@@ -78,7 +78,11 @@ export type LensPulseRuntimeMessagePayload = Schemas['LensPulseRuntimeMessagePay
 export type LensPulseRuntimeNotice = Schemas['LensPulseRuntimeNotice'];
 export type LensPulseSessionStatePayload = Schemas['LensPulseSessionStatePayload'];
 export type LensPulseSessionSummary = Schemas['LensPulseSessionSummary'];
-export type LensPulseTranscriptEntry = Schemas['LensPulseTranscriptEntry'];
+// Legacy OpenAPI schema naming uses "Transcript", but Lens semantics are
+// provider-backed history entries rather than PTY/terminal transcripts.
+export type LensPulseHistoryEntry = Schemas['LensPulseTranscriptEntry'];
+/** @deprecated Prefer LensPulseHistoryEntry in application code. */
+export type LensPulseTranscriptEntry = LensPulseHistoryEntry;
 export type LensPulseSnapshotResponse = Schemas['LensPulseSnapshotResponse'];
 export type LensPulseStreamsSummary = Schemas['LensPulseStreamsSummary'];
 export type LensPulseThreadStatePayload = Schemas['LensPulseThreadStatePayload'];

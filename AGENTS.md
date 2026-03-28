@@ -45,6 +45,7 @@ Rules:
 - Implement provider-backed Lens sessions as Lens-owned runtimes, not as reinterpretations of terminal transcript output.
 - For each explicit Codex or Claude Lens session, MidTerm should launch or attach a dedicated provider runtime for that Lens surface and consume structured runtime events from that runtime.
 - Lens is not a terminal transcript view. It must rely on explicit provider APIs and structured protocols that Codex and Claude expose for rich UI clients, with `mtagenthost` as the intended MidTerm host boundary for those integrations.
+- Reserve `transcript` terminology for actual terminal/PTTY capture or legacy wire names only. In Lens code and docs, prefer `history` for the canonical provider-backed item sequence and `timeline` for its rendered visual presentation.
 - An explicit Lens session does not own or attach to an `mthost` terminal. Its runtime boundary is `mtagenthost`, which launches the provider with the parameters and structured transport needed for a rich web UI integration.
 - Do not scrape the terminal buffer, infer assistant turns from PTY text, or depend on foreground process output as the source of truth for Lens conversation state.
 - Do not treat terminal stdout/stderr as the Lens protocol. PTY output may still exist for Terminal, diagnostics, or fallback scenarios, but it is not the authoritative source for Lens turns, streaming assistant output, tool lifecycle, approvals, plan-mode questions, or diffs.
@@ -57,6 +58,6 @@ Rules:
 ## Lens Design Documentation
 
 - The visual and interaction design contract for Lens lives in [docs/LensDesign.md](docs/LensDesign.md).
-- Read that document before making Lens transcript, composer, item-rendering, layout, spacing, typography, scrolling, or hierarchy changes.
+- Read that document before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, or hierarchy changes.
 - Treat `docs/LensDesign.md` as a maintained design contract, not a one-off note.
 - Any future Lens UI change that affects fundamentals must update `docs/LensDesign.md` in the same work so the current design understanding remains traceable for future sessions.

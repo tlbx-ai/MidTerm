@@ -6,7 +6,7 @@ This document is the source of truth for the visual and interaction design of Mi
 
 Lens is a provider-backed conversation surface for explicit Codex and Claude sessions. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
-Any future Lens UI change that affects layout, hierarchy, transcript ordering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
+Any future Lens UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
 ## Progress Tracking
 
@@ -21,7 +21,7 @@ When Lens UX changes, update both sections in the same work. If a rule is specif
 
 This document governs:
 
-- transcript ordering and grouping
+- history ordering and grouping
 - rendering of user messages, assistant output, tool activity, diffs, approvals, and plan-mode questions
 - composer and ready-state presentation
 - spacing, typography, hierarchy, density, and use of screen space
@@ -29,25 +29,31 @@ This document governs:
 
 Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Lens UX contract after provider events have been normalized into MidTerm-owned concepts.
 
+## Terminology
+
+- `history` means the canonical provider-backed ordered sequence of Lens items.
+- `timeline` means the rendered visual presentation of that history in the Lens UI.
+- `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names and should not be used as the Lens UI concept.
+
 ## Core Principles
 
 ### 1. Stable chronology
 
-- The transcript must be strictly chronological and visually stable.
+- The history/timeline must be strictly chronological and visually stable.
 - New items must append in a predictable order.
 - Existing items may update in place while streaming, but must not jump above or between older completed items unless the underlying turn/item identity itself is wrong.
 - Reordering bugs are correctness bugs, not cosmetic issues.
 
 ### 2. Minimal clutter
 
-- Prefer a clean transcript over chat-card chrome.
+- Prefer a clean history timeline over chat-card chrome.
 - Do not wrap every event in heavy bordered cards.
 - Avoid redundant labels, duplicate timestamps, duplicate avatars, and repeated status chips.
 - Use separators, spacing, and type hierarchy instead of ornamental containers.
 
 ### 3. One interaction model
 
-- User messages, assistant output, tool progress, approvals, diffs, and plan-mode questions should feel like one coherent transcript system.
+- User messages, assistant output, tool progress, approvals, diffs, and plan-mode questions should feel like one coherent history/timeline system.
 - Different item kinds may have different treatments, but they must share one visual grammar.
 - The UI should not feel like unrelated widgets stacked in one column.
 
@@ -60,7 +66,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 ### 5. Clear hierarchy
 
-- The user must be able to scan the transcript and immediately distinguish:
+- The user must be able to scan the history timeline and immediately distinguish:
   - user intent
   - assistant response
   - active work in progress
@@ -71,14 +77,14 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 ### 6. Lean DOM
 
-- Lens must not retain thousands of transcript nodes in the live DOM.
-- Once the visible transcript grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
+- Lens must not retain thousands of history nodes in the live DOM.
+- Once the visible history grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
 - Virtualization must preserve stable scroll behavior and not break streaming updates at the bottom.
 
 ### 7. Responsive behavior
 
 - Lens must remain fully usable on mobile-sized viewports.
-- Mobile Lens should preserve transcript hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal transcript reading.
+- Mobile Lens should preserve history hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal history reading.
 - Responsive behavior must be designed, not treated as desktop shrinkage.
 
 ### 8. Internationalized MidTerm UI copy
@@ -114,7 +120,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 ### Containers
 
-- Default transcript entries should not use card-heavy presentation.
+- Default history rows should not use card-heavy presentation.
 - Use lightweight blocks with strong spacing and alignment.
 - Borders, fills, and backgrounds should be sparse and purposeful.
 - Only exceptional states such as approvals, errors, or diff summaries may justify stronger containment.
@@ -123,7 +129,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 - Color should communicate meaning sparingly.
 - Persistent accent color usage should be limited to active/ready/progress states and important calls to action.
-- Avoid rainbow status noise across transcript rows.
+- Avoid rainbow status noise across history rows.
 
 ### Motion
 
@@ -131,7 +137,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Use restrained transitions for stream growth, tool state changes, and ready-state changes.
 - Avoid layout thrash and avoid motion that causes the eye to lose reading position.
 
-## Transcript Model
+## History Model
 
 ### Ordering
 
@@ -159,7 +165,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 ### Plan-mode questions and approvals
 
-- Requests that require user action must stand out clearly from passive transcript content.
+- Requests that require user action must stand out clearly from passive history content.
 - They should read like the next required interaction, not like another log entry.
 - The composer and action affordances should align with that state.
 
@@ -173,21 +179,21 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 - The composer is the primary action control for Lens sessions.
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
-- Ready-state presentation should be understated, always visible, and never confused with transcript content.
+- Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
 
 ## Performance Rules
 
-- Streaming must not cause full transcript rerenders.
+- Streaming must not cause full history/timeline rerenders.
 - Item updates should target stable DOM anchors keyed by canonical identity.
-- Virtual scrolling must remove old items from the live DOM when the transcript becomes large.
+- Virtual scrolling must remove old items from the live DOM when the history becomes large.
 - Rich items such as diffs or tool logs should support collapsed rendering by default.
 
 ## Design Review Checklist
 
 Any significant Lens UI change should be checked against these questions:
 
-1. Does transcript order remain stable while streaming and while tool items update?
+1. Does history order remain stable while streaming and while tool items update?
 2. Did this change reduce clutter or add it?
 3. Is the hierarchy clearer than before?
 4. Did we keep the number of visual patterns low?
@@ -206,13 +212,15 @@ Any significant Lens UI change should be checked against these questions:
 
 Status in this branch/work item:
 
-- implemented: stable transcript virtualization with a bounded render window instead of keeping the full long history in the DOM
+- implemented: stable history virtualization with a bounded render window instead of keeping the full long history in the DOM
+- implemented: deterministic history render planning plus keyed visible-row reconciliation instead of rebuilding the whole visible history subtree on every update
 - implemented: scroll-follow suppression while the user is away from the live edge, plus an explicit return-to-bottom control
 - implemented: terminal-font monospace rendering for machine-oriented Lens content
 - implemented: provider-stream-driven assistant rendering so partial assistant text can appear before the final provider message lands
 - implemented: responsive Lens styling for mobile-sized layouts
 - implemented: Lens-specific themed CSS tokens layered onto the existing MidTerm theme system
 - implemented: i18n-backed MidTerm Lens labels, buttons, helper copy, ready-state text, and interruption text
+- implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
 
 Still mandatory after this work whenever Lens evolves:
 

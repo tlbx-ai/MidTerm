@@ -9981,7 +9981,7 @@ body.shared-session-mode .session-tab-bar {
   --agent-lens-live: color-mix(in srgb, var(--accent-blue) 82%, white 10%);
   --agent-lens-warning: color-mix(in srgb, var(--accent-gold) 84%, white 8%);
   --agent-lens-attention: color-mix(in srgb, var(--accent-red) 82%, white 6%);
-  --agent-transcript-mono-font-family: var(--font-mono);
+  --agent-history-mono-font-family: var(--font-mono);
   background: var(--terminal-ui-background, var(--terminal-bg));
 }
 
@@ -10012,7 +10012,7 @@ body.shared-session-mode .session-tab-bar {
     );
 }
 
-.agent-transcript-card {
+.agent-history-card {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -10025,7 +10025,7 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
-.agent-transcript {
+.agent-history {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -10097,7 +10097,7 @@ body.shared-session-mode .session-tab-bar {
   display: none;
 }
 
-.agent-transcript-entry {
+.agent-history-entry {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -10112,19 +10112,19 @@ body.shared-session-mode .session-tab-bar {
   isolation: isolate;
 }
 
-.agent-transcript-positive {
+.agent-history-positive {
   color: inherit;
 }
 
-.agent-transcript-warning {
+.agent-history-warning {
   color: inherit;
 }
 
-.agent-transcript-attention {
+.agent-history-attention {
   color: inherit;
 }
 
-.agent-transcript-user {
+.agent-history-user {
   align-self: flex-end;
   width: min(100%, var(--agent-lens-user-width));
   padding: 10px 14px 12px;
@@ -10137,56 +10137,56 @@ body.shared-session-mode .session-tab-bar {
   );
 }
 
-.agent-transcript-assistant {
+.agent-history-assistant {
   align-self: flex-start;
   width: var(--agent-lens-content-width);
   padding: 12px 0 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
 }
 
-.agent-transcript-assistant.agent-transcript-live .agent-transcript-badge-assistant {
+.agent-history-assistant.agent-history-live .agent-history-badge-assistant {
   color: var(--agent-lens-live);
 }
 
-.agent-transcript-pending {
+.agent-history-pending {
   opacity: 0.96;
   scroll-margin-bottom: 18px;
 }
 
-.agent-transcript-entry[data-pending='true'],
-.agent-transcript-entry[data-live='true'] {
+.agent-history-entry[data-pending='true'],
+.agent-history-entry[data-live='true'] {
   scroll-margin-bottom: 18px;
 }
 
-.agent-transcript-assistant.agent-transcript-pending {
+.agent-history-assistant.agent-history-pending {
   border-bottom-color: color-mix(in srgb, var(--agent-lens-warning) 24%, transparent);
 }
 
-.agent-transcript-assistant.agent-transcript-pending .agent-transcript-body {
+.agent-history-assistant.agent-history-pending .agent-history-body {
   color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
 }
 
-.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending) {
+.agent-history-assistant.agent-history-live:not(.agent-history-pending) {
   border-bottom-color: color-mix(in srgb, var(--agent-lens-live) 26%, transparent);
 }
 
-.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending)
-  .agent-transcript-body {
+.agent-history-assistant.agent-history-live:not(.agent-history-pending)
+  .agent-history-body {
   color: var(--text-primary);
 }
 
-.agent-transcript-assistant.agent-transcript-live:not(.agent-transcript-pending)
-  .agent-transcript-meta {
+.agent-history-assistant.agent-history-live:not(.agent-history-pending)
+  .agent-history-meta {
   color: color-mix(in srgb, var(--agent-lens-live) 74%, var(--text-secondary));
 }
 
-.agent-transcript-tool,
-.agent-transcript-reasoning,
-.agent-transcript-plan,
-.agent-transcript-diff,
-.agent-transcript-request,
-.agent-transcript-system,
-.agent-transcript-notice {
+.agent-history-tool,
+.agent-history-reasoning,
+.agent-history-plan,
+.agent-history-diff,
+.agent-history-request,
+.agent-history-system,
+.agent-history-notice {
   width: var(--agent-lens-content-width);
   padding: 10px 0 10px 16px;
   border-left: 2px solid var(--agent-lens-rail);
@@ -10194,29 +10194,29 @@ body.shared-session-mode .session-tab-bar {
   background: transparent;
 }
 
-.agent-transcript-artifact {
+.agent-history-artifact {
   gap: 5px;
 }
 
-.agent-transcript-reasoning {
+.agent-history-reasoning {
   border-left-color: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
 }
 
-.agent-transcript-artifact[data-artifact-position='start'] {
+.agent-history-artifact[data-artifact-position='start'] {
   margin-top: 6px;
 }
 
-.agent-transcript-artifact[data-artifact-position='middle'] {
+.agent-history-artifact[data-artifact-position='middle'] {
   margin-top: 0;
   padding-top: 4px;
 }
 
-.agent-transcript-artifact[data-artifact-position='end'] {
+.agent-history-artifact[data-artifact-position='end'] {
   margin-top: 0;
   padding-bottom: 12px;
 }
 
-.agent-transcript-artifact-cluster-label {
+.agent-history-artifact-cluster-label {
   color: color-mix(in srgb, var(--text-secondary) 82%, transparent);
   font-size: 10px;
   font-weight: 700;
@@ -10225,7 +10225,7 @@ body.shared-session-mode .session-tab-bar {
   margin-bottom: 4px;
 }
 
-.agent-transcript-notice {
+.agent-history-notice {
   border-left-color: color-mix(in srgb, var(--accent-red) 72%, var(--border-color));
   background: linear-gradient(
     90deg,
@@ -10234,21 +10234,21 @@ body.shared-session-mode .session-tab-bar {
   );
 }
 
-.agent-transcript-header {
+.agent-history-header {
   display: flex;
   gap: 8px;
   align-items: baseline;
   min-width: 0;
 }
 
-.agent-transcript-user .agent-transcript-header,
-.agent-transcript-assistant .agent-transcript-header {
+.agent-history-user .agent-history-header,
+.agent-history-assistant .agent-history-header {
   order: 1;
   justify-content: space-between;
   margin-top: 0;
 }
 
-.agent-transcript-badge {
+.agent-history-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -10263,45 +10263,45 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-muted);
 }
 
-.agent-transcript-badge-user {
+.agent-history-badge-user {
   display: none;
 }
 
-.agent-transcript-badge-assistant {
+.agent-history-badge-assistant {
   display: none;
 }
 
-.agent-transcript-badge-tool {
+.agent-history-badge-tool {
   display: none;
 }
 
-.agent-transcript-badge-request {
+.agent-history-badge-request {
   color: var(--agent-lens-warning);
 }
 
-.agent-transcript-badge-plan,
-.agent-transcript-badge-diff,
-.agent-transcript-badge-system,
-.agent-transcript-badge-notice {
+.agent-history-badge-plan,
+.agent-history-badge-diff,
+.agent-history-badge-system,
+.agent-history-badge-notice {
   color: var(--text-muted);
 }
 
-.agent-transcript-badge-reasoning,
-.agent-transcript-badge-plan,
-.agent-transcript-badge-diff {
+.agent-history-badge-reasoning,
+.agent-history-badge-plan,
+.agent-history-badge-diff {
   color: color-mix(in srgb, var(--accent-blue) 72%, white 18%);
 }
 
-.agent-transcript-badge-plan,
-.agent-transcript-badge-diff {
+.agent-history-badge-plan,
+.agent-history-badge-diff {
   display: none;
 }
 
-.agent-transcript-badge-reasoning {
+.agent-history-badge-reasoning {
   display: inline-flex;
 }
 
-.agent-transcript-title {
+.agent-history-title {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
   font-size: 10px;
   font-weight: 700;
@@ -10311,20 +10311,20 @@ body.shared-session-mode .session-tab-bar {
   letter-spacing: 0.12em;
 }
 
-.agent-transcript-tool .agent-transcript-title,
-.agent-transcript-reasoning .agent-transcript-title,
-.agent-transcript-plan .agent-transcript-title,
-.agent-transcript-diff .agent-transcript-title {
+.agent-history-tool .agent-history-title,
+.agent-history-reasoning .agent-history-title,
+.agent-history-plan .agent-history-title,
+.agent-history-diff .agent-history-title {
   color: color-mix(in srgb, var(--text-secondary) 86%, transparent);
 }
 
-.agent-transcript-request .agent-transcript-title,
-.agent-transcript-system .agent-transcript-title,
-.agent-transcript-notice .agent-transcript-title {
+.agent-history-request .agent-history-title,
+.agent-history-system .agent-history-title,
+.agent-history-notice .agent-history-title {
   display: none;
 }
 
-.agent-transcript-meta {
+.agent-history-meta {
   color: var(--text-muted);
   font-size: 10px;
   letter-spacing: 0;
@@ -10333,19 +10333,19 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
-.agent-transcript-artifact .agent-transcript-meta {
+.agent-history-artifact .agent-history-meta {
   color: color-mix(in srgb, var(--text-muted) 76%, transparent);
 }
 
-.agent-transcript-user .agent-transcript-meta,
-.agent-transcript-assistant .agent-transcript-meta {
+.agent-history-user .agent-history-meta,
+.agent-history-assistant .agent-history-meta {
   margin-left: 0;
   font-size: 10px;
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
 }
 
-.agent-transcript-body,
-.agent-transcript-empty {
+.agent-history-body,
+.agent-history-empty {
   margin: 0;
   color: var(--text-secondary);
   font-size: 0.95rem;
@@ -10354,26 +10354,26 @@ body.shared-session-mode .session-tab-bar {
   word-break: break-word;
 }
 
-.agent-transcript-body {
+.agent-history-body {
   font-family: var(--font-ui);
   min-width: 0;
   max-width: 100%;
 }
 
-.agent-transcript-user .agent-transcript-body {
+.agent-history-user .agent-history-body {
   color: color-mix(in srgb, var(--text-primary) 98%, white 2%);
   font-family: var(--font-ui);
   font-size: 0.92rem;
   line-height: 1.58;
 }
 
-.agent-transcript-assistant .agent-transcript-body {
+.agent-history-assistant .agent-history-body {
   color: var(--text-primary);
   font-size: 1rem;
   line-height: 1.7;
 }
 
-.agent-transcript-live-indicator {
+.agent-history-live-indicator {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -10385,30 +10385,30 @@ body.shared-session-mode .session-tab-bar {
   text-transform: uppercase;
 }
 
-.agent-transcript-assistant-placeholder .agent-transcript-live-indicator {
+.agent-history-assistant-placeholder .agent-history-live-indicator {
   margin-bottom: 2px;
 }
 
-.agent-transcript-live-dots {
+.agent-history-live-dots {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.agent-transcript-live-dot {
+.agent-history-live-dot {
   width: 5px;
   height: 5px;
   border-radius: 999px;
   background: currentColor;
   opacity: 0.24;
-  animation: agent-transcript-live-dot 1.05s ease-in-out infinite;
+  animation: agent-history-live-dot 1.05s ease-in-out infinite;
 }
 
-.agent-transcript-live-label {
+.agent-history-live-label {
   color: inherit;
 }
 
-@keyframes agent-transcript-live-dot {
+@keyframes agent-history-live-dot {
   0%,
   100% {
     opacity: 0.2;
@@ -10421,76 +10421,76 @@ body.shared-session-mode .session-tab-bar {
   }
 }
 
-.agent-transcript-markdown {
+.agent-history-markdown {
   overflow: hidden;
 }
 
-.agent-transcript-markdown-content {
+.agent-history-markdown-content {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
 }
 
-.agent-transcript-markdown > :first-child {
+.agent-history-markdown > :first-child {
   margin-top: 0;
 }
 
-.agent-transcript-markdown > :last-child {
+.agent-history-markdown > :last-child {
   margin-bottom: 0;
 }
 
-.agent-transcript-markdown-content > :first-child {
+.agent-history-markdown-content > :first-child {
   margin-top: 0;
 }
 
-.agent-transcript-markdown-content > :last-child {
+.agent-history-markdown-content > :last-child {
   margin-bottom: 0;
 }
 
-.agent-transcript-markdown p,
-.agent-transcript-markdown ul,
-.agent-transcript-markdown ol,
-.agent-transcript-markdown blockquote,
-.agent-transcript-markdown pre,
-.agent-transcript-markdown figure,
-.agent-transcript-markdown h1,
-.agent-transcript-markdown h2,
-.agent-transcript-markdown h3,
-.agent-transcript-markdown h4 {
+.agent-history-markdown p,
+.agent-history-markdown ul,
+.agent-history-markdown ol,
+.agent-history-markdown blockquote,
+.agent-history-markdown pre,
+.agent-history-markdown figure,
+.agent-history-markdown h1,
+.agent-history-markdown h2,
+.agent-history-markdown h3,
+.agent-history-markdown h4 {
   margin: 0 0 8px;
 }
 
-.agent-transcript-markdown ul,
-.agent-transcript-markdown ol {
+.agent-history-markdown ul,
+.agent-history-markdown ol {
   padding-left: 22px;
 }
 
-.agent-transcript-markdown li + li {
+.agent-history-markdown li + li {
   margin-top: 4px;
 }
 
-.agent-transcript-markdown a {
+.agent-history-markdown a {
   color: color-mix(in srgb, var(--agent-lens-live) 88%, white 10%);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--agent-lens-live) 42%, transparent);
   text-underline-offset: 2px;
 }
 
-.agent-transcript-markdown strong {
+.agent-history-markdown strong {
   color: var(--text-primary);
   font-weight: 700;
 }
 
-.agent-transcript-markdown code {
+.agent-history-markdown code {
   padding: 1px 5px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--bg-hover) 80%, transparent);
   color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
-  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-size: 0.92em;
 }
 
-.agent-transcript-markdown pre {
+.agent-history-markdown pre {
   overflow-x: auto;
   padding: 10px 12px;
   border-radius: 10px;
@@ -10498,17 +10498,17 @@ body.shared-session-mode .session-tab-bar {
   border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
 }
 
-.agent-transcript-markdown pre code {
+.agent-history-markdown pre code {
   padding: 0;
   border-radius: 0;
   background: transparent;
   color: color-mix(in srgb, var(--text-primary) 88%, transparent);
   font-size: 0.86rem;
   line-height: 1.55;
-  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
 }
 
-.agent-transcript-markdown blockquote {
+.agent-history-markdown blockquote {
   margin-left: 0;
   padding-left: 12px;
   border-left: 2px solid rgba(255, 255, 255, 0.12);
@@ -10545,7 +10545,7 @@ body.shared-session-mode .session-tab-bar {
   text-transform: uppercase;
 }
 
-.agent-transcript-markdown .agent-markdown-table-wrap {
+.agent-history-markdown .agent-markdown-table-wrap {
   margin: 0 0 10px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -10556,27 +10556,27 @@ body.shared-session-mode .session-tab-bar {
   scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent) transparent;
 }
 
-.agent-transcript-markdown .agent-markdown-table-wrap::-webkit-scrollbar {
+.agent-history-markdown .agent-markdown-table-wrap::-webkit-scrollbar {
   height: 10px;
 }
 
-.agent-transcript-markdown .agent-markdown-table-wrap::-webkit-scrollbar-track {
+.agent-history-markdown .agent-markdown-table-wrap::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.agent-transcript-markdown .agent-markdown-table-wrap::-webkit-scrollbar-thumb {
+.agent-history-markdown .agent-markdown-table-wrap::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-primary) 18%, transparent);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
-.agent-transcript-markdown .agent-markdown-table-wrap::-webkit-scrollbar-thumb:hover {
+.agent-history-markdown .agent-markdown-table-wrap::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text-primary) 30%, transparent);
   background-clip: padding-box;
 }
 
-.agent-transcript-markdown table {
+.agent-history-markdown table {
   display: table;
   width: 100%;
   min-width: max-content;
@@ -10588,21 +10588,21 @@ body.shared-session-mode .session-tab-bar {
   background: transparent;
 }
 
-.agent-transcript-markdown table[data-table-density='dense'] th,
-.agent-transcript-markdown table[data-table-density='dense'] td {
+.agent-history-markdown table[data-table-density='dense'] th,
+.agent-history-markdown table[data-table-density='dense'] td {
   padding: 7px 8px;
   font-size: 0.8rem;
 }
 
-.agent-transcript-markdown .agent-markdown-th-short {
+.agent-history-markdown .agent-markdown-th-short {
   display: none;
 }
 
-.agent-transcript-markdown .agent-markdown-th-full {
+.agent-history-markdown .agent-markdown-th-full {
   display: inline;
 }
 
-.agent-transcript-markdown table[data-table-density='dense'] .agent-markdown-th-short {
+.agent-history-markdown table[data-table-density='dense'] .agent-markdown-th-short {
   display: inline;
   font-size: 0.72rem;
   font-weight: 700;
@@ -10610,15 +10610,15 @@ body.shared-session-mode .session-tab-bar {
   text-transform: uppercase;
 }
 
-.agent-transcript-markdown table[data-table-density='dense'] .agent-markdown-th-full {
+.agent-history-markdown table[data-table-density='dense'] .agent-markdown-th-full {
   display: none;
 }
 
-.agent-transcript-markdown
+.agent-history-markdown
   table[data-table-density='dense']
   th[data-col-kind='notes']
   .agent-markdown-th-short,
-.agent-transcript-markdown
+.agent-history-markdown
   table[data-table-density='dense']
   th[data-col-kind='key']
   .agent-markdown-th-short {
@@ -10626,12 +10626,12 @@ body.shared-session-mode .session-tab-bar {
   text-transform: none;
 }
 
-.agent-transcript-markdown thead {
+.agent-history-markdown thead {
   background: rgba(123, 162, 247, 0.1);
 }
 
-.agent-transcript-markdown th,
-.agent-transcript-markdown td {
+.agent-history-markdown th,
+.agent-history-markdown td {
   min-width: 120px;
   padding: 8px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -10641,16 +10641,16 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
-.agent-transcript-markdown th:last-child,
-.agent-transcript-markdown td:last-child {
+.agent-history-markdown th:last-child,
+.agent-history-markdown td:last-child {
   border-right: 0;
 }
 
-.agent-transcript-markdown tbody tr:last-child td {
+.agent-history-markdown tbody tr:last-child td {
   border-bottom: 0;
 }
 
-.agent-transcript-markdown th {
+.agent-history-markdown th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -10662,7 +10662,7 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
-.agent-transcript-markdown td {
+.agent-history-markdown td {
   color: #dce4f5;
   font-size: 0.84rem;
   line-height: 1.45;
@@ -10670,22 +10670,22 @@ body.shared-session-mode .session-tab-bar {
   overflow-wrap: normal;
 }
 
-.agent-transcript-markdown tbody tr:nth-child(even) td {
+.agent-history-markdown tbody tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.agent-transcript-markdown tbody tr:hover td {
+.agent-history-markdown tbody tr:hover td {
   background: rgba(123, 162, 247, 0.08);
 }
 
-.agent-transcript-markdown th:first-child {
+.agent-history-markdown th:first-child {
   left: 0;
   z-index: 3;
   background: rgba(24, 34, 55, 0.98);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
 }
 
-.agent-transcript-markdown td:first-child {
+.agent-history-markdown td:first-child {
   position: sticky;
   left: 0;
   z-index: 1;
@@ -10694,35 +10694,35 @@ body.shared-session-mode .session-tab-bar {
   color: #eef4ff;
 }
 
-.agent-transcript-markdown tbody tr:nth-child(even) td:first-child {
+.agent-history-markdown tbody tr:nth-child(even) td:first-child {
   background: rgba(14, 19, 31, 0.98);
 }
 
-.agent-transcript-markdown tbody tr:hover td:first-child {
+.agent-history-markdown tbody tr:hover td:first-child {
   background: rgba(25, 38, 62, 0.98);
 }
 
-.agent-transcript-markdown th[data-col-kind='key'],
-.agent-transcript-markdown td[data-col-kind='key'] {
+.agent-history-markdown th[data-col-kind='key'],
+.agent-history-markdown td[data-col-kind='key'] {
   min-width: 7.5rem;
 }
 
-.agent-transcript-markdown td[data-col-kind='key'] {
+.agent-history-markdown td[data-col-kind='key'] {
   color: #eef4ff;
   font-weight: 600;
 }
 
-.agent-transcript-markdown th[data-col-kind='tag'],
-.agent-transcript-markdown td[data-col-kind='tag'] {
+.agent-history-markdown th[data-col-kind='tag'],
+.agent-history-markdown td[data-col-kind='tag'] {
   min-width: 6.75rem;
 }
 
-.agent-transcript-markdown td[data-col-kind='tag'] {
+.agent-history-markdown td[data-col-kind='tag'] {
   color: #d7e4ff;
   text-align: center;
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill {
+.agent-history-markdown .agent-markdown-cell-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -10742,118 +10742,118 @@ body.shared-session-mode .session-tab-bar {
     0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill[data-cell-kind='tag'] {
+.agent-history-markdown .agent-markdown-cell-pill[data-cell-kind='tag'] {
   padding: 0.18rem 0.68rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill[data-cell-tone='positive'] {
+.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='positive'] {
   border-color: rgba(108, 194, 131, 0.42);
   background: linear-gradient(180deg, rgba(108, 194, 131, 0.28), rgba(108, 194, 131, 0.16));
   color: #e6ffe9;
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill[data-cell-tone='warning'] {
+.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='warning'] {
   border-color: rgba(255, 200, 111, 0.42);
   background: linear-gradient(180deg, rgba(255, 200, 111, 0.3), rgba(255, 200, 111, 0.16));
   color: #fff2cf;
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill[data-cell-tone='attention'] {
+.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='attention'] {
   border-color: rgba(255, 116, 116, 0.46);
   background: linear-gradient(180deg, rgba(255, 116, 116, 0.34), rgba(255, 116, 116, 0.18));
   color: #ffe0e0;
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill[data-cell-tone='info'] {
+.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='info'] {
   border-color: rgba(130, 196, 255, 0.4);
   background: linear-gradient(180deg, rgba(130, 196, 255, 0.28), rgba(130, 196, 255, 0.14));
   color: #e5f4ff;
 }
 
-.agent-transcript-markdown .agent-markdown-cell-pill[data-cell-tone='muted'] {
+.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='muted'] {
   border-color: rgba(255, 255, 255, 0.14);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
   color: rgba(232, 238, 248, 0.86);
 }
 
-.agent-transcript-markdown th[data-col-kind='numeric'],
-.agent-transcript-markdown td[data-col-kind='numeric'] {
+.agent-history-markdown th[data-col-kind='numeric'],
+.agent-history-markdown td[data-col-kind='numeric'] {
   min-width: 5.25rem;
   text-align: right;
-  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-variant-numeric: tabular-nums;
 }
 
-.agent-transcript-markdown th[data-col-kind='notes'],
-.agent-transcript-markdown td[data-col-kind='notes'] {
+.agent-history-markdown th[data-col-kind='notes'],
+.agent-history-markdown td[data-col-kind='notes'] {
   min-width: 22rem;
   max-width: 30rem;
   white-space: normal;
 }
 
-.agent-transcript-markdown table[data-table-density='dense'] th[data-col-kind='notes'],
-.agent-transcript-markdown table[data-table-density='dense'] td[data-col-kind='notes'] {
+.agent-history-markdown table[data-table-density='dense'] th[data-col-kind='notes'],
+.agent-history-markdown table[data-table-density='dense'] td[data-col-kind='notes'] {
   min-width: 18rem;
   max-width: 24rem;
 }
 
-.agent-transcript-markdown th[data-align='center'],
-.agent-transcript-markdown td[data-align='center'] {
+.agent-history-markdown th[data-align='center'],
+.agent-history-markdown td[data-align='center'] {
   text-align: center;
 }
 
-.agent-transcript-markdown th[data-align='right'],
-.agent-transcript-markdown td[data-align='right'] {
+.agent-history-markdown th[data-align='right'],
+.agent-history-markdown td[data-align='right'] {
   text-align: right;
-  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-variant-numeric: tabular-nums;
 }
 
-.agent-transcript-markdown h1,
-.agent-transcript-markdown h2,
-.agent-transcript-markdown h3,
-.agent-transcript-markdown h4 {
+.agent-history-markdown h1,
+.agent-history-markdown h2,
+.agent-history-markdown h3,
+.agent-history-markdown h4 {
   color: var(--text-primary);
   font-weight: 650;
   line-height: 1.25;
 }
 
-.agent-transcript-markdown h1 {
+.agent-history-markdown h1 {
   font-size: 1.18rem;
 }
 
-.agent-transcript-markdown h2 {
+.agent-history-markdown h2 {
   font-size: 1.08rem;
 }
 
-.agent-transcript-markdown h3,
-.agent-transcript-markdown h4 {
+.agent-history-markdown h3,
+.agent-history-markdown h4 {
   font-size: 1rem;
 }
 
-.agent-transcript-markdown p,
-.agent-transcript-markdown ul,
-.agent-transcript-markdown ol,
-.agent-transcript-markdown blockquote,
-.agent-transcript-markdown pre,
-.agent-transcript-markdown figure {
+.agent-history-markdown p,
+.agent-history-markdown ul,
+.agent-history-markdown ol,
+.agent-history-markdown blockquote,
+.agent-history-markdown pre,
+.agent-history-markdown figure {
   margin-top: 0;
   margin-bottom: 0.8rem;
 }
 
-.agent-transcript-markdown li + li {
+.agent-history-markdown li + li {
   margin-top: 0.28rem;
 }
 
-.agent-transcript-markdown blockquote {
+.agent-history-markdown blockquote {
   padding-left: 0.9rem;
   border-left: 2px solid color-mix(in srgb, var(--border-color) 92%, transparent);
   color: color-mix(in srgb, var(--text-secondary) 94%, transparent);
 }
 
-.agent-transcript-caret {
+.agent-history-caret {
   display: inline-block;
   width: 0.55ch;
   height: 1.05em;
@@ -10862,10 +10862,10 @@ body.shared-session-mode .session-tab-bar {
   border-radius: 1px;
   background: currentColor;
   opacity: 0.95;
-  animation: agent-transcript-caret-blink 1s steps(1, end) infinite;
+  animation: agent-history-caret-blink 1s steps(1, end) infinite;
 }
 
-@keyframes agent-transcript-caret-blink {
+@keyframes agent-history-caret-blink {
   0%,
   49% {
     opacity: 0.95;
@@ -10877,38 +10877,38 @@ body.shared-session-mode .session-tab-bar {
   }
 }
 
-.agent-transcript-tool .agent-transcript-body,
-.agent-transcript-reasoning .agent-transcript-body,
-.agent-transcript-plan .agent-transcript-body,
-.agent-transcript-diff .agent-transcript-body {
+.agent-history-tool .agent-history-body,
+.agent-history-reasoning .agent-history-body,
+.agent-history-plan .agent-history-body,
+.agent-history-diff .agent-history-body {
   padding: 2px 0 0;
   border-radius: 0;
   background: transparent;
   color: color-mix(in srgb, var(--text-primary) 88%, transparent);
-  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-size: 0.82rem;
   line-height: 1.52;
 }
 
-.agent-transcript-request .agent-transcript-body,
-.agent-transcript-system .agent-transcript-body,
-.agent-transcript-notice .agent-transcript-body {
+.agent-history-request .agent-history-body,
+.agent-history-system .agent-history-body,
+.agent-history-notice .agent-history-body {
   font-size: 0.88rem;
   line-height: 1.56;
 }
 
-.agent-transcript-attachments {
+.agent-history-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
 }
 
-.agent-transcript-attachment {
+.agent-history-attachment {
   text-decoration: none;
 }
 
-.agent-transcript-attachment-image {
+.agent-history-attachment-image {
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -10922,7 +10922,7 @@ body.shared-session-mode .session-tab-bar {
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
 }
 
-.agent-transcript-attachment-image-el {
+.agent-history-attachment-image-el {
   display: block;
   width: 100%;
   max-height: 260px;
@@ -10931,14 +10931,14 @@ body.shared-session-mode .session-tab-bar {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.agent-transcript-attachment-caption {
+.agent-history-attachment-caption {
   color: var(--text-secondary);
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.agent-transcript-attachment-file {
+.agent-history-attachment-file {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
@@ -10948,20 +10948,20 @@ body.shared-session-mode .session-tab-bar {
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-primary);
   font-size: 0.84rem;
-  font-family: var(--agent-transcript-mono-font-family, var(--font-mono));
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
 }
 
-.agent-transcript-attachment-file:hover,
-.agent-transcript-attachment-image:hover {
+.agent-history-attachment-file:hover,
+.agent-history-attachment-image:hover {
   border-color: rgba(255, 216, 143, 0.5);
 }
 
-.agent-transcript-spacer {
+.agent-history-spacer {
   flex: 0 0 auto;
   pointer-events: none;
 }
 
-.agent-transcript-actions,
+.agent-history-actions,
 .agent-request-actions {
   display: flex;
   flex-direction: column;
@@ -11237,11 +11237,11 @@ body.shared-session-mode .session-tab-bar {
 }
 
 @media (max-width: 900px) {
-  .agent-transcript-card {
+  .agent-history-card {
     padding: 0;
   }
 
-  .agent-transcript {
+  .agent-history {
     padding: 14px 14px 24px;
   }
 
@@ -11251,65 +11251,65 @@ body.shared-session-mode .session-tab-bar {
 }
 
 @media (max-width: 720px) {
-  .agent-transcript-card {
+  .agent-history-card {
     padding: 0;
   }
 
-  .agent-transcript {
+  .agent-history {
     padding: 10px 12px 20px;
     scroll-padding-bottom: 20px;
   }
 
-  .agent-transcript-user,
-  .agent-transcript-assistant {
+  .agent-history-user,
+  .agent-history-assistant {
     width: 100%;
   }
 
-  .agent-transcript-tool,
-  .agent-transcript-reasoning,
-  .agent-transcript-plan,
-  .agent-transcript-diff,
-  .agent-transcript-request,
-  .agent-transcript-system,
-  .agent-transcript-notice {
+  .agent-history-tool,
+  .agent-history-reasoning,
+  .agent-history-plan,
+  .agent-history-diff,
+  .agent-history-request,
+  .agent-history-system,
+  .agent-history-notice {
     width: 100%;
     padding: 10px 0 10px 12px;
   }
 
-  .agent-transcript-artifact[data-artifact-position='middle'],
-  .agent-transcript-artifact[data-artifact-position='end'] {
+  .agent-history-artifact[data-artifact-position='middle'],
+  .agent-history-artifact[data-artifact-position='end'] {
     margin-top: 0;
   }
 
-  .agent-transcript-header {
+  .agent-history-header {
     flex-wrap: wrap;
     align-items: flex-start;
     row-gap: 3px;
   }
 
-  .agent-transcript-title {
+  .agent-history-title {
     font-size: 9px;
   }
 
-  .agent-transcript-meta {
+  .agent-history-meta {
     width: 100%;
     margin-left: 0;
     white-space: normal;
     font-size: 9px;
   }
 
-  .agent-transcript-body,
-  .agent-transcript-empty {
+  .agent-history-body,
+  .agent-history-empty {
     font-size: 0.88rem;
     line-height: 1.54;
   }
 
-  .agent-transcript-assistant .agent-transcript-body {
+  .agent-history-assistant .agent-history-body {
     font-size: 0.95rem;
     line-height: 1.6;
   }
 
-  .agent-transcript-user {
+  .agent-history-user {
     padding: 10px 12px;
     border-radius: 12px;
   }

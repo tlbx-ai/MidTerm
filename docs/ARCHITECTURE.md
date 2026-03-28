@@ -203,7 +203,7 @@ MidTerm has a second input model in addition to direct terminal focus:
 Lens is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
 
 - the canonical turn, request, and stream state still belongs to the backend Lens runtime
-- the frontend Lens panel reconstructs that state into a chat-style transcript without taking ownership away from Terminal
+- the frontend Lens panel renders that state as provider-backed history/timeline UI without taking ownership away from Terminal
 - when live attach is unavailable, Lens can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
 - Lens is currently dev-gated in the session tabs while the UX is still being refined
 
@@ -217,6 +217,12 @@ The boundary between Terminal and Lens is a core design rule:
 ### Lens Provider Runtime Decision
 
 For provider-backed Lens sessions, MidTerm should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
+
+Terminology matters here:
+
+- `history` means the canonical provider-backed ordered sequence of Lens items
+- `timeline` means the rendered web presentation of that history
+- `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names, not Lens semantics
 
 That means:
 
@@ -251,7 +257,7 @@ The intended Definition of Done for provider-backed Lens sessions is:
 2. The session opens on the provider Lens surface with the Smart Input / composer visible.
 3. MidTerm shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
 4. The user can submit a prompt from the Lens composer without switching to Terminal.
-5. Assistant output streams into the Lens transcript incrementally as it is generated, rather than appearing only after full completion.
+5. Assistant output streams into the Lens history/timeline incrementally as it is generated, rather than appearing only after full completion.
 6. Tool activity is visible as it happens, including starts, updates, completions, approvals, and user-input questions.
 7. File edits and working diff updates are surfaced live in the Lens UI.
 8. Plan-mode or equivalent provider-driven question flows appear as first-class Lens interactions, not as raw terminal text.
@@ -259,7 +265,7 @@ The intended Definition of Done for provider-backed Lens sessions is:
 
 In practical terms, the user should experience Lens as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
 
-The visual and interaction design rules for that Lens surface are maintained separately in [LensDesign.md](LensDesign.md). Architecture decisions belong here; the concrete Lens UX contract, hierarchy, transcript behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
+The visual and interaction design rules for that Lens surface are maintained separately in [LensDesign.md](LensDesign.md). Architecture decisions belong here; the concrete Lens UX contract, hierarchy, history/timeline behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
 
 ## 5. Web Preview and Browser Automation
 

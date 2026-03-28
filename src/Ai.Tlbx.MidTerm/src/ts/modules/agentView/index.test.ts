@@ -6,6 +6,7 @@ const switchTab = vi.fn();
 const ensureSessionWrapper = vi.fn();
 const getTabPanel = vi.fn();
 const setSessionLensAvailability = vi.fn();
+const getActiveTab = vi.fn(() => 'agent');
 const getSessionState = vi.fn();
 const getSessionBufferTail = vi.fn();
 const attachSessionLens = vi.fn();
@@ -18,14 +19,96 @@ const approveLensRequest = vi.fn();
 const declineLensRequest = vi.fn();
 const resolveLensUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
+let activeSessionId: string | null = null;
+const activeSessionSubscribers: Array<(sessionId: string | null) => void> = [];
+
+function createMockDomNode(overrides: Record<string, unknown> = {}): any {
+  const node: any = {
+    dataset: {} as DOMStringMap,
+    style: {} as CSSStyleDeclaration,
+    className: '',
+    textContent: '',
+    innerHTML: '',
+    hidden: false,
+    disabled: false,
+    value: '',
+    children: [] as any[],
+    childNodes: [] as any[],
+    firstChild: null as any,
+    lastChild: null as any,
+    append: vi.fn(function (this: any, ...items: any[]) {
+      items.forEach((item) => this.insertBefore(item, null));
+    }),
+    appendChild: vi.fn(function (this: any, child: any) {
+      return this.insertBefore(child, null);
+    }),
+    replaceChildren: vi.fn(function (this: any, ...items: any[]) {
+      this.childNodes = [];
+      this.children = [];
+      items.forEach((item) => this.insertBefore(item, null));
+    }),
+    insertBefore: vi.fn(function (this: any, child: any, anchor: any) {
+      const nodes = this.childNodes as any[];
+      const existingIndex = nodes.indexOf(child);
+      if (existingIndex >= 0) {
+        nodes.splice(existingIndex, 1);
+      }
+
+      const anchorIndex = anchor ? nodes.indexOf(anchor) : -1;
+      if (anchorIndex >= 0) {
+        nodes.splice(anchorIndex, 0, child);
+      } else {
+        nodes.push(child);
+      }
+
+      this.childNodes = nodes;
+      this.children = nodes;
+      this.firstChild = nodes[0] ?? null;
+      this.lastChild = nodes[nodes.length - 1] ?? null;
+      return child;
+    }),
+    removeChild: vi.fn(function (this: any, child: any) {
+      const nodes = (this.childNodes as any[]).filter((candidate) => candidate !== child);
+      this.childNodes = nodes;
+      this.children = nodes;
+      this.firstChild = nodes[0] ?? null;
+      this.lastChild = nodes[nodes.length - 1] ?? null;
+      return child;
+    }),
+    setAttribute: vi.fn(),
+    addEventListener: vi.fn(),
+    classList: {
+      add: vi.fn(),
+      remove: vi.fn(),
+      toggle: vi.fn(),
+      contains: vi.fn(() => false),
+    },
+    scrollTop: 0,
+    scrollHeight: 0,
+    clientHeight: 0,
+  };
+
+  return Object.assign(node, overrides);
+}
 
 vi.mock('../sessionTabs', () => ({
   ensureSessionWrapper,
+  getActiveTab,
   getTabPanel,
   onTabActivated,
   onTabDeactivated,
   setSessionLensAvailability,
   switchTab,
+}));
+
+vi.mock('../../stores', () => ({
+  $activeSessionId: {
+    get: () => activeSessionId,
+    subscribe: (callback: (sessionId: string | null) => void) => {
+      activeSessionSubscribers.push(callback);
+      return () => {};
+    },
+  },
 }));
 
 vi.mock('../../api/client', () => ({
@@ -71,23 +154,7 @@ vi.mock('../logging', () => ({
 describe('agentView dev errors', () => {
   beforeEach(() => {
     vi.stubGlobal('document', {
-      createElement: () => ({
-        dataset: {} as DOMStringMap,
-        style: {} as CSSStyleDeclaration,
-        className: '',
-        textContent: '',
-        innerHTML: '',
-        append: vi.fn(),
-        appendChild: vi.fn(),
-        replaceChildren: vi.fn(),
-        addEventListener: vi.fn(),
-        setAttribute: vi.fn(),
-        classList: {
-          add: vi.fn(),
-          remove: vi.fn(),
-          toggle: vi.fn(),
-        },
-      }),
+      createElement: () => createMockDomNode(),
       createDocumentFragment: () => ({
         appendChild: vi.fn(),
         childNodes: [],
@@ -102,8 +169,9 @@ describe('agentView dev errors', () => {
       location: {
         origin: 'https://midterm.test',
       },
+      cancelAnimationFrame: vi.fn(),
       requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
-        callback(0);
+        queueMicrotask(() => callback(0));
         return 1;
       }),
     });
@@ -113,6 +181,8 @@ describe('agentView dev errors', () => {
     ensureSessionWrapper.mockReset();
     getTabPanel.mockReset();
     setSessionLensAvailability.mockReset();
+    getActiveTab.mockReset();
+    getActiveTab.mockReturnValue('agent');
     getSessionState.mockReset();
     getSessionState.mockResolvedValue(null);
     getSessionBufferTail.mockReset();
@@ -129,6 +199,8 @@ describe('agentView dev errors', () => {
     declineLensRequest.mockReset();
     resolveLensUserInput.mockReset();
     showDevErrorDialog.mockReset();
+    activeSessionId = null;
+    activeSessionSubscribers.length = 0;
     vi.resetModules();
   });
 
@@ -141,42 +213,21 @@ describe('agentView dev errors', () => {
 
     const getElement = (selector: string) => {
       if (!elements.has(selector)) {
-        elements.set(selector, {
-          dataset: {} as DOMStringMap,
-          hidden: false,
-          disabled: false,
-          textContent: '',
-          value: '',
-          className: '',
-          innerHTML: '',
-          scrollTop: 0,
-          scrollHeight: 0,
-          clientHeight: 0,
-          append: vi.fn(),
-          appendChild: vi.fn(),
-          replaceChildren: vi.fn(),
-          setAttribute: vi.fn(),
-          addEventListener: vi.fn(),
-          classList: {
-            add: vi.fn(),
-            remove: vi.fn(),
-            toggle: vi.fn(),
-          },
-        });
+        elements.set(selector, createMockDomNode());
       }
 
       return elements.get(selector);
     };
 
     return {
-      dataset: {} as DOMStringMap,
-      innerHTML: '',
-      classList: {
-        add: vi.fn(),
-        remove: vi.fn(),
-      },
+      ...createMockDomNode(),
       querySelector: vi.fn((selector: string) => getElement(selector)),
     } as unknown as HTMLDivElement;
+  }
+
+  function setActiveLensSession(sessionId: string | null): void {
+    activeSessionId = sessionId;
+    activeSessionSubscribers.forEach((callback) => callback(sessionId));
   }
 
   it('shows a dev error modal when Lens activation fails', async () => {
@@ -300,6 +351,8 @@ describe('agentView dev errors', () => {
       latestSequence: 1,
       events: [],
     });
+
+    setActiveLensSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -535,6 +588,11 @@ describe('agentView dev errors', () => {
       },
     } as Event);
 
+    const scheduledRefresh = (window.setTimeout as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as
+      | (() => void)
+      | undefined;
+    scheduledRefresh?.();
+
     await vi.waitFor(() => {
       expect(getLensSnapshot).toHaveBeenCalledTimes(2);
       expect(openLensEventStream).toHaveBeenCalledWith('s1', 36, expect.any(Object));
@@ -669,7 +727,9 @@ describe('agentView dev errors', () => {
     const interruptionHost = panel.querySelector(
       '[data-agent-field="composer-interruption"]',
     ) as any;
-    expect(interruptionHost.hidden).toBe(false);
+    await vi.waitFor(() => {
+      expect(interruptionHost.hidden).toBe(false);
+    });
     expect(interruptionHost.replaceChildren).toHaveBeenCalled();
     const interruptionPanel = interruptionHost.replaceChildren.mock.calls.at(-1)?.[0];
     expect(interruptionPanel?.className).toContain('agent-request-actions-user-input');
@@ -688,6 +748,197 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
 
     expect(detachSessionLens).not.toHaveBeenCalled();
+  });
+
+  it('does not close the live Lens stream when the agent tab is deactivated', async () => {
+    const disconnectStream = vi.fn();
+    openLensEventStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot.mockResolvedValue({
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T11:00:00Z',
+      latestSequence: 1,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T11:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-28T10:59:30Z',
+        completedAt: '2026-03-28T11:00:00Z',
+      },
+      streams: {
+        assistantText: 'Done.',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+      transcript: [],
+    });
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    const deactivate = onTabDeactivated.mock.calls[0]?.[1] as
+      | ((sessionId: string) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+    expect(deactivate).toBeTypeOf('function');
+
+    activate?.('s1', createPanel());
+
+    await vi.waitFor(() => {
+      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+    });
+
+    deactivate?.('s1');
+    await Promise.resolve();
+
+    expect(disconnectStream).not.toHaveBeenCalled();
+  });
+
+  it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
+    const disconnectStream = vi.fn();
+    openLensEventStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot.mockResolvedValue({
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T11:00:00Z',
+      latestSequence: 1,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T11:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-28T10:59:30Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'Initial assistant text.',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      items: [],
+      requests: [],
+      notices: [],
+      transcript: [
+        {
+          entryId: 'assistant:turn-1',
+          turnId: 'turn-1',
+          itemId: 'assistant-1',
+          requestId: null,
+          order: 1,
+          kind: 'assistant',
+          status: 'running',
+          title: 'Assistant',
+          body: 'Initial assistant text.',
+          updatedAt: '2026-03-28T11:00:00Z',
+          streaming: true,
+          attachments: [],
+        },
+      ],
+    });
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+    });
+
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.replaceChildren.mockClear();
+
+    setActiveLensSession('s2');
+
+    const streamCallbacks = openLensEventStream.mock.calls[0]?.[2] as
+      | { onEvent(event: unknown): void }
+      | undefined;
+    expect(streamCallbacks).toBeTruthy();
+
+    streamCallbacks?.onEvent({
+      sequence: 2,
+      eventId: 'evt-2',
+      sessionId: 's1',
+      provider: 'codex',
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      itemId: 'assistant-1',
+      requestId: null,
+      createdAt: '2026-03-28T11:00:01Z',
+      type: 'content.delta',
+      raw: null,
+      contentDelta: {
+        streamKind: 'assistant_text',
+        delta: ' more',
+      },
+    });
+    await Promise.resolve();
+
+    expect(disconnectStream).not.toHaveBeenCalled();
+    expect(historyHost.replaceChildren).not.toHaveBeenCalled();
   });
 
   it('detaches Lens when the agent view is destroyed', async () => {
@@ -739,7 +990,7 @@ describe('agentView dev errors', () => {
     expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
   });
 
-  it('prepends a readable Lens issue row ahead of the transcript', async () => {
+  it('prepends a readable Lens issue row ahead of the history', async () => {
     const { withActivationIssueNotice } = await import('./index');
 
     const entries = withActivationIssueNotice(
@@ -751,7 +1002,7 @@ describe('agentView dev errors', () => {
           tone: 'info',
           label: 'Assistant',
           title: '',
-          body: 'Transcript still visible.',
+          body: 'History still visible.',
           meta: '02:00',
         },
       ],
@@ -771,25 +1022,25 @@ describe('agentView dev errors', () => {
     expect(entries[0]?.kind).toBe('system');
     expect(entries[0]?.title).toBe('No resumable Codex thread is known yet');
     expect(entries[0]?.actions?.map((action) => action.id)).toEqual(['retry-lens']);
-    expect(entries[1]?.body).toBe('Transcript still visible.');
+    expect(entries[1]?.body).toBe('History still visible.');
   });
 
   it('compacts duplicate activation failure rows when an expected handoff issue is active', async () => {
-    const { buildActivationTranscriptEntries } = await import('./index');
+    const { buildActivationHistoryEntries } = await import('./index');
 
-    const entries = buildActivationTranscriptEntries({
+    const entries = buildActivationHistoryEntries({
       panel: createPanel(),
       snapshot: null,
       events: [],
-      transcriptViewport: null,
-      transcriptEntries: [],
+      historyViewport: null,
+      historyEntries: [],
       disconnectStream: null,
       streamConnected: false,
       refreshScheduled: null,
       refreshInFlight: false,
       requestBusyIds: new Set<string>(),
-      transcriptAutoScrollPinned: true,
-      transcriptRenderScheduled: null,
+      historyAutoScrollPinned: true,
+      historyRenderScheduled: null,
       activationState: 'failed',
       activationDetail: 'Lens startup failed.',
       activationError: 'HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.',
@@ -829,21 +1080,21 @@ describe('agentView dev errors', () => {
   });
 
   it('prepends a read-only terminal snapshot when Lens has no canonical history yet', async () => {
-    const { buildActivationTranscriptEntries } = await import('./index');
+    const { buildActivationHistoryEntries } = await import('./index');
 
-    const entries = buildActivationTranscriptEntries({
+    const entries = buildActivationHistoryEntries({
       panel: createPanel(),
       snapshot: null,
       events: [],
-      transcriptViewport: null,
-      transcriptEntries: [],
+      historyViewport: null,
+      historyEntries: [],
       disconnectStream: null,
       streamConnected: false,
       refreshScheduled: null,
       refreshInFlight: false,
       requestBusyIds: new Set<string>(),
-      transcriptAutoScrollPinned: true,
-      transcriptRenderScheduled: null,
+      historyAutoScrollPinned: true,
+      historyRenderScheduled: null,
       activationState: 'failed',
       activationDetail: 'Lens startup failed.',
       activationError:
@@ -937,7 +1188,7 @@ describe('agentView dev errors', () => {
     expect(result.optimisticTurns).toHaveLength(1);
   });
 
-  it('drops optimistic placeholders once canonical transcript entries exist for the turn', async () => {
+  it('drops optimistic placeholders once canonical history entries exist for the turn', async () => {
     const { applyOptimisticLensTurns } = await import('./index');
 
     const result = applyOptimisticLensTurns(
@@ -1018,8 +1269,8 @@ describe('agentView dev errors', () => {
     expect(result.optimisticTurns).toHaveLength(0);
   });
 
-  it.skip('builds transcript-first rows from canonical Lens events', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it.skip('builds history-first rows from canonical Lens events', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1099,7 +1350,7 @@ describe('agentView dev errors', () => {
           itemType: 'user_message',
           status: 'completed',
           title: 'You',
-          detail: 'Implement the transcript UI.',
+          detail: 'Implement the history UI.',
         },
         requestOpened: null,
         requestResolved: null,
@@ -1202,20 +1453,20 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript.map((entry) => entry.kind)).toContain('user');
-    expect(transcript.map((entry) => entry.kind)).toContain('assistant');
-    expect(transcript.map((entry) => entry.kind)).toContain('tool');
-    expect(transcript.map((entry) => entry.kind)).toContain('request');
-    expect(transcript.find((entry) => entry.kind === 'assistant')?.body).toContain(
+    expect(history.map((entry) => entry.kind)).toContain('user');
+    expect(history.map((entry) => entry.kind)).toContain('assistant');
+    expect(history.map((entry) => entry.kind)).toContain('tool');
+    expect(history.map((entry) => entry.kind)).toContain('request');
+    expect(history.find((entry) => entry.kind === 'assistant')?.body).toContain(
       'Working on it.',
     );
-    expect(transcript.find((entry) => entry.kind === 'request')?.requestId).toBe('req-1');
+    expect(history.find((entry) => entry.kind === 'request')?.requestId).toBe('req-1');
   });
 
-  it.skip('backs current-turn transcript rows from snapshot items when event history is incomplete', async () => {
-    const { buildLensTranscriptEntries, withLiveAssistantState } = await import('./index');
+  it.skip('backs current-turn history rows from snapshot items when event history is incomplete', async () => {
+    const { buildLensHistoryEntries, withLiveAssistantState } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1278,8 +1529,8 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, []);
-    const marked = withLiveAssistantState(snapshot, transcript);
+    const history = buildLensHistoryEntries(snapshot, []);
+    const marked = withLiveAssistantState(snapshot, history);
 
     expect(
       marked.some((entry) => entry.kind === 'user' && entry.body.includes('Describe the logo')),
@@ -1293,8 +1544,8 @@ describe('agentView dev errors', () => {
     expect(marked.some((entry) => entry.kind === 'assistant' && entry.live)).toBe(true);
   });
 
-  it('prefers canonical backend transcript rows over rebuilding from raw events', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it('prefers canonical backend history rows over rebuilding from raw events', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1405,19 +1656,19 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript.map((entry) => entry.id)).toEqual([
+    expect(history.map((entry) => entry.id)).toEqual([
       'user:turn-1',
       'assistant:turn-1',
       'assistant:turn-2',
     ]);
-    expect(transcript[2]?.body).toBe('second answer in progress');
-    expect(transcript[2]?.live).toBe(true);
+    expect(history[2]?.body).toBe('second answer in progress');
+    expect(history[2]?.live).toBe(true);
   });
 
-  it('maps canonical transcript metadata, requests, and attachments into render rows', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it('maps canonical history metadata, requests, and attachments into render rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1500,22 +1751,22 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot, []);
 
-    expect(transcript).toHaveLength(2);
-    expect(transcript[0]).toMatchObject({
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
       kind: 'user',
     });
-    expect(transcript[0]?.attachments).toHaveLength(1);
-    expect(transcript[1]).toMatchObject({
+    expect(history[0]?.attachments).toHaveLength(1);
+    expect(history[1]).toMatchObject({
       kind: 'request',
       requestId: 'req-1',
       body: 'Choose SAFE or FAST.',
     });
   });
 
-  it('keeps backend transcript order when a turn has both streamed and final assistant rows', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it('keeps backend history order when a turn has both streamed and final assistant rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1623,20 +1874,20 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot, []);
 
-    expect(transcript.map((entry) => entry.id)).toEqual([
+    expect(history.map((entry) => entry.id)).toEqual([
       'user:turn-2',
       'assistant-stream:turn-2',
       'tool:tool-1',
       'assistant:assistant-item-2',
     ]);
-    expect(transcript[1]?.live).toBe(true);
-    expect(transcript[3]?.live).toBe(false);
+    expect(history[1]?.live).toBe(true);
+    expect(history[3]?.live).toBe(false);
   });
 
   it.skip('hides normal state-management events and merges tool updates', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1804,28 +2055,28 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript).toHaveLength(3);
-    expect(transcript[0]).toMatchObject({
+    expect(history).toHaveLength(3);
+    expect(history[0]).toMatchObject({
       kind: 'tool',
       title: 'Run tests',
     });
-    expect(transcript[0]?.body).toContain('npm run typecheck');
-    expect(transcript[1]).toMatchObject({
+    expect(history[0]?.body).toContain('npm run typecheck');
+    expect(history[1]).toMatchObject({
       kind: 'tool',
       title: 'Command output',
     });
-    expect(transcript[1]?.body).toContain('All green');
-    expect(transcript[2]).toMatchObject({
+    expect(history[1]?.body).toContain('All green');
+    expect(history[2]).toMatchObject({
       kind: 'reasoning',
       title: 'Reasoning',
     });
-    expect(transcript[2]?.body).toContain('Thinking...');
+    expect(history[2]?.body).toContain('Thinking...');
   });
 
   it.skip('surfaces generic tool result streams instead of dropping them', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -1887,18 +2138,18 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript).toHaveLength(1);
-    expect(transcript[0]).toMatchObject({
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
       kind: 'tool',
       title: 'Tool Result',
     });
-    expect(transcript[0]?.body).toContain('exit_code: 0');
+    expect(history[0]?.body).toContain('exit_code: 0');
   });
 
-  it.skip('keeps distinct tool and reasoning stream kinds in separate transcript rows', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it.skip('keeps distinct tool and reasoning stream kinds in separate history rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2011,21 +2262,21 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript).toHaveLength(4);
-    expect(transcript[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
-    expect(transcript[0]?.body).toContain('npm test');
-    expect(transcript[1]).toMatchObject({ kind: 'tool', title: 'File change output' });
-    expect(transcript[1]?.body).toContain('M report.md');
-    expect(transcript[2]).toMatchObject({ kind: 'reasoning', title: 'Reasoning' });
-    expect(transcript[2]?.body).toContain('Need approval first.');
-    expect(transcript[3]).toMatchObject({ kind: 'reasoning', title: 'Reasoning summary' });
-    expect(transcript[3]?.body).toContain('Waiting for SAFE/FAST.');
+    expect(history).toHaveLength(4);
+    expect(history[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
+    expect(history[0]?.body).toContain('npm test');
+    expect(history[1]).toMatchObject({ kind: 'tool', title: 'File change output' });
+    expect(history[1]?.body).toContain('M report.md');
+    expect(history[2]).toMatchObject({ kind: 'reasoning', title: 'Reasoning' });
+    expect(history[2]?.body).toContain('Need approval first.');
+    expect(history[3]).toMatchObject({ kind: 'reasoning', title: 'Reasoning summary' });
+    expect(history[3]?.body).toContain('Waiting for SAFE/FAST.');
   });
 
   it.skip('renders plan delta and plan completed events as a visible plan row', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2102,18 +2353,18 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript).toHaveLength(1);
-    expect(transcript[0]).toMatchObject({
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
       kind: 'plan',
       title: 'Plan',
     });
-    expect(transcript[0]?.body).toContain('2. Apply the change.');
+    expect(history[0]?.body).toContain('2. Apply the change.');
   });
 
   it.skip('uses snapshot reasoning streams when event history is incomplete', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2155,23 +2406,23 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot, []);
 
-    expect(transcript).toHaveLength(2);
-    expect(transcript[0]).toMatchObject({
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
       kind: 'reasoning',
       title: 'Reasoning',
     });
-    expect(transcript[0]?.body).toContain('inspect the modified files');
-    expect(transcript[1]).toMatchObject({
+    expect(history[0]?.body).toContain('inspect the modified files');
+    expect(history[1]).toMatchObject({
       kind: 'reasoning',
       title: 'Reasoning summary',
     });
-    expect(transcript[1]?.body).toContain('verify output');
+    expect(history[1]?.body).toContain('verify output');
   });
 
   it.skip('keeps snapshot command output and file change output as separate tool rows', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2213,17 +2464,17 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot, []);
 
-    expect(transcript).toHaveLength(2);
-    expect(transcript[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
-    expect(transcript[0]?.body).toContain('status: TODO');
-    expect(transcript[1]).toMatchObject({ kind: 'tool', title: 'File change output' });
-    expect(transcript[1]?.body).toContain('Updated the following files');
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
+    expect(history[0]?.body).toContain('status: TODO');
+    expect(history[1]).toMatchObject({ kind: 'tool', title: 'File change output' });
+    expect(history[1]?.body).toContain('Updated the following files');
   });
 
   it.skip('places fallback request rows after existing snapshot conversation content', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2299,14 +2550,14 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot, []);
 
-    expect(transcript).toHaveLength(2);
-    expect(transcript[0]).toMatchObject({ kind: 'user' });
-    expect(transcript[1]).toMatchObject({ kind: 'request' });
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ kind: 'user' });
+    expect(history[1]).toMatchObject({ kind: 'request' });
   });
 
-  it('suppresses the active open composer request from transcript rendering', async () => {
+  it('suppresses the active open composer request from history rendering', async () => {
     const { suppressActiveComposerRequestEntries } = await import('./index');
 
     const entries = [
@@ -2360,8 +2611,8 @@ describe('agentView dev errors', () => {
     expect(visible[1]?.kind).toBe('diff');
   });
 
-  it.skip('renders question requests from user-input events into transcript rows', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it.skip('renders question requests from user-input events into history rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2432,16 +2683,16 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript).toHaveLength(1);
-    expect(transcript[0]).toMatchObject({
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
       kind: 'request',
       requestId: 'req-1',
     });
-    expect(transcript[0]?.body).toContain('Choose SAFE or FAST before I continue.');
-    expect(transcript[0]?.body).toContain('[1] SAFE');
-    expect(transcript[0]?.body).toContain('[2] FAST');
+    expect(history[0]?.body).toContain('Choose SAFE or FAST before I continue.');
+    expect(history[0]?.body).toContain('[1] SAFE');
+    expect(history[0]?.body).toContain('[2] FAST');
   });
 
   it('exposes the workflow Lens debug scenario for browser-side UX validation', async () => {
@@ -2450,8 +2701,8 @@ describe('agentView dev errors', () => {
     expect(getLensDebugScenarioNames()).toContain('workflow');
   });
 
-  it.skip('renders a rich real-Codex event mix into visible transcript rows', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it.skip('renders a rich real-Codex event mix into visible history rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2679,20 +2930,20 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const userEntry = transcript.find((entry) => entry.kind === 'user');
-    const commandCallEntry = transcript.find(
+    const history = buildLensHistoryEntries(snapshot, events);
+    const userEntry = history.find((entry) => entry.kind === 'user');
+    const commandCallEntry = history.find(
       (entry) => entry.kind === 'tool' && entry.body.includes('Get-Content report.md'),
     );
-    const commandOutputEntry = transcript.find(
+    const commandOutputEntry = history.find(
       (entry) => entry.kind === 'tool' && entry.title === 'Command output',
     );
-    const fileChangeEntry = transcript.find(
+    const fileChangeEntry = history.find(
       (entry) =>
         entry.kind === 'tool' && entry.body.includes('Success. Updated the following files'),
     );
-    const diffEntry = transcript.find((entry) => entry.kind === 'diff');
-    const assistantEntry = transcript.find((entry) => entry.kind === 'assistant');
+    const diffEntry = history.find((entry) => entry.kind === 'diff');
+    const assistantEntry = history.find((entry) => entry.kind === 'assistant');
 
     expect(userEntry?.body).toContain('update report.md');
     expect(commandCallEntry?.body).toContain('Get-Content report.md');
@@ -2703,7 +2954,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -2841,10 +3092,10 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const userEntries = transcript.filter((entry) => entry.kind === 'user');
-    const assistantEntries = transcript.filter((entry) => entry.kind === 'assistant');
-    const toolEntries = transcript.filter((entry) => entry.kind === 'tool');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const userEntries = history.filter((entry) => entry.kind === 'user');
+    const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
+    const toolEntries = history.filter((entry) => entry.kind === 'tool');
 
     expect(userEntries).toHaveLength(1);
     expect(userEntries[0]?.body).toContain('Reply with exactly HELLO_FROM_CODEX');
@@ -2859,7 +3110,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('concatenates assistant stream chunks without paragraph separators or duplicate final text', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3027,15 +3278,15 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const assistantEntries = transcript.filter((entry) => entry.kind === 'assistant');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
 
     expect(assistantEntries).toHaveLength(1);
     expect(assistantEntries[0]?.body).toBe('HELLO_FROM_CODEX');
   });
 
   it.skip('keeps separate assistant updates from the same turn in distinct rows when item ids differ', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3118,8 +3369,8 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const assistantEntries = transcript.filter((entry) => entry.kind === 'assistant');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
 
     expect(assistantEntries).toHaveLength(2);
     expect(assistantEntries[0]?.body).toBe('Ich pruefe kurz die lokale MidTerm-Anweisung.');
@@ -3129,7 +3380,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps the first-seen order for a live assistant row instead of moving it on completion', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3229,20 +3480,20 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript[0]).toMatchObject({
+    expect(history[0]).toMatchObject({
       kind: 'assistant',
       body: 'Working response.',
     });
-    expect(transcript[1]).toMatchObject({
+    expect(history[1]).toMatchObject({
       kind: 'tool',
       title: 'git status',
     });
   });
 
   it.skip('prefers the final Codex assistant message when it supersedes streamed chunks', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3357,15 +3608,15 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const assistantEntries = transcript.filter((entry) => entry.kind === 'assistant');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
 
     expect(assistantEntries).toHaveLength(1);
     expect(assistantEntries[0]?.body).toBe('The answer is 42.');
   });
 
   it.skip('keeps one user row when Codex emits repeated started/completed message payloads', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3424,7 +3675,7 @@ describe('agentView dev errors', () => {
           itemType: 'user_message',
           status: 'in_progress',
           title: 'Tool started',
-          detail: 'Explain the recent Lens transcript bug.',
+          detail: 'Explain the recent Lens history bug.',
         },
       },
       {
@@ -3443,20 +3694,20 @@ describe('agentView dev errors', () => {
           itemType: 'user_message',
           status: 'completed',
           title: 'Tool completed',
-          detail: 'Explain the recent Lens transcript bug.',
+          detail: 'Explain the recent Lens history bug.',
         },
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const userEntries = transcript.filter((entry) => entry.kind === 'user');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
-    expect(userEntries[0]?.body).toBe('Explain the recent Lens transcript bug.');
+    expect(userEntries[0]?.body).toBe('Explain the recent Lens history bug.');
   });
 
   it.skip('merges a local submitted user row with the later provider user item for the same turn', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3546,8 +3797,8 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const userEntries = transcript.filter((entry) => entry.kind === 'user');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
     expect(userEntries[0]?.body).toBe('Please inspect this image.');
@@ -3555,8 +3806,8 @@ describe('agentView dev errors', () => {
     expect(userEntries[0]?.attachments?.[0]?.displayName).toBe('screen.png');
   });
 
-  it.skip('keeps attachment-only user rows visible in the transcript', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+  it.skip('keeps attachment-only user rows visible in the history', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3627,8 +3878,8 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const userEntries = transcript.filter((entry) => entry.kind === 'user');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
     expect(userEntries[0]?.body).toBe('');
@@ -3636,7 +3887,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps user text from item title and still falls back to snapshot assistant text', async () => {
-    const { buildLensTranscriptEntries } = await import('./index');
+    const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3745,26 +3996,26 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, events);
 
-    expect(transcript.find((entry) => entry.kind === 'user')?.body).toContain(
+    expect(history.find((entry) => entry.kind === 'user')?.body).toContain(
       'Please summarize the failing test run.',
     );
     expect(
-      transcript.find(
+      history.find(
         (entry) => entry.kind === 'assistant' && entry.body.includes('Final answer from snapshot'),
       ),
     ).toBeTruthy();
   });
 
   it.skip('hides completed-status noise in normal chat row metadata', async () => {
-    const { buildLensTranscriptEntries, formatTranscriptMeta, shouldHideStatusInMeta } =
+    const { buildLensHistoryEntries, formatHistoryMeta, shouldHideStatusInMeta } =
       await import('./index');
 
     expect(shouldHideStatusInMeta('user', 'Completed')).toBe(true);
     expect(shouldHideStatusInMeta('assistant', 'Assistant Text')).toBe(true);
     expect(shouldHideStatusInMeta('request', 'Completed')).toBe(false);
-    expect(formatTranscriptMeta('user', 'Completed', '2026-03-21T15:09:20Z')).not.toContain(
+    expect(formatHistoryMeta('user', 'Completed', '2026-03-21T15:09:20Z')).not.toContain(
       'Completed',
     );
 
@@ -3849,9 +4100,9 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const transcript = buildLensTranscriptEntries(snapshot, events);
-    const userEntry = transcript.find((entry) => entry.kind === 'user');
-    const assistantEntry = transcript.find((entry) => entry.kind === 'assistant');
+    const history = buildLensHistoryEntries(snapshot, events);
+    const userEntry = history.find((entry) => entry.kind === 'user');
+    const assistantEntry = history.find((entry) => entry.kind === 'assistant');
 
     expect(userEntry?.meta).not.toContain('Completed');
     expect(assistantEntry?.meta).not.toContain('Completed');
@@ -3859,8 +4110,8 @@ describe('agentView dev errors', () => {
     expect(assistantEntry?.meta).toMatch(/\d{2}:\d{2}/);
   });
 
-  it('virtualizes older transcript rows but keeps a visible window', async () => {
-    const { computeTranscriptVirtualWindow } = await import('./index');
+  it('virtualizes older history rows but keeps a visible window', async () => {
+    const { computeHistoryVirtualWindow } = await import('./index');
 
     const entries = Array.from({ length: 120 }, (_, index) => ({
       id: `row-${index}`,
@@ -3873,7 +4124,7 @@ describe('agentView dev errors', () => {
       meta: 'now',
     })) as any;
 
-    const windowed = computeTranscriptVirtualWindow(entries, 1800, 900);
+    const windowed = computeHistoryVirtualWindow(entries, 1800, 900);
 
     expect(windowed.start).toBeGreaterThan(0);
     expect(windowed.end).toBeLessThan(entries.length);
@@ -3881,8 +4132,8 @@ describe('agentView dev errors', () => {
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
-  it('keeps transcript virtualization active on compact mobile widths too', async () => {
-    const { computeTranscriptVirtualWindow } = await import('./index');
+  it('keeps history virtualization active on compact mobile widths too', async () => {
+    const { computeHistoryVirtualWindow } = await import('./index');
 
     const entries = Array.from({ length: 120 }, (_, index) => ({
       id: `row-${index}`,
@@ -3895,7 +4146,7 @@ describe('agentView dev errors', () => {
       meta: 'now',
     })) as any;
 
-    const windowed = computeTranscriptVirtualWindow(entries, 1800, 900, 375);
+    const windowed = computeHistoryVirtualWindow(entries, 1800, 900, 375);
 
     expect(windowed.start).toBeGreaterThan(0);
     expect(windowed.end).toBeLessThan(entries.length);
@@ -3903,8 +4154,8 @@ describe('agentView dev errors', () => {
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
-  it('estimates taller transcript rows for narrow viewports', async () => {
-    const { estimateTranscriptEntryHeight } = await import('./index');
+  it('estimates taller history rows for narrow viewports', async () => {
+    const { estimateHistoryEntryHeight } = await import('./index');
 
     const entry = {
       id: 'assistant-1',
@@ -3917,8 +4168,8 @@ describe('agentView dev errors', () => {
       meta: 'now',
     } as any;
 
-    const desktopEstimate = estimateTranscriptEntryHeight(entry, 960);
-    const mobileEstimate = estimateTranscriptEntryHeight(entry, 420);
+    const desktopEstimate = estimateHistoryEntryHeight(entry, 960);
+    const mobileEstimate = estimateHistoryEntryHeight(entry, 420);
 
     expect(mobileEstimate).toBeGreaterThan(desktopEstimate);
   });
