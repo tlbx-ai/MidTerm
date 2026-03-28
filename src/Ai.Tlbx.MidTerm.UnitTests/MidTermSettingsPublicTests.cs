@@ -63,6 +63,24 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripDisableAutoMainBrowserPromotion()
+    {
+        var settings = new MidTermSettings
+        {
+            DisableAutoMainBrowserPromotion = true
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.DisableAutoMainBrowserPromotion);
+
+        settings.DisableAutoMainBrowserPromotion = false;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.DisableAutoMainBrowserPromotion);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripFontRenderingSettings()
     {
         var settings = new MidTermSettings

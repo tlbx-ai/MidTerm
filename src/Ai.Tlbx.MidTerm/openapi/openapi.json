@@ -6204,6 +6204,7 @@
           "clipboardShortcuts",
           "terminalEnterMode",
           "scrollbackProtection",
+          "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "inputMode",
           "fileRadar",
@@ -6362,6 +6363,9 @@
             "$ref": "#/components/schemas/TerminalEnterModeSetting"
           },
           "scrollbackProtection": {
+            "type": "boolean"
+          },
+          "disableAutoMainBrowserPromotion": {
             "type": "boolean"
           },
           "keepSystemAwakeWithActiveSessions": {

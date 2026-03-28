@@ -48,6 +48,7 @@ public sealed partial class MidTermSettingsPublic
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
+    public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;

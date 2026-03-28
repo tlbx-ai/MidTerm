@@ -140,6 +140,8 @@
   "settings.behavior.inputMode": "入力モード",
   "settings.behavior.inputModeHint": "スマート入力は直接キーボード入力の代わりにテキストボックスを使用します。両方モードでは入力バーをターミナルの下に固定します。",
   "settings.behavior.scrollbackProtection": "Claude Codeスクロールバックグリッチ保護",
+  "settings.behavior.disableAutoMainBrowserPromotion": "Disable auto-promotion to main browser",
+  "settings.behavior.disableAutoMainBrowserPromotionHint": "Prevents a different browser from taking over as main just because it was the only active tab for a while. Use the terminal badge to claim main browser explicitly when you want to resize from that device.",
   "settings.behavior.keepAwake": "セッションがある間はコンピューターをスリープさせない",
   "settings.behavior.keepAwakeHint": "MidTerm に少なくとも 1 つのアクティブなセッションがある間は、スリープやスタンバイを防ぎます。画面はオフになってもかまいません。Mac ノートでは、ふたを閉じると引き続きスリープします。",
   "settings.behavior.fileRadar": "File Radar",

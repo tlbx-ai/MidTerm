@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -7,12 +8,24 @@ public sealed class MainBrowserService
     private static readonly TimeSpan AutoPromoteAfterNoActiveTabs = TimeSpan.FromMinutes(3);
     private readonly Lock _lock = new();
     private readonly Dictionary<string, BrowserRegistration> _browserConnections = new();
+    private readonly SettingsService? _settingsService;
     private readonly TimeProvider _timeProvider;
     private string? _mainBrowserId;
     private DateTimeOffset? _noActiveTabsSinceUtc;
 
-    public MainBrowserService(TimeProvider? timeProvider = null)
+    public MainBrowserService(SettingsService settingsService)
+        : this(settingsService, null)
     {
+    }
+
+    internal MainBrowserService(TimeProvider? timeProvider = null)
+        : this(null, timeProvider)
+    {
+    }
+
+    internal MainBrowserService(SettingsService? settingsService, TimeProvider? timeProvider)
+    {
+        _settingsService = settingsService;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -95,6 +108,7 @@ public sealed class MainBrowserService
 
     public void UpdateActivity(string browserId, object connectionToken, bool isActive)
     {
+        var autoPromotionDisabled = _settingsService?.Load().DisableAutoMainBrowserPromotion == true;
         bool notify = false;
         lock (_lock)
         {
@@ -118,7 +132,8 @@ public sealed class MainBrowserService
                 registration.ActiveConnectionTokens.Remove(connectionToken);
             }
 
-            var shouldAutoPromote = ShouldAutoPromoteLocked(browserId, hadActiveBrowsers);
+            var shouldAutoPromote = !autoPromotionDisabled
+                && ShouldAutoPromoteLocked(browserId, hadActiveBrowsers);
             UpdateNoActiveTimerLocked(hadActiveBrowsers);
 
             if (shouldAutoPromote && _mainBrowserId != browserId)

@@ -329,6 +329,8 @@
   "settings.behavior.inputMode": "Input Mode",
   "settings.behavior.inputModeHint": "Smart Input uses a text box instead of direct keyboard input. Both mode docks the input bar below the terminal.",
   "settings.behavior.scrollbackProtection": "Claude Code scrollback glitch protection",
+  "settings.behavior.disableAutoMainBrowserPromotion": "Disable auto-promotion to main browser",
+  "settings.behavior.disableAutoMainBrowserPromotionHint": "Prevents a different browser from taking over as main just because it was the only active tab for a while. Use the terminal badge to claim main browser explicitly when you want to resize from that device.",
   "settings.behavior.keepAwake": "Keep computer awake while sessions exist",
   "settings.behavior.keepAwakeHint": "Prevents sleep or standby while MidTerm has at least one live session. The display may still turn off. On Mac laptops, closing the lid still puts the computer to sleep.",
   "settings.behavior.fileRadar": "File Radar",

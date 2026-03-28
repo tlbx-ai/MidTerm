@@ -531,6 +531,13 @@ async function resolveNewSessionDimensions(): Promise<{ cols: number; rows: numb
   let cols = settings?.defaultCols ?? 120;
   let rows = settings?.defaultRows ?? 30;
 
+  // Only the leading browser is allowed to claim a new server-side terminal size
+  // from its viewport. Followers create sessions at the configured defaults and
+  // then scale locally until they explicitly claim main browser.
+  if (!$isMainBrowser.get()) {
+    return { cols, rows };
+  }
+
   if (dom.terminalsArea) {
     const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
     const logId = 'launcher-' + crypto.randomUUID().slice(0, 8);

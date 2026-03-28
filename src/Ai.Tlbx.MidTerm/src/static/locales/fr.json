@@ -140,6 +140,8 @@
   "settings.behavior.inputMode": "Mode de saisie",
   "settings.behavior.inputModeHint": "La saisie intelligente utilise un champ de texte au lieu de la saisie directe au clavier. Le mode Les deux ancre la barre de saisie sous le terminal.",
   "settings.behavior.scrollbackProtection": "Protection contre les bugs de défilement arrière de Claude Code",
+  "settings.behavior.disableAutoMainBrowserPromotion": "Disable auto-promotion to main browser",
+  "settings.behavior.disableAutoMainBrowserPromotionHint": "Prevents a different browser from taking over as main just because it was the only active tab for a while. Use the terminal badge to claim main browser explicitly when you want to resize from that device.",
   "settings.behavior.keepAwake": "Garder l’ordinateur éveillé tant qu’il existe des sessions",
   "settings.behavior.keepAwakeHint": "Empêche la veille ou la mise en veille prolongée tant que MidTerm a au moins une session active. L’écran peut quand même s’éteindre. Sur les portables Mac, fermer le capot met quand même l’ordinateur en veille.",
   "settings.behavior.fileRadar": "Radar de Fichiers",
