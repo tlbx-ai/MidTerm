@@ -151,6 +151,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
             new TtyHostSessionManager(
                 runAsUser: settings.RunAsUser,
+                runAsUserSid: settings.RunAsUserSid,
                 isServiceMode: settingsService.IsRunningAsService,
                 sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
                 instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),

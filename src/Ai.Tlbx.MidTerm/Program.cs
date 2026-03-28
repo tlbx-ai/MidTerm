@@ -293,7 +293,7 @@ public class Program
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)
             {
-                sessionManager.UpdateRunAsUser(newSettings.RunAsUser);
+                sessionManager.UpdateRunAsUser(newSettings.RunAsUser, newSettings.RunAsUserSid);
                 GitCommandRunner.Configure(newSettings.RunAsUser, settingsService.IsRunningAsService);
             }
             else

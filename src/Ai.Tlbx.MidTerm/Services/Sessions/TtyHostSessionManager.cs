@@ -31,6 +31,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly SessionForegroundProcessService _foregroundProcessService;
     private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new();
     private string? _runAsUser;
+    private string? _runAsUserSid;
     private bool _disposed;
     private int? _mtPort;
     private Func<string>? _generateToken;
@@ -60,6 +61,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? expectedVersion = null,
         string? minCompatibleVersion = null,
         string? runAsUser = null,
+        string? runAsUserSid = null,
         bool isServiceMode = false,
         SessionControlStateService? sessionControlStateService = null,
         MidTermInstanceIdentity? instanceIdentity = null,
@@ -76,6 +78,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _ownershipRegistry = new TtyHostOwnershipRegistry(_instanceIdentity.SessionRegistryPath);
         _foregroundProcessService = foregroundProcessService ?? new SessionForegroundProcessService();
         _runAsUser = runAsUser;
+        _runAsUserSid = runAsUserSid;
     }
 
     private static string? GetMinCompatibleVersionFromManifest()
@@ -91,9 +94,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
-    public void UpdateRunAsUser(string? runAsUser)
+    public void UpdateRunAsUser(string? runAsUser, string? runAsUserSid = null)
     {
         _runAsUser = runAsUser;
+        _runAsUserSid = runAsUserSid;
         Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
     }
 
@@ -138,7 +142,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             if (ct.IsCancellationRequested) break;
             if (_registry.Clients.ContainsKey(sessionId)) continue;
 
-            var result = await TryConnectToSessionAsync(sessionId, hostPid, isLegacyEndpoint: false, allowLegacyOwnerless: false, ct).ConfigureAwait(false);
+            var result = await TryConnectToSessionAsync(
+                sessionId,
+                hostPid,
+                isLegacyEndpoint: false,
+                allowLegacyOwnerless: false,
+                ct).ConfigureAwait(false);
             HandleDiscoveryResult(sessionId, hostPid, legacyEndpoint: false, result, discoveredOrders);
         }
 
@@ -152,7 +161,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 if (ct.IsCancellationRequested) break;
                 if (_registry.Clients.ContainsKey(sessionId)) continue;
 
-                var result = await TryConnectToSessionAsync(sessionId, hostPid, isLegacyEndpoint: true, allowLegacyOwnerless: true, ct).ConfigureAwait(false);
+                var result = await TryConnectToSessionAsync(
+                    sessionId,
+                    hostPid,
+                    isLegacyEndpoint: true,
+                    allowLegacyOwnerless: true,
+                    ct).ConfigureAwait(false);
                 HandleDiscoveryResult(sessionId, hostPid, legacyEndpoint: true, result, discoveredOrders);
             }
 
@@ -303,8 +317,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
-
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, out var hostPid,
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, _runAsUserSid, out var hostPid,
                 _mtPort, mtToken, paneIndex, _tmuxBinDir))
         {
             return null;

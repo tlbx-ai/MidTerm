@@ -559,6 +559,7 @@ public sealed class SessionLensHostRuntimeServiceTests
                 IReadOnlyDictionary<string, string?>? _environmentOverrides,
                 IReadOnlyList<string>? _pathPrependEntries,
                 string? _runAsUser,
+                string? _runAsUserSid,
                 out TtyHostSpawner.RedirectedProcessHandle? launchedProcess,
                 out string? failure) =>
             {

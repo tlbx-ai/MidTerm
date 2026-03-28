@@ -1,5 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+#if WINDOWS
+using System.Security.Principal;
+using System.Runtime.Versioning;
+#endif
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,9 +11,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
-#if WINDOWS
-using System.Runtime.Versioning;
-#endif
 
 using Ai.Tlbx.MidTerm.Services.Updates;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
@@ -195,6 +196,7 @@ public static class TtyHostSpawner
         string instanceId,
         string ownerToken,
         string? runAsUser,
+        string? runAsUserSid,
         out int processId,
         int? mtPort = null,
         string? mtToken = null,
@@ -220,7 +222,7 @@ public static class TtyHostSpawner
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
-        return SpawnWindows(args, runAsUser, out processId);
+        return SpawnWindows(args, runAsUser, runAsUserSid, out processId);
 #else
         return SpawnUnix(sessionId, args, runAsUser, out processId);
 #endif
@@ -234,6 +236,7 @@ public static class TtyHostSpawner
         IReadOnlyDictionary<string, string?>? environmentOverrides,
         IReadOnlyList<string>? pathPrependEntries,
         string? runAsUser,
+        string? runAsUserSid,
         out RedirectedProcessHandle? launchedProcess,
         out string? failure)
     {
@@ -251,6 +254,7 @@ public static class TtyHostSpawner
                 environmentOverrides,
                 pathPrependEntries,
                 runAsUser,
+                runAsUserSid,
                 out launchedProcess,
                 out failure);
         }
@@ -863,14 +867,14 @@ public static class TtyHostSpawner
 
 #if WINDOWS
     [SupportedOSPlatform("windows")]
-    private static bool SpawnWindows(string args, string? runAsUser, out int processId)
+    private static bool SpawnWindows(string args, string? runAsUser, string? runAsUserSid, out int processId)
     {
         processId = 0;
         var commandLine = $"\"{TtyHostPath}\" {args}";
 
         if (IsRunningAsSystem())
         {
-            return SpawnAsUser(commandLine, runAsUser, out processId);
+            return SpawnAsUser(commandLine, runAsUser, runAsUserSid, out processId);
         }
         else
         {
@@ -914,11 +918,11 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool SpawnAsUser(string commandLine, string? runAsUser, out int processId)
+    private static bool SpawnAsUser(string commandLine, string? runAsUser, string? runAsUserSid, out int processId)
     {
         processId = 0;
 
-        if (!TryGetUserToken(runAsUser, out var userToken, out var sessionId))
+        if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out var sessionId))
         {
             return false;
         }
@@ -1006,7 +1010,8 @@ public static class TtyHostSpawner
         string workingDir,
         string? runAsUser,
         CancellationToken ct,
-        uint? preferredSessionId = null)
+        uint? preferredSessionId = null,
+        string? runAsUserSid = null)
     {
         if (preferredSessionId.HasValue)
         {
@@ -1025,7 +1030,7 @@ public static class TtyHostSpawner
             Log.Warn(() => $"TtyHostSpawner: Failed to get user token for preferred session {preferredSessionId.Value} (error: {Marshal.GetLastWin32Error()})");
         }
 
-        if (!TryGetUserToken(runAsUser, out var userToken, out _))
+        if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out _))
         {
             return (-1, "", "Failed to get user token for impersonation");
         }
@@ -1151,13 +1156,14 @@ public static class TtyHostSpawner
         IReadOnlyDictionary<string, string?>? environmentOverrides,
         IReadOnlyList<string>? pathPrependEntries,
         string? runAsUser,
+        string? runAsUserSid,
         out RedirectedProcessHandle? launchedProcess,
         out string? failure)
     {
         launchedProcess = null;
         failure = null;
 
-        if (!TryGetUserToken(runAsUser, out var userToken, out _))
+        if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out _))
         {
             failure = "Failed to get user token for impersonation";
             return false;
@@ -1389,12 +1395,12 @@ public static class TtyHostSpawner
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool TryGetUserToken(string? runAsUser, out IntPtr userToken, out uint sessionId)
+    private static bool TryGetUserToken(string? runAsUser, string? runAsUserSid, out IntPtr userToken, out uint sessionId)
     {
         userToken = IntPtr.Zero;
         sessionId = 0;
 
-        var hasTargetUser = !string.IsNullOrEmpty(runAsUser);
+        var hasTargetUser = !string.IsNullOrWhiteSpace(runAsUser) || !string.IsNullOrWhiteSpace(runAsUserSid);
 
         // Fast path when no specific user requested: try active console session
         if (!hasTargetUser)
@@ -1418,8 +1424,6 @@ public static class TtyHostSpawner
         try
         {
             var sessionInfoSize = Marshal.SizeOf<WTS_SESSION_INFO>();
-            IntPtr fallbackToken = IntPtr.Zero;
-            uint fallbackSessionId = 0;
 
             for (var i = 0; i < sessionCount; i++)
             {
@@ -1433,33 +1437,14 @@ public static class TtyHostSpawner
                 if (hasTargetUser)
                 {
                     var sessionUser = GetSessionUsername(info.SessionId);
-                    if (sessionUser is null)
+                    if (!TryGetMatchingSessionToken(info.SessionId, sessionUser, runAsUser, runAsUserSid, out userToken))
                     {
                         continue;
                     }
 
-                    if (IsMatchingWindowsUsername(runAsUser, sessionUser))
-                    {
-                        if (WTSQueryUserToken(info.SessionId, out userToken))
-                        {
-                            sessionId = info.SessionId;
-                            Log.Info(() => $"TtyHostSpawner: Got token for user '{runAsUser}' from session {info.SessionId}");
-                            // Clean up any fallback token we acquired
-                            if (fallbackToken != IntPtr.Zero)
-                            {
-                                CloseHandle(fallbackToken);
-                            }
-                            return true;
-                        }
-                    }
-                    else if (fallbackToken == IntPtr.Zero)
-                    {
-                        // Keep first available token as fallback
-                        if (WTSQueryUserToken(info.SessionId, out fallbackToken))
-                        {
-                            fallbackSessionId = info.SessionId;
-                        }
-                    }
+                    sessionId = info.SessionId;
+                    Log.Info(() => $"TtyHostSpawner: Got token for user '{runAsUser ?? runAsUserSid}' from session {info.SessionId}");
+                    return true;
                 }
                 else
                 {
@@ -1472,15 +1457,9 @@ public static class TtyHostSpawner
                 }
             }
 
-            // Clean up fallback token if we didn't use it
-            if (fallbackToken != IntPtr.Zero)
-            {
-                CloseHandle(fallbackToken);
-            }
-
             if (hasTargetUser)
             {
-                Log.Error(() => $"TtyHostSpawner: User '{runAsUser}' has no active session — refusing to spawn as different user");
+                Log.Error(() => $"TtyHostSpawner: User '{runAsUser ?? runAsUserSid}' has no active session — refusing to spawn as different user");
                 return false;
             }
         }
@@ -1526,6 +1505,52 @@ public static class TtyHostSpawner
         finally
         {
             WTSFreeMemory(buffer);
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool TryGetMatchingSessionToken(
+        uint sessionId,
+        string? sessionUser,
+        string? runAsUser,
+        string? runAsUserSid,
+        out IntPtr userToken)
+    {
+        userToken = IntPtr.Zero;
+        if (!WTSQueryUserToken(sessionId, out userToken))
+        {
+            return false;
+        }
+
+        var matched = false;
+        try
+        {
+            matched = !string.IsNullOrWhiteSpace(runAsUserSid)
+                ? TokenMatchesWindowsUserSid(userToken, runAsUserSid)
+                : IsMatchingWindowsUsername(runAsUser, sessionUser);
+            return matched;
+        }
+        finally
+        {
+            if (!matched && userToken != IntPtr.Zero)
+            {
+                CloseHandle(userToken);
+                userToken = IntPtr.Zero;
+            }
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool TokenMatchesWindowsUserSid(IntPtr userToken, string configuredSid)
+    {
+        try
+        {
+            using var identity = new WindowsIdentity(userToken);
+            return string.Equals(identity.User?.Value, configuredSid, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 #endif

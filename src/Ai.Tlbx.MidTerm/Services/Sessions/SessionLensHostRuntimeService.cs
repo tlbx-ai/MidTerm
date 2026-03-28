@@ -20,6 +20,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         IReadOnlyDictionary<string, string?>? environmentOverrides,
         IReadOnlyList<string>? pathPrependEntries,
         string? runAsUser,
+        string? runAsUserSid,
         out TtyHostSpawner.RedirectedProcessHandle? launchedProcess,
         out string? failure);
 
@@ -138,6 +139,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                     environmentOverrides,
                     pathPrependEntries,
                     settings.RunAsUser,
+                    settings.RunAsUserSid,
                     out var launchedProcess,
                     out var launchFailure))
             {
