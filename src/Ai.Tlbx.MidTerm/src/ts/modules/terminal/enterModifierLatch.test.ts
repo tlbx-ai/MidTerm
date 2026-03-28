@@ -91,6 +91,39 @@ describe('applyEnterModifierLatch', () => {
     expect(effective.shiftKey).toBe(false);
   });
 
+  it('preserves non-enumerable key fields from DOM-like keyboard events', () => {
+    const domLike = Object.create(null) as EnterOverrideInput;
+    Object.defineProperties(domLike, {
+      key: { value: 'Enter', enumerable: false, configurable: true },
+      code: { value: 'Enter', enumerable: false, configurable: true },
+      keyCode: { value: 13, enumerable: false, configurable: true },
+      which: { value: 13, enumerable: false, configurable: true },
+      charCode: { value: 13, enumerable: false, configurable: true },
+      ctrlKey: { value: false, enumerable: false, configurable: true, writable: true },
+      shiftKey: { value: false, enumerable: false, configurable: true, writable: true },
+      altKey: { value: false, enumerable: false, configurable: true },
+      metaKey: { value: false, enumerable: false, configurable: true },
+    });
+
+    const effective = applyEnterModifierLatch(
+      domLike,
+      {
+        ctrlPressed: true,
+        shiftPressed: false,
+        lastUpdatedAtMs: 100,
+      },
+      150,
+      500,
+    );
+
+    expect(effective.key).toBe('Enter');
+    expect(effective.code).toBe('Enter');
+    expect(effective.keyCode).toBe(13);
+    expect(effective.which).toBe(13);
+    expect(effective.charCode).toBe(13);
+    expect(effective.ctrlKey).toBe(true);
+  });
+
   it('ignores stale modifier state', () => {
     const original = key('Enter');
     const effective = applyEnterModifierLatch(

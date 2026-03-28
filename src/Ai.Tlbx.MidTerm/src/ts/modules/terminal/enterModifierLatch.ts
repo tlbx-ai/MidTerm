@@ -71,9 +71,28 @@ export function applyEnterModifierLatch(
     return input;
   }
 
-  return {
-    ...input,
+  const effective: EnterOverrideInput = {
     ctrlKey: input.ctrlKey || latch.ctrlPressed,
     shiftKey: input.shiftKey || latch.shiftPressed,
+    altKey: input.altKey,
+    metaKey: input.metaKey,
   };
+
+  if (input.key !== undefined) {
+    effective.key = input.key;
+  }
+  if (input.code !== undefined) {
+    effective.code = input.code;
+  }
+  if (input.keyCode !== undefined) {
+    effective.keyCode = input.keyCode;
+  }
+  if (input.which !== undefined) {
+    effective.which = input.which;
+  }
+  if (input.charCode !== undefined) {
+    effective.charCode = input.charCode;
+  }
+
+  return effective;
 }
