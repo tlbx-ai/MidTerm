@@ -151,8 +151,14 @@ public static class TtyHostSpawner
                 var mthostName = OperatingSystem.IsWindows() ? "mthost.exe" : "mthost";
                 if (!manifest.Checksums.TryGetValue(mthostName, out var expectedHash))
                 {
-                    // mthost not in checksums (shouldn't happen), allow but warn
-                    Log.Warn(() => "TtyHostSpawner: mthost not in version.json checksums");
+                    if (manifest.WebOnly)
+                    {
+                        Log.Info(() => "TtyHostSpawner: web-only manifest omits mthost checksum; preserving installed host");
+                    }
+                    else
+                    {
+                        Log.Warn(() => "TtyHostSpawner: mthost not in version.json checksums");
+                    }
                     _integrityVerified = true;
                     return true;
                 }

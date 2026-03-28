@@ -154,6 +154,27 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void VersionManifest_DeserializesWebOnlyFlag()
+    {
+        var manifest = JsonSerializer.Deserialize(
+            """
+            {
+              "web": "8.9.61-dev",
+              "pty": "8.9.59-dev",
+              "protocol": 1,
+              "minCompatiblePty": "2.0.0",
+              "webOnly": true
+            }
+            """,
+            VersionManifestContext.Default.VersionManifest);
+
+        Assert.NotNull(manifest);
+        Assert.True(manifest!.WebOnly);
+        Assert.Equal("8.9.61-dev", manifest.Web);
+        Assert.Equal("8.9.59-dev", manifest.Pty);
+    }
+
+    [Fact]
     public void TryReadLocalUpdateInfo_PtyChange_ReturnsFull()
     {
         var localReleaseDir = Path.Combine(_tempDir, "localrelease");

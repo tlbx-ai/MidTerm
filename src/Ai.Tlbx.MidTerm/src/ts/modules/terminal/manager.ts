@@ -1000,6 +1000,11 @@ export function setupTerminalEvents(
       return;
     }
 
+    if (tryHandleTerminalEnterOverride(sessionId, event, container)) {
+      keyDownHandled = true;
+      return;
+    }
+
     if (event.key === 'Dead' || event.key === 'AltGraph') {
       unprocessedDeadKey = true;
     }

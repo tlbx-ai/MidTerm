@@ -7868,6 +7868,7 @@
           "pty",
           "protocol",
           "minCompatiblePty",
+          "webOnly",
           "checksums",
           "signature"
         ],
@@ -7885,6 +7886,9 @@
           },
           "minCompatiblePty": {
             "type": "string"
+          },
+          "webOnly": {
+            "type": "boolean"
           },
           "checksums": {
             "type": [

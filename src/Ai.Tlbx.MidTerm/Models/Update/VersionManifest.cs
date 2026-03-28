@@ -13,6 +13,8 @@ public sealed class VersionManifest
     public int Protocol { get; set; } = 1;
     /// <summary>Minimum compatible PTY version for web-only updates.</summary>
     public string MinCompatiblePty { get; set; } = "";
+    /// <summary>Whether the signed updater should preserve the installed mthost binary.</summary>
+    public bool WebOnly { get; set; }
 
     /// <summary>SHA256 checksums of binary files (filename -> hex hash).</summary>
     public Dictionary<string, string>? Checksums { get; set; }

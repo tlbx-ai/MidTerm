@@ -5000,6 +5000,7 @@ export interface components {
       /** Format: int32 */
       protocol: number;
       minCompatiblePty: string;
+      webOnly: boolean;
       checksums: null | {
         [key: string]: string;
       };
