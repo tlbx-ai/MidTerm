@@ -355,6 +355,20 @@ function getOwnedTerminalInputProxy(container: HTMLDivElement): HTMLTextAreaElem
   return proxy instanceof HTMLTextAreaElement ? proxy : null;
 }
 
+function getOwnedXtermRoot(container: HTMLDivElement): HTMLDivElement | null {
+  const root = container.querySelector('.xterm');
+  return root instanceof HTMLDivElement ? root : null;
+}
+
+function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
+  const xtermRoot = getOwnedXtermRoot(state.container);
+  if (!xtermRoot) {
+    return;
+  }
+
+  xtermRoot.classList.toggle('focus', focused);
+}
+
 function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement | null {
   const activeElement = document.activeElement;
   if (isTerminalInputOwnerElement(activeElement) && container.contains(activeElement)) {
@@ -471,6 +485,7 @@ function focusTerminalInput(state: TerminalState): void {
   if (isTerminalKeyAuditEnabled()) {
     const proxy = state.inputProxy ?? getOwnedTerminalInputProxy(state.container);
     if (proxy) {
+      setTerminalVisualFocus(state, true);
       proxy.focus({ preventScroll: true });
       proxy.value = '';
       refreshCursorBlink(state.terminal);
@@ -479,6 +494,7 @@ function focusTerminalInput(state: TerminalState): void {
   }
 
   state.terminal.focus();
+  setTerminalVisualFocus(state, true);
   refreshCursorBlink(state.terminal);
 }
 
@@ -831,6 +847,7 @@ export function createTerminalForSession(
     const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
     if (xtermTextarea) {
       xtermTextarea.addEventListener('focus', () => {
+        setTerminalVisualFocus(state, true);
         if (isSmartInputMode()) {
           (xtermTextarea as HTMLTextAreaElement).blur();
           showSmartInput();
@@ -843,10 +860,15 @@ export function createTerminalForSession(
         }
       });
       xtermTextarea.addEventListener('blur', () => {
+        setTerminalVisualFocus(state, false);
         clearSessionEnterModifierLatch(sessionId);
       });
     }
+    inputProxy.addEventListener('focus', () => {
+      setTerminalVisualFocus(state, true);
+    });
     inputProxy.addEventListener('blur', () => {
+      setTerminalVisualFocus(state, false);
       clearSessionEnterModifierLatch(sessionId);
     });
 
