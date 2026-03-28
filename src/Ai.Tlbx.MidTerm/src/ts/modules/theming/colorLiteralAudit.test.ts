@@ -19,6 +19,7 @@ const AUDIT_EXCEPTIONS = new Set<string>([
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/colorLiteralAudit.test.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/cssThemes.test.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/cssThemes.ts',
+  'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/terminalColorSchemes.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/themes.ts',
 ]);
 

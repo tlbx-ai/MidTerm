@@ -489,8 +489,16 @@ optgroup {
   color: var(--text-primary);
 }
 
-select {
-  color-scheme: inherit;
+:root[data-native-color-scheme='dark'] select,
+:root[data-native-color-scheme='dark'] option,
+:root[data-native-color-scheme='dark'] optgroup {
+  color-scheme: dark;
+}
+
+:root[data-native-color-scheme='light'] select,
+:root[data-native-color-scheme='light'] option,
+:root[data-native-color-scheme='light'] optgroup {
+  color-scheme: light;
 }
 
 /* Global dark scrollbar styling */
@@ -2093,10 +2101,14 @@ body.has-app-background::after {
 }
 
 .layout-leaf .session-tab-bar {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
-    rgba(8, 10, 15, 0.94);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--text-primary) 2%, transparent),
+      transparent
+    ),
+    color-mix(in srgb, var(--bg-dialog-chrome) 94%, transparent);
   padding: 0 4px;
 }
 
@@ -2135,10 +2147,14 @@ body.has-app-background::after {
 }
 
 .layout-leaf.focused .session-tab-bar {
-  border-bottom-color: rgba(255, 216, 143, 0.16);
+  border-bottom-color: color-mix(in srgb, var(--accent-gold) 16%, transparent);
   background:
-    linear-gradient(180deg, rgba(255, 216, 143, 0.06), rgba(255, 255, 255, 0)),
-    rgba(8, 10, 15, 0.96);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent-gold) 6%, transparent),
+      transparent
+    ),
+    color-mix(in srgb, var(--bg-dialog-chrome) 96%, transparent);
 }
 
 /* Dock overlay - shown during drag to indicate drop zones */
@@ -2599,9 +2615,9 @@ body.has-app-background::after {
     min-width: 0;
     min-height: 36px;
     padding: 8px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.04);
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
     color: var(--text-secondary);
     font: inherit;
     font-size: var(--fs-sm);
@@ -2615,13 +2631,13 @@ body.has-app-background::after {
   }
 
   .mobile-tab-pill.active {
-    background: rgba(123, 162, 247, 0.18);
-    border-color: rgba(123, 162, 247, 0.42);
+    background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 42%, transparent);
     color: var(--text-primary);
   }
 
   .mobile-tab-pill:active {
-    background: rgba(123, 162, 247, 0.24);
+    background: color-mix(in srgb, var(--accent-blue) 24%, transparent);
     color: var(--text-primary);
   }
 
@@ -9266,9 +9282,9 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-status-indicator[data-severity='error'] {
-  border-color: color-mix(in srgb, #d95c5c 45%, var(--border-color) 55%);
-  background: color-mix(in srgb, #d95c5c 14%, var(--bg-elevated) 86%);
-  color: #f2a3a3;
+  border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-color) 55%);
+  background: color-mix(in srgb, var(--accent-red) 14%, var(--bg-elevated) 86%);
+  color: color-mix(in srgb, var(--accent-red) 58%, var(--text-primary) 42%);
 }
 
 .web-preview-dock-body {
@@ -10047,7 +10063,7 @@ body.shared-session-mode .session-tab-bar {
   background:
     linear-gradient(
       180deg,
-      rgba(6, 8, 13, 0),
+      transparent,
       color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 40%, transparent) 18%,
       color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, transparent)
     ),
@@ -10083,7 +10099,7 @@ body.shared-session-mode .session-tab-bar {
   color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
   font-size: 0.76rem;
   font-weight: 600;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 22px var(--shadow-color-md);
   backdrop-filter: blur(10px);
   cursor: pointer;
 }
@@ -10511,7 +10527,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-markdown blockquote {
   margin-left: 0;
   padding-left: 12px;
-  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  border-left: 2px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
   color: var(--text-secondary);
 }
 
@@ -10521,12 +10537,16 @@ body.shared-session-mode .session-tab-bar {
   gap: 8px;
   width: min(100%, 560px);
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-    rgba(7, 10, 17, 0.7);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--text-primary) 3%, transparent),
+      color-mix(in srgb, var(--text-primary) 1%, transparent)
+    ),
+    color-mix(in srgb, var(--bg-dialog-chrome) 70%, transparent);
+  box-shadow: 0 14px 30px var(--shadow-color-md);
 }
 
 .agent-markdown-image {
@@ -10535,7 +10555,7 @@ body.shared-session-mode .session-tab-bar {
   max-height: 360px;
   object-fit: cover;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
 .agent-markdown-figcaption {
@@ -10549,9 +10569,9 @@ body.shared-session-mode .session-tab-bar {
   margin: 0 0 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 10px;
-  background: rgba(7, 10, 17, 0.72);
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 72%, transparent);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent) transparent;
 }
@@ -10627,15 +10647,15 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-markdown thead {
-  background: rgba(123, 162, 247, 0.1);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 .agent-history-markdown th,
 .agent-history-markdown td {
   min-width: 120px;
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
@@ -10654,8 +10674,8 @@ body.shared-session-mode .session-tab-bar {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: rgba(20, 28, 45, 0.96);
-  color: #f3f6ff;
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 88%, var(--accent-blue-08));
+  color: var(--text-primary);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -10663,7 +10683,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-markdown td {
-  color: #dce4f5;
+  color: color-mix(in srgb, var(--text-primary) 92%, transparent);
   font-size: 0.84rem;
   line-height: 1.45;
   word-break: normal;
@@ -10671,35 +10691,35 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-markdown tbody tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.025);
+  background: color-mix(in srgb, var(--text-primary) 2.5%, transparent);
 }
 
 .agent-history-markdown tbody tr:hover td {
-  background: rgba(123, 162, 247, 0.08);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
 }
 
 .agent-history-markdown th:first-child {
   left: 0;
   z-index: 3;
-  background: rgba(24, 34, 55, 0.98);
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 82%, var(--accent-blue-10));
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .agent-history-markdown td:first-child {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: rgba(10, 14, 23, 0.96);
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
-  color: #eef4ff;
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 96%, transparent);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--text-primary);
 }
 
 .agent-history-markdown tbody tr:nth-child(even) td:first-child {
-  background: rgba(14, 19, 31, 0.98);
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 94%, var(--text-primary) 3%);
 }
 
 .agent-history-markdown tbody tr:hover td:first-child {
-  background: rgba(25, 38, 62, 0.98);
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 82%, var(--accent-blue) 18%);
 }
 
 .agent-history-markdown th[data-col-kind='key'],
@@ -10708,7 +10728,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-markdown td[data-col-kind='key'] {
-  color: #eef4ff;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -10718,7 +10738,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-markdown td[data-col-kind='tag'] {
-  color: #d7e4ff;
+  color: color-mix(in srgb, var(--text-primary) 82%, var(--accent-blue) 18%);
   text-align: center;
 }
 
@@ -10730,16 +10750,16 @@ body.shared-session-mode .session-tab-bar {
   max-width: 100%;
   padding: 0.16rem 0.64rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: #edf3ff;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 0 0 1px rgba(0, 0, 0, 0.06);
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--shadow-color) 24%, transparent);
 }
 
 .agent-history-markdown .agent-markdown-cell-pill[data-cell-kind='tag'] {
@@ -10749,33 +10769,53 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='positive'] {
-  border-color: rgba(108, 194, 131, 0.42);
-  background: linear-gradient(180deg, rgba(108, 194, 131, 0.28), rgba(108, 194, 131, 0.16));
-  color: #e6ffe9;
+  border-color: color-mix(in srgb, var(--accent-green) 42%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-green) 28%, transparent),
+    color-mix(in srgb, var(--accent-green) 16%, transparent)
+  );
+  color: color-mix(in srgb, var(--accent-green) 46%, var(--text-primary) 54%);
 }
 
 .agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='warning'] {
-  border-color: rgba(255, 200, 111, 0.42);
-  background: linear-gradient(180deg, rgba(255, 200, 111, 0.3), rgba(255, 200, 111, 0.16));
-  color: #fff2cf;
+  border-color: color-mix(in srgb, var(--accent-orange) 42%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-orange) 30%, transparent),
+    color-mix(in srgb, var(--accent-orange) 16%, transparent)
+  );
+  color: color-mix(in srgb, var(--accent-orange) 50%, var(--text-primary) 50%);
 }
 
 .agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='attention'] {
-  border-color: rgba(255, 116, 116, 0.46);
-  background: linear-gradient(180deg, rgba(255, 116, 116, 0.34), rgba(255, 116, 116, 0.18));
-  color: #ffe0e0;
+  border-color: color-mix(in srgb, var(--accent-red) 46%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-red) 34%, transparent),
+    color-mix(in srgb, var(--accent-red) 18%, transparent)
+  );
+  color: color-mix(in srgb, var(--accent-red) 46%, var(--text-primary) 54%);
 }
 
 .agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='info'] {
-  border-color: rgba(130, 196, 255, 0.4);
-  background: linear-gradient(180deg, rgba(130, 196, 255, 0.28), rgba(130, 196, 255, 0.14));
-  color: #e5f4ff;
+  border-color: color-mix(in srgb, var(--accent-blue) 40%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-blue) 28%, transparent),
+    color-mix(in srgb, var(--accent-blue) 14%, transparent)
+  );
+  color: color-mix(in srgb, var(--accent-blue) 46%, var(--text-primary) 54%);
 }
 
 .agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='muted'] {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
-  color: rgba(232, 238, 248, 0.86);
+  border-color: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--text-primary) 8%, transparent),
+    color-mix(in srgb, var(--text-primary) 4%, transparent)
+  );
+  color: color-mix(in srgb, var(--text-primary) 86%, transparent);
 }
 
 .agent-history-markdown th[data-col-kind='numeric'],
@@ -10914,12 +10954,16 @@ body.shared-session-mode .session-tab-bar {
   gap: 7px;
   width: min(280px, 100%);
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-    rgba(7, 10, 17, 0.7);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--text-primary) 3%, transparent),
+      color-mix(in srgb, var(--text-primary) 1%, transparent)
+    ),
+    color-mix(in srgb, var(--bg-dialog-chrome) 70%, transparent);
+  box-shadow: 0 14px 30px var(--shadow-color-md);
 }
 
 .agent-history-attachment-image-el {
@@ -10928,7 +10972,7 @@ body.shared-session-mode .session-tab-bar {
   max-height: 260px;
   object-fit: cover;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
 .agent-history-attachment-caption {
@@ -10944,8 +10988,8 @@ body.shared-session-mode .session-tab-bar {
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   color: var(--text-primary);
   font-size: 0.84rem;
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
@@ -10953,7 +10997,7 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-history-attachment-file:hover,
 .agent-history-attachment-image:hover {
-  border-color: rgba(255, 216, 143, 0.5);
+  border-color: color-mix(in srgb, var(--accent-gold) 50%, transparent);
 }
 
 .agent-history-spacer {
@@ -10983,7 +11027,7 @@ body.shared-session-mode .session-tab-bar {
       color-mix(in srgb, var(--bg-primary) 94%, transparent)
     ),
     var(--terminal-ui-background, var(--terminal-bg));
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 12px 24px var(--shadow-color-md);
 }
 
 .agent-request-actions-composer {
@@ -11054,8 +11098,8 @@ body.shared-session-mode .session-tab-bar {
   min-height: 40px;
   padding: 10px 16px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   color: var(--text-primary);
   font-size: 0.84rem;
   font-family: var(--font-ui);
@@ -11068,8 +11112,8 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-view-btn:hover:not(:disabled) {
-  border-color: rgba(255, 216, 143, 0.5);
-  background: rgba(255, 255, 255, 0.07);
+  border-color: color-mix(in srgb, var(--accent-gold) 50%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
 .agent-view-btn:active:not(:disabled) {
@@ -11082,15 +11126,15 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-view-btn-primary {
-  border-color: rgba(123, 162, 247, 0.28);
-  background: rgba(123, 162, 247, 0.14);
-  color: #d8e6ff;
+  border-color: color-mix(in srgb, var(--accent-blue) 28%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: color-mix(in srgb, var(--accent-blue) 36%, var(--text-primary) 64%);
 }
 
 .agent-view-btn-primary:hover:not(:disabled) {
-  border-color: rgba(143, 181, 255, 0.45);
-  background: rgba(123, 162, 247, 0.22);
-  color: #eef5ff;
+  border-color: color-mix(in srgb, var(--accent-blue-hover) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  color: var(--text-primary);
 }
 
 .agent-request-form {
