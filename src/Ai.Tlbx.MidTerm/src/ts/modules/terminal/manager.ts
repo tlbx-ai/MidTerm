@@ -360,13 +360,57 @@ function getOwnedXtermRoot(container: HTMLDivElement): HTMLDivElement | null {
   return root instanceof HTMLDivElement ? root : null;
 }
 
+type TerminalWithPrivateFocusInternals = TerminalState['terminal'] & {
+  _core?: {
+    _coreBrowserService?: {
+      _isFocused?: boolean;
+      _cachedIsFocused: boolean | undefined;
+    };
+    _onFocus?: { fire: () => void };
+    _onBlur?: { fire: () => void };
+    element?: HTMLElement;
+  };
+};
+
 function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
+  const privateTerminal = state.terminal as TerminalWithPrivateFocusInternals;
+  const privateCore = privateTerminal._core;
+  const coreBrowserService = privateCore?._coreBrowserService;
   const xtermRoot = getOwnedXtermRoot(state.container);
-  if (!xtermRoot) {
+  const hasRootFocus = xtermRoot?.classList.contains('focus') ?? false;
+  const hasInternalFocus = coreBrowserService?._isFocused ?? false;
+
+  if (hasRootFocus === focused && hasInternalFocus === focused) {
     return;
   }
 
-  xtermRoot.classList.toggle('focus', focused);
+  if (xtermRoot) {
+    xtermRoot.classList.toggle('focus', focused);
+  }
+
+  if (privateCore?.element && privateCore.element !== xtermRoot) {
+    privateCore.element.classList.toggle('focus', focused);
+  }
+
+  if (!privateCore || !coreBrowserService) {
+    return;
+  }
+
+  // xterm's inactive cursor style is driven by its private browser focus service,
+  // not only the root .focus class. Mirror proxy focus into that internal state so
+  // the renderer paints the active cursor while MidTerm owns the actual DOM focus.
+  coreBrowserService._isFocused = focused;
+  coreBrowserService._cachedIsFocused = undefined;
+
+  try {
+    if (focused) {
+      privateCore._onFocus?.fire();
+    } else {
+      privateCore._onBlur?.fire();
+    }
+  } catch {
+    // xterm internals may not be ready during initial open.
+  }
 }
 
 function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement | null {
