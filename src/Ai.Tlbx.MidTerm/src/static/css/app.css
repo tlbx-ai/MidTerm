@@ -6394,6 +6394,29 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-muted);
 }
 
+.diag-log-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0;
+}
+
+.diag-log-output {
+  margin: 0;
+  padding: 12px;
+  min-height: 140px;
+  max-height: 280px;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .btn-icon {
   display: flex;
   align-items: center;

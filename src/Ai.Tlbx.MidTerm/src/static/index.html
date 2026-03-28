@@ -2218,6 +2218,26 @@
                       Settings persist in localStorage across page reloads.
                     </p>
                   </div>
+
+                  <div class="settings-section">
+                    <h3>Terminal Key Log</h3>
+                    <p class="diag-help-text">
+                      Capture terminal Enter and modifier events so remap failures are directly
+                      visible.
+                    </p>
+                    <div class="setting-row">
+                      <label for="diag-terminal-key-log-toggle">Enable terminal key log</label>
+                      <input type="checkbox" id="diag-terminal-key-log-toggle" />
+                    </div>
+                    <div class="diag-log-actions">
+                      <button id="btn-clear-terminal-key-log" class="btn-secondary">
+                        Clear log
+                      </button>
+                    </div>
+                    <pre id="diag-terminal-key-log" class="diag-log-output">
+Enable terminal key log to capture Enter and modifier events.</pre
+                    >
+                  </div>
                 </section>
               </div>
             </div>
