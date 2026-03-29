@@ -7908,52 +7908,107 @@ body.shared-session-mode .session-tab-bar {
 
 .smart-input-lens-settings {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: flex-end;
+  flex-wrap: nowrap;
+  gap: 0;
+  align-items: stretch;
   width: 100%;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  margin-top: 8px;
+  padding: 0 4px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--terminal-ui-background, var(--terminal-bg)) 78%,
+    transparent
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(110%);
+  backdrop-filter: blur(14px) saturate(110%);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.smart-input-lens-settings::-webkit-scrollbar {
+  display: none;
 }
 
 .smart-input-lens-field {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1 1 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  position: relative;
+}
+
+.smart-input-lens-field + .smart-input-lens-field::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: color-mix(in srgb, var(--border-color) 48%, transparent);
 }
 
 .smart-input-lens-label {
-  font-size: 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
   line-height: 1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+  white-space: nowrap;
 }
 
 .smart-input-lens-control {
-  width: 100%;
-  min-height: 34px;
+  width: auto;
+  min-width: 0;
+  min-height: 28px;
   box-sizing: border-box;
-  border: 1px solid var(--border-subtle);
+  border: none;
   border-radius: 8px;
-  background: var(--text-input-background, var(--bg-input));
+  background: transparent;
   color: var(--text-primary);
-  padding: 7px 10px;
+  padding: 4px 22px 4px 0;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 1.2;
   outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 
 .smart-input-lens-control:focus {
-  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--text-input-background, var(--bg-input)) 55%, transparent);
 }
 
 .smart-input-lens-model {
-  min-width: 160px;
+  min-width: 132px;
+  max-width: 190px;
+}
+
+.smart-input-lens-control::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+}
+
+.smart-input-lens-field select.smart-input-lens-control {
+  background-image:
+    linear-gradient(45deg, transparent 50%, color-mix(in srgb, var(--text-muted) 92%, transparent) 50%),
+    linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 92%, transparent) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 1px),
+    calc(100% - 9px) calc(50% - 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 
 /* Input row — flex row holding mic, autosend, textarea, send, toggle */
@@ -11805,15 +11860,61 @@ body.shared-session-mode .session-tab-bar {
 
 @media (max-width: 768px) {
   .smart-input-lens-settings {
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 14px;
+    background: color-mix(
+      in srgb,
+      var(--terminal-ui-background, var(--terminal-bg)) 88%,
+      transparent
+    );
+    overflow: visible;
   }
 
   .smart-input-lens-field {
-    flex: 1 1 calc(50% - 3px);
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+    padding: 0;
+  }
+
+  .smart-input-lens-field + .smart-input-lens-field::before {
+    display: none;
   }
 
   .smart-input-lens-model {
     min-width: 0;
+    max-width: none;
+  }
+
+  .smart-input-lens-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .smart-input-lens-control {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--text-input-background, var(--bg-input)) 76%,
+      transparent
+    );
+    padding: 7px 10px;
+    font-size: 13px;
+    font-weight: 400;
+  }
+
+  .smart-input-lens-field select.smart-input-lens-control {
+    padding-right: 28px;
+    background-position:
+      calc(100% - 16px) calc(50% - 1px),
+      calc(100% - 11px) calc(50% - 1px);
   }
 
   .smart-input-row {

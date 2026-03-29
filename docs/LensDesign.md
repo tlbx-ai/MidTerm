@@ -193,8 +193,11 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ## Composer And Ready State
 
 - The composer is the primary action control for Lens sessions.
-- Lens should expose a compact quick-settings strip in or immediately above the smart input bar for the settings users change in-flow most often.
+- Lens should expose a compact quick-settings strip directly beneath the primary smart input row for the settings users change in-flow most often.
 - The quick-settings strip should stay intentionally small and session-oriented.
+- The quick-settings strip is Lens-only. Normal terminal smart input should continue showing only the standard terminal controls and text prompt row.
+- On desktop, the quick-settings strip should read as a low-clutter translucent control rail rather than a full-width form.
+- On mobile, that rail should become a permanently visible panel beneath the input row instead of compressing the desktop inline treatment beyond readability.
 - The common quick-settings surface should cover:
   - model
   - effort
@@ -263,7 +266,8 @@ Status in this branch/work item:
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
-- implemented: Lens exposes a compact quick-settings strip in the smart input bar for model, effort, plan mode, and permission mode
+- implemented: Lens exposes a compact quick-settings strip beneath the main smart input row for model, effort, plan mode, and permission mode
+- implemented: desktop Lens quick settings render as a compact translucent control rail, while mobile renders the same controls as an always-open panel beneath the input row
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 

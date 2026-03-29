@@ -496,8 +496,8 @@ function createDockedDOM(): void {
   dockedBar.className = 'smart-input-docked';
 
   const { lensSettingsRow, inputRow } = createInputElements();
-  dockedBar.appendChild(lensSettingsRow);
   dockedBar.appendChild(inputRow);
+  dockedBar.appendChild(lensSettingsRow);
   relocateDockedBar();
   updateAutoSendVisibility();
   syncVoiceInputAvailability();
@@ -708,12 +708,19 @@ function syncLensQuickSettingsControls(): void {
 
   const sessionId = $activeSessionId.get();
   if (!sessionId || !isLensActiveSession(sessionId)) {
+    if (dockedBar) {
+      dockedBar.dataset.lensSession = 'false';
+    }
     lensQuickSettingsRow.hidden = true;
+    delete lensQuickSettingsRow.dataset.provider;
     return;
   }
 
   const provider = getLensQuickSettingsProvider(sessionId);
   const draft = getLensQuickSettingsDraft(sessionId);
+  if (dockedBar) {
+    dockedBar.dataset.lensSession = 'true';
+  }
   lensQuickSettingsRow.hidden = false;
   lensQuickSettingsRow.dataset.provider = provider ?? '';
 
