@@ -1056,7 +1056,7 @@ function createSessionItem(
   if (!isPending) {
     const menuBtn = document.createElement('button');
     menuBtn.className = 'session-menu-btn';
-    menuBtn.innerHTML = icon('more');
+    menuBtn.innerHTML = icon('menu');
     menuBtn.title = t('session.actions');
     menuBtn.setAttribute('aria-label', t('session.actions'));
     menuBtn.setAttribute('aria-haspopup', 'menu');
