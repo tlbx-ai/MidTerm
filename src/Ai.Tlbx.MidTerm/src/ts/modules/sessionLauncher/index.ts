@@ -139,11 +139,17 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     const safeListEl = listEl;
 
     let pathFollowTimer: number | null = null;
+    let skipNextPathCommit = false;
 
-    function close(result: SessionLauncherSelection | null): void {
+    function clearPendingPathFollow(): void {
       if (pathFollowTimer !== null) {
         window.clearTimeout(pathFollowTimer);
+        pathFollowTimer = null;
       }
+    }
+
+    function close(result: SessionLauncherSelection | null): void {
+      clearPendingPathFollow();
       document.removeEventListener('keydown', onKeyDown);
       releaseBackButtonLayer?.();
       releaseBackButtonLayer = null;
@@ -283,9 +289,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     }
 
     function queuePathFollow(): void {
-      if (pathFollowTimer !== null) {
-        window.clearTimeout(pathFollowTimer);
-      }
+      clearPendingPathFollow();
 
       pathFollowTimer = window.setTimeout(() => {
         pathFollowTimer = null;
@@ -299,10 +303,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     }
 
     async function commitPathDraft(): Promise<void> {
-      if (pathFollowTimer !== null) {
-        window.clearTimeout(pathFollowTimer);
-        pathFollowTimer = null;
-      }
+      clearPendingPathFollow();
 
       const candidatePath = state.pathDraft.trim();
       if (!candidatePath) {
@@ -355,6 +356,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         return;
       }
 
+      clearPendingPathFollow();
       void loadDirectory(rootPath);
     });
 
@@ -362,6 +364,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       const target = event.target as HTMLElement | null;
       const openPath = target?.closest<HTMLElement>('[data-open-path]')?.dataset.openPath;
       if (openPath) {
+        clearPendingPathFollow();
         void loadDirectory(openPath);
       }
     });
@@ -387,7 +390,24 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     });
 
     safePathEl.addEventListener('blur', () => {
+      if (skipNextPathCommit) {
+        skipNextPathCommit = false;
+        return;
+      }
+
       void commitPathDraft();
+    });
+
+    overlay.addEventListener('pointerdown', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        document.activeElement === safePathEl &&
+        target?.closest(
+          '[data-open-path], [data-root-path], [data-action], [data-provider], [data-role="cancel"]',
+        )
+      ) {
+        skipNextPathCommit = true;
+      }
     });
 
     overlay.addEventListener('click', (event) => {
@@ -404,8 +424,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
       const action = target?.closest<HTMLElement>('[data-action]')?.dataset.action;
       if (action === 'home') {
+        clearPendingPathFollow();
         void loadDirectory(state.homePath);
       } else if (action === 'up' && state.parentPath) {
+        clearPendingPathFollow();
         void loadDirectory(state.parentPath);
       }
     });
