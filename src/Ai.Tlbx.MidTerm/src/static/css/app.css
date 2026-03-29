@@ -5673,11 +5673,18 @@ body.has-app-background::after {
 
 .session-launcher-modal {
   width: min(860px, 94vw);
-  max-height: min(88vh, 900px);
+  height: min(88vh, 760px);
+  max-height: none;
+  align-items: stretch;
+  justify-content: stretch;
   animation: modal-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .session-launcher-content {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   background-color: var(--bg-dialog, var(--bg-elevated-opaque));
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent-blue) 18%, var(--bg-dialog-chrome)), transparent 36%),
@@ -5685,10 +5692,12 @@ body.has-app-background::after {
 }
 
 .session-launcher-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .session-launcher-kicker {
@@ -5756,6 +5765,7 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
   min-height: 0;
 }
 
@@ -5763,6 +5773,7 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .session-launcher-launch-label {
@@ -5839,9 +5850,10 @@ body.has-app-background::after {
 .session-launcher-list {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 4px;
-  min-height: 240px;
-  max-height: min(48vh, 420px);
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding-right: 4px;
 }
