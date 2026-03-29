@@ -10,6 +10,7 @@
 import type { FilePathInfo, DirectoryEntry, DirectoryListResponse } from '../../types';
 import { createLogger } from '../logging';
 import { t } from '../i18n';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import {
   $activeSessionId,
   $fileViewerDocked,
@@ -51,6 +52,7 @@ let lastVideoVolume = 0.15;
 let isDirty = false;
 let isFullContentLoaded = true;
 let currentContent = '';
+let releaseBackButtonLayer: (() => void) | null = null;
 
 export function initFileViewer(): void {
   modal = document.getElementById('file-viewer-modal');
@@ -249,6 +251,9 @@ async function renderInDock(path: string): Promise<void> {
 }
 
 function closeViewer(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
+
   if (modal) {
     modal.classList.add('hidden');
   }
@@ -262,6 +267,10 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   if (!modal) {
     log.error(() => 'File viewer modal not initialized');
     return;
+  }
+
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(closeViewer);
   }
 
   currentPath = path;

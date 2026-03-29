@@ -1,4 +1,5 @@
 import { isDevMode } from '../modules/sidebar/voiceSection';
+import { registerBackButtonLayer } from '../modules/navigation/backButtonGuard';
 
 interface DevErrorDialogOptions {
   title: string;
@@ -37,6 +38,7 @@ export function showDevErrorDialog(options: DevErrorDialogOptions): void {
   const { summary, detail } = normalizeError(options.error);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  let releaseBackButtonLayer: (() => void) | null = null;
   overlay.innerHTML = `
     <div class="modal dev-error-modal" role="dialog" aria-modal="true" aria-labelledby="dev-error-title">
       <div class="modal-header">
@@ -68,6 +70,8 @@ export function showDevErrorDialog(options: DevErrorDialogOptions): void {
 
   const close = (): void => {
     document.removeEventListener('keydown', onKeyDown);
+    releaseBackButtonLayer?.();
+    releaseBackButtonLayer = null;
     overlay.remove();
   };
 
@@ -87,5 +91,6 @@ export function showDevErrorDialog(options: DevErrorDialogOptions): void {
 
   document.addEventListener('keydown', onKeyDown);
   document.body.appendChild(overlay);
+  releaseBackButtonLayer = registerBackButtonLayer(close);
   overlay.querySelector<HTMLButtonElement>('[data-role="close"]')?.focus();
 }

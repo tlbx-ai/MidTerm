@@ -19,6 +19,7 @@ import {
   getUpdateLog,
 } from '../../api/client';
 import { openSettings, switchSettingsTab } from '../settings';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 const log = createLogger('updating');
 
@@ -462,6 +463,7 @@ export function renderUpdateResult(): void {
 export async function showUpdateLog(): Promise<void> {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
+  let releaseBackButtonLayer: (() => void) | null = null;
   modal.innerHTML = `
     <div class="modal update-log-modal">
       <div class="modal-header">
@@ -479,6 +481,12 @@ export async function showUpdateLog(): Promise<void> {
 
   document.body.appendChild(modal);
 
+  const close = (): void => {
+    releaseBackButtonLayer?.();
+    releaseBackButtonLayer = null;
+    modal.remove();
+  };
+
   const logContent = modal.querySelector('.update-log-content') as HTMLPreElement;
   try {
     const { data, response } = await getUpdateLog();
@@ -492,7 +500,7 @@ export async function showUpdateLog(): Promise<void> {
   }
 
   modal.querySelector('.modal-close')?.addEventListener('click', () => {
-    modal.remove();
+    close();
   });
   modal.querySelector('.btn-copy-log')?.addEventListener('click', () => {
     void navigator.clipboard.writeText(logContent.textContent || '');
@@ -504,6 +512,7 @@ export async function showUpdateLog(): Promise<void> {
     }, 1500);
   });
   modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.remove();
+    if (e.target === modal) close();
   });
+  releaseBackButtonLayer = registerBackButtonLayer(close);
 }

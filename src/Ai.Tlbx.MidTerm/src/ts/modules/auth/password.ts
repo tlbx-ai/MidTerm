@@ -9,8 +9,10 @@ import { $authStatus } from '../../stores';
 import { bindClick } from '../../utils';
 import { checkAuthStatus, dismissSecurityWarning, logout } from './status';
 import { t } from '../i18n';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 let passwordModalHasPassword = false;
+let releaseBackButtonLayer: (() => void) | null = null;
 
 /**
  * Show the password modal for setting or changing password
@@ -45,6 +47,10 @@ export function showPasswordModal(_isInitialSetup: boolean): void {
     form.reset();
   }
 
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(hidePasswordModal);
+  }
+
   modal.classList.remove('hidden');
 
   const focusFieldId = passwordModalHasPassword ? 'current-password' : 'new-password';
@@ -58,6 +64,9 @@ export function showPasswordModal(_isInitialSetup: boolean): void {
  * Hide the password modal
  */
 function hidePasswordModal(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
+
   const modal = document.getElementById('password-modal');
   if (modal) {
     modal.classList.add('hidden');

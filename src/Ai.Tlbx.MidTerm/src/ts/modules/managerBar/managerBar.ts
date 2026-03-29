@@ -11,6 +11,7 @@ import { updateSettings } from '../../api/client';
 import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getSessionHeat } from '../sidebar/heatIndicator';
 import {
   computeNextScheduleTime,
@@ -92,6 +93,7 @@ let editingActionId: string | null = null;
 let renderedButtons: NormalizedManagerButton[] = [];
 const queueEntries: QueueEntry[] = [];
 let queueTimerId: number | null = null;
+let releaseBackButtonLayer: (() => void) | null = null;
 
 export function sendCommand(sessionId: string, text: string): void {
   void submitSessionText(sessionId, text).catch((error: unknown) => {
@@ -458,6 +460,10 @@ function openActionModal(existing?: NormalizedManagerButton): void {
   renderScheduleEditors(action.trigger.schedule);
   syncModalSections();
 
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(closeActionModal);
+  }
+
   modalEl.classList.remove('hidden');
   const modalBody = modalEl.querySelector<HTMLElement>('.manager-action-modal-body');
   if (modalBody) {
@@ -467,6 +473,8 @@ function openActionModal(existing?: NormalizedManagerButton): void {
 }
 
 function closeActionModal(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
   editingActionId = null;
   modalEl?.classList.add('hidden');
   clearModalError();

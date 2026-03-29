@@ -144,6 +144,7 @@ import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
 import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
 import { initWebPreview } from './modules/web';
+import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
   attachHubChannel,
   bindHubSettings,
@@ -281,6 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function init(): Promise<void> {
   initLogConcerns();
   log.info(() => 'MidTerm frontend initializing');
+  initBackButtonGuard();
 
   cacheDOMElements();
   await initI18n();
@@ -385,6 +387,7 @@ async function init(): Promise<void> {
 async function initShared(): Promise<void> {
   initLogConcerns();
   log.info(() => 'MidTerm shared frontend initializing');
+  initBackButtonGuard();
 
   cacheDOMElements();
   await initI18n();

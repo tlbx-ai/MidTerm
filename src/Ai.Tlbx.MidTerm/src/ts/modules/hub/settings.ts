@@ -13,6 +13,7 @@ import {
 } from './api';
 import { getHubMachines, refreshHubState } from './runtime';
 import type { HubMachineState, HubMachineUpsertRequest } from './types';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 interface HubMachineDraft {
   machineId: string | null;
@@ -20,6 +21,8 @@ interface HubMachineDraft {
   apiKey?: string | null;
   password?: string | null;
 }
+
+let releaseBackButtonLayer: (() => void) | null = null;
 
 function getInput(id: string): HTMLInputElement | null {
   return document.getElementById(id) as HTMLInputElement | null;
@@ -93,11 +96,17 @@ function openMachineModal(machineId?: string): void {
   }
 
   setMachineModalTitle(machine?.machine.id ?? null);
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(closeMachineModal);
+  }
   modal.classList.remove('hidden');
   getInput('hub-machine-url')?.focus();
 }
 
 function closeMachineModal(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
+
   const modal = getMachineModal();
   if (!modal) {
     return;
