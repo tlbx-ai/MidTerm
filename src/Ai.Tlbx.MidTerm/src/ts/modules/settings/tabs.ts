@@ -13,7 +13,6 @@ export type SettingsTab =
   | 'agent-ui'
   | 'behavior'
   | 'security'
-  | 'ide'
   | 'diagnostics';
 
 const STORAGE_KEY = 'settings-tab';
@@ -25,7 +24,6 @@ const VALID_TABS: SettingsTab[] = [
   'agent-ui',
   'behavior',
   'security',
-  'ide',
   'diagnostics',
 ];
 

@@ -54,7 +54,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 
 ### 2. Settings and Presentation
 
-- `F031` MidTerm exposes an in-browser settings UI split into General, Appearance, Behavior, Security, IDE, and Diagnostics tabs.
+- `F031` MidTerm exposes an in-browser settings UI split into Updates / Info, Appearance, Behaviour, Agent UI, Security, Multi Server, and Diagnostics tabs.
 - `F032` Settings changes sync live across connected browsers over `/ws/settings`.
 - `F033` The settings UI shows frontend, server, and host version information.
 - `F034` The settings UI shows environment and code-signing status badges.

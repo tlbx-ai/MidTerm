@@ -573,31 +573,27 @@
                   aria-selected="true"
                 >
                   <span class="icon">&#xea0c;</span>
-                  <span class="tab-label" data-i18n="settings.general">General</span>
-                </button>
-                <button class="settings-tab" data-tab="hub" role="tab" aria-selected="false">
-                  <span class="icon">&#xe925;</span>
-                  <span class="tab-label" data-i18n="settings.hub">MidTerm Hub</span>
+                  <span class="tab-label" data-i18n="settings.general">Updates / Info</span>
                 </button>
                 <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
                   <span class="icon">&#xe90d;</span>
                   <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
                 </button>
+                <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
+                  <span class="icon">&#xe993;</span>
+                  <span class="tab-label" data-i18n="settings.behavior">Behaviour</span>
+                </button>
                 <button class="settings-tab" data-tab="agent-ui" role="tab" aria-selected="false">
                   <span class="icon">&#xe925;</span>
                   <span class="tab-label" data-i18n="settings.agentUi">Agent UI</span>
-                </button>
-                <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
-                  <span class="icon">&#xe993;</span>
-                  <span class="tab-label" data-i18n="settings.behavior">Behavior</span>
                 </button>
                 <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
                   <span class="icon">&#xe908;</span>
                   <span class="tab-label" data-i18n="settings.security">Security</span>
                 </button>
-                <button class="settings-tab" data-tab="ide" role="tab" aria-selected="false">
-                  <span class="icon">&#xea57;</span>
-                  <span class="tab-label" data-i18n="settings.ideMode">IDE Mode</span>
+                <button class="settings-tab" data-tab="hub" role="tab" aria-selected="false">
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.hub">Multi Server</span>
                 </button>
                 <button
                   class="settings-tab"
@@ -614,7 +610,7 @@
               <div class="settings-content" role="tabpanel">
                 <!-- General Panel -->
                 <section class="settings-panel" data-panel="general">
-                  <h2 data-i18n="settings.general.title">General</h2>
+                  <h2 data-i18n="settings.general.title">Updates / Info</h2>
 
                   <!-- About & Updates -->
                   <div class="settings-section">
@@ -946,7 +942,7 @@
 
                 <!-- Hub Panel -->
                 <section class="settings-panel hidden" data-panel="hub">
-                  <h2 data-i18n="settings.hub.title">MidTerm Hub</h2>
+                  <h2 data-i18n="settings.hub.title">Multi Server</h2>
 
                   <div class="settings-section">
                     <div class="hub-toolbar">
@@ -1606,7 +1602,7 @@
 
                 <!-- Behavior Panel -->
                 <section class="settings-panel hidden" data-panel="behavior">
-                  <h2 data-i18n="settings.behavior.title">Behavior</h2>
+                  <h2 data-i18n="settings.behavior.title">Behaviour</h2>
 
                   <!-- Session Defaults -->
                   <div class="settings-section">
@@ -2063,27 +2059,6 @@
                       Windows Firewall can allow other PCs on your network to reach the current
                       MidTerm HTTPS port.
                     </p>
-                  </div>
-                </section>
-
-                <!-- IDE Mode Panel -->
-                <section class="settings-panel hidden" data-panel="ide">
-                  <h2 data-i18n="settings.ide.title">IDE Mode</h2>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.ide.overview">Overview</h3>
-                    <p class="setting-hint" data-i18n="settings.ide.overviewHintAlwaysOn">
-                      The IDE bar is always available above each terminal session. It provides
-                      terminal and files tabs, Git and command shortcuts, and session sharing.
-                    </p>
-                  </div>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.ide.git">Git</h3>
-                    <div class="setting-row">
-                      <label data-i18n="settings.ide.gitExecutable">Git executable</label>
-                      <code class="path-value" id="ide-git-status">checking...</code>
-                    </div>
                   </div>
                 </section>
 
