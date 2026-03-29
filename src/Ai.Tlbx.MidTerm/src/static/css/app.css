@@ -5894,9 +5894,46 @@ body.has-app-background::after {
 }
 
 @media (max-width: 760px) {
-  .session-launcher-modal {
-    width: min(94vw, 94vw);
-    max-height: min(92vh, 92vh);
+  .session-launcher-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .session-launcher-overlay > .session-launcher-modal {
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .session-launcher-overlay > .session-launcher-modal > .session-launcher-content {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-header {
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-right: calc(20px + env(safe-area-inset-right, 0px));
+    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+  }
+
+  .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-body {
+    padding-right: calc(20px + env(safe-area-inset-right, 0px));
+    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+  }
+
+  .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-footer {
+    padding-right: calc(20px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+  }
+
+  .session-launcher-list {
+    max-height: none;
   }
 
   .session-launcher-toolbar {
