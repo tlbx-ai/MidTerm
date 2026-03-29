@@ -30,6 +30,7 @@ interface LauncherPathResponse {
 interface LauncherState {
   homePath: string;
   currentPath: string;
+  pathDraft: string;
   parentPath: string | null;
   roots: LauncherDirectoryEntry[];
   entries: LauncherDirectoryEntry[];
@@ -80,7 +81,14 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
                   <span class="session-launcher-nav-icon" aria-hidden="true">&#8593;</span>
                   <span>${escapeHtml(t('sessionLauncher.up'))}</span>
                 </button>
-                <div class="session-launcher-path" data-role="path" title=""></div>
+                <input
+                  type="text"
+                  class="session-launcher-path"
+                  data-role="path"
+                  title=""
+                  spellcheck="false"
+                  autocomplete="off"
+                />
               </div>
               <div class="session-launcher-roots" data-role="roots"></div>
               <div class="session-launcher-status hidden" data-role="status"></div>
@@ -101,6 +109,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     const state: LauncherState = {
       homePath: home.path,
       currentPath: home.path,
+      pathDraft: home.path,
       parentPath: null,
       roots: roots.entries,
       entries: [],
@@ -111,7 +120,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     const providersEl = overlay.querySelector<HTMLElement>('[data-role="providers"]');
     const browserEl = overlay.querySelector<HTMLElement>('[data-role="browser"]');
-    const pathEl = overlay.querySelector<HTMLElement>('[data-role="path"]');
+    const pathEl = overlay.querySelector<HTMLInputElement>('[data-role="path"]');
     const rootsEl = overlay.querySelector<HTMLElement>('[data-role="roots"]');
     const statusEl = overlay.querySelector<HTMLElement>('[data-role="status"]');
     const listEl = overlay.querySelector<HTMLElement>('[data-role="list"]');
@@ -129,7 +138,12 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     const safeStatusEl = statusEl;
     const safeListEl = listEl;
 
+    let pathFollowTimer: number | null = null;
+
     function close(result: SessionLauncherSelection | null): void {
+      if (pathFollowTimer !== null) {
+        window.clearTimeout(pathFollowTimer);
+      }
       document.removeEventListener('keydown', onKeyDown);
       releaseBackButtonLayer?.();
       releaseBackButtonLayer = null;
@@ -191,11 +205,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     }
 
     function renderList(): void {
-      if (state.loading) {
-        safeListEl.innerHTML = '';
-        return;
-      }
-
       if (state.entries.length === 0) {
         safeListEl.innerHTML = `<div class="session-launcher-empty">${escapeHtml(t('sessionLauncher.empty'))}</div>`;
         return;
@@ -224,37 +233,91 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       renderStatus();
       renderList();
 
-      safePathEl.textContent = state.currentPath;
-      safePathEl.title = state.currentPath;
+      if (safePathEl.value !== state.pathDraft) {
+        safePathEl.value = state.pathDraft;
+      }
+      safePathEl.title = state.pathDraft;
     }
 
-    async function loadDirectory(path: string): Promise<void> {
+    async function loadDirectory(
+      path: string,
+      options?: {
+        suppressErrors?: boolean;
+      },
+    ): Promise<boolean> {
       const requestToken = ++state.requestToken;
       state.loading = true;
-      state.error = null;
+      if (!options?.suppressErrors) {
+        state.error = null;
+      }
       render();
 
       try {
         const response = await fetchDirectories(path);
         if (requestToken !== state.requestToken) {
-          return;
+          return false;
         }
 
         state.currentPath = response.path;
+        state.pathDraft = response.path;
         state.parentPath = response.parentPath;
         state.entries = response.entries;
+        state.error = null;
+        return true;
       } catch (error) {
         if (requestToken !== state.requestToken) {
-          return;
+          return false;
         }
 
-        state.error = error instanceof Error ? error.message : String(error);
+        if (!options?.suppressErrors) {
+          state.error = error instanceof Error ? error.message : String(error);
+        }
       } finally {
         if (requestToken === state.requestToken) {
           state.loading = false;
           render();
         }
       }
+
+      return false;
+    }
+
+    function queuePathFollow(): void {
+      if (pathFollowTimer !== null) {
+        window.clearTimeout(pathFollowTimer);
+      }
+
+      pathFollowTimer = window.setTimeout(() => {
+        pathFollowTimer = null;
+        const candidatePath = state.pathDraft.trim();
+        if (!candidatePath || candidatePath === state.currentPath) {
+          return;
+        }
+
+        void loadDirectory(candidatePath, { suppressErrors: true });
+      }, 280);
+    }
+
+    async function commitPathDraft(): Promise<void> {
+      if (pathFollowTimer !== null) {
+        window.clearTimeout(pathFollowTimer);
+        pathFollowTimer = null;
+      }
+
+      const candidatePath = state.pathDraft.trim();
+      if (!candidatePath) {
+        state.error = 'Path is required';
+        render();
+        return;
+      }
+
+      if (candidatePath === state.currentPath) {
+        state.error = null;
+        render();
+        return;
+      }
+
+      await loadDirectory(candidatePath);
     }
 
     render();
@@ -301,6 +364,30 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       if (openPath) {
         void loadDirectory(openPath);
       }
+    });
+
+    safePathEl.addEventListener('input', () => {
+      state.pathDraft = safePathEl.value;
+      queuePathFollow();
+    });
+
+    safePathEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void commitPathDraft();
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        state.pathDraft = state.currentPath;
+        state.error = null;
+        render();
+      }
+    });
+
+    safePathEl.addEventListener('blur', () => {
+      void commitPathDraft();
     });
 
     overlay.addEventListener('click', (event) => {

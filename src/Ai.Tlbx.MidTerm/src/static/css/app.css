@@ -5820,12 +5820,17 @@ body.has-app-background::after {
 }
 
 .session-launcher-nav-icon {
-  font-size: var(--fs-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  font-size: calc(var(--fs-xl) + 2px);
   line-height: 1;
 }
 
 .session-launcher-path {
   min-height: 40px;
+  width: 100%;
   display: flex;
   align-items: center;
   padding: 0 12px;
@@ -5833,9 +5838,16 @@ body.has-app-background::after {
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-dialog-muted) 82%, var(--bg-dialog));
   color: var(--text-primary);
+  font: inherit;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-launcher-path:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--border-color));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 28%, transparent);
 }
 
 .session-launcher-roots {

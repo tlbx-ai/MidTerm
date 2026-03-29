@@ -539,6 +539,13 @@ public static class FileEndpoints
         fullPath = string.Empty;
         errorResult = null;
 
+        path = NormalizeLauncherPath(path);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            errorResult = Results.BadRequest("Path is required");
+            return false;
+        }
+
         try
         {
             fullPath = Path.GetFullPath(path);
@@ -556,5 +563,18 @@ public static class FileEndpoints
         }
 
         return true;
+    }
+
+    private static string NormalizeLauncherPath(string path)
+    {
+        var trimmed = path.Trim();
+        if (trimmed.Length >= 2 &&
+            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
+             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
+        {
+            trimmed = trimmed[1..^1];
+        }
+
+        return Environment.ExpandEnvironmentVariables(trimmed);
     }
 }
