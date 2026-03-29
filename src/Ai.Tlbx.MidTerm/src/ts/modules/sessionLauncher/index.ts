@@ -8,6 +8,8 @@ export interface SessionLauncherSelection {
   workingDirectory: string;
 }
 
+let activeLauncherPromise: Promise<SessionLauncherSelection | null> | null = null;
+
 interface LauncherDirectoryEntry {
   name: string;
   fullPath: string;
@@ -36,6 +38,19 @@ interface LauncherState {
 }
 
 export async function openSessionLauncher(): Promise<SessionLauncherSelection | null> {
+  if (activeLauncherPromise) {
+    return activeLauncherPromise;
+  }
+
+  activeLauncherPromise = openSessionLauncherInternal();
+  try {
+    return await activeLauncherPromise;
+  } finally {
+    activeLauncherPromise = null;
+  }
+}
+
+async function openSessionLauncherInternal(): Promise<SessionLauncherSelection | null> {
   const [home, roots] = await Promise.all([fetchHomePath(), fetchLauncherRoots()]);
 
   return new Promise((resolve) => {

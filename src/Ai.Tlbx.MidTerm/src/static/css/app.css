@@ -5905,6 +5905,8 @@ body.has-app-background::after {
     height: 100vh;
     height: 100dvh;
     max-height: none;
+    align-items: stretch;
+    justify-content: stretch;
     border-radius: 0;
     box-shadow: none;
   }
@@ -5912,6 +5914,8 @@ body.has-app-background::after {
   .session-launcher-overlay > .session-launcher-modal > .session-launcher-content {
     width: 100%;
     height: 100%;
+    max-width: none;
+    max-height: none;
     border-radius: 0;
   }
 
