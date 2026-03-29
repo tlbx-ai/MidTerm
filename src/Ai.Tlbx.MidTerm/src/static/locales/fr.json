@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "Laisser vide pour le répertoire personnel",
   "settings.behavior.terminalBehavior": "Comportement du Terminal",
   "settings.behavior.scrollbackLines": "Lignes de Défilement Arrière",
+  "settings.behavior.scrollbackBytes": "Octets d'Historique",
   "settings.behavior.bellStyle": "Style de Sonnerie",
   "settings.behavior.copyOnSelect": "Copier lors de la Sélection",
   "settings.behavior.rightClickPaste": "Clic Droit pour Coller",

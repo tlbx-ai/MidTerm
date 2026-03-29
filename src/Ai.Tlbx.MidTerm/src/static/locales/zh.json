@@ -134,6 +134,7 @@
   "settings.behavior.defaultWorkingDirHint": "留空使用主目录",
   "settings.behavior.terminalBehavior": "终端行为",
   "settings.behavior.scrollbackLines": "回滚缓冲行数",
+  "settings.behavior.scrollbackBytes": "回滚缓冲字节数",
   "settings.behavior.bellStyle": "响铃样式",
   "settings.behavior.copyOnSelect": "选择时复制",
   "settings.behavior.rightClickPaste": "右键粘贴",

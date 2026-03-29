@@ -4632,6 +4632,7 @@
           "scrollbarStyle",
           "useWebGL",
           "scrollbackLines",
+          "scrollbackBytes",
           "bellStyle",
           "copyOnSelect",
           "rightClickPaste",
@@ -4778,6 +4779,10 @@
             "type": "boolean"
           },
           "scrollbackLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "scrollbackBytes": {
             "type": "integer",
             "format": "int32"
           },

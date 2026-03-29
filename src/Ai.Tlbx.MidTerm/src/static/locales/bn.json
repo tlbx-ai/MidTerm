@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "হোম ডিরেক্টরির জন্য খালি রাখুন",
   "settings.behavior.terminalBehavior": "টার্মিনাল আচরণ",
   "settings.behavior.scrollbackLines": "স্ক্রলব্যাক লাইন",
+  "settings.behavior.scrollbackBytes": "স্ক্রলব্যাক বাইট",
   "settings.behavior.bellStyle": "বেল স্টাইল",
   "settings.behavior.copyOnSelect": "সিলেক্টে কপি",
   "settings.behavior.rightClickPaste": "রাইট-ক্লিক পেস্ট",

@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "ホームディレクトリを使う場合は空欄",
   "settings.behavior.terminalBehavior": "ターミナル動作",
   "settings.behavior.scrollbackLines": "スクロールバック行数",
+  "settings.behavior.scrollbackBytes": "スクロールバック バイト数",
   "settings.behavior.bellStyle": "ベルスタイル",
   "settings.behavior.copyOnSelect": "選択時コピー",
   "settings.behavior.rightClickPaste": "右クリックで貼り付け",

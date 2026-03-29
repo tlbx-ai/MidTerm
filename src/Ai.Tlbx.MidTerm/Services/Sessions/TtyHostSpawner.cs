@@ -198,6 +198,7 @@ public static class TtyHostSpawner
         string? runAsUser,
         string? runAsUserSid,
         out int processId,
+        int scrollbackBytes,
         int? mtPort = null,
         string? mtToken = null,
         int? paneIndex = null,
@@ -218,7 +219,7 @@ public static class TtyHostSpawner
         }
 
         var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,
-            instanceId, ownerToken, mtPort, mtToken, paneIndex, tmuxBinDir);
+            instanceId, ownerToken, scrollbackBytes, mtPort, mtToken, paneIndex, tmuxBinDir);
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
@@ -315,10 +316,10 @@ public static class TtyHostSpawner
 
     private static string BuildArgs(
         string sessionId, string? shellType, string? workingDirectory, int cols, int rows,
-        string instanceId, string ownerToken,
+        string instanceId, string ownerToken, int scrollbackBytes,
         int? mtPort, string? mtToken, int? paneIndex, string? tmuxBinDir)
     {
-        var args = $"--session {sessionId} --cols {cols} --rows {rows} --mt-instance-id {instanceId} --mt-owner-token {ownerToken}";
+        var args = $"--session {sessionId} --cols {cols} --rows {rows} --scrollback {scrollbackBytes} --mt-instance-id {instanceId} --mt-owner-token {ownerToken}";
         if (!string.IsNullOrEmpty(shellType))
         {
             args += $" --shell {shellType}";

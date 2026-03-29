@@ -1657,9 +1657,33 @@
                           type="number"
                           id="setting-scrollback"
                           min="500"
-                          max="100000"
+                          max="10000"
                           step="500"
-                          value="10000"
+                          value="2000"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-scrollback-bytes"
+                        data-i18n="settings.behavior.scrollbackBytes"
+                        >Scrollback Bytes</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="scrollbackBytes"
+                        data-type="number"
+                      >
+                        <input
+                          type="number"
+                          id="setting-scrollback-bytes"
+                          min="65536"
+                          max="10485760"
+                          step="262144"
+                          value="2097152"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>

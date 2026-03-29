@@ -273,10 +273,16 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'immediate',
   }),
-  controlEntry('scrollbackLines', 'setting-scrollback', 'int', 10000, {
+  controlEntry('scrollbackLines', 'setting-scrollback', 'int', 2000, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, UI clamps to 500-100000',
+    validation: 'integer, UI clamps to 500-10000',
+    applyMode: 'immediate',
+  }),
+  controlEntry('scrollbackBytes', 'setting-scrollback-bytes', 'int', 2 * 1024 * 1024, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer bytes, UI clamps to 65536-10485760',
     applyMode: 'immediate',
   }),
   controlEntry('bellStyle', 'setting-bell-style', 'select', 'notification', {

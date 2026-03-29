@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "होम डायरेक्टरी के लिए खाली छोड़ें",
   "settings.behavior.terminalBehavior": "टर्मिनल व्यवहार",
   "settings.behavior.scrollbackLines": "स्क्रॉलबैक पंक्तियां",
+  "settings.behavior.scrollbackBytes": "स्क्रॉलबैक बाइट्स",
   "settings.behavior.bellStyle": "बेल शैली",
   "settings.behavior.copyOnSelect": "चयन पर कॉपी",
   "settings.behavior.rightClickPaste": "राइट-क्लिक पेस्ट",

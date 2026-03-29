@@ -5,6 +5,9 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed partial class MidTermSettingsPublic
 {
+    public const int DefaultScrollbackLines = 2000;
+    public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
+
     // Session Defaults (DefaultShell intentionally nullable - platform-specific logic at runtime)
     public ShellType? DefaultShell { get; set; }
     public int DefaultCols { get; set; } = 120;
@@ -41,7 +44,8 @@ public sealed partial class MidTermSettingsPublic
     public bool UseWebGL { get; set; } = true;
 
     // Terminal Behavior
-    public int ScrollbackLines { get; set; } = 10000;
+    public int ScrollbackLines { get; set; } = DefaultScrollbackLines;
+    public int ScrollbackBytes { get; set; } = DefaultScrollbackBytes;
     public BellStyleSetting BellStyle { get; set; } = BellStyleSetting.Notification;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;

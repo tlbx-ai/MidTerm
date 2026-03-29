@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "Dejar vacío para el directorio de inicio",
   "settings.behavior.terminalBehavior": "Comportamiento de la Terminal",
   "settings.behavior.scrollbackLines": "Líneas de Desplazamiento",
+  "settings.behavior.scrollbackBytes": "Bytes de Desplazamiento",
   "settings.behavior.bellStyle": "Estilo de Campana",
   "settings.behavior.copyOnSelect": "Copiar al Seleccionar",
   "settings.behavior.rightClickPaste": "Clic Derecho para Pegar",

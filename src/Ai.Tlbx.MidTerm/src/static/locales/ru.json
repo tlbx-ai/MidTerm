@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "Оставьте пустым для домашнего каталога",
   "settings.behavior.terminalBehavior": "Поведение терминала",
   "settings.behavior.scrollbackLines": "Строки истории прокрутки",
+  "settings.behavior.scrollbackBytes": "Байты истории прокрутки",
   "settings.behavior.bellStyle": "Стиль звукового сигнала",
   "settings.behavior.copyOnSelect": "Копировать при выделении",
   "settings.behavior.rightClickPaste": "Вставка правой кнопкой мыши",

@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "Leer lassen für Home-Verzeichnis",
   "settings.behavior.terminalBehavior": "Terminal-Verhalten",
   "settings.behavior.scrollbackLines": "Scrollback-Zeilen",
+  "settings.behavior.scrollbackBytes": "Scrollback-Bytes",
   "settings.behavior.bellStyle": "Glocken-Stil",
   "settings.behavior.copyOnSelect": "Beim Auswählen kopieren",
   "settings.behavior.rightClickPaste": "Rechtsklick zum Einfügen",

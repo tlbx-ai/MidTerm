@@ -315,6 +315,7 @@
   "settings.behavior.defaultWorkingDirHint": "Leave empty for home directory",
   "settings.behavior.terminalBehavior": "Terminal Behavior",
   "settings.behavior.scrollbackLines": "Scrollback Lines",
+  "settings.behavior.scrollbackBytes": "Scrollback Bytes",
   "settings.behavior.bellStyle": "Bell Style",
   "settings.behavior.copyOnSelect": "Copy on Select",
   "settings.behavior.rightClickPaste": "Right-Click Paste",

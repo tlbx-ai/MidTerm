@@ -745,7 +745,7 @@ export function getTerminalOptions(): ITerminalOptions {
     DEFAULT_TERMINAL_FONT_WEIGHT) as TerminalFontWeight;
   const fontWeightBold = (currentSettings?.fontWeightBold ??
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) as TerminalFontWeight;
-  const scrollback = currentSettings?.scrollbackLines ?? 10000;
+  const scrollback = currentSettings?.scrollbackLines ?? 2000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
   const options: ITerminalOptions = {

@@ -3963,6 +3963,8 @@ export interface components {
       useWebGL: boolean;
       /** Format: int32 */
       scrollbackLines: number;
+      /** Format: int32 */
+      scrollbackBytes: number;
       bellStyle: components['schemas']['BellStyleSetting'];
       copyOnSelect: boolean;
       rightClickPaste: boolean;

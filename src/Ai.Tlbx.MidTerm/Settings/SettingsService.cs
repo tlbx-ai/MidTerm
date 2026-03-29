@@ -465,6 +465,7 @@ public sealed class SettingsService
         current.ScrollbarStyle = old.ScrollbarStyle;
         current.UseWebGL = old.UseWebGL;
         current.ScrollbackLines = old.ScrollbackLines;
+        current.ScrollbackBytes = old.ScrollbackBytes;
         current.BellStyle = old.BellStyle;
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;

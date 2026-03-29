@@ -131,6 +131,7 @@
   "settings.behavior.defaultWorkingDirHint": "Deixe vazio para diretório home",
   "settings.behavior.terminalBehavior": "Comportamento do Terminal",
   "settings.behavior.scrollbackLines": "Linhas de Histórico",
+  "settings.behavior.scrollbackBytes": "Bytes de Histórico",
   "settings.behavior.bellStyle": "Estilo de Campainha",
   "settings.behavior.copyOnSelect": "Copiar ao Selecionar",
   "settings.behavior.rightClickPaste": "Colar com Botão Direito",

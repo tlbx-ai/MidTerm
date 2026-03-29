@@ -11,6 +11,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services.Hosting;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -29,6 +30,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly TtyHostOwnershipRegistry _ownershipRegistry;
     private readonly SessionForegroundProcessService _foregroundProcessService;
+    private readonly SettingsService? _settingsService;
     private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new();
     private string? _runAsUser;
     private string? _runAsUserSid;
@@ -65,7 +67,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         bool isServiceMode = false,
         SessionControlStateService? sessionControlStateService = null,
         MidTermInstanceIdentity? instanceIdentity = null,
-        SessionForegroundProcessService? foregroundProcessService = null)
+        SessionForegroundProcessService? foregroundProcessService = null,
+        SettingsService? settingsService = null)
     {
         _registry = new SessionRegistry(isServiceMode, sessionControlStateService);
         _clients = _registry.Clients;
@@ -77,6 +80,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             0);
         _ownershipRegistry = new TtyHostOwnershipRegistry(_instanceIdentity.SessionRegistryPath);
         _foregroundProcessService = foregroundProcessService ?? new SessionForegroundProcessService();
+        _settingsService = settingsService;
         _runAsUser = runAsUser;
         _runAsUserSid = runAsUserSid;
     }
@@ -317,8 +321,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
+        var scrollbackBytes = ResolveScrollbackBytes();
         if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, _runAsUserSid, out var hostPid,
-                _mtPort, mtToken, paneIndex, _tmuxBinDir))
+                scrollbackBytes, _mtPort, mtToken, paneIndex, _tmuxBinDir))
         {
             return null;
         }
@@ -402,6 +407,15 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public SessionInfo? GetSession(string sessionId)
     {
         return _registry.GetSession(sessionId);
+    }
+
+    private int ResolveScrollbackBytes()
+    {
+        var configured = _settingsService?.Load().ScrollbackBytes ?? MidTermSettings.DefaultScrollbackBytes;
+        return Math.Clamp(
+            configured,
+            MidTermSettings.MinScrollbackBytes,
+            MidTermSettings.MaxScrollbackBytes);
     }
 
     public void MarkTmuxCreated(string sessionId)
