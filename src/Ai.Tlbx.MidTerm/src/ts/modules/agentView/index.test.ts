@@ -230,6 +230,55 @@ describe('agentView dev errors', () => {
     activeSessionSubscribers.forEach((callback) => callback(sessionId));
   }
 
+  function createSnapshot(overrides: Record<string, any> = {}): any {
+    return {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-29T10:00:00Z',
+      latestSequence: 1,
+      totalHistoryCount: 0,
+      historyWindowStart: 0,
+      historyWindowEnd: 0,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-29T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-03-29T09:59:55Z',
+        completedAt: '2026-03-29T10:00:00Z',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [],
+      items: [],
+      requests: [],
+      notices: [],
+      ...overrides,
+    };
+  }
+
   it('shows a dev error modal when Lens activation fails', async () => {
     attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
     getLensSnapshot.mockRejectedValue(new Error('Lens snapshot unavailable'));
@@ -272,6 +321,120 @@ describe('agentView dev errors', () => {
     expect(setSessionLensAvailability).toHaveBeenCalledWith('s1', true);
     expect(switchTab).toHaveBeenCalledWith('s1', 'agent');
     expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
+  });
+
+  it('renders Codex Lens as a full-width left layout', async () => {
+    getLensSnapshot.mockResolvedValue(
+      createSnapshot({
+        totalHistoryCount: 2,
+        historyWindowEnd: 2,
+        transcript: [
+          {
+            entryId: 'user:turn-1',
+            order: 1,
+            kind: 'user',
+            turnId: 'turn-1',
+            itemId: 'user-1',
+            requestId: null,
+            status: 'completed',
+            itemType: 'user_message',
+            title: null,
+            body: 'Make Lens use the full width.',
+            attachments: [],
+            streaming: false,
+            createdAt: '2026-03-29T09:59:56Z',
+            updatedAt: '2026-03-29T09:59:56Z',
+          },
+          {
+            entryId: 'assistant:turn-1',
+            order: 2,
+            kind: 'assistant',
+            turnId: 'turn-1',
+            itemId: 'assistant-1',
+            requestId: null,
+            status: 'completed',
+            itemType: 'assistant_message',
+            title: null,
+            body: 'Lens now starts every row from the left.',
+            attachments: [],
+            streaming: false,
+            createdAt: '2026-03-29T10:00:00Z',
+            updatedAt: '2026-03-29T10:00:00Z',
+          },
+        ],
+      }),
+    );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(panel.dataset.lensProvider).toBe('codex');
+      expect(panel.dataset.lensLayout).toBe('full-width-left');
+    });
+  });
+
+  it('uses User and Agent badge labels for Codex Lens history rows', async () => {
+    const { resolveHistoryBadgeLabel } = await import('./index');
+
+    expect(resolveHistoryBadgeLabel('user', 'codex')).toBe('User');
+    expect(resolveHistoryBadgeLabel('assistant', 'codex')).toBe('Agent');
+    expect(resolveHistoryBadgeLabel('assistant', 'claude')).toBe('Assistant');
+  });
+
+  it('keeps auto-follow pinned when content grows without user scrolling', async () => {
+    const { resolveHistoryAutoScrollPinned } = await import('./index');
+
+    expect(
+      resolveHistoryAutoScrollPinned({
+        wasPinned: true,
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1860,
+        },
+        userInitiated: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('stops auto-follow immediately when the user scrolls away from the live edge', async () => {
+    const { resolveHistoryAutoScrollPinned } = await import('./index');
+
+    expect(
+      resolveHistoryAutoScrollPinned({
+        wasPinned: true,
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 760,
+          clientHeight: 600,
+          scrollHeight: 1860,
+        },
+        userInitiated: true,
+      }),
+    ).toBe(false);
   });
 
   it('keeps debug scenarios isolated from the live Lens attach path', async () => {
@@ -819,6 +982,169 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
 
     expect(disconnectStream).not.toHaveBeenCalled();
+  });
+
+  it('releases hidden history DOM and collapses background history back to a latest window', async () => {
+    const disconnectStream = vi.fn();
+    openLensEventStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot
+      .mockResolvedValueOnce({
+        sessionId: 's1',
+        provider: 'codex',
+        generatedAt: '2026-03-28T11:00:00Z',
+        latestSequence: 40,
+        totalHistoryCount: 400,
+        historyWindowStart: 160,
+        historyWindowEnd: 240,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+        session: {
+          state: 'running',
+          stateLabel: 'Running',
+          reason: null,
+          lastError: null,
+          lastEventAt: '2026-03-28T11:00:00Z',
+        },
+        thread: {
+          threadId: 'thread-1',
+          state: 'active',
+          stateLabel: 'Active',
+        },
+        currentTurn: {
+          turnId: 'turn-1',
+          state: 'running',
+          stateLabel: 'Running',
+          model: null,
+          effort: null,
+          startedAt: '2026-03-28T10:59:30Z',
+          completedAt: null,
+        },
+        streams: {
+          assistantText: 'Working…',
+          reasoningText: '',
+          reasoningSummaryText: '',
+          planText: '',
+          commandOutput: '',
+          fileChangeOutput: '',
+          unifiedDiff: '',
+        },
+        items: [],
+        requests: [],
+        notices: [],
+        transcript: Array.from({ length: 80 }, (_value, index) => ({
+          entryId: `assistant:${index + 161}`,
+          turnId: 'turn-1',
+          itemId: `assistant-${index + 161}`,
+          requestId: null,
+          order: index + 161,
+          kind: 'assistant',
+          status: 'running',
+          title: 'Assistant',
+          body: `Historical row ${index + 161}`,
+          updatedAt: '2026-03-28T11:00:00Z',
+          streaming: index === 79,
+          attachments: [],
+          createdAt: '2026-03-28T11:00:00Z',
+        })),
+      })
+      .mockResolvedValueOnce({
+        sessionId: 's1',
+        provider: 'codex',
+        generatedAt: '2026-03-28T11:00:05Z',
+        latestSequence: 45,
+        totalHistoryCount: 405,
+        historyWindowStart: 325,
+        historyWindowEnd: 405,
+        hasOlderHistory: true,
+        hasNewerHistory: false,
+        session: {
+          state: 'running',
+          stateLabel: 'Running',
+          reason: null,
+          lastError: null,
+          lastEventAt: '2026-03-28T11:00:05Z',
+        },
+        thread: {
+          threadId: 'thread-1',
+          state: 'active',
+          stateLabel: 'Active',
+        },
+        currentTurn: {
+          turnId: 'turn-1',
+          state: 'running',
+          stateLabel: 'Running',
+          model: null,
+          effort: null,
+          startedAt: '2026-03-28T10:59:30Z',
+          completedAt: null,
+        },
+        streams: {
+          assistantText: 'Latest output',
+          reasoningText: '',
+          reasoningSummaryText: '',
+          planText: '',
+          commandOutput: '',
+          fileChangeOutput: '',
+          unifiedDiff: '',
+        },
+        items: [],
+        requests: [],
+        notices: [],
+        transcript: Array.from({ length: 80 }, (_value, index) => ({
+          entryId: `assistant:${index + 326}`,
+          turnId: 'turn-1',
+          itemId: `assistant-${index + 326}`,
+          requestId: null,
+          order: index + 326,
+          kind: 'assistant',
+          status: 'running',
+          title: 'Assistant',
+          body: `Latest row ${index + 326}`,
+          updatedAt: '2026-03-28T11:00:05Z',
+          streaming: index === 79,
+          attachments: [],
+          createdAt: '2026-03-28T11:00:05Z',
+        })),
+      });
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    const deactivate = onTabDeactivated.mock.calls[0]?.[1] as
+      | ((sessionId: string) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+    expect(deactivate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+    });
+
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.replaceChildren.mockClear();
+
+    deactivate?.('s1');
+
+    await vi.waitFor(() => {
+      expect(getLensSnapshot.mock.calls).toContainEqual(['s1', undefined, 80]);
+    });
+
+    expect(disconnectStream).not.toHaveBeenCalled();
+    expect(historyHost.replaceChildren).toHaveBeenCalled();
   });
 
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {

@@ -63,6 +63,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Avoid narrow bubble layouts that waste the center column.
 - Long assistant output should read like a document, not like a chat toy.
 - Tool activity should compress well and expand only when detail is useful.
+- Codex Lens should use a full-width, left-anchored timeline instead of a centered conversation lane.
+- In Codex Lens, user and assistant rows should share the same left edge and be distinguished primarily by subdued small labels rather than opposing alignment or strong bubble chrome.
 
 ### 5. Clear hierarchy
 
@@ -81,6 +83,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Once the visible history grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
 - Virtualization must preserve stable scroll behavior and not break streaming updates at the bottom.
 - Lens history transport should be window-aware: MidTerm may deliver only the currently materialized history slice plus total-count/window metadata, and the UI should request older or newer slices on demand instead of assuming the full history is resident in the browser.
+- Browser-resident Lens history should stay bounded to a working window instead of accumulating the full session scrollback in memory.
+- When a Lens surface becomes hidden or inactive, its rendered history DOM should be dropped and its retained browser-side history window should collapse back toward a small latest-history slice while the runtime keeps ingesting canonical state.
 
 ### 7. Responsive behavior
 
@@ -239,11 +243,14 @@ Status in this branch/work item:
 - implemented: Lens-specific themed CSS tokens layered onto the existing MidTerm theme system
 - implemented: i18n-backed MidTerm Lens labels, buttons, helper copy, ready-state text, and interruption text
 - implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
+- implemented: hidden/background Lens sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: long machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
 - implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
 - implemented: dev mode writes one GUID-named per-session Lens screen log derived from canonical history deltas and render hints
 - implemented: Lens uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
+- implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
+- implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 
 Still mandatory after this work whenever Lens evolves:
 

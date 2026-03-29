@@ -49,6 +49,8 @@ const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
 const COLLAPSIBLE_HISTORY_BODY_MIN_LINES = 8;
 const COLLAPSIBLE_HISTORY_BODY_MIN_CHARS = 320;
 const COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS = 160;
+const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
+const NON_USER_SCROLL_DRIFT_TOLERANCE_PX = 4;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
@@ -70,6 +72,8 @@ interface SessionLensViewState {
   requestDraftAnswersById: Record<string, Record<string, string[]>>;
   requestQuestionIndexById: Record<string, number>;
   historyAutoScrollPinned: boolean;
+  historyLastScrollMetrics: HistoryScrollMetrics | null;
+  historyLastUserScrollIntentAt: number;
   historyRenderScheduled: number | null;
   activationState:
     | 'idle'
@@ -130,6 +134,7 @@ type HistoryKind =
 type HistoryTone = 'info' | 'positive' | 'warning' | 'attention';
 type LensHistoryActionId = 'retry-lens';
 export type LensDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
+export type LensLayoutMode = 'default' | 'full-width-left';
 
 const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = [
   'mixed',
@@ -190,6 +195,12 @@ interface HistoryViewportMetrics {
   scrollTop: number;
   clientHeight: number;
   clientWidth: number;
+}
+
+interface HistoryScrollMetrics {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
 }
 
 interface HistoryVisibleEntry {
@@ -270,6 +281,8 @@ export function initAgentView(): void {
     }
 
     state.historyAutoScrollPinned = true;
+    releaseHiddenLensRenderState(state);
+    void compactHiddenLensSessionHistory(sessionId, state);
   });
 
   log.info(() => 'Agent view initialized');
@@ -601,6 +614,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     requestDraftAnswersById: {},
     requestQuestionIndexById: {},
     historyAutoScrollPinned: true,
+    historyLastScrollMetrics: null,
+    historyLastUserScrollIntentAt: 0,
     historyRenderScheduled: null,
     activationState: 'idle',
     activationDetail: '',
@@ -1044,9 +1059,14 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
   `;
 }
 
-function syncAgentViewPresentation(panel: HTMLDivElement): void {
+function syncAgentViewPresentation(
+  panel: HTMLDivElement,
+  provider: string | null | undefined = null,
+): void {
   const style = (panel as unknown as { style?: CSSStyleDeclaration | null }).style;
   if (!style || typeof style.setProperty !== 'function') {
+    panel.dataset.lensProvider = normalizeLensProvider(provider);
+    panel.dataset.lensLayout = resolveLensLayoutMode(provider);
     return;
   }
 
@@ -1054,6 +1074,8 @@ function syncAgentViewPresentation(panel: HTMLDivElement): void {
     '--agent-history-mono-font-family',
     buildTerminalFontStack(getConfiguredTerminalFontFamily()),
   );
+  panel.dataset.lensProvider = normalizeLensProvider(provider);
+  panel.dataset.lensLayout = resolveLensLayoutMode(provider);
 }
 
 function bindHistoryViewport(sessionId: string, state: SessionLensViewState): void {
@@ -1064,6 +1086,18 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
   }
 
   viewport.dataset.lensScrollBound = 'true';
+  const markUserScrollIntent = () => {
+    const current = viewStates.get(sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.historyLastUserScrollIntentAt = Date.now();
+  };
+  viewport.addEventListener('wheel', markUserScrollIntent, { passive: true });
+  viewport.addEventListener('touchstart', markUserScrollIntent, { passive: true });
+  viewport.addEventListener('pointerdown', markUserScrollIntent, { passive: true });
+  viewport.addEventListener('keydown', markUserScrollIntent);
   viewport.addEventListener('scroll', () => {
     const current = viewStates.get(sessionId);
     const currentViewport = current?.historyViewport;
@@ -1071,11 +1105,15 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       return;
     }
 
-    current.historyAutoScrollPinned = isScrollContainerNearBottom({
-      scrollTop: currentViewport.scrollTop,
-      clientHeight: currentViewport.clientHeight,
-      scrollHeight: currentViewport.scrollHeight,
+    const scrollMetrics = readHistoryScrollMetrics(currentViewport);
+    current.historyAutoScrollPinned = resolveHistoryAutoScrollPinned({
+      wasPinned: current.historyAutoScrollPinned,
+      previous: current.historyLastScrollMetrics,
+      current: scrollMetrics,
+      userInitiated:
+        Date.now() - current.historyLastUserScrollIntentAt <= USER_HISTORY_SCROLL_INTENT_WINDOW_MS,
     });
+    current.historyLastScrollMetrics = scrollMetrics;
     renderScrollToBottomControl(current.panel, current);
 
     if (
@@ -1085,14 +1123,7 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       void loadOlderLensHistoryWindow(sessionId, current);
     }
 
-    if (
-      current.snapshot?.hasNewerHistory &&
-      isScrollContainerNearBottom({
-        scrollTop: currentViewport.scrollTop,
-        clientHeight: currentViewport.clientHeight,
-        scrollHeight: currentViewport.scrollHeight,
-      })
-    ) {
+    if (current.snapshot?.hasNewerHistory && current.historyAutoScrollPinned) {
       void loadLatestLensHistoryWindow(sessionId, current);
     }
 
@@ -1192,6 +1223,58 @@ function closeLensStream(sessionId: string): void {
   state.disconnectStream?.();
   state.disconnectStream = null;
   state.streamConnected = false;
+}
+
+function releaseHiddenLensRenderState(state: SessionLensViewState): void {
+  state.historyEntries = [];
+  state.historyRenderedNodes.clear();
+  state.assistantMarkdownCache.clear();
+  state.historyTopSpacer = null;
+  state.historyBottomSpacer = null;
+  state.historyEmptyState = null;
+  state.pendingHistoryPrependOffsetPx = 0;
+  state.renderDirty = true;
+
+  const historyHost = state.panel.querySelector<HTMLElement>('[data-agent-field="history"]');
+  historyHost?.replaceChildren();
+}
+
+async function compactHiddenLensSessionHistory(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.debugScenarioActive || state.refreshInFlight) {
+    return;
+  }
+
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const shouldRefreshLatestWindow =
+    snapshot.hasNewerHistory ||
+    snapshot.historyWindowStart > 0 ||
+    state.historyWindowCount > LENS_HISTORY_WINDOW_SIZE ||
+    snapshot.transcript.length > LENS_HISTORY_WINDOW_SIZE;
+
+  if (shouldRefreshLatestWindow) {
+    try {
+      const latestSnapshot = await getLensSnapshot(sessionId, undefined, LENS_HISTORY_WINDOW_SIZE);
+      const current = viewStates.get(sessionId);
+      if (!current || current !== state) {
+        return;
+      }
+
+      applyLensSnapshotWindowState(current, latestSnapshot);
+      current.snapshot = latestSnapshot;
+      return;
+    } catch (error) {
+      log.warn(() => `Failed to compact hidden Lens history for ${sessionId}: ${String(error)}`);
+    }
+  }
+
+  collapseSnapshotToLatestWindow(state, LENS_HISTORY_WINDOW_SIZE);
 }
 
 async function refreshLensSnapshot(sessionId: string): Promise<void> {
@@ -1313,6 +1396,31 @@ function applyLensSnapshotWindowState(
   const windowSize = Math.max(0, windowEnd - windowStart);
   state.historyWindowStart = windowStart;
   state.historyWindowCount = Math.max(windowSize, LENS_HISTORY_WINDOW_SIZE);
+}
+
+function collapseSnapshotToLatestWindow(
+  state: SessionLensViewState,
+  targetWindowCount: number,
+): void {
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const retainedEntries =
+    snapshot.transcript.length > targetWindowCount
+      ? snapshot.transcript.slice(-targetWindowCount)
+      : snapshot.transcript.slice();
+  const totalHistoryCount = Math.max(snapshot.totalHistoryCount, retainedEntries.length);
+
+  snapshot.transcript = retainedEntries;
+  snapshot.totalHistoryCount = totalHistoryCount;
+  snapshot.historyWindowEnd = totalHistoryCount;
+  snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - retainedEntries.length);
+  snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
+  snapshot.hasNewerHistory = false;
+  state.historyWindowStart = snapshot.historyWindowStart;
+  state.historyWindowCount = Math.max(targetWindowCount, retainedEntries.length);
 }
 
 export function applyCanonicalLensDelta(
@@ -1676,7 +1784,7 @@ function renderAgentView(
   streamConnected: boolean,
   state: SessionLensViewState,
 ): void {
-  syncAgentViewPresentation(panel);
+  syncAgentViewPresentation(panel, snapshot.provider);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncRequestInteractionState(state, snapshot.requests);
   const historyEntries = buildLensHistoryEntries(snapshot, events);
@@ -1803,6 +1911,7 @@ function renderActivationView(
   panel: HTMLDivElement,
   state: SessionLensViewState,
 ): void {
+  syncAgentViewPresentation(panel, state.snapshot?.provider ?? null);
   panel.dataset.agentTurnId = '';
   renderComposerInterruption(panel, sessionId, [], state);
   renderHistory(
@@ -1826,6 +1935,7 @@ function renderHistory(
   if (state) {
     state.historyViewport = container as HTMLDivElement;
     state.historyEntries = entries;
+    state.historyLastScrollMetrics ??= readHistoryScrollMetrics(container as HTMLDivElement);
     pruneAssistantMarkdownCache(state, entries);
     renderScrollToBottomControl(panel, state);
   }
@@ -1888,6 +1998,7 @@ function renderHistory(
       const current = viewStates.get(sessionId);
       if (current) {
         current.historyAutoScrollPinned = true;
+        current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
         renderScrollToBottomControl(panel, current);
       }
     });
@@ -1964,6 +2075,7 @@ function buildHistoryEntrySignature(
   cluster: ArtifactClusterInfo | null,
   state: SessionLensViewState | undefined,
 ): string {
+  const badgeLabel = resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.provider);
   const attachmentToken = (entry.attachments ?? [])
     .map((attachment) =>
       [attachment.kind, attachment.displayName, attachment.path, attachment.mimeType ?? ''].join(
@@ -1983,7 +2095,7 @@ function buildHistoryEntrySignature(
   return [
     entry.kind,
     entry.tone,
-    entry.label,
+    badgeLabel,
     entry.title,
     entry.body,
     entry.meta,
@@ -2153,10 +2265,12 @@ function scrollHistoryToBottom(sessionId: string, behavior: ScrollBehavior = 'au
   }
 
   state.historyAutoScrollPinned = true;
+  state.historyLastUserScrollIntentAt = 0;
   viewport.scrollTo({
     top: viewport.scrollHeight,
     behavior,
   });
+  state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
   renderScrollToBottomControl(state.panel, state);
 }
 
@@ -2285,6 +2399,14 @@ function readHistoryViewportMetrics(container: HTMLDivElement): HistoryViewportM
     scrollTop: container.scrollTop,
     clientHeight: container.clientHeight,
     clientWidth: container.clientWidth,
+  };
+}
+
+function readHistoryScrollMetrics(container: HTMLDivElement): HistoryScrollMetrics {
+  return {
+    scrollTop: container.scrollTop,
+    clientHeight: container.clientHeight,
+    scrollHeight: container.scrollHeight,
   };
 }
 
@@ -2666,7 +2788,10 @@ function createHistoryEntry(
 
   const badge = document.createElement('span');
   badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
-  badge.textContent = entry.label;
+  badge.textContent = resolveHistoryBadgeLabel(
+    entry.kind,
+    viewStates.get(sessionId)?.snapshot?.provider,
+  );
 
   const meta = document.createElement('div');
   meta.className = 'agent-history-meta';
@@ -3551,6 +3676,31 @@ export function isScrollContainerNearBottom(position: {
   return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
 }
 
+export function resolveHistoryAutoScrollPinned(args: {
+  wasPinned: boolean;
+  previous: HistoryScrollMetrics | null;
+  current: HistoryScrollMetrics;
+  userInitiated: boolean;
+}): boolean {
+  const nearBottom = isScrollContainerNearBottom(args.current);
+  if (!args.wasPinned || nearBottom) {
+    return nearBottom;
+  }
+
+  if (args.userInitiated || !args.previous) {
+    return false;
+  }
+
+  const scrollTopDropped =
+    args.current.scrollTop < args.previous.scrollTop - NON_USER_SCROLL_DRIFT_TOLERANCE_PX;
+  const layoutShifted =
+    args.current.scrollHeight > args.previous.scrollHeight + NON_USER_SCROLL_DRIFT_TOLERANCE_PX ||
+    Math.abs(args.current.clientHeight - args.previous.clientHeight) >
+      NON_USER_SCROLL_DRIFT_TOLERANCE_PX;
+
+  return layoutShifted && !scrollTopDropped;
+}
+
 /**
  * Uses a fast height heuristic for history virtualization so long agent
  * runs stay smooth without paying full layout cost on every render.
@@ -4153,6 +4303,14 @@ function resolveAttachmentLabel(attachment: LensAttachmentReference): string {
   return slashIndex >= 0 ? normalizedPath.slice(slashIndex + 1) : normalizedPath;
 }
 
+function normalizeLensProvider(provider: string | null | undefined): string {
+  return (provider || '').trim().toLowerCase();
+}
+
+export function resolveLensLayoutMode(provider: string | null | undefined): LensLayoutMode {
+  return normalizeLensProvider(provider) === 'codex' ? 'full-width-left' : 'default';
+}
+
 function historyLabel(kind: HistoryKind): string {
   switch (kind) {
     case 'user':
@@ -4174,6 +4332,23 @@ function historyLabel(kind: HistoryKind): string {
     default:
       return lensText('lens.label.system', 'System');
   }
+}
+
+export function resolveHistoryBadgeLabel(
+  kind: HistoryKind,
+  provider: string | null | undefined,
+): string {
+  if (resolveLensLayoutMode(provider) === 'full-width-left') {
+    if (kind === 'user') {
+      return lensText('lens.label.userShort', 'User');
+    }
+
+    if (kind === 'assistant') {
+      return lensText('lens.label.agent', 'Agent');
+    }
+  }
+
+  return historyLabel(kind);
 }
 
 function prettify(value: string): string {

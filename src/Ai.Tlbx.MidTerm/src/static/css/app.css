@@ -10120,6 +10120,12 @@ body.shared-session-mode .session-tab-bar {
   background: var(--terminal-ui-background, var(--terminal-bg));
 }
 
+.agent-view-panel[data-lens-layout='full-width-left'] {
+  --agent-lens-max-width: 100%;
+  --agent-lens-content-width: 100%;
+  --agent-lens-user-width: 100%;
+}
+
 .agent-view {
   display: flex;
   flex: 1;
@@ -10283,6 +10289,43 @@ body.shared-session-mode .session-tab-bar {
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
 }
 
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-composer-host,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-composer-interruption,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-entry,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-assistant,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-busy-indicator,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-tool,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-reasoning,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-plan,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-diff,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-request,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-system,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-notice {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user {
+  align-self: stretch;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-tool,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-reasoning,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-plan,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-diff,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-request,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-system,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-notice {
+  padding: 10px 0;
+  border-left: 0;
+}
+
 .agent-history-assistant.agent-history-live .agent-history-badge-assistant {
   color: var(--agent-lens-live);
 }
@@ -10440,6 +10483,27 @@ body.shared-session-mode .session-tab-bar {
   display: inline-flex;
 }
 
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {
+  display: inline-flex;
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-header,
+.agent-view-panel[data-lens-layout='full-width-left']
+  .agent-history-assistant
+  .agent-history-header {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-meta,
+.agent-view-panel[data-lens-layout='full-width-left']
+  .agent-history-assistant
+  .agent-history-meta {
+  margin-left: 0;
+}
+
 .agent-history-title {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
   font-size: 10px;
@@ -10507,6 +10571,12 @@ body.shared-session-mode .session-tab-bar {
   font-family: var(--font-ui);
   font-size: 0.92rem;
   line-height: 1.58;
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-body {
+  color: color-mix(in srgb, var(--text-primary) 80%, var(--text-secondary) 20%);
+  font-size: 0.95rem;
+  line-height: 1.64;
 }
 
 .agent-history-assistant .agent-history-body {
