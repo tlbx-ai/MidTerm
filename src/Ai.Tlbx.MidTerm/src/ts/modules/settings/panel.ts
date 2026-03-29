@@ -24,8 +24,10 @@ import {
 } from '../../api/client';
 import { showAlert, showConfirm } from '../../utils/dialog';
 import { t } from '../i18n';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 const log = createLogger('settings');
+let releaseBackButtonLayer: (() => void) | null = null;
 
 /**
  * Close the mobile sidebar
@@ -50,6 +52,10 @@ export function toggleSettings(): void {
  * Open the settings panel
  */
 export function openSettings(): void {
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(closeSettings);
+  }
+
   $settingsOpen.set(true);
   if (dom.settingsBtn) dom.settingsBtn.classList.add('active');
   closeSidebar();
@@ -78,6 +84,9 @@ export function openSettings(): void {
  * Close the settings panel
  */
 export function closeSettings(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
+
   unbindSettingsAutoSave();
   stopLatencyMeasurement();
   $settingsOpen.set(false);

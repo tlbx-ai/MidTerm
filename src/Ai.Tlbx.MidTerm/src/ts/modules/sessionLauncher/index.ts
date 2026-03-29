@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../utils/dom';
 import { t } from '../i18n';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 export type LauncherProvider = 'terminal' | 'codex' | 'claude';
 
@@ -56,6 +57,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay session-launcher-overlay';
+    let releaseBackButtonLayer: (() => void) | null = null;
 
     overlay.innerHTML = `
       <div class="modal session-launcher-modal" role="dialog" aria-modal="true" aria-labelledby="session-launcher-title">
@@ -129,6 +131,8 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function close(result: SessionLauncherSelection | null): void {
       document.removeEventListener('keydown', onKeyDown);
+      releaseBackButtonLayer?.();
+      releaseBackButtonLayer = null;
       overlay.remove();
       resolve(result);
     }
@@ -256,6 +260,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     render();
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKeyDown);
+    releaseBackButtonLayer = registerBackButtonLayer(() => {
+      close(null);
+    });
     void loadDirectory(state.homePath);
 
     function launch(provider: LauncherProvider): void {

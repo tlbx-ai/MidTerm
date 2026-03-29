@@ -7,6 +7,7 @@
 
 import { t } from '../modules/i18n';
 import { escapeHtml } from './dom';
+import { registerBackButtonLayer } from '../modules/navigation/backButtonGuard';
 
 interface ConfirmOptions {
   title?: string;
@@ -27,6 +28,7 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    let releaseBackButtonLayer: (() => void) | null = null;
 
     const confirmClass = options?.danger ? 'btn-danger' : 'btn-primary';
     const titleText = options?.title ?? t('dialog.confirm');
@@ -53,6 +55,8 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
 
     function close(result: boolean): void {
       document.removeEventListener('keydown', onKey);
+      releaseBackButtonLayer?.();
+      releaseBackButtonLayer = null;
       overlay.remove();
       resolve(result);
     }
@@ -80,6 +84,9 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
 
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+    releaseBackButtonLayer = registerBackButtonLayer(() => {
+      close(false);
+    });
 
     // Focus the confirm button for keyboard accessibility
     const confirmBtn = overlay.querySelector<HTMLButtonElement>('[data-role="confirm"]');
@@ -94,6 +101,7 @@ export function showAlert(message: string, options?: AlertOptions): Promise<void
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    let releaseBackButtonLayer: (() => void) | null = null;
 
     const titleText = options?.title ?? t('dialog.info');
     const okText = options?.okLabel ?? t('dialog.ok');
@@ -117,6 +125,8 @@ export function showAlert(message: string, options?: AlertOptions): Promise<void
 
     function close(): void {
       document.removeEventListener('keydown', onKey);
+      releaseBackButtonLayer?.();
+      releaseBackButtonLayer = null;
       overlay.remove();
       resolve();
     }
@@ -140,6 +150,7 @@ export function showAlert(message: string, options?: AlertOptions): Promise<void
 
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+    releaseBackButtonLayer = registerBackButtonLayer(close);
 
     const okBtn = overlay.querySelector<HTMLButtonElement>('[data-role="ok"]');
     okBtn?.focus();
