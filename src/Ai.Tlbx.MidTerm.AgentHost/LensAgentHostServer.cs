@@ -545,6 +545,13 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                 Detail = lensEvent.Item.Detail,
                 Attachments = CloneAttachments(lensEvent.Item.Attachments)
             },
+            QuickSettingsUpdated = lensEvent.QuickSettingsUpdated is null ? null : new LensPulseQuickSettingsPayload
+            {
+                Model = lensEvent.QuickSettingsUpdated.Model,
+                Effort = lensEvent.QuickSettingsUpdated.Effort,
+                PlanMode = LensQuickSettings.NormalizePlanMode(lensEvent.QuickSettingsUpdated.PlanMode),
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(lensEvent.QuickSettingsUpdated.PermissionMode)
+            },
             RequestOpened = lensEvent.RequestOpened is null ? null : new LensPulseRequestOpenedPayload
             {
                 RequestType = lensEvent.RequestOpened.RequestType,

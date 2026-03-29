@@ -134,6 +134,20 @@ export interface LensPulseItemPayload {
   attachments: LensAttachmentReference[];
 }
 
+export interface LensPulseQuickSettingsPayload {
+  model?: string | null;
+  effort?: string | null;
+  planMode: string;
+  permissionMode: string;
+}
+
+export interface LensQuickSettingsSummary {
+  model?: string | null;
+  effort?: string | null;
+  planMode: string;
+  permissionMode: string;
+}
+
 export interface LensPulseRequestOpenedPayload {
   requestType: string;
   requestTypeLabel: string;
@@ -192,6 +206,7 @@ export interface LensPulseEvent {
   planCompleted?: LensPulsePlanCompletedPayload | null;
   diffUpdated?: LensPulseDiffUpdatedPayload | null;
   item?: LensPulseItemPayload | null;
+  quickSettingsUpdated?: LensPulseQuickSettingsPayload | null;
   requestOpened?: LensPulseRequestOpenedPayload | null;
   requestResolved?: LensPulseRequestResolvedPayload | null;
   userInputRequested?: LensPulseUserInputRequestedPayload | null;
@@ -214,6 +229,7 @@ export interface LensPulseDeltaResponse {
   session: LensPulseSessionSummary;
   thread: LensPulseThreadSummary;
   currentTurn: LensPulseTurnSummary;
+  quickSettings: LensQuickSettingsSummary;
   streams: LensPulseStreamsSummary;
   historyUpserts: LensPulseHistoryEntry[];
   historyRemovals: string[];
@@ -323,6 +339,7 @@ export interface LensPulseSnapshotResponse {
   session: LensPulseSessionSummary;
   thread: LensPulseThreadSummary;
   currentTurn: LensPulseTurnSummary;
+  quickSettings: LensQuickSettingsSummary;
   streams: LensPulseStreamsSummary;
   transcript: LensPulseHistoryEntry[];
   items: LensPulseItemSummary[];
@@ -338,6 +355,8 @@ export interface LensTurnRequest {
   text?: string | null;
   model?: string | null;
   effort?: string | null;
+  planMode?: string | null;
+  permissionMode?: string | null;
   attachments: LensAttachmentReference[];
 }
 
@@ -347,6 +366,7 @@ export interface LensTurnStartResponse {
   threadId: string;
   turnId?: string | null;
   status: string;
+  quickSettings: LensQuickSettingsSummary;
 }
 
 export interface LensUserInputAnswerRequest {

@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const sendInput = vi.fn();
 const pasteToTerminal = vi.fn();
 const isLensActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
-const createLensTurnRequest = vi.fn((text: string) => ({ text, attachments: [] }));
+const createLensTurnRequest = vi.fn((text: string, attachments: unknown[] = [], sessionId?: string) => ({
+  text,
+  attachments,
+  sessionId,
+}));
 const submitLensTurn = vi.fn();
 
 vi.mock('../comms', () => ({
@@ -37,10 +41,11 @@ describe('submitSessionText', () => {
     const { submitSessionText } = await import('./submit');
     await submitSessionText('s1', 'Summarize the diff.');
 
-    expect(createLensTurnRequest).toHaveBeenCalledWith('Summarize the diff.');
+    expect(createLensTurnRequest).toHaveBeenCalledWith('Summarize the diff.', [], 's1');
     expect(submitLensTurn).toHaveBeenCalledWith('s1', {
       text: 'Summarize the diff.',
       attachments: [],
+      sessionId: 's1',
     });
     expect(pasteToTerminal).not.toHaveBeenCalled();
     expect(sendInput).not.toHaveBeenCalled();

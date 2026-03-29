@@ -4,6 +4,9 @@ const sendLensTurn = vi.fn();
 const pasteToTerminal = vi.fn();
 const isLensActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
 const fetchMock = vi.fn();
+const submitLensTurn = vi.fn((sessionId: string, request: unknown) =>
+  sendLensTurn(sessionId, request),
+);
 
 class FakeFileReader {
   public result: string | ArrayBuffer | null = null;
@@ -37,9 +40,11 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../lens/input', () => ({
   isLensActiveSession,
-  createLensTurnRequest: (text: string, attachments: unknown[] = []) => ({
+  submitLensTurn,
+  createLensTurnRequest: (text: string, attachments: unknown[] = [], sessionId?: string) => ({
     text,
     attachments,
+    sessionId,
   }),
 }));
 
@@ -64,6 +69,7 @@ vi.mock('../logging', () => ({
 describe('fileDrop', () => {
   beforeEach(() => {
     sendLensTurn.mockReset();
+    submitLensTurn.mockClear();
     pasteToTerminal.mockReset();
     isLensActiveSession.mockReset();
     fetchMock.mockReset();

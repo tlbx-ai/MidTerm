@@ -4,6 +4,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal static class LensProviderRuntimeConfiguration
 {
+    private const string CodexYoloDefaultEnvironmentVariable = "MIDTERM_LENS_CODEX_YOLO_DEFAULT";
     private const string CodexEnvironmentVariablesEnvironmentVariable = "MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES";
     private const string ClaudeEnvironmentVariablesEnvironmentVariable = "MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES";
     private const string ClaudeDangerouslySkipPermissionsEnvironmentVariable = "MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS";
@@ -55,6 +56,14 @@ internal static class LensProviderRuntimeConfiguration
     {
         return bool.TryParse(
                    Environment.GetEnvironmentVariable(ClaudeDangerouslySkipPermissionsEnvironmentVariable),
+                   out var enabled) &&
+               enabled;
+    }
+
+    public static bool GetCodexYoloDefault()
+    {
+        return bool.TryParse(
+                   Environment.GetEnvironmentVariable(CodexYoloDefaultEnvironmentVariable),
                    out var enabled) &&
                enabled;
     }

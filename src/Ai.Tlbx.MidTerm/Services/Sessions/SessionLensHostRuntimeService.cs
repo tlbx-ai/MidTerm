@@ -1034,6 +1034,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
     private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)
     {
+        environment["MIDTERM_LENS_CODEX_YOLO_DEFAULT"] = settings.CodexYoloDefault ? "true" : "false";
         environment["MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
         environment["MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
         environment["MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =

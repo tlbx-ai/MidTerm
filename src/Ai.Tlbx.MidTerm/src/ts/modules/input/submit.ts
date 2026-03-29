@@ -6,7 +6,7 @@ const SESSION_TEXT_SUBMIT_DELAY_MS = 200;
 
 export async function submitSessionText(sessionId: string, text: string): Promise<void> {
   if (isLensActiveSession(sessionId)) {
-    await submitLensTurn(sessionId, createLensTurnRequest(text));
+    await submitLensTurn(sessionId, createLensTurnRequest(text, [], sessionId));
     return;
   }
 

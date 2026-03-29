@@ -16,6 +16,10 @@ import {
   type LensTurnFailedEventDetail,
   type LensTurnSubmittedEventDetail,
 } from '../lens/input';
+import {
+  removeLensQuickSettingsSessionState,
+  syncLensQuickSettingsFromSnapshot,
+} from '../lens/quickSettings';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdownFragment } from '../../utils/markdown';
 import type { LensAttachmentReference } from '../../api/types';
@@ -310,6 +314,7 @@ export function destroyAgentView(sessionId: string): void {
   }
 
   viewStates.delete(sessionId);
+  removeLensQuickSettingsSessionState(sessionId);
 }
 
 /**
@@ -880,6 +885,12 @@ function buildLensDebugScenario(
         startedAt: at(-90000),
         completedAt: currentTurnState === 'running' ? null : at(-5000),
       },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: scenario === 'workflow' ? 'on' : 'off',
+        permissionMode: 'manual',
+      },
       streams: {
         assistantText,
         reasoningText:
@@ -1440,6 +1451,7 @@ export function applyCanonicalLensDelta(
   snapshot.session = cloneSnapshotSessionSummary(delta.session);
   snapshot.thread = cloneSnapshotThreadSummary(delta.thread);
   snapshot.currentTurn = cloneSnapshotTurnSummary(delta.currentTurn);
+  snapshot.quickSettings = cloneSnapshotQuickSettingsSummary(delta.quickSettings);
   snapshot.streams = cloneSnapshotStreamsSummary(delta.streams);
   snapshot.items = upsertSnapshotItems(snapshot.items, delta.itemUpserts, delta.itemRemovals);
   snapshot.requests = upsertSnapshotRequests(
@@ -1676,6 +1688,17 @@ function cloneSnapshotTurnSummary(
   };
 }
 
+function cloneSnapshotQuickSettingsSummary(
+  quickSettings: LensPulseSnapshotResponse['quickSettings'] | null | undefined,
+): LensPulseSnapshotResponse['quickSettings'] {
+  return {
+    model: quickSettings?.model ?? null,
+    effort: quickSettings?.effort ?? null,
+    planMode: quickSettings?.planMode ?? 'off',
+    permissionMode: quickSettings?.permissionMode ?? 'manual',
+  };
+}
+
 function cloneSnapshotStreamsSummary(
   streams: LensPulseSnapshotResponse['streams'],
 ): LensPulseSnapshotResponse['streams'] {
@@ -1784,6 +1807,7 @@ function renderAgentView(
   streamConnected: boolean,
   state: SessionLensViewState,
 ): void {
+  syncLensQuickSettingsFromSnapshot(snapshot.sessionId, snapshot.provider, snapshot.quickSettings);
   syncAgentViewPresentation(panel, snapshot.provider);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncRequestInteractionState(state, snapshot.requests);

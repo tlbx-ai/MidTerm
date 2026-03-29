@@ -87,6 +87,13 @@ public static class LensEventCompaction
                 Detail = CompactItemDetail(source.Item.ItemType, source.Item.Detail),
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
+            QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensPulseQuickSettingsPayload
+            {
+                Model = source.QuickSettingsUpdated.Model,
+                Effort = source.QuickSettingsUpdated.Effort,
+                PlanMode = LensQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode)
+            },
             RequestOpened = source.RequestOpened is null ? null : new LensPulseRequestOpenedPayload
             {
                 RequestType = source.RequestOpened.RequestType,

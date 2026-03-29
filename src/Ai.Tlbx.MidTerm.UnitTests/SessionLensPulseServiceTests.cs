@@ -277,6 +277,59 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_TracksQuickSettingsUpdates()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "settings-1",
+            SessionId = "s-settings",
+            Provider = "codex",
+            ThreadId = "thread-settings",
+            CreatedAt = DateTimeOffset.Parse("2026-03-30T08:00:00Z"),
+            Type = "quick-settings.updated",
+            QuickSettingsUpdated = new LensPulseQuickSettingsPayload
+            {
+                Model = "gpt-5.4",
+                Effort = "high",
+                PlanMode = "on",
+                PermissionMode = "auto"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-settings-1",
+            SessionId = "s-settings",
+            Provider = "codex",
+            ThreadId = "thread-settings",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.Parse("2026-03-30T08:00:01Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload
+            {
+                Model = "gpt-5.4",
+                Effort = "high"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-settings");
+        var events = service.GetEvents("s-settings");
+
+        Assert.NotNull(snapshot);
+        Assert.Equal("gpt-5.4", snapshot!.QuickSettings.Model);
+        Assert.Equal("high", snapshot.QuickSettings.Effort);
+        Assert.Equal("on", snapshot.QuickSettings.PlanMode);
+        Assert.Equal("auto", snapshot.QuickSettings.PermissionMode);
+        Assert.Contains(
+            events.Events,
+            lensEvent => lensEvent.Type == "quick-settings.updated" &&
+                         lensEvent.QuickSettingsUpdated is not null &&
+                         lensEvent.QuickSettingsUpdated.PlanMode == "on" &&
+                         lensEvent.QuickSettingsUpdated.PermissionMode == "auto");
+    }
+
+    [Fact]
     public void GetSnapshot_ResetsStreamingBuffersWhenANewTurnStarts()
     {
         var service = new SessionLensPulseService();

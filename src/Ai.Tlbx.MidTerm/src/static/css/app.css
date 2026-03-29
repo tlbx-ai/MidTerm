@@ -7906,6 +7906,56 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
 }
 
+.smart-input-lens-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  width: 100%;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+.smart-input-lens-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.smart-input-lens-label {
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.smart-input-lens-control {
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--text-input-background, var(--bg-input));
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  outline: none;
+}
+
+.smart-input-lens-control:focus {
+  border-color: var(--accent-blue);
+}
+
+.smart-input-lens-model {
+  min-width: 160px;
+}
+
 /* Input row — flex row holding mic, autosend, textarea, send, toggle */
 .smart-input-row {
   display: flex;
@@ -11754,6 +11804,18 @@ body.shared-session-mode .session-tab-bar {
 }
 
 @media (max-width: 768px) {
+  .smart-input-lens-settings {
+    gap: 6px;
+  }
+
+  .smart-input-lens-field {
+    flex: 1 1 calc(50% - 3px);
+  }
+
+  .smart-input-lens-model {
+    min-width: 0;
+  }
+
   .smart-input-row {
     flex-wrap: wrap;
     align-items: center;

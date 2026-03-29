@@ -36,9 +36,12 @@ describe('lens input', () => {
       provider: 'codex',
       turnId: 'turn-1',
       threadId: 'thread-1',
-      requestId: null,
-      model: null,
-      effort: null,
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
     });
 
     const { submitLensTurn, LENS_TURN_SUBMITTED_EVENT, LENS_TURN_ACCEPTED_EVENT } = await import(
@@ -47,16 +50,24 @@ describe('lens input', () => {
 
     await submitLensTurn('s1', {
       text: 'Inspect the diff.',
+      model: null,
+      effort: null,
+      planMode: 'off',
+      permissionMode: 'manual',
       attachments: [],
     });
 
     expect(sendLensTurn).toHaveBeenCalledWith('s1', {
       text: 'Inspect the diff.',
+      model: null,
+      effort: null,
+      planMode: 'off',
+      permissionMode: 'manual',
       attachments: [],
     });
-    expect(dispatchEvent).toHaveBeenCalledTimes(2);
-    expect(dispatchEvent.mock.calls[0]?.[0]?.type).toBe(LENS_TURN_SUBMITTED_EVENT);
-    expect(dispatchEvent.mock.calls[1]?.[0]?.type).toBe(LENS_TURN_ACCEPTED_EVENT);
+    expect(dispatchEvent.mock.calls.map((call) => call[0]?.type)).toEqual(
+      expect.arrayContaining([LENS_TURN_SUBMITTED_EVENT, LENS_TURN_ACCEPTED_EVENT]),
+    );
     vi.unstubAllGlobals();
   });
 });

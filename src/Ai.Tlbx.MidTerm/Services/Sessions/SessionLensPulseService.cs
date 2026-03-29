@@ -529,6 +529,11 @@ public sealed partial class SessionLensPulseService
             ApplyTurnCompleted(state, lensEvent);
         }
 
+        if (lensEvent.QuickSettingsUpdated is not null)
+        {
+            ApplyQuickSettingsUpdate(state, lensEvent);
+        }
+
         if (lensEvent.ContentDelta is not null)
         {
             ApplyContentDelta(state, lensEvent);
@@ -605,6 +610,7 @@ public sealed partial class SessionLensPulseService
             Session = CloneSessionSummary(state.Session),
             Thread = CloneThreadSummary(state.Thread),
             CurrentTurn = CloneTurnSummary(state.CurrentTurn),
+            QuickSettings = CloneQuickSettingsSummary(state.QuickSettings),
             Streams = CloneStreamsSummary(state.Streams),
             Transcript = historySlice,
             Items = state.Items.Values
@@ -643,6 +649,7 @@ public sealed partial class SessionLensPulseService
             Session = CloneSessionSummary(state.Session),
             Thread = CloneThreadSummary(state.Thread),
             CurrentTurn = CloneTurnSummary(state.CurrentTurn),
+            QuickSettings = CloneQuickSettingsSummary(state.QuickSettings),
             Streams = CloneStreamsSummary(state.Streams),
             HistoryUpserts = historyIds
                 .Select(id => state.TranscriptEntries.TryGetValue(id, out var entry) ? CloneTranscriptEntry(entry) : null)
@@ -686,6 +693,8 @@ public sealed partial class SessionLensPulseService
         state.CurrentTurn.Effort = lensEvent.TurnStarted?.Effort;
         state.CurrentTurn.StartedAt = lensEvent.CreatedAt;
         state.CurrentTurn.CompletedAt = null;
+        state.QuickSettings.Model = LensQuickSettings.NormalizeOptionalValue(lensEvent.TurnStarted?.Model);
+        state.QuickSettings.Effort = LensQuickSettings.NormalizeOptionalValue(lensEvent.TurnStarted?.Effort);
     }
 
     private static void ApplyTurnCompleted(LensConversationState state, LensPulseEvent lensEvent)
@@ -704,6 +713,20 @@ public sealed partial class SessionLensPulseService
         }
 
         CompleteStreamingTranscriptEntries(state, lensEvent.TurnId);
+    }
+
+    private static void ApplyQuickSettingsUpdate(LensConversationState state, LensPulseEvent lensEvent)
+    {
+        var quickSettings = lensEvent.QuickSettingsUpdated;
+        if (quickSettings is null)
+        {
+            return;
+        }
+
+        state.QuickSettings.Model = LensQuickSettings.NormalizeOptionalValue(quickSettings.Model);
+        state.QuickSettings.Effort = LensQuickSettings.NormalizeOptionalValue(quickSettings.Effort);
+        state.QuickSettings.PlanMode = LensQuickSettings.NormalizePlanMode(quickSettings.PlanMode);
+        state.QuickSettings.PermissionMode = LensQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode);
     }
 
     private static void ApplyPlanUpdate(LensConversationState state, LensPulseEvent lensEvent)
@@ -1464,6 +1487,13 @@ public sealed partial class SessionLensPulseService
                 Detail = source.Item.Detail,
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
+            QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensPulseQuickSettingsPayload
+            {
+                Model = source.QuickSettingsUpdated.Model,
+                Effort = source.QuickSettingsUpdated.Effort,
+                PlanMode = LensQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode)
+            },
             RequestOpened = source.RequestOpened is null ? null : new LensPulseRequestOpenedPayload
             {
                 RequestType = source.RequestOpened.RequestType,
@@ -1503,6 +1533,7 @@ public sealed partial class SessionLensPulseService
             Session = CloneSessionSummary(source.Session),
             Thread = CloneThreadSummary(source.Thread),
             CurrentTurn = CloneTurnSummary(source.CurrentTurn),
+            QuickSettings = CloneQuickSettingsSummary(source.QuickSettings),
             Streams = CloneStreamsSummary(source.Streams),
             HistoryUpserts = source.HistoryUpserts.Select(CloneTranscriptEntry).ToList(),
             HistoryRemovals = [.. source.HistoryRemovals],
@@ -1572,6 +1603,17 @@ public sealed partial class SessionLensPulseService
             Effort = source.Effort,
             StartedAt = source.StartedAt,
             CompletedAt = source.CompletedAt
+        };
+    }
+
+    private static LensQuickSettingsSummary CloneQuickSettingsSummary(LensQuickSettingsSummary source)
+    {
+        return new LensQuickSettingsSummary
+        {
+            Model = LensQuickSettings.NormalizeOptionalValue(source.Model),
+            Effort = LensQuickSettings.NormalizeOptionalValue(source.Effort),
+            PlanMode = LensQuickSettings.NormalizePlanMode(source.PlanMode),
+            PermissionMode = LensQuickSettings.NormalizePermissionMode(source.PermissionMode)
         };
     }
 
@@ -2514,6 +2556,7 @@ public sealed partial class SessionLensPulseService
         public LensPulseSessionSummary Session { get; } = new();
         public LensPulseThreadSummary Thread { get; } = new();
         public LensPulseTurnSummary CurrentTurn { get; } = new();
+        public LensQuickSettingsSummary QuickSettings { get; } = new();
         public LensPulseStreamsSummary Streams { get; } = new();
         public Dictionary<string, LensPulseTranscriptEntry> TranscriptEntries { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, LensPulseItemSummary> Items { get; } = new(StringComparer.Ordinal);

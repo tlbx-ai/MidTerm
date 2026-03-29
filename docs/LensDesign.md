@@ -193,6 +193,18 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ## Composer And Ready State
 
 - The composer is the primary action control for Lens sessions.
+- Lens should expose a compact quick-settings strip in or immediately above the smart input bar for the settings users change in-flow most often.
+- The quick-settings strip should stay intentionally small and session-oriented.
+- The common quick-settings surface should cover:
+  - model
+  - effort
+  - plan mode
+  - permission or approval mode
+- These quick controls should be MidTerm-owned canonical settings, not scraped provider-native menus.
+- Provider-specific meaning and transport mapping for those controls must stay in the C# Lens runtime layer.
+- The TypeScript Lens UI should render the common quick-settings surface from the canonical model without branching deeply on provider quirks.
+- Quick-settings changes should be sticky for the active Lens session and may also reuse provider-level draft defaults where that improves flow.
+- Quick-settings must communicate whether they affect the next turn, the active session runtime, or require a thread/runtime reopen behind the scenes.
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
@@ -251,6 +263,9 @@ Status in this branch/work item:
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
+- implemented: Lens exposes a compact quick-settings strip in the smart input bar for model, effort, plan mode, and permission mode
+- implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
+- implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 
 Still mandatory after this work whenever Lens evolves:
 

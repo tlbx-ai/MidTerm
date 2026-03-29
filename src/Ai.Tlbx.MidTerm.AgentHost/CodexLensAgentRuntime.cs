@@ -39,6 +39,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private string? _providerThreadId;
     private string? _activeTurnId;
     private string? _remoteEndpoint;
+    private LensQuickSettingsSummary _quickSettings = new();
     private long _sequence;
     private int _nextRequestId;
 
@@ -169,6 +170,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         _providerThreadId = null;
         _activeTurnId = null;
         _remoteEndpoint = attachPoint?.Endpoint;
+        _quickSettings = CreateDefaultQuickSettings();
         _pendingApprovals.Clear();
         _pendingUserInputs.Clear();
 
@@ -187,7 +189,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         await SendCodexRequestAsync("initialize", BuildCodexInitializeRequest, ct).ConfigureAwait(false);
         await WriteCodexMessageAsync(BuildCodexInitializedNotification(), ct).ConfigureAwait(false);
-        var (threadResult, providerThreadId, resumedExistingThread) = await OpenThreadAsync(attach, ct).ConfigureAwait(false);
+        var (threadResult, providerThreadId, resumedExistingThread) = await OpenThreadAsync(
+            attach,
+            _quickSettings,
+            ct).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(providerThreadId))
         {
@@ -218,7 +223,8 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     StateLabel = "Active",
                     ProviderThreadId = providerThreadId
                 };
-            })
+            }),
+            CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.lens", "runtime.attach", attach)
         };
 
         return Accepted(command.CommandId, command.SessionId, events: events);
@@ -238,7 +244,16 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
-        var input = await CreateCodexTurnInputAsync(request, ct).ConfigureAwait(false);
+        var quickSettings = ResolveRequestedQuickSettings(request);
+        if (!string.Equals(
+                _quickSettings.PermissionMode,
+                quickSettings.PermissionMode,
+                StringComparison.Ordinal))
+        {
+            await ReopenThreadAsync(quickSettings.PermissionMode, ct).ConfigureAwait(false);
+        }
+
+        var input = await CreateCodexTurnInputAsync(request, quickSettings.PlanMode, ct).ConfigureAwait(false);
         if (input.Count == 0)
         {
             throw new InvalidOperationException("Lens turn input must include text or attachments.");
@@ -246,9 +261,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         var turnResult = await SendCodexRequestAsync(
             "turn/start",
-            id => BuildCodexTurnStartRequest(id, _providerThreadId!, input, request.Model, request.Effort),
+            id => BuildCodexTurnStartRequest(id, _providerThreadId!, input, quickSettings.Model, quickSettings.Effort),
             ct).ConfigureAwait(false);
 
+        _quickSettings = quickSettings;
         _activeTurnId = GetString(turnResult, "turn", "id");
         return new HostCommandOutcome
         {
@@ -269,9 +285,20 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     Provider = Provider,
                     ThreadId = _providerThreadId!,
                     TurnId = _activeTurnId,
-                    Status = "accepted"
+                    Status = "accepted",
+                    QuickSettings = new LensQuickSettingsSummary
+                    {
+                        Model = _quickSettings.Model,
+                        Effort = _quickSettings.Effort,
+                        PlanMode = _quickSettings.PlanMode,
+                        PermissionMode = _quickSettings.PermissionMode
+                    }
                 }
-            }
+            },
+            Events =
+            [
+                CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.lens", "turn.start", request)
+            ]
         };
     }
 
@@ -1118,6 +1145,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
     private async Task<(JsonElement ThreadResult, string? ProviderThreadId, bool ResumedExistingThread)> OpenThreadAsync(
         LensAttachRuntimeRequest attach,
+        LensQuickSettingsSummary quickSettings,
         CancellationToken ct)
     {
         var resumeThreadId = attach.ResumeThreadId;
@@ -1132,7 +1160,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         {
             threadResult = await SendCodexRequestAsync(
                 "thread/resume",
-                id => BuildCodexThreadResumeRequest(id, resumeThreadId, attach.WorkingDirectory),
+                id => BuildCodexThreadResumeRequest(id, resumeThreadId, attach.WorkingDirectory, quickSettings.PermissionMode),
                 ct).ConfigureAwait(false);
             resumedExistingThread = true;
         }
@@ -1140,7 +1168,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         {
             threadResult = await SendCodexRequestAsync(
                 "thread/start",
-                id => BuildCodexThreadStartRequest(id, attach.WorkingDirectory),
+                id => BuildCodexThreadStartRequest(id, attach.WorkingDirectory, quickSettings.PermissionMode),
                 ct).ConfigureAwait(false);
             resumedExistingThread = false;
         }
@@ -1271,7 +1299,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         });
     }
 
-    private static string BuildCodexThreadStartRequest(string id, string cwd)
+    private static string BuildCodexThreadStartRequest(string id, string cwd, string permissionMode)
     {
         return BuildJsonString(writer =>
         {
@@ -1282,15 +1310,19 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             writer.WritePropertyName("params");
             writer.WriteStartObject();
             writer.WriteString("cwd", cwd);
-            writer.WriteString("approvalPolicy", "never");
-            writer.WriteString("sandbox", "danger-full-access");
+            writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
+            writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("experimentalRawEvents", false);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
     }
 
-    private static string BuildCodexThreadResumeRequest(string id, string threadId, string cwd)
+    private static string BuildCodexThreadResumeRequest(
+        string id,
+        string threadId,
+        string cwd,
+        string permissionMode)
     {
         return BuildJsonString(writer =>
         {
@@ -1302,8 +1334,8 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             writer.WriteStartObject();
             writer.WriteString("threadId", threadId);
             writer.WriteString("cwd", cwd);
-            writer.WriteString("approvalPolicy", "never");
-            writer.WriteString("sandbox", "danger-full-access");
+            writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
+            writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("persistExtendedHistory", false);
             writer.WriteEndObject();
             writer.WriteEndObject();
@@ -1461,7 +1493,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         });
     }
 
-    private static async Task<List<CodexTurnInputEntry>> CreateCodexTurnInputAsync(LensTurnRequest request, CancellationToken ct)
+    private static async Task<List<CodexTurnInputEntry>> CreateCodexTurnInputAsync(
+        LensTurnRequest request,
+        string? planMode,
+        CancellationToken ct)
     {
         var fileReferences = new List<string>();
         var imageEntries = new List<CodexTurnInputEntry>();
@@ -1498,14 +1533,17 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             fileReferences.Add(attachment.Path);
         }
 
-        var input = CreateCodexTurnInput(request.Text, fileReferences);
+        var input = CreateCodexTurnInput(request.Text, fileReferences, planMode);
         input.AddRange(imageEntries);
         return input;
     }
 
-    private static List<CodexTurnInputEntry> CreateCodexTurnInput(string? text, IReadOnlyList<string> fileReferences)
+    private static List<CodexTurnInputEntry> CreateCodexTurnInput(
+        string? text,
+        IReadOnlyList<string> fileReferences,
+        string? planMode)
     {
-        var effectiveText = (text ?? string.Empty).Trim();
+        var effectiveText = LensQuickSettings.ApplyPlanModePrompt(text, planMode);
         if (fileReferences.Count > 0)
         {
             var fileReferenceBlock = new StringBuilder();
@@ -1527,11 +1565,105 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             input.Add(new CodexTurnInputEntry
             {
                 Type = "text",
-                Text = effectiveText
+                Text = effectiveText.Trim()
             });
         }
 
         return input;
+    }
+
+    private LensQuickSettingsSummary CreateDefaultQuickSettings()
+    {
+        var defaultPermissionMode = LensProviderRuntimeConfiguration.GetCodexYoloDefault()
+            ? LensQuickSettings.PermissionModeAuto
+            : LensQuickSettings.PermissionModeManual;
+        return LensQuickSettings.CreateSummary(
+            null,
+            null,
+            LensQuickSettings.PlanModeOff,
+            defaultPermissionMode,
+            defaultPermissionMode);
+    }
+
+    private LensQuickSettingsSummary ResolveRequestedQuickSettings(LensTurnRequest request)
+    {
+        var defaultPermissionMode = LensProviderRuntimeConfiguration.GetCodexYoloDefault()
+            ? LensQuickSettings.PermissionModeAuto
+            : LensQuickSettings.PermissionModeManual;
+        return LensQuickSettings.CreateSummary(
+            request.Model,
+            request.Effort,
+            request.PlanMode,
+            request.PermissionMode,
+            defaultPermissionMode);
+    }
+
+    private async Task ReopenThreadAsync(string permissionMode, CancellationToken ct)
+    {
+        EnsureAttached();
+        if (string.IsNullOrWhiteSpace(_providerThreadId) || string.IsNullOrWhiteSpace(_workingDirectory))
+        {
+            return;
+        }
+
+        var threadResult = await SendCodexRequestAsync(
+            "thread/resume",
+            id => BuildCodexThreadResumeRequest(id, _providerThreadId!, _workingDirectory!, permissionMode),
+            ct).ConfigureAwait(false);
+        var resumedThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
+        if (!string.IsNullOrWhiteSpace(resumedThreadId))
+        {
+            _providerThreadId = resumedThreadId;
+        }
+    }
+
+    private LensHostEventEnvelope CreateQuickSettingsUpdatedEvent(
+        LensQuickSettingsSummary quickSettings,
+        string source,
+        string? method,
+        object? payload)
+    {
+        var rawPayload = SerializeQuickSettingsRawPayload(payload);
+        return CreateEvent("quick-settings.updated", null, null, null, source, method, rawPayload, lensEvent =>
+        {
+            lensEvent.QuickSettingsUpdated = LensQuickSettings.ToPayload(quickSettings);
+        });
+    }
+
+    private static JsonElement SerializeQuickSettingsRawPayload(object? payload)
+    {
+        return payload switch
+        {
+            null => default,
+            JsonElement element => element,
+            LensAttachRuntimeRequest attach => JsonSerializer.SerializeToElement(
+                attach,
+                LensHostJsonContext.Default.LensAttachRuntimeRequest),
+            LensTurnRequest request => JsonSerializer.SerializeToElement(
+                request,
+                LensHostJsonContext.Default.LensTurnRequest),
+            _ => default
+        };
+    }
+
+    private static string ResolveCodexApprovalPolicy(string permissionMode)
+    {
+        return string.Equals(
+            LensQuickSettings.NormalizePermissionMode(permissionMode),
+            LensQuickSettings.PermissionModeAuto,
+            StringComparison.Ordinal)
+            ? "never"
+            : "on-request";
+    }
+
+    private static string ResolveCodexSandbox(string permissionMode)
+    {
+        return string.Equals(
+            LensQuickSettings.NormalizePermissionMode(permissionMode),
+            LensQuickSettings.PermissionModeAuto,
+            StringComparison.Ordinal)
+            ? "danger-full-access"
+            : "workspace-write";
     }
 
     private static string ResolveAttachmentMimeType(LensAttachmentReference attachment)

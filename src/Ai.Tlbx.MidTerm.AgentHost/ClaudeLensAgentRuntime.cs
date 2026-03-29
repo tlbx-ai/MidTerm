@@ -43,6 +43,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     private string? _activeTurnId;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
+    private LensQuickSettingsSummary _quickSettings = new();
     private PendingClaudeUserInput? _pendingUserInput;
     private bool _turnStarted;
     private bool _interruptRequested;
@@ -109,6 +110,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
+        _quickSettings = CreateDefaultQuickSettings();
         if (!string.IsNullOrWhiteSpace(attach.ResumeThreadId))
         {
             _providerThreadId = attach.ResumeThreadId;
@@ -133,7 +135,8 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                     StateLabel = "Ready",
                     Reason = "Claude Lens runtime is ready for the next turn."
                 };
-            })
+            }),
+            CreateQuickSettingsUpdatedEvent(_quickSettings, "mtagenthost.claude", "runtime.attach", attach)
         };
 
         if (!string.IsNullOrWhiteSpace(_providerThreadId))
@@ -176,7 +179,8 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
-        var prompt = BuildPromptInput(request, out var addDirectories);
+        var quickSettings = ResolveRequestedQuickSettings(request);
+        var prompt = BuildPromptInput(request, quickSettings.PlanMode, out var addDirectories);
         if (string.IsNullOrWhiteSpace(prompt))
         {
             throw new InvalidOperationException("Lens turn input must include text or attachments.");
@@ -185,15 +189,22 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         await DisposeProcessAsync().ConfigureAwait(false);
 
         _activeTurnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        _activeTurnModel = request.Model;
-        _activeTurnEffort = request.Effort;
+        _activeTurnModel = quickSettings.Model;
+        _activeTurnEffort = quickSettings.Effort;
+        _quickSettings = quickSettings;
         _turnStarted = false;
         _interruptRequested = false;
         _pendingUserInput = null;
         _blocks.Clear();
         _tools.Clear();
 
-        await StartClaudeProcessAsync(prompt, addDirectories, _activeTurnModel, _activeTurnEffort, ct).ConfigureAwait(false);
+        await StartClaudeProcessAsync(
+            prompt,
+            addDirectories,
+            _activeTurnModel,
+            _activeTurnEffort,
+            _quickSettings.PermissionMode,
+            ct).ConfigureAwait(false);
 
         return new HostCommandOutcome
         {
@@ -214,9 +225,20 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                     Provider = Provider,
                     ThreadId = _providerThreadId ?? _sessionId ?? command.SessionId,
                     TurnId = _activeTurnId,
-                    Status = "accepted"
+                    Status = "accepted",
+                    QuickSettings = new LensQuickSettingsSummary
+                    {
+                        Model = _quickSettings.Model,
+                        Effort = _quickSettings.Effort,
+                        PlanMode = _quickSettings.PlanMode,
+                        PermissionMode = _quickSettings.PermissionMode
+                    }
                 }
-            }
+            },
+            Events =
+            [
+                CreateQuickSettingsUpdatedEvent(_quickSettings, "midterm.lens", "turn.start", request)
+            ]
         };
     }
 
@@ -241,7 +263,13 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
 
         try
         {
-            await StartClaudeProcessAsync(continuationPrompt, [], _activeTurnModel, _activeTurnEffort, ct).ConfigureAwait(false);
+            await StartClaudeProcessAsync(
+                continuationPrompt,
+                [],
+                _activeTurnModel,
+                _activeTurnEffort,
+                _quickSettings.PermissionMode,
+                ct).ConfigureAwait(false);
         }
         catch
         {
@@ -910,11 +938,15 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         IReadOnlyList<string> addDirectories,
         string? model,
         string? effort,
+        string permissionMode,
         CancellationToken ct)
     {
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(_binaryPath!, BuildArguments(model, effort, addDirectories), _workingDirectory!),
+            StartInfo = CreateProcessStartInfo(
+                _binaryPath!,
+                BuildArguments(model, effort, permissionMode, addDirectories),
+                _workingDirectory!),
             EnableRaisingEvents = true
         };
         LensProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, _userProfileDirectory);
@@ -977,10 +1009,13 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }
     }
 
-    private static string BuildPromptInput(LensTurnRequest request, out List<string> addDirectories)
+    private static string BuildPromptInput(
+        LensTurnRequest request,
+        string? planMode,
+        out List<string> addDirectories)
     {
         addDirectories = [];
-        var text = (request.Text ?? string.Empty).Trim();
+        var text = LensQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
         if (request.Attachments.Count == 0)
         {
             return text;
@@ -1020,7 +1055,11 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         return builder.ToString().Trim();
     }
 
-    private string BuildArguments(string? model, string? effort, IReadOnlyList<string> addDirectories)
+    private string BuildArguments(
+        string? model,
+        string? effort,
+        string permissionMode,
+        IReadOnlyList<string> addDirectories)
     {
         var args = new List<string>
         {
@@ -1033,7 +1072,10 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             MidTermUserInputBridgePrompt
         };
 
-        if (LensProviderRuntimeConfiguration.GetClaudeDangerouslySkipPermissionsDefault())
+        if (string.Equals(
+                LensQuickSettings.NormalizePermissionMode(permissionMode),
+                LensQuickSettings.PermissionModeAuto,
+                StringComparison.Ordinal))
         {
             args.Add("--dangerously-skip-permissions");
         }
@@ -1063,6 +1105,61 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }
 
         return string.Join(" ", args.Select(QuoteArgument));
+    }
+
+    private LensQuickSettingsSummary CreateDefaultQuickSettings()
+    {
+        var defaultPermissionMode = LensProviderRuntimeConfiguration.GetClaudeDangerouslySkipPermissionsDefault()
+            ? LensQuickSettings.PermissionModeAuto
+            : LensQuickSettings.PermissionModeManual;
+        return LensQuickSettings.CreateSummary(
+            null,
+            null,
+            LensQuickSettings.PlanModeOff,
+            defaultPermissionMode,
+            defaultPermissionMode);
+    }
+
+    private LensQuickSettingsSummary ResolveRequestedQuickSettings(LensTurnRequest request)
+    {
+        var defaultPermissionMode = LensProviderRuntimeConfiguration.GetClaudeDangerouslySkipPermissionsDefault()
+            ? LensQuickSettings.PermissionModeAuto
+            : LensQuickSettings.PermissionModeManual;
+        return LensQuickSettings.CreateSummary(
+            request.Model,
+            request.Effort,
+            request.PlanMode,
+            request.PermissionMode,
+            defaultPermissionMode);
+    }
+
+    private LensHostEventEnvelope CreateQuickSettingsUpdatedEvent(
+        LensQuickSettingsSummary quickSettings,
+        string source,
+        string? method,
+        object? payload)
+    {
+        var rawPayload = SerializeQuickSettingsRawPayload(payload);
+        return CreateEvent("quick-settings.updated", null, null, null, source, method, rawPayload, lensEvent =>
+        {
+            lensEvent.QuickSettingsUpdated = LensQuickSettings.ToPayload(quickSettings);
+        });
+    }
+
+    private static JsonElement SerializeQuickSettingsRawPayload(object? payload)
+    {
+        return payload switch
+        {
+            null => default,
+            JsonElement element => element,
+            LensAttachRuntimeRequest attach => JsonSerializer.SerializeToElement(
+                attach,
+                LensHostJsonContext.Default.LensAttachRuntimeRequest),
+            LensTurnRequest request => JsonSerializer.SerializeToElement(
+                request,
+                LensHostJsonContext.Default.LensTurnRequest),
+            _ => default
+        };
     }
 
     private static List<LensPulseAnsweredQuestion> NormalizeResolvedAnswers(

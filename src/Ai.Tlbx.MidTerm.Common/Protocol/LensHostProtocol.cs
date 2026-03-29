@@ -29,6 +29,7 @@ public sealed class LensPulseEvent
     public LensPulsePlanCompletedPayload? PlanCompleted { get; set; }
     public LensPulseDiffUpdatedPayload? DiffUpdated { get; set; }
     public LensPulseItemPayload? Item { get; set; }
+    public LensPulseQuickSettingsPayload? QuickSettingsUpdated { get; set; }
     public LensPulseRequestOpenedPayload? RequestOpened { get; set; }
     public LensPulseRequestResolvedPayload? RequestResolved { get; set; }
     public LensPulseUserInputRequestedPayload? UserInputRequested { get; set; }
@@ -101,6 +102,14 @@ public sealed class LensPulseItemPayload
     public List<LensAttachmentReference> Attachments { get; set; } = [];
 }
 
+public sealed class LensPulseQuickSettingsPayload
+{
+    public string? Model { get; set; }
+    public string? Effort { get; set; }
+    public string PlanMode { get; set; } = LensQuickSettings.PlanModeOff;
+    public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
+}
+
 public sealed class LensPulseRequestOpenedPayload
 {
     public string RequestType { get; set; } = string.Empty;
@@ -168,6 +177,7 @@ public sealed class LensPulseDeltaResponse
     public LensPulseSessionSummary Session { get; set; } = new();
     public LensPulseThreadSummary Thread { get; set; } = new();
     public LensPulseTurnSummary CurrentTurn { get; set; } = new();
+    public LensQuickSettingsSummary QuickSettings { get; set; } = new();
     public LensPulseStreamsSummary Streams { get; set; } = new();
     public List<LensPulseTranscriptEntry> HistoryUpserts { get; set; } = [];
     public List<string> HistoryRemovals { get; set; } = [];
@@ -192,6 +202,7 @@ public sealed class LensPulseSnapshotResponse
     public LensPulseSessionSummary Session { get; set; } = new();
     public LensPulseThreadSummary Thread { get; set; } = new();
     public LensPulseTurnSummary CurrentTurn { get; set; } = new();
+    public LensQuickSettingsSummary QuickSettings { get; set; } = new();
     public LensPulseStreamsSummary Streams { get; set; } = new();
     public List<LensPulseTranscriptEntry> Transcript { get; set; } = [];
     public List<LensPulseItemSummary> Items { get; set; } = [];
@@ -224,6 +235,87 @@ public sealed class LensPulseTurnSummary
     public string? Effort { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+}
+
+public static class LensQuickSettings
+{
+    public const string PlanModeOff = "off";
+    public const string PlanModeOn = "on";
+    public const string PermissionModeManual = "manual";
+    public const string PermissionModeAuto = "auto";
+
+    public static string NormalizePlanMode(string? value)
+    {
+        return string.Equals(value?.Trim(), PlanModeOn, StringComparison.OrdinalIgnoreCase)
+            ? PlanModeOn
+            : PlanModeOff;
+    }
+
+    public static string NormalizePermissionMode(string? value)
+    {
+        return string.Equals(value?.Trim(), PermissionModeAuto, StringComparison.OrdinalIgnoreCase)
+            ? PermissionModeAuto
+            : PermissionModeManual;
+    }
+
+    public static string? NormalizeOptionalValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    public static LensQuickSettingsSummary CreateSummary(
+        string? model,
+        string? effort,
+        string? planMode,
+        string? permissionMode,
+        string? defaultPermissionMode = null)
+    {
+        return new LensQuickSettingsSummary
+        {
+            Model = NormalizeOptionalValue(model),
+            Effort = NormalizeOptionalValue(effort),
+            PlanMode = NormalizePlanMode(planMode),
+            PermissionMode = NormalizePermissionMode(
+                string.IsNullOrWhiteSpace(permissionMode) ? defaultPermissionMode : permissionMode)
+        };
+    }
+
+    public static LensPulseQuickSettingsPayload ToPayload(LensQuickSettingsSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+
+        return new LensPulseQuickSettingsPayload
+        {
+            Model = NormalizeOptionalValue(summary.Model),
+            Effort = NormalizeOptionalValue(summary.Effort),
+            PlanMode = NormalizePlanMode(summary.PlanMode),
+            PermissionMode = NormalizePermissionMode(summary.PermissionMode)
+        };
+    }
+
+    public static string ApplyPlanModePrompt(string? text, string? planMode)
+    {
+        var prompt = NormalizeOptionalValue(text);
+        if (!string.Equals(NormalizePlanMode(planMode), PlanModeOn, StringComparison.Ordinal))
+        {
+            return prompt ?? string.Empty;
+        }
+
+        const string planInstruction =
+            "MidTerm plan mode is enabled for this turn. Start with a concise step-by-step plan, keep it updated while you work, and use native planning capabilities when available.";
+
+        return string.IsNullOrWhiteSpace(prompt)
+            ? planInstruction
+            : planInstruction + Environment.NewLine + Environment.NewLine + prompt;
+    }
+}
+
+public sealed class LensQuickSettingsSummary
+{
+    public string? Model { get; set; }
+    public string? Effort { get; set; }
+    public string PlanMode { get; set; } = LensQuickSettings.PlanModeOff;
+    public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
 }
 
 public sealed class LensPulseStreamsSummary
@@ -295,6 +387,8 @@ public sealed class LensTurnRequest
     public string? Text { get; set; }
     public string? Model { get; set; }
     public string? Effort { get; set; }
+    public string? PlanMode { get; set; }
+    public string? PermissionMode { get; set; }
     public List<LensAttachmentReference> Attachments { get; set; } = [];
 }
 
@@ -313,6 +407,7 @@ public sealed class LensTurnStartResponse
     public string ThreadId { get; set; } = string.Empty;
     public string? TurnId { get; set; }
     public string Status { get; set; } = "accepted";
+    public LensQuickSettingsSummary QuickSettings { get; set; } = new();
 }
 
 public sealed class LensInterruptRequest
@@ -549,11 +644,13 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensPulsePlanCompletedPayload))]
 [JsonSerializable(typeof(LensPulseDiffUpdatedPayload))]
 [JsonSerializable(typeof(LensPulseItemPayload))]
+[JsonSerializable(typeof(LensPulseQuickSettingsPayload))]
 [JsonSerializable(typeof(LensPulseRequestOpenedPayload))]
 [JsonSerializable(typeof(LensPulseRequestResolvedPayload))]
 [JsonSerializable(typeof(LensPulseUserInputRequestedPayload))]
 [JsonSerializable(typeof(LensPulseUserInputResolvedPayload))]
 [JsonSerializable(typeof(LensPulseRuntimeMessagePayload))]
+[JsonSerializable(typeof(LensQuickSettingsSummary))]
 [JsonSerializable(typeof(LensPulseQuestion))]
 [JsonSerializable(typeof(List<LensPulseQuestion>))]
 [JsonSerializable(typeof(LensPulseQuestionOption))]

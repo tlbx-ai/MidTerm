@@ -16,6 +16,12 @@ import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../
 import { t } from '../i18n';
 import { submitSessionText } from '../input/submit';
 import { isLensActiveSession } from '../lens/input';
+import {
+  LENS_QUICK_SETTINGS_CHANGED_EVENT,
+  getLensQuickSettingsDraft,
+  getLensQuickSettingsProvider,
+  setLensQuickSettingsDraft,
+} from '../lens/quickSettings';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop } from '../terminal';
@@ -31,6 +37,11 @@ let isRecording = false;
 let touchControllerOriginalParent: HTMLElement | null = null;
 let touchControllerOriginalNext: Node | null = null;
 let lastSessionId: string | null = null;
+let lensQuickSettingsRow: HTMLDivElement | null = null;
+let lensModelInput: HTMLInputElement | null = null;
+let lensEffortSelect: HTMLSelectElement | null = null;
+let lensPlanSelect: HTMLSelectElement | null = null;
+let lensPermissionSelect: HTMLSelectElement | null = null;
 const MAX_TEXTAREA_LINES = 5;
 const sessionDrafts = new Map<string, string>();
 
@@ -93,6 +104,12 @@ export function initSmartInput(): void {
   onDevModeChanged(() => {
     syncVoiceInputAvailability();
   });
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener(LENS_QUICK_SETTINGS_CHANGED_EVENT, () => {
+      syncLensQuickSettingsControls();
+    });
+  }
 
   onTabActivated('agent', (sessionId) => {
     if ($activeSessionId.get() === sessionId) {
@@ -183,6 +200,7 @@ function showDockedBar(focusTextarea: boolean = false): void {
     applyDraftToTextarea(activeTextarea, $activeSessionId.get());
     resizeTextarea(activeTextarea);
   }
+  syncLensQuickSettingsControls();
   syncVoiceInputAvailability();
   embedTouchController(dockedBar);
   if (focusTextarea) {
@@ -227,8 +245,106 @@ function releaseTouchController(): void {
 }
 
 function createInputElements(): {
+  lensSettingsRow: HTMLDivElement;
   inputRow: HTMLDivElement;
 } {
+  const nextLensQuickSettingsRow = document.createElement('div');
+  nextLensQuickSettingsRow.className = 'smart-input-lens-settings';
+  nextLensQuickSettingsRow.hidden = true;
+  lensQuickSettingsRow = nextLensQuickSettingsRow;
+
+  lensModelInput = document.createElement('input');
+  lensModelInput.className = 'smart-input-lens-control smart-input-lens-model';
+  lensModelInput.type = 'text';
+  lensModelInput.placeholder = 'Default model';
+  lensModelInput.autocomplete = 'off';
+  lensModelInput.spellcheck = false;
+  lensModelInput.addEventListener('input', () => {
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || !isLensActiveSession(sessionId)) {
+      return;
+    }
+
+    setLensQuickSettingsDraft(sessionId, {
+      model: lensModelInput?.value ?? null,
+    });
+  });
+
+  lensEffortSelect = document.createElement('select');
+  lensEffortSelect.className = 'smart-input-lens-control';
+  for (const [value, label] of [
+    ['', 'Default'],
+    ['low', 'Low'],
+    ['medium', 'Medium'],
+    ['high', 'High'],
+  ] as const) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    lensEffortSelect.appendChild(option);
+  }
+  lensEffortSelect.addEventListener('change', () => {
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || !isLensActiveSession(sessionId)) {
+      return;
+    }
+
+    setLensQuickSettingsDraft(sessionId, {
+      effort: lensEffortSelect?.value ?? null,
+    });
+  });
+
+  lensPlanSelect = document.createElement('select');
+  lensPlanSelect.className = 'smart-input-lens-control';
+  for (const [value, label] of [
+    ['off', 'Plan off'],
+    ['on', 'Plan on'],
+  ] as const) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    lensPlanSelect.appendChild(option);
+  }
+  lensPlanSelect.addEventListener('change', () => {
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || !isLensActiveSession(sessionId)) {
+      return;
+    }
+
+    setLensQuickSettingsDraft(sessionId, {
+      planMode: lensPlanSelect?.value ?? 'off',
+    });
+  });
+
+  lensPermissionSelect = document.createElement('select');
+  lensPermissionSelect.className = 'smart-input-lens-control';
+  for (const [value, label] of [
+    ['manual', 'Manual'],
+    ['auto', 'Auto'],
+  ] as const) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    lensPermissionSelect.appendChild(option);
+  }
+  lensPermissionSelect.addEventListener('change', () => {
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || !isLensActiveSession(sessionId)) {
+      return;
+    }
+
+    setLensQuickSettingsDraft(sessionId, {
+      permissionMode: lensPermissionSelect?.value ?? 'manual',
+    });
+  });
+
+  nextLensQuickSettingsRow.appendChild(createLensQuickSettingsField('Model', lensModelInput));
+  nextLensQuickSettingsRow.appendChild(createLensQuickSettingsField('Effort', lensEffortSelect));
+  nextLensQuickSettingsRow.appendChild(createLensQuickSettingsField('Plan', lensPlanSelect));
+  nextLensQuickSettingsRow.appendChild(
+    createLensQuickSettingsField('Permissions', lensPermissionSelect),
+  );
+
   const inputRow = document.createElement('div');
   inputRow.className = 'smart-input-row';
 
@@ -372,18 +488,20 @@ function createInputElements(): {
   inputRow.appendChild(sendBtn);
   inputRow.appendChild(toggleKeysBtn);
 
-  return { inputRow };
+  return { lensSettingsRow: nextLensQuickSettingsRow, inputRow };
 }
 
 function createDockedDOM(): void {
   dockedBar = document.createElement('div');
   dockedBar.className = 'smart-input-docked';
 
-  const { inputRow } = createInputElements();
+  const { lensSettingsRow, inputRow } = createInputElements();
+  dockedBar.appendChild(lensSettingsRow);
   dockedBar.appendChild(inputRow);
   relocateDockedBar();
   updateAutoSendVisibility();
   syncVoiceInputAvailability();
+  syncLensQuickSettingsControls();
 }
 
 function relocateDockedBar(): void {
@@ -449,6 +567,7 @@ function syncDraftForActiveSession(): void {
   if (activeTextarea) {
     applyDraftToTextarea(activeTextarea, sessionId);
   }
+  syncLensQuickSettingsControls();
 }
 
 /**
@@ -557,6 +676,73 @@ function updateAutoSendVisibility(): void {
   for (const container of [dockedBar]) {
     if (!container) continue;
     container.classList.toggle('autosend-active', autoSendEnabled && canUseSmartInputVoice());
+  }
+}
+
+function createLensQuickSettingsField(
+  labelText: string,
+  control: HTMLInputElement | HTMLSelectElement,
+): HTMLLabelElement {
+  const field = document.createElement('label');
+  field.className = 'smart-input-lens-field';
+
+  const label = document.createElement('span');
+  label.className = 'smart-input-lens-label';
+  label.textContent = labelText;
+
+  field.appendChild(label);
+  field.appendChild(control);
+  return field;
+}
+
+function syncLensQuickSettingsControls(): void {
+  if (
+    !lensQuickSettingsRow ||
+    !lensModelInput ||
+    !lensEffortSelect ||
+    !lensPlanSelect ||
+    !lensPermissionSelect
+  ) {
+    return;
+  }
+
+  const sessionId = $activeSessionId.get();
+  if (!sessionId || !isLensActiveSession(sessionId)) {
+    lensQuickSettingsRow.hidden = true;
+    return;
+  }
+
+  const provider = getLensQuickSettingsProvider(sessionId);
+  const draft = getLensQuickSettingsDraft(sessionId);
+  lensQuickSettingsRow.hidden = false;
+  lensQuickSettingsRow.dataset.provider = provider ?? '';
+
+  const modelPlaceholder =
+    provider === 'claude'
+      ? 'Default Claude model'
+      : provider === 'codex'
+        ? 'Default Codex model'
+        : 'Default model';
+  if (lensModelInput.placeholder !== modelPlaceholder) {
+    lensModelInput.placeholder = modelPlaceholder;
+  }
+
+  const modelValue = draft.model ?? '';
+  if (lensModelInput.value !== modelValue) {
+    lensModelInput.value = modelValue;
+  }
+
+  const effortValue = draft.effort ?? '';
+  if (lensEffortSelect.value !== effortValue) {
+    lensEffortSelect.value = effortValue;
+  }
+
+  if (lensPlanSelect.value !== draft.planMode) {
+    lensPlanSelect.value = draft.planMode;
+  }
+
+  if (lensPermissionSelect.value !== draft.permissionMode) {
+    lensPermissionSelect.value = draft.permissionMode;
   }
 }
 

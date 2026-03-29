@@ -21,6 +21,8 @@ public sealed class LensHostProtocolTests
                 Text = "Inspect the diff and continue.",
                 Model = "gpt-5.3-codex",
                 Effort = "medium",
+                PlanMode = LensQuickSettings.PlanModeOn,
+                PermissionMode = LensQuickSettings.PermissionModeAuto,
                 Attachments =
                 [
                     new LensAttachmentReference
@@ -43,6 +45,8 @@ public sealed class LensHostProtocolTests
         Assert.NotNull(roundTrip.StartTurn);
         Assert.Equal("Inspect the diff and continue.", roundTrip.StartTurn!.Text);
         Assert.Equal("gpt-5.3-codex", roundTrip.StartTurn.Model);
+        Assert.Equal(LensQuickSettings.PlanModeOn, roundTrip.StartTurn.PlanMode);
+        Assert.Equal(LensQuickSettings.PermissionModeAuto, roundTrip.StartTurn.PermissionMode);
         Assert.Single(roundTrip.StartTurn.Attachments);
         Assert.Equal("image", roundTrip.StartTurn.Attachments[0].Kind);
         Assert.Equal("Q:/repo/.midterm/uploads/screen.png", roundTrip.StartTurn.Attachments[0].Path);
@@ -147,6 +151,10 @@ public sealed class LensHostProtocolTests
         Assert.Equal("1. inspect\n2. patch", snapshot.Streams.PlanText);
         Assert.Equal("dotnet test", snapshot.Streams.CommandOutput);
         Assert.Equal("--- a/app.cs\n+++ b/app.cs", snapshot.Streams.UnifiedDiff);
+        Assert.Equal("gpt-5.3-codex", snapshot.QuickSettings.Model);
+        Assert.Equal("medium", snapshot.QuickSettings.Effort);
+        Assert.Equal(LensQuickSettings.PlanModeOn, snapshot.QuickSettings.PlanMode);
+        Assert.Equal(LensQuickSettings.PermissionModeManual, snapshot.QuickSettings.PermissionMode);
         Assert.Contains(snapshot.Requests, request => request.RequestId == "approval-1" && request.Decision == "accept");
     }
 
@@ -251,10 +259,33 @@ public sealed class LensHostProtocolTests
                         Provider = "codex",
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
-                        Status = "accepted"
+                        Status = "accepted",
+                        QuickSettings = new LensQuickSettingsSummary
+                        {
+                            Model = "gpt-5.3-codex",
+                            Effort = "medium",
+                            PlanMode = LensQuickSettings.PlanModeOn,
+                            PermissionMode = LensQuickSettings.PermissionModeManual
+                        }
                     }
                 },
                 [
+                    Envelope(command.SessionId, new LensPulseEvent
+                    {
+                        EventId = "evt-turn-settings-1",
+                        SessionId = command.SessionId,
+                        Provider = "codex",
+                        ThreadId = "thread-1",
+                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:02.5000000Z"),
+                        Type = "quick-settings.updated",
+                        QuickSettingsUpdated = new LensPulseQuickSettingsPayload
+                        {
+                            Model = "gpt-5.3-codex",
+                            Effort = "medium",
+                            PlanMode = LensQuickSettings.PlanModeOn,
+                            PermissionMode = LensQuickSettings.PermissionModeManual
+                        }
+                    }),
                     Envelope(command.SessionId, new LensPulseEvent
                     {
                         EventId = "evt-turn-1",
