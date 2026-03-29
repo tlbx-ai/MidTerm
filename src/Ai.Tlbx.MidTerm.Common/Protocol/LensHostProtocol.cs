@@ -449,10 +449,17 @@ public sealed class LensAttachRuntimeRequest
     public string SessionId { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public string WorkingDirectory { get; set; } = string.Empty;
+    public string? InstanceId { get; set; }
+    public string? OwnerToken { get; set; }
     public SessionAgentAttachPoint? AttachPoint { get; set; }
     public string? ExecutablePath { get; set; }
     public string? UserProfileDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
+}
+
+public sealed class LensHostEventsRequest
+{
+    public long AfterSequence { get; set; }
 }
 
 public sealed class LensHostCommandEnvelope
@@ -466,6 +473,7 @@ public sealed class LensHostCommandEnvelope
     public LensInterruptRequest? InterruptTurn { get; set; }
     public LensRequestResolutionCommand? ResolveRequest { get; set; }
     public LensUserInputResolutionCommand? ResolveUserInput { get; set; }
+    public LensHostEventsRequest? EventsRequest { get; set; }
 }
 
 public sealed class LensRequestResolutionCommand
@@ -489,6 +497,7 @@ public sealed class LensHostCommandResultEnvelope
     public string? Message { get; set; }
     public LensTurnStartResponse? TurnStarted { get; set; }
     public LensCommandAcceptedResponse? Accepted { get; set; }
+    public LensPulseEventListResponse? Events { get; set; }
 }
 
 public sealed class LensHostEventEnvelope
@@ -504,6 +513,7 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensHostCommandResultEnvelope))]
 [JsonSerializable(typeof(LensHostEventEnvelope))]
 [JsonSerializable(typeof(LensAttachRuntimeRequest))]
+[JsonSerializable(typeof(LensHostEventsRequest))]
 [JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(LensRequestResolutionCommand))]
 [JsonSerializable(typeof(LensUserInputResolutionCommand))]

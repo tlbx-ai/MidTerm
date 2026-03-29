@@ -1006,6 +1006,89 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void Append_CompactsHugeToolOutputAcrossEventsSnapshotAndScreenLog()
+    {
+        var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
+        var screenLogDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-screen-log-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storeDirectory);
+        Directory.CreateDirectory(screenLogDirectory);
+
+        try
+        {
+            var service = new SessionLensPulseService(
+                storeDirectory: storeDirectory,
+                enableScreenLogging: true,
+                screenLogDirectory: screenLogDirectory);
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "cmd-start",
+                SessionId = "s-huge",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                ItemId = "cmd-1",
+                CreatedAt = DateTimeOffset.Parse("2026-03-29T11:00:00Z"),
+                Type = "item.started",
+                Item = new LensPulseItemPayload
+                {
+                    ItemType = "command_execution",
+                    Status = "in_progress",
+                    Title = "Tool started",
+                    Detail = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'Get-Content src/Ai.Tlbx.MidTerm/Program.cs'"
+                }
+            });
+
+            var giantLine = new string('x', 120_000);
+            service.Append(new LensPulseEvent
+            {
+                EventId = "cmd-output",
+                SessionId = "s-huge",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                ItemId = "cmd-1",
+                CreatedAt = DateTimeOffset.Parse("2026-03-29T11:00:01Z"),
+                Type = "content.delta",
+                ContentDelta = new LensPulseContentDeltaPayload
+                {
+                    StreamKind = "command_output",
+                    Delta = giantLine
+                }
+            });
+
+            var events = service.GetEvents("s-huge");
+            var retainedOutputEvent = Assert.Single(events.Events, evt => evt.ContentDelta?.StreamKind == "command_output");
+            Assert.True(retainedOutputEvent.ContentDelta!.Delta.Length < 4_000);
+
+            var snapshot = service.GetSnapshot("s-huge");
+            Assert.NotNull(snapshot);
+            Assert.True(snapshot!.Streams.CommandOutput.Length < 20_000);
+
+            var toolEntry = Assert.Single(snapshot.Transcript, entry => entry.Kind == "tool");
+            Assert.True(toolEntry.Body.Length <= 4_096);
+            Assert.Contains("Read file", toolEntry.Title);
+            Assert.Contains("output truncated", toolEntry.Body, StringComparison.OrdinalIgnoreCase);
+
+            var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.lenslog.jsonl"));
+            var lastLine = File.ReadLines(logPath).Last();
+            Assert.True(lastLine.Length < 20_000);
+        }
+        finally
+        {
+            if (Directory.Exists(storeDirectory))
+            {
+                Directory.Delete(storeDirectory, recursive: true);
+            }
+
+            if (Directory.Exists(screenLogDirectory))
+            {
+                Directory.Delete(screenLogDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void HasHistory_TracksWhetherCanonicalLensEventsExist()
     {
         var service = new SessionLensPulseService();

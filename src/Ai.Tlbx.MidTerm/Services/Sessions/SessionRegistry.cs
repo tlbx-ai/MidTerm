@@ -154,7 +154,7 @@ internal sealed class SessionRegistry
                     BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
                     AgentControlled = IsAgentControlled(s.Id),
                     LensOnly = IsLensOnly(s.Id),
-                    ProfileHint = ProfileHints.TryGetValue(s.Id, out var profileHint) ? profileHint : null
+                    ProfileHint = GetProfileHint(s.Id)
                 })
                 .OrderBy(s => s.Order)
                 .ToList()
@@ -239,13 +239,15 @@ internal sealed class SessionRegistry
             LensOnlySessions.TryRemove(sessionId, out _);
         }
 
+        _sessionControlStateService?.SetLensOnly(sessionId, lensOnly);
         NotifyStateChange();
         return true;
     }
 
     public bool IsLensOnly(string sessionId)
     {
-        return LensOnlySessions.ContainsKey(sessionId);
+        return LensOnlySessions.ContainsKey(sessionId)
+            || _sessionControlStateService?.IsLensOnly(sessionId) == true;
     }
 
     public bool SetProfileHint(string sessionId, string? profile)
@@ -264,6 +266,7 @@ internal sealed class SessionRegistry
             ProfileHints[sessionId] = profile.Trim();
         }
 
+        _sessionControlStateService?.SetProfileHint(sessionId, profile);
         NotifyStateChange();
         return true;
     }
@@ -364,6 +367,13 @@ internal sealed class SessionRegistry
     {
         return AgentControlledSessions.ContainsKey(sessionId)
             || _sessionControlStateService?.IsAgentControlled(sessionId) == true;
+    }
+
+    private string? GetProfileHint(string sessionId)
+    {
+        return ProfileHints.TryGetValue(sessionId, out var profileHint)
+            ? profileHint
+            : _sessionControlStateService?.GetProfileHint(sessionId);
     }
 
     private IReadOnlyList<string> GetTmuxFamilySessionIds(string sessionId)

@@ -127,6 +127,40 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task DiscoverExistingSessionsAsync(
+        TtyHostSessionManager sessionManager,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(sessionManager);
+
+        var recovered = 0;
+        foreach (var session in sessionManager.GetSessionList().Sessions)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var profile = _profileService.NormalizeProfile(null, session);
+            if (!_hostRuntime.IsEnabledFor(profile) || !_hostRuntime.MayHaveRecoverableHost(session.Id))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (await _hostRuntime.RecoverExistingHostAsync(session.Id, profile, session, ct: ct).ConfigureAwait(false))
+                {
+                    recovered++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Lens runtime recovery failed for {session.Id}: {ex.Message}");
+                await _hostRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
+            }
+        }
+
+        Log.Info(() => $"SessionLensRuntimeService: Recovered {recovered} owned Lens runtimes on startup.");
+    }
+
     public bool IsAttached(string sessionId)
     {
         if (_hostRuntime.OwnsSession(sessionId))

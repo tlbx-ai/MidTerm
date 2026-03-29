@@ -440,6 +440,7 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync();
+        await lensRuntime.DiscoverExistingSessionsAsync(sessionManager);
         sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 
         WriteEventLog($"MainCore: Starting server on https://{bindAddress}:{port}");

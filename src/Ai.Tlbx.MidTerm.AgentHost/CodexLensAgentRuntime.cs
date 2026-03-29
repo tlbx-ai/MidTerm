@@ -785,6 +785,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     GetString(payload, "item", "type") ??
                     GetString(payload, "type") ??
                     "mcpToolCall");
+                if (itemType == "user_message")
+                {
+                    break;
+                }
+
                 var title = GetString(payload, "toolName") ?? "MCP tool";
                 var detail = GetString(payload, "summary") ?? BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
@@ -805,6 +810,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var turnId = ResolveTurnId(payload);
                 var itemId = ResolveItemId(payload);
                 var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                if (itemType == "user_message")
+                {
+                    break;
+                }
+
                 if (itemType == "plan")
                 {
                     var detail = BuildCodexItemDetail(payload);

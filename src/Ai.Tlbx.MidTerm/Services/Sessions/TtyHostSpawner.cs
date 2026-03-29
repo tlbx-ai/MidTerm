@@ -391,6 +391,15 @@ public static class TtyHostSpawner
                 return false;
             }
 
+#if !WINDOWS
+            // Detached redirected helpers are also used for persistent sidecars such as
+            // mtagenthost, so they need their own process group to survive mt restarts.
+            if (setpgid(process.Id, 0) != 0)
+            {
+                Log.Warn(() => $"TtyHostSpawner: setpgid failed for redirected PID {process.Id} (errno: {Marshal.GetLastPInvokeError()})");
+            }
+#endif
+
             launchedProcess = new RedirectedProcessHandle(
                 process,
                 process.StandardInput,

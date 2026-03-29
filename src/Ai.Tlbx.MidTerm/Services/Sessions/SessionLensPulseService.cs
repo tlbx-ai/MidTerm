@@ -18,6 +18,18 @@ public sealed partial class SessionLensPulseService
     private const int CollapsibleHistoryBodyMinChars = 320;
     private const int HistoryPreviewMaxChars = 160;
     private const int MaxVisibleCommandOutputLines = 10;
+    private const int MaxAssistantStreamChars = 262144;
+    private const int MaxReasoningStreamChars = 8192;
+    private const int MaxReasoningSummaryStreamChars = 8192;
+    private const int MaxPlanStreamChars = 16384;
+    private const int MaxCommandOutputStreamChars = 16384;
+    private const int MaxFileChangeOutputStreamChars = 16384;
+    private const int MaxUnifiedDiffChars = 32768;
+    private const int MaxToolRawOutputChars = 16384;
+    private const int MaxHistoryBodyChars = 4096;
+    private const int MaxHistoryLineChars = 512;
+    private const string TailRetentionMarker = "... earlier output omitted ...";
+    private const string HeadRetentionMarker = "... output truncated ...";
     private readonly ConcurrentDictionary<string, SessionLensPulseLog> _logs = new(StringComparer.Ordinal);
     private readonly string _storeDirectory;
     private readonly bool _screenLoggingEnabled;
@@ -52,20 +64,21 @@ public sealed partial class SessionLensPulseService
     {
         ArgumentNullException.ThrowIfNull(lensEvent);
 
+        var retainedEvent = LensEventCompaction.CloneForRetention(lensEvent);
         var log = GetOrLoadLog(lensEvent.SessionId);
         lock (log.SyncRoot)
         {
-            lensEvent.Sequence = ++log.NextSequence;
-            log.Events.Add(lensEvent);
-            ApplyEvent(log.State, lensEvent);
-            var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, lensEvent);
-            PersistEvent(log.SessionId, lensEvent);
+            retainedEvent.Sequence = ++log.NextSequence;
+            log.Events.Add(retainedEvent);
+            ApplyEvent(log.State, retainedEvent);
+            var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, retainedEvent);
+            PersistEvent(log.SessionId, retainedEvent);
             PersistScreenLogDelta(log, delta);
 
             var staleSubscribers = new List<LensPulseSubscriber>();
             foreach (var subscriber in log.Subscribers)
             {
-                if (!subscriber.Writer.TryWrite(CloneEvent(lensEvent)))
+                if (!subscriber.Writer.TryWrite(CloneEvent(retainedEvent)))
                 {
                     staleSubscribers.Add(subscriber);
                 }
@@ -354,9 +367,10 @@ public sealed partial class SessionLensPulseService
                 continue;
             }
 
-            log.Events.Add(lensEvent);
-            log.NextSequence = Math.Max(log.NextSequence, lensEvent.Sequence);
-            ApplyEvent(log.State, lensEvent);
+            var retainedEvent = LensEventCompaction.CloneForRetention(lensEvent);
+            log.Events.Add(retainedEvent);
+            log.NextSequence = Math.Max(log.NextSequence, retainedEvent.Sequence);
+            ApplyEvent(log.State, retainedEvent);
         }
 
         return log.Events.Count > 0;
@@ -696,12 +710,19 @@ public sealed partial class SessionLensPulseService
     {
         if (!string.IsNullOrWhiteSpace(lensEvent.PlanDelta?.Delta))
         {
-            state.Streams.PlanText = AppendTranscriptChunk(state.Streams.PlanText, lensEvent.PlanDelta.Delta);
+            state.Streams.PlanText = AppendRetainedTranscriptChunk(
+                state.Streams.PlanText,
+                lensEvent.PlanDelta.Delta,
+                MaxPlanStreamChars,
+                retainHead: false);
         }
 
         if (!string.IsNullOrWhiteSpace(lensEvent.PlanCompleted?.PlanMarkdown))
         {
-            state.Streams.PlanText = NormalizeTranscriptText(lensEvent.PlanCompleted.PlanMarkdown);
+            state.Streams.PlanText = RetainWithinBudget(
+                NormalizeTranscriptText(lensEvent.PlanCompleted.PlanMarkdown),
+                MaxPlanStreamChars,
+                retainHead: false);
         }
 
         var entry = EnsureTranscriptEntry(
@@ -713,15 +734,18 @@ public sealed partial class SessionLensPulseService
         entry.Status = "completed";
         entry.Title = "Plan";
         entry.Body = !string.IsNullOrWhiteSpace(lensEvent.PlanCompleted?.PlanMarkdown)
-            ? NormalizeTranscriptText(lensEvent.PlanCompleted.PlanMarkdown)
-            : AppendTranscriptChunk(entry.Body, lensEvent.PlanDelta?.Delta);
+            ? RetainWithinBudget(NormalizeTranscriptText(lensEvent.PlanCompleted.PlanMarkdown), MaxPlanStreamChars, retainHead: false)
+            : AppendRetainedTranscriptChunk(entry.Body, lensEvent.PlanDelta?.Delta, MaxPlanStreamChars, retainHead: false);
         entry.Streaming = false;
         entry.UpdatedAt = lensEvent.CreatedAt;
     }
 
     private static void ApplyDiffUpdate(LensConversationState state, LensPulseEvent lensEvent)
     {
-        state.Streams.UnifiedDiff = NormalizeTranscriptText(lensEvent.DiffUpdated?.UnifiedDiff);
+        state.Streams.UnifiedDiff = RetainWithinBudget(
+            NormalizeTranscriptText(lensEvent.DiffUpdated?.UnifiedDiff),
+            MaxUnifiedDiffChars,
+            retainHead: false);
         var entry = EnsureTranscriptEntry(
             state,
             $"diff:{lensEvent.TurnId ?? state.CurrentTurn.TurnId ?? lensEvent.EventId}",
@@ -847,19 +871,39 @@ public sealed partial class SessionLensPulseService
                 state.Streams.AssistantText = AppendAssistantDelta(state.Streams.AssistantText, lensEvent.ContentDelta.Delta);
                 break;
             case "reasoning_text":
-                state.Streams.ReasoningText = AppendTranscriptChunk(state.Streams.ReasoningText, lensEvent.ContentDelta.Delta);
+                state.Streams.ReasoningText = AppendRetainedTranscriptChunk(
+                    state.Streams.ReasoningText,
+                    lensEvent.ContentDelta.Delta,
+                    MaxReasoningStreamChars,
+                    retainHead: false);
                 break;
             case "reasoning_summary_text":
-                state.Streams.ReasoningSummaryText = AppendTranscriptChunk(state.Streams.ReasoningSummaryText, lensEvent.ContentDelta.Delta);
+                state.Streams.ReasoningSummaryText = AppendRetainedTranscriptChunk(
+                    state.Streams.ReasoningSummaryText,
+                    lensEvent.ContentDelta.Delta,
+                    MaxReasoningSummaryStreamChars,
+                    retainHead: false);
                 break;
             case "plan_text":
-                state.Streams.PlanText = AppendTranscriptChunk(state.Streams.PlanText, lensEvent.ContentDelta.Delta);
+                state.Streams.PlanText = AppendRetainedTranscriptChunk(
+                    state.Streams.PlanText,
+                    lensEvent.ContentDelta.Delta,
+                    MaxPlanStreamChars,
+                    retainHead: false);
                 break;
             case "command_output":
-                state.Streams.CommandOutput = AppendTranscriptChunk(state.Streams.CommandOutput, lensEvent.ContentDelta.Delta);
+                state.Streams.CommandOutput = AppendRetainedTranscriptChunk(
+                    state.Streams.CommandOutput,
+                    lensEvent.ContentDelta.Delta,
+                    MaxCommandOutputStreamChars,
+                    retainHead: false);
                 break;
             case "file_change_output":
-                state.Streams.FileChangeOutput = AppendTranscriptChunk(state.Streams.FileChangeOutput, lensEvent.ContentDelta.Delta);
+                state.Streams.FileChangeOutput = AppendRetainedTranscriptChunk(
+                    state.Streams.FileChangeOutput,
+                    lensEvent.ContentDelta.Delta,
+                    MaxFileChangeOutputStreamChars,
+                    retainHead: false);
                 break;
         }
 
@@ -887,7 +931,10 @@ public sealed partial class SessionLensPulseService
         else if (transcriptKind == "tool")
         {
             var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
-            toolState.RawOutput = AppendTranscriptChunk(toolState.RawOutput, lensEvent.ContentDelta.Delta);
+            toolState.RawOutput = AppendRetainedToolOutput(
+                toolState.RawOutput,
+                lensEvent.ContentDelta.Delta,
+                toolState.RetainHeadOutput);
             entry.Title = ResolveToolEntryTitle(
                 lensEvent.ContentDelta.StreamKind,
                 entry.Title,
@@ -1089,7 +1136,7 @@ public sealed partial class SessionLensPulseService
                 sections.Add($"... {omittedLineCount} earlier lines omitted ...");
             }
 
-            sections.AddRange(visibleLines);
+            sections.AddRange(visibleLines.Select(CompactHistoryLine));
 
             if (omittedLineCount > 0 && takeHead)
             {
@@ -1103,7 +1150,7 @@ public sealed partial class SessionLensPulseService
             sections.Add("Waiting for output...");
         }
 
-        return string.Join("\n", sections);
+        return CompactHistoryBody(string.Join("\n", sections), takeHead);
     }
 
     private static string SummarizeCommandText(string? value)
@@ -1194,7 +1241,6 @@ public sealed partial class SessionLensPulseService
         item.Detail = transcriptKind switch
         {
             "assistant" => MergeProgressiveMessage(item.Detail, lensEvent.Item.Detail),
-            "tool" => MergeTranscriptBody(item.Detail, lensEvent.Item.Detail),
             "user" => PreferMeaningfulText(item.Detail, lensEvent.Item.Detail),
             _ => MergeTranscriptBody(item.Detail, lensEvent.Item.Detail)
         };
@@ -1232,10 +1278,14 @@ public sealed partial class SessionLensPulseService
                     toolState.CommandText = PreferMeaningfulText(
                         toolState.CommandText,
                         ExtractCommandText(lensEvent.Item.Detail)) ?? string.Empty;
+                    toolState.RetainHeadOutput = TryExtractReadFileTarget(toolState.CommandText, out _);
                 }
                 else if (normalizedType is "command_output" or "file_change_output")
                 {
-                    toolState.RawOutput = MergeTranscriptBody(toolState.RawOutput, lensEvent.Item.Detail);
+                    toolState.RawOutput = AppendRetainedToolOutput(
+                        toolState.RawOutput,
+                        lensEvent.Item.Detail,
+                        toolState.RetainHeadOutput);
                 }
 
                 entry.Title = ResolveToolEntryTitle(normalizedType, lensEvent.Item.Title, toolState.CommandText);
@@ -1247,6 +1297,7 @@ public sealed partial class SessionLensPulseService
                         : MergeTranscriptBody(entry.Body, lensEvent.Item.Detail),
                     streaming: !IsTerminalStatus(item.Status));
                 entry.Streaming = !IsTerminalStatus(item.Status);
+                item.Detail = entry.Body;
                 break;
         }
     }
@@ -1926,7 +1977,7 @@ public sealed partial class SessionLensPulseService
 
     private static string AppendAssistantDelta(string? existing, string? delta)
     {
-        return $"{NormalizeTranscriptText(existing)}{NormalizeTranscriptText(delta)}";
+        return AppendRetainedStreamText(existing, delta, MaxAssistantStreamChars, retainHead: false, separateWithNewline: false);
     }
 
     private static int FindMessageOverlap(string left, string right)
@@ -1995,6 +2046,104 @@ public sealed partial class SessionLensPulseService
         }
 
         return $"{normalizedExisting}\n{normalizedChunk}";
+    }
+
+    private static string AppendRetainedToolOutput(string? existing, string? incoming, bool retainHead)
+    {
+        return AppendRetainedStreamText(existing, incoming, MaxToolRawOutputChars, retainHead, separateWithNewline: true);
+    }
+
+    private static string AppendRetainedTranscriptChunk(string? existing, string? incoming, int maxChars, bool retainHead)
+    {
+        return AppendRetainedStreamText(existing, incoming, maxChars, retainHead, separateWithNewline: true);
+    }
+
+    private static string AppendRetainedStreamText(
+        string? existing,
+        string? incoming,
+        int maxChars,
+        bool retainHead,
+        bool separateWithNewline)
+    {
+        var normalizedIncoming = NormalizeTranscriptText(incoming);
+        if (string.IsNullOrWhiteSpace(normalizedIncoming))
+        {
+            return NormalizeTranscriptText(existing);
+        }
+
+        var normalizedExisting = StripRetentionMarkers(NormalizeTranscriptText(existing));
+        if (string.IsNullOrWhiteSpace(normalizedExisting))
+        {
+            return RetainWithinBudget(normalizedIncoming, maxChars, retainHead);
+        }
+
+        var separator = separateWithNewline &&
+                        !normalizedExisting.EndsWith('\n') &&
+                        !normalizedIncoming.StartsWith('\n')
+            ? "\n"
+            : string.Empty;
+        return RetainWithinBudget(normalizedExisting + separator + normalizedIncoming, maxChars, retainHead);
+    }
+
+    private static string RetainWithinBudget(string? value, int maxChars, bool retainHead)
+    {
+        var normalized = NormalizeTranscriptText(value);
+        if (normalized.Length <= maxChars)
+        {
+            return normalized;
+        }
+
+        var marker = retainHead ? HeadRetentionMarker : TailRetentionMarker;
+        var availableChars = maxChars - marker.Length - 1;
+        if (availableChars <= 0)
+        {
+            return normalized[..Math.Max(0, maxChars)];
+        }
+
+        return retainHead
+            ? string.Concat(normalized.AsSpan(0, availableChars), "\n", marker)
+            : string.Concat(marker, "\n", normalized.AsSpan(normalized.Length - availableChars));
+    }
+
+    private static string StripRetentionMarkers(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        if (value.StartsWith(TailRetentionMarker + "\n", StringComparison.Ordinal))
+        {
+            return value[(TailRetentionMarker.Length + 1)..];
+        }
+
+        if (value.EndsWith("\n" + HeadRetentionMarker, StringComparison.Ordinal))
+        {
+            return value[..^(HeadRetentionMarker.Length + 1)];
+        }
+
+        return value;
+    }
+
+    private static string CompactHistoryLine(string line)
+    {
+        if (line.Length <= MaxHistoryLineChars)
+        {
+            return line;
+        }
+
+        var availableChars = MaxHistoryLineChars - HeadRetentionMarker.Length - 1;
+        if (availableChars <= 0)
+        {
+            return line[..MaxHistoryLineChars];
+        }
+
+        return string.Concat(line.AsSpan(0, availableChars), " ", HeadRetentionMarker);
+    }
+
+    private static string CompactHistoryBody(string body, bool retainHead)
+    {
+        return RetainWithinBudget(body, MaxHistoryBodyChars, retainHead);
     }
 
     private static string NormalizeTranscriptText(string? value)
@@ -2182,35 +2331,37 @@ public sealed partial class SessionLensPulseService
 
     private static string BuildScreenLogSignature(LensScreenLogDeltaRecord record)
     {
-        var historySignature = string.Join(
-            "|",
-            record.HistoryUpserts.Select(static entry =>
-                string.Join(
-                    "::",
-                    entry.EntryId,
-                    entry.Kind,
-                    entry.ItemType ?? string.Empty,
-                    entry.Status,
-                    entry.Title,
-                    entry.Meta,
-                    entry.Body,
-                    entry.RenderMode,
-                    entry.CollapsedByDefault ? "1" : "0",
-                    entry.Streaming ? "1" : "0")));
-        var removalSignature = string.Join("|", record.HistoryRemovals);
-        return string.Join(
-            "||",
-            record.Session.State,
-            record.Session.StateLabel,
-            record.Session.Reason ?? string.Empty,
-            record.Session.LastError ?? string.Empty,
-            record.CurrentTurn.TurnId ?? string.Empty,
-            record.CurrentTurn.State,
-            record.CurrentTurn.StateLabel,
-            record.CurrentTurn.Model ?? string.Empty,
-            record.CurrentTurn.Effort ?? string.Empty,
-            historySignature,
-            removalSignature);
+        var hash = new HashCode();
+        hash.Add(record.Session.State, StringComparer.Ordinal);
+        hash.Add(record.Session.StateLabel, StringComparer.Ordinal);
+        hash.Add(record.Session.Reason ?? string.Empty, StringComparer.Ordinal);
+        hash.Add(record.Session.LastError ?? string.Empty, StringComparer.Ordinal);
+        hash.Add(record.CurrentTurn.TurnId ?? string.Empty, StringComparer.Ordinal);
+        hash.Add(record.CurrentTurn.State, StringComparer.Ordinal);
+        hash.Add(record.CurrentTurn.StateLabel, StringComparer.Ordinal);
+        hash.Add(record.CurrentTurn.Model ?? string.Empty, StringComparer.Ordinal);
+        hash.Add(record.CurrentTurn.Effort ?? string.Empty, StringComparer.Ordinal);
+
+        foreach (var entry in record.HistoryUpserts)
+        {
+            hash.Add(entry.EntryId, StringComparer.Ordinal);
+            hash.Add(entry.Kind, StringComparer.Ordinal);
+            hash.Add(entry.ItemType ?? string.Empty, StringComparer.Ordinal);
+            hash.Add(entry.Status, StringComparer.Ordinal);
+            hash.Add(entry.Title, StringComparer.Ordinal);
+            hash.Add(entry.Meta, StringComparer.Ordinal);
+            hash.Add(entry.Body, StringComparer.Ordinal);
+            hash.Add(entry.RenderMode, StringComparer.Ordinal);
+            hash.Add(entry.CollapsedByDefault);
+            hash.Add(entry.Streaming);
+        }
+
+        foreach (var removal in record.HistoryRemovals)
+        {
+            hash.Add(removal, StringComparer.Ordinal);
+        }
+
+        return hash.ToHashCode().ToString("X8");
     }
 
     private static string NormalizeHistoryKind(string? kind)
@@ -2386,6 +2537,7 @@ public sealed partial class SessionLensPulseService
     {
         public string CommandText { get; set; } = string.Empty;
         public string RawOutput { get; set; } = string.Empty;
+        public bool RetainHeadOutput { get; set; }
     }
 
     private sealed class LensScreenLogHeaderRecord
