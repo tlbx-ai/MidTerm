@@ -8,7 +8,7 @@
 
 import { $activeSessionId, $currentSettings, $sessions } from '../../stores';
 import { updateSettings } from '../../api/client';
-import { sendInput } from '../comms';
+import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { getSessionHeat } from '../sidebar/heatIndicator';
@@ -34,7 +34,6 @@ import {
 
 const log = createLogger('managerBar');
 
-const COMMAND_SUBMIT_DELAY_MS = 200;
 const QUEUE_POLL_INTERVAL_MS = 500;
 
 type QueuePhase =
@@ -95,10 +94,9 @@ const queueEntries: QueueEntry[] = [];
 let queueTimerId: number | null = null;
 
 export function sendCommand(sessionId: string, text: string): void {
-  sendInput(sessionId, text);
-  window.setTimeout(() => {
-    sendInput(sessionId, '\r');
-  }, COMMAND_SUBMIT_DELAY_MS);
+  void submitSessionText(sessionId, text).catch((error: unknown) => {
+    log.error(() => `Failed to submit manager bar command: ${String(error)}`);
+  });
 }
 
 export function initManagerBar(): void {

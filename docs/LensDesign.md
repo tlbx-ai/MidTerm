@@ -158,7 +158,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Assistant content is the primary reading surface and should have the clearest typography.
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
-- The live assistant row should carry a subtle generating indicator while the provider is still working.
+- The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
+- Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 
 ### Tool activity
@@ -169,6 +170,9 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
+- Command/file-read noise should be summarized for screen use instead of dumping full raw terminal-like output into Lens history.
+- File-read commands should surface the path and a compact excerpt policy, not the full file body.
+- Generic command output should prefer compact head/tail or tail-oriented summaries with omitted-line markers over unbounded dumps.
 
 ### Plan-mode questions and approvals
 
@@ -238,6 +242,8 @@ Status in this branch/work item:
 - implemented: long machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
 - implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
 - implemented: dev mode writes one GUID-named per-session Lens screen log derived from canonical history deltas and render hints
+- implemented: Lens uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
+- implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 
 Still mandatory after this work whenever Lens evolves:
 

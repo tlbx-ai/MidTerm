@@ -13,12 +13,12 @@
  */
 
 import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../stores';
-import { sendInput } from '../comms';
 import { t } from '../i18n';
-import { isLensActiveSession, createLensTurnRequest, submitLensTurn } from '../lens/input';
+import { submitSessionText } from '../input/submit';
+import { isLensActiveSession } from '../lens/input';
 import { onTabActivated, onTabDeactivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
-import { handleFileDrop, pasteToTerminal } from '../terminal';
+import { handleFileDrop } from '../terminal';
 import { hideTouchController } from '../touchController';
 import { startTranscription, stopTranscription } from './transcription';
 
@@ -32,7 +32,6 @@ let touchControllerOriginalParent: HTMLElement | null = null;
 let touchControllerOriginalNext: Node | null = null;
 let lastSessionId: string | null = null;
 const MAX_TEXTAREA_LINES = 5;
-const SMART_INPUT_SUBMIT_DELAY_MS = 200;
 const sessionDrafts = new Map<string, string>();
 
 /**
@@ -562,17 +561,7 @@ function updateAutoSendVisibility(): void {
 }
 
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {
-  if (isLensActiveSession(sessionId)) {
-    await submitLensTurn(sessionId, createLensTurnRequest(text));
-    return;
-  }
-
-  // Smart Input is closer to a paste/submit workflow than raw keyboard input.
-  // Using the shared paste path preserves BPM handling, and a short settle
-  // delay before Enter is more reliable for JS TUIs such as Codex.
-  await pasteToTerminal(sessionId, text);
-  await new Promise((resolve) => window.setTimeout(resolve, SMART_INPUT_SUBMIT_DELAY_MS));
-  sendInput(sessionId, '\r');
+  await submitSessionText(sessionId, text);
 }
 
 function isTouchDevice(): boolean {

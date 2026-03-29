@@ -176,6 +176,7 @@ export interface LensHistoryEntry {
   pending?: boolean;
   sourceItemId?: string | null;
   sourceTurnId?: string | null;
+  busyIndicator?: boolean;
 }
 
 export interface HistoryVirtualWindow {
@@ -1690,12 +1691,16 @@ function renderAgentView(
   );
   state.optimisticTurns = optimistic.optimisticTurns;
   const renderedEntries = stabilizeHistoryEntryOrder(
-    withLiveAssistantState(
+    withTrailingBusyIndicator(
       snapshot,
-      withActivationIssueNotice(
-        withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
-        state.activationIssue,
+      withLiveAssistantState(
+        snapshot,
+        withActivationIssueNotice(
+          withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+          state.activationIssue,
+        ),
       ),
+      snapshot.requests,
     ),
   );
   renderHistory(panel, renderedEntries, snapshot.sessionId);
@@ -1984,6 +1989,7 @@ function buildHistoryEntrySignature(
     entry.meta,
     entry.pending ? '1' : '0',
     entry.live ? '1' : '0',
+    entry.busyIndicator ? '1' : '0',
     attachmentToken,
     actionToken,
     clusterToken,
@@ -2490,6 +2496,59 @@ export function withLiveAssistantState(
   return entries;
 }
 
+export function withTrailingBusyIndicator(
+  snapshot: LensPulseSnapshotResponse,
+  entries: LensHistoryEntry[],
+  requests: readonly LensPulseRequestSummary[],
+): LensHistoryEntry[] {
+  if (!shouldShowTrailingBusyIndicator(snapshot, requests)) {
+    return entries.filter((entry) => !entry.busyIndicator);
+  }
+
+  const nextEntries = entries.filter((entry) => !entry.busyIndicator);
+  const lastOrder = nextEntries.reduce((maxOrder, entry) => Math.max(maxOrder, entry.order), 0);
+  nextEntries.push({
+    id: `busy-indicator:${snapshot.currentTurn.turnId ?? snapshot.session.lastEventAt ?? 'current'}`,
+    order: lastOrder + 1,
+    kind: 'assistant',
+    tone: 'info',
+    label: historyLabel('assistant'),
+    title: '',
+    body: resolveTrailingBusyIndicatorLabel(snapshot, nextEntries),
+    meta: '',
+    busyIndicator: true,
+  });
+  return nextEntries;
+}
+
+function shouldShowTrailingBusyIndicator(
+  snapshot: LensPulseSnapshotResponse,
+  requests: readonly LensPulseRequestSummary[],
+): boolean {
+  const currentTurnState = (snapshot.currentTurn.state || '').toLowerCase();
+  const sessionState = (snapshot.session.state || '').toLowerCase();
+  const waitingOnUser = requests.some((request) => request.state === 'open');
+  if (waitingOnUser) {
+    return false;
+  }
+
+  return (
+    currentTurnState === 'running' ||
+    currentTurnState === 'in_progress' ||
+    (currentTurnState.length === 0 && (sessionState === 'starting' || sessionState === 'running'))
+  );
+}
+
+function resolveTrailingBusyIndicatorLabel(
+  snapshot: LensPulseSnapshotResponse,
+  entries: readonly LensHistoryEntry[],
+): string {
+  const hasLiveAssistant = entries.some((entry) => entry.kind === 'assistant' && entry.live);
+  return hasLiveAssistant || Boolean(snapshot.streams.assistantText.trim())
+    ? lensText('lens.status.generating', 'Generating')
+    : lensText('lens.status.working', 'Working');
+}
+
 /**
  * Surfaces attach and handoff failures inside the conversation lane so users
  * understand why Lens fell back instead of hunting through separate chrome.
@@ -2573,6 +2632,10 @@ function createHistoryEntry(
   sessionId: string,
   artifactCluster: ArtifactClusterInfo | null = null,
 ): HTMLElement {
+  if (entry.busyIndicator) {
+    return createBusyIndicatorEntry(entry);
+  }
+
   const article = document.createElement('article');
   article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
   article.dataset.kind = entry.kind;
@@ -2615,11 +2678,6 @@ function createHistoryEntry(
   }
   article.appendChild(header);
 
-  const liveIndicator = createHistoryLiveIndicator(entry);
-  if (liveIndicator) {
-    article.appendChild(liveIndicator);
-  }
-
   const titleText = normalizeHistoryTitle(entry);
   if (titleText) {
     const title = document.createElement('div');
@@ -2661,10 +2719,6 @@ function createHistoryBodyContent(
     case 'streaming': {
       body.classList.add('agent-history-streaming-body');
       body.textContent = entry.body;
-      const caret = document.createElement('span');
-      caret.className = 'agent-history-caret';
-      caret.setAttribute('aria-hidden', 'true');
-      body.appendChild(caret);
       return body;
     }
     case 'markdown': {
@@ -2680,6 +2734,33 @@ function createHistoryBodyContent(
       body.textContent = entry.body;
       return body;
   }
+}
+
+function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
+  const article = document.createElement('article');
+  article.className = 'agent-history-entry agent-history-assistant agent-history-busy-indicator';
+  article.dataset.kind = 'assistant';
+  article.dataset.busyIndicator = 'true';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'agent-history-busy-bubble';
+
+  const dots = document.createElement('span');
+  dots.className = 'agent-history-busy-dots';
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement('span');
+    dot.className = 'agent-history-busy-dot';
+    dots.appendChild(dot);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'agent-history-busy-label';
+  label.textContent = entry.body;
+
+  bubble.appendChild(dots);
+  bubble.appendChild(label);
+  article.appendChild(bubble);
+  return article;
 }
 
 function createCollapsedHistoryBody(
@@ -2766,42 +2847,6 @@ function syncHistoryNodeAttributes(target: HTMLElement, source: HTMLElement): vo
       datasetTarget[key] = value;
     }
   }
-}
-
-function createHistoryLiveIndicator(entry: LensHistoryEntry): HTMLElement | null {
-  if (!entry.live && !entry.pending) {
-    return null;
-  }
-
-  const indicator = document.createElement('div');
-  indicator.className = 'agent-history-live-indicator';
-  indicator.setAttribute('aria-hidden', 'true');
-
-  const dots = document.createElement('span');
-  dots.className = 'agent-history-live-dots';
-  for (let index = 0; index < 3; index += 1) {
-    const dot = document.createElement('span');
-    dot.className = 'agent-history-live-dot';
-    dots.appendChild(dot);
-  }
-
-  const label = document.createElement('span');
-  label.className = 'agent-history-live-label';
-  label.textContent = resolveHistoryLiveLabel(entry);
-
-  indicator.appendChild(dots);
-  indicator.appendChild(label);
-  return indicator;
-}
-
-function resolveHistoryLiveLabel(entry: LensHistoryEntry): string {
-  if (entry.pending) {
-    return lensText('lens.status.starting', 'Starting');
-  }
-
-  return entry.kind === 'assistant'
-    ? lensText('lens.status.generating', 'Generating')
-    : lensText('lens.status.working', 'Working');
 }
 
 function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
@@ -3511,6 +3556,10 @@ export function isScrollContainerNearBottom(position: {
  * runs stay smooth without paying full layout cost on every render.
  */
 export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidth = 960): number {
+  if (entry.busyIndicator) {
+    return 52;
+  }
+
   const effectiveWidth = Math.max(220, Math.min(viewportWidth, 960));
   const horizontalChrome =
     entry.kind === 'user'
