@@ -192,7 +192,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     {
         try
         {
-            using var process = Process.GetProcessById(pid);
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
             return process.MainWindowHandle != IntPtr.Zero;
         }
         catch
@@ -205,7 +205,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     {
         try
         {
-            using var process = Process.GetProcessById(pid);
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
             return process.StartTime.ToUniversalTime();
         }
         catch
