@@ -31,6 +31,7 @@ interface LauncherState {
   homePath: string;
   currentPath: string;
   pathDraft: string;
+  pathHistory: string[];
   parentPath: string | null;
   roots: LauncherDirectoryEntry[];
   entries: LauncherDirectoryEntry[];
@@ -110,6 +111,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       homePath: home.path,
       currentPath: home.path,
       pathDraft: home.path,
+      pathHistory: [],
       parentPath: null,
       roots: roots.entries,
       entries: [],
@@ -248,9 +250,11 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     async function loadDirectory(
       path: string,
       options?: {
+        recordHistory?: boolean;
         suppressErrors?: boolean;
       },
     ): Promise<boolean> {
+      const previousPath = state.currentPath;
       const requestToken = ++state.requestToken;
       state.loading = true;
       if (!options?.suppressErrors) {
@@ -268,6 +272,14 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         state.pathDraft = response.path;
         state.parentPath = response.parentPath;
         state.entries = response.entries;
+        if (
+          options?.recordHistory !== false &&
+          previousPath &&
+          previousPath !== response.path &&
+          state.pathHistory[state.pathHistory.length - 1] !== previousPath
+        ) {
+          state.pathHistory.push(previousPath);
+        }
         state.error = null;
         return true;
       } catch (error) {
@@ -282,6 +294,23 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         if (requestToken === state.requestToken) {
           state.loading = false;
           render();
+        }
+      }
+
+      return false;
+    }
+
+    async function navigateBackInHistory(): Promise<boolean> {
+      clearPendingPathFollow();
+      while (state.pathHistory.length > 0) {
+        const previousPath = state.pathHistory.pop();
+        if (!previousPath || previousPath === state.currentPath) {
+          continue;
+        }
+
+        const loaded = await loadDirectory(previousPath, { recordHistory: false });
+        if (loaded) {
+          return true;
         }
       }
 
@@ -325,9 +354,18 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKeyDown);
     releaseBackButtonLayer = registerBackButtonLayer(() => {
-      close(null);
+      if (state.loading) {
+        return;
+      }
+
+      void (async () => {
+        const navigated = await navigateBackInHistory();
+        if (!navigated) {
+          close(null);
+        }
+      })();
     });
-    void loadDirectory(state.homePath);
+    void loadDirectory(state.homePath, { recordHistory: false });
 
     function launch(provider: LauncherProvider): void {
       if (state.loading || !state.currentPath) {
