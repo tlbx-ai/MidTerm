@@ -5688,6 +5688,7 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
 }
 
 .session-launcher-kicker {
@@ -5926,6 +5927,7 @@ body.has-app-background::after {
   }
 
   .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-body {
+    overflow: hidden;
     padding-right: calc(20px + env(safe-area-inset-right, 0px));
     padding-left: calc(20px + env(safe-area-inset-left, 0px));
   }
@@ -5936,8 +5938,20 @@ body.has-app-background::after {
     padding-left: calc(20px + env(safe-area-inset-left, 0px));
   }
 
+  .session-launcher-body {
+    flex: 1;
+    gap: 12px;
+  }
+
+  .session-launcher-browser {
+    flex: 1;
+  }
+
   .session-launcher-list {
+    flex: 1;
+    min-height: 0;
     max-height: none;
+    padding-right: 0;
   }
 
   .session-launcher-toolbar {
@@ -5948,8 +5962,41 @@ body.has-app-background::after {
     grid-column: 1 / -1;
   }
 
+  .session-launcher-launch {
+    flex-shrink: 0;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  }
+
+  .session-launcher-launch-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
   .session-launcher-providers {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .session-launcher-provider {
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 52px;
+    padding: 10px 8px;
+  }
+
+  .session-launcher-provider-heading {
+    justify-content: center;
+  }
+
+  .session-launcher-provider-title {
+    font-size: var(--fs-base);
+  }
+
+  .session-launcher-provider-description {
+    display: none;
   }
 }
 
