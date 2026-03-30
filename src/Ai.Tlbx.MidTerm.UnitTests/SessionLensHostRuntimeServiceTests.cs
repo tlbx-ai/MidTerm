@@ -4,6 +4,7 @@ using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using Xunit;
 
@@ -785,6 +786,76 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
     }
 
+    [Fact]
+    public async Task SessionLensHostRuntimeService_Forget_KillsRecoveredMtAgentHostProcess()
+    {
+        var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-kill-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(settingsRoot);
+        var instanceIdentity = MidTermInstanceIdentity.Load(settingsRoot, 4040);
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-kill-host-1",
+            CurrentDirectory = AppContext.BaseDirectory,
+            ForegroundName = "codex",
+            LensOnly = true,
+            ProfileHint = "codex"
+        };
+
+        SessionLensHostRuntimeService? initialRuntime = null;
+        SessionLensHostRuntimeService? recoveredRuntime = null;
+        try
+        {
+            var initialPulse = new SessionLensPulseService();
+            initialRuntime = new SessionLensHostRuntimeService(
+                new SessionLensHostIngressService(initialPulse),
+                initialPulse,
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "synthetic");
+
+            Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session));
+
+            var hostPid = await WaitForTrackedHostPidAsync(initialRuntime, session.Id);
+            Assert.True(hostPid > 0);
+            Assert.True(ProcessExists(hostPid));
+
+            var recoveredPulse = new SessionLensPulseService();
+            recoveredRuntime = new SessionLensHostRuntimeService(
+                new SessionLensHostIngressService(recoveredPulse),
+                recoveredPulse,
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "synthetic");
+
+            Assert.True(await recoveredRuntime.RecoverExistingHostAsync(session.Id, "codex", session));
+            Assert.False(HasTrackedHostProcess(recoveredRuntime, session.Id));
+
+            recoveredRuntime.Forget(session.Id);
+
+            Assert.True(await WaitForConditionAsync(() => !ProcessExists(hostPid)));
+        }
+        finally
+        {
+            if (recoveredRuntime is not null)
+            {
+                await recoveredRuntime.DisposeAsync();
+            }
+
+            if (initialRuntime is not null)
+            {
+                await initialRuntime.DisposeAsync();
+            }
+
+            try
+            {
+                Directory.Delete(settingsRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private static async Task<LensPulseEventListResponse> WaitForEventsAsync(
         SessionLensPulseService pulse,
         string sessionId,
@@ -886,5 +957,58 @@ public sealed class SessionLensHostRuntimeServiceTests
         {
             return false;
         }
+    }
+
+    private static async Task<int> WaitForTrackedHostPidAsync(SessionLensHostRuntimeService runtime, string sessionId)
+    {
+        for (var i = 0; i < 80; i++)
+        {
+            var hostPid = GetTrackedHostPid(runtime, sessionId);
+            if (hostPid > 0)
+            {
+                return hostPid;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return GetTrackedHostPid(runtime, sessionId);
+    }
+
+    private static int GetTrackedHostPid(SessionLensHostRuntimeService runtime, string sessionId)
+    {
+        var state = GetTrackedHostState(runtime, sessionId);
+        if (state is null)
+        {
+            return 0;
+        }
+
+        return state.GetType().GetProperty("HostPid", BindingFlags.Instance | BindingFlags.Public)?.GetValue(state) as int? ?? 0;
+    }
+
+    private static bool HasTrackedHostProcess(SessionLensHostRuntimeService runtime, string sessionId)
+    {
+        var state = GetTrackedHostState(runtime, sessionId);
+        if (state is null)
+        {
+            return false;
+        }
+
+        return state.GetType().GetProperty("Process", BindingFlags.Instance | BindingFlags.Public)?.GetValue(state) is Process;
+    }
+
+    private static object? GetTrackedHostState(SessionLensHostRuntimeService runtime, string sessionId)
+    {
+        var statesField = typeof(SessionLensHostRuntimeService).GetField("_states", BindingFlags.Instance | BindingFlags.NonPublic);
+        var states = statesField?.GetValue(runtime);
+        var tryGetValue = states?.GetType().GetMethod("TryGetValue");
+        if (states is null || tryGetValue is null)
+        {
+            return null;
+        }
+
+        var args = new object?[] { sessionId, null };
+        var found = tryGetValue.Invoke(states, args) as bool? == true;
+        return found ? args[1] : null;
     }
 }
