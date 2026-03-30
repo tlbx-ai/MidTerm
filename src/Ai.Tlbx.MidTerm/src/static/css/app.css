@@ -5669,6 +5669,40 @@ body.has-app-background::after {
   white-space: pre-line;
 }
 
+.dialog-details {
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-dialog-muted, var(--bg-surface)) 92%, transparent);
+  overflow: hidden;
+}
+
+.dialog-details > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  list-style: none;
+}
+
+.dialog-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dialog-details-pre {
+  margin: 0;
+  padding: 0 12px 12px;
+  max-height: min(38vh, 280px);
+  overflow: auto;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+}
+
 .share-dialog-modal {
   width: min(520px, 92vw);
 }

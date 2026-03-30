@@ -14,7 +14,9 @@ import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
   CreateSessionRequest,
+  SessionInfoDto,
   WorkerBootstrapRequest,
+  WorkerBootstrapResponse,
   SessionPromptRequest,
   SessionStateResponse,
   LensTurnRequest,
@@ -66,6 +68,39 @@ export class LensHttpError extends Error {
   }
 }
 
+export class ApiProblemError extends Error {
+  readonly status: number;
+  readonly title: string;
+  readonly detail: string;
+  readonly errorDetails: string;
+  readonly errorStage: string;
+  readonly exceptionType: string;
+  readonly nativeErrorCode: number | null;
+
+  constructor(options: {
+    status: number;
+    title?: string;
+    detail?: string;
+    errorDetails?: string;
+    errorStage?: string;
+    exceptionType?: string;
+    nativeErrorCode?: number | null;
+  }) {
+    const title = options.title?.trim() || `HTTP ${options.status}`;
+    const detail = options.detail?.trim() || '';
+    super(detail || title);
+    this.name = 'ApiProblemError';
+    this.status = options.status;
+    this.title = title;
+    this.detail = detail;
+    this.errorDetails = options.errorDetails?.trim() || '';
+    this.errorStage = options.errorStage?.trim() || '';
+    this.exceptionType = options.exceptionType?.trim() || '';
+    this.nativeErrorCode =
+      typeof options.nativeErrorCode === 'number' ? options.nativeErrorCode : null;
+  }
+}
+
 async function throwHttpError(response: Response, fallback: string): Promise<never> {
   const detail = await response
     .text()
@@ -77,6 +112,80 @@ async function throwHttpError(response: Response, fallback: string): Promise<nev
   }
 
   throw new LensHttpError(response.status, response.statusText || fallback);
+}
+
+async function readResponseBody(response: Response): Promise<string> {
+  return response
+    .text()
+    .then((text) => text.trim())
+    .catch(() => '');
+}
+
+async function throwApiProblem(response: Response, fallback: string): Promise<never> {
+  const body = await readResponseBody(response);
+  if (body.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      const problem: ConstructorParameters<typeof ApiProblemError>[0] = {
+        status: response.status,
+        title:
+          typeof parsed.title === 'string' && parsed.title.trim()
+            ? parsed.title
+            : response.statusText || fallback,
+        detail:
+          typeof parsed.detail === 'string' && parsed.detail.trim()
+            ? parsed.detail
+            : response.statusText || fallback,
+      };
+      if (typeof parsed.errorDetails === 'string') {
+        problem.errorDetails = parsed.errorDetails;
+      }
+      if (typeof parsed.errorStage === 'string') {
+        problem.errorStage = parsed.errorStage;
+      }
+      if (typeof parsed.exceptionType === 'string') {
+        problem.exceptionType = parsed.exceptionType;
+      }
+      if (typeof parsed.nativeErrorCode === 'number') {
+        problem.nativeErrorCode = parsed.nativeErrorCode;
+      }
+      throw new ApiProblemError(problem);
+    } catch (error) {
+      if (error instanceof ApiProblemError) {
+        throw error;
+      }
+    }
+  }
+
+  throw new ApiProblemError({
+    status: response.status,
+    title: response.statusText || fallback,
+    detail: body || response.statusText || fallback,
+  });
+}
+
+async function postJsonWithProblem<TResponse>(
+  path: string,
+  body?: unknown,
+  parse?: (text: string) => TResponse,
+): Promise<{ data: TResponse | undefined; response: Response }> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+
+  if (!response.ok) {
+    await throwApiProblem(response, 'Request failed.');
+  }
+
+  const text = await readResponseBody(response);
+  return {
+    data: text ? (parse ? parse(text) : (JSON.parse(text) as TResponse)) : undefined,
+    response,
+  };
 }
 
 async function fetchLensJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
@@ -168,15 +277,19 @@ export async function getSessions() {
 }
 
 export async function createSession(request?: CreateSessionRequest) {
-  return client.POST('/api/sessions', {
-    body: request,
-  });
+  return postJsonWithProblem(
+    '/api/sessions',
+    request,
+    (text) => JSON.parse(text) as SessionInfoDto,
+  );
 }
 
 export async function bootstrapWorker(request: WorkerBootstrapRequest) {
-  return client.POST('/api/workers/bootstrap', {
-    body: request,
-  });
+  return postJsonWithProblem(
+    '/api/workers/bootstrap',
+    request,
+    (text) => JSON.parse(text) as WorkerBootstrapResponse,
+  );
 }
 
 export async function deleteSession(id: string) {

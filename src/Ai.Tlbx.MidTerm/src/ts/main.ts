@@ -200,6 +200,7 @@ import type { Session } from './types';
 import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
 import {
+  ApiProblemError,
   createSession as apiCreateSession,
   bootstrapWorker,
   deleteSession as apiDeleteSession,
@@ -614,6 +615,42 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function getSessionLaunchFailure(error: unknown): { message: string; details?: string } {
+  if (error instanceof ApiProblemError) {
+    const details: string[] = [];
+    if (error.errorStage) {
+      details.push(`Stage: ${error.errorStage}`);
+    }
+    if (error.exceptionType) {
+      details.push(`Exception: ${error.exceptionType}`);
+    }
+    if (error.nativeErrorCode !== null) {
+      details.push(`Native error code: ${error.nativeErrorCode}`);
+    }
+    if (error.errorDetails) {
+      details.push(error.errorDetails);
+    }
+
+    return {
+      message: error.detail || error.title || 'Session launch failed.',
+      ...(details.length > 0 ? { details: details.join('\n\n') } : {}),
+    };
+  }
+
+  return {
+    message: getErrorMessage(error),
+  };
+}
+
+function showSessionLaunchFailure(error: unknown): void {
+  const failure = getSessionLaunchFailure(error);
+  const options = {
+    title: t('sessionLauncher.createFailed'),
+    ...(failure.details ? { details: failure.details } : {}),
+  };
+  void showAlert(failure.message, options);
+}
+
 function isLensOnlySession(session: Session | null | undefined): boolean {
   return session?.lensOnly === true;
 }
@@ -658,7 +695,7 @@ async function createSession(): Promise<void> {
       .catch((e: unknown) => {
         clearPendingSession(tempId);
         log.error(() => `Failed to create session: ${String(e)}`);
-        void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+        showSessionLaunchFailure(e);
       });
     return;
   }
@@ -694,7 +731,7 @@ async function createSession(): Promise<void> {
     .catch((e: unknown) => {
       clearPendingSession(tempId);
       log.error(() => `Failed to create worker session: ${String(e)}`);
-      void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+      showSessionLaunchFailure(e);
     });
 }
 
@@ -1263,6 +1300,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
         })
         .catch((e: unknown) => {
           log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
+          showSessionLaunchFailure(e);
         });
       return;
     }
@@ -1290,6 +1328,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
     })
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
+      showSessionLaunchFailure(e);
     });
 }
 

@@ -311,10 +311,24 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? workingDirectory,
         CancellationToken ct = default)
     {
+        return (await CreateSessionDetailedAsync(shellType, cols, rows, workingDirectory, ct).ConfigureAwait(false)).Session;
+    }
+
+    internal async Task<SessionCreationResult> CreateSessionDetailedAsync(
+        string? shellType,
+        int cols,
+        int rows,
+        string? workingDirectory,
+        CancellationToken ct = default)
+    {
+        var creationTimer = Stopwatch.StartNew();
         if (_registry.SessionCount >= MaxSessions)
         {
             Log.Warn(() => $"Session limit reached ({MaxSessions})");
-            return null;
+            return SessionCreationResult.Failed(new SessionLaunchFailure(
+                "limits",
+                $"Session limit reached ({MaxSessions}).",
+                "MidTerm refused to create a new session because the maximum number of live sessions is already in use. Close an existing session and try again."));
         }
 
         var sessionId = Guid.NewGuid().ToString("N")[..SessionIdLength];
@@ -322,64 +336,99 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
         var scrollbackBytes = ResolveScrollbackBytes();
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, _runAsUserSid, out var hostPid,
-                scrollbackBytes, _mtPort, mtToken, paneIndex, _tmuxBinDir))
+        var spawnResult = TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, _runAsUserSid,
+            scrollbackBytes, _mtPort, mtToken, paneIndex, _tmuxBinDir);
+        if (!spawnResult.Succeeded)
         {
-            return null;
+            return SessionCreationResult.Failed(spawnResult.Failure!);
         }
 
-        // Wait for IPC endpoint with exponential backoff
-        // When using sudo -u, the returned PID is sudo's PID, not mthost's.
-        // So we scan for any socket matching the sessionId pattern.
-        await Task.Delay(50, ct).ConfigureAwait(false);
-        int? actualPid = null;
-        for (var wait = 50; wait < 500; wait *= 2)
+        var hostPid = spawnResult.ProcessId;
+        var spawnElapsedMs = creationTimer.ElapsedMilliseconds;
+        var connectPid = hostPid;
+        if (!OperatingSystem.IsWindows())
         {
-            // First try exact PID (direct spawn without sudo)
-            if (SessionEndpointDiscovery.EndpointExists(_instanceIdentity.InstanceId, sessionId, hostPid))
+            // When using sudo -u on Unix, the returned PID is sudo's PID rather than mthost's.
+            // Probe briefly for the real endpoint before attempting IPC.
+            await Task.Delay(50, ct).ConfigureAwait(false);
+            int? actualPid = null;
+            for (var wait = 50; wait < 500; wait *= 2)
             {
-                actualPid = hostPid;
-                break;
+                if (SessionEndpointDiscovery.EndpointExists(_instanceIdentity.InstanceId, sessionId, hostPid))
+                {
+                    actualPid = hostPid;
+                    break;
+                }
+
+                actualPid = SessionEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId);
+                if (actualPid is not null)
+                {
+                    break;
+                }
+
+                await Task.Delay(wait, ct).ConfigureAwait(false);
             }
-            // Then scan for any matching socket (sudo spawn case)
-            actualPid = SessionEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId);
-            if (actualPid is not null) break;
-            await Task.Delay(wait, ct).ConfigureAwait(false);
+
+            connectPid = actualPid ?? hostPid;
         }
 
-        // Use actual PID if found via scan, otherwise fall back to spawner PID
-        var connectPid = actualPid ?? hostPid;
-
-        // Connect to the new session using sessionId + actual PID for endpoint
+        // Windows gets the real mthost PID from CreateProcess/CreateProcessAsUser, so there is
+        // no need for the endpoint probe loop above on the hot create-session path.
+        // Connect to the new session using sessionId + actual PID for endpoint.
         var client = new TtyHostClient(sessionId, connectPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken);
         var connected = false;
+        var connectTimer = Stopwatch.StartNew();
+        var connectAttempts = OperatingSystem.IsWindows() ? 20 : 10;
+        var connectTimeoutMs = OperatingSystem.IsWindows() ? 150 : 1000;
+        var retryDelayMs = OperatingSystem.IsWindows() ? 50 : 200;
 
-        for (var attempt = 0; attempt < 10 && !connected; attempt++)
+        for (var attempt = 0; attempt < connectAttempts && !connected; attempt++)
         {
-            connected = await client.ConnectAsync(1000, ct).ConfigureAwait(false);
-            if (!connected)
+            connected = await client.ConnectAsync(connectTimeoutMs, ct, maxAttempts: 1).ConfigureAwait(false);
+            if (!connected && attempt + 1 < connectAttempts)
             {
-                await Task.Delay(200, ct).ConfigureAwait(false);
+                if (!IsProcessRunning(connectPid))
+                {
+                    break;
+                }
+
+                await Task.Delay(retryDelayMs, ct).ConfigureAwait(false);
             }
         }
 
         if (!connected)
         {
-            Log.Error(() => $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process {connectPid}");
-            KillProcess(connectPid);
-            TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
-            await client.DisposeAsync().ConfigureAwait(false);
-            return null;
+            var failedConnectElapsedMs = connectTimer.ElapsedMilliseconds;
+            var processRunning = IsProcessRunning(connectPid);
+            var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
+            Log.Error(() =>
+                $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process(es) [{processDescription}] " +
+                $"after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={failedConnectElapsedMs} ms)");
+            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid, client).ConfigureAwait(false);
+            return SessionCreationResult.Failed(new SessionLaunchFailure(
+                "connect",
+                processRunning
+                    ? "The terminal host did not open its IPC channel in time."
+                    : "The terminal host exited before MidTerm could attach to it.",
+                $"MidTerm launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms.",
+                processRunning ? null : "ProcessExited"));
         }
 
+        var connectElapsedMs = connectTimer.ElapsedMilliseconds;
+        var infoTimer = Stopwatch.StartNew();
         var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
         if (info is null)
         {
-            Log.Error(() => $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process {connectPid}");
-            KillProcess(connectPid);
-            TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
-            await client.DisposeAsync().ConfigureAwait(false);
-            return null;
+            var failedInfoElapsedMs = infoTimer.ElapsedMilliseconds;
+            var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
+            Log.Error(() =>
+                $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process(es) [{processDescription}] " +
+                $"after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={failedInfoElapsedMs} ms)");
+            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid, client).ConfigureAwait(false);
+            return SessionCreationResult.Failed(new SessionLaunchFailure(
+                "handshake",
+                "The terminal host connected but never returned session metadata.",
+                $"MidTerm established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms."));
         }
 
         info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
@@ -396,12 +445,15 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         await client.SetOrderAsync((byte)(paneIndex % 256), ct).ConfigureAwait(false);
 
-        Log.Info(() => $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid})");
+        var infoElapsedMs = infoTimer.ElapsedMilliseconds;
+        Log.Info(() =>
+            $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid}) in {creationTimer.ElapsedMilliseconds} ms " +
+            $"[spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={infoElapsedMs} ms]");
         OnSessionCreated?.Invoke(sessionId, paneIndex);
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
 
-        return info;
+        return SessionCreationResult.Success(info);
     }
 
     public SessionInfo? GetSession(string sessionId)
@@ -1061,6 +1113,42 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             // Process may have already exited
         }
+    }
+
+    private static bool IsProcessRunning(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string DescribeSpawnedProcesses(int hostPid, int connectPid)
+    {
+        return hostPid == connectPid
+            ? $"PID {connectPid}"
+            : $"spawn PID {hostPid}, attach PID {connectPid}";
+    }
+
+    private static async Task CleanupFailedSessionCreationAsync(
+        string sessionId,
+        int hostPid,
+        int connectPid,
+        TtyHostClient client)
+    {
+        KillProcess(connectPid);
+        if (hostPid != connectPid)
+        {
+            KillProcess(hostPid);
+        }
+
+        TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
+        await client.DisposeAsync().ConfigureAwait(false);
     }
 
     public sealed class TerminalTransportRuntimeSnapshot

@@ -7,6 +7,13 @@ describe('api client lens helpers', () => {
   });
 
   it('surfaces the actual Lens attach HTTP detail instead of a body-read error', async () => {
+    vi.stubGlobal('location', {
+      protocol: 'https:',
+      host: '127.0.0.1:2100',
+      pathname: '/',
+      search: '',
+      hash: '',
+    });
     let reads = 0;
     vi.stubGlobal(
       'fetch',
@@ -42,6 +49,13 @@ describe('api client lens helpers', () => {
   });
 
   it('builds the Lens events URL with afterSequence and parses the payload', async () => {
+    vi.stubGlobal('location', {
+      protocol: 'https:',
+      host: '127.0.0.1:2100',
+      pathname: '/',
+      search: '',
+      hash: '',
+    });
     vi.stubGlobal('window', {
       location: { origin: 'https://127.0.0.1:2100' },
     });
@@ -119,5 +133,86 @@ describe('api client lens helpers', () => {
       'https://127.0.0.1:2100/api/sessions/session-1/buffer/tail?lines=80&stripAnsi=true',
     );
     expect(result).toBe('PS> codex --yolo\nready');
+  });
+
+  it('surfaces structured session launch problem details', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        async text() {
+          return JSON.stringify({
+            title: 'Session launch failed',
+            detail: 'Windows blocked the mthost process launch.',
+            errorDetails: 'CreateProcess failed with Win32 error 5: Access is denied.',
+            errorStage: 'spawn',
+            exceptionType: 'Win32Exception',
+            nativeErrorCode: 5,
+          });
+        },
+      })),
+    );
+
+    const { createSession, ApiProblemError } = await import('./client');
+
+    let thrown: unknown;
+    try {
+      await createSession({ cols: 120, rows: 30, shell: 'Pwsh', workingDirectory: null });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ApiProblemError);
+    expect((thrown as ApiProblemError).detail).toBe('Windows blocked the mthost process launch.');
+    expect((thrown as ApiProblemError).errorDetails).toBe(
+      'CreateProcess failed with Win32 error 5: Access is denied.',
+    );
+    expect((thrown as ApiProblemError).nativeErrorCode).toBe(5);
+  });
+
+  it('parses successful session launch responses via fetch fallback', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      async text() {
+        return JSON.stringify({
+          id: 'session-1',
+          pid: 42,
+          createdAt: '2026-03-30T10:00:00Z',
+          isRunning: true,
+          exitCode: null,
+          name: '',
+          terminalTitle: '',
+          currentDirectory: 'Q:/repos/MidTermWorkspace4',
+          foregroundPid: null,
+          foregroundName: null,
+          foregroundCommandLine: null,
+          foregroundDisplayName: null,
+          foregroundProcessIdentity: null,
+          shellType: 'Pwsh',
+          cols: 120,
+          rows: 30,
+          manuallyNamed: false,
+          supervisor: null,
+          order: 1,
+          parentSessionId: null,
+          bookmarkId: null,
+          agentControlled: false,
+        });
+      },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { createSession } = await import('./client');
+    const { data } = await createSession({ cols: 120, rows: 30, shell: 'Pwsh' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+    expect(data?.id).toBe('session-1');
   });
 });

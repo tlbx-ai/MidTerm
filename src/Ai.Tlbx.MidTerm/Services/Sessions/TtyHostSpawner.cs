@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 #if WINDOWS
+using System.ComponentModel;
 using System.Security.Principal;
 using System.Runtime.Versioning;
 #endif
@@ -187,7 +188,7 @@ public static class TtyHostSpawner
         }
     }
 
-    public static bool SpawnTtyHost(
+    internal static TtyHostSpawnResult SpawnTtyHost(
         string sessionId,
         string? shellType,
         string? workingDirectory,
@@ -197,25 +198,26 @@ public static class TtyHostSpawner
         string ownerToken,
         string? runAsUser,
         string? runAsUserSid,
-        out int processId,
         int scrollbackBytes,
         int? mtPort = null,
         string? mtToken = null,
         int? paneIndex = null,
         string? tmuxBinDir = null)
     {
-        processId = 0;
-
         if (!File.Exists(TtyHostPath))
         {
-            Log.Error(() => $"TtyHostSpawner: mthost not found at: {TtyHostPath}");
-            return false;
+            var message = $"mthost not found at: {TtyHostPath}";
+            Log.Error(() => $"TtyHostSpawner: {message}");
+            return TtyHostSpawnResult.Failed(message, detail: "MidTerm could not find the tty host binary.");
         }
 
         if (!VerifyMthostIntegrity())
         {
-            Log.Error(() => "TtyHostSpawner: mthost integrity check failed - refusing to spawn");
-            return false;
+            const string message = "mthost integrity check failed - refusing to spawn";
+            Log.Error(() => $"TtyHostSpawner: {message}");
+            return TtyHostSpawnResult.Failed(
+                "mthost integrity verification failed.",
+                detail: "MidTerm refused to launch an mthost binary whose checksum did not match the installed manifest.");
         }
 
         var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,
@@ -223,9 +225,9 @@ public static class TtyHostSpawner
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
-        return SpawnWindows(args, runAsUser, runAsUserSid, out processId);
+        return SpawnWindows(args, runAsUser, runAsUserSid);
 #else
-        return SpawnUnix(sessionId, args, runAsUser, out processId);
+        return SpawnUnix(sessionId, args, runAsUser);
 #endif
 #pragma warning restore CA1416
     }
@@ -534,15 +536,15 @@ public static class TtyHostSpawner
         }
     }
 
-    private static bool SpawnUnix(string sessionId, string args, string? runAsUser, out int processId)
+    private static TtyHostSpawnResult SpawnUnix(string sessionId, string args, string? runAsUser)
     {
-        processId = 0;
+        var processId = 0;
 
         try
         {
             if (OperatingSystem.IsMacOS() && TrySpawnMacOsViaLaunchAgent(sessionId, args, out processId))
             {
-                return true;
+                return TtyHostSpawnResult.Success(processId);
             }
 
             ProcessStartInfo psi;
@@ -556,7 +558,9 @@ public static class TtyHostSpawner
                 if (!UserValidationService.IsValidUsernameFormat(runAsUser))
                 {
                     Log.Error(() => $"TtyHostSpawner SECURITY: Rejected invalid username format: {runAsUser}");
-                    return false;
+                    return TtyHostSpawnResult.Failed(
+                        $"Refused to spawn mthost for invalid username '{runAsUser}'.",
+                        detail: "The configured run-as username did not pass validation.");
                 }
 
                 psi = new ProcessStartInfo
@@ -594,8 +598,11 @@ public static class TtyHostSpawner
             var process = Process.Start(psi);
             if (process is null)
             {
-                Log.Error(() => "TtyHostSpawner: Process.Start returned null");
-                return false;
+                const string message = "Process.Start returned null";
+                Log.Error(() => $"TtyHostSpawner: {message}");
+                return TtyHostSpawnResult.Failed(
+                    "Failed to launch the mthost process.",
+                    detail: "Process.Start returned null.");
             }
 
             processId = process.Id;
@@ -616,12 +623,15 @@ public static class TtyHostSpawner
             {
                 Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
             }
-            return true;
+            return TtyHostSpawnResult.Success(processId);
         }
         catch (Exception ex)
         {
             Log.Error(() => $"TtyHostSpawner: Failed to spawn: {ex.Message}");
-            return false;
+            return TtyHostSpawnResult.Failed(
+                "Failed to launch the mthost process.",
+                detail: ex.ToString(),
+                exceptionType: ex.GetType().Name);
         }
     }
 
@@ -877,26 +887,23 @@ public static class TtyHostSpawner
 
 #if WINDOWS
     [SupportedOSPlatform("windows")]
-    private static bool SpawnWindows(string args, string? runAsUser, string? runAsUserSid, out int processId)
+    private static TtyHostSpawnResult SpawnWindows(string args, string? runAsUser, string? runAsUserSid)
     {
-        processId = 0;
         var commandLine = $"\"{TtyHostPath}\" {args}";
 
         if (IsRunningAsSystem())
         {
-            return SpawnAsUser(commandLine, runAsUser, runAsUserSid, out processId);
+            return SpawnAsUser(commandLine, runAsUser, runAsUserSid);
         }
         else
         {
-            return SpawnDirect(commandLine, out processId);
+            return SpawnDirect(commandLine);
         }
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool SpawnDirect(string commandLine, out int processId)
+    private static TtyHostSpawnResult SpawnDirect(string commandLine)
     {
-        processId = 0;
-
         var si = new STARTUPINFO();
         si.cb = Marshal.SizeOf<STARTUPINFO>();
 
@@ -914,35 +921,47 @@ public static class TtyHostSpawner
 
         if (!success)
         {
-            Log.Error(() => $"TtyHostSpawner: CreateProcess failed: {Marshal.GetLastWin32Error()}");
-            return false;
+            var errorCode = Marshal.GetLastWin32Error();
+            var detail = new Win32Exception(errorCode).Message;
+            Log.Error(() => $"TtyHostSpawner: CreateProcess failed: {errorCode} ({detail})");
+            return TtyHostSpawnResult.Failed(
+                "Windows blocked the mthost process launch.",
+                detail: $"CreateProcess failed with Win32 error {errorCode}: {detail}",
+                exceptionType: nameof(Win32Exception),
+                nativeErrorCode: errorCode);
         }
 
-        processId = pi.dwProcessId;
+        var processId = pi.dwProcessId;
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
 
         var pid = processId;
         Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {pid})");
-        return true;
+        return TtyHostSpawnResult.Success(processId);
     }
 
     [SupportedOSPlatform("windows")]
-    private static bool SpawnAsUser(string commandLine, string? runAsUser, string? runAsUserSid, out int processId)
+    private static TtyHostSpawnResult SpawnAsUser(string commandLine, string? runAsUser, string? runAsUserSid)
     {
-        processId = 0;
-
         if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out var sessionId))
         {
-            return false;
+            return TtyHostSpawnResult.Failed(
+                "Failed to acquire a Windows user token for launching mthost.",
+                detail: $"Could not acquire a token for '{runAsUser ?? runAsUserSid ?? "active session"}'.");
         }
 
         try
         {
             if (!CreateEnvironmentBlock(out var envBlock, userToken, false))
             {
-                Log.Error(() => $"TtyHostSpawner: CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}");
-                return false;
+                var errorCode = Marshal.GetLastWin32Error();
+                var detail = new Win32Exception(errorCode).Message;
+                Log.Error(() => $"TtyHostSpawner: CreateEnvironmentBlock failed: {errorCode} ({detail})");
+                return TtyHostSpawnResult.Failed(
+                    "Failed to prepare the Windows environment block for mthost.",
+                    detail: $"CreateEnvironmentBlock failed with Win32 error {errorCode}: {detail}",
+                    exceptionType: nameof(Win32Exception),
+                    nativeErrorCode: errorCode);
             }
 
             try
@@ -970,18 +989,24 @@ public static class TtyHostSpawner
 
                     if (!success)
                     {
-                        Log.Error(() => $"TtyHostSpawner: CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}");
-                        return false;
+                        var errorCode = Marshal.GetLastWin32Error();
+                        var detail = new Win32Exception(errorCode).Message;
+                        Log.Error(() => $"TtyHostSpawner: CreateProcessAsUser failed: {errorCode} ({detail})");
+                        return TtyHostSpawnResult.Failed(
+                            "Windows blocked the mthost process launch for the target user.",
+                            detail: $"CreateProcessAsUser failed with Win32 error {errorCode}: {detail}",
+                            exceptionType: nameof(Win32Exception),
+                            nativeErrorCode: errorCode);
                     }
 
-                    processId = pi.dwProcessId;
+                    var processId = pi.dwProcessId;
                     CloseHandle(pi.hThread);
                     CloseHandle(pi.hProcess);
 
                     var pid = processId;
                     var sess = sessionId;
                     Log.Info(() => $"TtyHostSpawner: Spawned mthost as user (PID: {pid}, Session: {sess})");
-                    return true;
+                    return TtyHostSpawnResult.Success(processId);
                 }
                 finally
                 {

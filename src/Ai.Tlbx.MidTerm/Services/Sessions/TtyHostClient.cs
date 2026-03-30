@@ -104,11 +104,12 @@ public sealed class TtyHostClient : IAsyncDisposable
             : IpcEndpoint.GetSessionEndpoint(instanceId!, sessionId, hostPid);
     }
 
-    public async Task<bool> ConnectAsync(int timeoutMs = 5000, CancellationToken ct = default)
+    public async Task<bool> ConnectAsync(int timeoutMs = 5000, CancellationToken ct = default, int maxAttempts = 3)
     {
         if (_disposed) return false;
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        var attempts = Math.Max(1, maxAttempts);
+        for (var attempt = 0; attempt < attempts; attempt++)
         {
             try
             {
@@ -163,7 +164,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                 Log.Verbose(() => $"[IPC] {_sessionId}: Connect attempt {attempt} failed: {ex.GetType().Name}: {ex.Message}");
             }
 
-            if (attempt < 2)
+            if (attempt + 1 < attempts)
             {
                 await Task.Delay(200 * (attempt + 1), ct).ConfigureAwait(false);
             }

@@ -520,14 +520,21 @@ public sealed class StateWebSocketHandler
         var rows = payload?.Rows ?? 24;
         var workingDir = payload?.WorkingDirectory;
 
-        var session = await _sessionManager.CreateSessionAsync(payload?.Shell, cols, rows, workingDir);
+        var creation = await _sessionManager.CreateSessionDetailedAsync(payload?.Shell, cols, rows, workingDir);
 
-        if (session is null)
+        if (!creation.Succeeded)
         {
-            await sendResponse(cmd.Id, false, null, "Failed to create session");
+            var failure = creation.Failure;
+            var error = failure?.Message ?? "Failed to create session";
+            if (!string.IsNullOrWhiteSpace(failure?.Detail))
+            {
+                error += $"\n\n{failure.Detail}";
+            }
+            await sendResponse(cmd.Id, false, null, error);
             return;
         }
 
+        var session = creation.Session!;
         var data = new WsSessionCreatedData
         {
             Id = session.Id,

@@ -16,6 +16,7 @@ using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Microsoft.AspNetCore.Mvc;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class SessionApiEndpoints
@@ -95,27 +96,29 @@ public static partial class SessionApiEndpoints
                 shellType = parsed;
             }
 
-            var sessionInfo = await sessionManager.CreateSessionAsync(
+            var creation = await sessionManager.CreateSessionDetailedAsync(
                 shellType?.ToString(), cols, rows, request?.WorkingDirectory);
 
-            if (sessionInfo is null)
+            if (!creation.Succeeded)
             {
-                return Results.Problem("Failed to create session");
+                return CreateSessionLaunchProblem(creation.Failure);
             }
 
+            var sessionInfo = creation.Session!;
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
         {
-            var sessionInfo = await sessionManager.CreateSessionAsync(
+            var creation = await sessionManager.CreateSessionDetailedAsync(
                 request.Shell, request.Cols, request.Rows, request.WorkingDirectory, ct);
 
-            if (sessionInfo is null)
+            if (!creation.Succeeded)
             {
-                return Results.Problem("Failed to create worker session");
+                return CreateSessionLaunchProblem(creation.Failure, "Worker session launch failed");
             }
 
+            var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
 
             if (request.AgentControlled)
@@ -1095,4 +1098,38 @@ public static partial class SessionApiEndpoints
         int SubmitDelayMs,
         int FollowupSubmitCount,
         int FollowupSubmitDelayMs);
+
+    private static IResult CreateSessionLaunchProblem(
+        SessionLaunchFailure? failure,
+        string title = "Session launch failed")
+    {
+        var statusCode = failure?.Stage == "limits"
+            ? StatusCodes.Status409Conflict
+            : StatusCodes.Status500InternalServerError;
+        var problem = new ProblemDetails
+        {
+            Title = title,
+            Status = statusCode,
+            Detail = failure?.Message ?? "Failed to create session."
+        };
+
+        if (failure is not null)
+        {
+            problem.Extensions["errorStage"] = failure.Stage;
+            if (!string.IsNullOrWhiteSpace(failure.Detail))
+            {
+                problem.Extensions["errorDetails"] = failure.Detail;
+            }
+            if (!string.IsNullOrWhiteSpace(failure.ExceptionType))
+            {
+                problem.Extensions["exceptionType"] = failure.ExceptionType;
+            }
+            if (failure.NativeErrorCode is not null)
+            {
+                problem.Extensions["nativeErrorCode"] = failure.NativeErrorCode.Value;
+            }
+        }
+
+        return Results.Problem(problem);
+    }
 }

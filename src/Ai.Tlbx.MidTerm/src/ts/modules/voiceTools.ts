@@ -10,6 +10,7 @@ import { sendInput } from './comms';
 import { sessionTerminals } from '../state';
 import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
 import {
+  ApiProblemError,
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
   getHistory,
@@ -36,6 +37,18 @@ import { JS_BUILD_VERSION } from '../constants';
 const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
+
+function getSessionLaunchErrorMessage(error: unknown): string {
+  if (error instanceof ApiProblemError) {
+    if (error.errorDetails) {
+      return `${error.detail}\n\n${error.errorDetails}`;
+    }
+
+    return error.detail || error.title || error.message;
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Get only the visible viewport content (cols x rows).
@@ -300,20 +313,24 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
  * Handle create_session tool - create a new terminal session.
  */
 async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
-  const sessions = $sessionList.get();
-  const refSession = sessions[0];
-  const cols = refSession?.cols ?? 120;
-  const rows = refSession?.rows ?? 30;
+  try {
+    const sessions = $sessionList.get();
+    const refSession = sessions[0];
+    const cols = refSession?.cols ?? 120;
+    const rows = refSession?.rows ?? 30;
 
-  const { data } = await apiCreateSession({
-    cols,
-    rows,
-    shell: args.shellType ?? null,
-    workingDirectory: args.workingDirectory ?? null,
-  });
-  if (!data) return { success: false, error: 'Failed to create session' };
+    const { data } = await apiCreateSession({
+      cols,
+      rows,
+      shell: args.shellType ?? null,
+      workingDirectory: args.workingDirectory ?? null,
+    });
+    if (!data) return { success: false, error: 'Failed to create session' };
 
-  return { success: true, sessionId: data.id, shell: data.shellType };
+    return { success: true, sessionId: data.id, shell: data.shellType };
+  } catch (error) {
+    return { success: false, error: getSessionLaunchErrorMessage(error) };
+  }
 }
 
 /**
@@ -369,12 +386,17 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
     const cols = refSession?.cols ?? 120;
     const rows = refSession?.rows ?? 30;
 
-    const { data: sessionData } = await apiCreateSession({
-      cols,
-      rows,
-      shell: bookmark.shellType || null,
-      workingDirectory: bookmark.workingDirectory || null,
-    });
+    let sessionData: Awaited<ReturnType<typeof apiCreateSession>>['data'];
+    try {
+      ({ data: sessionData } = await apiCreateSession({
+        cols,
+        rows,
+        shell: bookmark.shellType || null,
+        workingDirectory: bookmark.workingDirectory || null,
+      }));
+    } catch (error) {
+      return { success: false, error: getSessionLaunchErrorMessage(error) };
+    }
     if (!sessionData) return { success: false, error: 'Failed to create session' };
 
     if (bookmark.commandLine) {

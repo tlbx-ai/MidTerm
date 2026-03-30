@@ -19,6 +19,8 @@ interface ConfirmOptions {
 interface AlertOptions {
   title?: string;
   okLabel?: string;
+  details?: string;
+  detailsLabel?: string;
 }
 
 /**
@@ -105,6 +107,16 @@ export function showAlert(message: string, options?: AlertOptions): Promise<void
 
     const titleText = options?.title ?? t('dialog.info');
     const okText = options?.okLabel ?? t('dialog.ok');
+    const detailsText = options?.details?.trim() ?? '';
+    const detailsLabel = options?.detailsLabel?.trim() || 'Details';
+    const detailsMarkup = detailsText
+      ? `
+          <details class="dialog-details">
+            <summary>${escapeHtml(detailsLabel)}</summary>
+            <pre class="dialog-details-pre">${escapeHtml(detailsText)}</pre>
+          </details>
+        `
+      : '';
 
     overlay.innerHTML = `
       <div class="modal dialog-modal">
@@ -115,6 +127,7 @@ export function showAlert(message: string, options?: AlertOptions): Promise<void
           </div>
           <div class="modal-body">
             <p class="dialog-message">${escapeHtml(message)}</p>
+            ${detailsMarkup}
           </div>
           <div class="modal-footer">
             <button class="btn-primary" data-role="ok">${escapeHtml(okText)}</button>
