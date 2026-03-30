@@ -42,11 +42,19 @@ jobs:
           NOTES=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
           PRERELEASE=""
           [[ "${{ github.ref_name }}" == *"-dev"* ]] && PRERELEASE="--prerelease"
-          gh release create ${{ github.ref_name }} \
-            $PRERELEASE \
-            --title "$TITLE" \
-            --notes "## What's Changed
+          RELEASE_NOTES="## What's Changed
           ${NOTES}"
+          if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
+            gh release edit ${{ github.ref_name }} \
+              $PRERELEASE \
+              --title "$TITLE" \
+              --notes "$RELEASE_NOTES"
+          else
+            gh release create ${{ github.ref_name }} \
+              $PRERELEASE \
+              --title "$TITLE" \
+              --notes "$RELEASE_NOTES"
+          fi
 
   # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
   frontend:
@@ -224,7 +232,7 @@ jobs:
           $rid = "${{ matrix.rid }}"
           $archive = "staging/mt-$rid.tar.gz"
           tar -cf - -C "staging/$rid" . | gzip -9 > $archive
-          gh release upload "${{ github.ref_name }}" $archive
+          gh release upload "${{ github.ref_name }}" $archive --clobber
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -379,7 +387,7 @@ jobs:
           $rid = "${{ matrix.rid }}"
           $archive = "staging/mt-$rid.tar.gz"
           tar -cf - -C "staging/$rid" . | gzip -9 > $archive
-          gh release upload "${{ github.ref_name }}" $archive
+          gh release upload "${{ github.ref_name }}" $archive --clobber
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
