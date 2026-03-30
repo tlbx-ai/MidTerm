@@ -22,7 +22,7 @@ import {
   getLensQuickSettingsProvider,
   setLensQuickSettingsDraft,
 } from '../lens/quickSettings';
-import { onTabActivated, onTabDeactivated } from '../sessionTabs';
+import { onTabActivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop } from '../terminal';
 import { hideTouchController } from '../touchController';
@@ -117,7 +117,13 @@ export function initSmartInput(): void {
     }
   });
 
-  onTabDeactivated('agent', (sessionId) => {
+  onTabActivated('terminal', (sessionId) => {
+    if ($activeSessionId.get() === sessionId) {
+      syncSmartInputVisibility();
+    }
+  });
+
+  onTabActivated('files', (sessionId) => {
     if ($activeSessionId.get() === sessionId) {
       syncSmartInputVisibility();
     }
