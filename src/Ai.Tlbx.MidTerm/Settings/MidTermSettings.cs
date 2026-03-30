@@ -6,6 +6,12 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class MidTermSettings
 {
+    public const int DefaultScrollbackLines = 2000;
+    public const int MaxScrollbackLines = 10000;
+    public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
+    public const int MinScrollbackBytes = 64 * 1024;
+    public const int MaxScrollbackBytes = 10 * 1024 * 1024;
+
     // Session Defaults
     public ShellType DefaultShell { get; set; } = GetPlatformDefaultShell();
     public int DefaultCols { get; set; } = 120;
@@ -55,13 +61,15 @@ public sealed class MidTermSettings
     public bool UseWebGL { get; set; } = true;
 
     // Terminal Behavior
-    public int ScrollbackLines { get; set; } = 10000;
+    public int ScrollbackLines { get; set; } = DefaultScrollbackLines;
+    public int ScrollbackBytes { get; set; } = DefaultScrollbackBytes;
     public BellStyleSetting BellStyle { get; set; } = BellStyleSetting.Notification;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
+    public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)

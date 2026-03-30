@@ -246,6 +246,15 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
+  it('shows the follower claim badge even when the terminal already fits', () => {
+    const harness = createTerminalHarness(81, 24);
+
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.makeReferenceScaleBrowser');
+    expect(harness.xterm.style.transform ?? '').toBe('');
+  });
+
   it('resizes immediately after the browser becomes main and clears the badge path', () => {
     const harness = createTerminalHarness(80, 24);
     sessionTerminals.set('s1', harness.state as never);

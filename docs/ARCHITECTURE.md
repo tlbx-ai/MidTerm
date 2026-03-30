@@ -203,9 +203,91 @@ MidTerm has a second input model in addition to direct terminal focus:
 Lens is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
 
 - the canonical turn, request, and stream state still belongs to the backend Lens runtime
-- the frontend Lens panel reconstructs that state into a chat-style transcript without taking ownership away from Terminal
+- the frontend Lens panel renders that state as provider-backed history/timeline UI without taking ownership away from Terminal
 - when live attach is unavailable, Lens can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
 - Lens is currently dev-gated in the session tabs while the UX is still being refined
+
+The boundary between Terminal and Lens is a core design rule:
+
+- a plain terminal session remains terminal-owned even if its foreground process is `codex`, `claude`, or another AI CLI
+- foreground process detection may label, summarize, or describe a session, but it must not by itself promote that session into Lens
+- only sessions explicitly created as Lens sessions should expose provider-primary tabs such as `Codex` or `Claude`
+- the IDE bar is exclusive by surface: terminal sessions show `Terminal` plus `Files`, while explicit Lens sessions show the provider tab plus `Files`
+
+### Lens Provider Runtime Decision
+
+For provider-backed Lens sessions, MidTerm should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
+
+Terminology matters here:
+
+- `history` means the canonical provider-backed ordered sequence of Lens items
+- `timeline` means the rendered web presentation of that history
+- `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names, not Lens semantics
+
+That means:
+
+- an explicit Codex or Claude Lens session owns a dedicated Lens runtime for that provider
+- `mtagenthost` is the intended MidTerm host/runtime boundary for those provider-backed Lens sessions
+- explicit Lens sessions do not use `mthost` and do not gain terminal access through the PTY layer
+- the runtime launches or attaches using the provider's supported structured protocol
+- MidTerm normalizes that provider traffic into canonical Lens turn, item, request, stream, and diff events
+- the Lens UI renders those canonical events and snapshots as a conversation surface
+- the terminal remains a separate surface with separate ownership and behavior
+
+This rule exists to prevent a class of design failures:
+
+- terminal transcripts are not a reliable protocol boundary
+- foreground process detection is not enough to define conversation identity
+- Lens is not a terminal transcript view and must not treat PTY stdout/stderr as its authoritative event stream
+- screen-scraping or buffer-parsing makes streaming, tool lifecycle, approvals, plan-mode questions, and diff state fragile
+- terminal behavior and Lens behavior become entangled unless the runtime boundary is explicit
+
+The correct architectural direction is therefore:
+
+- Terminal stays terminal-native
+- Lens stays provider-runtime-native through `mtagenthost` plus provider APIs and structured protocols intended for rich UI clients
+- `mthost` is for real terminals; `mtagenthost` is for explicit provider Lens sessions
+- canonical Lens events bridge the runtime and the web UI
+
+### Lens Sync Transport
+
+Lens sync is now owned by a dedicated `/ws/lens` channel rather than REST snapshot polling plus SSE.
+
+- HTTP remains for explicit Lens session creation/bootstrap only
+- after session start, Lens attach, snapshot reads, history window reads, turn submission, interrupts, approvals, and user-input answers all flow through `/ws/lens`
+- `mt` remains the state master and durable owner of canonical Lens history plus the derived live read model
+- the browser keeps one multiplexed Lens socket and can subscribe to many Lens sessions at once
+- Lens history is synchronized as a windowed read model, not as a full-history replay on every reconnect
+- reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
+- the frontend stays provider-neutral and does not reconstruct Lens state from PTY output or provider-specific raw transports
+
+### Lens Screen Logs
+
+For UI iteration and bug discussion, Lens also emits a dev-only per-session screen log derived from the same canonical backend history model that drives `/ws/lens`.
+
+- the screen log is written by MidTerm, not by the browser
+- one GUID-named log file is created per Lens session under the normal MidTerm log root
+- records are screen-oriented and capture rendered-history facts such as kind, label, title, meta, body, render mode, and collapsed-by-default hints
+- raw tool output should be summarized before it reaches both the Lens timeline and the screen log, and duplicate no-op screen states should not be re-logged
+- raw provider payloads and PTY output are not the screen log contract
+
+### Lens UX Target And DOD
+
+The intended Definition of Done for provider-backed Lens sessions is:
+
+1. A user can create a new session in MidTerm and explicitly choose `Codex` or `Claude`.
+2. The session opens on the provider Lens surface with the Smart Input / composer visible.
+3. MidTerm shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
+4. The user can submit a prompt from the Lens composer without switching to Terminal.
+5. Assistant output streams into the Lens history/timeline incrementally as it is generated, rather than appearing only after full completion.
+6. Tool activity is visible as it happens, including starts, updates, completions, approvals, and user-input questions.
+7. File edits and working diff updates are surfaced live in the Lens UI.
+8. Plan-mode or equivalent provider-driven question flows appear as first-class Lens interactions, not as raw terminal text.
+9. The full Lens experience is implemented without hijacking or reclassifying normal terminal sessions.
+
+In practical terms, the user should experience Lens as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
+
+The visual and interaction design rules for that Lens surface are maintained separately in [LensDesign.md](LensDesign.md). Architecture decisions belong here; the concrete Lens UX contract, hierarchy, history/timeline behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
 
 ## 5. Web Preview and Browser Automation
 
@@ -277,16 +359,16 @@ The frontend settings registry defines editability, apply mode, control ownershi
 
 MidTerm uses a mix of server-side and browser-side storage:
 
-| Area | Storage |
-| --- | --- |
-| Server settings | `settings.json` |
-| Secrets | platform-specific secret storage |
-| Certificates and keys | settings directory plus protected key storage |
-| History and share data | server-side files/services |
-| Split layout | browser `localStorage` |
-| Sidebar width/collapse | cookies |
-| Smart Input/chat/touch prefs | browser `localStorage` |
-| Preview snapshots | `.midterm/snapshot_*` under the working tree |
+| Area                         | Storage                                       |
+| ---------------------------- | --------------------------------------------- |
+| Server settings              | `settings.json`                               |
+| Secrets                      | platform-specific secret storage              |
+| Certificates and keys        | settings directory plus protected key storage |
+| History and share data       | server-side files/services                    |
+| Split layout                 | browser `localStorage`                        |
+| Sidebar width/collapse       | cookies                                       |
+| Smart Input/chat/touch prefs | browser `localStorage`                        |
+| Preview snapshots            | `.midterm/snapshot_*` under the working tree  |
 
 ## 7. Security and Remote Access
 
@@ -302,10 +384,10 @@ MidTerm assumes that anyone who reaches the UI could gain shell access, so the d
 
 ### Secret Storage
 
-| Platform | Secret storage |
-| --- | --- |
-| Windows | DPAPI-backed `secrets.bin` |
-| macOS user mode | Keychain-backed storage |
+| Platform                   | Secret storage                                         |
+| -------------------------- | ------------------------------------------------------ |
+| Windows                    | DPAPI-backed `secrets.bin`                             |
+| macOS user mode            | Keychain-backed storage                                |
 | macOS service mode / Linux | file-backed secret storage with restricted permissions |
 
 ### Certificates
@@ -361,11 +443,11 @@ That is how MidTerm can update installed systems without asking users to manuall
 
 ### WebSockets
 
-| Endpoint | Purpose |
-| --- | --- |
-| `/ws/mux` | Binary multiplexed terminal I/O |
-| `/ws/state` | Session list, update state, and related JSON state pushes |
-| `/ws/settings` | Live settings synchronization |
+| Endpoint       | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| `/ws/mux`      | Binary multiplexed terminal I/O                           |
+| `/ws/state`    | Session list, update state, and related JSON state pushes |
+| `/ws/settings` | Live settings synchronization                             |
 
 ### HTTP API Groups
 

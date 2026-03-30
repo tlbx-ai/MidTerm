@@ -94,6 +94,38 @@ export const TERMINAL_COLOR_SCHEME_FIELDS = [
 
 export type TerminalColorSchemeFieldKey = (typeof TERMINAL_COLOR_SCHEME_FIELDS)[number]['key'];
 
+export const TERMINAL_COLOR_SCHEME_TEXT_PLACEHOLDERS = {
+  scrollbarColor: 'rgba(0, 0, 0, 0.3)',
+} as const;
+
+export const DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS: Omit<TerminalColorSchemeDefinition, 'name'> =
+  {
+    background: '#000000',
+    foreground: '#FFFFFF',
+    cursor: '#FFFFFF',
+    cursorAccent: '#000000',
+    selectionBackground: '#555555',
+    scrollbarSliderBackground: '',
+    scrollbarSliderHoverBackground: '',
+    scrollbarSliderActiveBackground: '',
+    black: '#000000',
+    red: '#FF0000',
+    green: '#00FF00',
+    yellow: '#FFFF00',
+    blue: '#0000FF',
+    magenta: '#FF00FF',
+    cyan: '#00FFFF',
+    white: '#FFFFFF',
+    brightBlack: '#808080',
+    brightRed: '#FF5555',
+    brightGreen: '#55FF55',
+    brightYellow: '#FFFF55',
+    brightBlue: '#5555FF',
+    brightMagenta: '#FF55FF',
+    brightCyan: '#55FFFF',
+    brightWhite: '#F5F5F5',
+  };
+
 export function isBuiltInTerminalColorSchemeName(name: string | null | undefined): boolean {
   if (typeof name !== 'string') {
     return false;
@@ -184,22 +216,29 @@ export function themeToTerminalColorSchemeDefinition(
     scrollbarSliderBackground: theme.scrollbarSliderBackground,
     scrollbarSliderHoverBackground: theme.scrollbarSliderHoverBackground,
     scrollbarSliderActiveBackground: theme.scrollbarSliderActiveBackground,
-    black: theme.black ?? '#000000',
-    red: theme.red ?? '#FF0000',
-    green: theme.green ?? '#00FF00',
-    yellow: theme.yellow ?? '#FFFF00',
-    blue: theme.blue ?? '#0000FF',
-    magenta: theme.magenta ?? '#FF00FF',
-    cyan: theme.cyan ?? '#00FFFF',
-    white: theme.white ?? '#FFFFFF',
-    brightBlack: theme.brightBlack ?? theme.black ?? '#808080',
-    brightRed: theme.brightRed ?? theme.red ?? '#FF0000',
-    brightGreen: theme.brightGreen ?? theme.green ?? '#00FF00',
-    brightYellow: theme.brightYellow ?? theme.yellow ?? '#FFFF00',
-    brightBlue: theme.brightBlue ?? theme.blue ?? '#0000FF',
-    brightMagenta: theme.brightMagenta ?? theme.magenta ?? '#FF00FF',
-    brightCyan: theme.brightCyan ?? theme.cyan ?? '#00FFFF',
-    brightWhite: theme.brightWhite ?? theme.white ?? '#FFFFFF',
+    black: theme.black ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.black,
+    red: theme.red ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.red,
+    green: theme.green ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.green,
+    yellow: theme.yellow ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.yellow,
+    blue: theme.blue ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.blue,
+    magenta: theme.magenta ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.magenta,
+    cyan: theme.cyan ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.cyan,
+    white: theme.white ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.white,
+    brightBlack:
+      theme.brightBlack ?? theme.black ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightBlack,
+    brightRed: theme.brightRed ?? theme.red ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightRed,
+    brightGreen:
+      theme.brightGreen ?? theme.green ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightGreen,
+    brightYellow:
+      theme.brightYellow ?? theme.yellow ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightYellow,
+    brightBlue:
+      theme.brightBlue ?? theme.blue ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightBlue,
+    brightMagenta:
+      theme.brightMagenta ?? theme.magenta ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightMagenta,
+    brightCyan:
+      theme.brightCyan ?? theme.cyan ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightCyan,
+    brightWhite:
+      theme.brightWhite ?? theme.white ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightWhite,
   };
 }
 

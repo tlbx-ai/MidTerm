@@ -34,9 +34,11 @@ class FakeElement {
   public textContent = '';
   public title = '';
   public innerHTML = '';
+  public hidden = false;
   public readonly dataset: Record<string, string> = {};
   public readonly children: FakeElement[] = [];
   public readonly classList: FakeClassList;
+  public readonly style: Record<string, string> = {};
   private readonly listeners = new Map<string, Array<() => void>>();
 
   public constructor(tagName: string) {
@@ -89,6 +91,19 @@ function findMatchingElement(elements: FakeElement[], selector: string): FakeEle
 }
 
 function matchesSelector(element: FakeElement, selector: string): boolean {
+  const dataTabMatch = selector.match(/^\.([^\[]+)\[data-tab="([^"]+)"\]$/);
+  if (dataTabMatch) {
+    return (
+      element.className.split(/\s+/).includes(dataTabMatch[1] ?? '') &&
+      element.dataset.tab === dataTabMatch[2]
+    );
+  }
+
+  const dataActionMatch = selector.match(/^\[data-action="([^"]+)"\]$/);
+  if (dataActionMatch) {
+    return element.dataset.action === dataActionMatch[1];
+  }
+
   if (selector.startsWith('.')) {
     const className = selector.slice(1);
     return element.className.split(/\s+/).includes(className);
@@ -200,5 +215,30 @@ describe('tabBar', () => {
     expect(gitButton.querySelector('.git-indicator-stats')?.innerHTML).toContain('-3');
     expect(gitButton.querySelector('.git-indicator-branch')?.textContent).toBe('feature/git-chip');
     expect(gitButton.querySelector('.git-indicator-status')?.textContent).toBe('~1');
+  });
+
+  it('forces hidden tabs out of layout even when tab CSS uses display flex', async () => {
+    const { createTabBar, setTabVisible } = await import('./tabBar');
+
+    const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
+    const agentButton = bar.children.find(
+      (child) =>
+        child.className.split(/\s+/).includes('session-tab') && child.dataset.tab === 'agent',
+    );
+
+    expect(agentButton).toBeDefined();
+    if (!agentButton) {
+      throw new Error('Expected agent tab button');
+    }
+
+    setTabVisible(bar as unknown as HTMLDivElement, 'agent', false);
+
+    expect(agentButton.hidden).toBe(true);
+    expect(agentButton.style.display).toBe('none');
+
+    setTabVisible(bar as unknown as HTMLDivElement, 'agent', true);
+
+    expect(agentButton.hidden).toBe(false);
+    expect(agentButton.style.display).toBe('');
   });
 });

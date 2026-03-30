@@ -28,6 +28,7 @@ The core idea is still simple:
 
 - **Terminal workspace, not a single shell page.** Multiple sessions, split-pane layouts, session reordering, search, heat indicators, bookmarks/history, tmux compatibility, and a manual-resize model built for multi-device use.
 - **Workflow surfaces around the terminal.** Per-session Files tabs with preview and save, Git status with diff overlays, Commands panels for saved scripts, a customizable manager bar, and session-scoped web preview/browser automation.
+- **Clear terminal vs Lens boundaries.** MidTerm keeps ordinary terminal sessions as `Terminal + Files`; provider-branded Lens tabs such as Codex or Claude appear only for sessions the user explicitly launched as Lens sessions.
 - **Remote and mobile features built in.** Smart Input, touch controller, mobile action menus, PWA install, document Picture-in-Picture, voice/chat hooks, shared-session links, and Share Access packets for sending trusted connection details to other devices.
 - **Security and operations for real installs.** Password auth, local HTTPS cert generation, trust-page onboarding, API keys, run-as-user support, diagnostics overlays, live settings sync, stable/dev update channels, and install/update scripts for user mode or service mode.
 
@@ -85,6 +86,7 @@ Open `https://localhost:2000`, create a session, and you have the full workspace
 ## Common Workflows
 
 - **AI coding agents on your own hardware.** Run Claude Code, Codex, Aider, Cursor CLI, or any other terminal-native agent, then continue approving steps from your phone.
+- **Explicit Lens sessions when you want a conversation surface.** Launch Codex or Claude from MidTerm's New Session flow when you want the provider-branded Lens lane; starting those CLIs inside an existing terminal does not convert that terminal into Lens.
 - **Long-running sessions that stay put.** Builds, deploys, test suites, data jobs, shells, and TUIs stay alive while the browser client comes and goes.
 - **Terminal-plus-browser workflows.** Use web preview and browser automation beside the terminal instead of constantly switching out to a separate browser window.
 - **Remote access without turning your machine into a cloud IDE.** Pair MidTerm with Tailscale, Cloudflare Tunnel, or your own reverse proxy and keep your code, tools, and API keys on the box you control.

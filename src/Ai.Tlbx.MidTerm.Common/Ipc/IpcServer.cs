@@ -1,7 +1,7 @@
 using System.IO.Pipes;
 using System.Net.Sockets;
 
-namespace Ai.Tlbx.MidTerm.TtyHost.Ipc;
+namespace Ai.Tlbx.MidTerm.Common.Ipc;
 
 public interface IIpcClientConnection : IDisposable
 {
@@ -14,7 +14,6 @@ public interface IIpcServer : IDisposable
     Task<IIpcClientConnection> AcceptAsync(CancellationToken ct);
 }
 
-#if WINDOWS
 public sealed class WindowsNamedPipeServer : IIpcServer
 {
     private readonly string _pipeName;
@@ -49,7 +48,11 @@ public sealed class WindowsNamedPipeServer : IIpcServer
         private readonly NamedPipeServerStream _pipe;
         private bool _disposed;
 
-        public NamedPipeConnection(NamedPipeServerStream pipe) => _pipe = pipe;
+        public NamedPipeConnection(NamedPipeServerStream pipe)
+        {
+            _pipe = pipe;
+        }
+
         public Stream Stream => _pipe;
         public bool IsConnected => !_disposed && _pipe.IsConnected;
 
@@ -61,7 +64,7 @@ public sealed class WindowsNamedPipeServer : IIpcServer
         }
     }
 }
-#else
+
 public sealed class UnixSocketServer : IIpcServer
 {
     private readonly string _socketPath;
@@ -72,7 +75,6 @@ public sealed class UnixSocketServer : IIpcServer
     {
         _socketPath = socketPath;
 
-        // Clean up any stale socket file; ignore errors (file may be locked or already gone)
         try
         {
             if (File.Exists(_socketPath))
@@ -80,7 +82,9 @@ public sealed class UnixSocketServer : IIpcServer
                 File.Delete(_socketPath);
             }
         }
-        catch { }
+        catch
+        {
+        }
 
         _listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         _listener.Bind(new UnixDomainSocketEndPoint(_socketPath));
@@ -106,7 +110,6 @@ public sealed class UnixSocketServer : IIpcServer
         try { _listener?.Close(); } catch { }
         _listener = null;
 
-        // Clean up socket file
         try
         {
             if (File.Exists(_socketPath))
@@ -114,7 +117,9 @@ public sealed class UnixSocketServer : IIpcServer
                 File.Delete(_socketPath);
             }
         }
-        catch { }
+        catch
+        {
+        }
     }
 
     private sealed class UnixSocketConnection : IIpcClientConnection
@@ -140,16 +145,13 @@ public sealed class UnixSocketServer : IIpcServer
         }
     }
 }
-#endif
 
 public static class IpcServerFactory
 {
     public static IIpcServer Create(string endpoint)
     {
-#if WINDOWS
-        return new WindowsNamedPipeServer(endpoint);
-#else
-        return new UnixSocketServer(endpoint);
-#endif
+        return OperatingSystem.IsWindows()
+            ? new WindowsNamedPipeServer(endpoint)
+            : new UnixSocketServer(endpoint);
     }
 }

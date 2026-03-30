@@ -1,6 +1,7 @@
 import { createLogger } from '../logging';
 import {
   ensureSessionWrapper,
+  getActiveTab,
   getTabPanel,
   onTabActivated,
   onTabDeactivated,
@@ -15,34 +16,48 @@ import {
   type LensTurnFailedEventDetail,
   type LensTurnSubmittedEventDetail,
 } from '../lens/input';
+import {
+  removeLensQuickSettingsSessionState,
+  syncLensQuickSettingsFromSnapshot,
+} from '../lens/quickSettings';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdownFragment } from '../../utils/markdown';
 import type { LensAttachmentReference } from '../../api/types';
 import {
-  getSessionState,
-  getSessionBufferTail,
   attachSessionLens,
   detachSessionLens,
   getLensSnapshot,
-  getLensEvents,
   approveLensRequest,
   declineLensRequest,
   resolveLensUserInput,
   openLensEventStream,
+  type LensPulseDeltaResponse,
   type LensPulseEvent,
   type LensPulseRequestSummary,
   type LensPulseSnapshotResponse,
-  type SessionStateResponse,
+  type LensPulseHistoryEntry,
   LensHttpError,
 } from '../../api/client';
+import { t } from '../i18n';
+import { buildTerminalFontStack, getConfiguredTerminalFontFamily } from '../terminal/fontConfig';
+import { $activeSessionId } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
-const TRANSCRIPT_OVERSCAN_PX = 800;
-const TRANSCRIPT_VIRTUALIZE_AFTER = 80;
+const HISTORY_OVERSCAN_PX = 800;
+const HISTORY_VIRTUALIZE_AFTER = 50;
+const LENS_HISTORY_WINDOW_SIZE = 80;
+const LENS_HISTORY_PAGE_SIZE = 40;
+const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
+const COLLAPSIBLE_HISTORY_BODY_MIN_LINES = 8;
+const COLLAPSIBLE_HISTORY_BODY_MIN_CHARS = 320;
+const COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS = 160;
+const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
+const NON_USER_SCROLL_DRIFT_TOLERANCE_PX = 4;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
+let lensActiveSessionBound = false;
 
 interface SessionLensViewState {
   panel: HTMLDivElement;
@@ -50,18 +65,20 @@ interface SessionLensViewState {
   events: LensPulseEvent[];
   debugScenarioActive: boolean;
   activationRunId: number;
-  transcriptViewport: HTMLDivElement | null;
-  transcriptEntries: LensTranscriptEntry[];
+  historyViewport: HTMLDivElement | null;
+  historyEntries: LensHistoryEntry[];
+  historyWindowStart: number;
+  historyWindowCount: number;
   disconnectStream: (() => void) | null;
   streamConnected: boolean;
-  refreshScheduled: number | null;
   refreshInFlight: boolean;
   requestBusyIds: Set<string>;
   requestDraftAnswersById: Record<string, Record<string, string[]>>;
   requestQuestionIndexById: Record<string, number>;
-  transcriptAutoScrollPinned: boolean;
-  transcriptRenderScheduled: number | null;
-  terminalFallback: SessionStateResponse | null;
+  historyAutoScrollPinned: boolean;
+  historyLastScrollMetrics: HistoryScrollMetrics | null;
+  historyLastUserScrollIntentAt: number;
+  historyRenderScheduled: number | null;
   activationState:
     | 'idle'
     | 'opening'
@@ -77,6 +94,14 @@ interface SessionLensViewState {
   activationIssue: LensActivationIssue | null;
   activationActionBusy: boolean;
   optimisticTurns: PendingLensTurn[];
+  renderDirty: boolean;
+  assistantMarkdownCache: Map<string, AssistantMarkdownCacheEntry>;
+  historyRenderedNodes: Map<string, HistoryRenderedNode>;
+  historyTopSpacer: HTMLDivElement | null;
+  historyBottomSpacer: HTMLDivElement | null;
+  historyEmptyState: HTMLDivElement | null;
+  pendingHistoryPrependOffsetPx: number;
+  historyExpandedEntries: Set<string>;
 }
 
 interface PendingLensTurn {
@@ -89,13 +114,18 @@ interface PendingLensTurn {
 }
 
 interface LensActivationTraceEntry {
-  tone: TranscriptTone;
+  tone: HistoryTone;
   meta: string;
   summary: string;
   detail: string;
 }
 
-type TranscriptKind =
+interface AssistantMarkdownCacheEntry {
+  body: string;
+  html: string;
+}
+
+type HistoryKind =
   | 'user'
   | 'assistant'
   | 'reasoning'
@@ -105,9 +135,10 @@ type TranscriptKind =
   | 'diff'
   | 'system'
   | 'notice';
-type TranscriptTone = 'info' | 'positive' | 'warning' | 'attention';
-type LensTranscriptActionId = 'retry-lens';
+type HistoryTone = 'info' | 'positive' | 'warning' | 'attention';
+type LensHistoryActionId = 'retry-lens';
 export type LensDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
+export type LensLayoutMode = 'default' | 'full-width-left';
 
 const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = [
   'mixed',
@@ -116,8 +147,8 @@ const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = [
   'workflow',
 ];
 
-interface LensTranscriptAction {
-  id: LensTranscriptActionId;
+interface LensHistoryAction {
+  id: LensHistoryActionId;
   label: string;
   style: 'primary' | 'secondary';
   busyLabel?: string;
@@ -131,42 +162,77 @@ export interface LensActivationIssue {
     | 'native-runtime-unavailable'
     | 'readonly-history'
     | 'startup-failed';
-  tone: TranscriptTone;
+  tone: HistoryTone;
   meta: string;
   title: string;
   body: string;
-  actions: LensTranscriptAction[];
+  actions: LensHistoryAction[];
 }
 
-export interface LensTranscriptEntry {
+export interface LensHistoryEntry {
   id: string;
   order: number;
-  kind: TranscriptKind;
-  tone: TranscriptTone;
+  kind: HistoryKind;
+  tone: HistoryTone;
   label: string;
   title: string;
   body: string;
   meta: string;
   requestId?: string;
   attachments?: LensAttachmentReference[];
-  actions?: LensTranscriptAction[];
+  actions?: LensHistoryAction[];
   live?: boolean;
   pending?: boolean;
   sourceItemId?: string | null;
   sourceTurnId?: string | null;
+  busyIndicator?: boolean;
 }
 
-export interface TranscriptVirtualWindow {
+export interface HistoryVirtualWindow {
   start: number;
   end: number;
   topSpacerPx: number;
   bottomSpacerPx: number;
 }
 
-interface TranscriptViewportMetrics {
+interface HistoryViewportMetrics {
   scrollTop: number;
   clientHeight: number;
   clientWidth: number;
+}
+
+interface HistoryScrollMetrics {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+}
+
+interface HistoryVisibleEntry {
+  key: string;
+  entry: LensHistoryEntry;
+  cluster: ArtifactClusterInfo | null;
+  signature: string;
+}
+
+interface HistoryRenderPlan {
+  emptyStateText: string | null;
+  topSpacerPx: number;
+  bottomSpacerPx: number;
+  visibleEntries: HistoryVisibleEntry[];
+}
+
+interface HistoryRenderedNode {
+  node: HTMLElement;
+  signature: string;
+  entry: LensHistoryEntry;
+  cluster: ArtifactClusterInfo | null;
+}
+
+export interface HistoryBodyPresentation {
+  mode: 'plain' | 'monospace' | 'markdown' | 'streaming';
+  collapsedByDefault: boolean;
+  lineCount: number;
+  preview: string;
 }
 
 interface ArtifactClusterInfo {
@@ -176,6 +242,26 @@ interface ArtifactClusterInfo {
   onlyTools: boolean;
 }
 
+function lensText(key: string, fallback: string): string {
+  const translated = t(key);
+  if (!translated || translated === key) {
+    return fallback;
+  }
+
+  return translated;
+}
+
+function lensFormat(
+  key: string,
+  fallback: string,
+  replacements: Record<string, string | number>,
+): string {
+  return Object.entries(replacements).reduce(
+    (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
+    lensText(key, fallback),
+  );
+}
+
 /**
  * Wires Lens into the session-tab shell so supported agent sessions can open a
  * conversation-first surface without changing MidTerm's terminal-owned runtime
@@ -183,16 +269,24 @@ interface ArtifactClusterInfo {
  */
 export function initAgentView(): void {
   bindLensTurnLifecycle();
+  bindActiveLensSessionRendering();
   onTabActivated('agent', (sessionId, panel) => {
     ensureAgentViewSkeleton(sessionId, panel);
     const state = getOrCreateViewState(sessionId, panel);
     state.panel = panel;
-    bindTranscriptViewport(sessionId, state);
+    bindHistoryViewport(sessionId, state);
     void activateAgentView(sessionId);
   });
 
   onTabDeactivated('agent', (sessionId) => {
-    closeLensStream(sessionId);
+    const state = viewStates.get(sessionId);
+    if (!state) {
+      return;
+    }
+
+    state.historyAutoScrollPinned = true;
+    releaseHiddenLensRenderState(state);
+    void compactHiddenLensSessionHistory(sessionId, state);
   });
 
   log.info(() => 'Agent view initialized');
@@ -208,18 +302,23 @@ export function destroyAgentView(sessionId: string): void {
     log.warn(() => `Failed to detach Lens for ${sessionId}: ${String(error)}`);
   });
   const state = viewStates.get(sessionId);
-  if (state && state.refreshScheduled !== null) {
-    window.clearTimeout(state.refreshScheduled);
+  if (state && state.historyRenderScheduled !== null) {
+    window.cancelAnimationFrame(state.historyRenderScheduled);
   }
-  if (state && state.transcriptRenderScheduled !== null) {
-    window.cancelAnimationFrame(state.transcriptRenderScheduled);
+  state?.historyRenderedNodes.clear();
+  if (state) {
+    state.historyTopSpacer = null;
+    state.historyBottomSpacer = null;
+    state.historyEmptyState = null;
+    state.historyExpandedEntries.clear();
   }
 
   viewStates.delete(sessionId);
+  removeLensQuickSettingsSessionState(sessionId);
 }
 
 /**
- * Exposes deterministic transcript fixtures so Lens UI work can be iterated
+ * Exposes deterministic history fixtures so Lens UI work can be iterated
  * and regression-tested without depending on a live agent runtime.
  */
 export function getLensDebugScenarioNames(): readonly LensDebugScenarioName[] {
@@ -227,7 +326,7 @@ export function getLensDebugScenarioNames(): readonly LensDebugScenarioName[] {
 }
 
 /**
- * Loads a representative Lens transcript into an existing session panel to
+ * Loads representative Lens history into an existing session panel to
  * speed up conversation UX and CSS tuning without depending on a live agent runtime.
  */
 export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): boolean {
@@ -241,7 +340,7 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   ensureAgentViewSkeleton(sessionId, panel);
   const state = getOrCreateViewState(sessionId, panel);
   state.panel = panel;
-  bindTranscriptViewport(sessionId, state);
+  bindHistoryViewport(sessionId, state);
 
   const debugScenario = buildLensDebugScenario(
     sessionId,
@@ -260,9 +359,8 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.activationError = null;
   state.activationIssue = null;
   state.activationActionBusy = false;
-  state.terminalFallback = null;
   state.requestBusyIds.clear();
-  state.transcriptAutoScrollPinned = true;
+  state.historyAutoScrollPinned = true;
   renderCurrentAgentView(sessionId);
   switchTab(sessionId, 'agent');
   return true;
@@ -279,11 +377,16 @@ async function activateAgentView(sessionId: string): Promise<void> {
     return;
   }
 
+  if (state.snapshot && state.disconnectStream && state.streamConnected) {
+    renderCurrentAgentView(sessionId, { immediate: true });
+    return;
+  }
+
   state.activationRunId += 1;
   const activationRunId = state.activationRunId;
 
-  const hasExistingTranscript = state.snapshot !== null || state.events.length > 0;
-  if (hasExistingTranscript) {
+  const hasExistingHistory = state.snapshot !== null || state.events.length > 0;
+  if (hasExistingHistory) {
     await resumeLensFromHistory(sessionId, state, activationRunId);
     return;
   }
@@ -295,21 +398,26 @@ async function activateAgentView(sessionId: string): Promise<void> {
   state.activationError = null;
   state.activationIssue = null;
   state.activationActionBusy = false;
-  state.terminalFallback = null;
 
   setActivationState(
     state,
     'opening',
-    'Lens pane opened. Preparing transcript runtime attach.',
-    'Lens pane opened.',
-    'MidTerm is switching from the terminal surface to the Lens transcript for this session.',
+    lensText('lens.activation.opening.detail', 'Lens pane opened. Preparing Lens runtime attach.'),
+    lensText('lens.activation.opening.summary', 'Lens pane opened.'),
+    lensText(
+      'lens.activation.opening.body',
+      'MidTerm is opening the Lens conversation surface for this session.',
+    ),
   );
   setActivationState(
     state,
     'attaching',
-    'Requesting Lens runtime attach.',
-    'Attaching Lens runtime.',
-    'Starting or reconnecting the backend-owned Lens runtime for this session.',
+    lensText('lens.activation.attaching.detail', 'Requesting Lens runtime attach.'),
+    lensText('lens.activation.attaching.summary', 'Attaching Lens runtime.'),
+    lensText(
+      'lens.activation.attaching.body',
+      'Starting or reconnecting the backend-owned Lens runtime for this session.',
+    ),
   );
   renderCurrentAgentView(sessionId);
 
@@ -331,9 +439,15 @@ async function activateAgentView(sessionId: string): Promise<void> {
     setActivationState(
       state,
       'waiting-snapshot',
-      'Lens runtime accepted the attach request.',
-      'Lens runtime attached.',
-      'Waiting for the first canonical Lens snapshot from MidTerm.',
+      lensText(
+        'lens.activation.waitingSnapshot.detail',
+        'Lens runtime accepted the attach request.',
+      ),
+      lensText('lens.activation.waitingSnapshot.summary', 'Lens runtime attached.'),
+      lensText(
+        'lens.activation.waitingSnapshot.body',
+        'Waiting for the first canonical Lens snapshot from MidTerm.',
+      ),
     );
     renderCurrentAgentView(sessionId);
 
@@ -342,27 +456,21 @@ async function activateAgentView(sessionId: string): Promise<void> {
 
     setActivationState(
       state,
-      'loading-events',
-      'Lens snapshot is ready. Loading recent transcript events.',
-      'Lens snapshot ready.',
-      'Loading the canonical Lens event backlog for this session.',
-    );
-    renderCurrentAgentView(sessionId);
-
-    const eventFeed = await getLensEvents(sessionId);
-    ensureLensActivationIsCurrent(state, activationRunId);
-    state.snapshot = snapshot;
-    state.events = eventFeed.events.slice(-200);
-    state.streamConnected = false;
-
-    setActivationState(
-      state,
       'connecting-stream',
-      'Lens data is loaded. Connecting the live stream.',
-      'Lens event backlog loaded.',
-      'Opening the live Lens event stream so the transcript updates in real time.',
+      lensText(
+        'lens.activation.connectingStream.detail',
+        'Lens snapshot is ready. Connecting the live stream.',
+      ),
+      lensText('lens.activation.connectingStream.summary', 'Lens snapshot ready.'),
+      lensText(
+        'lens.activation.connectingStream.body',
+        'Opening the live Lens stream so the history updates in real time.',
+      ),
     );
     renderCurrentAgentView(sessionId);
+    state.snapshot = snapshot;
+    state.events = [];
+    state.streamConnected = false;
     openLiveLensStream(sessionId, snapshot.latestSequence);
   } catch (error) {
     if (isStaleLensActivationError(error)) {
@@ -382,8 +490,11 @@ async function activateAgentView(sessionId: string): Promise<void> {
         state,
         'warning',
         'history-restored',
-        'Canonical Lens history restored.',
-        'MidTerm recovered canonical Lens history after the initial attach failed, so it is retrying the live attach automatically.',
+        lensText('lens.activation.historyRestored.summary', 'Canonical Lens history restored.'),
+        lensText(
+          'lens.activation.historyRestored.body',
+          'MidTerm recovered canonical Lens history after the initial attach failed, so it is retrying the live attach automatically.',
+        ),
       );
       await resumeLensFromHistory(sessionId, state, activationRunId);
       return;
@@ -391,18 +502,20 @@ async function activateAgentView(sessionId: string): Promise<void> {
 
     state.activationError = describeError(error);
     state.activationIssue = classifyLensActivationIssue(error, false);
-    state.terminalFallback = await tryLoadTerminalSnapshotFallback(sessionId);
     setActivationState(
       state,
       'failed',
-      'Lens startup failed before the first stable snapshot became available.',
-      'Lens startup failed.',
+      lensText(
+        'lens.activation.startupFailed.detail',
+        'Lens startup failed before the first stable snapshot became available.',
+      ),
+      lensText('lens.activation.startupFailed.summary', 'Lens startup failed.'),
       state.activationError,
       'attention',
     );
     if (shouldShowLensDevErrorDialog(state.activationIssue)) {
       showDevErrorDialog({
-        title: 'Lens failed to open',
+        title: lensText('lens.error.openTitle', 'Lens failed to open'),
         context: `Lens activation failed for session ${sessionId}`,
         error,
       });
@@ -423,16 +536,9 @@ async function resumeLensFromHistory(
   try {
     await attachSessionLens(sessionId);
     ensureLensActivationIsCurrent(state, activationRunId);
-    const afterSequence =
-      state.events.length > 0 ? (state.events[state.events.length - 1]?.sequence ?? 0) : 0;
-    const eventFeed = await getLensEvents(sessionId, afterSequence);
-    ensureLensActivationIsCurrent(state, activationRunId);
-    if (eventFeed.events.length > 0) {
-      state.events = [...state.events, ...eventFeed.events].slice(-200);
-    }
     await refreshLensSnapshot(sessionId);
     ensureLensActivationIsCurrent(state, activationRunId);
-    openLiveLensStream(sessionId, state.snapshot?.latestSequence ?? eventFeed.latestSequence);
+    openLiveLensStream(sessionId, state.snapshot?.latestSequence ?? 0);
   } catch (error) {
     if (isStaleLensActivationError(error)) {
       return;
@@ -441,7 +547,6 @@ async function resumeLensFromHistory(
     log.warn(() => `Failed to resume Lens for ${sessionId}: ${String(error)}`);
     state.activationError = describeError(error);
     state.activationIssue = classifyLensActivationIssue(error, true);
-    state.terminalFallback = null;
     renderCurrentAgentView(sessionId);
   }
 }
@@ -453,30 +558,17 @@ async function tryLoadReadonlyLensHistory(
 ): Promise<boolean> {
   try {
     const snapshot = await getLensSnapshot(sessionId);
+    applyLensSnapshotWindowState(state, snapshot);
     ensureLensActivationIsCurrent(state, activationRunId);
     const hasSnapshotHistory = hasRenderableLensHistory(snapshot);
-    let events: LensPulseEvent[] = [];
-
-    try {
-      const eventFeed = await getLensEvents(sessionId);
-      ensureLensActivationIsCurrent(state, activationRunId);
-      events = eventFeed.events.slice(-200);
-    } catch (error) {
-      if (isStaleLensActivationError(error)) {
-        return false;
-      }
-      log.warn(() => `Failed to load Lens events fallback for ${sessionId}: ${String(error)}`);
-    }
-
-    if (!hasSnapshotHistory && events.length === 0) {
+    if (!hasSnapshotHistory) {
       return false;
     }
 
     state.snapshot = snapshot;
-    state.events = events;
+    state.events = [];
     state.streamConnected = false;
     state.activationTrace = [];
-    state.terminalFallback = null;
     return true;
   } catch (error) {
     log.warn(() => `Failed to load Lens snapshot fallback for ${sessionId}: ${String(error)}`);
@@ -516,18 +608,20 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     events: [],
     debugScenarioActive: false,
     activationRunId: 0,
-    transcriptViewport: null,
-    transcriptEntries: [],
+    historyViewport: null,
+    historyEntries: [],
+    historyWindowStart: 0,
+    historyWindowCount: LENS_HISTORY_WINDOW_SIZE,
     disconnectStream: null,
     streamConnected: false,
-    refreshScheduled: null,
     refreshInFlight: false,
     requestBusyIds: new Set<string>(),
     requestDraftAnswersById: {},
     requestQuestionIndexById: {},
-    transcriptAutoScrollPinned: true,
-    transcriptRenderScheduled: null,
-    terminalFallback: null,
+    historyAutoScrollPinned: true,
+    historyLastScrollMetrics: null,
+    historyLastUserScrollIntentAt: 0,
+    historyRenderScheduled: null,
     activationState: 'idle',
     activationDetail: '',
     activationTrace: [],
@@ -535,6 +629,14 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     activationIssue: null,
     activationActionBusy: false,
     optimisticTurns: [],
+    renderDirty: false,
+    assistantMarkdownCache: new Map<string, AssistantMarkdownCacheEntry>(),
+    historyRenderedNodes: new Map<string, HistoryRenderedNode>(),
+    historyTopSpacer: null,
+    historyBottomSpacer: null,
+    historyEmptyState: null,
+    pendingHistoryPrependOffsetPx: 0,
+    historyExpandedEntries: new Set<string>(),
   };
 
   viewStates.set(sessionId, created);
@@ -586,7 +688,7 @@ function buildLensDebugScenario(
       createItem(
         'user-debug-table',
         'user_message',
-        'Stress the Lens transcript with wide markdown tables and dense comparisons.',
+        'Stress the Lens history with wide markdown tables and dense comparisons.',
         at(-180000),
       ),
     ];
@@ -598,7 +700,7 @@ function buildLensDebugScenario(
       '| Alpha | Lens | Streaming | 1420 | 18233 | 68% | 118 ms | 880 ms | gpt-5.4 | Codex | 0 | Long answer with code and tables kept live while the operator watches scrollback |',
       '| Beta | Terminal | Idle | 0 | 932 | 12% | 74 ms | 140 ms | none | Human | 1 | Waiting for next prompt and preserving shell ownership |',
       '| Gamma | Lens | Blocked | 17 | 4112 | 31% | 129 ms | 1420 ms | gpt-5.4-mini | Codex | 3 | Approval request open and should stay visible even when the assistant lane is busy |',
-      '| Delta | Lens | Replaying | 921 | 15540 | 54% | 105 ms | 650 ms | claude-opus | Claude | 0 | Canonical history restored from MidTerm and replayed into the transcript |',
+      '| Delta | Lens | Replaying | 921 | 15540 | 54% | 105 ms | 650 ms | claude-opus | Claude | 0 | Canonical history restored from MidTerm and replayed into the history lane |',
       '',
       '| Metric | P50 | P95 | P99 | Target | Last good build | Regressed by | Notes |',
       '| --- | ---: | ---: | ---: | ---: | :--- | :--- | :--- |',
@@ -608,7 +710,7 @@ function buildLensDebugScenario(
       '',
       '| Render mode | Benefit | Risk |',
       '| :--- | :--- | :--- |',
-      '| Virtual window | Keeps long transcripts fast | Needs stable bottom pinning |',
+      '| Virtual window | Keeps long histories fast | Needs stable bottom pinning |',
       '| Inline tables | Preserves structure for operators | Can overflow on mobile without scroll container |',
     ].join('\n');
   } else if (scenario === 'long') {
@@ -616,7 +718,7 @@ function buildLensDebugScenario(
       const isUser = index % 2 === 0;
       const ordinal = index + 1;
       const body = isUser
-        ? `Prompt ${ordinal}: summarize lane ${Math.floor(index / 2) + 1} and keep the transcript compact.`
+        ? `Prompt ${ordinal}: summarize lane ${Math.floor(index / 2) + 1} and keep the history compact.`
         : [
             `Reply ${ordinal}: lane ${Math.floor(index / 2) + 1} is stable.`,
             '',
@@ -707,7 +809,7 @@ function buildLensDebugScenario(
         questions: [
           {
             id: 'posture',
-            question: 'Which rollout posture fits this transcript best?',
+            question: 'Which rollout posture fits this history best?',
             header: 'Posture',
             multiSelect: false,
             options: [
@@ -733,12 +835,12 @@ function buildLensDebugScenario(
       '',
       '| Surface | Goal | Status |',
       '| :--- | :--- | :---: |',
-      '| Transcript chrome | Stay quiet and readable | Good |',
+      '| History chrome | Stay quiet and readable | Good |',
       '| Streaming feel | Keep the answer alive while it grows | Live |',
       '| Tables | Preserve structure without blowing out the lane | Better |',
       '',
       '```ts',
-      'const transcriptMode = "power-user";',
+      'const historyMode = "power-user";',
       'const keepLabelsQuiet = true;',
       '```',
       '',
@@ -754,12 +856,17 @@ function buildLensDebugScenario(
       provider: 'codex',
       generatedAt: at(0),
       latestSequence: 500,
+      totalHistoryCount: items.length,
+      historyWindowStart: 0,
+      historyWindowEnd: items.length,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
       session: {
         state: currentTurnState === 'running' ? 'running' : 'ready',
         stateLabel: currentTurnState === 'running' ? 'Running' : 'Ready',
         reason:
           scenario === 'long'
-            ? 'Long synthetic history loaded for transcript virtualization.'
+            ? 'Long synthetic history loaded for history virtualization.'
             : 'Lens debug scenario loaded from the browser console.',
         lastError: null,
         lastEventAt: at(0),
@@ -777,6 +884,12 @@ function buildLensDebugScenario(
         effort: 'high',
         startedAt: at(-90000),
         completedAt: currentTurnState === 'running' ? null : at(-5000),
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: scenario === 'workflow' ? 'on' : 'off',
+        permissionMode: 'manual',
       },
       streams: {
         assistantText,
@@ -800,6 +913,36 @@ function buildLensDebugScenario(
             ? 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE'
             : '',
       },
+      // The backend snapshot contract still uses the legacy `transcript` field
+      // name. Lens semantics in the frontend treat this as canonical history.
+      transcript: buildDebugScenarioHistory({
+        generatedAt: at(0),
+        turnId: 'turn-debug',
+        currentTurnState,
+        currentTurnStateLabel,
+        items,
+        requests,
+        assistantText,
+        reasoningText:
+          scenario === 'workflow'
+            ? 'Need the operator choice before touching the file so the patch posture is explicit.'
+            : '',
+        reasoningSummaryText:
+          scenario === 'workflow'
+            ? 'Waiting on SAFE/FAST, then update report.md and show the working diff.'
+            : '',
+        planText:
+          scenario === 'workflow'
+            ? '1. Read the workspace.\n2. Ask for SAFE or FAST.\n3. Patch and summarize the diff.'
+            : '',
+        commandOutput: scenario === 'workflow' ? 'status: TODO\nowner: codex' : '',
+        fileChangeOutput:
+          scenario === 'workflow' ? 'Success. Updated the following files:\nM report.md' : '',
+        unifiedDiff:
+          scenario === 'workflow'
+            ? 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE'
+            : '',
+      }),
       items,
       requests,
       notices: [],
@@ -808,7 +951,103 @@ function buildLensDebugScenario(
   };
 }
 
+function buildDebugScenarioHistory(args: {
+  generatedAt: string;
+  turnId: string;
+  currentTurnState: string;
+  currentTurnStateLabel: string;
+  items: LensPulseSnapshotResponse['items'];
+  requests: LensPulseSnapshotResponse['requests'];
+  assistantText: string;
+  reasoningText: string;
+  reasoningSummaryText: string;
+  planText: string;
+  commandOutput: string;
+  fileChangeOutput: string;
+  unifiedDiff: string;
+}): LensPulseHistoryEntry[] {
+  const historyEntries: LensPulseHistoryEntry[] = [];
+  let order = 1;
+
+  for (const item of args.items) {
+    historyEntries.push({
+      entryId: `${historyKindFromItem(item.itemType)}:${item.turnId || item.itemId}`,
+      order: order++,
+      kind: historyKindFromItem(item.itemType),
+      turnId: item.turnId ?? null,
+      itemId: item.itemId,
+      requestId: null,
+      status: item.status,
+      itemType: item.itemType,
+      title: item.title ?? null,
+      body: item.detail || '',
+      attachments: cloneHistoryAttachments(item.attachments),
+      streaming: false,
+      createdAt: item.updatedAt,
+      updatedAt: item.updatedAt,
+    });
+  }
+
+  const pushStream = (kind: string, title: string | null, body: string): void => {
+    if (!body.trim()) {
+      return;
+    }
+
+    const status =
+      kind === 'assistant' && args.currentTurnState === 'running' ? 'streaming' : 'completed';
+
+    historyEntries.push({
+      entryId: `${kind}:${args.turnId}:${order}`,
+      order: order++,
+      kind,
+      turnId: args.turnId,
+      itemId: null,
+      requestId: null,
+      status,
+      itemType: kind,
+      title,
+      body,
+      attachments: [],
+      streaming: kind === 'assistant' && args.currentTurnState === 'running',
+      createdAt: args.generatedAt,
+      updatedAt: args.generatedAt,
+    });
+  };
+
+  pushStream('assistant', null, args.assistantText);
+  pushStream('reasoning', 'Reasoning', args.reasoningText);
+  pushStream('reasoning', 'Reasoning summary', args.reasoningSummaryText);
+  pushStream('plan', 'Plan', args.planText);
+  pushStream('tool', 'Command output', args.commandOutput);
+  pushStream('tool', 'File change output', args.fileChangeOutput);
+  pushStream('diff', 'Working diff', args.unifiedDiff);
+
+  for (const request of args.requests) {
+    historyEntries.push({
+      entryId: `request:${request.requestId}`,
+      order: order++,
+      kind: 'request',
+      turnId: request.turnId ?? null,
+      itemId: null,
+      requestId: request.requestId,
+      status: request.state,
+      itemType: request.kind,
+      title: request.kindLabel,
+      body: [request.detail, ...request.questions.map((question) => question.question)]
+        .filter(Boolean)
+        .join('\n\n'),
+      attachments: [],
+      streaming: false,
+      createdAt: request.updatedAt,
+      updatedAt: request.updatedAt,
+    });
+  }
+
+  return historyEntries;
+}
+
 function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): void {
+  syncAgentViewPresentation(panel);
   if (panel.dataset.agentViewReady === 'true') {
     return;
   }
@@ -818,9 +1057,9 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
   panel.innerHTML = `
     <section class="agent-view">
       <div class="agent-chat-shell">
-        <section class="agent-transcript-card">
-          <div class="agent-transcript" data-agent-field="transcript"></div>
-          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>Jump to live</button>
+        <section class="agent-history-card">
+          <div class="agent-history" data-agent-field="history"></div>
+          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
         </section>
         <section class="agent-composer-shell">
           <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
@@ -831,30 +1070,76 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
   `;
 }
 
-function bindTranscriptViewport(sessionId: string, state: SessionLensViewState): void {
-  const viewport = state.panel.querySelector<HTMLDivElement>('[data-agent-field="transcript"]');
-  state.transcriptViewport = viewport;
+function syncAgentViewPresentation(
+  panel: HTMLDivElement,
+  provider: string | null | undefined = null,
+): void {
+  const style = (panel as unknown as { style?: CSSStyleDeclaration | null }).style;
+  if (!style || typeof style.setProperty !== 'function') {
+    panel.dataset.lensProvider = normalizeLensProvider(provider);
+    panel.dataset.lensLayout = resolveLensLayoutMode(provider);
+    return;
+  }
+
+  style.setProperty(
+    '--agent-history-mono-font-family',
+    buildTerminalFontStack(getConfiguredTerminalFontFamily()),
+  );
+  panel.dataset.lensProvider = normalizeLensProvider(provider);
+  panel.dataset.lensLayout = resolveLensLayoutMode(provider);
+}
+
+function bindHistoryViewport(sessionId: string, state: SessionLensViewState): void {
+  const viewport = state.panel.querySelector<HTMLDivElement>('[data-agent-field="history"]');
+  state.historyViewport = viewport;
   if (!viewport || viewport.dataset.lensScrollBound === 'true') {
     return;
   }
 
   viewport.dataset.lensScrollBound = 'true';
+  const markUserScrollIntent = () => {
+    const current = viewStates.get(sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.historyLastUserScrollIntentAt = Date.now();
+  };
+  viewport.addEventListener('wheel', markUserScrollIntent, { passive: true });
+  viewport.addEventListener('touchstart', markUserScrollIntent, { passive: true });
+  viewport.addEventListener('pointerdown', markUserScrollIntent, { passive: true });
+  viewport.addEventListener('keydown', markUserScrollIntent);
   viewport.addEventListener('scroll', () => {
     const current = viewStates.get(sessionId);
-    const currentViewport = current?.transcriptViewport;
+    const currentViewport = current?.historyViewport;
     if (!current || !currentViewport) {
       return;
     }
 
-    current.transcriptAutoScrollPinned = isScrollContainerNearBottom({
-      scrollTop: currentViewport.scrollTop,
-      clientHeight: currentViewport.clientHeight,
-      scrollHeight: currentViewport.scrollHeight,
+    const scrollMetrics = readHistoryScrollMetrics(currentViewport);
+    current.historyAutoScrollPinned = resolveHistoryAutoScrollPinned({
+      wasPinned: current.historyAutoScrollPinned,
+      previous: current.historyLastScrollMetrics,
+      current: scrollMetrics,
+      userInitiated:
+        Date.now() - current.historyLastUserScrollIntentAt <= USER_HISTORY_SCROLL_INTENT_WINDOW_MS,
     });
+    current.historyLastScrollMetrics = scrollMetrics;
     renderScrollToBottomControl(current.panel, current);
 
-    if (current.transcriptEntries.length > TRANSCRIPT_VIRTUALIZE_AFTER) {
-      scheduleTranscriptRender(sessionId);
+    if (
+      current.snapshot?.hasOlderHistory &&
+      currentViewport.scrollTop <= LENS_HISTORY_FETCH_THRESHOLD_PX
+    ) {
+      void loadOlderLensHistoryWindow(sessionId, current);
+    }
+
+    if (current.snapshot?.hasNewerHistory && current.historyAutoScrollPinned) {
+      void loadLatestLensHistoryWindow(sessionId, current);
+    }
+
+    if (current.historyEntries.length > HISTORY_VIRTUALIZE_AFTER) {
+      scheduleHistoryRender(sessionId);
     }
   });
 
@@ -864,26 +1149,13 @@ function bindTranscriptViewport(sessionId: string, state: SessionLensViewState):
   if (scrollButton && scrollButton.dataset.lensScrollBound !== 'true') {
     scrollButton.dataset.lensScrollBound = 'true';
     scrollButton.addEventListener('click', () => {
-      scrollTranscriptToBottom(sessionId, 'smooth');
+      scrollHistoryToBottom(sessionId, 'smooth');
     });
   }
 }
 
-function scheduleTranscriptRender(sessionId: string): void {
-  const state = viewStates.get(sessionId);
-  if (!state || state.transcriptRenderScheduled !== null) {
-    return;
-  }
-
-  state.transcriptRenderScheduled = window.requestAnimationFrame(() => {
-    const current = viewStates.get(sessionId);
-    if (!current) {
-      return;
-    }
-
-    current.transcriptRenderScheduled = null;
-    renderCurrentAgentView(sessionId);
-  });
+function scheduleHistoryRender(sessionId: string): void {
+  renderCurrentAgentView(sessionId);
 }
 
 function openLiveLensStream(sessionId: string, afterSequence: number): void {
@@ -893,46 +1165,64 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
   }
 
   closeLensStream(sessionId);
-  state.disconnectStream = openLensEventStream(sessionId, afterSequence, {
-    onOpen: () => {
-      const current = viewStates.get(sessionId);
-      if (!current) {
-        return;
-      }
+  state.disconnectStream = openLensEventStream(
+    sessionId,
+    afterSequence,
+    state.historyWindowStart,
+    state.historyWindowCount,
+    {
+      onOpen: () => {
+        const current = viewStates.get(sessionId);
+        if (!current) {
+          return;
+        }
 
-      current.streamConnected = true;
-      current.activationIssue = null;
-      current.activationError = null;
-      setActivationState(
-        current,
-        'ready',
-        'Lens live stream connected.',
-        'Live Lens stream connected.',
-        'Realtime canonical Lens events are now flowing into the transcript.',
-        'positive',
-      );
-      renderCurrentAgentView(sessionId);
-    },
-    onEvent: (lensEvent) => {
-      const current = viewStates.get(sessionId);
-      if (!current) {
-        return;
-      }
+        current.streamConnected = true;
+        current.activationIssue = null;
+        current.activationError = null;
+        setActivationState(
+          current,
+          'ready',
+          lensText('lens.activation.ready.detail', 'Lens live stream connected.'),
+          lensText('lens.activation.ready.summary', 'Live Lens stream connected.'),
+          lensText(
+            'lens.activation.ready.body',
+            'Realtime canonical Lens events are now flowing into the history.',
+          ),
+          'positive',
+        );
+        renderCurrentAgentView(sessionId);
+      },
+      onSnapshot: (snapshot) => {
+        const current = viewStates.get(sessionId);
+        if (!current) {
+          return;
+        }
 
-      current.events = [...current.events, lensEvent].slice(-200);
-      renderCurrentAgentView(sessionId);
-      scheduleSnapshotRefresh(sessionId);
-    },
-    onError: () => {
-      const current = viewStates.get(sessionId);
-      if (!current) {
-        return;
-      }
+        applyLensSnapshotWindowState(current, snapshot);
+        current.snapshot = snapshot;
+        scheduleHistoryRender(sessionId);
+      },
+      onDelta: (delta) => {
+        const current = viewStates.get(sessionId);
+        if (!current || !current.snapshot) {
+          return;
+        }
 
-      current.streamConnected = false;
-      renderCurrentAgentView(sessionId);
+        applyCanonicalLensDelta(current, delta);
+        scheduleHistoryRender(sessionId);
+      },
+      onError: () => {
+        const current = viewStates.get(sessionId);
+        if (!current) {
+          return;
+        }
+
+        current.streamConnected = false;
+        renderCurrentAgentView(sessionId);
+      },
     },
-  });
+  );
 }
 
 function closeLensStream(sessionId: string): void {
@@ -946,16 +1236,56 @@ function closeLensStream(sessionId: string): void {
   state.streamConnected = false;
 }
 
-function scheduleSnapshotRefresh(sessionId: string): void {
-  const state = viewStates.get(sessionId);
-  if (!state || state.refreshScheduled !== null) {
+function releaseHiddenLensRenderState(state: SessionLensViewState): void {
+  state.historyEntries = [];
+  state.historyRenderedNodes.clear();
+  state.assistantMarkdownCache.clear();
+  state.historyTopSpacer = null;
+  state.historyBottomSpacer = null;
+  state.historyEmptyState = null;
+  state.pendingHistoryPrependOffsetPx = 0;
+  state.renderDirty = true;
+
+  const historyHost = state.panel.querySelector<HTMLElement>('[data-agent-field="history"]');
+  historyHost?.replaceChildren();
+}
+
+async function compactHiddenLensSessionHistory(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.debugScenarioActive || state.refreshInFlight) {
     return;
   }
 
-  state.refreshScheduled = window.setTimeout(() => {
-    state.refreshScheduled = null;
-    void refreshLensSnapshot(sessionId);
-  }, 120);
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const shouldRefreshLatestWindow =
+    snapshot.hasNewerHistory ||
+    snapshot.historyWindowStart > 0 ||
+    state.historyWindowCount > LENS_HISTORY_WINDOW_SIZE ||
+    snapshot.transcript.length > LENS_HISTORY_WINDOW_SIZE;
+
+  if (shouldRefreshLatestWindow) {
+    try {
+      const latestSnapshot = await getLensSnapshot(sessionId, undefined, LENS_HISTORY_WINDOW_SIZE);
+      const current = viewStates.get(sessionId);
+      if (!current || current !== state) {
+        return;
+      }
+
+      applyLensSnapshotWindowState(current, latestSnapshot);
+      current.snapshot = latestSnapshot;
+      return;
+    } catch (error) {
+      log.warn(() => `Failed to compact hidden Lens history for ${sessionId}: ${String(error)}`);
+    }
+  }
+
+  collapseSnapshotToLatestWindow(state, LENS_HISTORY_WINDOW_SIZE);
 }
 
 async function refreshLensSnapshot(sessionId: string): Promise<void> {
@@ -966,14 +1296,20 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
 
   state.refreshInFlight = true;
   try {
-    state.snapshot = await getLensSnapshot(sessionId);
+    const nextSnapshot = await getLensSnapshot(
+      sessionId,
+      state.historyWindowStart,
+      state.historyWindowCount,
+    );
+    applyLensSnapshotWindowState(state, nextSnapshot);
+    state.snapshot = nextSnapshot;
     if (state.activationState !== 'ready') {
       setActivationState(
         state,
         'ready',
         'Lens snapshot refreshed.',
         'Lens snapshot refreshed.',
-        'The Lens read model is available and the transcript is rendering live data.',
+        'The Lens read model is available and the history is rendering live data.',
         'positive',
       );
     }
@@ -990,7 +1326,7 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
       'attention',
     );
     showDevErrorDialog({
-      title: 'Lens refresh failed',
+      title: lensText('lens.error.refreshTitle', 'Lens refresh failed'),
       context: `Lens snapshot refresh failed for session ${sessionId}`,
       error,
     });
@@ -1000,11 +1336,428 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
   }
 }
 
-function renderCurrentAgentView(sessionId: string): void {
+async function loadOlderLensHistoryWindow(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.refreshInFlight || !state.snapshot?.hasOlderHistory) {
+    return;
+  }
+
+  const nextStart = Math.max(0, state.historyWindowStart - LENS_HISTORY_PAGE_SIZE);
+  const existingWindowStart = state.historyWindowStart;
+  if (nextStart === existingWindowStart) {
+    return;
+  }
+
+  state.refreshInFlight = true;
+  try {
+    const nextWindowCount = state.historyWindowCount + (existingWindowStart - nextStart);
+    const nextSnapshot = await getLensSnapshot(sessionId, nextStart, nextWindowCount);
+    const nextWindowStart = nextSnapshot.historyWindowStart;
+    const prependedEntries = nextSnapshot.transcript.slice(
+      0,
+      Math.max(0, existingWindowStart - nextWindowStart),
+    );
+    state.pendingHistoryPrependOffsetPx = prependedEntries.reduce(
+      (sum, entry) => sum + estimateHistoryEntryHeight(mapSnapshotEntryToHistoryEntry(entry)),
+      0,
+    );
+    applyLensSnapshotWindowState(state, nextSnapshot);
+    state.snapshot = nextSnapshot;
+    renderCurrentAgentView(sessionId);
+  } catch (error) {
+    log.warn(() => `Failed to load older Lens history for ${sessionId}: ${String(error)}`);
+  } finally {
+    state.refreshInFlight = false;
+  }
+}
+
+async function loadLatestLensHistoryWindow(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.refreshInFlight || !state.snapshot?.hasNewerHistory) {
+    return;
+  }
+
+  state.refreshInFlight = true;
+  try {
+    const nextSnapshot = await getLensSnapshot(sessionId, undefined, state.historyWindowCount);
+    applyLensSnapshotWindowState(state, nextSnapshot);
+    state.snapshot = nextSnapshot;
+    renderCurrentAgentView(sessionId);
+  } catch (error) {
+    log.warn(() => `Failed to load latest Lens history for ${sessionId}: ${String(error)}`);
+  } finally {
+    state.refreshInFlight = false;
+  }
+}
+
+function applyLensSnapshotWindowState(
+  state: SessionLensViewState,
+  snapshot: LensPulseSnapshotResponse,
+): void {
+  const windowStart =
+    typeof snapshot.historyWindowStart === 'number' ? snapshot.historyWindowStart : 0;
+  const windowEnd =
+    typeof snapshot.historyWindowEnd === 'number'
+      ? snapshot.historyWindowEnd
+      : windowStart + snapshot.transcript.length;
+  const windowSize = Math.max(0, windowEnd - windowStart);
+  state.historyWindowStart = windowStart;
+  state.historyWindowCount = Math.max(windowSize, LENS_HISTORY_WINDOW_SIZE);
+}
+
+function collapseSnapshotToLatestWindow(
+  state: SessionLensViewState,
+  targetWindowCount: number,
+): void {
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const retainedEntries =
+    snapshot.transcript.length > targetWindowCount
+      ? snapshot.transcript.slice(-targetWindowCount)
+      : snapshot.transcript.slice();
+  const totalHistoryCount = Math.max(snapshot.totalHistoryCount, retainedEntries.length);
+
+  snapshot.transcript = retainedEntries;
+  snapshot.totalHistoryCount = totalHistoryCount;
+  snapshot.historyWindowEnd = totalHistoryCount;
+  snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - retainedEntries.length);
+  snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
+  snapshot.hasNewerHistory = false;
+  state.historyWindowStart = snapshot.historyWindowStart;
+  state.historyWindowCount = Math.max(targetWindowCount, retainedEntries.length);
+}
+
+export function applyCanonicalLensDelta(
+  state: SessionLensViewState,
+  delta: LensPulseDeltaResponse,
+): void {
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const previousTotalHistoryCount = snapshot.totalHistoryCount;
+  snapshot.provider = delta.provider || snapshot.provider;
+  snapshot.generatedAt = delta.generatedAt;
+  snapshot.latestSequence = Math.max(snapshot.latestSequence, delta.latestSequence);
+  snapshot.totalHistoryCount = Math.max(delta.totalHistoryCount, snapshot.totalHistoryCount);
+  snapshot.session = cloneSnapshotSessionSummary(delta.session);
+  snapshot.thread = cloneSnapshotThreadSummary(delta.thread);
+  snapshot.currentTurn = cloneSnapshotTurnSummary(delta.currentTurn);
+  snapshot.quickSettings = cloneSnapshotQuickSettingsSummary(delta.quickSettings);
+  snapshot.streams = cloneSnapshotStreamsSummary(delta.streams);
+  snapshot.items = upsertSnapshotItems(snapshot.items, delta.itemUpserts, delta.itemRemovals);
+  snapshot.requests = upsertSnapshotRequests(
+    snapshot.requests,
+    delta.requestUpserts,
+    delta.requestRemovals,
+  );
+  snapshot.notices = upsertSnapshotNotices(snapshot.notices, delta.noticeUpserts);
+  applyHistoryWindowDelta(
+    state,
+    snapshot,
+    previousTotalHistoryCount,
+    delta.historyUpserts,
+    delta.historyRemovals,
+  );
+}
+
+function applyHistoryWindowDelta(
+  state: SessionLensViewState,
+  snapshot: LensPulseSnapshotResponse,
+  previousTotalHistoryCount: number,
+  upserts: readonly LensPulseHistoryEntry[],
+  removals: readonly string[],
+): void {
+  const currentWindowStart = snapshot.historyWindowStart;
+  const currentWindowEnd = snapshot.historyWindowEnd;
+  const wasLiveEdge = currentWindowEnd >= previousTotalHistoryCount;
+  const nextEntries = snapshot.transcript.map(cloneSnapshotHistoryEntry);
+  const entryIndexById = new Map(nextEntries.map((entry, index) => [entry.entryId, index]));
+
+  for (const entryId of removals) {
+    const index = entryIndexById.get(entryId);
+    if (index === undefined) {
+      continue;
+    }
+
+    nextEntries.splice(index, 1);
+    entryIndexById.delete(entryId);
+    reindexHistoryEntryMap(entryIndexById, nextEntries);
+  }
+
+  for (const upsert of upserts) {
+    const cloned = cloneSnapshotHistoryEntry(upsert);
+    const existingIndex = entryIndexById.get(cloned.entryId);
+    if (existingIndex !== undefined) {
+      nextEntries.splice(existingIndex, 1, cloned);
+      continue;
+    }
+
+    if (wasLiveEdge) {
+      nextEntries.push(cloned);
+      entryIndexById.set(cloned.entryId, nextEntries.length - 1);
+      continue;
+    }
+
+    const absoluteIndex = Math.max(0, cloned.order - 1);
+    if (absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd) {
+      nextEntries.push(cloned);
+      entryIndexById.set(cloned.entryId, nextEntries.length - 1);
+    }
+  }
+
+  nextEntries.sort((left, right) => left.order - right.order);
+  const targetWindowCount = Math.max(1, state.historyWindowCount || LENS_HISTORY_WINDOW_SIZE);
+
+  if (wasLiveEdge) {
+    const trimmedEntries =
+      nextEntries.length > targetWindowCount
+        ? nextEntries.slice(-targetWindowCount)
+        : nextEntries.slice();
+    snapshot.transcript = trimmedEntries;
+    snapshot.historyWindowEnd = snapshot.totalHistoryCount;
+    snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - trimmedEntries.length);
+  } else {
+    snapshot.transcript = nextEntries.filter((entry) => {
+      const absoluteIndex = Math.max(0, entry.order - 1);
+      return absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd;
+    });
+    snapshot.historyWindowStart = currentWindowStart;
+    snapshot.historyWindowEnd = snapshot.historyWindowStart + snapshot.transcript.length;
+  }
+
+  snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
+  snapshot.hasNewerHistory = snapshot.historyWindowEnd < snapshot.totalHistoryCount;
+  state.historyWindowStart = snapshot.historyWindowStart;
+  state.historyWindowCount = Math.max(snapshot.transcript.length, targetWindowCount);
+}
+
+function reindexHistoryEntryMap(
+  entryIndexById: Map<string, number>,
+  entries: readonly LensPulseHistoryEntry[],
+): void {
+  entryIndexById.clear();
+  entries.forEach((entry, index) => {
+    entryIndexById.set(entry.entryId, index);
+  });
+}
+
+function upsertSnapshotItems(
+  current: readonly LensPulseSnapshotResponse['items'][number][],
+  upserts: readonly LensPulseSnapshotResponse['items'][number][],
+  removals: readonly string[],
+): LensPulseSnapshotResponse['items'] {
+  const next = new Map(current.map((item) => [item.itemId, cloneSnapshotItemSummary(item)]));
+
+  for (const itemId of removals) {
+    next.delete(itemId);
+  }
+
+  for (const item of upserts) {
+    next.set(item.itemId, cloneSnapshotItemSummary(item));
+  }
+
+  return Array.from(next.values()).sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+}
+
+function upsertSnapshotRequests(
+  current: readonly LensPulseSnapshotResponse['requests'][number][],
+  upserts: readonly LensPulseSnapshotResponse['requests'][number][],
+  removals: readonly string[],
+): LensPulseSnapshotResponse['requests'] {
+  const next = new Map(
+    current.map((request) => [request.requestId, cloneSnapshotRequestSummary(request)]),
+  );
+
+  for (const requestId of removals) {
+    next.delete(requestId);
+  }
+
+  for (const request of upserts) {
+    next.set(request.requestId, cloneSnapshotRequestSummary(request));
+  }
+
+  return Array.from(next.values()).sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+}
+
+function upsertSnapshotNotices(
+  current: readonly LensPulseSnapshotResponse['notices'][number][],
+  upserts: readonly LensPulseSnapshotResponse['notices'][number][],
+): LensPulseSnapshotResponse['notices'] {
+  const next = new Map(
+    current.map((notice) => [notice.eventId, cloneSnapshotRuntimeNotice(notice)]),
+  );
+
+  for (const notice of upserts) {
+    next.set(notice.eventId, cloneSnapshotRuntimeNotice(notice));
+  }
+
+  return Array.from(next.values()).sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
+}
+
+function cloneSnapshotHistoryEntry(entry: LensPulseHistoryEntry): LensPulseHistoryEntry {
+  return {
+    ...entry,
+    attachments: cloneHistoryAttachments(entry.attachments),
+  };
+}
+
+function cloneSnapshotItemSummary(
+  item: LensPulseSnapshotResponse['items'][number],
+): LensPulseSnapshotResponse['items'][number] {
+  return {
+    ...item,
+    turnId: item.turnId ?? null,
+    title: item.title ?? null,
+    detail: item.detail ?? null,
+    attachments: cloneHistoryAttachments(item.attachments),
+  };
+}
+
+function cloneSnapshotRequestSummary(
+  request: LensPulseSnapshotResponse['requests'][number],
+): LensPulseSnapshotResponse['requests'][number] {
+  return {
+    ...request,
+    turnId: request.turnId ?? null,
+    detail: request.detail ?? null,
+    decision: request.decision ?? null,
+    questions: request.questions.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({ ...option })),
+    })),
+    answers: request.answers.map((answer) => ({
+      questionId: answer.questionId,
+      answers: [...answer.answers],
+    })),
+  };
+}
+
+function cloneSnapshotRuntimeNotice(
+  notice: LensPulseSnapshotResponse['notices'][number],
+): LensPulseSnapshotResponse['notices'][number] {
+  return {
+    ...notice,
+    detail: notice.detail ?? null,
+  };
+}
+
+function cloneSnapshotSessionSummary(
+  session: LensPulseSnapshotResponse['session'],
+): LensPulseSnapshotResponse['session'] {
+  return {
+    ...session,
+    reason: session.reason ?? null,
+    lastError: session.lastError ?? null,
+    lastEventAt: session.lastEventAt ?? null,
+  };
+}
+
+function cloneSnapshotThreadSummary(
+  thread: LensPulseSnapshotResponse['thread'],
+): LensPulseSnapshotResponse['thread'] {
+  return {
+    ...thread,
+  };
+}
+
+function cloneSnapshotTurnSummary(
+  turn: LensPulseSnapshotResponse['currentTurn'],
+): LensPulseSnapshotResponse['currentTurn'] {
+  return {
+    ...turn,
+    turnId: turn.turnId ?? null,
+    model: turn.model ?? null,
+    effort: turn.effort ?? null,
+    startedAt: turn.startedAt ?? null,
+    completedAt: turn.completedAt ?? null,
+  };
+}
+
+function cloneSnapshotQuickSettingsSummary(
+  quickSettings: LensPulseSnapshotResponse['quickSettings'] | null | undefined,
+): LensPulseSnapshotResponse['quickSettings'] {
+  return {
+    model: quickSettings?.model ?? null,
+    effort: quickSettings?.effort ?? null,
+    planMode: quickSettings?.planMode ?? 'off',
+    permissionMode: quickSettings?.permissionMode ?? 'manual',
+  };
+}
+
+function cloneSnapshotStreamsSummary(
+  streams: LensPulseSnapshotResponse['streams'],
+): LensPulseSnapshotResponse['streams'] {
+  return {
+    ...streams,
+  };
+}
+
+function renderCurrentAgentView(
+  sessionId: string,
+  options: { immediate?: boolean; force?: boolean } = {},
+): void {
   const state = viewStates.get(sessionId);
   if (!state) {
     return;
   }
+
+  state.renderDirty = true;
+
+  if (!options.force && !isLensViewVisible(sessionId, state)) {
+    return;
+  }
+
+  if (!options.immediate) {
+    if (state.historyRenderScheduled !== null) {
+      return;
+    }
+
+    state.historyRenderScheduled = window.requestAnimationFrame(() => {
+      const current = viewStates.get(sessionId);
+      if (!current) {
+        return;
+      }
+
+      current.historyRenderScheduled = null;
+      commitAgentViewRender(sessionId, options.force === true);
+    });
+    return;
+  }
+
+  if (state.historyRenderScheduled !== null) {
+    window.cancelAnimationFrame(state.historyRenderScheduled);
+    state.historyRenderScheduled = null;
+  }
+
+  commitAgentViewRender(sessionId, options.force === true);
+}
+
+function commitAgentViewRender(sessionId: string, force = false): void {
+  const state = viewStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  if (!force && !isLensViewVisible(sessionId, state)) {
+    return;
+  }
+
+  state.renderDirty = false;
 
   if (!state.snapshot) {
     renderActivationView(sessionId, state.panel, state);
@@ -1014,6 +1767,39 @@ function renderCurrentAgentView(sessionId: string): void {
   renderAgentView(state.panel, state.snapshot, state.events, state.streamConnected, state);
 }
 
+function bindActiveLensSessionRendering(): void {
+  if (lensActiveSessionBound) {
+    return;
+  }
+
+  $activeSessionId.subscribe((sessionId) => {
+    if (!sessionId) {
+      return;
+    }
+
+    const state = viewStates.get(sessionId);
+    if (!state || !state.renderDirty) {
+      return;
+    }
+
+    renderCurrentAgentView(sessionId, { immediate: true });
+  });
+  lensActiveSessionBound = true;
+}
+
+function isLensViewVisible(sessionId: string, state: SessionLensViewState): boolean {
+  if (state.debugScenarioActive) {
+    return true;
+  }
+
+  if (getActiveTab(sessionId) !== 'agent') {
+    return false;
+  }
+
+  const activeSessionId = $activeSessionId.get();
+  return !activeSessionId || activeSessionId === sessionId;
+}
+
 function renderAgentView(
   panel: HTMLDivElement,
   snapshot: LensPulseSnapshotResponse,
@@ -1021,34 +1807,42 @@ function renderAgentView(
   streamConnected: boolean,
   state: SessionLensViewState,
 ): void {
+  syncLensQuickSettingsFromSnapshot(snapshot.sessionId, snapshot.provider, snapshot.quickSettings);
+  syncAgentViewPresentation(panel, snapshot.provider);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncRequestInteractionState(state, snapshot.requests);
-  const transcriptEntries = buildLensTranscriptEntries(snapshot, events);
-  const visibleTranscriptEntries = suppressActiveComposerRequestEntries(
-    transcriptEntries,
+  const historyEntries = buildLensHistoryEntries(snapshot, events);
+  const visibleHistoryEntries = suppressActiveComposerRequestEntries(
+    historyEntries,
     snapshot.requests,
   );
   const optimistic = applyOptimisticLensTurns(
     snapshot,
-    visibleTranscriptEntries,
+    visibleHistoryEntries,
     state.optimisticTurns,
   );
   state.optimisticTurns = optimistic.optimisticTurns;
-  const renderedEntries = withActivationIssueNotice(
-    withLiveAssistantState(
+  const renderedEntries = stabilizeHistoryEntryOrder(
+    withTrailingBusyIndicator(
       snapshot,
-      withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+      withLiveAssistantState(
+        snapshot,
+        withActivationIssueNotice(
+          withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+          state.activationIssue,
+        ),
+      ),
+      snapshot.requests,
     ),
-    state.activationIssue,
   );
-  renderTranscript(panel, renderedEntries, snapshot.sessionId);
+  renderHistory(panel, renderedEntries, snapshot.sessionId);
   renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
 }
 
 export function suppressActiveComposerRequestEntries(
-  entries: readonly LensTranscriptEntry[],
+  entries: readonly LensHistoryEntry[],
   requests: readonly LensPulseRequestSummary[],
-): LensTranscriptEntry[] {
+): LensHistoryEntry[] {
   const activeRequest = findActiveComposerRequest(requests);
   if (!activeRequest || activeRequest.state !== 'open') {
     return [...entries];
@@ -1083,7 +1877,7 @@ function handleLensTurnSubmitted(event: Event): void {
       optimisticId: detail.optimisticId,
       turnId: null,
       text: (detail.request.text ?? '').trim(),
-      attachments: cloneTranscriptAttachments(detail.request.attachments),
+      attachments: cloneHistoryAttachments(detail.request.attachments),
       submittedAt: new Date().toISOString(),
       status: 'submitted',
     },
@@ -1115,7 +1909,6 @@ function handleLensTurnAccepted(event: Event): void {
   }
 
   renderCurrentAgentView(detail.sessionId);
-  void refreshLensSnapshot(detail.sessionId);
 }
 
 function handleLensTurnFailed(event: Event): void {
@@ -1131,70 +1924,62 @@ function handleLensTurnFailed(event: Event): void {
   renderCurrentAgentView(detail.sessionId);
 }
 
+function stabilizeHistoryEntryOrder(entries: readonly LensHistoryEntry[]): LensHistoryEntry[] {
+  return [...entries].sort(
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id),
+  );
+}
+
 function renderActivationView(
   sessionId: string,
   panel: HTMLDivElement,
   state: SessionLensViewState,
 ): void {
+  syncAgentViewPresentation(panel, state.snapshot?.provider ?? null);
   panel.dataset.agentTurnId = '';
   renderComposerInterruption(panel, sessionId, [], state);
-  renderTranscript(
+  renderHistory(
     panel,
-    withActivationIssueNotice(buildActivationTranscriptEntries(state), state.activationIssue),
+    withActivationIssueNotice(buildActivationHistoryEntries(state), state.activationIssue),
     sessionId,
   );
 }
 
-function renderTranscript(
+function renderHistory(
   panel: HTMLDivElement,
-  entries: LensTranscriptEntry[],
+  entries: LensHistoryEntry[],
   sessionId: string,
 ): void {
-  const container = panel.querySelector<HTMLElement>('[data-agent-field="transcript"]');
+  const container = panel.querySelector<HTMLElement>('[data-agent-field="history"]');
   if (!container) {
     return;
   }
 
   const state = viewStates.get(sessionId);
   if (state) {
-    state.transcriptViewport = container as HTMLDivElement;
-    state.transcriptEntries = entries;
+    state.historyViewport = container as HTMLDivElement;
+    state.historyEntries = entries;
+    state.historyLastScrollMetrics ??= readHistoryScrollMetrics(container as HTMLDivElement);
+    pruneAssistantMarkdownCache(state, entries);
     renderScrollToBottomControl(panel, state);
   }
 
-  if (entries.length === 0) {
-    renderEmptyContainer(container, 'No transcript entries yet.');
-    return;
-  }
-
   const viewport = container as HTMLDivElement;
-  const metrics = readTranscriptViewportMetrics(viewport);
-  const virtualWindow = computeTranscriptVirtualWindow(
-    entries,
-    metrics.scrollTop,
-    metrics.clientHeight,
-    metrics.clientWidth,
-  );
-  const visibleEntries = entries.slice(virtualWindow.start, virtualWindow.end);
-  const fragment = document.createDocumentFragment();
-  if (virtualWindow.topSpacerPx > 0) {
-    fragment.appendChild(createTranscriptSpacer(virtualWindow.topSpacerPx));
-  }
-  for (const [visibleIndex, entry] of visibleEntries.entries()) {
-    const absoluteIndex = virtualWindow.start + visibleIndex;
-    fragment.appendChild(
-      createTranscriptEntry(entry, sessionId, resolveArtifactCluster(entries, absoluteIndex)),
-    );
-  }
-  if (virtualWindow.bottomSpacerPx > 0) {
-    fragment.appendChild(createTranscriptSpacer(virtualWindow.bottomSpacerPx));
-  }
+  const metrics = readHistoryViewportMetrics(viewport);
+  const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
+  reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
 
-  container.replaceChildren(fragment);
-
-  if (state?.transcriptAutoScrollPinned) {
+  if (state && state.pendingHistoryPrependOffsetPx > 0 && !state.historyAutoScrollPinned) {
+    const restoreOffset = state.pendingHistoryPrependOffsetPx;
+    state.pendingHistoryPrependOffsetPx = 0;
     window.requestAnimationFrame(() => {
-      const viewport = state.transcriptViewport;
+      viewport.scrollTop += restoreOffset;
+    });
+  }
+
+  if (state?.historyAutoScrollPinned) {
+    window.requestAnimationFrame(() => {
+      const viewport = state.historyViewport;
       if (!viewport) {
         return;
       }
@@ -1202,15 +1987,15 @@ function renderTranscript(
       const previousScrollTop = viewport.scrollTop;
       const focusCandidates =
         typeof viewport.getElementsByClassName === 'function'
-          ? Array.from(viewport.getElementsByClassName('agent-transcript-entry'))
-              .filter((node): node is HTMLElement => node instanceof HTMLElement)
+          ? Array.from(viewport.getElementsByClassName('agent-history-entry'))
+              .filter((node): node is HTMLElement => isElementLike(node))
               .filter((node) => node.dataset.pending === 'true' || node.dataset.live === 'true')
           : [];
       const viewportChildren =
         typeof viewport.children !== 'undefined'
           ? Array.from(viewport.children).filter(
               (node): node is HTMLElement =>
-                node instanceof HTMLElement && node.classList.contains('agent-transcript-entry'),
+                isElementLike(node) && node.classList.contains('agent-history-entry'),
             )
           : [];
       const focusTarget =
@@ -1228,18 +2013,257 @@ function renderTranscript(
       }
 
       if (
-        entries.length > TRANSCRIPT_VIRTUALIZE_AFTER &&
+        entries.length > HISTORY_VIRTUALIZE_AFTER &&
         Math.abs(viewport.scrollTop - previousScrollTop) > 1
       ) {
-        scheduleTranscriptRender(sessionId);
+        scheduleHistoryRender(sessionId);
       }
 
       const current = viewStates.get(sessionId);
       if (current) {
-        current.transcriptAutoScrollPinned = true;
+        current.historyAutoScrollPinned = true;
+        current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
         renderScrollToBottomControl(panel, current);
       }
     });
+  }
+}
+
+function isElementLike(node: unknown): node is HTMLElement {
+  return (
+    typeof node === 'object' &&
+    node !== null &&
+    'classList' in node &&
+    'dataset' in node &&
+    'appendChild' in node
+  );
+}
+
+function buildHistoryRenderPlan(
+  entries: readonly LensHistoryEntry[],
+  metrics: HistoryViewportMetrics,
+  state: SessionLensViewState | undefined,
+): HistoryRenderPlan {
+  if (entries.length === 0) {
+    return {
+      emptyStateText: lensText('lens.emptyHistory', 'No history entries yet.'),
+      topSpacerPx: 0,
+      bottomSpacerPx: 0,
+      visibleEntries: [],
+    };
+  }
+
+  const virtualWindow = computeHistoryVirtualWindow(
+    entries,
+    metrics.scrollTop,
+    metrics.clientHeight,
+    metrics.clientWidth,
+  );
+  const remoteAverageHeight =
+    entries.length > 0
+      ? entries.reduce(
+          (sum, entry) => sum + estimateHistoryEntryHeight(entry, metrics.clientWidth),
+          0,
+        ) / entries.length
+      : 92;
+  const remoteTopSpacerPx = Math.max(
+    0,
+    Math.round((state?.snapshot?.historyWindowStart ?? 0) * remoteAverageHeight),
+  );
+  const totalHistoryCount = state?.snapshot?.totalHistoryCount ?? entries.length;
+  const historyWindowEnd = state?.snapshot?.historyWindowEnd ?? entries.length;
+  const remoteBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
+  const remoteBottomSpacerPx = Math.max(0, Math.round(remoteBottomCount * remoteAverageHeight));
+
+  return {
+    emptyStateText: null,
+    topSpacerPx: remoteTopSpacerPx + virtualWindow.topSpacerPx,
+    bottomSpacerPx: remoteBottomSpacerPx + virtualWindow.bottomSpacerPx,
+    visibleEntries: entries
+      .slice(virtualWindow.start, virtualWindow.end)
+      .map((entry, visibleIndex) => {
+        const absoluteIndex = virtualWindow.start + visibleIndex;
+        const cluster = resolveArtifactCluster(entries, absoluteIndex);
+        return {
+          key: entry.id,
+          entry,
+          cluster,
+          signature: buildHistoryEntrySignature(entry, cluster, state),
+        };
+      }),
+  };
+}
+
+function buildHistoryEntrySignature(
+  entry: LensHistoryEntry,
+  cluster: ArtifactClusterInfo | null,
+  state: SessionLensViewState | undefined,
+): string {
+  const badgeLabel = resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.provider);
+  const attachmentToken = (entry.attachments ?? [])
+    .map((attachment) =>
+      [attachment.kind, attachment.displayName, attachment.path, attachment.mimeType ?? ''].join(
+        ':',
+      ),
+    )
+    .join('|');
+  const actionToken = (entry.actions ?? [])
+    .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
+    .join('|');
+  const clusterToken = cluster
+    ? [cluster.position, cluster.label ?? '', cluster.count, cluster.onlyTools ? '1' : '0'].join(
+        ':',
+      )
+    : '';
+
+  return [
+    entry.kind,
+    entry.tone,
+    badgeLabel,
+    entry.title,
+    entry.body,
+    entry.meta,
+    entry.pending ? '1' : '0',
+    entry.live ? '1' : '0',
+    entry.busyIndicator ? '1' : '0',
+    attachmentToken,
+    actionToken,
+    clusterToken,
+    state?.activationActionBusy === true && (entry.actions?.length ?? 0) > 0 ? 'busy' : 'idle',
+  ].join('||');
+}
+
+function reconcileHistoryRenderPlan(
+  sessionId: string,
+  container: HTMLDivElement,
+  plan: HistoryRenderPlan,
+): void {
+  const state = viewStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  if (plan.emptyStateText) {
+    const emptyNode = ensureEmptyHistoryNode(state, plan.emptyStateText);
+    syncOrderedChildren(container, [emptyNode]);
+    state.historyRenderedNodes.clear();
+    state.historyTopSpacer = null;
+    state.historyBottomSpacer = null;
+    return;
+  }
+
+  state.historyEmptyState = null;
+  const nextChildren: HTMLElement[] = [];
+
+  if (plan.topSpacerPx > 0) {
+    nextChildren.push(ensureHistorySpacerNode(state, 'top', plan.topSpacerPx));
+  } else {
+    state.historyTopSpacer = null;
+  }
+
+  const visibleKeys = new Set<string>();
+  for (const visibleEntry of plan.visibleEntries) {
+    visibleKeys.add(visibleEntry.key);
+    nextChildren.push(resolveRenderedHistoryNode(sessionId, state, visibleEntry));
+  }
+
+  pruneRenderedHistoryNodes(state, visibleKeys);
+
+  if (plan.bottomSpacerPx > 0) {
+    nextChildren.push(ensureHistorySpacerNode(state, 'bottom', plan.bottomSpacerPx));
+  } else {
+    state.historyBottomSpacer = null;
+  }
+
+  syncOrderedChildren(container, nextChildren);
+}
+
+function ensureEmptyHistoryNode(state: SessionLensViewState, text: string): HTMLDivElement {
+  if (!state.historyEmptyState) {
+    const empty = document.createElement('div');
+    empty.className = 'agent-history-empty';
+    state.historyEmptyState = empty;
+  }
+
+  state.historyEmptyState.textContent = text;
+  return state.historyEmptyState;
+}
+
+function ensureHistorySpacerNode(
+  state: SessionLensViewState,
+  position: 'top' | 'bottom',
+  heightPx: number,
+): HTMLDivElement {
+  const existing = position === 'top' ? state.historyTopSpacer : state.historyBottomSpacer;
+  const spacer = existing ?? (createHistorySpacer(0) as HTMLDivElement);
+  spacer.style.height = `${Math.max(0, Math.round(heightPx))}px`;
+
+  if (position === 'top') {
+    state.historyTopSpacer = spacer;
+  } else {
+    state.historyBottomSpacer = spacer;
+  }
+
+  return spacer;
+}
+
+function resolveRenderedHistoryNode(
+  sessionId: string,
+  state: SessionLensViewState,
+  visibleEntry: HistoryVisibleEntry,
+): HTMLElement {
+  const existing = state.historyRenderedNodes.get(visibleEntry.key);
+  if (existing && existing.signature === visibleEntry.signature) {
+    return existing.node;
+  }
+
+  if (existing) {
+    updateHistoryEntryNode(existing.node, visibleEntry.entry, sessionId, visibleEntry.cluster);
+    state.historyRenderedNodes.set(visibleEntry.key, {
+      node: existing.node,
+      signature: visibleEntry.signature,
+      entry: visibleEntry.entry,
+      cluster: visibleEntry.cluster,
+    });
+    return existing.node;
+  }
+
+  const node = createHistoryEntry(visibleEntry.entry, sessionId, visibleEntry.cluster);
+  state.historyRenderedNodes.set(visibleEntry.key, {
+    node,
+    signature: visibleEntry.signature,
+    entry: visibleEntry.entry,
+    cluster: visibleEntry.cluster,
+  });
+  return node;
+}
+
+function pruneRenderedHistoryNodes(
+  state: SessionLensViewState,
+  visibleKeys: ReadonlySet<string>,
+): void {
+  for (const cacheKey of state.historyRenderedNodes.keys()) {
+    if (!visibleKeys.has(cacheKey)) {
+      state.historyRenderedNodes.delete(cacheKey);
+    }
+  }
+}
+
+function syncOrderedChildren(container: HTMLElement, nodes: readonly HTMLElement[]): void {
+  let anchor = container.firstChild;
+  for (const node of nodes) {
+    if (anchor !== node) {
+      container.insertBefore(node, anchor);
+    } else {
+      anchor = anchor.nextSibling;
+      continue;
+    }
+
+    anchor = node.nextSibling;
+  }
+
+  while (container.childNodes.length > nodes.length) {
+    container.removeChild(container.lastChild as ChildNode);
   }
 }
 
@@ -1250,24 +2274,27 @@ function renderScrollToBottomControl(panel: HTMLDivElement, state: SessionLensVi
   }
 
   const shouldShow =
-    !state.transcriptAutoScrollPinned &&
-    state.transcriptEntries.length > 0 &&
+    !state.historyAutoScrollPinned &&
+    state.historyEntries.length > 0 &&
     state.activationState !== 'failed';
+  button.textContent = lensText('lens.scrollToBottom', 'Back to bottom');
   button.hidden = !shouldShow;
 }
 
-function scrollTranscriptToBottom(sessionId: string, behavior: ScrollBehavior = 'auto'): void {
+function scrollHistoryToBottom(sessionId: string, behavior: ScrollBehavior = 'auto'): void {
   const state = viewStates.get(sessionId);
-  const viewport = state?.transcriptViewport;
+  const viewport = state?.historyViewport;
   if (!state || !viewport) {
     return;
   }
 
-  state.transcriptAutoScrollPinned = true;
+  state.historyAutoScrollPinned = true;
+  state.historyLastUserScrollIntentAt = 0;
   viewport.scrollTo({
     top: viewport.scrollHeight,
     behavior,
   });
+  state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
   renderScrollToBottomControl(state.panel, state);
 }
 
@@ -1391,7 +2418,7 @@ function resolveInitialQuestionAnswers(
   return answered?.answers.slice() ?? [];
 }
 
-function readTranscriptViewportMetrics(container: HTMLDivElement): TranscriptViewportMetrics {
+function readHistoryViewportMetrics(container: HTMLDivElement): HistoryViewportMetrics {
   return {
     scrollTop: container.scrollTop,
     clientHeight: container.clientHeight,
@@ -1399,393 +2426,37 @@ function readTranscriptViewportMetrics(container: HTMLDivElement): TranscriptVie
   };
 }
 
-/**
- * Normalizes the backend-owned Lens snapshot plus event stream into a stable
- * conversation transcript so the frontend can stay a thin presentation layer.
- */
-export function buildLensTranscriptEntries(
-  snapshot: LensPulseSnapshotResponse,
-  events: LensPulseEvent[],
-): LensTranscriptEntry[] {
-  const entries: LensTranscriptEntry[] = [];
-  const byKey = new Map<string, LensTranscriptEntry>();
-  const requestSummaryById = new Map(
-    snapshot.requests.map((request) => [request.requestId, request]),
-  );
-  const sortedEvents = [...events].sort((left, right) => left.sequence - right.sequence);
-
-  const ensureEntry = (
-    key: string,
-    create: () => LensTranscriptEntry,
-    orderOverride?: number,
-  ): LensTranscriptEntry => {
-    const existing = byKey.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    const entry = create();
-    if (typeof orderOverride === 'number') {
-      entry.order = orderOverride;
-    }
-    byKey.set(key, entry);
-    entries.push(entry);
-    return entry;
+function readHistoryScrollMetrics(container: HTMLDivElement): HistoryScrollMetrics {
+  return {
+    scrollTop: container.scrollTop,
+    clientHeight: container.clientHeight,
+    scrollHeight: container.scrollHeight,
   };
+}
 
-  for (const lensEvent of sortedEvents) {
-    const order = lensEvent.sequence;
+/**
+ * Normalizes the backend-owned Lens snapshot plus event stream into stable
+ * conversation history so the frontend can stay a thin presentation layer.
+ */
+export function buildLensHistoryEntries(
+  snapshot: LensPulseSnapshotResponse,
+  _events: LensPulseEvent[],
+): LensHistoryEntry[] {
+  return buildCanonicalSnapshotHistoryEntries(snapshot);
+}
 
-    if (lensEvent.item && lensEvent.itemId) {
-      const itemKind = transcriptKindFromItem(lensEvent.item.itemType);
-      const itemKey = resolveTranscriptEntryKey(itemKind, lensEvent);
-      const itemEntry = ensureEntry(itemKey, () => ({
-        id: itemKey,
-        order,
-        kind: itemKind,
-        tone: toneFromState(lensEvent.item?.status),
-        label: transcriptLabel(itemKind),
-        title:
-          itemKind === 'tool'
-            ? resolveToolTranscriptTitle(
-                lensEvent.item?.itemType,
-                lensEvent.item?.title,
-                lensEvent.item?.detail,
-              )
-            : transcriptLabel(itemKind),
-        body: resolveTranscriptItemBody(itemKind, lensEvent.item?.detail, lensEvent.item?.title),
-        meta: formatTranscriptMeta(
-          itemKind,
-          prettify(lensEvent.item?.status || 'updated'),
-          lensEvent.createdAt,
-        ),
-        attachments: cloneTranscriptAttachments(lensEvent.item?.attachments),
-        sourceItemId: lensEvent.itemId,
-        sourceTurnId: lensEvent.turnId,
-      }));
-      itemEntry.kind = itemKind;
-      itemEntry.tone = toneFromState(lensEvent.item.status);
-      itemEntry.label = transcriptLabel(itemKind);
-      itemEntry.title =
-        itemKind === 'tool'
-          ? resolveToolTranscriptTitle(
-              lensEvent.item.itemType,
-              lensEvent.item.title,
-              lensEvent.item.detail,
-            )
-          : transcriptLabel(itemKind);
-      const itemBody = resolveTranscriptItemBody(
-        itemKind,
-        lensEvent.item.detail,
-        lensEvent.item.title,
-      );
-      if (itemBody) {
-        itemEntry.body = mergeTranscriptBody(itemKind, itemEntry.body, itemBody);
-      }
-      itemEntry.attachments = mergeTranscriptAttachments(
-        itemEntry.attachments,
-        lensEvent.item.attachments,
-      );
-      itemEntry.meta = formatTranscriptMeta(
-        itemKind,
-        prettify(lensEvent.item.status),
-        lensEvent.createdAt,
-      );
-      itemEntry.sourceItemId = lensEvent.itemId;
-      itemEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (lensEvent.contentDelta) {
-      const streamKind = lensEvent.contentDelta.streamKind;
-      const transcriptKind = transcriptKindFromStream(streamKind);
-      if (!transcriptKind) {
-        continue;
-      }
-      const key = resolveTranscriptEntryKey(transcriptKind, lensEvent, streamKind);
-      const contentEntry = ensureEntry(key, () => ({
-        id: key,
-        order,
-        kind: transcriptKind,
-        tone: transcriptKind === 'assistant' ? 'info' : 'warning',
-        label: transcriptStreamLabel(streamKind),
-        title: transcriptStreamTitle(streamKind),
-        body: '',
-        meta: formatTranscriptMeta(transcriptKind, prettify(streamKind), lensEvent.createdAt),
-        sourceItemId: lensEvent.itemId,
-        sourceTurnId: lensEvent.turnId,
-      }));
-      contentEntry.body = appendStreamDelta(
-        transcriptKind,
-        contentEntry.body,
-        lensEvent.contentDelta.delta,
-      );
-      contentEntry.meta = formatTranscriptMeta(
-        transcriptKind,
-        prettify(streamKind),
-        lensEvent.createdAt,
-      );
-      contentEntry.sourceItemId = lensEvent.itemId;
-      contentEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (lensEvent.planDelta || lensEvent.planCompleted) {
-      const key = `plan:${lensEvent.turnId || lensEvent.sequence}`;
-      const planEntry = ensureEntry(key, () => ({
-        id: key,
-        order,
-        kind: 'plan',
-        tone: 'info',
-        label: 'Plan',
-        title: 'Plan',
-        body: '',
-        meta: formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt),
-        sourceTurnId: lensEvent.turnId,
-      }));
-      if (lensEvent.planDelta?.delta) {
-        planEntry.body += lensEvent.planDelta.delta;
-      }
-      if (lensEvent.planCompleted?.planMarkdown) {
-        planEntry.body = lensEvent.planCompleted.planMarkdown;
-      }
-      planEntry.meta = formatTranscriptMeta('plan', 'Plan', lensEvent.createdAt);
-      planEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (lensEvent.diffUpdated) {
-      const key = `diff:${lensEvent.turnId || lensEvent.sequence}`;
-      const diffEntry = ensureEntry(key, () => ({
-        id: key,
-        order,
-        kind: 'diff',
-        tone: 'warning',
-        label: 'Diff',
-        title: 'Working diff',
-        body: lensEvent.diffUpdated?.unifiedDiff || '',
-        meta: formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt),
-        sourceTurnId: lensEvent.turnId,
-      }));
-      diffEntry.body = lensEvent.diffUpdated.unifiedDiff;
-      diffEntry.meta = formatTranscriptMeta('diff', 'Diff', lensEvent.createdAt);
-      diffEntry.sourceTurnId = lensEvent.turnId;
-    }
-
-    if (
-      lensEvent.requestOpened ||
-      lensEvent.userInputRequested ||
-      lensEvent.requestResolved ||
-      lensEvent.userInputResolved
-    ) {
-      const requestId = lensEvent.requestId || `request:${lensEvent.sequence}`;
-      const summary = requestSummaryById.get(requestId);
-      const requestEntry = ensureEntry(`request:${requestId}`, () =>
-        createRequestTranscriptEntry(requestId, summary, lensEvent, order),
-      );
-      updateRequestTranscriptEntry(requestEntry, summary, lensEvent);
-    }
-
-    const eventEntry = buildSystemEntryFromEvent(lensEvent, order);
-    if (eventEntry) {
-      entries.push(eventEntry);
-    }
+function buildCanonicalSnapshotHistoryEntries(
+  snapshot: LensPulseSnapshotResponse,
+): LensHistoryEntry[] {
+  // The backend wire contract still exposes `snapshot.transcript`. Treat that
+  // legacy field as canonical Lens history in the frontend.
+  const historyEntries = Array.isArray(snapshot.transcript) ? snapshot.transcript : [];
+  if (historyEntries.length === 0) {
+    return [];
   }
 
-  let fallbackOrder = snapshot.latestSequence + 1;
-  const sortedSnapshotItems = [...snapshot.items].sort(
-    (left, right) => new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime(),
-  );
-  for (const item of sortedSnapshotItems) {
-    const itemKind = transcriptKindFromItem(item.itemType);
-    const itemKey = resolveSnapshotItemEntryKey(itemKind, item, fallbackOrder);
-    const snapshotEntry = ensureEntry(itemKey, () => ({
-      id: itemKey,
-      order: fallbackOrder,
-      kind: itemKind,
-      tone: toneFromState(item.status),
-      label: transcriptLabel(itemKind),
-      title:
-        itemKind === 'tool'
-          ? resolveToolTranscriptTitle(item.itemType, item.title, item.detail)
-          : transcriptLabel(itemKind),
-      body: resolveTranscriptItemBody(itemKind, item.detail, item.title),
-      meta: formatTranscriptMeta(itemKind, prettify(item.status), item.updatedAt),
-      attachments: cloneTranscriptAttachments(item.attachments),
-      sourceItemId: item.itemId,
-      sourceTurnId: item.turnId,
-    }));
-    snapshotEntry.tone = toneFromState(item.status);
-    snapshotEntry.label = transcriptLabel(itemKind);
-    snapshotEntry.title =
-      itemKind === 'tool'
-        ? resolveToolTranscriptTitle(item.itemType, item.title, item.detail)
-        : transcriptLabel(itemKind);
-    snapshotEntry.body = mergeTranscriptBody(
-      itemKind,
-      snapshotEntry.body,
-      resolveTranscriptItemBody(itemKind, item.detail, item.title),
-    );
-    snapshotEntry.attachments = mergeTranscriptAttachments(
-      snapshotEntry.attachments,
-      item.attachments,
-    );
-    snapshotEntry.meta = formatTranscriptMeta(itemKind, prettify(item.status), item.updatedAt);
-    snapshotEntry.sourceItemId = item.itemId;
-    snapshotEntry.sourceTurnId = item.turnId;
-    fallbackOrder += 1;
-  }
-
-  const currentTurnAssistantKey = resolveCurrentTurnAssistantEntryKey(snapshot, entries);
-  if (snapshot.streams.assistantText.trim()) {
-    if (currentTurnAssistantKey) {
-      const currentAssistantEntry = ensureEntry(currentTurnAssistantKey, () => ({
-        id: currentTurnAssistantKey,
-        order: fallbackOrder,
-        kind: 'assistant',
-        tone: 'info',
-        label: 'Assistant',
-        title: 'Assistant',
-        body: snapshot.streams.assistantText,
-        meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
-        sourceTurnId: snapshot.currentTurn.turnId,
-      }));
-      currentAssistantEntry.body = mergeProgressiveMessage(
-        currentAssistantEntry.body,
-        snapshot.streams.assistantText,
-      );
-      currentAssistantEntry.meta = formatTranscriptMeta(
-        'assistant',
-        'Snapshot',
-        snapshot.generatedAt,
-      );
-      currentAssistantEntry.sourceTurnId = snapshot.currentTurn.turnId;
-      fallbackOrder += 1;
-    } else if (!entries.some((entry) => entry.kind === 'assistant' && entry.body.trim())) {
-      entries.push({
-        id: 'fallback-assistant',
-        order: fallbackOrder,
-        kind: 'assistant',
-        tone: 'info',
-        label: 'Assistant',
-        title: 'Assistant',
-        body: snapshot.streams.assistantText,
-        meta: formatTranscriptMeta('assistant', 'Snapshot', snapshot.generatedAt),
-        sourceTurnId: snapshot.currentTurn.turnId,
-      });
-      fallbackOrder += 1;
-    }
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'reasoning' && entry.title === 'Reasoning') &&
-    snapshot.streams.reasoningText.trim()
-  ) {
-    entries.push({
-      id: 'fallback-reasoning',
-      order: fallbackOrder,
-      kind: 'reasoning',
-      tone: 'info',
-      label: 'Reasoning',
-      title: 'Reasoning',
-      body: snapshot.streams.reasoningText,
-      meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'reasoning' && entry.title === 'Reasoning summary') &&
-    snapshot.streams.reasoningSummaryText.trim()
-  ) {
-    entries.push({
-      id: 'fallback-reasoning-summary',
-      order: fallbackOrder,
-      kind: 'reasoning',
-      tone: 'info',
-      label: 'Reasoning',
-      title: 'Reasoning summary',
-      body: snapshot.streams.reasoningSummaryText,
-      meta: formatTranscriptMeta('reasoning', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'plan' && entry.body.trim()) &&
-    snapshot.streams.planText.trim()
-  ) {
-    entries.push({
-      id: 'fallback-plan',
-      order: fallbackOrder,
-      kind: 'plan',
-      tone: 'info',
-      label: 'Plan',
-      title: 'Plan',
-      body: snapshot.streams.planText,
-      meta: formatTranscriptMeta('plan', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'diff' && entry.body.trim()) &&
-    snapshot.streams.unifiedDiff.trim()
-  ) {
-    entries.push({
-      id: 'fallback-diff',
-      order: fallbackOrder,
-      kind: 'diff',
-      tone: 'warning',
-      label: 'Diff',
-      title: 'Working diff',
-      body: snapshot.streams.unifiedDiff,
-      meta: formatTranscriptMeta('diff', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'tool' && entry.title === 'Command output') &&
-    snapshot.streams.commandOutput.trim()
-  ) {
-    entries.push({
-      id: 'fallback-command-output',
-      order: fallbackOrder,
-      kind: 'tool',
-      tone: 'warning',
-      label: 'Tool',
-      title: 'Command output',
-      body: snapshot.streams.commandOutput,
-      meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
-    });
-    fallbackOrder += 1;
-  }
-
-  if (
-    !entries.some((entry) => entry.kind === 'tool' && entry.title === 'File change output') &&
-    snapshot.streams.fileChangeOutput.trim()
-  ) {
-    entries.push({
-      id: 'fallback-file-change-output',
-      order: fallbackOrder,
-      kind: 'tool',
-      tone: 'warning',
-      label: 'Tool',
-      title: 'File change output',
-      body: snapshot.streams.fileChangeOutput,
-      meta: formatTranscriptMeta('tool', 'Snapshot', snapshot.generatedAt),
-    });
-  }
-
-  for (const request of snapshot.requests) {
-    const key = `request:${request.requestId}`;
-    const entry = ensureEntry(key, () =>
-      createRequestTranscriptEntry(request.requestId, request, null, fallbackOrder),
-    );
-    updateRequestTranscriptEntry(entry, request, null);
-    entry.order = Math.max(entry.order, fallbackOrder);
-    fallbackOrder += 1;
-  }
-
-  return entries
+  return historyEntries
+    .map(mapSnapshotEntryToHistoryEntry)
     .filter(
       (entry) =>
         entry.body.trim() ||
@@ -1797,16 +2468,42 @@ export function buildLensTranscriptEntries(
     .sort((left, right) => left.order - right.order);
 }
 
+function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHistoryEntry {
+  const kind = normalizeSnapshotHistoryKind(entry.kind);
+  const statusLabel = entry.streaming
+    ? lensText('lens.status.streaming', 'Streaming')
+    : prettify(entry.status || kind);
+  const mapped: LensHistoryEntry = {
+    id: entry.entryId,
+    order: entry.order,
+    kind,
+    tone: toneFromState(entry.status),
+    label: historyLabel(kind),
+    title: entry.title || '',
+    body: entry.body || '',
+    meta: formatHistoryMeta(kind, statusLabel, entry.updatedAt),
+    attachments: cloneHistoryAttachments(entry.attachments),
+    live: entry.streaming,
+    sourceItemId: entry.itemId ?? null,
+    sourceTurnId: entry.turnId ?? null,
+  };
+  if (entry.requestId) {
+    mapped.requestId = entry.requestId;
+  }
+
+  return mapped;
+}
+
 /**
  * Keeps the conversation responsive while the canonical Lens snapshot catches
  * up, so submitted turns feel immediate even though authority stays server-side.
  */
 export function applyOptimisticLensTurns(
   snapshot: LensPulseSnapshotResponse,
-  entries: readonly LensTranscriptEntry[],
+  entries: readonly LensHistoryEntry[],
   optimisticTurns: readonly PendingLensTurn[],
 ): {
-  entries: LensTranscriptEntry[];
+  entries: LensHistoryEntry[];
   optimisticTurns: PendingLensTurn[];
 } {
   if (optimisticTurns.length === 0) {
@@ -1837,15 +2534,15 @@ export function applyOptimisticLensTurns(
         order: nextOrder,
         kind: 'user',
         tone: 'info',
-        label: 'You',
+        label: historyLabel('user'),
         title: '',
         body: turn.text,
-        meta: formatTranscriptMeta(
+        meta: formatHistoryMeta(
           'user',
           turn.status === 'submitted' ? 'Sending' : 'Sent',
           turn.submittedAt,
         ),
-        attachments: cloneTranscriptAttachments(turn.attachments),
+        attachments: cloneHistoryAttachments(turn.attachments),
         pending: turn.status === 'submitted',
       });
       nextOrder += 1;
@@ -1857,10 +2554,10 @@ export function applyOptimisticLensTurns(
         order: nextOrder,
         kind: 'assistant',
         tone: 'info',
-        label: 'Assistant',
+        label: historyLabel('assistant'),
         title: '',
         body: turn.status === 'submitted' ? 'Starting…' : 'Thinking…',
-        meta: formatTranscriptMeta(
+        meta: formatHistoryMeta(
           'assistant',
           turn.status === 'submitted' ? 'Starting' : 'Running',
           turn.submittedAt,
@@ -1884,9 +2581,9 @@ export function applyOptimisticLensTurns(
 
 function withInlineLensStatus(
   snapshot: LensPulseSnapshotResponse,
-  entries: LensTranscriptEntry[],
+  entries: LensHistoryEntry[],
   streamConnected: boolean,
-): LensTranscriptEntry[] {
+): LensHistoryEntry[] {
   const hasConversation = entries.some((entry) =>
     ['user', 'assistant', 'tool', 'request', 'plan', 'diff'].includes(entry.kind),
   );
@@ -1894,8 +2591,11 @@ function withInlineLensStatus(
     snapshot.session.lastError?.trim() ||
     snapshot.session.reason?.trim() ||
     (streamConnected
-      ? 'Lens is connected to MidTerm and waiting for transcript content.'
-      : 'Lens is reconnecting to MidTerm.');
+      ? lensText(
+          'lens.status.connectedWaiting',
+          'Lens is connected to MidTerm and waiting for history content.',
+        )
+      : lensText('lens.status.reconnecting', 'Lens is reconnecting to MidTerm.'));
 
   if ((!statusBody || hasConversation) && !snapshot.session.lastError) {
     return entries;
@@ -1907,10 +2607,10 @@ function withInlineLensStatus(
       order: Number.MIN_SAFE_INTEGER,
       kind: snapshot.session.lastError ? 'notice' : 'system',
       tone: snapshot.session.lastError ? 'attention' : streamConnected ? 'positive' : 'warning',
-      label: 'MidTerm',
+      label: lensText('lens.label.midterm', 'MidTerm'),
       title: '',
       body: statusBody,
-      meta: streamConnected ? '' : 'Connecting',
+      meta: streamConnected ? '' : lensText('lens.status.connecting', 'Connecting'),
     },
     ...entries,
   ];
@@ -1922,8 +2622,8 @@ function withInlineLensStatus(
  */
 export function withLiveAssistantState(
   snapshot: LensPulseSnapshotResponse,
-  entries: LensTranscriptEntry[],
-): LensTranscriptEntry[] {
+  entries: LensHistoryEntry[],
+): LensHistoryEntry[] {
   if (snapshot.currentTurn.state !== 'running' && snapshot.currentTurn.state !== 'in_progress') {
     return entries;
   }
@@ -1942,14 +2642,67 @@ export function withLiveAssistantState(
   return entries;
 }
 
+export function withTrailingBusyIndicator(
+  snapshot: LensPulseSnapshotResponse,
+  entries: LensHistoryEntry[],
+  requests: readonly LensPulseRequestSummary[],
+): LensHistoryEntry[] {
+  if (!shouldShowTrailingBusyIndicator(snapshot, requests)) {
+    return entries.filter((entry) => !entry.busyIndicator);
+  }
+
+  const nextEntries = entries.filter((entry) => !entry.busyIndicator);
+  const lastOrder = nextEntries.reduce((maxOrder, entry) => Math.max(maxOrder, entry.order), 0);
+  nextEntries.push({
+    id: `busy-indicator:${snapshot.currentTurn.turnId ?? snapshot.session.lastEventAt ?? 'current'}`,
+    order: lastOrder + 1,
+    kind: 'assistant',
+    tone: 'info',
+    label: historyLabel('assistant'),
+    title: '',
+    body: resolveTrailingBusyIndicatorLabel(snapshot, nextEntries),
+    meta: '',
+    busyIndicator: true,
+  });
+  return nextEntries;
+}
+
+function shouldShowTrailingBusyIndicator(
+  snapshot: LensPulseSnapshotResponse,
+  requests: readonly LensPulseRequestSummary[],
+): boolean {
+  const currentTurnState = (snapshot.currentTurn.state || '').toLowerCase();
+  const sessionState = (snapshot.session.state || '').toLowerCase();
+  const waitingOnUser = requests.some((request) => request.state === 'open');
+  if (waitingOnUser) {
+    return false;
+  }
+
+  return (
+    currentTurnState === 'running' ||
+    currentTurnState === 'in_progress' ||
+    (currentTurnState.length === 0 && (sessionState === 'starting' || sessionState === 'running'))
+  );
+}
+
+function resolveTrailingBusyIndicatorLabel(
+  snapshot: LensPulseSnapshotResponse,
+  entries: readonly LensHistoryEntry[],
+): string {
+  const hasLiveAssistant = entries.some((entry) => entry.kind === 'assistant' && entry.live);
+  return hasLiveAssistant || Boolean(snapshot.streams.assistantText.trim())
+    ? lensText('lens.status.generating', 'Generating')
+    : lensText('lens.status.working', 'Working');
+}
+
 /**
  * Surfaces attach and handoff failures inside the conversation lane so users
  * understand why Lens fell back instead of hunting through separate chrome.
  */
 export function withActivationIssueNotice(
-  entries: LensTranscriptEntry[],
+  entries: LensHistoryEntry[],
   issue: LensActivationIssue | null,
-): LensTranscriptEntry[] {
+): LensHistoryEntry[] {
   if (!issue) {
     return entries;
   }
@@ -1960,7 +2713,7 @@ export function withActivationIssueNotice(
       order: Number.MIN_SAFE_INTEGER,
       kind: issue.tone === 'attention' ? 'notice' : 'system',
       tone: issue.tone,
-      label: 'MidTerm',
+      label: lensText('lens.label.midterm', 'MidTerm'),
       title: issue.title,
       body: issue.body,
       meta: issue.meta,
@@ -1970,146 +2723,43 @@ export function withActivationIssueNotice(
   ];
 }
 
-function createRequestTranscriptEntry(
-  requestId: string,
-  request: LensPulseRequestSummary | undefined,
-  lensEvent: LensPulseEvent | null,
-  order: number,
-): LensTranscriptEntry {
-  return {
-    id: `request:${requestId}`,
-    order,
-    kind: 'request',
-    tone: request?.state === 'resolved' ? 'positive' : 'warning',
-    label: 'Request',
-    title:
-      request?.kindLabel ||
-      lensEvent?.requestOpened?.requestTypeLabel ||
-      lensEvent?.type ||
-      'Request',
-    body: formatRequestTranscriptBody(request, lensEvent) || 'Action required.',
-    meta: request
-      ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
-      : formatTranscriptMeta(
-          'request',
-          'Request',
-          lensEvent?.createdAt || new Date().toISOString(),
-        ),
-    requestId,
-  };
-}
-
-function updateRequestTranscriptEntry(
-  entry: LensTranscriptEntry,
-  request: LensPulseRequestSummary | undefined,
-  lensEvent: LensPulseEvent | null,
-): void {
-  entry.kind = 'request';
-  entry.label = 'Request';
-  entry.tone = request?.state === 'resolved' ? 'positive' : 'warning';
-  entry.title =
-    request?.kindLabel ||
-    lensEvent?.requestOpened?.requestTypeLabel ||
-    lensEvent?.type ||
-    entry.title;
-  entry.body = formatRequestTranscriptBody(request, lensEvent) || entry.body;
-  entry.meta = request
-    ? formatTranscriptMeta('request', prettify(request.state), request.updatedAt)
-    : lensEvent
-      ? formatTranscriptMeta('request', prettify(lensEvent.type), lensEvent.createdAt)
-      : entry.meta;
-}
-
-function buildSystemEntryFromEvent(
-  lensEvent: LensPulseEvent,
-  order: number,
-): LensTranscriptEntry | null {
-  if (lensEvent.runtimeMessage) {
-    if (lensEvent.type !== 'runtime.error' && lensEvent.type !== 'runtime.warning') {
-      return null;
-    }
-    return {
-      id: `runtime:${lensEvent.eventId}`,
-      order,
-      kind: lensEvent.type === 'runtime.error' ? 'notice' : 'system',
-      tone: lensEvent.type === 'runtime.error' ? 'attention' : toneFromEvent(lensEvent.type),
-      label: lensEvent.type === 'runtime.error' ? 'Error' : 'Runtime',
-      title: prettify(lensEvent.type),
-      body: [lensEvent.runtimeMessage.message, lensEvent.runtimeMessage.detail]
-        .filter(Boolean)
-        .join('\n\n'),
-      meta: formatTranscriptMeta(
-        lensEvent.type === 'runtime.error' ? 'notice' : 'system',
-        prettify(lensEvent.type),
-        lensEvent.createdAt,
-      ),
-    };
-  }
-
-  if (lensEvent.turnCompleted?.errorMessage) {
-    return {
-      id: `turn:${lensEvent.eventId}`,
-      order,
-      kind: 'notice',
-      tone: toneFromEvent(lensEvent.type),
-      label: 'Turn',
-      title: lensEvent.turnCompleted.stateLabel || prettify(lensEvent.type),
-      body: lensEvent.turnCompleted.errorMessage,
-      meta: formatTranscriptMeta('notice', prettify(lensEvent.type), lensEvent.createdAt),
-    };
-  }
-
-  return null;
-}
-
 /**
- * Renders Lens attach and recovery progress as transcript entries so the user
+ * Renders Lens attach and recovery progress as history entries so the user
  * sees handoff progress in the same place they expect the conversation to live.
  */
-export function buildActivationTranscriptEntries(
-  state: SessionLensViewState,
-): LensTranscriptEntry[] {
-  const terminalFallbackEntry = buildTerminalFallbackEntry(state.terminalFallback);
-
+export function buildActivationHistoryEntries(state: SessionLensViewState): LensHistoryEntry[] {
   if (state.activationTrace.length === 0) {
-    const entries: LensTranscriptEntry[] = [
+    return [
       {
         id: 'activation:pending',
         order: 0,
         kind: 'system',
         tone: state.activationState === 'failed' ? 'attention' : 'warning',
-        label: 'MidTerm',
+        label: lensText('lens.label.midterm', 'MidTerm'),
         title: '',
         body: state.activationDetail || 'Waiting for Lens boot steps…',
-        meta: state.activationState === 'failed' ? 'Failed' : 'Connecting',
+        meta:
+          state.activationState === 'failed'
+            ? lensText('lens.status.failed', 'Failed')
+            : lensText('lens.status.connecting', 'Connecting'),
       },
     ];
-
-    if (terminalFallbackEntry) {
-      entries.unshift(terminalFallbackEntry);
-    }
-
-    return entries;
   }
 
   const traceEntries = shouldCompactActivationTrace(state.activationIssue)
     ? state.activationTrace.filter((entry) => entry.tone !== 'attention').slice(-2)
     : state.activationTrace;
 
-  const entries: LensTranscriptEntry[] = traceEntries.map((entry, index) => ({
+  const entries: LensHistoryEntry[] = traceEntries.map((entry, index) => ({
     id: `activation:${index}`,
     order: index,
     kind: entry.tone === 'attention' ? ('notice' as const) : ('system' as const),
     tone: entry.tone,
-    label: 'MidTerm',
+    label: lensText('lens.label.midterm', 'MidTerm'),
     title: '',
     body: entry.detail,
     meta: entry.meta,
   }));
-
-  if (terminalFallbackEntry) {
-    return [terminalFallbackEntry, ...entries];
-  }
 
   return entries;
 }
@@ -2123,30 +2773,34 @@ function shouldCompactActivationTrace(issue: LensActivationIssue | null): boolea
   );
 }
 
-function createTranscriptEntry(
-  entry: LensTranscriptEntry,
+function createHistoryEntry(
+  entry: LensHistoryEntry,
   sessionId: string,
   artifactCluster: ArtifactClusterInfo | null = null,
 ): HTMLElement {
+  if (entry.busyIndicator) {
+    return createBusyIndicatorEntry(entry);
+  }
+
   const article = document.createElement('article');
-  article.className = `agent-transcript-entry agent-transcript-${entry.kind} agent-transcript-${entry.tone}`;
+  article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
   article.dataset.kind = entry.kind;
   article.dataset.tone = entry.tone;
   if (artifactCluster) {
     article.dataset.artifactPosition = artifactCluster.position;
-    article.classList.add('agent-transcript-artifact');
+    article.classList.add('agent-history-artifact');
   }
   if (entry.pending) {
     article.dataset.pending = 'true';
-    article.classList.add('agent-transcript-pending');
+    article.classList.add('agent-history-pending');
   }
   if (entry.live) {
     article.dataset.live = 'true';
-    article.classList.add('agent-transcript-live');
+    article.classList.add('agent-history-live');
   }
   if (entry.kind === 'assistant' && isAssistantPlaceholderEntry(entry)) {
     article.dataset.placeholder = 'true';
-    article.classList.add('agent-transcript-assistant-placeholder');
+    article.classList.add('agent-history-assistant-placeholder');
   }
 
   if (artifactCluster?.label) {
@@ -2154,14 +2808,17 @@ function createTranscriptEntry(
   }
 
   const header = document.createElement('div');
-  header.className = 'agent-transcript-header';
+  header.className = 'agent-history-header';
 
   const badge = document.createElement('span');
-  badge.className = `agent-transcript-badge agent-transcript-badge-${entry.kind}`;
-  badge.textContent = entry.label;
+  badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
+  badge.textContent = resolveHistoryBadgeLabel(
+    entry.kind,
+    viewStates.get(sessionId)?.snapshot?.provider,
+  );
 
   const meta = document.createElement('div');
-  meta.className = 'agent-transcript-meta';
+  meta.className = 'agent-history-meta';
   meta.textContent = entry.meta;
 
   header.appendChild(badge);
@@ -2170,67 +2827,198 @@ function createTranscriptEntry(
   }
   article.appendChild(header);
 
-  const titleText = normalizeTranscriptTitle(entry);
+  const titleText = normalizeHistoryTitle(entry);
   if (titleText) {
     const title = document.createElement('div');
-    title.className = 'agent-transcript-title';
+    title.className = 'agent-history-title';
     title.textContent = titleText;
     article.appendChild(title);
   }
 
-  if (shouldRenderTranscriptBody(entry)) {
-    const body = document.createElement(
-      entry.kind === 'diff' ||
-        entry.kind === 'tool' ||
-        entry.kind === 'reasoning' ||
-        entry.kind === 'plan'
-        ? 'pre'
-        : 'div',
+  if (shouldRenderHistoryBody(entry)) {
+    const presentation = resolveHistoryBodyPresentation(entry);
+    article.appendChild(
+      presentation.collapsedByDefault
+        ? createCollapsedHistoryBody(entry, sessionId, presentation)
+        : createHistoryBodyContent(entry, sessionId, presentation),
     );
-    body.className = 'agent-transcript-body';
-    if (entry.kind === 'assistant') {
-      body.classList.add('agent-transcript-markdown');
-      body.innerHTML = renderMarkdownFragment(entry.body);
-      collapseSingleParagraphMarkdownBody(body);
-      if (entry.live) {
-        const caret = document.createElement('span');
-        caret.className = 'agent-transcript-caret';
-        caret.setAttribute('aria-hidden', 'true');
-        body.appendChild(caret);
-      }
-    } else {
-      body.textContent = entry.body;
-    }
-    article.appendChild(body);
   }
 
-  const attachmentBlock = createTranscriptAttachmentBlock(sessionId, entry.attachments);
+  const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
   if (attachmentBlock) {
     article.appendChild(attachmentBlock);
   }
 
   if (entry.actions && entry.actions.length > 0) {
-    article.appendChild(createTranscriptActionBlock(sessionId, entry.actions));
+    article.appendChild(createHistoryActionBlock(sessionId, entry.actions));
   }
 
   return article;
 }
 
+function createHistoryBodyContent(
+  entry: LensHistoryEntry,
+  sessionId: string,
+  presentation: HistoryBodyPresentation,
+): HTMLElement {
+  const body = document.createElement(presentation.mode === 'monospace' ? 'pre' : 'div');
+  body.className = 'agent-history-body';
+
+  switch (presentation.mode) {
+    case 'streaming': {
+      body.classList.add('agent-history-streaming-body');
+      body.textContent = entry.body;
+      return body;
+    }
+    case 'markdown': {
+      body.classList.add('agent-history-markdown');
+      const content = document.createElement('div');
+      content.className = 'agent-history-markdown-content';
+      content.innerHTML = getCachedAssistantMarkdownHtml(sessionId, entry);
+      collapseSingleParagraphMarkdownBody(content);
+      body.appendChild(content);
+      return body;
+    }
+    default:
+      body.textContent = entry.body;
+      return body;
+  }
+}
+
+function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
+  const article = document.createElement('article');
+  article.className = 'agent-history-entry agent-history-assistant agent-history-busy-indicator';
+  article.dataset.kind = 'assistant';
+  article.dataset.busyIndicator = 'true';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'agent-history-busy-bubble';
+
+  const dots = document.createElement('span');
+  dots.className = 'agent-history-busy-dots';
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement('span');
+    dot.className = 'agent-history-busy-dot';
+    dots.appendChild(dot);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'agent-history-busy-label';
+  label.textContent = entry.body;
+
+  bubble.appendChild(dots);
+  bubble.appendChild(label);
+  article.appendChild(bubble);
+  return article;
+}
+
+function createCollapsedHistoryBody(
+  entry: LensHistoryEntry,
+  sessionId: string,
+  presentation: HistoryBodyPresentation,
+): HTMLElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'agent-history-disclosure-shell';
+
+  const details = document.createElement('details');
+  details.className = 'agent-history-disclosure';
+  details.open = isHistoryEntryExpanded(sessionId, entry.id);
+
+  const summary = document.createElement('summary');
+  summary.className = 'agent-history-disclosure-summary';
+
+  const label = document.createElement('span');
+  label.className = 'agent-history-disclosure-label';
+  label.textContent = lensText('lens.panel.details', 'Details');
+  summary.appendChild(label);
+
+  const meta = document.createElement('span');
+  meta.className = 'agent-history-disclosure-meta';
+  meta.textContent = lensFormat('lens.panel.lines', '{count} lines', {
+    count: presentation.lineCount,
+  });
+  summary.appendChild(meta);
+
+  if (presentation.preview) {
+    const preview = document.createElement('span');
+    preview.className = 'agent-history-disclosure-preview';
+    preview.textContent = presentation.preview;
+    summary.appendChild(preview);
+  }
+
+  details.addEventListener('toggle', () => {
+    const state = viewStates.get(sessionId);
+    if (!state) {
+      return;
+    }
+
+    if (details.open) {
+      state.historyExpandedEntries.add(entry.id);
+    } else {
+      state.historyExpandedEntries.delete(entry.id);
+    }
+  });
+
+  details.appendChild(summary);
+  details.appendChild(createHistoryBodyContent(entry, sessionId, presentation));
+  wrapper.appendChild(details);
+  return wrapper;
+}
+
+function isHistoryEntryExpanded(sessionId: string, entryId: string): boolean {
+  return viewStates.get(sessionId)?.historyExpandedEntries.has(entryId) === true;
+}
+
+function updateHistoryEntryNode(
+  node: HTMLElement,
+  entry: LensHistoryEntry,
+  sessionId: string,
+  artifactCluster: ArtifactClusterInfo | null = null,
+): void {
+  const nextNode = createHistoryEntry(entry, sessionId, artifactCluster);
+  syncHistoryNodeAttributes(node, nextNode);
+  node.replaceChildren(...Array.from(nextNode.childNodes));
+}
+
+function syncHistoryNodeAttributes(target: HTMLElement, source: HTMLElement): void {
+  target.className = source.className;
+
+  const datasetTarget = target.dataset as Record<string, string | undefined>;
+  const datasetSource = source.dataset as Record<string, string | undefined>;
+  for (const key of Object.keys(datasetTarget)) {
+    if (!(key in datasetSource)) {
+      Reflect.deleteProperty(target.dataset, key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(datasetSource)) {
+    if (typeof value === 'string') {
+      datasetTarget[key] = value;
+    }
+  }
+}
+
 function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
   const label = document.createElement('div');
-  label.className = 'agent-transcript-artifact-cluster-label';
-  label.textContent = `${cluster.label}${cluster.count > 1 ? ` (${cluster.count})` : ''}`;
+  label.className = 'agent-history-artifact-cluster-label';
+  label.textContent =
+    cluster.count > 1
+      ? lensFormat('lens.cluster.withCount', '{label} ({count})', {
+          label: cluster.label || '',
+          count: cluster.count,
+        })
+      : cluster.label || '';
   return label;
 }
 
-function createTranscriptActionBlock(
+function createHistoryActionBlock(
   sessionId: string,
-  actions: readonly LensTranscriptAction[],
+  actions: readonly LensHistoryAction[],
 ): HTMLElement {
   const state = viewStates.get(sessionId);
   const busy = state?.activationActionBusy === true;
   const row = document.createElement('div');
-  row.className = 'agent-transcript-actions';
+  row.className = 'agent-history-actions';
 
   for (const action of actions) {
     const button = document.createElement('button');
@@ -2240,7 +3028,7 @@ function createTranscriptActionBlock(
     button.disabled = busy;
     button.textContent = busy ? action.busyLabel || action.label : action.label;
     button.addEventListener('click', () => {
-      void handleTranscriptAction(sessionId, action.id);
+      void handleHistoryAction(sessionId, action.id);
     });
     row.appendChild(button);
   }
@@ -2248,9 +3036,9 @@ function createTranscriptActionBlock(
   return row;
 }
 
-function createTranscriptSpacer(heightPx: number): HTMLElement {
+function createHistorySpacer(heightPx: number): HTMLElement {
   const spacer = document.createElement('div');
-  spacer.className = 'agent-transcript-spacer';
+  spacer.className = 'agent-history-spacer';
   spacer.style.height = `${Math.max(0, Math.round(heightPx))}px`;
   return spacer;
 }
@@ -2268,7 +3056,45 @@ function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
   container.innerHTML = first.innerHTML;
 }
 
-function shouldRenderTranscriptBody(entry: LensTranscriptEntry): boolean {
+function getCachedAssistantMarkdownHtml(sessionId: string, entry: LensHistoryEntry): string {
+  const state = viewStates.get(sessionId);
+  if (!state) {
+    return renderMarkdownFragment(entry.body);
+  }
+
+  const existing = state.assistantMarkdownCache.get(entry.id);
+  if (existing && existing.body === entry.body) {
+    return existing.html;
+  }
+
+  const html = renderMarkdownFragment(entry.body);
+  state.assistantMarkdownCache.set(entry.id, {
+    body: entry.body,
+    html,
+  });
+  return html;
+}
+
+function pruneAssistantMarkdownCache(
+  state: SessionLensViewState,
+  entries: readonly LensHistoryEntry[],
+): void {
+  if (state.assistantMarkdownCache.size === 0) {
+    return;
+  }
+
+  const activeAssistantIds = new Set(
+    entries.filter((entry) => entry.kind === 'assistant').map((entry) => entry.id),
+  );
+
+  for (const cacheKey of state.assistantMarkdownCache.keys()) {
+    if (!activeAssistantIds.has(cacheKey)) {
+      state.assistantMarkdownCache.delete(cacheKey);
+    }
+  }
+}
+
+function shouldRenderHistoryBody(entry: LensHistoryEntry): boolean {
   if (!entry.body.trim()) {
     return false;
   }
@@ -2280,8 +3106,8 @@ function shouldRenderTranscriptBody(entry: LensTranscriptEntry): boolean {
   if (
     entry.kind === 'tool' &&
     !entry.body.includes('\n') &&
-    normalizeComparableTranscriptText(entry.body) ===
-      normalizeComparableTranscriptText(normalizeTranscriptTitle(entry))
+    normalizeComparableHistoryText(entry.body) ===
+      normalizeComparableHistoryText(normalizeHistoryTitle(entry))
   ) {
     return false;
   }
@@ -2290,7 +3116,7 @@ function shouldRenderTranscriptBody(entry: LensTranscriptEntry): boolean {
 }
 
 function resolveArtifactCluster(
-  entries: readonly LensTranscriptEntry[],
+  entries: readonly LensHistoryEntry[],
   index: number,
 ): ArtifactClusterInfo | null {
   const entry = entries[index];
@@ -2316,8 +3142,8 @@ function resolveArtifactCluster(
   const label =
     position === 'start' && (count > 1 || !onlyTools)
       ? onlyTools
-        ? 'Tool calls'
-        : 'Work log'
+        ? lensText('lens.cluster.toolCalls', 'Tool calls')
+        : lensText('lens.cluster.workLog', 'Work log')
       : null;
 
   return {
@@ -2328,11 +3154,11 @@ function resolveArtifactCluster(
   };
 }
 
-function isArtifactEntry(kind: TranscriptKind | undefined): boolean {
+function isArtifactEntry(kind: HistoryKind | undefined): boolean {
   return kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff';
 }
 
-function isAssistantPlaceholderEntry(entry: LensTranscriptEntry): boolean {
+function isAssistantPlaceholderEntry(entry: LensHistoryEntry): boolean {
   if (entry.kind !== 'assistant') {
     return false;
   }
@@ -2346,7 +3172,7 @@ function isAssistantPlaceholderEntry(entry: LensTranscriptEntry): boolean {
   );
 }
 
-function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
+function normalizeHistoryTitle(entry: LensHistoryEntry): string {
   const title = entry.title.trim();
   if (!title) {
     return '';
@@ -2359,14 +3185,14 @@ function normalizeTranscriptTitle(entry: LensTranscriptEntry): string {
   return title;
 }
 
-async function handleTranscriptAction(
+async function handleHistoryAction(
   sessionId: string,
-  _actionId: LensTranscriptActionId,
+  _actionId: LensHistoryActionId,
 ): Promise<void> {
   await retryLensActivation(sessionId);
 }
 
-function createTranscriptAttachmentBlock(
+function createHistoryAttachmentBlock(
   sessionId: string,
   attachments: readonly LensAttachmentReference[] | undefined,
 ): HTMLElement | null {
@@ -2375,25 +3201,25 @@ function createTranscriptAttachmentBlock(
   }
 
   const container = document.createElement('div');
-  container.className = 'agent-transcript-attachments';
+  container.className = 'agent-history-attachments';
 
   for (const attachment of attachments) {
     if (isImageAttachment(attachment)) {
       const link = document.createElement('a');
-      link.className = 'agent-transcript-attachment agent-transcript-attachment-image';
+      link.className = 'agent-history-attachment agent-history-attachment-image';
       link.href = buildLensAttachmentUrl(sessionId, attachment);
       link.target = '_blank';
       link.rel = 'noreferrer';
 
       const image = document.createElement('img');
-      image.className = 'agent-transcript-attachment-image-el';
+      image.className = 'agent-history-attachment-image-el';
       image.src = link.href;
       image.loading = 'lazy';
       image.alt = resolveAttachmentLabel(attachment);
       link.appendChild(image);
 
       const caption = document.createElement('span');
-      caption.className = 'agent-transcript-attachment-caption';
+      caption.className = 'agent-history-attachment-caption';
       caption.textContent = resolveAttachmentLabel(attachment);
       link.appendChild(caption);
 
@@ -2402,7 +3228,7 @@ function createTranscriptAttachmentBlock(
     }
 
     const link = document.createElement('a');
-    link.className = 'agent-transcript-attachment agent-transcript-attachment-file';
+    link.className = 'agent-history-attachment agent-history-attachment-file';
     link.href = buildLensAttachmentUrl(sessionId, attachment);
     link.target = '_blank';
     link.rel = 'noreferrer';
@@ -2414,14 +3240,10 @@ function createTranscriptAttachmentBlock(
 }
 
 /**
- * Keeps timestamps and status concise so the transcript reads like a chat
+ * Keeps timestamps and status concise so the history reads like a chat
  * surface instead of an event log, while still preserving debugging context.
  */
-export function formatTranscriptMeta(
-  kind: TranscriptKind,
-  statusLabel: string,
-  value: string,
-): string {
+export function formatHistoryMeta(kind: HistoryKind, statusLabel: string, value: string): string {
   const timeText = formatAbsoluteTime(value);
   const normalizedStatus = statusLabel.trim();
   if (!normalizedStatus) {
@@ -2439,7 +3261,7 @@ export function formatTranscriptMeta(
  * Drops low-signal status copy once the visual hierarchy already explains the
  * role of a row, which is important for the quieter t3-style conversation UX.
  */
-export function shouldHideStatusInMeta(kind: TranscriptKind, statusLabel: string): boolean {
+export function shouldHideStatusInMeta(kind: HistoryKind, statusLabel: string): boolean {
   const normalizedStatus = statusLabel.trim().toLowerCase();
   if (!normalizedStatus) {
     return true;
@@ -2506,7 +3328,7 @@ function createRequestActionBlock(
       back.type = 'button';
       back.className = 'agent-view-btn';
       back.disabled = busy;
-      back.textContent = 'Back';
+      back.textContent = lensText('lens.request.back', 'Back');
       back.addEventListener('click', () => {
         setActiveRequestQuestionIndex(sessionId, request.requestId, activeQuestionIndex - 1);
       });
@@ -2519,10 +3341,10 @@ function createRequestActionBlock(
     submit.disabled = busy || !hasDraftAnswerForQuestion(draftAnswers, activeQuestion);
     submit.textContent =
       activeQuestionIndex < request.questions.length - 1
-        ? 'Continue'
+        ? lensText('lens.request.continue', 'Continue')
         : busy
-          ? 'Sending…'
-          : 'Send answer';
+          ? lensText('lens.request.sending', 'Sending…')
+          : lensText('lens.request.sendAnswer', 'Send answer');
     controls.appendChild(submit);
     form.appendChild(controls);
 
@@ -2549,7 +3371,9 @@ function createRequestActionBlock(
   approve.type = 'button';
   approve.className = 'agent-view-btn agent-view-btn-primary';
   approve.disabled = busy;
-  approve.textContent = busy ? 'Working…' : 'Approve once';
+  approve.textContent = busy
+    ? lensText('lens.request.working', 'Working…')
+    : lensText('lens.request.approveOnce', 'Approve once');
   approve.addEventListener('click', () => {
     void handleApproveRequest(sessionId, request.requestId);
   });
@@ -2558,7 +3382,7 @@ function createRequestActionBlock(
   decline.type = 'button';
   decline.className = 'agent-view-btn';
   decline.disabled = busy;
-  decline.textContent = 'Decline';
+  decline.textContent = lensText('lens.request.decline', 'Decline');
   decline.addEventListener('click', () => {
     void handleDeclineRequest(sessionId, request.requestId);
   });
@@ -2582,7 +3406,9 @@ function createRequestPanelHeader(
   const eyebrow = document.createElement('span');
   eyebrow.className = 'agent-request-eyebrow';
   eyebrow.textContent =
-    request.kind === 'tool_user_input' ? 'Pending user input' : 'Pending approval';
+    request.kind === 'tool_user_input'
+      ? lensText('lens.request.pendingUserInput', 'Pending user input')
+      : lensText('lens.request.pendingApproval', 'Pending approval');
   topRow.appendChild(eyebrow);
 
   const summary = document.createElement('span');
@@ -2593,7 +3419,10 @@ function createRequestPanelHeader(
   if (request.kind === 'tool_user_input' && request.questions.length > 1) {
     const progress = document.createElement('span');
     progress.className = 'agent-request-progress';
-    progress.textContent = `${activeQuestionIndex + 1}/${request.questions.length}`;
+    progress.textContent = lensFormat('lens.request.progress', '{current}/{total}', {
+      current: activeQuestionIndex + 1,
+      total: request.questions.length,
+    });
     topRow.appendChild(progress);
   }
 
@@ -2614,17 +3443,33 @@ function summarizeRequestInterruption(request: LensPulseRequestSummary): string 
     const activeQuestion = request.questions[0];
     if (request.questions.length === 1 && activeQuestion?.options.length) {
       return activeQuestion.multiSelect
-        ? `Select one or more of ${activeQuestion.options.length} options to continue.`
-        : `Select 1 of ${activeQuestion.options.length} options to continue.`;
+        ? lensFormat(
+            'lens.request.selectManyToContinue',
+            'Select one or more of {count} options to continue.',
+            { count: activeQuestion.options.length },
+          )
+        : lensFormat(
+            'lens.request.selectOneToContinue',
+            'Select 1 of {count} options to continue.',
+            { count: activeQuestion.options.length },
+          );
     }
 
     return request.questions.length === 1
-      ? 'The agent needs one answer to continue.'
-      : `The agent needs ${request.questions.length} answers to continue.`;
+      ? lensText('lens.request.needsOneAnswer', 'The agent needs one answer to continue.')
+      : lensFormat(
+          'lens.request.needsManyAnswers',
+          'The agent needs {count} answers to continue.',
+          { count: request.questions.length },
+        );
   }
 
-  const label = request.kindLabel.trim() || 'Approval';
-  return `${label} required before the turn can continue.`;
+  const label = request.kindLabel.trim() || lensText('lens.request.approvalLabel', 'Approval');
+  return lensFormat(
+    'lens.request.requiredBeforeContinue',
+    '{label} required before the turn can continue.',
+    { label },
+  );
 }
 
 function createQuestionField(
@@ -2695,7 +3540,7 @@ function createQuestionField(
   input.type = 'text';
   input.name = question.id;
   input.className = 'agent-request-input';
-  input.placeholder = 'Type answer';
+  input.placeholder = lensText('lens.request.typeAnswer', 'Type answer');
   input.value = draftValue[0] || '';
   input.addEventListener('input', () => {
     updateRequestDraftAnswers(sessionId, request.requestId, question.id, [input.value.trim()]);
@@ -2838,13 +3683,6 @@ function hasDraftAnswerForQuestion(
   return (draftAnswers[question.id] ?? []).some((answer) => answer.trim().length > 0);
 }
 
-function renderEmptyContainer(container: HTMLElement, text: string): void {
-  const empty = document.createElement('div');
-  empty.className = 'agent-transcript-empty';
-  empty.textContent = text;
-  container.replaceChildren(empty);
-}
-
 /**
  * Protects the user's reading position during streaming turns so Lens only
  * auto-pins when they are effectively already following the live edge.
@@ -2862,14 +3700,40 @@ export function isScrollContainerNearBottom(position: {
   return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
 }
 
+export function resolveHistoryAutoScrollPinned(args: {
+  wasPinned: boolean;
+  previous: HistoryScrollMetrics | null;
+  current: HistoryScrollMetrics;
+  userInitiated: boolean;
+}): boolean {
+  const nearBottom = isScrollContainerNearBottom(args.current);
+  if (!args.wasPinned || nearBottom) {
+    return nearBottom;
+  }
+
+  if (args.userInitiated || !args.previous) {
+    return false;
+  }
+
+  const scrollTopDropped =
+    args.current.scrollTop < args.previous.scrollTop - NON_USER_SCROLL_DRIFT_TOLERANCE_PX;
+  const layoutShifted =
+    args.current.scrollHeight > args.previous.scrollHeight + NON_USER_SCROLL_DRIFT_TOLERANCE_PX ||
+    Math.abs(args.current.clientHeight - args.previous.clientHeight) >
+      NON_USER_SCROLL_DRIFT_TOLERANCE_PX;
+
+  return layoutShifted && !scrollTopDropped;
+}
+
 /**
- * Uses a fast height heuristic for transcript virtualization so long agent
+ * Uses a fast height heuristic for history virtualization so long agent
  * runs stay smooth without paying full layout cost on every render.
  */
-export function estimateTranscriptEntryHeight(
-  entry: LensTranscriptEntry,
-  viewportWidth = 960,
-): number {
+export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidth = 960): number {
+  if (entry.busyIndicator) {
+    return 52;
+  }
+
   const effectiveWidth = Math.max(220, Math.min(viewportWidth, 960));
   const horizontalChrome =
     entry.kind === 'user'
@@ -2899,7 +3763,8 @@ export function estimateTranscriptEntryHeight(
       0,
     );
   const textLines = Math.max(1, wrappedLines);
-  const bodyHeight = Math.min(420, 18 * textLines);
+  const presentation = resolveHistoryBodyPresentation(entry);
+  const bodyHeight = presentation.collapsedByDefault ? 40 : Math.min(420, 18 * textLines);
 
   switch (entry.kind) {
     case 'tool':
@@ -2921,17 +3786,16 @@ export function estimateTranscriptEntryHeight(
 }
 
 /**
- * Virtualizes long desktop transcripts while deliberately staying simpler on
- * mobile, where dense but predictable scrolling mattered more than big-history
- * optimization in the recent Lens UX pass.
+ * Virtualizes long histories across viewport sizes so Lens keeps a bounded
+ * DOM even during extended agent runs.
  */
-export function computeTranscriptVirtualWindow(
-  entries: ReadonlyArray<LensTranscriptEntry>,
+export function computeHistoryVirtualWindow(
+  entries: ReadonlyArray<LensHistoryEntry>,
   scrollTop: number,
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
-): TranscriptVirtualWindow {
-  if (entries.length <= TRANSCRIPT_VIRTUALIZE_AFTER || clientWidth <= 720) {
+): HistoryVirtualWindow {
+  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
     return {
       start: 0,
       end: entries.length,
@@ -2940,8 +3804,8 @@ export function computeTranscriptVirtualWindow(
     };
   }
 
-  const targetTop = Math.max(0, scrollTop - TRANSCRIPT_OVERSCAN_PX);
-  const targetBottom = scrollTop + clientHeight + TRANSCRIPT_OVERSCAN_PX;
+  const targetTop = Math.max(0, scrollTop - HISTORY_OVERSCAN_PX);
+  const targetBottom = scrollTop + clientHeight + HISTORY_OVERSCAN_PX;
   let cumulative = 0;
   let start = 0;
   let topSpacerPx = 0;
@@ -2952,7 +3816,7 @@ export function computeTranscriptVirtualWindow(
       continue;
     }
 
-    const height = estimateTranscriptEntryHeight(entry, clientWidth);
+    const height = estimateHistoryEntryHeight(entry, clientWidth);
     if (cumulative + height >= targetTop) {
       start = index;
       topSpacerPx = cumulative;
@@ -2969,12 +3833,12 @@ export function computeTranscriptVirtualWindow(
       break;
     }
 
-    cumulative += estimateTranscriptEntryHeight(entry, clientWidth);
+    cumulative += estimateHistoryEntryHeight(entry, clientWidth);
     end += 1;
   }
 
   const totalHeight = entries.reduce(
-    (sum, entry) => sum + estimateTranscriptEntryHeight(entry, clientWidth),
+    (sum, entry) => sum + estimateHistoryEntryHeight(entry, clientWidth),
     0,
   );
 
@@ -2986,292 +3850,65 @@ export function computeTranscriptVirtualWindow(
   };
 }
 
-function appendTranscriptChunk(existing: string, delta: string): string {
-  const trimmedDelta = normalizeTranscriptText(delta).trim();
-  if (!trimmedDelta) {
-    return existing;
-  }
-
-  const trimmedExisting = normalizeTranscriptText(existing).trimEnd();
-  if (!trimmedExisting) {
-    return trimmedDelta;
-  }
-
-  if (trimmedExisting.includes(trimmedDelta)) {
-    return trimmedExisting;
-  }
-
-  const separator = trimmedExisting.endsWith('\n') || trimmedDelta.startsWith('\n') ? '\n' : '\n\n';
-  return `${trimmedExisting}${separator}${trimmedDelta}`;
-}
-
-function mergeTranscriptBody(kind: TranscriptKind, existing: string, incoming: string): string {
-  const trimmedIncoming = normalizeTranscriptText(incoming).trim();
-  if (!trimmedIncoming) {
-    return existing;
-  }
-
-  if (kind === 'assistant' || kind === 'user') {
-    return mergeProgressiveMessage(existing, trimmedIncoming);
-  }
-
-  return appendTranscriptChunk(existing, trimmedIncoming);
-}
-
-function mergeTranscriptAttachments(
-  existing: readonly LensAttachmentReference[] | undefined,
-  incoming: readonly LensAttachmentReference[] | undefined,
-): LensAttachmentReference[] {
-  const merged = cloneTranscriptAttachments(existing);
-  if (!incoming || incoming.length === 0) {
-    return merged;
-  }
-
-  const seen = new Set(merged.map(attachmentIdentity));
-  for (const attachment of incoming) {
-    const identity = attachmentIdentity(attachment);
-    if (seen.has(identity)) {
-      continue;
-    }
-
-    seen.add(identity);
-    merged.push({ ...attachment });
-  }
-
-  return merged;
-}
-
-function cloneTranscriptAttachments(
+function cloneHistoryAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
 ): LensAttachmentReference[] {
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
-function attachmentIdentity(attachment: LensAttachmentReference): string {
-  return [
-    attachment.kind || '',
-    attachment.path || '',
-    attachment.mimeType || '',
-    attachment.displayName || '',
-  ].join('|');
+export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): HistoryBodyPresentation {
+  if (entry.kind === 'assistant') {
+    return {
+      mode: entry.live ? 'streaming' : 'markdown',
+      collapsedByDefault: false,
+      lineCount: countHistoryBodyLines(entry.body),
+      preview: '',
+    };
+  }
+
+  const mode = isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
+  const lineCount = countHistoryBodyLines(entry.body);
+  const collapsedByDefault =
+    mode === 'monospace' &&
+    !entry.live &&
+    !entry.pending &&
+    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS);
+
+  return {
+    mode,
+    collapsedByDefault,
+    lineCount,
+    preview: collapsedByDefault ? buildHistoryBodyPreview(entry.body) : '',
+  };
 }
 
-function resolveTranscriptEntryKey(
-  kind: TranscriptKind,
-  lensEvent: LensPulseEvent,
-  discriminator: string | null = null,
-): string {
-  const itemIdentity = lensEvent.itemId || lensEvent.turnId || lensEvent.sequence;
-  if (kind === 'tool' || kind === 'reasoning') {
-    return `${kind}:${discriminator || 'default'}:${itemIdentity}`;
-  }
-
-  if (kind === 'assistant') {
-    return `${kind}:${itemIdentity}`;
-  }
-
-  if (kind === 'user') {
-    return `${kind}:${lensEvent.turnId || lensEvent.itemId || lensEvent.sequence}`;
-  }
-
-  return `${kind}:${itemIdentity}`;
+function isMachineHistoryKind(kind: HistoryKind): boolean {
+  return kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff';
 }
 
-function resolveSnapshotItemEntryKey(
-  kind: TranscriptKind,
-  item: {
-    itemId: string;
-    turnId: string | null;
-  },
-  fallbackOrder: number,
-): string {
-  if (kind === 'tool') {
-    return `tool:${item.itemId || item.turnId || fallbackOrder}`;
-  }
-
-  if (kind === 'assistant') {
-    return `${kind}:${item.itemId || item.turnId || fallbackOrder}`;
-  }
-
-  if (kind === 'user') {
-    return `${kind}:${item.turnId || item.itemId || fallbackOrder}`;
-  }
-
-  return `${kind}:${item.itemId || item.turnId || fallbackOrder}`;
+function countHistoryBodyLines(body: string): number {
+  return body.trim() ? body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').length : 0;
 }
 
-function mergeProgressiveMessage(existing: string, incoming: string): string {
-  const normalizedExisting = normalizeTranscriptText(existing);
-  const normalizedIncoming = normalizeTranscriptText(incoming);
-  const trimmedExisting = normalizedExisting.trim();
-  if (!trimmedExisting) {
-    return normalizedIncoming;
+function buildHistoryBodyPreview(body: string): string {
+  const firstContentLine =
+    body
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line) ?? '';
+  const singleLine = firstContentLine.replace(/\s+/g, ' ').trim();
+  if (singleLine.length <= COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS) {
+    return singleLine;
   }
 
-  if (trimmedExisting === normalizedIncoming) {
-    return trimmedExisting;
-  }
-
-  if (normalizedIncoming.includes(trimmedExisting)) {
-    return normalizedIncoming;
-  }
-
-  if (trimmedExisting.includes(normalizedIncoming)) {
-    return trimmedExisting;
-  }
-
-  const overlapLength = findMessageOverlap(trimmedExisting, normalizedIncoming);
-  if (overlapLength > 0) {
-    return `${trimmedExisting}${normalizedIncoming.slice(overlapLength)}`;
-  }
-
-  return appendTranscriptChunk(trimmedExisting, normalizedIncoming);
+  return `${singleLine.slice(0, COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS - 1)}…`;
 }
 
-function findMessageOverlap(left: string, right: string): number {
-  const maxOverlap = Math.min(left.length, right.length);
-  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
-    if (left.slice(-overlap) === right.slice(0, overlap)) {
-      return overlap;
-    }
-  }
-
-  return 0;
-}
-
-function appendStreamDelta(kind: TranscriptKind, existing: string, delta: string): string {
-  if (kind === 'assistant') {
-    return `${normalizeTranscriptText(existing)}${normalizeTranscriptText(delta)}`;
-  }
-
-  return appendTranscriptChunk(existing, delta);
-}
-
-function normalizeTranscriptText(value: string | null | undefined): string {
-  return (value || '').replace(/\r\n?/g, '\n');
-}
-
-function normalizeComparableTranscriptText(value: string): string {
+function normalizeComparableHistoryText(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function resolveCurrentTurnAssistantEntryKey(
-  snapshot: LensPulseSnapshotResponse,
-  entries: readonly LensTranscriptEntry[],
-): string | null {
-  const turnId = snapshot.currentTurn.turnId;
-  if (!turnId) {
-    return null;
-  }
-
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.kind === 'assistant' && entry.sourceTurnId === turnId) {
-      return entry.id;
-    }
-  }
-
-  for (let index = snapshot.items.length - 1; index >= 0; index -= 1) {
-    const item = snapshot.items[index];
-    if (!item) {
-      continue;
-    }
-
-    if (transcriptKindFromItem(item.itemType) === 'assistant' && item.turnId === turnId) {
-      return resolveSnapshotItemEntryKey('assistant', item, snapshot.latestSequence + 1);
-    }
-  }
-
-  return `assistant:${turnId}`;
-}
-
-function resolveTranscriptItemBody(
-  kind: TranscriptKind,
-  detail: string | null | undefined,
-  title: string | null | undefined,
-): string {
-  if (kind === 'tool') {
-    return normalizeTranscriptText(detail || '').trim();
-  }
-
-  const trimmedDetail = normalizeTranscriptText(detail || '').trim();
-  if (trimmedDetail) {
-    return trimmedDetail;
-  }
-
-  const trimmedTitle = title?.trim() || '';
-  if (!trimmedTitle || isGenericTranscriptPlaceholder(kind, trimmedTitle)) {
-    return '';
-  }
-
-  return trimmedTitle;
-}
-
-function isGenericTranscriptPlaceholder(kind: TranscriptKind, value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  const genericValues = new Set([
-    transcriptLabel(kind).toLowerCase(),
-    'assistant message',
-    'user message',
-    'user input',
-    'agent message',
-    'message',
-    'tool started',
-    'tool completed',
-    'started',
-    'completed',
-  ]);
-  return genericValues.has(normalized);
-}
-
-function compactToolTitle(value: string): string {
-  return value
-    .replace(/\s+(?:complete|completed)\s*$/i, '')
-    .replace(/^tool[:\s-]*/i, '')
-    .trim();
-}
-
-function resolveToolTranscriptTitle(
-  itemType: string | null | undefined,
-  title: string | null | undefined,
-  detail: string | null | undefined,
-): string {
-  const compactTitle = compactToolTitle(title || itemType || 'tool');
-  if (compactTitle && !isGenericToolTitle(compactTitle)) {
-    return compactTitle;
-  }
-
-  const detailSummary = summarizeToolDetail(detail);
-  if (detailSummary) {
-    return detailSummary;
-  }
-
-  return compactTitle || transcriptLabel('tool');
-}
-
-function isGenericToolTitle(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return new Set([
-    'tool',
-    'command',
-    'command execution',
-    'file change',
-    'web search',
-    'dynamic tool call',
-    'mcp tool call',
-  ]).has(normalized);
-}
-
-function summarizeToolDetail(detail: string | null | undefined): string {
-  const firstLine = detail
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  if (!firstLine) {
-    return '';
-  }
-
-  return firstLine.length > 84 ? `${firstLine.slice(0, 81)}...` : firstLine;
 }
 
 async function handleApproveRequest(sessionId: string, requestId: string): Promise<void> {
@@ -3314,7 +3951,7 @@ async function runRequestAction(
       () => `Failed to resolve Lens request ${requestId} for ${sessionId}: ${String(error)}`,
     );
     showDevErrorDialog({
-      title: 'Lens request failed',
+      title: lensText('lens.error.requestTitle', 'Lens request failed'),
       context: `Lens request action failed for session ${sessionId}, request ${requestId}`,
       error,
     });
@@ -3333,15 +3970,22 @@ async function waitForInitialLensSnapshot(
   for (let attempt = 1; attempt <= 12; attempt += 1) {
     ensureLensActivationIsCurrent(state, activationRunId);
     try {
-      const snapshot = await getLensSnapshot(sessionId);
+      const snapshot = state.snapshot
+        ? await getLensSnapshot(sessionId, state.historyWindowStart, state.historyWindowCount)
+        : await getLensSnapshot(sessionId);
+      applyLensSnapshotWindowState(state, snapshot);
       ensureLensActivationIsCurrent(state, activationRunId);
       if (attempt > 1) {
         appendActivationTrace(
           state,
           'positive',
           `snapshot retry ${attempt}`,
-          'Lens snapshot became available.',
-          `MidTerm produced the first canonical Lens snapshot on retry ${attempt}.`,
+          lensText('lens.activation.snapshotReady.summary', 'Lens snapshot became available.'),
+          lensFormat(
+            'lens.activation.snapshotReady.body',
+            'MidTerm produced the first canonical Lens snapshot on retry {attempt}.',
+            { attempt },
+          ),
         );
       }
       return snapshot;
@@ -3354,7 +3998,7 @@ async function waitForInitialLensSnapshot(
         state,
         attempt === 12 ? 'attention' : 'warning',
         `snapshot retry ${attempt}`,
-        'Lens snapshot not ready yet.',
+        lensText('lens.activation.snapshotPending', 'Lens snapshot not ready yet.'),
         describeError(error),
       );
       renderCurrentAgentView(sessionId);
@@ -3373,7 +4017,7 @@ function setActivationState(
   activationDetail: string,
   summary: string,
   detail: string,
-  tone: TranscriptTone = 'info',
+  tone: HistoryTone = 'info',
 ): void {
   state.activationState = activationState;
   state.activationDetail = activationDetail;
@@ -3382,7 +4026,7 @@ function setActivationState(
 
 function appendActivationTrace(
   state: SessionLensViewState,
-  tone: TranscriptTone,
+  tone: HistoryTone,
   phase: string,
   summary: string,
   detail: string,
@@ -3410,8 +4054,13 @@ export function classifyLensActivationIssue(
   const detail =
     error instanceof LensHttpError && error.detail.trim() ? error.detail.trim() : description;
   const normalizedDetail = detail.toLowerCase();
-  const actions: LensTranscriptAction[] = [
-    { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
+  const actions: LensHistoryAction[] = [
+    {
+      id: 'retry-lens',
+      label: lensText('lens.action.retry', 'Retry Lens'),
+      style: 'primary',
+      busyLabel: lensText('lens.action.retryBusy', 'Retrying...'),
+    },
   ];
 
   if (
@@ -3420,11 +4069,19 @@ export function classifyLensActivationIssue(
     return {
       kind: 'busy-terminal-turn',
       tone: 'warning',
-      meta: hasReadonlyHistory ? 'Read-only history' : 'Terminal busy',
-      title: 'Terminal owns the live Codex turn',
+      meta: hasReadonlyHistory
+        ? lensText('lens.issue.readonlyHistory', 'Read-only history')
+        : lensText('lens.issue.terminalBusy', 'Terminal busy'),
+      title: lensText('lens.issue.busyTerminalTurn.title', 'Terminal owns the live Codex turn'),
       body: hasReadonlyHistory
-        ? 'Lens is showing the last stable transcript while the terminal Codex turn is still running. Finish or interrupt that turn in Terminal, then retry live Lens attach.'
-        : 'Lens cannot take over while Terminal still owns the active Codex turn. Finish or interrupt that turn in Terminal, then retry.',
+        ? lensText(
+            'lens.issue.busyTerminalTurn.bodyReadonly',
+            'Lens is showing the last stable history while the terminal Codex turn is still running. Finish or interrupt that turn in Terminal, then retry live Lens attach.',
+          )
+        : lensText(
+            'lens.issue.busyTerminalTurn.body',
+            'Lens cannot take over while Terminal still owns the active Codex turn. Finish or interrupt that turn in Terminal, then retry.',
+          ),
       actions,
     };
   }
@@ -3433,11 +4090,19 @@ export function classifyLensActivationIssue(
     return {
       kind: 'missing-resume-id',
       tone: 'warning',
-      meta: hasReadonlyHistory ? 'Read-only history' : 'Live attach unavailable',
-      title: 'No resumable Codex thread is known yet',
+      meta: hasReadonlyHistory
+        ? lensText('lens.issue.readonlyHistory', 'Read-only history')
+        : lensText('lens.issue.liveAttachUnavailable', 'Live attach unavailable'),
+      title: lensText('lens.issue.missingResumeId.title', 'No resumable Codex thread is known yet'),
       body: hasReadonlyHistory
-        ? 'Lens can still show canonical history, but MidTerm does not yet know a resumable Codex thread id for live handoff in this session. Keep using Terminal for the live lane, or retry after the thread identity becomes known.'
-        : 'MidTerm cannot determine a resumable Codex thread id for this session yet, so live Lens attach is unavailable. Use Terminal for the live lane, or retry later.',
+        ? lensText(
+            'lens.issue.missingResumeId.bodyReadonly',
+            'Lens can still show canonical history, but MidTerm does not yet know a resumable Codex thread id for live handoff in this session. Keep using Terminal for the live lane, or retry after the thread identity becomes known.',
+          )
+        : lensText(
+            'lens.issue.missingResumeId.body',
+            'MidTerm cannot determine a resumable Codex thread id for this session yet, so live Lens attach is unavailable. Use Terminal for the live lane, or retry later.',
+          ),
       actions,
     };
   }
@@ -3446,9 +4111,15 @@ export function classifyLensActivationIssue(
     return {
       kind: 'shell-recovery-failed',
       tone: 'warning',
-      meta: 'Terminal recovery failed',
-      title: 'Terminal did not recover cleanly after handoff',
-      body: 'MidTerm stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry Lens once the lane is stable again.',
+      meta: lensText('lens.issue.terminalRecoveryFailed', 'Terminal recovery failed'),
+      title: lensText(
+        'lens.issue.shellRecoveryFailed.title',
+        'Terminal did not recover cleanly after handoff',
+      ),
+      body: lensText(
+        'lens.issue.shellRecoveryFailed.body',
+        'MidTerm stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry Lens once the lane is stable again.',
+      ),
       actions,
     };
   }
@@ -3457,9 +4128,15 @@ export function classifyLensActivationIssue(
     return {
       kind: 'native-runtime-unavailable',
       tone: 'warning',
-      meta: 'Native runtime unavailable',
-      title: 'This session cannot start a live Lens runtime yet',
-      body: 'MidTerm could not start the native Lens runtime for this session. Retry after the session becomes native-runtime-capable.',
+      meta: lensText('lens.issue.nativeRuntimeUnavailable', 'Native runtime unavailable'),
+      title: lensText(
+        'lens.issue.nativeRuntimeUnavailable.title',
+        'This session cannot start a live Lens runtime yet',
+      ),
+      body: lensText(
+        'lens.issue.nativeRuntimeUnavailable.body',
+        'MidTerm could not start the native Lens runtime for this session. Retry after the session becomes native-runtime-capable.',
+      ),
       actions,
     };
   }
@@ -3468,9 +4145,16 @@ export function classifyLensActivationIssue(
     return {
       kind: 'readonly-history',
       tone: 'warning',
-      meta: 'Read-only history',
-      title: 'Live Lens attach is unavailable right now',
-      body: `${detail} Lens is staying open on canonical history, so you can still inspect the last stable transcript while Terminal remains the live fallback.`,
+      meta: lensText('lens.issue.readonlyHistory', 'Read-only history'),
+      title: lensText(
+        'lens.issue.readonlyHistory.title',
+        'Live Lens attach is unavailable right now',
+      ),
+      body: lensFormat(
+        'lens.issue.readonlyHistory.body',
+        '{detail} Lens is staying open on canonical history, so you can still inspect the last stable history while Terminal remains the live fallback.',
+        { detail },
+      ),
       actions,
     };
   }
@@ -3478,11 +4162,16 @@ export function classifyLensActivationIssue(
   return {
     kind: 'startup-failed',
     tone: 'attention',
-    meta: 'Lens attach failed',
-    title: 'Lens could not open',
+    meta: lensText('lens.issue.attachFailed', 'Lens attach failed'),
+    title: lensText('lens.issue.startupFailed.title', 'Lens could not open'),
     body: detail,
     actions: [
-      { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
+      {
+        id: 'retry-lens',
+        label: lensText('lens.action.retry', 'Retry Lens'),
+        style: 'primary',
+        busyLabel: lensText('lens.action.retryBusy', 'Retrying...'),
+      },
     ],
   };
 }
@@ -3505,102 +4194,6 @@ function describeError(error: unknown): string {
   return typeof error === 'string' ? error : JSON.stringify(error, null, 2);
 }
 
-async function tryLoadTerminalSnapshotFallback(
-  sessionId: string,
-): Promise<SessionStateResponse | null> {
-  try {
-    const [response, bufferTail] = await Promise.all([
-      getSessionState(sessionId, false),
-      getSessionBufferTail(sessionId, 120, true),
-    ]);
-    if (!bufferTail.trim()) {
-      return null;
-    }
-
-    response.bufferText = bufferTail;
-    return response;
-  } catch (error) {
-    log.warn(() => `Failed to load terminal snapshot fallback for ${sessionId}: ${String(error)}`);
-    return null;
-  }
-}
-
-/**
- * Preserves useful context when live Lens attach fails by turning the current
- * terminal buffer into a read-only conversation artifact instead of a dead end.
- */
-export function buildTerminalFallbackEntry(
-  state: SessionStateResponse | null,
-): LensTranscriptEntry | null {
-  const body = summarizeTerminalFallbackBuffer(state?.bufferText);
-  if (!body) {
-    return null;
-  }
-
-  const session = state?.session;
-  const sessionLabel = [session?.shellType, session?.supervisor?.profile]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(' • ');
-
-  return {
-    id: 'terminal:fallback',
-    order: -1,
-    kind: 'tool',
-    tone: 'info',
-    label: 'Terminal',
-    title: resolveTerminalFallbackTitle(state),
-    body,
-    meta: sessionLabel ? `Read-only fallback • ${sessionLabel}` : 'Read-only fallback',
-  };
-}
-
-function resolveTerminalFallbackTitle(state: SessionStateResponse | null): string {
-  const session = state?.session;
-  return (
-    session?.foregroundDisplayName?.trim() ||
-    session?.foregroundCommandLine?.trim() ||
-    session?.terminalTitle?.trim() ||
-    'Current terminal buffer'
-  );
-}
-
-/**
- * Trims noisy terminal history into a compact fallback snapshot so Lens can
- * show enough context to recover without drowning the conversation surface.
- */
-export function summarizeTerminalFallbackBuffer(value: string | null | undefined): string {
-  const normalized = (value || '').replace(/\r\n/g, '\n').trimEnd();
-  if (!normalized.trim()) {
-    return '';
-  }
-
-  const lines = normalized.split('\n').map(compactRepeatedTerminalLine);
-  const truncatedLines = lines.length > 120 ? lines.slice(-120) : lines;
-  let truncated = truncatedLines.join('\n');
-  if (truncated.length > 12000) {
-    truncated = truncated.slice(-12000);
-  }
-
-  const omitted =
-    truncatedLines.length !== lines.length || truncated.length !== normalized.length
-      ? '... earlier terminal output omitted ...\n'
-      : '';
-
-  return `${omitted}${truncated}`.trimEnd();
-}
-
-function compactRepeatedTerminalLine(line: string): string {
-  const trimmed = line.trimEnd();
-  if (trimmed.length < 2 || trimmed.length % 2 !== 0) {
-    return trimmed;
-  }
-
-  const half = trimmed.length / 2;
-  const left = trimmed.slice(0, half);
-  const right = trimmed.slice(half);
-  return left === right ? left : trimmed;
-}
-
 async function retryLensActivation(sessionId: string): Promise<void> {
   const state = viewStates.get(sessionId);
   if (!state || state.activationActionBusy) {
@@ -3614,8 +4207,11 @@ async function retryLensActivation(sessionId: string): Promise<void> {
     state,
     'info',
     'retry',
-    'Retrying Lens attach.',
-    'MidTerm is retrying the live Lens attach for this session.',
+    lensText('lens.activation.retry.summary', 'Retrying Lens attach.'),
+    lensText(
+      'lens.activation.retry.detail',
+      'MidTerm is retrying the live Lens attach for this session.',
+    ),
   );
   renderCurrentAgentView(sessionId);
 
@@ -3645,97 +4241,7 @@ function isStaleLensActivationError(error: unknown): boolean {
   return error instanceof Error && error.message === STALE_LENS_ACTIVATION;
 }
 
-function formatRequestTranscriptBody(
-  request: LensPulseRequestSummary | undefined,
-  lensEvent: LensPulseEvent | null,
-): string {
-  if (request) {
-    return formatRequestSummaryBody(request);
-  }
-
-  const eventSections = [
-    lensEvent?.requestOpened?.detail?.trim() || '',
-    formatRequestQuestions(lensEvent?.userInputRequested?.questions),
-  ].filter(Boolean);
-  return eventSections.join('\n\n');
-}
-
-function formatRequestSummaryBody(request: LensPulseRequestSummary): string {
-  const sections = [
-    request.detail?.trim() || '',
-    formatRequestQuestions(request.questions),
-    formatRequestAnswers(request.answers),
-  ].filter(Boolean);
-  return sections.join('\n\n');
-}
-
-function formatRequestQuestions(
-  questions:
-    | ReadonlyArray<LensPulseRequestSummary['questions'][number]>
-    | NonNullable<LensPulseEvent['userInputRequested']>['questions']
-    | null
-    | undefined,
-): string {
-  if (!questions || questions.length === 0) {
-    return '';
-  }
-
-  return questions
-    .map((question, index) => {
-      const headingParts = [
-        questions.length > 1 ? `Question ${index + 1}` : 'Question',
-        question.header.trim(),
-      ].filter(Boolean);
-      const optionLines =
-        question.options.length > 0
-          ? question.options.map((option, optionIndex) => {
-              const description =
-                option.description && option.description !== option.label
-                  ? ` - ${option.description}`
-                  : '';
-              return `[${optionIndex + 1}] ${option.label}${description}`;
-            })
-          : [];
-      return [headingParts.join(' - '), question.question, ...optionLines].join('\n');
-    })
-    .join('\n\n');
-}
-
-function formatRequestAnswers(
-  answers: readonly LensPulseRequestSummary['answers'][number][] | null | undefined,
-): string {
-  if (!answers || answers.length === 0) {
-    return '';
-  }
-
-  return [
-    'Selected answers',
-    ...answers.map((answer) => `${answer.questionId}: ${answer.answers.join(', ')}`),
-  ].join('\n');
-}
-
-function toneFromEvent(eventType: string): TranscriptTone {
-  if (eventType.endsWith('error')) {
-    return 'attention';
-  }
-  if (
-    eventType.endsWith('warning') ||
-    eventType.includes('request') ||
-    eventType.includes('aborted')
-  ) {
-    return 'warning';
-  }
-  if (
-    eventType.endsWith('completed') ||
-    eventType.endsWith('resolved') ||
-    eventType.endsWith('ready')
-  ) {
-    return 'positive';
-  }
-  return 'info';
-}
-
-function toneFromState(state: string | null | undefined): TranscriptTone {
+function toneFromState(state: string | null | undefined): HistoryTone {
   const normalized = (state || '').toLowerCase();
   if (
     normalized.includes('error') ||
@@ -3763,7 +4269,7 @@ function toneFromState(state: string | null | undefined): TranscriptTone {
   return 'info';
 }
 
-function transcriptKindFromItem(itemType: string): TranscriptKind {
+function historyKindFromItem(itemType: string): HistoryKind {
   const normalized = itemType.toLowerCase();
   if (normalized.includes('assistant')) {
     return 'assistant';
@@ -3774,23 +4280,22 @@ function transcriptKindFromItem(itemType: string): TranscriptKind {
   return 'tool';
 }
 
-function transcriptKindFromStream(streamKind: string): TranscriptKind | null {
-  const normalized = streamKind.toLowerCase();
-  if (normalized === 'assistant_text') {
-    return 'assistant';
+function normalizeSnapshotHistoryKind(kind: string | null | undefined): HistoryKind {
+  const normalized = (kind || '').toLowerCase();
+  switch (normalized) {
+    case 'user':
+    case 'assistant':
+    case 'reasoning':
+    case 'tool':
+    case 'request':
+    case 'plan':
+    case 'diff':
+    case 'system':
+    case 'notice':
+      return normalized as HistoryKind;
+    default:
+      return 'system';
   }
-  if (normalized === 'reasoning_text' || normalized === 'reasoning_summary_text') {
-    return 'reasoning';
-  }
-  if (
-    normalized === 'command_output' ||
-    normalized === 'file_change_output' ||
-    normalized.endsWith('_output') ||
-    normalized.endsWith('_result')
-  ) {
-    return 'tool';
-  }
-  return null;
 }
 
 function isImageAttachment(attachment: LensAttachmentReference): boolean {
@@ -3822,59 +4327,52 @@ function resolveAttachmentLabel(attachment: LensAttachmentReference): string {
   return slashIndex >= 0 ? normalizedPath.slice(slashIndex + 1) : normalizedPath;
 }
 
-function transcriptLabel(kind: TranscriptKind): string {
+function normalizeLensProvider(provider: string | null | undefined): string {
+  return (provider || '').trim().toLowerCase();
+}
+
+export function resolveLensLayoutMode(provider: string | null | undefined): LensLayoutMode {
+  return normalizeLensProvider(provider) === 'codex' ? 'full-width-left' : 'default';
+}
+
+function historyLabel(kind: HistoryKind): string {
   switch (kind) {
     case 'user':
-      return 'You';
+      return lensText('lens.label.user', 'You');
     case 'assistant':
-      return 'Assistant';
+      return lensText('lens.label.assistant', 'Assistant');
     case 'reasoning':
-      return 'Reasoning';
+      return lensText('lens.label.reasoning', 'Reasoning');
     case 'tool':
-      return 'Tool';
+      return lensText('lens.label.tool', 'Tool');
     case 'request':
-      return 'Request';
+      return lensText('lens.label.request', 'Request');
     case 'plan':
-      return 'Plan';
+      return lensText('lens.label.plan', 'Plan');
     case 'diff':
-      return 'Diff';
+      return lensText('lens.label.diff', 'Diff');
     case 'notice':
-      return 'Error';
+      return lensText('lens.label.error', 'Error');
     default:
-      return 'System';
+      return lensText('lens.label.system', 'System');
   }
 }
 
-function transcriptStreamLabel(streamKind: string): string {
-  switch (streamKind) {
-    case 'assistant_text':
-      return 'Assistant';
-    case 'reasoning_text':
-    case 'reasoning_summary_text':
-      return 'Reasoning';
-    case 'command_output':
-    case 'file_change_output':
-      return 'Tool';
-    default:
-      return prettify(streamKind);
-  }
-}
+export function resolveHistoryBadgeLabel(
+  kind: HistoryKind,
+  provider: string | null | undefined,
+): string {
+  if (resolveLensLayoutMode(provider) === 'full-width-left') {
+    if (kind === 'user') {
+      return lensText('lens.label.userShort', 'User');
+    }
 
-function transcriptStreamTitle(streamKind: string): string {
-  switch (streamKind) {
-    case 'assistant_text':
-      return 'Assistant response';
-    case 'reasoning_text':
-      return 'Reasoning';
-    case 'reasoning_summary_text':
-      return 'Reasoning summary';
-    case 'command_output':
-      return 'Command output';
-    case 'file_change_output':
-      return 'File change output';
-    default:
-      return prettify(streamKind);
+    if (kind === 'assistant') {
+      return lensText('lens.label.agent', 'Agent');
+    }
   }
+
+  return historyLabel(kind);
 }
 
 function prettify(value: string): string {

@@ -7,6 +7,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -26,16 +27,19 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private readonly AiCliProfileService _profileService;
     private readonly SessionLensPulseService _pulse;
     private readonly SessionLensHostRuntimeService _hostRuntime;
+    private readonly SettingsService? _settingsService;
 
     public SessionLensRuntimeService(
         TtyHostSessionManager sessionManager,
         AiCliProfileService profileService,
         SessionLensPulseService pulse,
-        SessionLensHostRuntimeService hostRuntime)
+        SessionLensHostRuntimeService hostRuntime,
+        SettingsService? settingsService = null)
     {
         _profileService = profileService;
         _pulse = pulse;
         _hostRuntime = hostRuntime;
+        _settingsService = settingsService;
         sessionManager.OnSessionClosed += Forget;
     }
 
@@ -97,30 +101,71 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     return true;
                 }
 
-                var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session);
+                var executablePath = AiCliCommandLocator.ResolveExecutablePath(profile, session, ResolveConfiguredUserProfileDirectory());
                 return await StartCodexAsync(state, executablePath, ct).ConfigureAwait(false);
             }
 
             if (state.Claude is not null)
             {
                 state.TransportKey = "claude-stream-json";
-                state.TransportLabel = "Claude stream-json sidecar";
+                state.TransportLabel = "Claude stream-json runtime";
                 state.Status = state.Status == LensRuntimeStatus.None ? LensRuntimeStatus.Ready : state.Status;
                 return true;
             }
 
             state.Claude = new ClaudeLensRuntime();
+            state.QuickSettings = LensQuickSettings.CreateSummary(
+                null,
+                null,
+                LensQuickSettings.PlanModeOff,
+                GetClaudeDefaultPermissionMode(),
+                GetClaudeDefaultPermissionMode());
             state.TransportKey = "claude-stream-json";
-            state.TransportLabel = "Claude stream-json sidecar";
-            SetStatus(state, LensRuntimeStatus.Ready, "Claude Lens sidecar is ready.");
-            AppendActivity(state, "positive", "session.started", "Claude Lens sidecar attached.", "Lens prompts now use Claude's structured stream-json output in this session's cwd.");
-            EmitPulseSessionState(state, "session.started", "ready", "Ready", "Claude Lens sidecar attached.");
+            state.TransportLabel = "Claude stream-json runtime";
+            SetStatus(state, LensRuntimeStatus.Ready, "Claude Lens runtime is ready.");
+            AppendActivity(state, "positive", "session.started", "Claude Lens runtime attached.", "Lens prompts now use Claude's structured stream-json output in this session's cwd.");
+            EmitPulseSessionState(state, "session.started", "ready", "Ready", "Claude Lens runtime attached.");
+            EmitPulseQuickSettingsUpdated(state, state.QuickSettings, "midterm.lens", "runtime.attach");
             return true;
         }
         finally
         {
             state.Gate.Release();
         }
+    }
+
+    public async Task DiscoverExistingSessionsAsync(
+        TtyHostSessionManager sessionManager,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(sessionManager);
+
+        var recovered = 0;
+        foreach (var session in sessionManager.GetSessionList().Sessions)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var profile = _profileService.NormalizeProfile(null, session);
+            if (!_hostRuntime.IsEnabledFor(profile) || !_hostRuntime.MayHaveRecoverableHost(session.Id))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (await _hostRuntime.RecoverExistingHostAsync(session.Id, profile, session, ct: ct).ConfigureAwait(false))
+                {
+                    recovered++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Lens runtime recovery failed for {session.Id}: {ex.Message}");
+                await _hostRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
+            }
+        }
+
+        Log.Info(() => $"SessionLensRuntimeService: Recovered {recovered} owned Lens runtimes on startup.");
     }
 
     public bool IsAttached(string sessionId)
@@ -422,7 +467,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, "app-server", state.WorkingDirectory!),
+            StartInfo = CreateProcessStartInfo(
+                binaryPath,
+                "app-server",
+                state.WorkingDirectory!,
+                ResolvePreferredUserProfileDirectory(binaryPath)),
             EnableRaisingEvents = true
         };
 
@@ -434,18 +483,25 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return false;
         }
 
-        state.Codex = new CodexLensRuntime
-        {
-            Process = process,
-            Output = process.StandardOutput,
-            Error = process.StandardError,
-            Input = process.StandardInput
-        };
+            state.Codex = new CodexLensRuntime
+            {
+                Process = process,
+                Output = process.StandardOutput,
+                Error = process.StandardError,
+                Input = process.StandardInput,
+                PermissionMode = state.QuickSettings.PermissionMode
+            };
+        state.QuickSettings = LensQuickSettings.CreateSummary(
+            null,
+            null,
+            LensQuickSettings.PlanModeOff,
+            GetCodexDefaultPermissionMode(),
+            GetCodexDefaultPermissionMode());
         state.TransportKey = "codex-app-server";
-        state.TransportLabel = "Codex app-server sidecar";
-        SetStatus(state, LensRuntimeStatus.Starting, "Starting Codex Lens sidecar.");
-        AppendActivity(state, "info", "session.started", "Codex Lens sidecar starting.", "Lens is launching a native Codex app-server in this session's cwd while the terminal stays separate.");
-        EmitPulseSessionState(state, "session.started", "starting", "Starting", "Starting Codex Lens sidecar.");
+        state.TransportLabel = "Codex app-server runtime";
+        SetStatus(state, LensRuntimeStatus.Starting, "Starting Codex Lens runtime.");
+        AppendActivity(state, "info", "session.started", "Codex Lens runtime starting.", "Lens is launching a native Codex app-server in this session's cwd while the terminal surface remains separate.");
+        EmitPulseSessionState(state, "session.started", "starting", "Starting", "Starting Codex Lens runtime.");
 
         state.Codex.ReaderTask = Task.Run(() => ReadCodexLoopAsync(state, state.Codex, CancellationToken.None), CancellationToken.None);
         state.Codex.ErrorTask = Task.Run(() => ReadCodexErrorLoopAsync(state, state.Codex, CancellationToken.None), CancellationToken.None);
@@ -460,13 +516,13 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
                 SetStatus(state, process.ExitCode == 0 ? LensRuntimeStatus.Stopped : LensRuntimeStatus.Error,
                     process.ExitCode == 0
-                        ? "Codex Lens sidecar exited."
-                        : $"Codex Lens sidecar exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+                        ? "Codex Lens runtime exited."
+                        : $"Codex Lens runtime exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
                 AppendActivity(
                     state,
                     process.ExitCode == 0 ? "warning" : "attention",
                     "session.exited",
-                    "Codex Lens sidecar exited.",
+                    "Codex Lens runtime exited.",
                     $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
             }
         };
@@ -484,7 +540,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             var threadResult = await SendCodexRequestAsync(
                 state,
                 "thread/start",
-                id => BuildCodexThreadStartRequest(id, state.WorkingDirectory!),
+                id => BuildCodexThreadStartRequest(id, state.WorkingDirectory!, state.QuickSettings.PermissionMode),
                 ct).ConfigureAwait(false);
 
             var providerThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
@@ -494,10 +550,11 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             }
 
             state.Codex.ProviderThreadId = providerThreadId;
-            SetStatus(state, LensRuntimeStatus.Ready, "Codex Lens sidecar ready.");
-            AppendActivity(state, "positive", "thread.started", "Codex Lens sidecar attached.", $"Connected to provider thread `{providerThreadId}`.");
-            EmitPulseSessionState(state, "session.ready", "ready", "Ready", "Codex Lens sidecar ready.");
+            SetStatus(state, LensRuntimeStatus.Ready, "Codex Lens runtime ready.");
+            AppendActivity(state, "positive", "thread.started", "Codex Lens runtime attached.", $"Connected to provider thread `{providerThreadId}`.");
+            EmitPulseSessionState(state, "session.ready", "ready", "Ready", "Codex Lens runtime ready.");
             EmitPulseThreadState(state, "thread.started", "active", "Active", providerThreadId);
+            EmitPulseQuickSettingsUpdated(state, state.QuickSettings, "midterm.lens", "runtime.attach");
             return true;
         }
         catch (Exception ex)
@@ -545,12 +602,17 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         state.AssistantText = string.Empty;
         state.UnifiedDiff = null;
         SetStatus(state, LensRuntimeStatus.Running, "Codex is processing the Lens prompt.");
-        AppendActivity(state, "info", "turn.started", "Sent prompt to Codex Lens sidecar.", SummarizePrompt(request.Text));
-        var turnInput = CreateCodexTurnInput(request.Text, []);
+        AppendActivity(state, "info", "turn.started", "Sent prompt to Codex Lens runtime.", SummarizePrompt(request.Text));
+        var turnInput = CreateCodexTurnInput(request.Text, [], state.QuickSettings.PlanMode);
         var turnResult = await SendCodexRequestAsync(
             state,
             "turn/start",
-            id => BuildCodexTurnStartRequest(id, codex.ProviderThreadId!, turnInput),
+            id => BuildCodexTurnStartRequest(
+                id,
+                codex.ProviderThreadId!,
+                turnInput,
+                state.QuickSettings.Model,
+                state.QuickSettings.Effort),
             ct).ConfigureAwait(false);
         state.Codex!.ActiveTurnId = GetString(turnResult, "turn", "id");
         return true;
@@ -577,7 +639,24 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             throw new InvalidOperationException("Codex is waiting for approval. Resolve the pending request before starting another turn.");
         }
 
-        var turnInput = await CreateCodexTurnInputAsync(request, ct).ConfigureAwait(false);
+        var quickSettings = CreateCodexQuickSettings(request);
+        if (!string.Equals(codex.PermissionMode, quickSettings.PermissionMode, StringComparison.Ordinal))
+        {
+            var resumeResult = await SendCodexRequestAsync(
+                state,
+                "thread/resume",
+                id => BuildCodexThreadResumeRequest(
+                    id,
+                    codex.ProviderThreadId!,
+                    state.WorkingDirectory!,
+                    quickSettings.PermissionMode),
+                ct).ConfigureAwait(false);
+            codex.ProviderThreadId = GetString(resumeResult, "thread", "id")
+                                     ?? GetString(resumeResult, "threadId")
+                                     ?? codex.ProviderThreadId;
+        }
+
+        var turnInput = await CreateCodexTurnInputAsync(request, quickSettings.PlanMode, ct).ConfigureAwait(false);
         if (turnInput.Count == 0)
         {
             throw new InvalidOperationException("Lens turn input must include text or attachments.");
@@ -586,15 +665,23 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         state.AssistantText = string.Empty;
         state.UnifiedDiff = null;
         SetStatus(state, LensRuntimeStatus.Running, "Codex is processing the Lens turn.");
-        AppendActivity(state, "info", "turn.started", "Sent turn to Codex Lens sidecar.", SummarizePrompt(request.Text));
+        AppendActivity(state, "info", "turn.started", "Sent turn to Codex Lens runtime.", SummarizePrompt(request.Text));
         var turnResult = await SendCodexRequestAsync(
             state,
             "turn/start",
-            id => BuildCodexTurnStartRequest(id, codex.ProviderThreadId!, turnInput, request.Model, request.Effort),
+            id => BuildCodexTurnStartRequest(
+                id,
+                codex.ProviderThreadId!,
+                turnInput,
+                quickSettings.Model,
+                quickSettings.Effort),
             ct).ConfigureAwait(false);
 
         var turnId = GetString(turnResult, "turn", "id");
         codex.ActiveTurnId = turnId;
+        codex.PermissionMode = quickSettings.PermissionMode;
+        state.QuickSettings = quickSettings;
+        EmitPulseQuickSettingsUpdated(state, quickSettings, "midterm.lens", "turn.start");
         EmitSubmittedUserTurn(state, turnId, request);
         return new LensTurnStartResponse
         {
@@ -602,7 +689,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             Provider = AiCliProfileService.CodexProfile,
             ThreadId = codex.ProviderThreadId,
             TurnId = turnId,
-            Status = "accepted"
+            Status = "accepted",
+            QuickSettings = CloneQuickSettingsSummary(quickSettings)
         };
     }
 
@@ -631,18 +719,40 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             "--verbose",
             "--output-format",
             "stream-json",
-            "--include-partial-messages",
-            "--dangerously-skip-permissions"
+            "--include-partial-messages"
         };
+        if (string.Equals(
+                state.QuickSettings.PermissionMode,
+                LensQuickSettings.PermissionModeAuto,
+                StringComparison.Ordinal))
+        {
+            args.Add("--dangerously-skip-permissions");
+        }
         if (!string.IsNullOrWhiteSpace(claude.ResumeSessionId))
         {
             args.Add("--resume");
             args.Add(claude.ResumeSessionId);
         }
 
+        if (!string.IsNullOrWhiteSpace(state.QuickSettings.Model))
+        {
+            args.Add("--model");
+            args.Add(state.QuickSettings.Model);
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.QuickSettings.Effort))
+        {
+            args.Add("--effort");
+            args.Add(state.QuickSettings.Effort);
+        }
+
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, args, state.WorkingDirectory!),
+            StartInfo = CreateProcessStartInfo(
+                binaryPath,
+                args,
+                state.WorkingDirectory!,
+                ResolvePreferredUserProfileDirectory(binaryPath)),
             EnableRaisingEvents = true
         };
 
@@ -658,15 +768,16 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         claude.Error = process.StandardError;
         claude.Input = process.StandardInput;
         state.TransportKey = "claude-stream-json";
-        state.TransportLabel = "Claude stream-json sidecar";
+        state.TransportLabel = "Claude stream-json runtime";
         state.AssistantText = string.Empty;
         state.UnifiedDiff = null;
         SetStatus(state, LensRuntimeStatus.Running, "Claude is processing the Lens prompt.");
-        AppendActivity(state, "info", "turn.started", "Sent prompt to Claude Lens sidecar.", SummarizePrompt(request.Text));
+        AppendActivity(state, "info", "turn.started", "Sent prompt to Claude Lens runtime.", SummarizePrompt(request.Text));
 
         claude.ReaderTask = Task.Run(() => ReadClaudeLoopAsync(state, claude, CancellationToken.None), CancellationToken.None);
         claude.ErrorTask = Task.Run(() => ReadClaudeErrorLoopAsync(state, claude, CancellationToken.None), CancellationToken.None);
-        await claude.Input!.WriteLineAsync(request.Text ?? string.Empty).ConfigureAwait(false);
+        await claude.Input!.WriteLineAsync(
+            LensQuickSettings.ApplyPlanModePrompt(request.Text, state.QuickSettings.PlanMode)).ConfigureAwait(false);
         await claude.Input.FlushAsync().ConfigureAwait(false);
         claude.Input.Close();
 
@@ -678,14 +789,12 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         LensTurnRequest request,
         CancellationToken ct)
     {
-        if (request.Attachments.Count > 0)
-        {
-            throw new InvalidOperationException("Claude Lens attachments are not wired yet.");
-        }
+        var quickSettings = CreateClaudeQuickSettings(request);
+        state.QuickSettings = quickSettings;
 
         var promptRequest = new SessionPromptRequest
         {
-            Text = request.Text
+            Text = BuildClaudePromptInput(request, quickSettings.PlanMode)
         };
 
         if (!await SendClaudePromptAsync(state, promptRequest, ct).ConfigureAwait(false))
@@ -693,12 +802,15 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             throw new InvalidOperationException("Claude Lens runtime is not attached.");
         }
 
+        EmitPulseQuickSettingsUpdated(state, quickSettings, "midterm.lens", "turn.start");
+
         return new LensTurnStartResponse
         {
             SessionId = state.SessionId,
             Provider = AiCliProfileService.ClaudeProfile,
             ThreadId = state.Claude?.ResumeSessionId ?? state.SessionId,
-            Status = "accepted"
+            Status = "accepted",
+            QuickSettings = CloneQuickSettingsSummary(quickSettings)
         };
     }
 
@@ -860,7 +972,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         });
     }
 
-    private static string BuildCodexThreadStartRequest(string id, string cwd)
+    private static string BuildCodexThreadStartRequest(string id, string cwd, string permissionMode)
     {
         return BuildJsonString(writer =>
         {
@@ -871,9 +983,33 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             writer.WritePropertyName("params");
             writer.WriteStartObject();
             writer.WriteString("cwd", cwd);
-            writer.WriteString("approvalPolicy", "never");
-            writer.WriteString("sandbox", "danger-full-access");
+            writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
+            writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("experimentalRawEvents", false);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexThreadResumeRequest(
+        string id,
+        string threadId,
+        string cwd,
+        string permissionMode)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "thread/resume");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
+            writer.WriteString("cwd", cwd);
+            writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
+            writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
+            writer.WriteBoolean("persistExtendedHistory", false);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -1009,9 +1145,12 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         });
     }
 
-    private static List<CodexTurnInputEntry> CreateCodexTurnInput(string? text, IReadOnlyList<string> fileReferences)
+    private static List<CodexTurnInputEntry> CreateCodexTurnInput(
+        string? text,
+        IReadOnlyList<string> fileReferences,
+        string? planMode)
     {
-        var effectiveText = (text ?? string.Empty).Trim();
+        var effectiveText = LensQuickSettings.ApplyPlanModePrompt(text, planMode);
         if (fileReferences.Count > 0)
         {
             var fileReferenceBlock = new StringBuilder();
@@ -1042,6 +1181,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private static async Task<List<CodexTurnInputEntry>> CreateCodexTurnInputAsync(
         LensTurnRequest request,
+        string? planMode,
         CancellationToken ct)
     {
         var fileReferences = new List<string>();
@@ -1080,9 +1220,49 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             fileReferences.Add(attachment.Path);
         }
 
-        var input = CreateCodexTurnInput(request.Text, fileReferences);
+        var input = CreateCodexTurnInput(request.Text, fileReferences, planMode);
         input.AddRange(imageEntries);
         return input;
+    }
+
+    private static string BuildClaudePromptInput(LensTurnRequest request, string? planMode)
+    {
+        var builder = new StringBuilder();
+        var text = LensQuickSettings.ApplyPlanModePrompt(request.Text, planMode);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            builder.AppendLine(text);
+        }
+
+        if (request.Attachments.Count > 0)
+        {
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(request.Attachments.Count == 1
+                ? "Attached resource:"
+                : $"Attached resources ({request.Attachments.Count.ToString(CultureInfo.InvariantCulture)}):");
+            foreach (var attachment in request.Attachments)
+            {
+                if (string.IsNullOrWhiteSpace(attachment.Path))
+                {
+                    continue;
+                }
+
+                if (!File.Exists(attachment.Path))
+                {
+                    throw new InvalidOperationException($"Lens attachment does not exist: {attachment.Path}");
+                }
+
+                builder.Append("- ");
+                builder.Append(string.Equals(attachment.Kind, "image", StringComparison.OrdinalIgnoreCase) ? "[image] " : "[file] ");
+                builder.AppendLine(attachment.Path);
+            }
+        }
+
+        return builder.ToString().Trim();
     }
 
     private static string ResolveAttachmentMimeType(LensAttachmentReference attachment)
@@ -1421,7 +1601,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     var planText = BuildCodexPlanMarkdown(payload);
                     if (!string.IsNullOrWhiteSpace(planText))
                     {
-                        EmitPulsePlanCompleted(state, planText, "codex.app-server.notification", method, payload);
+                        EmitPulsePlanCompleted(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, planText, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -1430,7 +1610,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 {
                     state.UnifiedDiff = GetString(payload, "unifiedDiff") ?? GetString(payload, "diff") ?? GetString(payload, "patch");
                     AppendActivity(state, "info", "turn.diff.updated", "Codex updated the working diff.", SummarizeDiff(state.UnifiedDiff));
-                    EmitPulseDiffUpdated(state, state.UnifiedDiff ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseDiffUpdated(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, state.UnifiedDiff ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
                 }
 
@@ -1441,24 +1621,32 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     {
                         state.AssistantText = (state.AssistantText ?? string.Empty) + delta;
                     }
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "assistant_text", delta, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(
+                        state,
+                        GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId,
+                        GetString(payload, "itemId") ?? GetString(payload, "item", "id"),
+                        "assistant_text",
+                        delta,
+                        "codex.app-server.notification",
+                        method,
+                        payload);
                     break;
                 }
 
                 case "item/reasoning/textDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/reasoning/summaryTextDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_summary_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "reasoning_summary_text", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/commandExecution/outputDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "command_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "command_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/fileChange/outputDelta":
-                    EmitPulseContentDelta(state, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "file_change_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
+                    EmitPulseContentDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "itemId") ?? GetString(payload, "item", "id"), "file_change_output", GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty, "codex.app-server.notification", method, payload);
                     break;
 
                 case "item/plan/delta":
@@ -1466,7 +1654,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     var delta = GetString(payload, "delta") ?? GetString(payload, "text") ?? string.Empty;
                     if (!string.IsNullOrEmpty(delta))
                     {
-                        EmitPulsePlanDelta(state, delta, "codex.app-server.notification", method, payload);
+                        EmitPulsePlanDelta(state, GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, delta, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -1474,25 +1662,63 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 case "item/started":
                 {
                     var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                    var turnId = GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId;
                     if (itemType is "command_execution" or "file_change" or "web_search" or "mcp_tool_call" or "dynamic_tool_call")
                     {
                         AppendActivity(state, "info", "tool.started", $"{PrettifyToolKind(itemType)} started.", BuildCodexItemDetail(payload));
                     }
-                    EmitPulseItem(state, "item.started", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", $"{PrettifyToolKind(itemType)} started", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
+                    EmitPulseItem(state, "item.started", turnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", $"{PrettifyToolKind(itemType)} started", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     break;
                 }
 
                 case "item/reasoning/summaryPartAdded":
                 case "item/commandExecution/terminalInteraction":
                 {
-                    var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
-                    EmitPulseItem(state, "item.updated", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", PrettifyToolKind(itemType), BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
+                    var itemType = method == "item/commandExecution/terminalInteraction"
+                        ? "command_execution"
+                        : NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                    var detail = method == "item/commandExecution/terminalInteraction"
+                        ? GetString(payload, "stdin") ?? BuildCodexItemDetail(payload)
+                        : BuildCodexItemDetail(payload);
+                    var title = method == "item/commandExecution/terminalInteraction"
+                        ? "Command running"
+                        : PrettifyToolKind(itemType);
+                    EmitPulseItem(state, "item.updated", GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "in_progress", title, detail, null, "codex.app-server.notification", method, payload);
+                    break;
+                }
+
+                case "item/mcpToolCall/progress":
+                {
+                    var turnId = GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId;
+                    var itemId = GetString(payload, "item", "id") ?? GetString(payload, "itemId") ?? GetString(payload, "toolUseId");
+                    if (string.IsNullOrWhiteSpace(itemId))
+                    {
+                        break;
+                    }
+
+                    var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type") ?? "mcpToolCall");
+                    var title = GetString(payload, "toolName") ?? "MCP tool";
+                    var detail = GetString(payload, "summary") ?? BuildCodexItemDetail(payload);
+                    EmitPulseItem(
+                        state,
+                        "item.updated",
+                        turnId,
+                        itemId,
+                        itemType,
+                        "in_progress",
+                        title,
+                        detail,
+                        null,
+                        "codex.app-server.notification",
+                        method,
+                        payload);
                     break;
                 }
 
                 case "item/completed":
                 {
                     var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
+                    var turnId = GetString(payload, "turnId") ?? GetString(payload, "turn", "id") ?? state.Codex?.ActiveTurnId;
                     if (itemType is "assistant_message" or "agent_message")
                     {
                         var detail = BuildCodexItemDetail(payload);
@@ -1501,20 +1727,20 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                             state.AssistantText = detail;
                         }
                         AppendActivity(state, "positive", "item.completed", "Assistant message completed.", Trim(detail, 220));
-                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), "assistant_message", "completed", "Assistant message", detail, null, "codex.app-server.notification", method, payload);
+                        EmitPulseItem(state, "item.completed", turnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), "assistant_message", "completed", "Assistant message", detail, null, "codex.app-server.notification", method, payload);
                     }
                     else if (itemType is "plan")
                     {
                         var detail = BuildCodexItemDetail(payload);
                         if (!string.IsNullOrWhiteSpace(detail))
                         {
-                            EmitPulsePlanCompleted(state, detail, "codex.app-server.notification", method, payload);
+                            EmitPulsePlanCompleted(state, turnId, detail, "codex.app-server.notification", method, payload);
                         }
                     }
                     else if (itemType is "command_execution" or "file_change" or "web_search" or "mcp_tool_call" or "dynamic_tool_call")
                     {
                         AppendActivity(state, "positive", "tool.completed", $"{PrettifyToolKind(itemType)} completed.", BuildCodexItemDetail(payload));
-                        EmitPulseItem(state, "item.completed", GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "completed", $"{PrettifyToolKind(itemType)} completed", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
+                        EmitPulseItem(state, "item.completed", turnId, GetString(payload, "item", "id") ?? GetString(payload, "itemId"), itemType, "completed", $"{PrettifyToolKind(itemType)} completed", BuildCodexItemDetail(payload), null, "codex.app-server.notification", method, payload);
                     }
                     break;
                 }
@@ -1545,8 +1771,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                         state,
                         exitCode == 0 ? LensRuntimeStatus.Ready : LensRuntimeStatus.Error,
                         exitCode == 0
-                            ? "Claude Lens sidecar is ready for the next prompt."
-                            : $"Claude Lens sidecar exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
+                            ? "Claude Lens runtime is ready for the next prompt."
+                            : $"Claude Lens runtime exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
                 }
             }
         }
@@ -1615,7 +1841,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 case "system":
                 {
                     claude.ResumeSessionId ??= GetString(root, "session_id");
-                    AppendActivity(state, "positive", "session.started", "Claude Lens sidecar attached.", "Claude is streaming structured JSON turn output for Lens.");
+                    AppendActivity(state, "positive", "session.started", "Claude Lens runtime attached.", "Claude is streaming structured JSON turn output for Lens.");
                     break;
                 }
 
@@ -1764,16 +1990,18 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private static ProcessStartInfo CreateProcessStartInfo(
         string binaryPath,
         IReadOnlyList<string> arguments,
-        string workingDirectory)
+        string workingDirectory,
+        string? profileDirectory = null)
     {
         var argumentString = string.Join(" ", arguments.Select(QuoteArgument));
-        return CreateProcessStartInfo(binaryPath, argumentString, workingDirectory);
+        return CreateProcessStartInfo(binaryPath, argumentString, workingDirectory, profileDirectory);
     }
 
     private static ProcessStartInfo CreateProcessStartInfo(
         string binaryPath,
         string arguments,
-        string workingDirectory)
+        string workingDirectory,
+        string? profileDirectory = null)
     {
         ProcessStartInfo startInfo;
         var extension = Path.GetExtension(binaryPath);
@@ -1815,6 +2043,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             };
         }
 
+        LensHostEnvironmentResolver.ApplyProfileEnvironment(startInfo, profileDirectory);
         return startInfo;
     }
 
@@ -1830,60 +2059,32 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             : value;
     }
 
-    private static string? FindExecutableInPath(string commandName)
+    private string? FindExecutableInPath(string commandName)
     {
-        if (Path.IsPathRooted(commandName) && File.Exists(commandName))
-        {
-            return commandName;
-        }
+        return AiCliCommandLocator.FindExecutableInPath(commandName, ResolveConfiguredUserProfileDirectory());
+    }
 
-        var pathVar = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(pathVar))
+    private string? ResolvePreferredUserProfileDirectory(string? executablePath)
+    {
+        if (!OperatingSystem.IsWindows())
         {
             return null;
         }
 
-        var candidateNames = OperatingSystem.IsWindows()
-            ? GetWindowsExecutableNames(commandName)
-            : [commandName];
-
-        foreach (var rawDirectory in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var directory = rawDirectory.Trim().Trim('"');
-            if (string.IsNullOrWhiteSpace(directory))
-            {
-                continue;
-            }
-
-            foreach (var candidateName in candidateNames)
-            {
-                var fullPath = Path.Combine(directory, candidateName);
-                if (File.Exists(fullPath))
-                {
-                    return fullPath;
-                }
-            }
-        }
-
-        return null;
+        return ResolveConfiguredUserProfileDirectory()
+               ?? LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(executablePath)
+               ?? LensHostEnvironmentResolver.ResolveCurrentWindowsProfileDirectory();
     }
 
-    private static string[] GetWindowsExecutableNames(string commandName)
+    private string? ResolveConfiguredUserProfileDirectory()
     {
-        if (!string.IsNullOrWhiteSpace(Path.GetExtension(commandName)))
+        var settings = _settingsService?.Load();
+        if (settings is null || !OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
         {
-            return [commandName];
+            return null;
         }
 
-        var pathext = Environment.GetEnvironmentVariable("PATHEXT");
-        var extensions = string.IsNullOrWhiteSpace(pathext)
-            ? [".exe", ".cmd", ".bat"]
-            : pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return extensions
-            .Select(ext => commandName + ext.ToLowerInvariant())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
     }
 
     private static string BuildCodexItemDetail(JsonElement payload)
@@ -2114,6 +2315,18 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         });
     }
 
+    private void EmitPulseQuickSettingsUpdated(
+        LensRuntimeState state,
+        LensQuickSettingsSummary quickSettings,
+        string rawSource,
+        string? rawMethod)
+    {
+        EmitPulseEvent(state, "quick-settings.updated", rawSource, rawMethod, default, lensEvent =>
+        {
+            lensEvent.QuickSettingsUpdated = LensQuickSettings.ToPayload(quickSettings);
+        });
+    }
+
     private void EmitPulseTurnStarted(
         LensRuntimeState state,
         string? turnId,
@@ -2158,6 +2371,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulseContentDelta(
         LensRuntimeState state,
+        string? turnId,
         string? itemId,
         string streamKind,
         string delta,
@@ -2172,6 +2386,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         EmitPulseEvent(state, "content.delta", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.ItemId = itemId;
             lensEvent.ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -2183,6 +2398,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulsePlanDelta(
         LensRuntimeState state,
+        string? turnId,
         string delta,
         string rawSource,
         string rawMethod,
@@ -2190,6 +2406,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, "plan.delta", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.PlanDelta = new LensPulsePlanDeltaPayload
             {
                 Delta = delta
@@ -2199,6 +2416,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulsePlanCompleted(
         LensRuntimeState state,
+        string? turnId,
         string planMarkdown,
         string rawSource,
         string rawMethod,
@@ -2206,6 +2424,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, "plan.completed", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
             {
                 PlanMarkdown = planMarkdown
@@ -2215,6 +2434,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private void EmitPulseDiffUpdated(
         LensRuntimeState state,
+        string? turnId,
         string unifiedDiff,
         string rawSource,
         string rawMethod,
@@ -2222,6 +2442,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, "diff.updated", rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.DiffUpdated = new LensPulseDiffUpdatedPayload
             {
                 UnifiedDiff = unifiedDiff
@@ -2232,6 +2453,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     private void EmitPulseItem(
         LensRuntimeState state,
         string eventType,
+        string? turnId,
         string? itemId,
         string itemType,
         string status,
@@ -2244,6 +2466,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         EmitPulseEvent(state, eventType, rawSource, rawMethod, payload, lensEvent =>
         {
+            lensEvent.TurnId = turnId;
             lensEvent.ItemId = itemId;
             lensEvent.Item = new LensPulseItemPayload
             {
@@ -2269,6 +2492,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         EmitPulseItem(
             state,
             "item.completed",
+            turnId,
             $"local-user:{turnId ?? Guid.NewGuid().ToString("N")}",
             "user_message",
             "completed",
@@ -2414,6 +2638,73 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         }
 
         _pulse.Append(lensEvent);
+    }
+
+    private LensQuickSettingsSummary CreateCodexQuickSettings(LensTurnRequest request)
+    {
+        var defaultPermissionMode = GetCodexDefaultPermissionMode();
+        return LensQuickSettings.CreateSummary(
+            request.Model,
+            request.Effort,
+            request.PlanMode,
+            request.PermissionMode,
+            defaultPermissionMode);
+    }
+
+    private LensQuickSettingsSummary CreateClaudeQuickSettings(LensTurnRequest request)
+    {
+        var defaultPermissionMode = GetClaudeDefaultPermissionMode();
+        return LensQuickSettings.CreateSummary(
+            request.Model,
+            request.Effort,
+            request.PlanMode,
+            request.PermissionMode,
+            defaultPermissionMode);
+    }
+
+    private string GetCodexDefaultPermissionMode()
+    {
+        return _settingsService?.Load().CodexYoloDefault == true
+            ? LensQuickSettings.PermissionModeAuto
+            : LensQuickSettings.PermissionModeManual;
+    }
+
+    private string GetClaudeDefaultPermissionMode()
+    {
+        return _settingsService?.Load().ClaudeDangerouslySkipPermissionsDefault == true
+            ? LensQuickSettings.PermissionModeAuto
+            : LensQuickSettings.PermissionModeManual;
+    }
+
+    private static LensQuickSettingsSummary CloneQuickSettingsSummary(LensQuickSettingsSummary quickSettings)
+    {
+        return new LensQuickSettingsSummary
+        {
+            Model = LensQuickSettings.NormalizeOptionalValue(quickSettings.Model),
+            Effort = LensQuickSettings.NormalizeOptionalValue(quickSettings.Effort),
+            PlanMode = LensQuickSettings.NormalizePlanMode(quickSettings.PlanMode),
+            PermissionMode = LensQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode)
+        };
+    }
+
+    private static string ResolveCodexApprovalPolicy(string permissionMode)
+    {
+        return string.Equals(
+            LensQuickSettings.NormalizePermissionMode(permissionMode),
+            LensQuickSettings.PermissionModeAuto,
+            StringComparison.Ordinal)
+            ? "never"
+            : "on-request";
+    }
+
+    private static string ResolveCodexSandbox(string permissionMode)
+    {
+        return string.Equals(
+            LensQuickSettings.NormalizePermissionMode(permissionMode),
+            LensQuickSettings.PermissionModeAuto,
+            StringComparison.Ordinal)
+            ? "danger-full-access"
+            : "workspace-write";
     }
 
     private static string HumanizeTurnState(string turnState)
@@ -2589,6 +2880,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         public string? AssistantText { get; set; }
         public string? UnifiedDiff { get; set; }
         public string? PendingUserInputQuestion { get; set; }
+        public LensQuickSettingsSummary QuickSettings { get; set; } = new();
         public long NextSequence { get; set; }
         public List<AgentSessionVibeActivity> Activities { get; } = [];
         public CodexLensRuntime? Codex { get; set; }
@@ -2606,6 +2898,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         public Task? ErrorTask { get; set; }
         public string? ProviderThreadId { get; set; }
         public string? ActiveTurnId { get; set; }
+        public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
         public int NextRequestId;
         public ConcurrentDictionary<string, TaskCompletionSource<JsonRpcReply>> PendingRequests { get; } = new(StringComparer.Ordinal);
         public ConcurrentDictionary<string, PendingCodexApproval> PendingApprovals { get; } = new(StringComparer.Ordinal);

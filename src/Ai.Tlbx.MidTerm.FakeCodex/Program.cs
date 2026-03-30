@@ -357,7 +357,13 @@ static FakeCodexLaunchCapture CreateLaunchCapture()
     {
         ExecutablePath = args.Length > 0 ? args[0] : null,
         Arguments = args.Skip(1).ToArray(),
-        ProcessWorkingDirectory = Environment.CurrentDirectory
+        ProcessWorkingDirectory = Environment.CurrentDirectory,
+        UserProfile = Environment.GetEnvironmentVariable("USERPROFILE"),
+        Home = Environment.GetEnvironmentVariable("HOME"),
+        CodexHome = Environment.GetEnvironmentVariable("CODEX_HOME"),
+        AppData = Environment.GetEnvironmentVariable("APPDATA"),
+        LocalAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA"),
+        Path = Environment.GetEnvironmentVariable("PATH")
     };
 }
 
@@ -470,6 +476,18 @@ internal sealed class FakeCodexLaunchCapture
     public string[] Arguments { get; set; } = [];
 
     public string? ProcessWorkingDirectory { get; set; }
+
+    public string? UserProfile { get; set; }
+
+    public string? Home { get; set; }
+
+    public string? CodexHome { get; set; }
+
+    public string? AppData { get; set; }
+
+    public string? LocalAppData { get; set; }
+
+    public string? Path { get; set; }
 
     public List<string> Methods { get; set; } = [];
 

@@ -56,6 +56,20 @@ public sealed class LensHostEnvironmentResolverTests
     }
 
     [Fact]
+    public void ResolveWindowsProfileDirectoryFromExecutablePath_ReturnsOwningUserProfile()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(
+            @"C:\Users\johan\AppData\Roaming\npm\codex.cmd");
+
+        Assert.Equal(Path.Combine("C:\\", "Users", "johan"), profileDirectory);
+    }
+
+    [Fact]
     public void ApplyUserProfileEnvironment_PrependsCommonUserCliPaths()
     {
         if (!OperatingSystem.IsWindows())
@@ -76,11 +90,15 @@ public sealed class LensHostEnvironmentResolverTests
         LensHostEnvironmentResolver.ApplyUserProfileEnvironment(startInfo, settings);
 
         Assert.StartsWith(
-            Path.Combine(currentProfile, "AppData", "Local", "Programs", "nodejs") + Path.PathSeparator,
+            Path.Combine(currentProfile, ".local", "bin") + Path.PathSeparator,
             startInfo.Environment["PATH"],
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
             Path.PathSeparator + Path.Combine(currentProfile, "AppData", "Roaming", "npm") + Path.PathSeparator,
+            startInfo.Environment["PATH"],
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            Path.PathSeparator + Path.Combine(currentProfile, "AppData", "Local", "Programs", "nodejs") + Path.PathSeparator,
             startInfo.Environment["PATH"],
             StringComparison.OrdinalIgnoreCase);
     }

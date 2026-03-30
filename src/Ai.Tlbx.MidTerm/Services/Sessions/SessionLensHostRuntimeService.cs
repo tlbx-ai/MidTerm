@@ -1,9 +1,12 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Pipes;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Hosting;
@@ -20,6 +23,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         IReadOnlyDictionary<string, string?>? environmentOverrides,
         IReadOnlyList<string>? pathPrependEntries,
         string? runAsUser,
+        string? runAsUserSid,
         out TtyHostSpawner.RedirectedProcessHandle? launchedProcess,
         out string? failure);
 
@@ -28,11 +32,14 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private const string SyntheticMode = "synthetic";
     private const string HostModeEnvironmentVariable = "MIDTERM_LENS_HOST_MODE";
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(10);
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly SessionLensHostIngressService _ingress;
     private readonly SessionLensPulseService _pulse;
     private readonly SettingsService _settingsService;
     private readonly MidTermInstanceIdentity _instanceIdentity;
+    private readonly LensHostOwnershipRegistry _ownershipRegistry;
+    private readonly bool _preserveHostsOnDispose;
     private readonly string _mode;
     private readonly RedirectedProcessLauncher _launcher;
 
@@ -60,6 +67,11 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
             0);
+        _ownershipRegistry = new LensHostOwnershipRegistry(
+            Path.Combine(
+                Path.GetDirectoryName(_instanceIdentity.SessionRegistryPath) ?? Path.GetTempPath(),
+                $"lens-host-sessions-{_instanceIdentity.InstanceId}.json"));
+        _preserveHostsOnDispose = !IsTestBinaryBaseDirectory(AppContext.BaseDirectory);
         _mode = NormalizeMode(mode ?? Environment.GetEnvironmentVariable(HostModeEnvironmentVariable));
         _launcher = launcher ?? TtyHostSpawner.TryStartRedirectedProcess;
     }
@@ -77,6 +89,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     public bool OwnsSession(string sessionId)
     {
         return _states.TryGetValue(sessionId, out var state) &&
+               state.Input is not null &&
+               state.Output is not null &&
                state.Status is not HostRuntimeStatus.None and not HostRuntimeStatus.Stopped;
     }
 
@@ -86,6 +100,54 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         SessionInfoDto session,
         string? resumeThreadIdOverride = null,
         CancellationToken ct = default)
+    {
+        return await EnsureAttachedAsync(
+            sessionId,
+            profile,
+            session,
+            resumeThreadIdOverride,
+            allowSpawn: true,
+            ct).ConfigureAwait(false);
+    }
+
+    public bool MayHaveRecoverableHost(string sessionId)
+    {
+        if (OwnsSession(sessionId))
+        {
+            return true;
+        }
+
+        if (_ownershipRegistry.GetSessions().Any(record => string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return LensHostEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId).HasValue;
+    }
+
+    public async Task<bool> RecoverExistingHostAsync(
+        string sessionId,
+        string profile,
+        SessionInfoDto session,
+        string? resumeThreadIdOverride = null,
+        CancellationToken ct = default)
+    {
+        return await EnsureAttachedAsync(
+            sessionId,
+            profile,
+            session,
+            resumeThreadIdOverride,
+            allowSpawn: false,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> EnsureAttachedAsync(
+        string sessionId,
+        string profile,
+        SessionInfoDto session,
+        string? resumeThreadIdOverride,
+        bool allowSpawn,
+        CancellationToken ct)
     {
         var workingDirectory = session.CurrentDirectory;
         if (!IsEnabledFor(profile) ||
@@ -102,72 +164,84 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         {
             state.Profile = profile;
             state.WorkingDirectory = workingDirectory;
+            EnsurePulseSessionSeeded(sessionId, profile);
             var attachPoint = SelectAttachPoint(profile, session);
 
-            if (state.Process is { HasExited: false } && state.Input is not null && state.Output is not null)
+            if (state.Input is not null && state.Output is not null)
             {
                 return true;
             }
 
-            await DisposeStateAsync(state).ConfigureAwait(false);
-            if (!TryResolveLaunch(profile, _mode, out var launch))
-            {
-                state.Status = HostRuntimeStatus.Error;
-                state.LastError = "mtagenthost executable could not be resolved.";
-                return false;
-            }
-
-            var executablePath = attachPoint is null
-                ? AiCliCommandLocator.ResolveExecutablePath(profile, session)
-                : null;
+            await DisposeStateAsync(state, terminateHost: false).ConfigureAwait(false);
             var settings = _settingsService.Load();
+            var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
+            var executablePath = attachPoint is null
+                ? AiCliCommandLocator.ResolveExecutablePath(profile, session, userProfileDirectory)
+                : null;
+            var preferredProfileDirectory = ResolvePreferredProfileDirectory(settings, executablePath);
             BuildLaunchEnvironment(
                 settings,
                 executablePath,
+                preferredProfileDirectory,
                 _instanceIdentity,
                 out var environmentOverrides,
                 out var pathPrependEntries);
 
-            if (!_launcher(
-                    launch.FileName,
-                    launch.Arguments,
-                    workingDirectory,
-                    environmentOverrides,
-                    pathPrependEntries,
-                    settings.RunAsUser,
-                    out var launchedProcess,
-                    out var launchFailure))
+            if (!await TryConnectExistingHostAsync(state, profile, workingDirectory, ct).ConfigureAwait(false))
             {
-                state.Status = HostRuntimeStatus.Error;
-                state.LastError = string.IsNullOrWhiteSpace(launchFailure)
-                    ? "mtagenthost process failed to start."
-                    : launchFailure;
-                return false;
+                if (!allowSpawn)
+                {
+                    state.Status = HostRuntimeStatus.None;
+                    state.LastError = null;
+                    return false;
+                }
+
+                if (!TryResolveLaunch(profile, _mode, out var launch))
+                {
+                    state.Status = HostRuntimeStatus.Error;
+                    state.LastError = "mtagenthost executable could not be resolved.";
+                    return false;
+                }
+
+                if (!_launcher(
+                        launch.FileName,
+                        BuildIpcLaunchArguments(launch.Arguments, sessionId, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken),
+                        workingDirectory,
+                        environmentOverrides,
+                        pathPrependEntries,
+                        settings.RunAsUser,
+                        settings.RunAsUserSid,
+                        out var launchedProcess,
+                        out var launchFailure))
+                {
+                    state.Status = HostRuntimeStatus.Error;
+                    state.LastError = string.IsNullOrWhiteSpace(launchFailure)
+                        ? "mtagenthost process failed to start."
+                        : launchFailure;
+                    return false;
+                }
+
+                if (launchedProcess is null)
+                {
+                    state.Status = HostRuntimeStatus.Error;
+                    state.LastError = "mtagenthost process launcher returned no handle.";
+                    return false;
+                }
+
+                try { launchedProcess.Input.Dispose(); } catch { }
+                try { launchedProcess.Output.Dispose(); } catch { }
+
+                state.Process = launchedProcess.Process;
+                state.Error = launchedProcess.Error;
+
+                if (!await ConnectToSpawnedHostAsync(state, ct).ConfigureAwait(false))
+                {
+                    state.LastError = "mtagenthost IPC endpoint did not become available.";
+                    await DisposeStateAsync(state, terminateHost: true).ConfigureAwait(false);
+                    state.Status = HostRuntimeStatus.Error;
+                    return false;
+                }
             }
-
-            var process = launchedProcess!.Process;
-            state.Process = process;
-            state.Input = launchedProcess.Input;
-            state.Output = launchedProcess.Output;
-            state.Error = launchedProcess.Error;
-            state.TransportKey = attachPoint is null ? "mtagenthost-stdio" : attachPoint.TransportKind;
-            state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
-            state.Status = HostRuntimeStatus.Starting;
-
-            var helloLine = await ReadLineWithTimeoutAsync(process.StandardOutput, ct).ConfigureAwait(false);
-            var hello = JsonSerializer.Deserialize(helloLine, LensHostJsonContext.Default.LensHostHello)
-                        ?? throw new InvalidOperationException("Lens host hello payload was empty.");
-            _ingress.ValidateHello(hello);
-
-            state.ReaderTask = Task.Run(() => ReadLoopAsync(state), CancellationToken.None);
-            state.ErrorTask = Task.Run(() => ReadErrorLoopAsync(state), CancellationToken.None);
-            process.Exited += (_, _) =>
-            {
-                state.Status = process.ExitCode == 0 ? HostRuntimeStatus.Stopped : HostRuntimeStatus.Error;
-                state.LastError = process.ExitCode == 0
-                    ? state.LastError
-                    : $"mtagenthost exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.";
-            };
 
             var attachResult = await SendCommandAsync(
                 state,
@@ -181,8 +255,11 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                         SessionId = sessionId,
                         Provider = profile,
                         WorkingDirectory = workingDirectory,
+                        InstanceId = _instanceIdentity.InstanceId,
+                        OwnerToken = _instanceIdentity.OwnerToken,
                         AttachPoint = attachPoint,
                         ExecutablePath = executablePath,
+                        UserProfileDirectory = preferredProfileDirectory,
                         ResumeThreadId = resumeThreadIdOverride ?? attachPoint?.PreferredThreadId
                     }
                 },
@@ -192,7 +269,12 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             state.LastError = attachResult.Status == "accepted" ? null : attachResult.Message;
             if (attachResult.Status == "accepted")
             {
+                state.TransportKey = attachPoint?.TransportKind ?? "mtagenthost-ipc";
+                state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
+                _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
+                await SyncPulseFromHostAsync(state, ct).ConfigureAwait(false);
                 EnsurePulseSessionSeeded(sessionId, profile);
+                await WaitForPulseSnapshotAsync(sessionId, ct).ConfigureAwait(false);
             }
             return attachResult.Status == "accepted";
         }
@@ -279,7 +361,6 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             state.Status = HostRuntimeStatus.Running;
             var turnStarted = result.TurnStarted
                               ?? throw new InvalidOperationException("Lens host did not return turn-start metadata.");
-            AppendSubmittedUserTurn(state, request, turnStarted);
             return turnStarted;
         }
         finally
@@ -408,7 +489,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     {
         snapshot = default!;
         if (!_states.TryGetValue(sessionId, out var state) ||
-            state.Status == HostRuntimeStatus.None)
+            state.Status == HostRuntimeStatus.None ||
+            state.Status == HostRuntimeStatus.Stopped ||
+            state.Input is null ||
+            state.Output is null)
         {
             return false;
         }
@@ -436,8 +520,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     {
         if (_states.TryRemove(sessionId, out var state))
         {
-            _ = DisposeStateAsync(state);
+            _ = DisposeOwnedStateAsync(state, terminateHost: true);
         }
+
+        _ownershipRegistry.Remove(sessionId);
     }
 
     public async Task DetachAsync(string sessionId, CancellationToken ct = default)
@@ -450,7 +536,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         await state.Gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await DisposeStateAsync(state).ConfigureAwait(false);
+            await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
         }
         finally
         {
@@ -458,11 +544,52 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<int> TerminateAllOwnedHostsAsync(CancellationToken ct = default)
+    {
+        var terminated = 0;
+        var sessionIds = _states.Keys
+            .Concat(_ownershipRegistry.GetSessions().Select(static record => record.SessionId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var sessionId in sessionIds)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (_states.TryRemove(sessionId, out var state))
+            {
+                await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
+                    terminated++;
+                }
+                finally
+                {
+                    state.Gate.Release();
+                }
+
+                continue;
+            }
+
+            var record = _ownershipRegistry.GetSessions()
+                .FirstOrDefault(candidate => string.Equals(candidate.SessionId, sessionId, StringComparison.Ordinal));
+            if (record is null)
+            {
+                continue;
+            }
+
+            await TerminateOwnedHostAsync(sessionId, record.HostPid).ConfigureAwait(false);
+            terminated++;
+        }
+
+        return terminated;
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var state in _states.Values)
         {
-            await DisposeStateAsync(state).ConfigureAwait(false);
+            await DisposeOwnedStateAsync(state, terminateHost: !_preserveHostsOnDispose).ConfigureAwait(false);
         }
 
         _states.Clear();
@@ -589,6 +716,167 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         return line ?? throw new EndOfStreamException("mtagenthost closed stdout before sending hello.");
     }
 
+    private async Task<bool> TryConnectExistingHostAsync(
+        HostRuntimeState state,
+        string profile,
+        string workingDirectory,
+        CancellationToken ct)
+    {
+        var recorded = _ownershipRegistry.GetSessions()
+            .FirstOrDefault(record => string.Equals(record.SessionId, state.SessionId, StringComparison.Ordinal));
+        if (recorded is not null)
+        {
+            if (await TryConnectToHostAsync(state, recorded.HostPid, ct).ConfigureAwait(false))
+            {
+                state.Profile = string.IsNullOrWhiteSpace(recorded.Profile) ? profile : recorded.Profile;
+                state.WorkingDirectory = string.IsNullOrWhiteSpace(recorded.WorkingDirectory) ? workingDirectory : recorded.WorkingDirectory;
+                return true;
+            }
+
+            _ownershipRegistry.Remove(state.SessionId);
+            LensHostEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, state.SessionId, recorded.HostPid);
+        }
+
+        var discoveredPid = LensHostEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, state.SessionId);
+        if (discoveredPid is int hostPid && await TryConnectToHostAsync(state, hostPid, ct).ConfigureAwait(false))
+        {
+            state.Profile = profile;
+            state.WorkingDirectory = workingDirectory;
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task<bool> ConnectToSpawnedHostAsync(HostRuntimeState state, CancellationToken ct)
+    {
+        if (state.Process is null)
+        {
+            return false;
+        }
+
+        await Task.Delay(50, ct).ConfigureAwait(false);
+        var launchedPid = state.Process.Id;
+        for (var wait = 50; wait <= 800; wait *= 2)
+        {
+            if (state.Process.HasExited)
+            {
+                return false;
+            }
+
+            if (await TryConnectToHostAsync(state, launchedPid, ct, connectTimeoutMs: 125).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            var discoveredPid = LensHostEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, state.SessionId);
+            if (discoveredPid is int hostPid &&
+                hostPid != launchedPid &&
+                await TryConnectToHostAsync(state, hostPid, ct, connectTimeoutMs: 125).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            await Task.Delay(wait, ct).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    private async Task<bool> TryConnectToHostAsync(
+        HostRuntimeState state,
+        int hostPid,
+        CancellationToken ct,
+        int connectTimeoutMs = 1000)
+    {
+        await DisposeStreamsAsync(state).ConfigureAwait(false);
+
+        var endpoint = LensHostEndpoint.GetSessionEndpoint(_instanceIdentity.InstanceId, state.SessionId, hostPid);
+        HostTransportConnection? connection = null;
+        try
+        {
+            connection = await HostTransportConnection.ConnectAsync(endpoint, connectTimeoutMs, ct).ConfigureAwait(false);
+            var helloLine = await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false);
+            var hello = JsonSerializer.Deserialize(helloLine, LensHostJsonContext.Default.LensHostHello)
+                        ?? throw new InvalidOperationException("Lens host hello payload was empty.");
+            _ingress.ValidateHello(hello);
+
+            state.Connection = connection;
+            state.Input = connection.Writer;
+            state.Output = connection.Reader;
+            state.HostPid = hostPid;
+            state.TransportKey = "mtagenthost-ipc";
+            state.TransportLabel = "mtagenthost owned IPC";
+            state.Status = HostRuntimeStatus.Starting;
+            state.ReaderTask = Task.Run(() => ReadLoopAsync(state), CancellationToken.None);
+            if (state.Error is not null)
+            {
+                state.ErrorTask = Task.Run(() => ReadErrorLoopAsync(state), CancellationToken.None);
+            }
+
+            return true;
+        }
+        catch
+        {
+            connection?.Dispose();
+            return false;
+        }
+    }
+
+    private async Task SyncPulseFromHostAsync(HostRuntimeState state, CancellationToken ct)
+    {
+        var fullHistory = await GetHostEventsAsync(state, 0, ct).ConfigureAwait(false);
+        _pulse.Forget(state.SessionId);
+        foreach (var lensEvent in fullHistory.Events)
+        {
+            _pulse.Append(lensEvent);
+        }
+    }
+
+    private async Task WaitForPulseSnapshotAsync(string sessionId, CancellationToken ct)
+    {
+        if (_pulse.GetSnapshot(sessionId) is not null)
+        {
+            return;
+        }
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(250);
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(15, ct).ConfigureAwait(false);
+            if (_pulse.GetSnapshot(sessionId) is not null)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task<LensPulseEventListResponse> GetHostEventsAsync(
+        HostRuntimeState state,
+        long afterSequence,
+        CancellationToken ct)
+    {
+        var result = await SendCommandAsync(
+            state,
+            commandId => new LensHostCommandEnvelope
+            {
+                CommandId = commandId,
+                SessionId = state.SessionId,
+                Type = "events.get",
+                EventsRequest = new LensHostEventsRequest
+                {
+                    AfterSequence = afterSequence
+                }
+            },
+            ct).ConfigureAwait(false);
+
+        return result.Events ?? new LensPulseEventListResponse
+        {
+            SessionId = state.SessionId
+        };
+    }
+
     private static void UpdateStateFromEvent(HostRuntimeState state, LensPulseEvent lensEvent)
     {
         state.LastError = lensEvent.RuntimeMessage?.Message is not null && lensEvent.Type == "runtime.error"
@@ -667,6 +955,11 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
     private static string DescribeTransportLabel(string mode, string profile, SessionAgentAttachPoint? attachPoint)
     {
+        if (attachPoint is null && string.Equals(mode, CodexMode, StringComparison.Ordinal))
+        {
+            return "mtagenthost owned IPC";
+        }
+
         if (attachPoint is not null)
         {
             return attachPoint.TransportKind switch
@@ -687,6 +980,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private static void BuildLaunchEnvironment(
         MidTermSettings settings,
         string? executablePath,
+        string? profileDirectory,
         MidTermInstanceIdentity instanceIdentity,
         out Dictionary<string, string?> environmentOverrides,
         out List<string> pathPrependEntries)
@@ -694,16 +988,39 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         environmentOverrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         pathPrependEntries = [];
 
+        static void AddPathEntry(List<string> entries, string? directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return;
+            }
+
+            if (!entries.Exists(existing => string.Equals(existing, directory, StringComparison.OrdinalIgnoreCase)))
+            {
+                entries.Add(directory);
+            }
+        }
+
         var executableDirectory = Path.GetDirectoryName(executablePath);
         if (!string.IsNullOrWhiteSpace(executableDirectory))
         {
-            pathPrependEntries.Add(executableDirectory);
+            AddPathEntry(pathPrependEntries, executableDirectory);
         }
 
-        if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(settings.RunAsUser))
+        if (OperatingSystem.IsWindows())
         {
-            var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
-            if (!string.IsNullOrWhiteSpace(profileDirectory) && Directory.Exists(profileDirectory))
+            foreach (var directory in AiCliCommandLocator.GetWellKnownWindowsCommandDirectories(
+                         Environment.GetEnvironmentVariable("APPDATA"),
+                         Environment.GetEnvironmentVariable("LOCALAPPDATA"),
+                         Environment.GetEnvironmentVariable("USERPROFILE")))
+            {
+                AddPathEntry(pathPrependEntries, directory);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(profileDirectory))
+        {
+            if (Directory.Exists(profileDirectory))
             {
                 environmentOverrides["USERPROFILE"] = profileDirectory;
                 environmentOverrides["HOME"] = profileDirectory;
@@ -720,8 +1037,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
                 environmentOverrides["APPDATA"] = appDataDirectory;
                 environmentOverrides["LOCALAPPDATA"] = localAppDataDirectory;
-                pathPrependEntries.Add(Path.Combine(appDataDirectory, "npm"));
-                pathPrependEntries.Add(Path.Combine(localAppDataDirectory, "Programs", "nodejs"));
+                foreach (var directory in AiCliCommandLocator.GetUserCommandDirectories(profileDirectory).Reverse())
+                {
+                    AddPathEntry(pathPrependEntries, directory);
+                }
             }
         }
 
@@ -730,8 +1049,33 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
     }
 
+    private static string? ResolveConfiguredUserProfileDirectory(MidTermSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
+        {
+            return null;
+        }
+
+        return LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
+    }
+
+    private static string? ResolvePreferredProfileDirectory(MidTermSettings settings, string? executablePath)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        return ResolveConfiguredUserProfileDirectory(settings)
+               ?? LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(executablePath)
+               ?? LensHostEnvironmentResolver.ResolveCurrentWindowsProfileDirectory();
+    }
+
     private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)
     {
+        environment["MIDTERM_LENS_CODEX_YOLO_DEFAULT"] = settings.CodexYoloDefault ? "true" : "false";
         environment["MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES"] = settings.CodexEnvironmentVariables ?? string.Empty;
         environment["MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
         environment["MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
@@ -803,56 +1147,6 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                baseDir.Contains("Ai.Tlbx.MidTerm.Tests", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void AppendSubmittedUserTurn(
-        HostRuntimeState state,
-        LensTurnRequest request,
-        LensTurnStartResponse turnStarted)
-    {
-        if (string.IsNullOrWhiteSpace(request.Text) && request.Attachments.Count == 0)
-        {
-            return;
-        }
-
-        _pulse.Append(new LensPulseEvent
-        {
-            EventId = $"evt-local-user-{Guid.NewGuid():N}",
-            SessionId = state.SessionId,
-            Provider = turnStarted.Provider,
-            ThreadId = turnStarted.ThreadId,
-            TurnId = turnStarted.TurnId,
-            ItemId = $"local-user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
-            CreatedAt = DateTimeOffset.UtcNow,
-            Type = "item.completed",
-            Item = new LensPulseItemPayload
-            {
-                ItemType = "user_message",
-                Status = "completed",
-                Title = "User message",
-                Detail = request.Text,
-                Attachments = CloneAttachments(request.Attachments)
-            }
-        });
-    }
-
-    private static List<LensAttachmentReference> CloneAttachments(
-        IReadOnlyList<LensAttachmentReference>? attachments)
-    {
-        if (attachments is null || attachments.Count == 0)
-        {
-            return [];
-        }
-
-        return attachments.Select(static attachment => new LensAttachmentReference
-        {
-            Kind = attachment.Kind,
-            Path = attachment.Path,
-            MimeType = attachment.MimeType,
-            DisplayName = string.IsNullOrWhiteSpace(attachment.DisplayName)
-                ? Path.GetFileName(attachment.Path)
-                : attachment.DisplayName
-        }).ToList();
-    }
-
     private static string? ResolveDotNetHostPath()
     {
         var hostPath = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
@@ -873,18 +1167,75 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
     private HostRuntimeState GetRequiredState(string sessionId)
     {
-        if (!_states.TryGetValue(sessionId, out var state) ||
-            state.Process is null ||
-            state.Process.HasExited ||
-            state.Input is null)
+        if (!_states.TryGetValue(sessionId, out var state))
         {
-            throw new InvalidOperationException("Lens host runtime is not attached.");
+            throw new InvalidOperationException($"Lens host runtime is not attached: missing state for {sessionId}.");
+        }
+
+        if (state.Input is null)
+        {
+            throw new InvalidOperationException(
+                $"Lens host runtime is not attached: state exists for {sessionId} but input is null (status={state.Status}, hostPid={state.HostPid}, hasConnection={(state.Connection is not null).ToString().ToLowerInvariant()}, hasProcess={(state.Process is not null).ToString().ToLowerInvariant()}).");
         }
 
         return state;
     }
 
-    private static async Task DisposeStateAsync(HostRuntimeState state)
+    private static async Task DisposeStreamsAsync(HostRuntimeState state)
+    {
+        foreach (var pending in state.PendingCommands.Values)
+        {
+            pending.TrySetException(new InvalidOperationException("Lens host runtime connection is closing."));
+        }
+
+        state.PendingCommands.Clear();
+        state.Connection?.Dispose();
+        state.Connection = null;
+        state.Input = null;
+        state.Output = null;
+
+        if (state.ReaderTask is not null)
+        {
+            await Task.WhenAny(state.ReaderTask, Task.Delay(250)).ConfigureAwait(false);
+            state.ReaderTask = null;
+        }
+    }
+
+    private async Task DisposeOwnedStateAsync(HostRuntimeState state, bool terminateHost)
+    {
+        var hostPid = state.HostPid;
+        try
+        {
+            await DisposeStateAsync(state, terminateHost).ConfigureAwait(false);
+        }
+        finally
+        {
+            CleanupOwnedHostRegistration(state.SessionId, hostPid);
+        }
+    }
+
+    private void CleanupOwnedHostRegistration(string sessionId, int hostPid)
+    {
+        _ownershipRegistry.Remove(sessionId);
+        if (hostPid > 0)
+        {
+            LensHostEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid);
+        }
+    }
+
+    private async Task TerminateOwnedHostAsync(string sessionId, int hostPid)
+    {
+        try
+        {
+            await TerminateHostProcessAsync(null, hostPid).ConfigureAwait(false);
+        }
+        finally
+        {
+            CleanupOwnedHostRegistration(sessionId, hostPid);
+        }
+    }
+
+    private static async Task DisposeStateAsync(HostRuntimeState state, bool terminateHost)
     {
         foreach (var pending in state.PendingCommands.Values)
         {
@@ -895,18 +1246,19 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         try
         {
-            if (state.Process is { HasExited: false } process)
+            if (terminateHost)
             {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await TerminateHostProcessAsync(state.Process, state.HostPid).ConfigureAwait(false);
             }
         }
         catch
         {
         }
 
-        try { state.Input?.Dispose(); } catch { }
-        try { state.Output?.Dispose(); } catch { }
+        state.Connection?.Dispose();
+        state.Connection = null;
+        state.Input = null;
+        state.Output = null;
         try { state.Error?.Dispose(); } catch { }
         try { state.Process?.Dispose(); } catch { }
 
@@ -921,6 +1273,40 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
 
         state.Status = HostRuntimeStatus.Stopped;
+        state.HostPid = 0;
+    }
+
+    private static async Task TerminateHostProcessAsync(Process? launchedProcess, int hostPid)
+    {
+        if (launchedProcess is { HasExited: false } process)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (hostPid <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using var externalProcess = Process.GetProcessById(hostPid);
+            if (externalProcess.HasExited)
+            {
+                return;
+            }
+
+            externalProcess.Kill(entireProcessTree: true);
+            await externalProcess.WaitForExitAsync().ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private sealed class HostRuntimeState
@@ -939,12 +1325,81 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         public string TransportLabel { get; set; } = string.Empty;
         public string? LastError { get; set; }
         public HostRuntimeStatus Status { get; set; }
+        public int HostPid { get; set; }
+        public HostTransportConnection? Connection { get; set; }
         public Process? Process { get; set; }
         public StreamWriter? Input { get; set; }
         public StreamReader? Output { get; set; }
         public StreamReader? Error { get; set; }
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
+    }
+
+    private sealed class HostTransportConnection : IDisposable
+    {
+        private readonly IDisposable _handle;
+
+        private HostTransportConnection(IDisposable handle, Stream stream)
+        {
+            _handle = handle;
+            Reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
+            Writer = new StreamWriter(stream, Utf8NoBom, bufferSize: 1024, leaveOpen: true) { AutoFlush = true };
+        }
+
+        public StreamReader Reader { get; }
+        public StreamWriter Writer { get; }
+
+        public static async Task<HostTransportConnection> ConnectAsync(string endpoint, int timeoutMs, CancellationToken ct)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var pipe = new NamedPipeClientStream(".", endpoint, PipeDirection.InOut, PipeOptions.Asynchronous);
+                await pipe.ConnectAsync(timeoutMs, ct).ConfigureAwait(false);
+                return new HostTransportConnection(pipe, pipe);
+            }
+
+            var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeoutMs);
+            await socket.ConnectAsync(new UnixDomainSocketEndPoint(endpoint), timeoutCts.Token).ConfigureAwait(false);
+            var stream = new NetworkStream(socket, ownsSocket: true);
+            return new HostTransportConnection(stream, stream);
+        }
+
+        public void Dispose()
+        {
+            try { Writer.Dispose(); } catch { }
+            try { Reader.Dispose(); } catch { }
+            try { _handle.Dispose(); } catch { }
+        }
+    }
+
+    private static IReadOnlyList<string> BuildIpcLaunchArguments(
+        IReadOnlyList<string> args,
+        string sessionId,
+        string instanceId,
+        string ownerToken)
+    {
+        var updated = new List<string>(args.Count + 7);
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--stdio", StringComparison.Ordinal))
+            {
+                updated.Add("--ipc");
+            }
+            else
+            {
+                updated.Add(arg);
+            }
+        }
+
+        updated.Add("--session-id");
+        updated.Add(sessionId);
+        updated.Add("--instance-id");
+        updated.Add(instanceId);
+        updated.Add("--owner-token");
+        updated.Add(ownerToken);
+        return updated;
     }
 
     private readonly record struct HostLaunch(string FileName, IReadOnlyList<string> Arguments);

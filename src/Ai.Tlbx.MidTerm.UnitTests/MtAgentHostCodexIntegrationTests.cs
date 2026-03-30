@@ -295,6 +295,62 @@ public sealed class MtAgentHostCodexIntegrationTests
     }
 
     [Fact]
+    public async Task MtAgentHost_AppliesExplicitUserProfileEnvironmentToSpawnedCodexProcess()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var profileDirectory = Path.Combine(fakeCodex.Root, "Users", "johan");
+        Directory.CreateDirectory(Path.Combine(profileDirectory, "AppData", "Roaming", "npm"));
+        Directory.CreateDirectory(Path.Combine(profileDirectory, "AppData", "Local", "Programs", "nodejs"));
+        Directory.CreateDirectory(Path.Combine(profileDirectory, ".local", "bin"));
+
+        try
+        {
+            _ = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-profile-env",
+                SessionId = "session-profile-env",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-profile-env",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root,
+                    UserProfileDirectory = profileDirectory
+                }
+            });
+
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-profile-env");
+            Assert.Equal("accepted", attachResult.Status);
+
+            var capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => !string.IsNullOrWhiteSpace(launch.UserProfile));
+
+            Assert.Equal(profileDirectory, capture.UserProfile);
+            Assert.Equal(profileDirectory, capture.Home);
+            Assert.Equal(Path.Combine(profileDirectory, ".codex"), capture.CodexHome);
+            Assert.Equal(Path.Combine(profileDirectory, "AppData", "Roaming"), capture.AppData);
+            Assert.Equal(Path.Combine(profileDirectory, "AppData", "Local"), capture.LocalAppData);
+            Assert.StartsWith(Path.Combine(profileDirectory, "AppData", "Roaming", "npm"), capture.Path, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_CanAttachToExistingCodexWebSocketRuntime()
     {
         await using var fakeServer = FakeCodexWebSocketServer.Start(
@@ -469,6 +525,181 @@ public sealed class MtAgentHostCodexIntegrationTests
                 envelope => envelope.Event.Type == "content.delta" &&
                             envelope.Event.ContentDelta?.StreamKind == "assistant_text" &&
                             envelope.Event.ContentDelta.Delta.Contains("HELLO_FROM_CODEX", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_MapsCodexMcpToolProgressIntoCanonicalItemUpdates()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-mcp-1",
+            assistantReply: "MCP progress handled.",
+            emitRichTranscriptItems: true,
+            emitTurnIds: true,
+            emitMcpToolProgress: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-mcp",
+                SessionId = "session-remote-mcp",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-remote-mcp",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-mcp-1"
+                    },
+                    ResumeThreadId = "thread-remote-mcp-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-mcp");
+            _ = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "session.ready",
+                maxEvents: 4);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-mcp",
+                SessionId = "session-remote-mcp",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Show MCP tool progress.",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-mcp");
+            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "turn.completed",
+                maxEvents: 16);
+
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "item.updated" &&
+                            envelope.Event.ItemId == "item-mcp-1" &&
+                            envelope.Event.TurnId == "turn-remote-1" &&
+                            envelope.Event.Item?.ItemType == "mcp_tool_call" &&
+                            envelope.Event.Item?.Title == "grep" &&
+                            envelope.Event.Item?.Detail?.Contains("Searching src for Lens runtime events", StringComparison.Ordinal) == true);
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "item.completed" &&
+                            envelope.Event.ItemId == "item-mcp-1" &&
+                            envelope.Event.Item?.ItemType == "mcp_tool_call");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_PreservesPayloadTurnIdForLateCodexDiffNotifications()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-late-diff-1",
+            assistantReply: "Remote Codex reply with late diff.",
+            emitTurnIds: true,
+            emitLateDiffAfterCompletion: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-late-diff",
+                SessionId = "session-remote-late-diff",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-remote-late-diff",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-late-diff-1"
+                    },
+                    ResumeThreadId = "thread-remote-late-diff-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-late-diff");
+            _ = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "session.ready",
+                maxEvents: 4);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-late-diff",
+                SessionId = "session-remote-late-diff",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Show a late diff update.",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-late-diff");
+            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "diff.updated",
+                maxEvents: 10);
+
+            var diffEvent = Assert.Single(turnEvents, envelope => envelope.Event.Type == "diff.updated");
+            Assert.Equal("turn-remote-1", diffEvent.Event.TurnId);
+            Assert.Equal("--- a/remote.txt\n+++ b/remote.txt\n@@ -1 +1 @@\n-old\n+new", diffEvent.Event.DiffUpdated?.UnifiedDiff);
         }
         finally
         {
@@ -664,6 +895,18 @@ public sealed class MtAgentHostCodexIntegrationTests
         public string[] Arguments { get; set; } = [];
 
         public string? ProcessWorkingDirectory { get; set; }
+
+        public string? UserProfile { get; set; }
+
+        public string? Home { get; set; }
+
+        public string? CodexHome { get; set; }
+
+        public string? AppData { get; set; }
+
+        public string? LocalAppData { get; set; }
+
+        public string? Path { get; set; }
 
         public List<string> Methods { get; set; } = [];
 

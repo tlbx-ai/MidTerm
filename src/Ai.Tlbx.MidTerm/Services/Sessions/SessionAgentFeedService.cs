@@ -211,12 +211,12 @@ public sealed class SessionAgentFeedService
         }
     }
 
-    public AgentSessionFeedResponse GetFeed(string sessionId, IReadOnlyList<AgentSessionVibeActivity> activities, DateTimeOffset generatedAt)
+    public AgentSessionFeedResponse GetFeed(string sessionId, string source, IReadOnlyList<AgentSessionVibeActivity> activities, DateTimeOffset generatedAt)
     {
         return new AgentSessionFeedResponse
         {
             SessionId = sessionId,
-            Source = "fallback",
+            Source = string.IsNullOrWhiteSpace(source) ? "unknown" : source,
             GeneratedAt = generatedAt,
             Activities = activities.ToList()
         };

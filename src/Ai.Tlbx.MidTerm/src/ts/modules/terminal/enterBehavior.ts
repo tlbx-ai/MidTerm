@@ -5,6 +5,8 @@
  * default keyboard translation.
  */
 
+// Keep the legacy persisted values for compatibility with existing settings.json
+// files, but treat them as a simple off/on remap toggle in the terminal UI.
 export type TerminalEnterMode = 'default' | 'shiftEnterLineFeed';
 export type TerminalEnterTarget = 'default' | 'powershell';
 
@@ -20,9 +22,7 @@ export interface EnterOverrideInput {
   metaKey: boolean;
 }
 
-const PSREADLINE_SHIFT_ENTER = '\x1b[13;2u';
-const PSREADLINE_CTRL_ENTER = '\x1b[13;5u';
-const PSREADLINE_CTRL_SHIFT_ENTER = '\x1b[13;6u';
+const META_ENTER = '\x1b\r';
 
 export function isPowerShellEnterTarget(
   foregroundName?: string | null,
@@ -34,6 +34,10 @@ export function isPowerShellEnterTarget(
   return (
     haystack.includes('pwsh') || haystack.includes('powershell') || haystack.includes('psreadline')
   );
+}
+
+export function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
+  return mode === 'shiftEnterLineFeed';
 }
 
 function isEnterKey(input: EnterOverrideInput): boolean {
@@ -53,38 +57,19 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
   mode: TerminalEnterMode,
-  target: TerminalEnterTarget = 'default',
+  _target: TerminalEnterTarget = 'default',
 ): string | null {
   if (!isEnterKey(input)) {
     return null;
   }
 
-  if (!input.altKey && !input.metaKey && target === 'powershell') {
-    if (input.ctrlKey && input.shiftKey) {
-      return PSREADLINE_CTRL_SHIFT_ENTER;
-    }
-
-    if (input.ctrlKey) {
-      return PSREADLINE_CTRL_ENTER;
-    }
-
-    if (mode === 'shiftEnterLineFeed' && input.shiftKey) {
-      return PSREADLINE_SHIFT_ENTER;
-    }
-  }
-
-  if (input.ctrlKey && !input.shiftKey && !input.altKey && !input.metaKey) {
-    return '\n';
-  }
-
   if (
-    mode === 'shiftEnterLineFeed' &&
-    input.shiftKey &&
-    !input.ctrlKey &&
+    isTerminalEnterRemapEnabled(mode) &&
     !input.altKey &&
-    !input.metaKey
+    !input.metaKey &&
+    (input.ctrlKey || input.shiftKey)
   ) {
-    return '\n';
+    return META_ENTER;
   }
 
   return null;

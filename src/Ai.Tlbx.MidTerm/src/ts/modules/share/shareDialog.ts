@@ -16,6 +16,7 @@ import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { setShareClickHandler } from '../sessionTabs';
 import { getBootstrapData } from '../bootstrap';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 const log = createLogger('shareDialog');
 
@@ -37,6 +38,7 @@ function openShareDialog(sessionId: string): void {
   const sessionName = session?.name || session?.terminalTitle || sessionId;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  let releaseBackButtonLayer: (() => void) | null = null;
   overlay.innerHTML = `
     <div class="modal dialog-modal">
       <div class="modal-content dialog-content share-dialog-modal">
@@ -101,6 +103,8 @@ function openShareDialog(sessionId: string): void {
 
   function close(): void {
     document.removeEventListener('keydown', onKey);
+    releaseBackButtonLayer?.();
+    releaseBackButtonLayer = null;
     overlay.remove();
   }
 
@@ -254,6 +258,7 @@ function openShareDialog(sessionId: string): void {
 
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
+  releaseBackButtonLayer = registerBackButtonLayer(close);
   cancelBtn.focus();
   createBtn.disabled = true;
   void loadNetworkOptions()

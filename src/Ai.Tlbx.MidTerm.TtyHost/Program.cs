@@ -13,7 +13,6 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Process;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Shells;
-using Ai.Tlbx.MidTerm.TtyHost.Ipc;
 using Ai.Tlbx.MidTerm.TtyHost.Process;
 using Ai.Tlbx.MidTerm.TtyHost.Pty;
 
@@ -42,7 +41,7 @@ public static class Program
     private const int HeartbeatIntervalMs = 5000;
     private const int HandshakeTimeoutMs = 10000;
     private const int MinScrollbackBytes = 64 * 1024;
-    private const int MaxScrollbackBytes = 64 * 1024 * 1024;
+    private const int MaxScrollbackBytes = 10 * 1024 * 1024;
     private const int MaxIpcQueuedFramesPerClient = 256;
 
     private static CancellationTokenSource? _shutdownCts;
@@ -1056,7 +1055,7 @@ public static class Program
               --cwd <path>      Working directory
               --cols <n>        Terminal columns (default: 80)
               --rows <n>        Terminal rows (default: 24)
-              --scrollback <b>  Scrollback buffer in bytes (default: 10485760)
+              --scrollback <b>  Scrollback buffer in bytes (default: 2097152)
               --scrollback-bytes <b>  Alias for --scrollback
               --loglevel <lvl>  Log level: exception, error, warn, info, verbose (default: warn)
               --debug           Shortcut for --loglevel verbose
@@ -1095,7 +1094,7 @@ public static class Program
 
 internal sealed class TerminalSession : IDisposable
 {
-    internal const int DefaultBufferCapacity = 10 * 1024 * 1024; // 10MB fixed buffer
+    internal const int DefaultBufferCapacity = 2 * 1024 * 1024; // 2MB fixed buffer
 
     private readonly IPtyConnection _pty;
     private readonly IProcessMonitor? _processMonitor;

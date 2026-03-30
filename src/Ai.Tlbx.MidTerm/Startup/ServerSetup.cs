@@ -151,10 +151,12 @@ public static class ServerSetup
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
             new TtyHostSessionManager(
                 runAsUser: settings.RunAsUser,
+                runAsUserSid: settings.RunAsUserSid,
                 isServiceMode: settingsService.IsRunningAsService,
                 sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
                 instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),
-                foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>()));
+                foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>(),
+                settingsService: _.GetRequiredService<SettingsService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();

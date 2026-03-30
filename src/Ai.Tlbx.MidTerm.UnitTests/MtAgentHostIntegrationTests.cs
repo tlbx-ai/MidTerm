@@ -73,9 +73,10 @@ public sealed class MtAgentHostIntegrationTests
 
             var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn");
             Assert.NotNull(turnResult.TurnStarted);
-            Assert.Equal("started", turnResult.TurnStarted!.Status);
+            Assert.Equal("accepted", turnResult.TurnStarted!.Status);
 
-            var turnEvents = await LensHostTestClient.ReadEventsAsync(process.StandardOutput, pendingEvents, 8);
+            var turnEvents = await LensHostTestClient.ReadEventsAsync(process.StandardOutput, pendingEvents, 9);
+            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "item.completed" && envelope.Event.Item?.ItemType == "user_message");
             Assert.Contains(turnEvents, envelope => envelope.Event.Type == "content.delta" && envelope.Event.ContentDelta?.StreamKind == "assistant_text");
             Assert.Contains(turnEvents, envelope => envelope.Event.Type == "content.delta" && envelope.Event.ContentDelta?.StreamKind == "reasoning_text");
             Assert.Contains(turnEvents, envelope => envelope.Event.Type == "plan.completed");

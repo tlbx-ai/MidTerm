@@ -457,9 +457,12 @@ export function applyCssTheme(themeName: ThemeName): void {
   const root = document.documentElement;
   const palette = CSS_THEMES[themeName];
   if (palette) {
+    const nativeColorScheme = getNativeColorScheme(themeName);
     for (const [prop, value] of Object.entries(palette)) {
       root.style.setProperty(prop, value);
     }
+    root.style.colorScheme = nativeColorScheme;
+    root.dataset.nativeColorScheme = nativeColorScheme;
     updateThemeColor(palette['--bg-primary'] ?? '#0D0E14');
   } else {
     // Dark is the base theme in app.css — clear any overrides
@@ -469,6 +472,8 @@ export function applyCssTheme(themeName: ThemeName): void {
         root.style.removeProperty(prop);
       }
     }
+    root.style.colorScheme = 'dark';
+    root.dataset.nativeColorScheme = 'dark';
     updateThemeColor('#0D0E14');
   }
 }
@@ -485,6 +490,10 @@ export function getCssThemePalette(themeName: ThemeName): CssThemePalette {
   }
 
   return fallback;
+}
+
+export function getNativeColorScheme(themeName: ThemeName): 'light' | 'dark' {
+  return themeName === 'light' || themeName === 'solarizedLight' ? 'light' : 'dark';
 }
 
 function updateThemeColor(color: string): void {

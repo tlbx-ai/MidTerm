@@ -10,7 +10,6 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
-using Ai.Tlbx.MidTerm.Common.Protocol;
 namespace Ai.Tlbx.MidTerm.OpenApi.Stubs;
 
 public class StubSessionHandler : ISessionHandler
@@ -63,106 +62,6 @@ public class StubSessionHandler : ISessionHandler
 
     public Task<IResult> SendPromptInputAsync(string id, SessionPromptRequest request) =>
         Task.FromResult<IResult>(Results.Ok());
-
-    public Task<IResult> AttachLensAsync(string id) =>
-        Task.FromResult<IResult>(Results.Ok());
-
-    public Task<IResult> StartLensTurnAsync(string id, LensTurnRequest request) =>
-        Task.FromResult<IResult>(Results.Json(new LensTurnStartResponse
-        {
-            SessionId = id,
-            Provider = "codex",
-            ThreadId = "thread-stub",
-            TurnId = "turn-stub",
-            Status = "started"
-        }));
-
-    public Task<IResult> InterruptLensTurnAsync(string id, LensInterruptRequest request) =>
-        Task.FromResult<IResult>(Results.Json(new LensCommandAcceptedResponse
-        {
-            SessionId = id,
-            Status = "accepted",
-            TurnId = request.TurnId
-        }));
-
-    public Task<IResult> ApproveLensRequestAsync(string id, string requestId) =>
-        Task.FromResult<IResult>(Results.Json(new LensCommandAcceptedResponse
-        {
-            SessionId = id,
-            Status = "accepted",
-            RequestId = requestId
-        }));
-
-    public Task<IResult> ResolveLensRequestAsync(string id, string requestId, LensRequestDecisionRequest request) =>
-        Task.FromResult<IResult>(Results.Json(new LensCommandAcceptedResponse
-        {
-            SessionId = id,
-            Status = request.Decision ?? "accepted",
-            RequestId = requestId
-        }));
-
-    public Task<IResult> DeclineLensRequestAsync(string id, string requestId, LensRequestDecisionRequest request) =>
-        Task.FromResult<IResult>(Results.Json(new LensCommandAcceptedResponse
-        {
-            SessionId = id,
-            Status = request.Decision ?? "declined",
-            RequestId = requestId
-        }));
-
-    public Task<IResult> ResolveLensUserInputAsync(string id, string requestId, LensUserInputAnswerRequest request) =>
-        Task.FromResult<IResult>(Results.Json(new LensCommandAcceptedResponse
-        {
-            SessionId = id,
-            Status = "accepted",
-            RequestId = requestId
-        }));
-
-    public Task<IResult> GetLensSnapshotAsync(string id) =>
-        Task.FromResult<IResult>(Results.Json(new LensPulseSnapshotResponse
-        {
-            SessionId = id,
-            Provider = "codex",
-            LatestSequence = 3,
-            Session = new LensPulseSessionSummary
-            {
-                State = "ready",
-                StateLabel = "Ready"
-            },
-            Thread = new LensPulseThreadSummary
-            {
-                ThreadId = "thread-stub",
-                State = "active",
-                StateLabel = "Active"
-            }
-        }));
-
-    public Task<IResult> GetLensEventsAsync(string id, long afterSequence) =>
-        Task.FromResult<IResult>(Results.Json(new LensPulseEventListResponse
-        {
-            SessionId = id,
-            LatestSequence = Math.Max(afterSequence, 1),
-            Events =
-            [
-                new LensPulseEvent
-                {
-                    Sequence = afterSequence + 1,
-                    EventId = "evt-stub",
-                    SessionId = id,
-                    Provider = "codex",
-                    ThreadId = "thread-stub",
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    Type = "session.ready",
-                    SessionState = new LensPulseSessionStatePayload
-                    {
-                        State = "ready",
-                        StateLabel = "Ready"
-                    }
-                }
-            ]
-        }));
-
-    public Task<IResult> GetLensEventStreamAsync(string id, long afterSequence) =>
-        Task.FromResult<IResult>(Results.Text("", "text/event-stream"));
 
     public Task<IResult> GetBufferAsync(string id) =>
         Task.FromResult<IResult>(Results.Bytes(Array.Empty<byte>(), "application/octet-stream"));

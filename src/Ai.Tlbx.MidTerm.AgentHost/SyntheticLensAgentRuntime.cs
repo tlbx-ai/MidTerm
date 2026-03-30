@@ -57,7 +57,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
                 Provider = _provider,
                 ThreadId = _threadId ?? "thread-synthetic",
                 TurnId = _activeTurnId,
-                Status = "started"
+                Status = "accepted"
             };
         }
 

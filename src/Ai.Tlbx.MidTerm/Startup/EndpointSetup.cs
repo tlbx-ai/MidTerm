@@ -778,6 +778,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
         var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
+        var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(
@@ -826,6 +827,12 @@ Start-Service -Name $serviceName -ErrorAction Stop
             if (path == "/ws/git")
             {
                 await gitHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/lens")
+            {
+                await lensHandler.HandleAsync(context);
                 return;
             }
 

@@ -187,6 +187,54 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetLensOnly_PersistsAcrossManagerRestart()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                Assert.True(manager.SetLensOnly("s1", true));
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.True(dto.LensOnly);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SetProfileHint_PersistsAcrossManagerRestart()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                Assert.True(manager.SetProfileHint("s1", "codex"));
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.Equal("codex", dto.ProfileHint);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SetSessionNameAsync_AutoMode_StoresTerminalTitleOnly()
     {
         await using var manager = CreateManager();
@@ -363,6 +411,34 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal("dotnet test", refreshed.ForegroundCommandLine);
     }
 
+    [Fact]
+    public void ApplyStartupWorkingDirectoryFallback_SeedsMissingCurrentDirectory()
+    {
+        var info = new SessionInfo
+        {
+            Id = "s1",
+            CurrentDirectory = null
+        };
+
+        InvokeApplyStartupWorkingDirectoryFallback(info, @"C:\Repo");
+
+        Assert.Equal(@"C:\Repo", info.CurrentDirectory);
+    }
+
+    [Fact]
+    public void ApplyStartupWorkingDirectoryFallback_DoesNotOverrideReportedCurrentDirectory()
+    {
+        var info = new SessionInfo
+        {
+            Id = "s1",
+            CurrentDirectory = @"C:\Actual"
+        };
+
+        InvokeApplyStartupWorkingDirectoryFallback(info, @"C:\Requested");
+
+        Assert.Equal(@"C:\Actual", info.CurrentDirectory);
+    }
+
     private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
         return new TtyHostSessionManager(
@@ -407,7 +483,7 @@ public sealed class TtyHostSessionManagerStateTests
             "HandleClientOutput",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-        method.Invoke(manager, [sessionId, 120, 30, new ReadOnlyMemory<byte>(output)]);
+        method.Invoke(manager, [sessionId, 0UL, 120, 30, new ReadOnlyMemory<byte>(output)]);
     }
 
     private static void InvokeMergeCachedFields(SessionInfo refreshed, SessionInfo existing)
@@ -417,6 +493,15 @@ public sealed class TtyHostSessionManagerStateTests
             BindingFlags.Static | BindingFlags.NonPublic)!;
 
         method.Invoke(null, [refreshed, existing]);
+    }
+
+    private static void InvokeApplyStartupWorkingDirectoryFallback(SessionInfo info, string? workingDirectory)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "ApplyStartupWorkingDirectoryFallback",
+            BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        method.Invoke(null, [info, workingDirectory]);
     }
 
     private static T GetField<T>(TtyHostSessionManager manager, string name)

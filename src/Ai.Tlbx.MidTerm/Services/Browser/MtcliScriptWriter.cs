@@ -57,11 +57,9 @@ public static class MtcliScriptWriter
         }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
         _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
-        _MNOSESSION() { [[ "$1" == *"No browser preview connected for"* ]]; }
         _MBB() {
           local args=("$@")
-          local original=("$@")
-          local injectedSession=0 injectedPreview=0 output exitCode
+          local injectedSession=0 injectedPreview=0
           if [ -n "$(_MSID)" ] && ! _MHAS "--session" "${args[@]}"; then
             args+=("--session" "$(_MSID)")
             injectedSession=1
@@ -73,14 +71,7 @@ public static class MtcliScriptWriter
             args+=("--preview" "$(_MPREVIEW)")
             injectedPreview=1
           fi
-          output=$(_MB "${args[@]}")
-          exitCode=$?
-          if [ $injectedSession -eq 1 ] && _MNOSESSION "$output"; then
-            output=$(_MB "${original[@]}")
-            exitCode=$?
-          fi
-          printf '%s' "$output"
-          return $exitCode
+          _MB "${args[@]}"
         }
         _MQ() {
           if [ -n "$(_MSID)" ]; then
@@ -499,10 +490,6 @@ public static class MtcliScriptWriter
             if ($env:MT_PREVIEW_NAME) { return $env:MT_PREVIEW_NAME }
             return "default"
         }
-        function script:_MShouldRetryAnonymous {
-            param([string]$Output)
-            return $Output -like "*No browser preview connected for*"
-        }
         function script:_MParseBool {
             param([string]$Value)
             if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
@@ -530,7 +517,6 @@ public static class MtcliScriptWriter
             } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
         }
         function script:_MBB {
-            $originalArgs = @($args)
             $allArgs = @($args)
             $injectedSession = $false
             if ($env:MT_SESSION_ID -and -not ($allArgs -contains "--session")) {
@@ -545,14 +531,7 @@ public static class MtcliScriptWriter
                 $allArgs += @("--preview", (_MPreview))
                 $injectedPreview = $true
             }
-            $output = _MB @allArgs
-            $exitCode = $LASTEXITCODE
-            if ($injectedSession -and (_MShouldRetryAnonymous $output)) {
-                $output = _MB @originalArgs
-                $exitCode = $LASTEXITCODE
-            }
-            $global:LASTEXITCODE = $exitCode
-            $output
+            _MB @allArgs
         }
         function script:_MQuery {
             if (-not $env:MT_SESSION_ID) { return "" }

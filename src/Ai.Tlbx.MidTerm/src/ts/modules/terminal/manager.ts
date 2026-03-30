@@ -57,7 +57,18 @@ import {
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
-import { getTerminalEnterOverride, isPowerShellEnterTarget } from './enterBehavior';
+import {
+  getTerminalEnterOverride,
+  isTerminalEnterRemapEnabled,
+  isPowerShellEnterTarget,
+  type EnterOverrideInput,
+} from './enterBehavior';
+import {
+  applyEnterModifierLatch,
+  updateEnterModifierLatch,
+  type EnterModifierLatchState,
+} from './enterModifierLatch';
+import { evaluateTerminalKeyAudit, isModifierKeyOnlyEvent, isThirdLevelShift } from './keyAudit';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -75,10 +86,12 @@ import {
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
 import { shouldUseWebglRenderer } from './webglSupport';
+import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 import { handleOsc7Cwd } from '../process';
+import { recordTerminalKeyLog } from '../diagnostics';
 
 let showBellNotification: (sessionId: string) => void = () => {};
 
@@ -105,8 +118,131 @@ let calibrationPromise: Promise<void> | null = null;
 
 // Debounce timer for focus operations
 let focusDebounceTimer: number | null = null;
+const ENTER_MODIFIER_LATCH_MAX_AGE_MS = 1500;
+const enterModifierLatches = new Map<string, EnterModifierLatchState>();
+let globalTerminalEnterOverrideInstalled = false;
 
-function getSessionEnterOverride(sessionId: string, event: KeyboardEvent): string | null {
+type TerminalKeyMatchEvent = {
+  key?: string;
+  code?: string;
+  keyCode?: number;
+  which?: number;
+};
+
+function isEnterLikeKey(event: TerminalKeyMatchEvent): boolean {
+  return (
+    event.key === 'Enter' ||
+    event.code === 'Enter' ||
+    event.code === 'NumpadEnter' ||
+    event.keyCode === 13 ||
+    event.which === 13
+  );
+}
+
+function isModifierLikeKey(event: Pick<TerminalKeyMatchEvent, 'key' | 'code'>): boolean {
+  const key = event.key?.toLowerCase();
+  return (
+    key === 'control' ||
+    key === 'shift' ||
+    key === 'alt' ||
+    key === 'meta' ||
+    event.code === 'ControlLeft' ||
+    event.code === 'ControlRight' ||
+    event.code === 'ShiftLeft' ||
+    event.code === 'ShiftRight' ||
+    event.code === 'AltLeft' ||
+    event.code === 'AltRight' ||
+    event.code === 'MetaLeft' ||
+    event.code === 'MetaRight'
+  );
+}
+
+function isTerminalKeyLogRelevant(event: TerminalKeyMatchEvent): boolean {
+  return isEnterLikeKey(event) || isModifierLikeKey(event);
+}
+
+function formatEnterModifierLatchState(latch: EnterModifierLatchState | null | undefined): string {
+  if (!latch) {
+    return 'none';
+  }
+
+  const parts: string[] = [];
+  if (latch.ctrlPressed) parts.push('ctrl');
+  if (latch.shiftPressed) parts.push('shift');
+  return parts.length > 0 ? parts.join('+') : 'none';
+}
+
+function describeTerminalKeyLogTarget(
+  target: EventTarget | null,
+  container?: HTMLDivElement,
+): string {
+  const element = target as Element | null;
+  if (!element) {
+    return 'none';
+  }
+
+  if (element instanceof HTMLTextAreaElement) {
+    if (element.classList.contains('midterm-terminal-input-proxy')) {
+      return 'proxy';
+    }
+    if (element.classList.contains('xterm-helper-textarea')) {
+      return 'xterm';
+    }
+  }
+
+  if (container?.contains(element)) {
+    return element.tagName.toLowerCase();
+  }
+
+  return 'outside';
+}
+
+type TerminalKeyLogEventLike = Pick<KeyboardEvent, 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'> &
+  TerminalKeyMatchEvent &
+  Partial<Pick<KeyboardEvent, 'type' | 'target' | 'defaultPrevented' | 'isComposing'>>;
+
+function recordTerminalKeyDebugEvent(
+  sessionId: string,
+  source: string,
+  event: TerminalKeyLogEventLike,
+  container?: HTMLDivElement,
+  note?: string,
+): void {
+  if (!isTerminalKeyLogRelevant(event)) {
+    return;
+  }
+
+  const logEntry: TerminalKeyLogEntryInput = {
+    sessionId,
+    source,
+    type: event.type ?? 'event',
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+    target: describeTerminalKeyLogTarget(event.target ?? null, container),
+  };
+
+  if (event.key !== undefined) {
+    logEntry.key = event.key;
+  }
+  if (event.code !== undefined) {
+    logEntry.code = event.code;
+  }
+  if (event.defaultPrevented !== undefined) {
+    logEntry.defaultPrevented = event.defaultPrevented;
+  }
+  if (event.isComposing !== undefined) {
+    logEntry.isComposing = event.isComposing;
+  }
+  if (note !== undefined) {
+    logEntry.note = note;
+  }
+
+  recordTerminalKeyLog(logEntry);
+}
+
+function getSessionEnterOverride(sessionId: string, event: EnterOverrideInput): string | null {
   const foreground = getForegroundInfo(sessionId);
   const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
   return getTerminalEnterOverride(
@@ -118,37 +254,292 @@ function getSessionEnterOverride(sessionId: string, event: KeyboardEvent): strin
   );
 }
 
-function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLTextAreaElement &&
-    target.classList.contains('xterm-helper-textarea') &&
-    container.contains(target)
+function isTerminalKeyAuditEnabled(): boolean {
+  return isTerminalEnterRemapEnabled(
+    $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
   );
+}
+
+function isMacPlatform(): boolean {
+  return /\bmac/i.test(navigator.userAgent);
+}
+
+function isWindowsPlatform(): boolean {
+  return /\bwindows/i.test(navigator.userAgent);
+}
+
+function getLegacyKeyboardNumbers(event: KeyboardEvent): {
+  charCode: number;
+  keyCode: number;
+  which: number;
+} {
+  /* eslint-disable @typescript-eslint/no-deprecated */
+  return {
+    charCode: event.charCode,
+    keyCode: event.keyCode,
+    which: event.which,
+  };
+  /* eslint-enable @typescript-eslint/no-deprecated */
+}
+
+function cancelTerminalInputEvent(event: Event): false {
+  event.preventDefault();
+  event.stopPropagation();
+  if ('stopImmediatePropagation' in event) {
+    event.stopImmediatePropagation();
+  }
+  return false;
+}
+
+function updateSessionEnterModifierLatch(
+  sessionId: string,
+  event: KeyboardEvent,
+  container?: HTMLDivElement,
+  source = 'latch',
+): void {
+  if ((event.type !== 'keydown' && event.type !== 'keyup') || event.isComposing) {
+    return;
+  }
+
+  if (container && !shouldCaptureTerminalKey(container, event.target)) {
+    recordTerminalKeyDebugEvent(sessionId, source, event, container, 'skip=not-owner');
+    return;
+  }
+
+  const eventType = event.type;
+  const next = updateEnterModifierLatch(
+    enterModifierLatches.get(sessionId),
+    {
+      type: eventType,
+      key: event.key,
+      code: event.code,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+    },
+    performance.now(),
+  );
+  if (next) {
+    enterModifierLatches.set(sessionId, next);
+  } else {
+    enterModifierLatches.delete(sessionId);
+  }
+
+  recordTerminalKeyDebugEvent(
+    sessionId,
+    source,
+    event,
+    container,
+    `latch=${formatEnterModifierLatchState(next)}`,
+  );
+}
+
+function clearSessionEnterModifierLatch(sessionId: string): void {
+  enterModifierLatches.delete(sessionId);
+}
+
+function isTerminalInputOwnerElement(element: Element | null): element is HTMLTextAreaElement {
+  return (
+    element instanceof HTMLTextAreaElement &&
+    (element.classList.contains('xterm-helper-textarea') ||
+      element.classList.contains('midterm-terminal-input-proxy'))
+  );
+}
+
+function getOwnedXtermTextarea(container: HTMLDivElement): HTMLTextAreaElement | null {
+  const textarea = container.querySelector('textarea.xterm-helper-textarea');
+  return textarea instanceof HTMLTextAreaElement ? textarea : null;
+}
+
+function getOwnedTerminalInputProxy(container: HTMLDivElement): HTMLTextAreaElement | null {
+  const proxy = container.querySelector('textarea.midterm-terminal-input-proxy');
+  return proxy instanceof HTMLTextAreaElement ? proxy : null;
+}
+
+function getOwnedXtermRoot(container: HTMLDivElement): HTMLDivElement | null {
+  const root = container.querySelector('.xterm');
+  return root instanceof HTMLDivElement ? root : null;
+}
+
+type TerminalWithPrivateFocusInternals = TerminalState['terminal'] & {
+  _core?: {
+    _coreBrowserService?: {
+      _isFocused?: boolean;
+      _cachedIsFocused: boolean | undefined;
+    };
+    _onFocus?: { fire: () => void };
+    _onBlur?: { fire: () => void };
+    element?: HTMLElement;
+  };
+};
+
+function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
+  const privateTerminal = state.terminal as TerminalWithPrivateFocusInternals;
+  const privateCore = privateTerminal._core;
+  const coreBrowserService = privateCore?._coreBrowserService;
+  const xtermRoot = getOwnedXtermRoot(state.container);
+  const hasRootFocus = xtermRoot?.classList.contains('focus') ?? false;
+  const hasInternalFocus = coreBrowserService?._isFocused ?? false;
+
+  if (hasRootFocus === focused && hasInternalFocus === focused) {
+    return;
+  }
+
+  if (xtermRoot) {
+    xtermRoot.classList.toggle('focus', focused);
+  }
+
+  if (privateCore?.element && privateCore.element !== xtermRoot) {
+    privateCore.element.classList.toggle('focus', focused);
+  }
+
+  if (!privateCore || !coreBrowserService) {
+    return;
+  }
+
+  // xterm's inactive cursor style is driven by its private browser focus service,
+  // not only the root .focus class. Mirror proxy focus into that internal state so
+  // the renderer paints the active cursor while MidTerm owns the actual DOM focus.
+  coreBrowserService._isFocused = focused;
+  coreBrowserService._cachedIsFocused = undefined;
+
+  try {
+    if (focused) {
+      privateCore._onFocus?.fire();
+    } else {
+      privateCore._onBlur?.fire();
+    }
+  } catch {
+    // xterm internals may not be ready during initial open.
+  }
+}
+
+function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement | null {
+  const activeElement = document.activeElement;
+  if (isTerminalInputOwnerElement(activeElement) && container.contains(activeElement)) {
+    return activeElement;
+  }
+
+  if (isTerminalKeyAuditEnabled()) {
+    return getOwnedTerminalInputProxy(container) ?? getOwnedXtermTextarea(container);
+  }
+
+  return getOwnedXtermTextarea(container) ?? getOwnedTerminalInputProxy(container);
+}
+
+function shouldCaptureTerminalKey(container: HTMLDivElement, target: EventTarget | null): boolean {
+  if (isTerminalInputOwnerElement(target as Element | null) && container.contains(target as Node)) {
+    return true;
+  }
+
+  const ownedInput = getOwnedTerminalInput(container);
+  return ownedInput !== null && document.activeElement === ownedInput;
+}
+
+function getFocusedTerminalSessionMatch(): { sessionId: string; container: HTMLDivElement } | null {
+  const activeElement = document.activeElement;
+  if (!isTerminalInputOwnerElement(activeElement)) {
+    return null;
+  }
+
+  for (const [sessionId, state] of sessionTerminals.entries()) {
+    if (!state.opened) {
+      continue;
+    }
+
+    if (state.container.contains(activeElement)) {
+      return { sessionId, container: state.container };
+    }
+  }
+
+  return null;
 }
 
 function tryHandleTerminalEnterOverride(
   sessionId: string,
   event: KeyboardEvent,
   container?: HTMLDivElement,
+  source = 'enter',
 ): boolean {
   if (event.type !== 'keydown' || event.defaultPrevented || event.isComposing) {
+    recordTerminalKeyDebugEvent(sessionId, source, event, container, 'skip=prehandled');
     return false;
   }
 
   if (container && !shouldCaptureTerminalKey(container, event.target)) {
+    recordTerminalKeyDebugEvent(sessionId, source, event, container, 'skip=not-owner');
     return false;
   }
 
-  const enterOverride = getSessionEnterOverride(sessionId, event);
+  const latch = enterModifierLatches.get(sessionId);
+  const effectiveEvent = applyEnterModifierLatch(
+    event,
+    latch,
+    performance.now(),
+    ENTER_MODIFIER_LATCH_MAX_AGE_MS,
+  );
+  const effectiveLogEvent: TerminalKeyLogEventLike = {
+    ...effectiveEvent,
+    type: event.type,
+    target: event.target,
+    defaultPrevented: event.defaultPrevented,
+    isComposing: event.isComposing,
+  };
+  const enterOverride = getSessionEnterOverride(sessionId, effectiveEvent);
+  const effectiveParts: string[] = [`latch=${formatEnterModifierLatchState(latch)}`];
+  if (effectiveEvent.ctrlKey !== event.ctrlKey || effectiveEvent.shiftKey !== event.shiftKey) {
+    effectiveParts.push(
+      `effectiveMods=${effectiveEvent.ctrlKey ? 'C' : '-'}${effectiveEvent.shiftKey ? 'S' : '-'}`,
+    );
+  }
+
   if (enterOverride === null) {
+    recordTerminalKeyDebugEvent(
+      sessionId,
+      source,
+      effectiveLogEvent,
+      container,
+      `${effectiveParts.join(' ')} override=none`,
+    );
     return false;
   }
+
+  recordTerminalKeyDebugEvent(
+    sessionId,
+    source,
+    effectiveLogEvent,
+    container,
+    `${effectiveParts.join(' ')} override=ESC+CR`,
+  );
 
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
   sendInput(sessionId, enterOverride);
+  recordTerminalKeyDebugEvent(
+    sessionId,
+    `${source}-sent`,
+    effectiveLogEvent,
+    container,
+    'send=ESC+CR',
+  );
   return true;
+}
+
+function focusTerminalInput(state: TerminalState): void {
+  if (isTerminalKeyAuditEnabled()) {
+    const proxy = state.inputProxy ?? getOwnedTerminalInputProxy(state.container);
+    if (proxy) {
+      setTerminalVisualFocus(state, true);
+      proxy.focus({ preventScroll: true });
+      proxy.value = '';
+      refreshCursorBlink(state.terminal);
+      return;
+    }
+  }
+
+  state.terminal.focus();
+  setTerminalVisualFocus(state, true);
+  refreshCursorBlink(state.terminal);
 }
 
 /**
@@ -245,8 +636,7 @@ export function focusActiveTerminal(): void {
 
     const state = sessionTerminals.get(activeId);
     if (state?.opened) {
-      state.terminal.focus();
-      refreshCursorBlink(state.terminal);
+      focusTerminalInput(state);
     }
   }, 16);
 }
@@ -254,6 +644,13 @@ export function focusActiveTerminal(): void {
 function hasNonTerminalFocus(): boolean {
   const el = document.activeElement;
   if (!el) return false;
+  if (
+    el instanceof HTMLTextAreaElement &&
+    (el.classList.contains('xterm-helper-textarea') ||
+      el.classList.contains('midterm-terminal-input-proxy'))
+  ) {
+    return false;
+  }
   const tag = el.tagName;
   return (
     tag === 'INPUT' ||
@@ -270,6 +667,37 @@ const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
  * Skips refocus when the click lands on an element that needs its own keyboard input.
  */
 export function setupGlobalFocusReclaim(): void {
+  if (!globalTerminalEnterOverrideInstalled) {
+    globalTerminalEnterOverrideInstalled = true;
+
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        const match = getFocusedTerminalSessionMatch();
+        if (!match) {
+          return;
+        }
+
+        updateSessionEnterModifierLatch(match.sessionId, event, match.container, 'document-latch');
+        tryHandleTerminalEnterOverride(match.sessionId, event, match.container, 'document-enter');
+      },
+      true,
+    );
+
+    document.addEventListener(
+      'keyup',
+      (event) => {
+        const match = getFocusedTerminalSessionMatch();
+        if (!match) {
+          return;
+        }
+
+        updateSessionEnterModifierLatch(match.sessionId, event, match.container, 'document-latch');
+      },
+      true,
+    );
+  }
+
   document.addEventListener('mouseup', (e) => {
     const target = e.target as HTMLElement;
     if (
@@ -317,7 +745,7 @@ export function getTerminalOptions(): ITerminalOptions {
     DEFAULT_TERMINAL_FONT_WEIGHT) as TerminalFontWeight;
   const fontWeightBold = (currentSettings?.fontWeightBold ??
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) as TerminalFontWeight;
-  const scrollback = currentSettings?.scrollbackLines ?? 10000;
+  const scrollback = currentSettings?.scrollbackLines ?? 2000;
   const contrast = currentSettings?.minimumContrastRatio ?? 1;
 
   const options: ITerminalOptions = {
@@ -401,6 +829,7 @@ export function createTerminalForSession(
     terminal: terminal,
     fitAddon: fitAddon,
     container: container,
+    inputProxy: null,
     serverCols: serverCols > 0 ? serverCols : 0,
     serverRows: serverRows > 0 ? serverRows : 0,
     opened: false,
@@ -429,16 +858,63 @@ export function createTerminalForSession(
     state.opened = true;
     syncEffectiveXtermThemeDomOverrides($currentSettings.get());
 
+    if (getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
+    const inputProxy = document.createElement('textarea');
+    inputProxy.className = 'midterm-terminal-input-proxy';
+    inputProxy.tabIndex = -1;
+    inputProxy.setAttribute('aria-label', 'Terminal input');
+    inputProxy.setAttribute('autocorrect', 'off');
+    inputProxy.autocapitalize = 'off';
+    inputProxy.spellcheck = false;
+    Object.assign(inputProxy.style, {
+      position: 'absolute',
+      inset: '0',
+      opacity: '0',
+      pointerEvents: 'none',
+      resize: 'none',
+      border: '0',
+      margin: '0',
+      padding: '0',
+      background: 'transparent',
+      color: 'transparent',
+      caretColor: 'transparent',
+      outline: 'none',
+      overflow: 'hidden',
+      zIndex: '5',
+    });
+    container.appendChild(inputProxy);
+    state.inputProxy = inputProxy;
+
     // Intercept xterm's internal textarea focus when Smart Input is active
     const xtermTextarea = container.querySelector('textarea.xterm-helper-textarea');
     if (xtermTextarea) {
       xtermTextarea.addEventListener('focus', () => {
+        setTerminalVisualFocus(state, true);
         if (isSmartInputMode()) {
           (xtermTextarea as HTMLTextAreaElement).blur();
           showSmartInput();
+          return;
+        }
+
+        if (isTerminalKeyAuditEnabled() && state.inputProxy) {
+          (xtermTextarea as HTMLTextAreaElement).blur();
+          state.inputProxy.focus({ preventScroll: true });
         }
       });
+      xtermTextarea.addEventListener('blur', () => {
+        setTerminalVisualFocus(state, false);
+        clearSessionEnterModifierLatch(sessionId);
+      });
     }
+    inputProxy.addEventListener('focus', () => {
+      setTerminalVisualFocus(state, true);
+    });
+    inputProxy.addEventListener('blur', () => {
+      setTerminalVisualFocus(state, false);
+      clearSessionEnterModifierLatch(sessionId);
+    });
 
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
     // Other event handlers are set up later in setupTerminalEvents
@@ -588,7 +1064,6 @@ export function setupTerminalEvents(
     window.isSecureContext &&
     typeof navigator.clipboard !== 'undefined' &&
     typeof navigator.clipboard.readText === 'function';
-
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
 
@@ -670,18 +1145,303 @@ export function setupTerminalEvents(
   );
 
   const enterOverrideHandler = (event: KeyboardEvent) => {
-    tryHandleTerminalEnterOverride(sessionId, event, container);
+    tryHandleTerminalEnterOverride(sessionId, event, container, 'container-enter');
   };
+  const enterModifierKeydownHandler = (event: KeyboardEvent) => {
+    updateSessionEnterModifierLatch(sessionId, event, container, 'container-latch');
+  };
+  const enterModifierKeyupHandler = (event: KeyboardEvent) => {
+    updateSessionEnterModifierLatch(sessionId, event, container, 'container-latch');
+  };
+  let keyDownHandled = false;
+  let keyDownSeen = false;
+  let keyPressHandled = false;
+  let unprocessedDeadKey = false;
+  const isMac = isMacPlatform();
+  const isWindows = isWindowsPlatform();
+  const macOptionIsMeta = terminal.options.macOptionIsMeta === true;
+  const isKeyAuditActive = (): boolean => isTerminalKeyAuditEnabled();
+  const resetKeyAuditState = (): void => {
+    keyDownHandled = false;
+    keyDownSeen = false;
+    keyPressHandled = false;
+    unprocessedDeadKey = false;
+  };
+  const terminalKeyAuditKeydownHandler = (event: KeyboardEvent) => {
+    if (
+      !isKeyAuditActive() ||
+      !shouldCaptureTerminalKey(container, event.target) ||
+      event.isComposing
+    ) {
+      return;
+    }
+
+    keyDownHandled = false;
+    keyDownSeen = true;
+
+    if (event.key === 'F12') {
+      return;
+    }
+
+    const foreground = getForegroundInfo(sessionId);
+    const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
+
+    if (isCopyShortcut(event, style)) {
+      if (terminal.hasSelection()) {
+        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
+        terminal.clearSelection();
+        keyDownHandled = true;
+        cancelTerminalInputEvent(event);
+      }
+      return;
+    }
+
+    if (isNativeImagePasteShortcut(event)) {
+      void handleNativeImagePaste(sessionId, {
+        foregroundName: foreground.name,
+        foregroundCommandLine: foreground.commandLine,
+      }).then((result) => {
+        if (result === 'none') {
+          sendInput(sessionId, '\x1bv');
+        }
+      });
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (isPasteShortcut(event)) {
+      if (canUseAsyncClipboard()) {
+        void handleClipboardPaste(sessionId, {
+          foregroundName: foreground.name,
+          foregroundCommandLine: foreground.commandLine,
+        });
+        keyDownHandled = true;
+        cancelTerminalInputEvent(event);
+      }
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+      showSearch();
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (event.key === 'Escape' && isSearchVisible()) {
+      hideSearch();
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (tryHandleTerminalEnterOverride(sessionId, event, container, 'audit-enter')) {
+      keyDownHandled = true;
+      return;
+    }
+
+    if (event.key === 'Dead' || event.key === 'AltGraph') {
+      unprocessedDeadKey = true;
+    }
+
+    const legacyNumbers = getLegacyKeyboardNumbers(event);
+    const result = evaluateTerminalKeyAudit(
+      {
+        key: event.key,
+        code: event.code,
+        keyCode: legacyNumbers.keyCode,
+        which: legacyNumbers.which,
+        charCode: legacyNumbers.charCode,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+      },
+      terminal.modes.applicationCursorKeysMode,
+      isMac,
+      macOptionIsMeta,
+    );
+
+    if (result.type === 'pageUp' || result.type === 'pageDown') {
+      const scrollCount = terminal.rows - 1;
+      terminal.scrollLines(result.type === 'pageUp' ? -scrollCount : scrollCount);
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (result.type === 'selectAll') {
+      terminal.selectAll();
+      keyDownHandled = true;
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (isThirdLevelShift(event, isMac, isWindows, macOptionIsMeta)) {
+      return;
+    }
+
+    if (!result.key) {
+      if (isModifierKeyOnlyEvent({ key: event.key })) {
+        cancelTerminalInputEvent(event);
+      }
+      return;
+    }
+
+    if (event.key && !event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+      const charCode = event.key.charCodeAt(0);
+      if (charCode >= 65 && charCode <= 90) {
+        return;
+      }
+    }
+
+    if (unprocessedDeadKey) {
+      unprocessedDeadKey = false;
+      return;
+    }
+
+    sendInput(sessionId, result.key);
+    keyDownHandled = true;
+    cancelTerminalInputEvent(event);
+  };
+  const terminalKeyAuditKeypressHandler = (event: KeyboardEvent) => {
+    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
+      return;
+    }
+
+    keyPressHandled = false;
+
+    if (keyDownHandled) {
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    const legacyNumbers = getLegacyKeyboardNumbers(event);
+    const keyCode =
+      legacyNumbers.charCode !== 0
+        ? legacyNumbers.charCode
+        : legacyNumbers.which !== 0
+          ? legacyNumbers.which
+          : legacyNumbers.keyCode;
+
+    if (
+      keyCode === 0 ||
+      ((event.altKey || event.ctrlKey || event.metaKey) &&
+        !isThirdLevelShift(
+          {
+            altKey: event.altKey,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            keyCode: legacyNumbers.keyCode,
+            type: 'keypress',
+            getModifierState: event.getModifierState.bind(event),
+          },
+          isMac,
+          isWindows,
+          macOptionIsMeta,
+        ))
+    ) {
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    sendInput(sessionId, String.fromCharCode(keyCode));
+    keyPressHandled = true;
+    unprocessedDeadKey = false;
+    cancelTerminalInputEvent(event);
+  };
+  const terminalKeyAuditInputHandler = (event: Event) => {
+    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
+      return;
+    }
+
+    const inputEvent = event as InputEvent;
+    if (
+      inputEvent.data &&
+      inputEvent.inputType === 'insertText' &&
+      (!inputEvent.isComposing || !keyDownSeen)
+    ) {
+      if (keyPressHandled) {
+        cancelTerminalInputEvent(event);
+        return;
+      }
+
+      unprocessedDeadKey = false;
+      sendInput(sessionId, inputEvent.data);
+      cancelTerminalInputEvent(event);
+      return;
+    }
+
+    if (event.target instanceof HTMLTextAreaElement) {
+      event.target.value = '';
+    }
+  };
+  const terminalKeyAuditKeyupHandler = (event: KeyboardEvent) => {
+    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
+      return;
+    }
+
+    keyDownSeen = false;
+    keyPressHandled = false;
+
+    if (isModifierKeyOnlyEvent({ key: event.key })) {
+      cancelTerminalInputEvent(event);
+    }
+  };
+  container.addEventListener('keydown', enterModifierKeydownHandler, true);
+  container.addEventListener('keyup', enterModifierKeyupHandler, true);
+  container.addEventListener('keydown', terminalKeyAuditKeydownHandler, true);
+  container.addEventListener('keypress', terminalKeyAuditKeypressHandler, true);
+  container.addEventListener('input', terminalKeyAuditInputHandler, true);
+  container.addEventListener('keyup', terminalKeyAuditKeyupHandler, true);
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keydown', enterModifierKeydownHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keyup', enterModifierKeyupHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keydown', terminalKeyAuditKeydownHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keypress', terminalKeyAuditKeypressHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('input', terminalKeyAuditInputHandler, true);
+    },
+  });
+  disposables.push({
+    dispose: () => {
+      container.removeEventListener('keyup', terminalKeyAuditKeyupHandler, true);
+    },
+  });
   container.addEventListener('keydown', enterOverrideHandler, true);
 
   // Keyboard shortcuts for copy/paste
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+    if (isKeyAuditActive()) {
+      if (e.type !== 'keydown') return false;
+      return e.key === 'F12';
+    }
+
+    resetKeyAuditState();
+
     if (e.type !== 'keydown') return true;
 
     // F12: let browser handle it (open DevTools)
     if (e.key === 'F12') return false;
 
-    if (tryHandleTerminalEnterOverride(sessionId, e)) {
+    if (tryHandleTerminalEnterOverride(sessionId, e, undefined, 'xterm-enter')) {
       return false;
     }
 
@@ -829,6 +1589,8 @@ export function destroyTerminalForSession(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
+  clearSessionEnterModifierLatch(sessionId);
+
   // Clean up xterm event disposables
   if (state.disposables) {
     state.disposables.forEach((d) => {
@@ -886,6 +1648,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   // Clean up file path allowlist
   clearPathAllowlist(sessionId);
 
+  state.inputProxy?.remove();
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);

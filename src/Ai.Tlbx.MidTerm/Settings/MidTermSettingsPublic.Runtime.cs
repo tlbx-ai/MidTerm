@@ -62,12 +62,14 @@ public sealed partial class MidTermSettingsPublic
             ScrollbarStyle = settings.ScrollbarStyle,
             UseWebGL = settings.UseWebGL,
             ScrollbackLines = settings.ScrollbackLines,
+            ScrollbackBytes = settings.ScrollbackBytes,
             BellStyle = settings.BellStyle,
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
             ClipboardShortcuts = settings.ClipboardShortcuts,
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
+            DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
@@ -147,13 +149,18 @@ public sealed partial class MidTermSettingsPublic
         settings.SmoothScrolling = SmoothScrolling;
         settings.ScrollbarStyle = ScrollbarStyle;
         settings.UseWebGL = UseWebGL;
-        settings.ScrollbackLines = ScrollbackLines;
+        settings.ScrollbackLines = Math.Clamp(ScrollbackLines, 0, MidTermSettings.MaxScrollbackLines);
+        settings.ScrollbackBytes = Math.Clamp(
+            ScrollbackBytes,
+            MidTermSettings.MinScrollbackBytes,
+            MidTermSettings.MaxScrollbackBytes);
         settings.BellStyle = BellStyle;
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
+        settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;

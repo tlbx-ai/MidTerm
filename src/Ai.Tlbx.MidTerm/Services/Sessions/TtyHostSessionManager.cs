@@ -11,6 +11,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services.Hosting;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -29,8 +30,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly TtyHostOwnershipRegistry _ownershipRegistry;
     private readonly SessionForegroundProcessService _foregroundProcessService;
+    private readonly SettingsService? _settingsService;
     private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new();
     private string? _runAsUser;
+    private string? _runAsUserSid;
     private bool _disposed;
     private int? _mtPort;
     private Func<string>? _generateToken;
@@ -60,10 +63,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? expectedVersion = null,
         string? minCompatibleVersion = null,
         string? runAsUser = null,
+        string? runAsUserSid = null,
         bool isServiceMode = false,
         SessionControlStateService? sessionControlStateService = null,
         MidTermInstanceIdentity? instanceIdentity = null,
-        SessionForegroundProcessService? foregroundProcessService = null)
+        SessionForegroundProcessService? foregroundProcessService = null,
+        SettingsService? settingsService = null)
     {
         _registry = new SessionRegistry(isServiceMode, sessionControlStateService);
         _clients = _registry.Clients;
@@ -75,7 +80,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             0);
         _ownershipRegistry = new TtyHostOwnershipRegistry(_instanceIdentity.SessionRegistryPath);
         _foregroundProcessService = foregroundProcessService ?? new SessionForegroundProcessService();
+        _settingsService = settingsService;
         _runAsUser = runAsUser;
+        _runAsUserSid = runAsUserSid;
     }
 
     private static string? GetMinCompatibleVersionFromManifest()
@@ -91,9 +98,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
-    public void UpdateRunAsUser(string? runAsUser)
+    public void UpdateRunAsUser(string? runAsUser, string? runAsUserSid = null)
     {
         _runAsUser = runAsUser;
+        _runAsUserSid = runAsUserSid;
         Log.Info(() => $"TtyHostSessionManager: RunAsUser updated to: {runAsUser ?? "(none)"}");
     }
 
@@ -138,7 +146,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             if (ct.IsCancellationRequested) break;
             if (_registry.Clients.ContainsKey(sessionId)) continue;
 
-            var result = await TryConnectToSessionAsync(sessionId, hostPid, isLegacyEndpoint: false, allowLegacyOwnerless: false, ct).ConfigureAwait(false);
+            var result = await TryConnectToSessionAsync(
+                sessionId,
+                hostPid,
+                isLegacyEndpoint: false,
+                allowLegacyOwnerless: false,
+                ct).ConfigureAwait(false);
             HandleDiscoveryResult(sessionId, hostPid, legacyEndpoint: false, result, discoveredOrders);
         }
 
@@ -152,7 +165,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 if (ct.IsCancellationRequested) break;
                 if (_registry.Clients.ContainsKey(sessionId)) continue;
 
-                var result = await TryConnectToSessionAsync(sessionId, hostPid, isLegacyEndpoint: true, allowLegacyOwnerless: true, ct).ConfigureAwait(false);
+                var result = await TryConnectToSessionAsync(
+                    sessionId,
+                    hostPid,
+                    isLegacyEndpoint: true,
+                    allowLegacyOwnerless: true,
+                    ct).ConfigureAwait(false);
                 HandleDiscoveryResult(sessionId, hostPid, legacyEndpoint: true, result, discoveredOrders);
             }
 
@@ -303,9 +321,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
-
-        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, out var hostPid,
-                _mtPort, mtToken, paneIndex, _tmuxBinDir))
+        var scrollbackBytes = ResolveScrollbackBytes();
+        if (!TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, _runAsUserSid, out var hostPid,
+                scrollbackBytes, _mtPort, mtToken, paneIndex, _tmuxBinDir))
         {
             return null;
         }
@@ -365,6 +383,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
+        ApplyStartupWorkingDirectoryFallback(info, workingDirectory);
 
         // Start read loop after handshake completes (avoids race condition with GetInfoAsync)
         SubscribeToClient(client);
@@ -388,6 +407,15 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public SessionInfo? GetSession(string sessionId)
     {
         return _registry.GetSession(sessionId);
+    }
+
+    private int ResolveScrollbackBytes()
+    {
+        var configured = _settingsService?.Load().ScrollbackBytes ?? MidTermSettings.DefaultScrollbackBytes;
+        return Math.Clamp(
+            configured,
+            MidTermSettings.MinScrollbackBytes,
+            MidTermSettings.MaxScrollbackBytes);
     }
 
     public void MarkTmuxCreated(string sessionId)
@@ -627,6 +655,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         return _registry.ClearBookmarksByHistoryId(bookmarkId);
+    }
+
+    private static void ApplyStartupWorkingDirectoryFallback(SessionInfo info, string? workingDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(info.CurrentDirectory) ||
+            string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            return;
+        }
+
+        info.CurrentDirectory = workingDirectory.Trim();
     }
 
     public bool ReorderSessions(IList<string> sessionIds)

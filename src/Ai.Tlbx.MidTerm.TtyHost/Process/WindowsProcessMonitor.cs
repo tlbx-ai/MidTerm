@@ -1,5 +1,6 @@
 #if WINDOWS
 using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -67,8 +68,8 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
         try
         {
-            var childPid = GetFirstDirectChild(_shellPid, hSnapshot);
-            if (childPid is null)
+            var child = GetBestDirectChild(_shellPid, hSnapshot);
+            if (child is null)
             {
                 return new ForegroundProcessInfo
                 {
@@ -80,10 +81,10 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
             return new ForegroundProcessInfo
             {
-                Pid = childPid.Value,
-                Name = GetProcessName(childPid.Value, hSnapshot) ?? "unknown",
-                CommandLine = StripExecutablePath(GetProcessCommandLine(childPid.Value)),
-                Cwd = GetProcessCwd(childPid.Value) ?? GetShellCwd()
+                Pid = child.Value.Pid,
+                Name = child.Value.Name ?? "unknown",
+                CommandLine = StripExecutablePath(GetProcessCommandLine(child.Value.Pid)),
+                Cwd = GetProcessCwd(child.Value.Pid) ?? GetShellCwd()
             };
         }
         finally
@@ -107,7 +108,8 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
             try
             {
-                var childPid = GetFirstDirectChild(_shellPid, hSnapshot);
+                var child = GetBestDirectChild(_shellPid, hSnapshot);
+                var childPid = child?.Pid;
                 var cwd = GetShellCwd();
                 var childCwd = childPid.HasValue ? GetProcessCwd(childPid.Value) : null;
 
@@ -132,7 +134,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                         info = new ForegroundProcessInfo
                         {
                             Pid = childPid.Value,
-                            Name = GetProcessName(childPid.Value, hSnapshot) ?? "unknown",
+                            Name = child?.Name ?? "unknown",
                             CommandLine = StripExecutablePath(GetProcessCommandLine(childPid.Value)),
                             Cwd = childCwd ?? cwd
                         };
@@ -153,37 +155,63 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         }
     }
 
-    private static int? GetFirstDirectChild(int parentPid, IntPtr hSnapshot)
+    private static ForegroundChildCandidate? GetBestDirectChild(int parentPid, IntPtr hSnapshot)
     {
+        var candidates = new List<ForegroundChildCandidate>();
         var pe = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
         if (Process32FirstW(hSnapshot, ref pe))
         {
             do
             {
                 if ((int)pe.th32ParentProcessID == parentPid)
-                    return (int)pe.th32ProcessID;
-            } while (Process32NextW(hSnapshot, ref pe));
-        }
-        return null;
-    }
-
-    private static string? GetProcessName(int pid, IntPtr hSnapshot)
-    {
-        var pe = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
-        if (Process32FirstW(hSnapshot, ref pe))
-        {
-            do
-            {
-                if ((int)pe.th32ProcessID == pid)
                 {
-                    var name = pe.szExeFile;
-                    if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                        name = name[..^4];
-                    return name;
+                    var pid = (int)pe.th32ProcessID;
+                    candidates.Add(new ForegroundChildCandidate(
+                        pid,
+                        NormalizeProcessName(pe.szExeFile),
+                        HasVisibleWindow(pid),
+                        GetStartedAtUtc(pid)));
                 }
             } while (Process32NextW(hSnapshot, ref pe));
         }
-        return null;
+
+        return ForegroundChildSelector.SelectBest(candidates);
+    }
+
+    private static string NormalizeProcessName(string processName)
+    {
+        if (processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return processName[..^4];
+        }
+
+        return processName;
+    }
+
+    private static bool HasVisibleWindow(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.MainWindowHandle != IntPtr.Zero;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static DateTimeOffset? GetStartedAtUtc(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.StartTime.ToUniversalTime();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? GetProcessCwd(int pid)

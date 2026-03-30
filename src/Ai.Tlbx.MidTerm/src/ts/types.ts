@@ -89,6 +89,7 @@ export interface TerminalState {
   terminal: Terminal;
   fitAddon: FitAddon;
   container: HTMLDivElement;
+  inputProxy?: HTMLTextAreaElement | null;
   serverCols: number;
   serverRows: number;
   opened: boolean;

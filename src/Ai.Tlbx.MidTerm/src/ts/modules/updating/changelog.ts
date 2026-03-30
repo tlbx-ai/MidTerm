@@ -9,8 +9,10 @@ import { $currentSettings } from '../../stores';
 import { updateSettings } from '../../api/client';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 
 const log = createLogger('updating');
+let releaseBackButtonLayer: (() => void) | null = null;
 
 const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/tlbx-ai/MidTerm/releases';
 const PER_PAGE = 30;
@@ -40,6 +42,10 @@ export function showChangelog(afterUpdate = false): void {
   currentPage = 1;
   hasMoreReleases = true;
   isLoading = false;
+
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(closeChangelog);
+  }
 
   if (modal) modal.classList.remove('hidden');
   if (body) body.innerHTML = `<div class="changelog-loading">${t('changelog.loading')}</div>`;
@@ -172,6 +178,9 @@ function fetchReleases(isInitial: boolean): void {
  * Close the changelog modal
  */
 export function closeChangelog(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
+
   const modal = document.getElementById('changelog-modal');
   if (modal) modal.classList.add('hidden');
 }

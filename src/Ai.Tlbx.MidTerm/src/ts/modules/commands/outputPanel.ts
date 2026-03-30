@@ -13,6 +13,7 @@ import { sessionTerminals, hiddenSessionIds } from '../../state';
 import { sendInput, sendResize } from '../comms/muxChannel';
 import { getTerminalOptions } from '../terminal/manager';
 import { escapeHtml } from '../../utils';
+import { $isMainBrowser } from '../../stores';
 
 export { hiddenSessionIds } from '../../state';
 
@@ -105,7 +106,7 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
     try {
       fitAddon.fit();
       const dims = fitAddon.proposeDimensions();
-      if (dims && dims.cols > 0 && dims.rows > 0) {
+      if ($isMainBrowser.get() && dims && dims.cols > 0 && dims.rows > 0) {
         sendResize(hiddenSessionId, dims.cols, dims.rows);
         termState.serverCols = dims.cols;
         termState.serverRows = dims.rows;
@@ -119,7 +120,7 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
     try {
       fitAddon.fit();
       const dims = fitAddon.proposeDimensions();
-      if (dims && dims.cols > 0 && dims.rows > 0) {
+      if ($isMainBrowser.get() && dims && dims.cols > 0 && dims.rows > 0) {
         sendResize(hiddenSessionId, dims.cols, dims.rows);
         termState.serverCols = dims.cols;
         termState.serverRows = dims.rows;

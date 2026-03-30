@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Settings;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -48,5 +49,42 @@ public sealed class MainBrowserServiceTests
 
         Assert.True(service.IsMain("browser-a:tab-1"));
         Assert.False(service.IsMain("browser-b:tab-2"));
+    }
+
+    [Fact]
+    public void UpdateActivity_DoesNotAutoPromoteWhenDisabledInSettings()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "midterm-main-browser-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var settingsService = new SettingsService(tempDir);
+            var settings = settingsService.Load();
+            settings.DisableAutoMainBrowserPromotion = true;
+            settingsService.Save(settings);
+
+            var timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-03-18T10:00:00Z"));
+            var service = new MainBrowserService(settingsService, timeProvider);
+            var mainConnection = new object();
+            var followerConnection = new object();
+
+            service.Register("browser-a:tab-1", mainConnection);
+            service.UpdateActivity("browser-a:tab-1", mainConnection, true);
+            service.Claim("browser-a:tab-1");
+
+            service.UpdateActivity("browser-a:tab-1", mainConnection, false);
+            timeProvider.Advance(TimeSpan.FromMinutes(3).Add(TimeSpan.FromSeconds(1)));
+
+            service.Register("browser-b:tab-2", followerConnection);
+            service.UpdateActivity("browser-b:tab-2", followerConnection, true);
+
+            Assert.True(service.IsMain("browser-a:tab-1"));
+            Assert.False(service.IsMain("browser-b:tab-2"));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 }

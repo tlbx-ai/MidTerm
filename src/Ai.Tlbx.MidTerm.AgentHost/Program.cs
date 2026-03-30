@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Common.Ipc;
 using System.Reflection;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
@@ -18,15 +19,35 @@ public static class Program
             return 0;
         }
 
+        var syntheticProvider = ReadOption(args, "--synthetic");
+        var instanceId = ReadOption(args, "--instance-id");
+        var ownerToken = ReadOption(args, "--owner-token");
+        var sessionId = ReadOption(args, "--session-id");
+
+        if (args.Contains("--ipc", StringComparer.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(instanceId) ||
+                string.IsNullOrWhiteSpace(ownerToken) ||
+                string.IsNullOrWhiteSpace(sessionId))
+            {
+                Console.Error.WriteLine("mtagenthost --ipc requires --instance-id, --owner-token, and --session-id.");
+                return 1;
+            }
+
+            var endpoint = LensHostEndpoint.GetSessionEndpoint(instanceId, sessionId, Environment.ProcessId);
+            await using var ipcServer = new LensAgentHostServer(syntheticProvider, instanceId, ownerToken);
+            await ipcServer.RunIpcAsync(endpoint).ConfigureAwait(false);
+            return 0;
+        }
+
         if (!args.Contains("--stdio", StringComparer.Ordinal))
         {
-            Console.Error.WriteLine("mtagenthost requires --stdio.");
+            Console.Error.WriteLine("mtagenthost requires --stdio or --ipc.");
             return 1;
         }
 
-        var syntheticProvider = ReadOption(args, "--synthetic");
         await using var server = new LensAgentHostServer(syntheticProvider);
-        await server.RunAsync().ConfigureAwait(false);
+        await server.RunStdioAsync().ConfigureAwait(false);
         return 0;
     }
 
@@ -52,11 +73,13 @@ public static class Program
             Usage:
               mtagenthost --stdio
               mtagenthost --stdio --synthetic <provider>
+              mtagenthost --ipc --session-id <id> --instance-id <id> --owner-token <token>
               mtagenthost --version
               mtagenthost --help
 
             Current scope:
               - stdio JSON transport
+              - owned IPC transport for persistent MidTerm reconnect
               - real Codex and Claude runtimes
               - synthetic provider mode for protocol/integration testing
             """);

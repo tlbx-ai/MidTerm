@@ -8,9 +8,10 @@
 
 import { $activeSessionId, $currentSettings, $sessions } from '../../stores';
 import { updateSettings } from '../../api/client';
-import { sendInput } from '../comms';
+import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getSessionHeat } from '../sidebar/heatIndicator';
 import {
   computeNextScheduleTime,
@@ -34,7 +35,6 @@ import {
 
 const log = createLogger('managerBar');
 
-const COMMAND_SUBMIT_DELAY_MS = 200;
 const QUEUE_POLL_INTERVAL_MS = 500;
 
 type QueuePhase =
@@ -93,12 +93,12 @@ let editingActionId: string | null = null;
 let renderedButtons: NormalizedManagerButton[] = [];
 const queueEntries: QueueEntry[] = [];
 let queueTimerId: number | null = null;
+let releaseBackButtonLayer: (() => void) | null = null;
 
 export function sendCommand(sessionId: string, text: string): void {
-  sendInput(sessionId, text);
-  window.setTimeout(() => {
-    sendInput(sessionId, '\r');
-  }, COMMAND_SUBMIT_DELAY_MS);
+  void submitSessionText(sessionId, text).catch((error: unknown) => {
+    log.error(() => `Failed to submit manager bar command: ${String(error)}`);
+  });
 }
 
 export function initManagerBar(): void {
@@ -460,6 +460,10 @@ function openActionModal(existing?: NormalizedManagerButton): void {
   renderScheduleEditors(action.trigger.schedule);
   syncModalSections();
 
+  if (!releaseBackButtonLayer) {
+    releaseBackButtonLayer = registerBackButtonLayer(closeActionModal);
+  }
+
   modalEl.classList.remove('hidden');
   const modalBody = modalEl.querySelector<HTMLElement>('.manager-action-modal-body');
   if (modalBody) {
@@ -469,6 +473,8 @@ function openActionModal(existing?: NormalizedManagerButton): void {
 }
 
 function closeActionModal(): void {
+  releaseBackButtonLayer?.();
+  releaseBackButtonLayer = null;
   editingActionId = null;
   modalEl?.classList.add('hidden');
   clearModalError();

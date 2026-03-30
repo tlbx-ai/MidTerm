@@ -528,7 +528,10 @@ export async function handleFileDrop(files: FileList): Promise<void> {
         if (overlay) {
           overlay.setLabel(t('fileDrop.transferringToLens'));
         }
-        await submitLensTurn(activeId, createLensTurnRequest(promptText, lensAttachments));
+        await submitLensTurn(
+          activeId,
+          createLensTurnRequest(promptText, lensAttachments, activeId),
+        );
       }
       return;
     }

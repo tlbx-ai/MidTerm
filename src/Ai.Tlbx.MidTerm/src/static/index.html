@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-native-color-scheme="dark">
   <head>
     <meta charset="utf-8" />
     <meta
@@ -573,11 +573,7 @@
                   aria-selected="true"
                 >
                   <span class="icon">&#xea0c;</span>
-                  <span class="tab-label" data-i18n="settings.general">General</span>
-                </button>
-                <button class="settings-tab" data-tab="hub" role="tab" aria-selected="false">
-                  <span class="icon">&#xe925;</span>
-                  <span class="tab-label" data-i18n="settings.hub">MidTerm Hub</span>
+                  <span class="tab-label" data-i18n="settings.general">Updates / Info</span>
                 </button>
                 <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
                   <span class="icon">&#xe90d;</span>
@@ -585,15 +581,19 @@
                 </button>
                 <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
                   <span class="icon">&#xe993;</span>
-                  <span class="tab-label" data-i18n="settings.behavior">Behavior</span>
+                  <span class="tab-label" data-i18n="settings.behavior">Behaviour</span>
+                </button>
+                <button class="settings-tab" data-tab="agent-ui" role="tab" aria-selected="false">
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.agentUi">Agent UI</span>
                 </button>
                 <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
                   <span class="icon">&#xe908;</span>
                   <span class="tab-label" data-i18n="settings.security">Security</span>
                 </button>
-                <button class="settings-tab" data-tab="ide" role="tab" aria-selected="false">
-                  <span class="icon">&#xea57;</span>
-                  <span class="tab-label" data-i18n="settings.ideMode">IDE Mode</span>
+                <button class="settings-tab" data-tab="hub" role="tab" aria-selected="false">
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.hub">Multi Server</span>
                 </button>
                 <button
                   class="settings-tab"
@@ -610,7 +610,7 @@
               <div class="settings-content" role="tabpanel">
                 <!-- General Panel -->
                 <section class="settings-panel" data-panel="general">
-                  <h2 data-i18n="settings.general.title">General</h2>
+                  <h2 data-i18n="settings.general.title">Updates / Info</h2>
 
                   <!-- About & Updates -->
                   <div class="settings-section">
@@ -942,7 +942,7 @@
 
                 <!-- Hub Panel -->
                 <section class="settings-panel hidden" data-panel="hub">
-                  <h2 data-i18n="settings.hub.title">MidTerm Hub</h2>
+                  <h2 data-i18n="settings.hub.title">Multi Server</h2>
 
                   <div class="settings-section">
                     <div class="hub-toolbar">
@@ -1546,9 +1546,63 @@
                   </div>
                 </section>
 
+                <!-- Agent UI Panel -->
+                <section class="settings-panel hidden" data-panel="agent-ui">
+                  <h2 data-i18n="settings.agentUi.title">Agent UI</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.agentUi.agentDefaults">Agent Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-yolo-default"
+                        data-i18n="settings.agentUi.codexYoloDefault"
+                        >Enable Codex --yolo by default</label
+                      >
+                      <input type="checkbox" id="setting-codex-yolo-default" />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-codex-env" data-i18n="settings.agentUi.codexEnv"
+                        >Codex Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-codex-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-claude-dangerously-skip-permissions-default"
+                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
+                        >Enable Claude --dangerously-skip-permissions by default</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-claude-dangerously-skip-permissions-default"
+                      />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
+                        >Claude Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-claude-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+                </section>
+
                 <!-- Behavior Panel -->
                 <section class="settings-panel hidden" data-panel="behavior">
-                  <h2 data-i18n="settings.behavior.title">Behavior</h2>
+                  <h2 data-i18n="settings.behavior.title">Behaviour</h2>
 
                   <!-- Session Defaults -->
                   <div class="settings-section">
@@ -1583,55 +1637,6 @@
                     </div>
                   </div>
 
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.behavior.agentDefaults">Agent Defaults</h3>
-                    <div class="setting-row">
-                      <label
-                        for="setting-codex-yolo-default"
-                        data-i18n="settings.behavior.codexYoloDefault"
-                        >Enable Codex --yolo by default</label
-                      >
-                      <input type="checkbox" id="setting-codex-yolo-default" />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-codex-env" data-i18n="settings.behavior.codexEnv"
-                        >Codex Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-codex-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.behavior.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-claude-dangerously-skip-permissions-default"
-                        data-i18n="settings.behavior.claudeDangerouslySkipPermissionsDefault"
-                        >Enable Claude --dangerously-skip-permissions by default</label
-                      >
-                      <input
-                        type="checkbox"
-                        id="setting-claude-dangerously-skip-permissions-default"
-                      />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-claude-env" data-i18n="settings.behavior.claudeEnv"
-                        >Claude Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-claude-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.behavior.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
-                  </div>
-
                   <!-- Terminal Behavior -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.behavior.terminalBehavior">Terminal Behavior</h3>
@@ -1648,9 +1653,33 @@
                           type="number"
                           id="setting-scrollback"
                           min="500"
-                          max="100000"
+                          max="10000"
                           step="500"
-                          value="10000"
+                          value="2000"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-scrollback-bytes"
+                        data-i18n="settings.behavior.scrollbackBytes"
+                        >Scrollback Bytes</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="scrollbackBytes"
+                        data-type="number"
+                      >
+                        <input
+                          type="number"
+                          id="setting-scrollback-bytes"
+                          min="65536"
+                          max="10485760"
+                          step="262144"
+                          value="2097152"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>
@@ -1714,7 +1743,7 @@
                       <label
                         for="setting-terminal-enter-mode"
                         data-i18n="settings.behavior.terminalEnterMode"
-                        >Shift+Enter = NewLine without Send</label
+                        >Shift/Ctrl+Enter = Alt+Enter in Terminal</label
                       >
                       <select id="setting-terminal-enter-mode">
                         <option
@@ -1762,6 +1791,20 @@
                       >
                       <input type="checkbox" id="setting-scrollback-protection" />
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-disable-auto-main-browser-promotion"
+                        data-i18n="settings.behavior.disableAutoMainBrowserPromotion"
+                        >Disable auto-promotion to main browser</label
+                      >
+                      <input type="checkbox" id="setting-disable-auto-main-browser-promotion" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.disableAutoMainBrowserPromotionHint"
+                    >
+                      Keeps the current main browser until another browser explicitly claims it.
+                    </p>
                     <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
                         >Keep computer awake while sessions exist</label
@@ -2019,27 +2062,6 @@
                   </div>
                 </section>
 
-                <!-- IDE Mode Panel -->
-                <section class="settings-panel hidden" data-panel="ide">
-                  <h2 data-i18n="settings.ide.title">IDE Mode</h2>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.ide.overview">Overview</h3>
-                    <p class="setting-hint" data-i18n="settings.ide.overviewHintAlwaysOn">
-                      The IDE bar is always available above each terminal session. It provides
-                      terminal and files tabs, Git and command shortcuts, and session sharing.
-                    </p>
-                  </div>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.ide.git">Git</h3>
-                    <div class="setting-row">
-                      <label data-i18n="settings.ide.gitExecutable">Git executable</label>
-                      <code class="path-value" id="ide-git-status">checking...</code>
-                    </div>
-                  </div>
-                </section>
-
                 <!-- Diagnostics Panel -->
                 <section class="settings-panel hidden" data-panel="diagnostics">
                   <h2 data-i18n="settings.diagnostics.title">Diagnostics</h2>
@@ -2204,6 +2226,26 @@
                       Settings persist in localStorage across page reloads.
                     </p>
                   </div>
+
+                  <div class="settings-section">
+                    <h3>Terminal Key Log</h3>
+                    <p class="diag-help-text">
+                      Capture terminal Enter and modifier events so remap failures are directly
+                      visible.
+                    </p>
+                    <div class="setting-row">
+                      <label for="diag-terminal-key-log-toggle">Enable terminal key log</label>
+                      <input type="checkbox" id="diag-terminal-key-log-toggle" />
+                    </div>
+                    <div class="diag-log-actions">
+                      <button id="btn-clear-terminal-key-log" class="btn-secondary">
+                        Clear log
+                      </button>
+                    </div>
+                    <pre id="diag-terminal-key-log" class="diag-log-output">
+Enable terminal key log to capture Enter and modifier events.</pre
+                    >
+                  </div>
                 </section>
               </div>
             </div>
@@ -2364,10 +2406,18 @@
               placeholder="https://localhost:3000"
               spellcheck="false"
             />
+            <span
+              id="web-preview-status-indicator"
+              class="web-preview-status-indicator hidden"
+              tabindex="0"
+              role="img"
+              aria-hidden="true"
+              title=""
+              >!</span
+            >
             <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
           </div>
           <div class="web-preview-dock-body">
-            <div class="web-preview-status-banner hidden" id="web-preview-status-banner"></div>
             <div id="web-preview-iframe-host"></div>
           </div>
           <div class="web-preview-detached-placeholder hidden" id="web-preview-detached-msg">

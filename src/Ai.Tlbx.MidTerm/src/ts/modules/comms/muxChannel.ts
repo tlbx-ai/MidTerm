@@ -58,6 +58,7 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
+import { $isMainBrowser } from '../../stores';
 import {
   muxWs,
   sessionTerminals,
@@ -1298,6 +1299,10 @@ function flushPendingInput(): void {
  * Send terminal resize to server.
  */
 export function sendResize(sessionId: string, cols: number, rows: number): void {
+  if (!$isMainBrowser.get()) {
+    return;
+  }
+
   if (isHubSessionId(sessionId)) {
     sendHubResize(sessionId, cols, rows);
     return;

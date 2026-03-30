@@ -18,7 +18,9 @@ import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import {
   BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS,
+  DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS,
   TERMINAL_COLOR_SCHEME_FIELDS,
+  TERMINAL_COLOR_SCHEME_TEXT_PLACEHOLDERS,
   type TerminalColorSchemeFieldKey,
   findCustomTerminalColorScheme,
   getBuiltInTerminalTheme,
@@ -938,7 +940,9 @@ function ensureTerminalColorSchemeEditorRendered(): void {
       input.spellcheck = false;
 
       if (field.input === 'text') {
-        input.placeholder = field.label.includes('Scrollbar') ? 'rgba(0, 0, 0, 0.3)' : '';
+        input.placeholder = field.label.includes('Scrollbar')
+          ? TERMINAL_COLOR_SCHEME_TEXT_PLACEHOLDERS.scrollbarColor
+          : '';
       }
 
       item.appendChild(input);
@@ -1119,30 +1123,7 @@ function readTerminalColorSchemeEditorDefinition(): TerminalColorSchemeDefinitio
 
   const definition: TerminalColorSchemeDefinition = {
     name: nameInput.value.trim(),
-    background: '#000000',
-    foreground: '#FFFFFF',
-    cursor: '#FFFFFF',
-    cursorAccent: '#000000',
-    selectionBackground: '#555555',
-    scrollbarSliderBackground: '',
-    scrollbarSliderHoverBackground: '',
-    scrollbarSliderActiveBackground: '',
-    black: '#000000',
-    red: '#FF0000',
-    green: '#00FF00',
-    yellow: '#FFFF00',
-    blue: '#0000FF',
-    magenta: '#FF00FF',
-    cyan: '#00FFFF',
-    white: '#FFFFFF',
-    brightBlack: '#808080',
-    brightRed: '#FF5555',
-    brightGreen: '#55FF55',
-    brightYellow: '#FFFF55',
-    brightBlue: '#5555FF',
-    brightMagenta: '#FF55FF',
-    brightCyan: '#55FFFF',
-    brightWhite: '#F5F5F5',
+    ...DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS,
   };
 
   for (const field of TERMINAL_COLOR_SCHEME_FIELDS) {
@@ -1489,7 +1470,7 @@ function validateAgentEnvironmentInputs(): boolean {
       .find((line) => line.length > 0 && !ENVIRONMENT_VARIABLE_LINE_PATTERN.test(line));
 
     if (invalidLine) {
-      textarea.setCustomValidity(t('settings.behavior.agentEnvInvalid'));
+      textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));
       textarea.reportValidity();
       textarea.focus();
       return false;

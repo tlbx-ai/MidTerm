@@ -1,5 +1,60 @@
-import { describe, expect, it } from 'vitest';
-import { CSS_THEMES } from './cssThemes';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { applyCssTheme, CSS_THEMES, getNativeColorScheme } from './cssThemes';
+
+class MockStyle {
+  private readonly values = new Map<string, string>();
+
+  public colorScheme = '';
+
+  public setProperty(name: string, value: string): void {
+    this.values.set(name, value);
+  }
+
+  public getPropertyValue(name: string): string {
+    return this.values.get(name) ?? '';
+  }
+}
+
+const originalDocument = globalThis.document;
+
+let rootStyle: MockStyle;
+let dataset: Record<string, string>;
+let metaThemeColor = '';
+
+beforeEach(() => {
+  rootStyle = new MockStyle();
+  dataset = {};
+  metaThemeColor = '';
+
+  Object.defineProperty(globalThis, 'document', {
+    value: {
+      documentElement: {
+        style: rootStyle,
+        dataset,
+      },
+      querySelector: (selector: string) =>
+        selector === 'meta[name="theme-color"]'
+          ? {
+              setAttribute: (name: string, value: string) => {
+                if (name === 'content') {
+                  metaThemeColor = value;
+                }
+              },
+            }
+          : null,
+    },
+    configurable: true,
+    writable: true,
+  });
+});
+
+afterEach(() => {
+  Object.defineProperty(globalThis, 'document', {
+    value: originalDocument,
+    configurable: true,
+    writable: true,
+  });
+});
 
 const requiredCtaTokens = [
   '--cta-primary',
@@ -38,5 +93,24 @@ describe('CSS_THEMES CTA tokens', () => {
     expect(CSS_THEMES.solarizedLight['--cta-primary']).toBe(
       CSS_THEMES.solarizedLight['--accent-gold'],
     );
+  });
+
+  it('maps browser-native color scheme to the active UI brightness', () => {
+    expect(getNativeColorScheme('dark')).toBe('dark');
+    expect(getNativeColorScheme('solarizedDark')).toBe('dark');
+    expect(getNativeColorScheme('light')).toBe('light');
+    expect(getNativeColorScheme('solarizedLight')).toBe('light');
+  });
+
+  it('publishes the active native color scheme for browser-rendered controls', () => {
+    applyCssTheme('solarizedDark');
+    expect(rootStyle.colorScheme).toBe('dark');
+    expect(dataset.nativeColorScheme).toBe('dark');
+    expect(metaThemeColor).toBe(CSS_THEMES.solarizedDark['--bg-primary']);
+
+    applyCssTheme('light');
+    expect(rootStyle.colorScheme).toBe('light');
+    expect(dataset.nativeColorScheme).toBe('light');
+    expect(metaThemeColor).toBe(CSS_THEMES.light['--bg-primary']);
   });
 });

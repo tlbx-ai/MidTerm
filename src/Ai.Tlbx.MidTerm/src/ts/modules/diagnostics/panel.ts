@@ -11,6 +11,13 @@ import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
+import {
+  clearTerminalKeyLog,
+  getTerminalKeyLogLines,
+  isTerminalKeyLogEnabled,
+  setTerminalKeyLogEnabled,
+  subscribeTerminalKeyLog,
+} from './terminalKeyLog';
 import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
 import { createLogger } from '../logging';
@@ -26,6 +33,7 @@ export function initDiagnosticsPanel(): void {
   bindRestartButton();
   bindOverlayToggle();
   bindGitOverlayToggle();
+  bindTerminalKeyLogControls();
 }
 
 export function startLatencyMeasurement(): void {
@@ -300,5 +308,36 @@ function bindGitOverlayToggle(): void {
       disableGitStatusOverlay();
       localStorage.removeItem('git-overlay-enabled');
     }
+  });
+}
+
+function bindTerminalKeyLogControls(): void {
+  const toggle = document.getElementById('diag-terminal-key-log-toggle') as HTMLInputElement | null;
+  const clearBtn = document.getElementById(
+    'btn-clear-terminal-key-log',
+  ) as HTMLButtonElement | null;
+  const output = document.getElementById('diag-terminal-key-log');
+
+  if (!toggle || !clearBtn || !output) {
+    return;
+  }
+
+  toggle.checked = isTerminalKeyLogEnabled();
+
+  const render = (): void => {
+    output.textContent = getTerminalKeyLogLines().join('\n');
+    output.scrollTop = output.scrollHeight;
+  };
+
+  render();
+  subscribeTerminalKeyLog(render);
+
+  toggle.addEventListener('change', () => {
+    setTerminalKeyLogEnabled(toggle.checked);
+    render();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    clearTerminalKeyLog();
   });
 }

@@ -293,7 +293,7 @@ public class Program
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)
             {
-                sessionManager.UpdateRunAsUser(newSettings.RunAsUser);
+                sessionManager.UpdateRunAsUser(newSettings.RunAsUser, newSettings.RunAsUserSid);
                 GitCommandRunner.Configure(newSettings.RunAsUser, settingsService.IsRunningAsService);
             }
             else
@@ -440,6 +440,7 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync();
+        await lensRuntime.DiscoverExistingSessionsAsync(sessionManager);
         sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 
         WriteEventLog($"MainCore: Starting server on https://{bindAddress}:{port}");

@@ -16,3 +16,11 @@ export {
   disableGitStatusOverlay,
   isGitStatusOverlayEnabled,
 } from './gitStatusOverlay';
+export {
+  clearTerminalKeyLog,
+  getTerminalKeyLogLines,
+  isTerminalKeyLogEnabled,
+  recordTerminalKeyLog,
+  setTerminalKeyLogEnabled,
+  subscribeTerminalKeyLog,
+} from './terminalKeyLog';
