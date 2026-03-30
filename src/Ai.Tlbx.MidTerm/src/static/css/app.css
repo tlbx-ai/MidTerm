@@ -1694,7 +1694,7 @@ body.has-app-background::after {
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 4px;
+  padding: 0;
   touch-action: manipulation;
   display: flex;
   align-items: flex-start;
@@ -1907,6 +1907,8 @@ body.has-app-background::after {
 /* xterm sizing - natural size based on rows/cols */
 .terminal-container .xterm {
   flex-shrink: 0;
+  min-width: 100%;
+  min-height: 100%;
 }
 
 /* Terminal scrollbar visibility — controlled by scrollbarStyle setting */
@@ -2883,9 +2885,7 @@ body.has-app-background::after {
 
   /* Terminal container - minimal padding on mobile */
   .terminal-container {
-    padding: 4px;
-    padding-left: calc(4px + env(safe-area-inset-left, 0));
-    padding-right: calc(4px + env(safe-area-inset-right, 0));
+    padding: 0;
     overflow: hidden;
   }
 

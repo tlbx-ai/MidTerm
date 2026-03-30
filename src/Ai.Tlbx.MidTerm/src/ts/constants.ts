@@ -314,7 +314,7 @@ export const TERMINAL_FONT_STACK =
   "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Symbol', monospace";
 
 /** Padding around terminal content in pixels */
-export const TERMINAL_PADDING = 8;
+export const TERMINAL_PADDING = 0;
 
 /** Reserved space for xterm's overlay scrollbar (0 = scrollbar overlays text) */
 export const SCROLLBAR_WIDTH = 0;

@@ -209,8 +209,8 @@ function logResizeDiagnostics(
     if (xterm && screen) {
       actualWidth = screen.offsetWidth;
       actualHeight = screen.offsetHeight;
-      const availW = state.container.clientWidth - 8;
-      const availH = state.container.clientHeight - 8;
+      const availW = state.container.clientWidth - TERMINAL_PADDING;
+      const availH = state.container.clientHeight - TERMINAL_PADDING;
       const scaleX = availW / xterm.offsetWidth;
       const scaleY = availH / xterm.offsetHeight;
       scaleFactor = Math.min(scaleX, scaleY, 1);
