@@ -1,18 +1,49 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendLensTurn = vi.fn();
+const getActiveTab = vi.fn(() => 'agent');
+const sessionState = {
+  s1: {
+    id: 's1',
+    lensOnly: true,
+  },
+} as Record<string, { id: string; lensOnly: boolean }>;
 
 vi.mock('../../api/client', () => ({
   sendLensTurn,
 }));
 
+vi.mock('../../stores', () => ({
+  $sessions: {
+    get: () => sessionState,
+  },
+}));
+
 vi.mock('../sessionTabs', () => ({
-  getActiveTab: vi.fn(() => 'agent'),
+  getActiveTab,
 }));
 
 describe('lens input', () => {
   beforeEach(() => {
     sendLensTurn.mockReset();
+    getActiveTab.mockReset();
+    getActiveTab.mockReturnValue('agent');
+    sessionState.s1 = {
+      id: 's1',
+      lensOnly: true,
+    };
+  });
+
+  it('requires a Lens-owned session before reporting Lens as active', async () => {
+    const { isLensActiveSession } = await import('./input');
+
+    expect(isLensActiveSession('s1')).toBe(true);
+
+    sessionState.s1 = {
+      id: 's1',
+      lensOnly: false,
+    };
+    expect(isLensActiveSession('s1')).toBe(false);
   });
 
   it('dispatches optimistic lifecycle events around Lens turn submission', async () => {

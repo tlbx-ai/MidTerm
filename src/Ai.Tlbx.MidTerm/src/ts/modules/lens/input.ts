@@ -4,6 +4,7 @@ import type {
   LensTurnRequest,
   LensTurnStartResponse,
 } from '../../api/types';
+import { $sessions } from '../../stores';
 import { getActiveTab } from '../sessionTabs';
 import { acceptLensQuickSettings, createLensTurnRequestWithQuickSettings } from './quickSettings';
 
@@ -31,7 +32,12 @@ type LensTurnLifecycleEventDetail =
   | LensTurnFailedEventDetail;
 
 export function isLensActiveSession(sessionId: string | null | undefined): boolean {
-  return !!sessionId && getActiveTab(sessionId) === 'agent';
+  if (!sessionId) {
+    return false;
+  }
+
+  const session = $sessions.get()[sessionId];
+  return session?.lensOnly === true && getActiveTab(sessionId) === 'agent';
 }
 
 export function createLensTurnRequest(
