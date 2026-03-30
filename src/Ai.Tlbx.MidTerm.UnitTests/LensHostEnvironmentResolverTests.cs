@@ -56,6 +56,25 @@ public sealed class LensHostEnvironmentResolverTests
     }
 
     [Fact]
+    public void ResolveWindowsProfileDirectory_DoesNotFallbackToSystemProfileParent()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(
+            @"ATURIS\johannes.schmidt",
+            userSid: null);
+
+        Assert.NotNull(profileDirectory);
+        Assert.DoesNotContain(
+            Path.Combine("system32", "config"),
+            profileDirectory!,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ResolveWindowsProfileDirectoryFromExecutablePath_ReturnsOwningUserProfile()
     {
         if (!OperatingSystem.IsWindows())
