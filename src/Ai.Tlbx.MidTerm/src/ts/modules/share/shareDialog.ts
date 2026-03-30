@@ -6,8 +6,11 @@
 
 import {
   createShareLink,
+  getActiveShares,
   getNetworks,
   getSharePacket,
+  revokeShare,
+  type ActiveShareGrantInfo,
   type CreateShareLinkRequest,
   type NetworkInterfaceDto,
 } from '../../api/client';
@@ -66,6 +69,12 @@ function openShareDialog(sessionId: string): void {
             <input id="share-link-output" class="share-link-output" type="text" readonly />
             <p class="share-dialog-expiry"></p>
           </div>
+          <div class="share-dialog-running">
+            <div class="share-dialog-running-header">
+              <span class="share-dialog-field-label">${escapeHtml(t('share.dialog.runningShares'))}</span>
+            </div>
+            <div class="share-dialog-running-list" data-role="active-shares"></div>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" data-role="cancel">${escapeHtml(t('dialog.cancel'))}</button>
@@ -82,6 +91,7 @@ function openShareDialog(sessionId: string): void {
   const outputEl = overlay.querySelector<HTMLInputElement>('#share-link-output');
   const expiryEl = overlay.querySelector<HTMLElement>('.share-dialog-expiry');
   const networkSelectEl = overlay.querySelector<HTMLSelectElement>('#share-network-select');
+  const activeSharesEl = overlay.querySelector<HTMLElement>('[data-role="active-shares"]');
 
   if (
     !createBtn ||
@@ -90,7 +100,8 @@ function openShareDialog(sessionId: string): void {
     !resultEl ||
     !outputEl ||
     !expiryEl ||
-    !networkSelectEl
+    !networkSelectEl ||
+    !activeSharesEl
   ) {
     overlay.remove();
     return;
@@ -99,7 +110,10 @@ function openShareDialog(sessionId: string): void {
   let currentShareUrl = '';
   let currentMode: ShareMode | null = null;
   let requestGeneration = 0;
+  let shareListGeneration = 0;
   let networkOptions: ShareNetworkOption[] = [];
+  let activeShares: ActiveShareGrantInfo[] = [];
+  let revokingGrantId: string | null = null;
 
   function close(): void {
     document.removeEventListener('keydown', onKey);
@@ -125,6 +139,14 @@ function openShareDialog(sessionId: string): void {
     const role = target.closest('[data-role]')?.getAttribute('data-role');
     if (role === 'cancel' || role === 'close') {
       close();
+      return;
+    }
+
+    if (role === 'terminate-share') {
+      const grantId = target.closest<HTMLElement>('[data-grant-id]')?.dataset.grantId;
+      if (grantId) {
+        void terminateShare(grantId);
+      }
     }
   });
 
@@ -151,6 +173,88 @@ function openShareDialog(sessionId: string): void {
       }
       networkSelectEl.appendChild(el);
     });
+  };
+
+  const renderActiveShares = (): void => {
+    if (activeShares.length === 0) {
+      activeSharesEl.innerHTML = `<p class="share-dialog-running-empty">${escapeHtml(
+        t('share.dialog.noRunningShares'),
+      )}</p>`;
+      return;
+    }
+
+    activeSharesEl.innerHTML = activeShares
+      .map((share) => {
+        const isRevoking = revokingGrantId === share.grantId;
+        const modeLabel =
+          share.mode === 'FullControl' ? t('share.dialog.fullControl') : t('share.dialog.viewOnly');
+        const terminateLabel = isRevoking
+          ? t('share.dialog.terminating')
+          : t('share.dialog.terminate');
+
+        return `
+          <article class="share-dialog-running-item" data-grant-id="${escapeHtml(share.grantId)}">
+            <div class="share-dialog-running-main">
+              <p class="share-dialog-running-session">${escapeHtml(share.sessionName)}</p>
+              <p class="share-dialog-running-meta">
+                <span class="share-dialog-running-mode">${escapeHtml(modeLabel)}</span>
+                <span>${escapeHtml(t('share.dialog.expiresAt'))}: ${escapeHtml(new Date(share.expiresAtUtc).toLocaleString())}</span>
+              </p>
+            </div>
+            <button class="btn-danger share-dialog-terminate-btn" data-role="terminate-share" ${isRevoking ? 'disabled' : ''}>${escapeHtml(terminateLabel)}</button>
+          </article>
+        `;
+      })
+      .join('');
+  };
+
+  const loadActiveShares = async (): Promise<void> => {
+    const requestId = ++shareListGeneration;
+    activeSharesEl.innerHTML = `<p class="share-dialog-running-empty">${escapeHtml(
+      t('share.dialog.loadingShares'),
+    )}</p>`;
+
+    try {
+      const response = await getActiveShares(6);
+      if (requestId !== shareListGeneration) {
+        return;
+      }
+
+      activeShares = response.shares;
+      renderActiveShares();
+    } catch (error) {
+      if (requestId !== shareListGeneration) {
+        return;
+      }
+
+      log.error(() => `Failed to load active shares: ${String(error)}`);
+      activeSharesEl.innerHTML = `<p class="share-dialog-running-empty">${escapeHtml(
+        t('share.dialog.runningSharesUnavailable'),
+      )}</p>`;
+    }
+  };
+
+  const terminateShare = async (grantId: string): Promise<void> => {
+    if (!grantId || revokingGrantId) {
+      return;
+    }
+
+    revokingGrantId = grantId;
+    renderActiveShares();
+
+    try {
+      await revokeShare(grantId);
+      activeShares = activeShares.filter((share) => share.grantId !== grantId);
+      renderActiveShares();
+      await loadActiveShares();
+    } catch (error) {
+      log.error(() => `Failed to revoke share ${grantId}: ${String(error)}`);
+      revokingGrantId = null;
+      renderActiveShares();
+    } finally {
+      revokingGrantId = null;
+      renderActiveShares();
+    }
   };
 
   const loadNetworkOptions = async (): Promise<void> => {
@@ -218,6 +322,7 @@ function openShareDialog(sessionId: string): void {
       expiryEl.textContent =
         t('share.dialog.expiresAt') + ': ' + new Date(response.expiresAtUtc).toLocaleString();
       createBtn.textContent = t('trust.copy');
+      await loadActiveShares();
     } catch (error) {
       if (requestId !== requestGeneration) {
         return;
@@ -261,6 +366,7 @@ function openShareDialog(sessionId: string): void {
   releaseBackButtonLayer = registerBackButtonLayer(close);
   cancelBtn.focus();
   createBtn.disabled = true;
+  void loadActiveShares();
   void loadNetworkOptions()
     .then(() => {
       if (networkOptions.length === 0) {

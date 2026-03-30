@@ -2671,6 +2671,85 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/share/active': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          limit?: number;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ActiveShareGrantListResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/share/{grantId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          grantId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/share/claim': {
     parameters: {
       query?: never;
@@ -3483,6 +3562,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ActiveShareGrantInfo: {
+      grantId: string;
+      sessionId: string;
+      sessionName: string;
+      mode: components['schemas']['ShareAccessMode'];
+      /** Format: date-time */
+      createdAtUtc: string;
+      /** Format: date-time */
+      expiresAtUtc: string;
+    };
+    ActiveShareGrantListResponse: {
+      shares: components['schemas']['ActiveShareGrantInfo'][];
+    };
     AgentSessionFeedResponse: {
       sessionId: string;
       source: string;

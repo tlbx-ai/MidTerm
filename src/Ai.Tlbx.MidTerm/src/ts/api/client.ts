@@ -32,6 +32,7 @@ import type {
   HistoryPatchRequest,
   CreateShareLinkRequest,
   CreateShareLinkResponse,
+  ActiveShareGrantListResponse,
   ClaimShareRequest,
   ClaimShareResponse,
   ShareBootstrapResponse,
@@ -598,6 +599,28 @@ export async function createShareLink(
   }
 
   return (await response.json()) as CreateShareLinkResponse;
+}
+
+export async function getActiveShares(limit = 6): Promise<ActiveShareGrantListResponse> {
+  const url = new URL('/api/share/active', window.location.origin);
+  url.searchParams.set('limit', String(limit));
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as ActiveShareGrantListResponse;
+}
+
+export async function revokeShare(grantId: string): Promise<void> {
+  const response = await fetch(`/api/share/${encodeURIComponent(grantId)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
 }
 
 export async function claimShareLink(request: ClaimShareRequest): Promise<ClaimShareResponse> {

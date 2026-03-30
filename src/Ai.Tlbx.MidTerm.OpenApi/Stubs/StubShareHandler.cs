@@ -21,6 +21,30 @@ public sealed class StubShareHandler : IShareHandler
         });
     }
 
+    public IResult GetActiveShares(int? limit)
+    {
+        var maxCount = Math.Clamp(limit ?? 6, 0, 6);
+        var shares = Enumerable.Range(1, maxCount)
+            .Select(index => new ActiveShareGrantInfo
+            {
+                GrantId = $"grant-{index}",
+                SessionId = $"session-{index}",
+                SessionName = $"Shared Session {index}",
+                Mode = index % 2 == 0 ? ShareAccessMode.ViewOnly : ShareAccessMode.FullControl,
+                CreatedAtUtc = DateTime.UtcNow.AddMinutes(-index * 5),
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(60 - (index * 5))
+            })
+            .ToList();
+
+        return Results.Json(new ActiveShareGrantListResponse
+        {
+            Shares = shares
+        });
+    }
+
+    public IResult RevokeShare(string grantId) =>
+        string.IsNullOrWhiteSpace(grantId) ? Results.NotFound() : Results.NoContent();
+
     public IResult ClaimShareLink(ClaimShareRequest request) =>
         Results.Json(new ClaimShareResponse
         {

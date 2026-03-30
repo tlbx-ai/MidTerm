@@ -802,6 +802,12 @@
   "share.dialog.creating": "Creating...",
   "share.dialog.copied": "Copied",
   "share.dialog.expiresAt": "Expires",
+  "share.dialog.runningShares": "Running shares",
+  "share.dialog.loadingShares": "Loading running shares...",
+  "share.dialog.noRunningShares": "No shares are currently active.",
+  "share.dialog.runningSharesUnavailable": "Running shares could not be loaded right now.",
+  "share.dialog.terminate": "Terminate",
+  "share.dialog.terminating": "Terminating...",
   "share.shared.invalid": "This shared session link is invalid or has expired.",
 
   "touch.ctrl": "Ctrl",

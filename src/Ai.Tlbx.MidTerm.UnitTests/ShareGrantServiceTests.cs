@@ -138,6 +138,48 @@ public sealed class ShareGrantServiceTests : IDisposable
     }
 
     [Fact]
+    public void GetActiveGrants_ReturnsNewestActiveGrants_AndFiltersExpiredEntries()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        _service.CreateGrant("session-1", ShareAccessMode.ViewOnly);
+        _timeProvider.Advance(TimeSpan.FromMinutes(5));
+        var second = _service.CreateGrant("session-2", ShareAccessMode.FullControl);
+        _timeProvider.Advance(TimeSpan.FromMinutes(5));
+        var third = _service.CreateGrant("session-3", ShareAccessMode.ViewOnly);
+
+        var active = _service.GetActiveGrants(2);
+
+        Assert.Collection(active,
+            first =>
+            {
+                Assert.Equal(third.GrantId, first.GrantId);
+                Assert.Equal("session-3", first.SessionId);
+            },
+            next =>
+            {
+                Assert.Equal(second.GrantId, next.GrantId);
+                Assert.Equal("session-2", next.SessionId);
+            });
+    }
+
+    [Fact]
+    public void RevokeGrant_InvalidatesOnlyMatchingGrant()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var first = _service.CreateGrant("session-1", ShareAccessMode.FullControl);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var second = _service.CreateGrant("session-2", ShareAccessMode.ViewOnly);
+
+        var revoked = _service.RevokeGrant(first.GrantId);
+
+        Assert.True(revoked);
+        Assert.False(_service.TryClaim(first.GrantId, first.Secret, out _, out _));
+        Assert.True(_service.TryClaim(second.GrantId, second.Secret, out _, out _));
+    }
+
+    [Fact]
     public void CanWrite_OnlyAllowsFullControl()
     {
         var readOnlyAccess = new ShareAccessContext

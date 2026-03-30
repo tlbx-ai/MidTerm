@@ -197,6 +197,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Share ---
 [JsonSerializable(typeof(CreateShareLinkRequest))]
 [JsonSerializable(typeof(CreateShareLinkResponse))]
+[JsonSerializable(typeof(ActiveShareGrantInfo))]
+[JsonSerializable(typeof(List<ActiveShareGrantInfo>))]
+[JsonSerializable(typeof(ActiveShareGrantListResponse))]
 [JsonSerializable(typeof(ClaimShareRequest))]
 [JsonSerializable(typeof(ClaimShareResponse))]
 [JsonSerializable(typeof(ShareBootstrapResponse))]

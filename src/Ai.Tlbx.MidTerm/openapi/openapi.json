@@ -2313,6 +2313,60 @@
         }
       }
     },
+    "/api/share/active": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveShareGrantListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/{grantId}": {
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/share/claim": {
       "post": {
         "tags": [
@@ -2774,6 +2828,53 @@
   },
   "components": {
     "schemas": {
+      "ActiveShareGrantInfo": {
+        "required": [
+          "grantId",
+          "sessionId",
+          "sessionName",
+          "mode",
+          "createdAtUtc",
+          "expiresAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "grantId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActiveShareGrantListResponse": {
+        "required": [
+          "shares"
+        ],
+        "type": "object",
+        "properties": {
+          "shares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveShareGrantInfo"
+            }
+          }
+        }
+      },
       "AgentSessionFeedResponse": {
         "required": [
           "sessionId",

@@ -5704,7 +5704,8 @@ body.has-app-background::after {
 }
 
 .share-dialog-modal {
-  width: min(520px, 92vw);
+  width: min(680px, 92vw);
+  max-height: min(82vh, 760px);
 }
 
 .setting-row-stack {
@@ -6175,6 +6176,86 @@ body.has-app-background::after {
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+.share-dialog-running {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.share-dialog-running-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.share-dialog-running-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.share-dialog-running-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.share-dialog-running-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.share-dialog-running-session,
+.share-dialog-running-meta {
+  margin: 0;
+}
+
+.share-dialog-running-session {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.share-dialog-running-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.share-dialog-running-mode {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.share-dialog-terminate-btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .share-dialog-running-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .share-dialog-terminate-btn {
+    width: 100%;
+  }
 }
 
 body.shared-session-mode .sidebar,
