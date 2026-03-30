@@ -226,6 +226,27 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_FullUpdate_StopsMtAgentHostProcesses()
+    {
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains("KillProcessByPath $CurrentAgentHost", scriptText, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("kill_process_by_path \"$CURRENT_AGENTHOST\"", scriptText, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void GenerateUpdateScript_Linux_StoresBackupsOutsideInstallDirectory()
     {
         if (OperatingSystem.IsWindows())

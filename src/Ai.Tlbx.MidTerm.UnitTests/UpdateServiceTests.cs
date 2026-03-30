@@ -379,7 +379,7 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public void StageLinuxServiceUpdatePayload_CopiesRequiredFilesIntoDurableStaging()
+    public void StageLinuxServiceUpdatePayload_WebOnly_SkipsMtAgentHost()
     {
         var extractedDir = Path.Combine(_tempDir, "download", "extracted");
         var settingsDir = Path.Combine(_tempDir, "settings");
@@ -408,15 +408,54 @@ public sealed class UpdateServiceTests : IDisposable
 
         Assert.Equal(Path.Combine(settingsDir, "update-staging", "payload"), stagedDir);
         Assert.True(File.Exists(Path.Combine(stagedDir, "mt")));
-        Assert.True(File.Exists(Path.Combine(stagedDir, "mtagenthost")));
+        Assert.False(File.Exists(Path.Combine(stagedDir, "mtagenthost")));
         Assert.True(File.Exists(Path.Combine(stagedDir, "version.json")));
         Assert.False(Directory.Exists(Path.GetDirectoryName(extractedDir)!));
 
         if (!OperatingSystem.IsWindows())
         {
             var mode = File.GetUnixFileMode(Path.Combine(stagedDir, "mt"));
-            var agentMode = File.GetUnixFileMode(Path.Combine(stagedDir, "mtagenthost"));
             Assert.True(mode.HasFlag(UnixFileMode.UserExecute));
+        }
+    }
+
+    [Fact]
+    public void StageLinuxServiceUpdatePayload_FullUpdate_StagesMtAgentHost()
+    {
+        var extractedDir = Path.Combine(_tempDir, "download-full", "extracted");
+        var settingsDir = Path.Combine(_tempDir, "settings-full");
+        Directory.CreateDirectory(extractedDir);
+        Directory.CreateDirectory(settingsDir);
+        File.WriteAllText(Path.Combine(extractedDir, "mt"), "new-mt");
+        File.WriteAllText(Path.Combine(extractedDir, "mthost"), "new-mthost");
+        File.WriteAllText(Path.Combine(extractedDir, "mtagenthost"), "new-agenthost");
+        File.WriteAllText(
+            Path.Combine(extractedDir, "version.json"),
+            """
+            {
+              "web": "8.7.22-dev",
+              "pty": "8.7.22-dev",
+              "protocol": 1
+            }
+            """);
+
+        var stagedDir = UpdateService.StageLinuxServiceUpdatePayload(
+            extractedDir,
+            settingsDir,
+            UpdateType.Full,
+            deleteSourceAfter: true,
+            new UpdateArtifacts(
+                Path.Combine(settingsDir, "update.log"),
+                Path.Combine(settingsDir, "update-result.json")));
+
+        Assert.True(File.Exists(Path.Combine(stagedDir, "mt")));
+        Assert.True(File.Exists(Path.Combine(stagedDir, "mthost")));
+        Assert.True(File.Exists(Path.Combine(stagedDir, "mtagenthost")));
+        Assert.True(File.Exists(Path.Combine(stagedDir, "version.json")));
+
+        if (!OperatingSystem.IsWindows())
+        {
+            var agentMode = File.GetUnixFileMode(Path.Combine(stagedDir, "mtagenthost"));
             Assert.True(agentMode.HasFlag(UnixFileMode.UserExecute));
         }
     }

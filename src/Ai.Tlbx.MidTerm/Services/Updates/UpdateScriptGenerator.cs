@@ -272,6 +272,11 @@ try {{
     if (-not $IsWebOnly) {{
         Log 'Killing mthost.exe processes...'
         KillProcessByPath $CurrentMthost
+
+        if (Test-Path $CurrentAgentHost) {{
+            Log 'Killing {AgentHostBinaryName}.exe processes...'
+            KillProcessByPath $CurrentAgentHost
+        }}
     }}
 
     Log 'All processes stopped'
@@ -292,7 +297,7 @@ try {{
         }}
     }}
 
-    if (Test-Path $CurrentAgentHost) {{
+    if ((-not $IsWebOnly) -and (Test-Path $CurrentAgentHost)) {{
         if (-not (WaitForFileWritable $CurrentAgentHost)) {{
             throw ""{AgentHostBinaryName}.exe is still locked after $MaxRetries retries. Another process may be using it.""
         }}
@@ -318,7 +323,7 @@ try {{
         Log 'mthost.exe backed up'
     }}
 
-    if (Test-Path $CurrentAgentHost) {{
+    if ((-not $IsWebOnly) -and (Test-Path $CurrentAgentHost)) {{
         Log 'Backing up {AgentHostBinaryName}.exe...'
         Copy-Item $CurrentAgentHost ""$CurrentAgentHost.bak"" -Force -ErrorAction Stop
         Log '{AgentHostBinaryName}.exe backed up'
@@ -439,7 +444,7 @@ try {{
         SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
     }}
 
-    if (Test-Path $NewAgentHost) {{
+    if ((-not $IsWebOnly) -and (Test-Path $NewAgentHost)) {{
         SafeCopy $NewAgentHost $CurrentAgentHost '{AgentHostBinaryName}.exe'
     }}
 
@@ -1082,6 +1087,10 @@ kill_process_by_path ""$CURRENT_MT""
 if [[ ""$IS_WEB_ONLY"" == ""false"" ]]; then
     log ""Killing mthost processes...""
     kill_process_by_path ""$CURRENT_MTHOST""
+    if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+        log ""Killing {AgentHostBinaryName} processes...""
+        kill_process_by_path ""$CURRENT_AGENTHOST""
+    fi
 fi
 
 log ""All processes stopped""
@@ -1106,7 +1115,7 @@ if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     fi
 fi
 
-if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_AGENTHOST"" ]]; then
     if ! wait_for_file_writable ""$CURRENT_AGENTHOST""; then
         log ""{AgentHostBinaryName} is still locked after $MAX_RETRIES retries"" ""ERROR""
         write_result false ""{AgentHostBinaryName} is still locked. Another process may be using it.""
@@ -1134,7 +1143,7 @@ if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_MTHOST"" ]]; then
     log ""mthost backed up""
 fi
 
-if [[ -f ""$CURRENT_AGENTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$CURRENT_AGENTHOST"" ]]; then
     log ""Backing up {AgentHostBinaryName}...""
     cp -f ""$CURRENT_AGENTHOST"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
     log ""{AgentHostBinaryName} backed up""
@@ -1247,7 +1256,7 @@ if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$NEW_MTHOST"" ]]; then
     fi
 fi
 
-if [[ -f ""$NEW_AGENTHOST"" ]]; then
+if [[ ""$IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$NEW_AGENTHOST"" ]]; then
     if ! safe_copy ""$NEW_AGENTHOST"" ""$CURRENT_AGENTHOST"" ""{AgentHostBinaryName}""; then
         write_result false ""Failed to install {AgentHostBinaryName}""
         exit 1

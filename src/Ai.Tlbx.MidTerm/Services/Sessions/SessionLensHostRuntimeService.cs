@@ -520,7 +520,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     {
         if (_states.TryRemove(sessionId, out var state))
         {
-            _ = DisposeStateAsync(state, terminateHost: true);
+            _ = DisposeOwnedStateAsync(state, terminateHost: true);
         }
 
         _ownershipRegistry.Remove(sessionId);
@@ -536,7 +536,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         await state.Gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await DisposeStateAsync(state, terminateHost: true).ConfigureAwait(false);
+            await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
         }
         finally
         {
@@ -544,11 +544,52 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<int> TerminateAllOwnedHostsAsync(CancellationToken ct = default)
+    {
+        var terminated = 0;
+        var sessionIds = _states.Keys
+            .Concat(_ownershipRegistry.GetSessions().Select(static record => record.SessionId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var sessionId in sessionIds)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (_states.TryRemove(sessionId, out var state))
+            {
+                await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
+                    terminated++;
+                }
+                finally
+                {
+                    state.Gate.Release();
+                }
+
+                continue;
+            }
+
+            var record = _ownershipRegistry.GetSessions()
+                .FirstOrDefault(candidate => string.Equals(candidate.SessionId, sessionId, StringComparison.Ordinal));
+            if (record is null)
+            {
+                continue;
+            }
+
+            await TerminateOwnedHostAsync(sessionId, record.HostPid).ConfigureAwait(false);
+            terminated++;
+        }
+
+        return terminated;
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var state in _states.Values)
         {
-            await DisposeStateAsync(state, terminateHost: !_preserveHostsOnDispose).ConfigureAwait(false);
+            await DisposeOwnedStateAsync(state, terminateHost: !_preserveHostsOnDispose).ConfigureAwait(false);
         }
 
         _states.Clear();
@@ -1160,6 +1201,40 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
+    private async Task DisposeOwnedStateAsync(HostRuntimeState state, bool terminateHost)
+    {
+        var hostPid = state.HostPid;
+        try
+        {
+            await DisposeStateAsync(state, terminateHost).ConfigureAwait(false);
+        }
+        finally
+        {
+            CleanupOwnedHostRegistration(state.SessionId, hostPid);
+        }
+    }
+
+    private void CleanupOwnedHostRegistration(string sessionId, int hostPid)
+    {
+        _ownershipRegistry.Remove(sessionId);
+        if (hostPid > 0)
+        {
+            LensHostEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid);
+        }
+    }
+
+    private async Task TerminateOwnedHostAsync(string sessionId, int hostPid)
+    {
+        try
+        {
+            await TerminateHostProcessAsync(null, hostPid).ConfigureAwait(false);
+        }
+        finally
+        {
+            CleanupOwnedHostRegistration(sessionId, hostPid);
+        }
+    }
+
     private static async Task DisposeStateAsync(HostRuntimeState state, bool terminateHost)
     {
         foreach (var pending in state.PendingCommands.Values)
@@ -1171,10 +1246,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         try
         {
-            if (terminateHost && state.Process is { HasExited: false } process)
+            if (terminateHost)
             {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await TerminateHostProcessAsync(state.Process, state.HostPid).ConfigureAwait(false);
             }
         }
         catch
@@ -1199,6 +1273,40 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
 
         state.Status = HostRuntimeStatus.Stopped;
+        state.HostPid = 0;
+    }
+
+    private static async Task TerminateHostProcessAsync(Process? launchedProcess, int hostPid)
+    {
+        if (launchedProcess is { HasExited: false } process)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (hostPid <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using var externalProcess = Process.GetProcessById(hostPid);
+            if (externalProcess.HasExited)
+            {
+                return;
+            }
+
+            externalProcess.Kill(entireProcessTree: true);
+            await externalProcess.WaitForExitAsync().ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private sealed class HostRuntimeState

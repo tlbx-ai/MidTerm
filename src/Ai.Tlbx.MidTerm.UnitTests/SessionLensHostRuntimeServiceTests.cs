@@ -3,6 +3,8 @@ using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
+using System.Diagnostics;
+using System.Text.Json;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -617,6 +619,74 @@ public sealed class SessionLensHostRuntimeServiceTests
     }
 
     [Fact]
+    public async Task SessionLensHostRuntimeService_TerminateAllOwnedHostsAsync_KillsRecoveredHosts()
+    {
+        var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-terminate-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(settingsRoot);
+        var instanceIdentity = MidTermInstanceIdentity.Load(settingsRoot, 5050);
+        var session = new SessionInfoDto
+        {
+            Id = "session-runtime-terminate-host-1",
+            CurrentDirectory = AppContext.BaseDirectory,
+            ForegroundName = "codex",
+            LensOnly = true,
+            ProfileHint = "codex"
+        };
+
+        SessionLensHostRuntimeService? initialRuntime = null;
+        SessionLensHostRuntimeService? restartedRuntime = null;
+        try
+        {
+            var initialPulse = new SessionLensPulseService();
+            initialRuntime = new SessionLensHostRuntimeService(
+                new SessionLensHostIngressService(initialPulse),
+                initialPulse,
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "synthetic");
+
+            Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session));
+            var hostPid = await WaitForHostPidAsync(instanceIdentity, session.Id);
+
+            var restartedPulse = new SessionLensPulseService();
+            restartedRuntime = new SessionLensHostRuntimeService(
+                new SessionLensHostIngressService(restartedPulse),
+                restartedPulse,
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "synthetic");
+
+            Assert.True(await restartedRuntime.RecoverExistingHostAsync(session.Id, "codex", session));
+
+            var terminated = await restartedRuntime.TerminateAllOwnedHostsAsync();
+
+            Assert.Equal(1, terminated);
+            Assert.True(await WaitForConditionAsync(() => !ProcessExists(hostPid)));
+            Assert.False(restartedRuntime.MayHaveRecoverableHost(session.Id));
+        }
+        finally
+        {
+            if (restartedRuntime is not null)
+            {
+                await restartedRuntime.DisposeAsync();
+            }
+
+            if (initialRuntime is not null)
+            {
+                await initialRuntime.DisposeAsync();
+            }
+
+            try
+            {
+                Directory.Delete(settingsRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
     public async Task SessionLensHostRuntimeService_CanRecoverFullLensHistoryAfterMtRestart()
     {
         var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-restart-tests", Guid.NewGuid().ToString("N"));
@@ -751,5 +821,70 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
 
         return pulse.GetSnapshot(sessionId);
+    }
+
+    private static async Task<int> WaitForHostPidAsync(MidTermInstanceIdentity instanceIdentity, string sessionId)
+    {
+        var registryPath = Path.Combine(
+            Path.GetDirectoryName(instanceIdentity.SessionRegistryPath) ?? Path.GetTempPath(),
+            $"lens-host-sessions-{instanceIdentity.InstanceId}.json");
+
+        for (var i = 0; i < 80; i++)
+        {
+            if (File.Exists(registryPath))
+            {
+                using var document = JsonDocument.Parse(await File.ReadAllTextAsync(registryPath));
+                if (document.RootElement.TryGetProperty("Sessions", out var sessions))
+                {
+                    foreach (var entry in sessions.EnumerateArray())
+                    {
+                        if (!entry.TryGetProperty("SessionId", out var sessionIdProperty) ||
+                            !string.Equals(sessionIdProperty.GetString(), sessionId, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (entry.TryGetProperty("HostPid", out var hostPidProperty) &&
+                            hostPidProperty.TryGetInt32(out var hostPid) &&
+                            hostPid > 0)
+                        {
+                            return hostPid;
+                        }
+                    }
+                }
+            }
+
+            await Task.Delay(25);
+        }
+
+        throw new InvalidOperationException($"Timed out waiting for host pid for session '{sessionId}'.");
+    }
+
+    private static async Task<bool> WaitForConditionAsync(Func<bool> predicate)
+    {
+        for (var i = 0; i < 80; i++)
+        {
+            if (predicate())
+            {
+                return true;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return predicate();
+    }
+
+    private static bool ProcessExists(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
