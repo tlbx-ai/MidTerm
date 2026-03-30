@@ -96,10 +96,7 @@ function showFailureState(): void {
 
   const buttonLabel = translate('update.refreshUi', 'Refresh UI');
   const message = lifecycle.httpReady
-    ? translate(
-        'update.restoringConnections',
-        'Restoring live connections...',
-      )
+    ? translate('update.restoringConnections', 'Restoring live connections...')
     : translate(
         'settings.diagnostics.restartFailed',
         'Server may not have restarted. Try refreshing the page.',
@@ -139,7 +136,10 @@ function finishIfRecovered(): void {
 
   setOverlayMessage(
     refreshState
-      ? translate('update.refreshWhenConvenient', 'Refresh when convenient. Terminals stay connected.')
+      ? translate(
+          'update.refreshWhenConvenient',
+          'Refresh when convenient. Terminals stay connected.',
+        )
       : translate('update.serverBack', 'Server reconnected.'),
     false,
   );
@@ -171,9 +171,7 @@ async function pollServerHealth(): Promise<void> {
     }
 
     if (!($stateWsConnected.get() && $muxWsConnected.get())) {
-      setOverlayMessage(
-        translate('update.restoringConnections', 'Restoring live connections...'),
-      );
+      setOverlayMessage(translate('update.restoringConnections', 'Restoring live connections...'));
       return;
     }
 
@@ -193,9 +191,7 @@ function syncLifecycleFromConnections(): void {
     return;
   }
 
-  const reconnecting =
-    !$stateWsConnected.get() ||
-    !$muxWsConnected.get();
+  const reconnecting = !$stateWsConnected.get() || !$muxWsConnected.get();
   if (reconnecting) {
     setOverlayMessage(
       translate('settings.diagnostics.restartingServer', 'Server is restarting...'),
@@ -226,7 +222,9 @@ export function beginServerRestartLifecycle(
   lifecycle = {
     kind,
     updateType: options?.updateType ?? null,
-    overlay: createOverlay(translate('settings.diagnostics.restartingServer', 'Server is restarting...')),
+    overlay: createOverlay(
+      translate('settings.diagnostics.restartingServer', 'Server is restarting...'),
+    ),
     pollTimer: null,
     timeoutTimer: null,
     httpReady: false,
@@ -243,7 +241,9 @@ export function beginServerRestartLifecycle(
   }, RESTART_TIMEOUT_MS);
 
   void pollServerHealth();
-  log.info(() => `Server restart lifecycle started (${kind}, updateType=${options?.updateType ?? 'none'})`);
+  log.info(
+    () => `Server restart lifecycle started (${kind}, updateType=${options?.updateType ?? 'none'})`,
+  );
 }
 
 export function setFrontendRefreshState(
@@ -257,16 +257,25 @@ export function setFrontendRefreshState(
   const nextStatus = options?.status ?? 'available';
   const nextType = options?.updateType ?? 'unknown';
 
-  if (
-    current?.serverVersion === serverVersion &&
-    current?.status === nextStatus &&
-    current?.updateType === nextType
-  ) {
+  if (current !== null && current.serverVersion === serverVersion) {
+    if (current.status === nextStatus && current.updateType === nextType) {
+      return;
+    }
+  }
+
+  if (current === null) {
+    $frontendRefreshState.set({
+      clientVersion: JS_BUILD_VERSION,
+      serverVersion,
+      updateType: nextType,
+      status: nextStatus,
+      reason: 'server-update',
+    });
     return;
   }
 
   $frontendRefreshState.set({
-    clientVersion: current?.clientVersion || JS_BUILD_VERSION,
+    clientVersion: current.clientVersion || JS_BUILD_VERSION,
     serverVersion,
     updateType: nextType,
     status: nextStatus,

@@ -54,13 +54,13 @@ export function renderUpdatePanel(): void {
   if (refreshState) {
     panel.classList.remove('hidden');
 
-    const dismissBtn = panel.querySelector('#update-dismiss-btn') as HTMLButtonElement | null;
+    const dismissBtn = panel.querySelector<HTMLButtonElement>('#update-dismiss-btn');
     const headerEl = panel.querySelector('.update-header');
     const currentEl = panel.querySelector('.update-current');
     const latestEl = panel.querySelector('.update-latest');
     const noteEl = panel.querySelector('.update-note');
-    const btn = panel.querySelector('.update-btn') as HTMLButtonElement | null;
-    const changelogEl = panel.querySelector('#update-changelog-link') as HTMLElement | null;
+    const btn = panel.querySelector<HTMLButtonElement>('.update-btn');
+    const changelogEl = panel.querySelector<HTMLElement>('#update-changelog-link');
 
     if (dismissBtn) {
       dismissBtn.hidden = refreshState.status === 'required';
@@ -121,9 +121,9 @@ export function renderUpdatePanel(): void {
   const latestEl = panel.querySelector('.update-latest');
   const noteEl = panel.querySelector('.update-note');
   const headerEl = panel.querySelector('.update-header');
-  const dismissBtn = panel.querySelector('#update-dismiss-btn') as HTMLButtonElement | null;
-  const changelogEl = panel.querySelector('#update-changelog-link') as HTMLElement | null;
-  const btn = panel.querySelector('.update-btn') as HTMLButtonElement | null;
+  const dismissBtn = panel.querySelector<HTMLButtonElement>('#update-dismiss-btn');
+  const changelogEl = panel.querySelector<HTMLElement>('#update-changelog-link');
+  const btn = panel.querySelector<HTMLButtonElement>('.update-btn');
 
   if (dismissBtn) {
     dismissBtn.hidden = false;
@@ -240,7 +240,7 @@ export function applyUpdate(): void {
     .then(({ response }) => {
       if (response.ok) {
         if (btn) btn.textContent = t('update.restarting');
-        waitForServerAndReload(info.type ?? null);
+        waitForServerAndReload(info.type);
       } else {
         if (btn) {
           btn.disabled = false;
