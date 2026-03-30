@@ -189,6 +189,17 @@ export function formatDate(isoDate: string): string {
   }
 }
 
+/**
+ * Shared viewer header contract:
+ * - The surrounding surface chrome owns the header for every viewer type.
+ * - Viewer bodies should start with content, not a renderer-specific top bar.
+ * - Variant metadata belongs in the shared subtitle text so text, binary, and
+ *   future viewers keep the same top alignment.
+ */
+export function formatViewerHeaderSubtitle(path: string, metadata?: string | null): string {
+  return metadata ? `${path} | ${metadata}` : path;
+}
+
 export function isTextFile(ext: string, mime: string, serverIsText?: boolean | null): boolean {
   if (serverIsText != null) return serverIsText;
   if (TEXT_EXTENSIONS.has(ext)) return true;

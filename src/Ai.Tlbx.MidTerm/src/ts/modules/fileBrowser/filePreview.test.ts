@@ -144,6 +144,8 @@ vi.mock('../i18n', () => ({
 vi.mock('../fileViewer/rendering', () => ({
   formatSize: (size: number) => `${size}`,
   getExtension: (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase(),
+  formatViewerHeaderSubtitle: (path: string, metadata?: string | null) =>
+    metadata ? `${path} | ${metadata}` : path,
   highlightCode: (text: string) => `highlight:${text}`,
   isTextFile: isTextFileMock,
   isImageFile: () => false,
@@ -284,6 +286,9 @@ describe('filePreview', () => {
 
     expect(formatBinaryDumpMock).toHaveBeenCalledWith(new Uint8Array([0x41, 0x42]));
     expect(createLineNumberedViewerMock).toHaveBeenCalledWith('binary:2', ['file-viewer-binary-shell']);
-    expect(container.querySelector('.file-viewer-binary-bar')).not.toBeNull();
+    expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('archive.bin');
+    expect(container.querySelector('.preview-toolbar-subtitle')?.textContent).toBe(
+      'Q:\\repos\\MidTerm\\archive.bin | application/octet-stream | 2',
+    );
   });
 });

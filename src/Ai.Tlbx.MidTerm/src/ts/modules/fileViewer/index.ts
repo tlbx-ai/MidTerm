@@ -33,6 +33,7 @@ import {
   joinPath,
   getFileIcon,
   formatSize,
+  formatViewerHeaderSubtitle,
   isTextFile,
   formatBinaryDump,
   createLineNumberedEditor,
@@ -227,8 +228,9 @@ async function renderInDock(path: string): Promise<void> {
   const pathEl = dockPanel.querySelector('.file-viewer-dock-path');
   const bodyEl = dockPanel.querySelector('.file-viewer-dock-body');
 
-  if (titleEl) titleEl.textContent = getFileName(path);
-  if (pathEl) pathEl.textContent = path;
+  if (titleEl || pathEl) {
+    updateDockHeader(path);
+  }
   if (bodyEl)
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
@@ -282,8 +284,9 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   const bodyEl = modal.querySelector('.file-viewer-body');
   const downloadBtn = modal.querySelector<HTMLElement>('#file-viewer-download');
 
-  if (titleEl) titleEl.textContent = getFileName(path);
-  if (pathEl) pathEl.textContent = path;
+  if (titleEl || pathEl) {
+    updateModalHeader(path);
+  }
   if (bodyEl)
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
@@ -432,6 +435,42 @@ function createCodeStack(): HTMLDivElement {
   return stack;
 }
 
+function updateModalHeader(path: string, metadata?: string | null): void {
+  if (!modal) {
+    return;
+  }
+
+  const titleEl = modal.querySelector('.file-viewer-title');
+  const pathEl = modal.querySelector('.file-viewer-path');
+  if (titleEl) titleEl.textContent = getFileName(path);
+  if (pathEl) pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+}
+
+function updateDockHeader(path: string, metadata?: string | null): void {
+  const dockPanel = document.getElementById('file-viewer-dock');
+  if (!dockPanel) {
+    return;
+  }
+
+  const titleEl = dockPanel.querySelector('.file-viewer-dock-title');
+  const pathEl = dockPanel.querySelector('.file-viewer-dock-path');
+  if (titleEl) titleEl.textContent = getFileName(path);
+  if (pathEl) pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+}
+
+function updateViewerHeaders(path: string, metadata?: string | null): void {
+  updateModalHeader(path, metadata);
+  updateDockHeader(path, metadata);
+}
+
+function formatBinaryHeaderMetadata(info: FilePathInfo): string {
+  const parts = [info.mimeType || t('fileViewer.binaryFile')];
+  if (info.size != null) {
+    parts.push(formatSize(info.size));
+  }
+  return parts.join(' | ');
+}
+
 async function renderFile(path: string, info: FilePathInfo, container: Element): Promise<void> {
   const mime = info.mimeType || 'application/octet-stream';
   const ext = getExtension(path).toLowerCase();
@@ -577,13 +616,9 @@ async function renderBinaryContent(
     const stack = createCodeStack();
     const viewer = createLineNumberedViewer(formatBinaryDump(bytes), ['file-viewer-binary-shell']);
     viewer.pre.classList.add('file-viewer-binary-text');
+    updateViewerHeaders(path, formatBinaryHeaderMetadata(info));
 
     container.innerHTML = '';
-
-    const infoBar = document.createElement('div');
-    infoBar.className = 'file-viewer-binary-bar';
-    infoBar.textContent = `${info.mimeType || t('fileViewer.binaryFile')} \u2014 ${formatSize(fileSize)}`;
-    stack.appendChild(infoBar);
     stack.appendChild(viewer.root);
 
     if (partial) {

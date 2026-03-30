@@ -8790,15 +8790,6 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-hover);
 }
 
-/* Binary content info bar */
-.file-viewer-binary-bar {
-  padding: 8px 16px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  font-size: var(--fs-md);
-  color: var(--text-secondary);
-}
-
 /* Binary text view */
 .file-viewer-binary-text {
   color: var(--text-secondary);
@@ -12096,6 +12087,9 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .preview-toolbar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -12109,11 +12103,25 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
+.preview-toolbar-subtitle {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
 .preview-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.preview-toolbar-actions:empty {
+  display: none;
 }
 
 .preview-editor-btn,

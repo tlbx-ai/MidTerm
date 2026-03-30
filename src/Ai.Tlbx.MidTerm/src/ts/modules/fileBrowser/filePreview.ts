@@ -12,6 +12,7 @@ import { escapeHtml } from '../../utils';
 import {
   formatSize,
   getExtension,
+  formatViewerHeaderSubtitle,
   highlightCode,
   isTextFile,
   isImageFile,
@@ -31,6 +32,60 @@ function buildSaveUrl(sessionId: string): string {
     url += `?sessionId=${encodeURIComponent(sessionId)}`;
   }
   return url;
+}
+
+function formatBinaryPreviewMetadata(entry: FileTreeEntry): string {
+  const parts = [entry.mimeType || t('fileViewer.binaryFile')];
+  if (entry.size != null) {
+    parts.push(formatSize(entry.size));
+  }
+  return parts.join(' | ');
+}
+
+/**
+ * Keep the preview toolbar as the only header. New preview types should reuse
+ * this shell and put extra metadata into the subtitle instead of adding a
+ * renderer-specific bar above the body.
+ */
+function createPreviewShell(
+  entry: FileTreeEntry,
+  subtitleMetadata?: string | null,
+): {
+  shell: HTMLDivElement;
+  body: HTMLDivElement;
+  actions: HTMLDivElement;
+} {
+  const shell = document.createElement('div');
+  shell.className = 'preview-text-shell';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'preview-toolbar';
+
+  const meta = document.createElement('div');
+  meta.className = 'preview-toolbar-meta';
+
+  const name = document.createElement('span');
+  name.className = 'preview-toolbar-name';
+  name.textContent = entry.name;
+  meta.appendChild(name);
+
+  const subtitle = document.createElement('span');
+  subtitle.className = 'preview-toolbar-subtitle';
+  subtitle.textContent = formatViewerHeaderSubtitle(entry.fullPath, subtitleMetadata);
+  meta.appendChild(subtitle);
+
+  const actions = document.createElement('div');
+  actions.className = 'preview-toolbar-actions';
+
+  const body = document.createElement('div');
+  body.className = 'preview-text-body';
+
+  toolbar.appendChild(meta);
+  toolbar.appendChild(actions);
+  shell.appendChild(toolbar);
+  shell.appendChild(body);
+
+  return { shell, body, actions };
 }
 
 export function renderPreview(
@@ -110,20 +165,14 @@ async function fetchAndRenderBinary(
     }
 
     const bytes = new Uint8Array(await res.arrayBuffer());
-    const shell = document.createElement('div');
-    shell.className = 'file-viewer-code-stack';
-
-    const infoBar = document.createElement('div');
-    infoBar.className = 'file-viewer-binary-bar';
-    infoBar.textContent = `${entry.mimeType || t('fileViewer.binaryFile')} \u2014 ${
-      entry.size !== undefined ? formatSize(entry.size) : t('fileBrowser.unknownSize')
-    }`;
-
+    const { shell, body } = createPreviewShell(entry, formatBinaryPreviewMetadata(entry));
+    const stack = document.createElement('div');
+    stack.className = 'file-viewer-code-stack';
     const viewer = createLineNumberedViewer(formatBinaryDump(bytes), ['file-viewer-binary-shell']);
     viewer.pre.classList.add('file-viewer-binary-text');
 
-    shell.appendChild(infoBar);
-    shell.appendChild(viewer.root);
+    stack.appendChild(viewer.root);
+    body.appendChild(stack);
 
     container.innerHTML = '';
     container.appendChild(shell);
@@ -145,22 +194,7 @@ function renderTextContent(
   let isEditing = startInEditor;
   let isDirty = false;
 
-  const shell = document.createElement('div');
-  shell.className = 'preview-text-shell';
-
-  const toolbar = document.createElement('div');
-  toolbar.className = 'preview-toolbar';
-
-  const meta = document.createElement('div');
-  meta.className = 'preview-toolbar-meta';
-
-  const name = document.createElement('span');
-  name.className = 'preview-toolbar-name';
-  name.textContent = entry.name;
-  meta.appendChild(name);
-
-  const actions = document.createElement('div');
-  actions.className = 'preview-toolbar-actions';
+  const { shell, body, actions } = createPreviewShell(entry);
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
@@ -174,9 +208,6 @@ function renderTextContent(
   saveBtn.textContent = t('fileViewer.save');
   saveBtn.disabled = true;
   saveBtn.style.display = isEditing ? '' : 'none';
-
-  const body = document.createElement('div');
-  body.className = 'preview-text-body';
 
   const updateDirtyState = (dirty: boolean): void => {
     isDirty = dirty;
@@ -262,12 +293,6 @@ function renderTextContent(
 
   actions.appendChild(editBtn);
   actions.appendChild(saveBtn);
-
-  toolbar.appendChild(meta);
-  toolbar.appendChild(actions);
-
-  shell.appendChild(toolbar);
-  shell.appendChild(body);
 
   container.innerHTML = '';
   container.appendChild(shell);
