@@ -5771,6 +5771,52 @@ body.has-app-background::after {
   gap: 10px;
 }
 
+.session-launcher-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.session-launcher-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  min-height: 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-dialog-muted) 92%, var(--bg-dialog));
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.session-launcher-target:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
+}
+
+.session-launcher-target.active {
+  border-color: color-mix(in srgb, var(--accent-blue) 56%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-dialog-muted));
+}
+
+.session-launcher-target-title {
+  font-size: var(--fs-base);
+  font-weight: 700;
+}
+
+.session-launcher-target-description {
+  color: var(--text-secondary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 .session-launcher-provider {
   display: flex;
   flex-direction: column;
@@ -5819,12 +5865,23 @@ body.has-app-background::after {
   line-height: 1.4;
 }
 
+.session-launcher-provider-hint {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 .session-launcher-browser {
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1;
   min-height: 0;
+}
+
+.session-launcher-remote {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .session-launcher-launch {
@@ -6059,6 +6116,10 @@ body.has-app-background::after {
   .session-launcher-providers {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+  }
+
+  .session-launcher-targets {
+    grid-template-columns: 1fr;
   }
 
   .session-launcher-provider {

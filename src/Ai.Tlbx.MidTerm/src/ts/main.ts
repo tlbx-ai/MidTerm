@@ -150,6 +150,7 @@ import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
   attachHubChannel,
   bindHubSettings,
+  createRemoteSession,
   deleteRemoteSession,
   detachHubChannel,
   getFirstHubSessionId,
@@ -161,6 +162,7 @@ import {
   renameRemoteSession,
   renderHubSettings,
   subscribeHubState,
+  toHubCompositeId,
 } from './modules/hub';
 import {
   initSessionShareButton,
@@ -673,15 +675,43 @@ async function createSession(): Promise<void> {
   const { cols, rows } = await resolveNewSessionDimensions();
   const tempId = createPendingSession(cols, rows);
   const shell = resolveLauncherShell();
+  const workingDirectory = selection.workingDirectory?.trim() || undefined;
+  const createSessionRequest = {
+    cols,
+    rows,
+    shell,
+    ...(workingDirectory ? { workingDirectory } : {}),
+  };
   closeSidebar();
 
+  const target = selection.target;
+  if (target.kind === 'hub') {
+    if (selection.provider !== 'terminal') {
+      clearPendingSession(tempId);
+      void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
+        title: t('sessionLauncher.createFailed'),
+      });
+      return;
+    }
+
+    createRemoteSession(target.machineId, createSessionRequest)
+      .then(async (session) => {
+        await refreshHubState();
+        clearPendingSession(tempId);
+        const compositeId = toHubCompositeId(target.machineId, session.id);
+        newlyCreatedSessions.add(compositeId);
+        selectSession(compositeId);
+      })
+      .catch((e: unknown) => {
+        clearPendingSession(tempId);
+        log.error(() => `Failed to create remote session: ${String(e)}`);
+        void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+      });
+    return;
+  }
+
   if (selection.provider === 'terminal') {
-    apiCreateSession({
-      cols,
-      rows,
-      shell,
-      workingDirectory: selection.workingDirectory,
-    })
+    apiCreateSession(createSessionRequest)
       .then(({ data }) => {
         clearPendingSession(tempId);
         if (!data) {
@@ -701,10 +731,7 @@ async function createSession(): Promise<void> {
   }
 
   bootstrapWorker({
-    cols,
-    rows,
-    shell,
-    workingDirectory: selection.workingDirectory,
+    ...createSessionRequest,
     agentControlled: false,
     injectGuidance: true,
     profile: selection.provider,

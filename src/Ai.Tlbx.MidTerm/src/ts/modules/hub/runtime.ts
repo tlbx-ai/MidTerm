@@ -17,6 +17,15 @@ function toCompositeId(machineId: string, sessionId: string): string {
   return `hub:${machineId}:${sessionId}`;
 }
 
+function isMachineLaunchable(machine: HubMachineState): boolean {
+  return (
+    machine.machine.enabled &&
+    machine.status === 'online' &&
+    !machine.requiresTrust &&
+    !machine.fingerprintMismatch
+  );
+}
+
 function toSession(session: HubSessionRecord['session']): Session {
   return {
     ...session,
@@ -69,6 +78,14 @@ export function isHubSessionId(sessionId: string | null | undefined): boolean {
 
 export function getHubMachines(): HubMachineState[] {
   return machines;
+}
+
+export function getLaunchableHubMachines(): HubMachineState[] {
+  return machines.filter(isMachineLaunchable);
+}
+
+export function toHubCompositeId(machineId: string, sessionId: string): string {
+  return toCompositeId(machineId, sessionId);
 }
 
 export function getHubSessionRecord(sessionId: string): HubSessionRecord | null {

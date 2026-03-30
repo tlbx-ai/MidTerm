@@ -1,12 +1,32 @@
 import { escapeHtml } from '../../utils/dom';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '../hub/runtime';
+import type { HubMachineState } from '../hub/types';
 
 export type LauncherProvider = 'terminal' | 'codex' | 'claude';
 
+const LOCAL_TARGET_ID = 'local';
+
+export interface LocalSessionLauncherTarget {
+  id: typeof LOCAL_TARGET_ID;
+  kind: 'local';
+}
+
+export interface HubSessionLauncherTarget {
+  id: string;
+  kind: 'hub';
+  machineId: string;
+  machineName: string;
+  baseUrl: string;
+}
+
+export type SessionLauncherTarget = LocalSessionLauncherTarget | HubSessionLauncherTarget;
+
 export interface SessionLauncherSelection {
   provider: LauncherProvider;
-  workingDirectory: string;
+  workingDirectory: string | null;
+  target: SessionLauncherTarget;
 }
 
 let activeLauncherPromise: Promise<SessionLauncherSelection | null> | null = null;
@@ -38,6 +58,34 @@ interface LauncherState {
   loading: boolean;
   error: string | null;
   requestToken: number;
+  targets: SessionLauncherTarget[];
+  selectedTargetId: string;
+  remotePathDrafts: Record<string, string>;
+}
+
+export function buildSessionLauncherTargets(
+  machines: ReadonlyArray<HubMachineState>,
+): SessionLauncherTarget[] {
+  return [
+    {
+      id: LOCAL_TARGET_ID,
+      kind: 'local',
+    },
+    ...machines.map((machine) => ({
+      id: `hub:${machine.machine.id}`,
+      kind: 'hub' as const,
+      machineId: machine.machine.id,
+      machineName: machine.machine.name,
+      baseUrl: machine.machine.baseUrl,
+    })),
+  ];
+}
+
+export function isProviderSupportedOnTarget(
+  provider: LauncherProvider,
+  target: SessionLauncherTarget,
+): boolean {
+  return target.kind === 'local' || provider === 'terminal';
 }
 
 export async function openSessionLauncher(): Promise<SessionLauncherSelection | null> {
@@ -72,6 +120,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
             <button class="modal-close" type="button" data-role="cancel" aria-label="${escapeHtml(t('dialog.cancel'))}">&times;</button>
           </div>
           <div class="modal-body session-launcher-body">
+            <div class="session-launcher-launch hidden" data-role="targets-section">
+              <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseTarget'))}</div>
+              <div class="session-launcher-targets" data-role="targets"></div>
+            </div>
             <div class="session-launcher-browser" data-role="browser">
               <div class="session-launcher-toolbar">
                 <button type="button" class="btn-secondary session-launcher-nav-btn" data-action="home" title="${escapeHtml(t('sessionLauncher.home'))}">
@@ -95,9 +147,23 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
               <div class="session-launcher-status hidden" data-role="status"></div>
               <div class="session-launcher-list" data-role="list"></div>
             </div>
+            <div class="session-launcher-remote hidden" data-role="remote-browser">
+              <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.remoteWorkingDirectory'))}</div>
+              <input
+                type="text"
+                class="session-launcher-path"
+                data-role="remote-path"
+                title=""
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="${escapeHtml(t('sessionLauncher.remoteWorkingDirectoryPlaceholder'))}"
+              />
+              <div class="session-launcher-status" data-role="remote-hint">${escapeHtml(t('sessionLauncher.remoteWorkingDirectoryHint'))}</div>
+            </div>
             <div class="session-launcher-launch">
               <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseProvider'))}</div>
               <div class="session-launcher-providers" data-role="providers"></div>
+              <div class="session-launcher-provider-hint hidden" data-role="provider-hint"></div>
             </div>
           </div>
           <div class="modal-footer session-launcher-footer">
@@ -118,27 +184,56 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       loading: false,
       error: null,
       requestToken: 0,
+      targets: buildSessionLauncherTargets(getLaunchableHubMachines()),
+      selectedTargetId: LOCAL_TARGET_ID,
+      remotePathDrafts: {},
     };
 
     const providersEl = overlay.querySelector<HTMLElement>('[data-role="providers"]');
+    const targetsSectionEl = overlay.querySelector<HTMLElement>('[data-role="targets-section"]');
+    const targetsEl = overlay.querySelector<HTMLElement>('[data-role="targets"]');
     const browserEl = overlay.querySelector<HTMLElement>('[data-role="browser"]');
+    const remoteBrowserEl = overlay.querySelector<HTMLElement>('[data-role="remote-browser"]');
+    const remotePathEl = overlay.querySelector<HTMLInputElement>('[data-role="remote-path"]');
+    const providerHintEl = overlay.querySelector<HTMLElement>('[data-role="provider-hint"]');
     const pathEl = overlay.querySelector<HTMLInputElement>('[data-role="path"]');
     const rootsEl = overlay.querySelector<HTMLElement>('[data-role="roots"]');
     const statusEl = overlay.querySelector<HTMLElement>('[data-role="status"]');
     const listEl = overlay.querySelector<HTMLElement>('[data-role="list"]');
     const cancelButtons = overlay.querySelectorAll<HTMLElement>('[data-role="cancel"]');
 
-    if (!providersEl || !browserEl || !pathEl || !rootsEl || !statusEl || !listEl) {
+    if (
+      !providersEl ||
+      !targetsSectionEl ||
+      !targetsEl ||
+      !browserEl ||
+      !remoteBrowserEl ||
+      !remotePathEl ||
+      !providerHintEl ||
+      !pathEl ||
+      !rootsEl ||
+      !statusEl ||
+      !listEl
+    ) {
       overlay.remove();
       resolve(null);
       return;
     }
 
     const safeProvidersEl = providersEl;
+    const safeTargetsSectionEl = targetsSectionEl;
+    const safeTargetsEl = targetsEl;
+    const safeBrowserEl = browserEl;
+    const safeRemoteBrowserEl = remoteBrowserEl;
+    const safeRemotePathEl = remotePathEl;
+    const safeProviderHintEl = providerHintEl;
     const safePathEl = pathEl;
     const safeRootsEl = rootsEl;
     const safeStatusEl = statusEl;
     const safeListEl = listEl;
+    const releaseHubStateSubscription = subscribeHubState(() => {
+      render();
+    });
 
     let pathFollowTimer: number | null = null;
     let skipNextPathCommit = false;
@@ -153,6 +248,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     function close(result: SessionLauncherSelection | null): void {
       clearPendingPathFollow();
       document.removeEventListener('keydown', onKeyDown);
+      releaseHubStateSubscription();
       releaseBackButtonLayer?.();
       releaseBackButtonLayer = null;
       overlay.remove();
@@ -166,9 +262,72 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       }
     }
 
+    function getSelectedTarget(): SessionLauncherTarget {
+      return (
+        state.targets.find((target) => target.id === state.selectedTargetId) ?? {
+          id: LOCAL_TARGET_ID,
+          kind: 'local',
+        }
+      );
+    }
+
+    function refreshTargets(): void {
+      state.targets = buildSessionLauncherTargets(getLaunchableHubMachines());
+      if (!state.targets.some((target) => target.id === state.selectedTargetId)) {
+        state.selectedTargetId = LOCAL_TARGET_ID;
+      }
+    }
+
+    function renderTargets(): void {
+      const showTargets = state.targets.length > 1;
+      safeTargetsSectionEl.classList.toggle('hidden', !showTargets);
+      if (!showTargets) {
+        safeTargetsEl.innerHTML = '';
+        return;
+      }
+
+      safeTargetsEl.innerHTML = state.targets
+        .map((target) => {
+          const active = state.selectedTargetId === target.id ? ' active' : '';
+          if (target.kind === 'local') {
+            return `
+              <button type="button" class="session-launcher-target${active}" data-target-id="${escapeHtml(target.id)}">
+                <span class="session-launcher-target-title">${escapeHtml(t('sessionLauncher.localTargetTitle'))}</span>
+                <span class="session-launcher-target-description">${escapeHtml(t('sessionLauncher.localTargetDescription'))}</span>
+              </button>
+            `;
+          }
+
+          return `
+            <button type="button" class="session-launcher-target${active}" data-target-id="${escapeHtml(target.id)}">
+              <span class="session-launcher-target-title">${escapeHtml(target.machineName)}</span>
+              <span class="session-launcher-target-description">${escapeHtml(target.baseUrl)}</span>
+            </button>
+          `;
+        })
+        .join('');
+    }
+
+    function renderLocationMode(): void {
+      const target = getSelectedTarget();
+      const isLocalTarget = target.kind === 'local';
+      safeBrowserEl.classList.toggle('hidden', !isLocalTarget);
+      safeRemoteBrowserEl.classList.toggle('hidden', isLocalTarget);
+
+      if (!isLocalTarget) {
+        const currentDraft = state.remotePathDrafts[target.id] ?? '';
+        if (safeRemotePathEl.value !== currentDraft) {
+          safeRemotePathEl.value = currentDraft;
+        }
+        safeRemotePathEl.title = currentDraft;
+      }
+    }
+
     function renderProviders(): void {
+      const target = getSelectedTarget();
       safeProvidersEl.innerHTML = getProviders()
         .map((definition) => {
+          const supported = isProviderSupportedOnTarget(definition.provider, target);
           const badge = definition.beta
             ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
             : '';
@@ -179,7 +338,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
               data-provider="${definition.provider}"
               title="${escapeHtml(definition.launchLabel)}"
               aria-label="${escapeHtml(definition.launchLabel)}"
-              ${state.loading || !state.currentPath ? 'disabled' : ''}
+              ${!supported || (target.kind === 'local' && (state.loading || !state.currentPath)) ? 'disabled' : ''}
             >
               <span class="session-launcher-provider-heading">
                 <span class="session-launcher-provider-title">${escapeHtml(definition.title)}</span>
@@ -190,6 +349,12 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           `;
         })
         .join('');
+
+      const showProviderHint = target.kind === 'hub';
+      safeProviderHintEl.classList.toggle('hidden', !showProviderHint);
+      safeProviderHintEl.textContent = showProviderHint
+        ? t('sessionLauncher.remoteTerminalOnly')
+        : '';
     }
 
     function renderRoots(): void {
@@ -236,6 +401,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     }
 
     function render(): void {
+      refreshTargets();
+      renderTargets();
+      renderLocationMode();
       renderProviders();
       renderRoots();
       renderStatus();
@@ -366,15 +534,25 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       })();
     });
     void loadDirectory(state.homePath, { recordHistory: false });
+    void refreshHubState().catch(() => {});
 
     function launch(provider: LauncherProvider): void {
-      if (state.loading || !state.currentPath) {
+      const target = getSelectedTarget();
+      if (!isProviderSupportedOnTarget(provider, target)) {
+        return;
+      }
+
+      if (target.kind === 'local' && (state.loading || !state.currentPath)) {
         return;
       }
 
       close({
         provider,
-        workingDirectory: state.currentPath,
+        workingDirectory:
+          target.kind === 'local'
+            ? state.currentPath
+            : state.remotePathDrafts[target.id]?.trim() || null,
+        target,
       });
     }
 
@@ -385,6 +563,19 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       }
 
       launch(target.dataset.provider as LauncherProvider);
+    });
+
+    safeTargetsEl.addEventListener('click', (event) => {
+      const targetId = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        '[data-target-id]',
+      )?.dataset.targetId;
+      if (!targetId || state.selectedTargetId === targetId) {
+        return;
+      }
+
+      clearPendingPathFollow();
+      state.selectedTargetId = targetId;
+      render();
     });
 
     safeRootsEl.addEventListener('click', (event) => {
@@ -410,6 +601,11 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     safePathEl.addEventListener('input', () => {
       state.pathDraft = safePathEl.value;
       queuePathFollow();
+    });
+
+    safeRemotePathEl.addEventListener('input', () => {
+      state.remotePathDrafts[state.selectedTargetId] = safeRemotePathEl.value;
+      safeRemotePathEl.title = safeRemotePathEl.value;
     });
 
     safePathEl.addEventListener('keydown', (event) => {
@@ -441,7 +637,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       if (
         document.activeElement === safePathEl &&
         target?.closest(
-          '[data-open-path], [data-root-path], [data-action], [data-provider], [data-role="cancel"]',
+          '[data-open-path], [data-root-path], [data-action], [data-provider], [data-target-id], [data-role="cancel"]',
         )
       ) {
         skipNextPathCommit = true;
