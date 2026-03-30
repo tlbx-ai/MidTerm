@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const source = readFileSync(path.join(__dirname, 'smartInput.ts'), 'utf8');
+const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 
 describe('smart input tab wiring', () => {
   it('resyncs smart input visibility when non-Lens tabs activate', () => {
@@ -16,5 +17,10 @@ describe('smart input tab wiring', () => {
 
   it('does not rely on agent deactivation timing to hide Lens-only controls', () => {
     expect(source).not.toContain("onTabDeactivated('agent'");
+  });
+
+  it('keeps Lens quick settings hidden when the hidden attribute is set', () => {
+    expect(css).toContain('.smart-input-lens-settings[hidden] {');
+    expect(css).toContain('display: none !important;');
   });
 });

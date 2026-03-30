@@ -7929,6 +7929,10 @@ body.shared-session-mode .session-tab-bar {
   scrollbar-width: none;
 }
 
+.smart-input-lens-settings[hidden] {
+  display: none !important;
+}
+
 .smart-input-lens-settings::-webkit-scrollbar {
   display: none;
 }
