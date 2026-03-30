@@ -21,6 +21,7 @@ import {
 import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
 import { createLogger } from '../logging';
+import { beginServerRestartLifecycle, reloadAppShell } from '../updating';
 
 const log = createLogger('diagnostics');
 type TerminalTransportDiagnostics = NonNullable<SessionStateResponse['terminalTransport']>;
@@ -218,7 +219,7 @@ function bindReloadSettingsButton(): void {
       try {
         const { response } = await reloadSettings();
         if (response.ok) {
-          window.location.reload();
+          reloadAppShell();
         }
       } catch (e) {
         log.error(() => `Failed to reload settings: ${String(e)}`);
@@ -250,44 +251,9 @@ function bindRestartButton(): void {
         // Server may have already shut down before responding — that's expected
       }
 
-      showRestartOverlay();
+      beginServerRestartLifecycle('restart');
     })();
   });
-}
-
-function showRestartOverlay(): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'restart-overlay';
-  overlay.innerHTML = `
-    <div class="spinner"></div>
-    <div>${t('settings.diagnostics.restartingServer')}</div>
-  `;
-  document.body.appendChild(overlay);
-
-  let attempts = 0;
-  const maxAttempts = 30; // 30 × 2s = 60s timeout
-
-  const poll = setInterval(async () => {
-    attempts++;
-    try {
-      const resp = await fetch('/api/health', { cache: 'no-store' });
-      if (resp.ok) {
-        clearInterval(poll);
-        window.location.reload();
-        return;
-      }
-    } catch {
-      // Server still down — keep polling
-    }
-
-    if (attempts >= maxAttempts) {
-      clearInterval(poll);
-      overlay.innerHTML = `
-        <div>${t('settings.diagnostics.restartFailed')}</div>
-        <button class="btn-primary" onclick="window.location.reload()">${t('settings.diagnostics.retryConnection')}</button>
-      `;
-    }
-  }, 2000);
 }
 
 function bindGitOverlayToggle(): void {

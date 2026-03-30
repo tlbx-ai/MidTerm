@@ -5,29 +5,43 @@
  * and applying updates with server restart.
  */
 
-import type { UpdateInfo, UpdateResult } from '../../api/types';
-import { $updateInfo, $currentSettings } from '../../stores';
+import type { UpdateInfo, UpdateResult, UpdateType } from '../../api/types';
+import { $frontendRefreshState, $updateInfo, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
 import {
   applyUpdate as apiApplyUpdate,
   checkUpdate,
-  getVersion,
   getUpdateResult,
   deleteUpdateResult,
   getUpdateLog,
 } from '../../api/client';
 import { openSettings, switchSettingsTab } from '../settings';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { beginServerRestartLifecycle, requestFrontendRefresh } from './runtime';
 
 const log = createLogger('updating');
 
-const MAX_RELOAD_ATTEMPTS = 30;
-const RELOAD_INTERVAL_MS = 2000;
-const INITIAL_RESTART_DELAY_MS = 3000;
-
 const DISMISSED_VERSION_KEY = 'mt-dismissed-update-version';
+let updateUiInitialized = false;
+
+export function initUpdateUi(): void {
+  if (updateUiInitialized) {
+    return;
+  }
+
+  updateUiInitialized = true;
+  $updateInfo.subscribe(() => {
+    renderUpdatePanel();
+  });
+  $currentSettings.subscribe(() => {
+    renderUpdatePanel();
+  });
+  $frontendRefreshState.subscribe(() => {
+    renderUpdatePanel();
+  });
+}
 
 /**
  * Render the update panel based on current update info
@@ -35,6 +49,47 @@ const DISMISSED_VERSION_KEY = 'mt-dismissed-update-version';
 export function renderUpdatePanel(): void {
   const panel = document.getElementById('update-panel');
   if (!panel) return;
+
+  const refreshState = $frontendRefreshState.get();
+  if (refreshState) {
+    panel.classList.remove('hidden');
+
+    const dismissBtn = panel.querySelector('#update-dismiss-btn') as HTMLButtonElement | null;
+    const headerEl = panel.querySelector('.update-header');
+    const currentEl = panel.querySelector('.update-current');
+    const latestEl = panel.querySelector('.update-latest');
+    const noteEl = panel.querySelector('.update-note');
+    const btn = panel.querySelector('.update-btn') as HTMLButtonElement | null;
+    const changelogEl = panel.querySelector('#update-changelog-link') as HTMLElement | null;
+
+    if (dismissBtn) {
+      dismissBtn.hidden = refreshState.status === 'required';
+    }
+    if (headerEl) {
+      headerEl.textContent =
+        refreshState.status === 'required' ? t('update.refreshRequired') : t('update.refreshReady');
+    }
+    if (currentEl) currentEl.textContent = refreshState.clientVersion;
+    if (latestEl) latestEl.textContent = refreshState.serverVersion;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t('update.refreshUi');
+    }
+    if (noteEl) {
+      noteEl.textContent =
+        refreshState.status === 'required'
+          ? t('update.refreshRequiredNote')
+          : t('update.refreshWhenConvenient');
+      noteEl.classList.add('update-note-safe');
+      noteEl.classList.remove('update-note-warning');
+    }
+    if (changelogEl) {
+      changelogEl.hidden = true;
+    }
+
+    renderUpdateFooterHint();
+    return;
+  }
 
   const info = $updateInfo.get();
   if (!info || !info.available) {
@@ -66,6 +121,20 @@ export function renderUpdatePanel(): void {
   const latestEl = panel.querySelector('.update-latest');
   const noteEl = panel.querySelector('.update-note');
   const headerEl = panel.querySelector('.update-header');
+  const dismissBtn = panel.querySelector('#update-dismiss-btn') as HTMLButtonElement | null;
+  const changelogEl = panel.querySelector('#update-changelog-link') as HTMLElement | null;
+  const btn = panel.querySelector('.update-btn') as HTMLButtonElement | null;
+
+  if (dismissBtn) {
+    dismissBtn.hidden = false;
+  }
+  if (changelogEl) {
+    changelogEl.hidden = false;
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = t('sidebar.updateRestart');
+  }
 
   if (currentEl) currentEl.textContent = info.currentVersion;
   if (latestEl) latestEl.textContent = info.latestVersion;
@@ -89,7 +158,17 @@ export function renderUpdatePanel(): void {
 
 function renderUpdateFooterHint(): void {
   const hint = document.getElementById('footer-update-hint');
+  const link = document.getElementById('footer-update-link');
   if (!hint) return;
+
+  const refreshState = $frontendRefreshState.get();
+  if (refreshState) {
+    if (link) {
+      link.textContent = t('update.refreshUi');
+    }
+    hint.classList.add('hidden');
+    return;
+  }
 
   const info = $updateInfo.get();
   const settings = $currentSettings.get();
@@ -99,6 +178,9 @@ function renderUpdateFooterHint(): void {
 
   // Show footer hint when update exists but panel is hidden (dismissed or master off)
   if (info?.available && (masterDisabled || versionDismissed)) {
+    if (link) {
+      link.textContent = t('sidebar.footerUpdateAvailable');
+    }
     hint.classList.remove('hidden');
   } else {
     hint.classList.add('hidden');
@@ -114,6 +196,10 @@ export function bindFooterUpdateLink(): void {
   const link = document.getElementById('footer-update-link');
   if (link) {
     link.addEventListener('click', () => {
+      if ($frontendRefreshState.get()) {
+        requestFrontendRefresh();
+        return;
+      }
       openSettings();
       switchSettingsTab('general');
     });
@@ -154,7 +240,7 @@ export function applyUpdate(): void {
     .then(({ response }) => {
       if (response.ok) {
         if (btn) btn.textContent = t('update.restarting');
-        waitForServerAndReload();
+        waitForServerAndReload(info.type ?? null);
       } else {
         if (btn) {
           btn.disabled = false;
@@ -173,29 +259,10 @@ export function applyUpdate(): void {
 }
 
 /**
- * Wait for the server to restart after an update, then reload the page
+ * Start the coordinated server restart lifecycle after an update.
  */
-export function waitForServerAndReload(): void {
-  let attempts = 0;
-
-  function checkServer(): void {
-    attempts++;
-    getVersion()
-      .then(({ response }) => {
-        if (response.ok) {
-          location.reload();
-        } else if (attempts < MAX_RELOAD_ATTEMPTS) {
-          setTimeout(checkServer, RELOAD_INTERVAL_MS);
-        }
-      })
-      .catch(() => {
-        if (attempts < MAX_RELOAD_ATTEMPTS) {
-          setTimeout(checkServer, RELOAD_INTERVAL_MS);
-        }
-      });
-  }
-
-  setTimeout(checkServer, INITIAL_RESTART_DELAY_MS);
+export function waitForServerAndReload(updateType: UpdateType | null = null): void {
+  beginServerRestartLifecycle('update', { updateType });
 }
 
 /**
@@ -342,9 +409,10 @@ export function applyLocalUpdate(): void {
   apiApplyUpdate('local')
     .then(({ response }) => {
       const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
+      const updateType = $updateInfo.get()?.localUpdate?.type ?? null;
       if (response.ok) {
         if (btn) btn.textContent = 'Restarting...';
-        waitForServerAndReload();
+        waitForServerAndReload(updateType);
       } else {
         if (btn) {
           btn.disabled = false;
@@ -370,6 +438,15 @@ export function handleUpdateInfo(update: UpdateInfo): void {
   $updateInfo.set(update);
   renderUpdatePanel();
   renderUpdateCards(update);
+}
+
+export function handlePrimaryUpdateAction(): void {
+  if ($frontendRefreshState.get()) {
+    requestFrontendRefresh();
+    return;
+  }
+
+  applyUpdate();
 }
 
 const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';

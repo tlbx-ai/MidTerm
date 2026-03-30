@@ -164,6 +164,16 @@ async function loadHarness() {
   vi.resetModules();
   MockWebSocket.instances = [];
   vi.stubGlobal('WebSocket', MockWebSocket);
+  const localStorageData = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => localStorageData.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      localStorageData.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      localStorageData.delete(key);
+    }),
+  });
 
   Object.values(mocks).forEach((value) => {
     if ('mockReset' in value && typeof value.mockReset === 'function') {
@@ -203,7 +213,7 @@ async function loadHarness() {
     throw new Error('Mock WebSocket was not created');
   }
 
-  return { stores, ws };
+  return { stores, ws, localStorageData };
 }
 
 describe('stateChannel browser-ui handling', () => {
@@ -331,5 +341,39 @@ describe('stateChannel browser-ui handling', () => {
     ]);
 
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
+  });
+
+  it('restores the remembered active session when reconnecting after a refresh', async () => {
+    const { stores, localStorageData } = await loadHarness();
+    localStorageData.set('midterm.activeSessionId', 'session-b');
+    stores.$activeSessionId.set(null);
+
+    const stateChannel = await import('./stateChannel');
+    stateChannel.handleStateUpdate([
+      {
+        id: 'session-a',
+        cols: 120,
+        rows: 30,
+        lensOnly: false,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+      {
+        id: 'session-b',
+        cols: 120,
+        rows: 30,
+        lensOnly: false,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ]);
+
+    expect(mocks.selectSession).toHaveBeenCalledWith('session-b', {
+      closeSettingsPanel: false,
+    });
   });
 });

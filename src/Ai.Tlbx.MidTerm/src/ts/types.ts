@@ -24,6 +24,7 @@ export type {
   AuthStatusResponse,
   UpdateInfo,
   LocalUpdateInfo,
+  UpdateType,
   UpdateResult,
   SystemHealth,
   FirewallRuleStatusResponse,

@@ -21,6 +21,67 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MidTerm" />
+    <script>
+      (function () {
+        try {
+          if (sessionStorage.getItem('midterm.pendingAppRefresh') === '1') {
+            document.documentElement.classList.add('midterm-app-refreshing');
+          }
+        } catch {
+          // Ignore sessionStorage failures and continue with the normal shell.
+        }
+      })();
+    </script>
+    <style>
+      html.midterm-app-refreshing,
+      html.midterm-app-refreshing body {
+        background: #0d0e14;
+      }
+
+      html.midterm-app-refreshing body {
+        margin: 0;
+        overflow: hidden;
+      }
+
+      html.midterm-app-refreshing body > * {
+        visibility: hidden;
+      }
+
+      html.midterm-app-refreshing body::before {
+        content: 'Updating MidTerm...';
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f3f6fb;
+        font:
+          600 15px/1.4 'Segoe UI',
+          sans-serif;
+        letter-spacing: 0.02em;
+      }
+
+      html.midterm-app-refreshing body::after {
+        content: '';
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 28px;
+        height: 28px;
+        margin-left: -14px;
+        margin-top: 20px;
+        border: 3px solid rgba(255, 255, 255, 0.18);
+        border-top-color: #8adf9a;
+        border-radius: 50%;
+        animation: midterm-refresh-spin 0.8s linear infinite;
+      }
+
+      @keyframes midterm-refresh-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
 
     <!-- Preload terminal fonts for instant availability -->
     <link

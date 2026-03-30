@@ -23,6 +23,7 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { handleSessionClosed } from '../layout';
 import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
 import { renderUpdatePanel } from '../updating/checker';
+import { getRememberedActiveSessionId } from '../updating/appShellState';
 import { handleHiddenSessionClosed } from '../commands/commandsPanel';
 import { closeOverlay } from '../commands/outputPanel';
 import {
@@ -384,7 +385,12 @@ export function handleStateUpdate(newSessions: Session[]): void {
   const sessionList = $sessionList.get();
   const firstSession = sessionList[0];
   if (!activeId && firstSession?.id && !isSettingsOpen) {
-    selectSession(firstSession.id, { closeSettingsPanel: false });
+    const rememberedActiveId = getRememberedActiveSessionId();
+    const rememberedSession =
+      rememberedActiveId !== null
+        ? sessionList.find((session) => session.id === rememberedActiveId)
+        : undefined;
+    selectSession((rememberedSession ?? firstSession).id, { closeSettingsPanel: false });
   }
 
   // Handle active session being deleted (but not if settings are open)

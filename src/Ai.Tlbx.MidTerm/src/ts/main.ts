@@ -77,7 +77,6 @@ import { toggleSettings, closeSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap, getBootstrapData } from './modules/bootstrap';
 import {
-  applyUpdate,
   checkForUpdates,
   showChangelog,
   closeChangelog,
@@ -85,6 +84,11 @@ import {
   showUpdateLog,
   dismissUpdateNotification,
   bindFooterUpdateLink,
+  clearPendingAppRefreshMarker,
+  handlePrimaryUpdateAction,
+  initAppShellStatePersistence,
+  initUpdateRuntime,
+  initUpdateUi,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
@@ -265,6 +269,7 @@ window.mmDebug = {
 // =============================================================================
 
 initThemeFromCookie();
+clearPendingAppRefreshMarker();
 
 document.addEventListener('DOMContentLoaded', () => {
   const path = window.location.pathname;
@@ -286,6 +291,9 @@ async function init(): Promise<void> {
 
   cacheDOMElements();
   await initI18n();
+  initUpdateUi();
+  initUpdateRuntime();
+  initAppShellStatePersistence();
   initTrafficIndicator();
   setSessionBytesCallback((sessionId, bytes) => {
     recordMobilePiPBytes(sessionId, bytes);
@@ -391,6 +399,9 @@ async function initShared(): Promise<void> {
 
   cacheDOMElements();
   await initI18n();
+  initUpdateUi();
+  initUpdateRuntime();
+  initAppShellStatePersistence();
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -1793,9 +1804,9 @@ function bindEvents(): void {
     dom.settingsBtn.addEventListener('click', toggleSettings);
   }
 
-  bindClick('update-btn', applyUpdate);
+  bindClick('update-btn', handlePrimaryUpdateAction);
   bindClick('btn-check-updates', checkForUpdates);
-  bindClick('btn-apply-update', applyUpdate);
+  bindClick('btn-apply-update', handlePrimaryUpdateAction);
   bindClick('btn-show-changelog', () => {
     showChangelog();
   });

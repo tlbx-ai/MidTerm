@@ -15,6 +15,7 @@ const terminalContainer = {
 } as HTMLDivElement;
 
 const visibleTabs = new Map<string, Set<string>>();
+const localStorageData = new Map<string, string>();
 
 function createMockElement(): HTMLDivElement {
   return {
@@ -134,9 +135,19 @@ describe('tabManager', () => {
     ];
     terminalContainer.children.length = 0;
     visibleTabs.clear();
+    localStorageData.clear();
     vi.resetModules();
     vi.stubGlobal('document', {
       createElement: () => createMockElement(),
+    });
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => localStorageData.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        localStorageData.set(key, value);
+      }),
+      removeItem: vi.fn((key: string) => {
+        localStorageData.delete(key);
+      }),
     });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -250,6 +261,15 @@ describe('tabManager', () => {
     expect(isTabAvailable('s1', 'terminal')).toBe(true);
     expect(getActiveTab('s1')).toBe('terminal');
     expect(isTabAvailable('s1', 'agent')).toBe(false);
+  });
+
+  it('restores the remembered files tab after a shell refresh', async () => {
+    localStorageData.set('midterm.sessionTab.s1', 'files');
+    const { ensureSessionWrapper, getActiveTab } = await import('./tabManager');
+
+    ensureSessionWrapper('s1');
+
+    expect(getActiveTab('s1')).toBe('files');
   });
 
   it('invokes every registered callback for tab activation and deactivation', async () => {
