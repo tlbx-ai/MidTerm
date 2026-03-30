@@ -270,6 +270,7 @@ Status in this branch/work item:
 - implemented: desktop Lens quick settings render as a compact translucent control rail, while mobile renders the same controls as an always-open panel beneath the input row
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
+- implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 
 Still mandatory after this work whenever Lens evolves:
 

@@ -32,6 +32,7 @@ import {
   type ManagerTriggerKind,
   type NormalizedManagerButton,
 } from './workflow';
+import { shouldShowManagerBar } from './visibility';
 
 const log = createLogger('managerBar');
 
@@ -146,19 +147,25 @@ export function initManagerBar(): void {
 
   if (!barEl || !buttonsEl || !addBtn || !queueEl) return;
 
+  const syncManagerBarVisibility = (): void => {
+    const settings = $currentSettings.get();
+    const visible = shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
+    barEl?.classList.toggle('hidden', !visible);
+    renderMobileButtons(visible ? renderedButtons : []);
+    renderQueue();
+  };
+
   $currentSettings.subscribe((settings) => {
     if (!settings) return;
     renderedButtons = normalizeManagerBarButtons(
       settings.managerBarButtons as unknown as ManagerButton[],
     );
     renderButtons(renderedButtons);
-    barEl?.classList.toggle('hidden', !settings.managerBarEnabled);
-    renderMobileButtons(settings.managerBarEnabled ? renderedButtons : []);
-    renderQueue();
+    syncManagerBarVisibility();
   });
 
   $activeSessionId.subscribe(() => {
-    renderQueue();
+    syncManagerBarVisibility();
   });
 
   $sessions.subscribe((sessions) => {
@@ -171,8 +178,8 @@ export function initManagerBar(): void {
     }
     if (changed) {
       syncQueueProcessor();
-      renderQueue();
     }
+    syncManagerBarVisibility();
   });
 
   queueEl.addEventListener('click', (event) => {

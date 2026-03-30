@@ -27,6 +27,11 @@ import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop } from '../terminal';
 import { hideTouchController } from '../touchController';
 import { startTranscription, stopTranscription } from './transcription';
+import {
+  shouldShowDockedSmartInput,
+  shouldShowLensQuickSettings,
+  type SmartInputVisibilityState,
+} from './visibility';
 
 let dockedBar: HTMLDivElement | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
@@ -45,17 +50,22 @@ let lensPermissionSelect: HTMLSelectElement | null = null;
 const MAX_TEXTAREA_LINES = 5;
 const sessionDrafts = new Map<string, string>();
 
+function getSmartInputVisibilityState(): SmartInputVisibilityState {
+  const activeSessionId = $activeSessionId.get();
+  return {
+    activeSessionId,
+    inputMode: $currentSettings.get()?.inputMode,
+    lensActive: isLensActiveSession(activeSessionId),
+  };
+}
+
 /**
  * Treats Lens as a conversation-first composer surface even when the global
  * input mode is not Smart Input, so agent turns always use the docked composer.
  */
 export function isSmartInputMode(): boolean {
-  if (isLensActiveSession($activeSessionId.get())) {
-    return true;
-  }
-
-  const mode = $currentSettings.get()?.inputMode;
-  return mode === 'smartinput';
+  const state = getSmartInputVisibilityState();
+  return state.lensActive || (Boolean(state.activeSessionId) && state.inputMode === 'smartinput');
 }
 
 /**
@@ -71,12 +81,7 @@ export function isBothMode(): boolean {
 }
 
 function hasSmartInput(): boolean {
-  if (isLensActiveSession($activeSessionId.get())) {
-    return true;
-  }
-
-  const mode = $currentSettings.get()?.inputMode;
-  return mode === 'smartinput' || mode === 'both';
+  return shouldShowDockedSmartInput(getSmartInputVisibilityState());
 }
 
 /**
@@ -166,37 +171,22 @@ export function hideSmartInput(): void {
 }
 
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
-  const activeId = $activeSessionId.get();
-  if (isLensActiveSession(activeId)) {
-    showDockedBar(focusTextarea);
-    return;
-  }
-
-  const settings = $currentSettings.get();
-  if (!settings) {
-    return;
-  }
-
-  if (settings.inputMode === 'smartinput') {
+  if (!shouldShowDockedSmartInput(getSmartInputVisibilityState())) {
     hideSmartInput();
-    if (activeId) {
-      showSmartInput();
-    }
+    hideDockedBar();
+    releaseTouchController();
     return;
   }
 
-  if (settings.inputMode === 'both') {
-    hideSmartInput();
-    showDockedBar(focusTextarea);
-    return;
-  }
-
-  hideSmartInput();
-  hideDockedBar();
-  releaseTouchController();
+  showDockedBar(focusTextarea);
 }
 
 function showDockedBar(focusTextarea: boolean = false): void {
+  if (!shouldShowDockedSmartInput(getSmartInputVisibilityState())) {
+    hideDockedBar();
+    return;
+  }
+
   if (!dockedBar) createDockedDOM();
   relocateDockedBar();
   dockedBar?.classList.add('visible');
@@ -712,8 +702,8 @@ function syncLensQuickSettingsControls(): void {
     return;
   }
 
-  const sessionId = $activeSessionId.get();
-  if (!sessionId || !isLensActiveSession(sessionId)) {
+  const visibilityState = getSmartInputVisibilityState();
+  if (!shouldShowLensQuickSettings(visibilityState)) {
     if (dockedBar) {
       dockedBar.dataset.lensSession = 'false';
     }
@@ -722,6 +712,7 @@ function syncLensQuickSettingsControls(): void {
     return;
   }
 
+  const sessionId = visibilityState.activeSessionId as string;
   const provider = getLensQuickSettingsProvider(sessionId);
   const draft = getLensQuickSettingsDraft(sessionId);
   if (dockedBar) {
