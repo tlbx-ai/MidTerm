@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { $currentSettings, $isMainBrowser } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
-import { fitSessionToScreen } from './scaling';
+import { setupVisualViewport } from './scaling';
 import { sendResize } from '../comms';
 
 const mocks = vi.hoisted(() => ({
@@ -43,35 +43,7 @@ vi.mock('./presentationRefresh', () => ({
   refreshTerminalRenderer: mocks.refreshTerminalRenderer,
 }));
 
-type FakeElement = {
-  style: Record<string, string>;
-  classList: {
-    contains: (name: string) => boolean;
-    add: (name: string) => void;
-    remove: (name: string) => void;
-  };
-  querySelector: <T>(selector: string) => T | null;
-  getBoundingClientRect: () => { width: number; height: number };
-  clientWidth?: number;
-  clientHeight?: number;
-  offsetWidth?: number;
-  offsetHeight?: number;
-};
-
-function createClassList(initial: string[] = []) {
-  const classes = new Set(initial);
-  return {
-    contains: (name: string) => classes.has(name),
-    add: (name: string) => {
-      classes.add(name);
-    },
-    remove: (name: string) => {
-      classes.delete(name);
-    },
-  };
-}
-
-function createFitHarness() {
+function createHarness() {
   const terminal = {
     cols: 82,
     rows: 24,
@@ -91,9 +63,7 @@ function createFitHarness() {
     },
   };
 
-  const xterm = {
-    style: {} as Record<string, string>,
-  } as FakeElement;
+  const xterm = { style: {} as Record<string, string> };
   Object.defineProperties(xterm, {
     offsetWidth: {
       get: () => terminal.cols * 10,
@@ -103,7 +73,7 @@ function createFitHarness() {
     },
   });
 
-  const screen = {} as FakeElement;
+  const screen = {};
   Object.defineProperties(screen, {
     offsetWidth: {
       get: () => terminal.cols * 10,
@@ -117,7 +87,11 @@ function createFitHarness() {
     style: {},
     clientWidth: 818,
     clientHeight: 488,
-    classList: createClassList(),
+    classList: {
+      contains: () => false,
+      add: vi.fn(),
+      remove: vi.fn(),
+    },
     closest: () => null,
     querySelector<T>(selector: string): T | null {
       if (selector === '.xterm') return xterm as T;
@@ -125,7 +99,7 @@ function createFitHarness() {
       return null;
     },
     getBoundingClientRect: () => ({ width: 818, height: 488 }),
-  } as FakeElement;
+  };
 
   return {
     state: {
@@ -140,30 +114,57 @@ function createFitHarness() {
       opened: true,
       pendingVisualRefresh: false,
     },
-    terminal,
   };
 }
 
-describe('fitSessionToScreen', () => {
+describe('setupVisualViewport', () => {
+  const host = globalThis as typeof globalThis & {
+    window?: typeof globalThis;
+    visualViewport?: unknown;
+    innerHeight: number;
+    scrollTo: typeof globalThis.scrollTo;
+  };
   const originalDocument = globalThis.document;
   const originalLocalStorage = globalThis.localStorage;
   const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalWindow = host.window;
+  const originalVisualViewport = host.visualViewport;
+  const originalInnerHeight = host.innerHeight;
+  const originalScrollTo = host.scrollTo;
 
   beforeEach(() => {
     sessionTerminals.clear();
-    mocks.refreshTerminalRenderer.mockClear();
     vi.mocked(sendResize).mockReset();
+    mocks.refreshTerminalRenderer.mockClear();
     $isMainBrowser.set(true);
     $currentSettings.set({
       fontSize: 14,
       fontFamily: 'Cascadia Code',
     } as never);
+
+    const harness = createHarness();
+    sessionTerminals.set('s1', harness.state as never);
     dom.terminalsArea = {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
+
     globalThis.document = {
+      querySelector: () => null,
+      documentElement: { style: {} },
+      body: {
+        style: {},
+        classList: {
+          contains: () => false,
+          toggle: vi.fn(),
+        },
+      },
       getElementById: () => null,
-    } as Document;
+    } as unknown as Document;
+
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
     globalThis.localStorage = {
       getItem: () => null,
       setItem: () => undefined,
@@ -172,10 +173,24 @@ describe('fitSessionToScreen', () => {
       key: () => null,
       length: 0,
     } as Storage;
-    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    }) as typeof requestAnimationFrame;
+
+    Object.defineProperty(host, 'window', {
+      configurable: true,
+      value: host,
+    });
+    Object.defineProperty(host, 'innerHeight', {
+      configurable: true,
+      value: 700,
+    });
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: {
+        height: 600,
+        offsetTop: 0,
+        addEventListener: vi.fn(),
+      },
+    });
+    host.scrollTo = vi.fn();
   });
 
   afterEach(() => {
@@ -184,35 +199,25 @@ describe('fitSessionToScreen', () => {
     globalThis.document = originalDocument;
     globalThis.localStorage = originalLocalStorage;
     globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    Object.defineProperty(host, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: originalVisualViewport,
+    });
+    Object.defineProperty(host, 'innerHeight', {
+      configurable: true,
+      value: originalInnerHeight,
+    });
+    host.scrollTo = originalScrollTo;
     vi.clearAllMocks();
   });
 
-  it('refreshes xterm renderer metrics before fitting the main-browser viewport', () => {
-    const harness = createFitHarness();
-    sessionTerminals.set('s1', harness.state as never);
+  it('makes the leading browser resize terminals on visual viewport changes', () => {
+    setupVisualViewport();
 
-    fitSessionToScreen('s1');
-
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
-    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
-  });
-
-  it('retries a transiently tiny viewport instead of collapsing to minimum dimensions', () => {
-    const harness = createFitHarness();
-    let measurements = 0;
-    sessionTerminals.set('s1', harness.state as never);
-    dom.terminalsArea = {
-      getBoundingClientRect: () => {
-        measurements += 1;
-        return measurements === 1 ? { width: 0, height: 0 } : { width: 818, height: 488 };
-      },
-    } as HTMLElement;
-
-    fitSessionToScreen('s1');
-
-    expect(harness.terminal.resize).toHaveBeenCalledTimes(1);
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 });

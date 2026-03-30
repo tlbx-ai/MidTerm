@@ -128,15 +128,23 @@ MidTerm tracks foreground cwd, process, command line, and terminal title. That d
 ### Terminal Resize Principle
 
 MidTerm intentionally does **not** auto-resize existing sessions just because another client connected or a page reloaded.
+MidTerm also treats terminal size ownership as a **manual** decision, not something the system should guess.
 
 The model is:
 
-1. New sessions are created at the best size for the creating viewport.
-2. Existing sessions keep their server-side dimensions.
-3. Secondary browsers CSS-scale terminals locally instead of sending resize commands.
-4. Users explicitly claim a new size with a manual fit action when they want one.
+1. One browser is the explicit leading browser for terminal sizing.
+2. Only the leading browser may send authoritative server-side `cols`/`rows`.
+3. New sessions are created at the best size for the leading browser's viewport, never from a follower's viewport.
+4. Existing sessions keep their server-side dimensions until the leading browser explicitly changes them.
+5. Secondary browsers CSS-scale terminals locally instead of sending resize commands.
+6. Users explicitly claim size ownership from another browser when they want a different screen to become authoritative.
+7. Disconnects, reconnects, inactivity, focus changes, visibility changes, or device changes must not automatically transfer size ownership.
 
 This is what makes multi-device usage predictable instead of having one client constantly break another client's layout.
+The engineering goal is therefore twofold:
+
+- keep the leading browser's sizing path reliable for all relevant UI changes such as window resizes, panel open/close, layout changes, session switches, and new session creation
+- keep follower browsers strictly non-authoritative even when they render a different viewport more cleanly
 
 ### Host Reconnect and Updates
 

@@ -30,6 +30,15 @@ Rules:
 - Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
 - In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.
 
+## Terminal Size Ownership
+
+- Treat terminal row/column size ownership as a manual, user-controlled decision.
+- Do not add automatic ownership handoff heuristics based on reconnects, inactivity, visibility, focus, device class, viewport size, or "last active" guesses.
+- If a phone or tablet claimed ownership earlier, that ownership must persist across disconnects and later reconnects until the user explicitly claims ownership from another browser.
+- Only the leading browser may send or imply authoritative terminal `cols`/`rows`, including for new sessions, fit actions, panel/layout changes, session switches, and viewport resizes.
+- Non-leading browsers may scale locally for presentation, but they must never dictate server-side terminal dimensions.
+- When fixing resize bugs, preserve this principle: improve the leading browser's reliability, not the follower's authority.
+
 ## Session Surface Boundary
 
 - Treat Terminal and Lens as separate surfaces with an explicit boundary.

@@ -37,16 +37,14 @@ import {
   focusActiveTerminal,
   refreshTerminalPresentation,
   setupGlobalFocusReclaim,
-  calculateOptimalDimensions,
   fitSessionToScreen,
-  getEffectiveTerminalFontSize,
   handleClipboardPaste,
   pasteToTerminal,
   initMobilePiP,
   recordMobilePiPBytes,
   isTerminalViewingScrollback,
+  resolveLaunchDimensions,
 } from './modules/terminal';
-import { getConfiguredTerminalFontFamily } from './modules/terminal/fontConfig';
 import {
   getSessionDisplayName,
   setSessionListCallbacks,
@@ -199,7 +197,6 @@ import {
   clearPendingRename,
 } from './stores';
 import type { Session } from './types';
-import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
 import {
@@ -541,37 +538,7 @@ function setupVisibilityChangeHandler(): void {
 // =============================================================================
 
 async function resolveNewSessionDimensions(): Promise<{ cols: number; rows: number }> {
-  const settings = $currentSettings.get();
-  let cols = settings?.defaultCols ?? 120;
-  let rows = settings?.defaultRows ?? 30;
-
-  // Only the leading browser is allowed to claim a new server-side terminal size
-  // from its viewport. Followers create sessions at the configured defaults and
-  // then scale locally until they explicitly claim main browser.
-  if (!$isMainBrowser.get()) {
-    return { cols, rows };
-  }
-
-  if (dom.terminalsArea) {
-    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
-    const logId = 'launcher-' + crypto.randomUUID().slice(0, 8);
-    const dims = await calculateOptimalDimensions(
-      dom.terminalsArea,
-      fontSize,
-      getConfiguredTerminalFontFamily(),
-      settings?.lineHeight ?? 1,
-      settings?.letterSpacing ?? 0,
-      settings?.fontWeight ?? 'normal',
-      settings?.fontWeightBold ?? 'bold',
-      logId,
-    );
-    if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
-      cols = dims.cols;
-      rows = dims.rows;
-    }
-  }
-
-  return { cols, rows };
+  return resolveLaunchDimensions($currentSettings.get(), 'launcher');
 }
 
 function createPendingSession(cols: number, rows: number): string {
@@ -1241,28 +1208,7 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
 }
 
 async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
-  const settings = $currentSettings.get();
-  let cols = settings?.defaultCols ?? 120;
-  let rows = settings?.defaultRows ?? 30;
-
-  if (dom.terminalsArea) {
-    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
-    const logId = 'history-' + crypto.randomUUID().slice(0, 8);
-    const dims = await calculateOptimalDimensions(
-      dom.terminalsArea,
-      fontSize,
-      getConfiguredTerminalFontFamily(),
-      settings?.lineHeight ?? 1,
-      settings?.letterSpacing ?? 0,
-      settings?.fontWeight ?? 'normal',
-      settings?.fontWeightBold ?? 'bold',
-      logId,
-    );
-    if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
-      cols = dims.cols;
-      rows = dims.rows;
-    }
-  }
+  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
 
   closeSidebar();
 

@@ -8,6 +8,29 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MainBrowserServiceTests
 {
     [Fact]
+    public void Unregister_PreservesMainOwnershipUntilAnotherBrowserExplicitlyClaimsIt()
+    {
+        var service = new MainBrowserService();
+        var mainConnection = new object();
+        var followerConnection = new object();
+
+        service.Register("browser-a:tab-1", mainConnection);
+        service.Claim("browser-a:tab-1");
+        service.Register("browser-b:tab-2", followerConnection);
+
+        service.Unregister("browser-a:tab-1", mainConnection);
+
+        Assert.Equal("browser-a:tab-1", service.GetMainBrowserId());
+        Assert.False(service.IsMain("browser-b:tab-2"));
+        Assert.True(service.ShouldShowButton("browser-b:tab-2"));
+
+        service.Claim("browser-b:tab-2");
+
+        Assert.Equal("browser-b:tab-2", service.GetMainBrowserId());
+        Assert.True(service.IsMain("browser-b:tab-2"));
+    }
+
+    [Fact]
     public void UpdateActivity_AutoPromotesFirstActiveBrowser_AfterThreeMinutesWithoutActiveTabs()
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-03-18T10:00:00Z"));

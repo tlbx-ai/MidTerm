@@ -41,6 +41,7 @@ import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
 
 const SCALE_TOLERANCE = 0.97;
+const MAX_TRANSIENT_FIT_RETRIES = 2;
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 
@@ -462,6 +463,70 @@ function refreshRendererForMeasurement(
   refreshTerminalRenderer(state);
 }
 
+function clearTerminalScaling(state: Pick<TerminalState, 'container'>): void {
+  const xterm = state.container.querySelector<HTMLElement>('.xterm');
+  if (!xterm) {
+    return;
+  }
+
+  xterm.style.transform = '';
+  xterm.style.transformOrigin = '';
+  state.container.classList.remove('scaled');
+}
+
+function calculateViewportFit(
+  state: Pick<TerminalState, 'terminal' | 'container'>,
+  container: HTMLElement,
+  isLayoutPane: boolean,
+): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
+  const rect = container.getBoundingClientRect();
+  if (rect.width < 100 || rect.height < 100) {
+    return null;
+  }
+
+  const measuredCellDims = measureTerminalCellDimensions(state);
+  const cellWidth = measuredCellDims?.cellWidth ?? null;
+  const cellHeight = measuredCellDims?.cellHeight ?? null;
+  if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
+    return null;
+  }
+
+  const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
+  const dockWidth = isLayoutPane ? 0 : getDockPanelWidth();
+  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
+  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
+  if (availWidth <= 0 || availHeight <= 0) {
+    return null;
+  }
+
+  let cols = Math.floor(availWidth / cellWidth);
+  let rows = Math.floor(availHeight / cellHeight);
+  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
+  rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+
+  return { cols, rows, cellWidth, cellHeight };
+}
+
+function scheduleFitRetry(sessionId: string, retriesRemaining: number): void {
+  if (retriesRemaining <= 0) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    const state = sessionTerminals.get(sessionId);
+    if (!state) {
+      return;
+    }
+
+    const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
+    if (layoutPane) {
+      fitTerminalToContainerInternal(sessionId, layoutPane, retriesRemaining - 1);
+    } else {
+      fitSessionToScreenInternal(sessionId, retriesRemaining - 1);
+    }
+  });
+}
+
 /**
  * Fit a session's terminal to the current screen size.
  * This sends a resize request to the server.
@@ -471,6 +536,10 @@ function refreshRendererForMeasurement(
  * clearing zoom/scale causes layout to be in flux when measurements occur.
  */
 export function fitSessionToScreen(sessionId: string): void {
+  fitSessionToScreenInternal(sessionId, MAX_TRANSIENT_FIT_RETRIES);
+}
+
+function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
@@ -492,11 +561,7 @@ export function fitSessionToScreen(sessionId: string): void {
   }
 
   // Clear any existing scaling first
-  const xterm = state.container.querySelector<HTMLElement>('.xterm');
-  if (xterm) {
-    xterm.style.transform = '';
-    state.container.classList.remove('scaled');
-  }
+  clearTerminalScaling(state);
 
   // Ensure terminal is visible for accurate measurement
   const wasHidden = state.container.classList.contains('hidden');
@@ -514,47 +579,16 @@ export function fitSessionToScreen(sessionId: string): void {
 
   refreshRendererForMeasurement(state);
 
-  // Get cell dimensions — prefer xterm.js internal render dimensions
-  // to avoid circular measurements when terminal overflows container
-  const measuredCellDims = measureTerminalCellDimensions(state);
-  const cellWidth = measuredCellDims?.cellWidth ?? null;
-  const cellHeight = measuredCellDims?.cellHeight ?? null;
-
-  if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
-    // Fallback to FitAddon if measurements aren't valid
-    requestAnimationFrame(() => {
-      try {
-        const dims = state.fitAddon.proposeDimensions();
-        if (dims && dims.cols && dims.rows) {
-          state.fitAddon.fit();
-          sendResize(sessionId, state.terminal.cols, state.terminal.rows);
-        }
-      } catch {
-        // FitAddon may fail if terminal isn't fully initialized
-      }
-
-      if (wasHidden) {
-        state.container.classList.add('hidden');
-      }
-      focusActiveTerminal();
-    });
+  const fit = calculateViewportFit(state, dom.terminalsArea, false);
+  if (!fit) {
+    if (wasHidden) {
+      state.container.classList.add('hidden');
+    }
+    scheduleFitRetry(sessionId, retriesRemaining);
     return;
   }
 
-  // Calculate available space (accounting for container padding, scrollbar, tab bar, and dock panels)
-  const rect = dom.terminalsArea.getBoundingClientRect();
-  const tabBarH = getTabBarHeight();
-  const dockWidth = getDockPanelWidth();
-  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
-  const availHeight = rect.height - TERMINAL_PADDING - tabBarH;
-
-  // Calculate cols/rows that fit in available space
-  let cols = Math.floor(availWidth / cellWidth);
-  let rows = Math.floor(availHeight / cellHeight);
-
-  // Clamp to valid range
-  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
-  rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+  const { cols, rows, cellWidth, cellHeight } = fit;
 
   // Resize terminal and notify server (synchronous — xterm reflows immediately,
   // offsetWidth forces layout so scaling check gets accurate measurements)
@@ -595,6 +629,14 @@ export function fitSessionToScreen(sessionId: string): void {
  * Used when docking terminals into a layout.
  */
 export function fitTerminalToContainer(sessionId: string, container: HTMLElement): void {
+  fitTerminalToContainerInternal(sessionId, container, MAX_TRANSIENT_FIT_RETRIES);
+}
+
+function fitTerminalToContainerInternal(
+  sessionId: string,
+  container: HTMLElement,
+  retriesRemaining: number,
+): void {
   const state = sessionTerminals.get(sessionId);
   if (!state || !state.opened) return;
 
@@ -605,34 +647,13 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
 
   refreshRendererForMeasurement(state);
 
-  // Get cell dimensions — prefer xterm.js internal render dimensions
-  const measuredCellDims = measureTerminalCellDimensions(state);
-  const cellWidth = measuredCellDims?.cellWidth ?? null;
-  const cellHeight = measuredCellDims?.cellHeight ?? null;
-
-  if (!cellWidth || !cellHeight || cellWidth < 1 || cellHeight < 1) {
-    // Fallback to fitAddon if measurements aren't valid
-    try {
-      state.fitAddon.fit();
-      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
-    } catch {
-      // FitAddon may fail if terminal isn't fully initialized
-    }
+  const fit = calculateViewportFit(state, container, true);
+  if (!fit) {
+    scheduleFitRetry(sessionId, retriesRemaining);
     return;
   }
 
-  // Calculate available space in the container
-  const rect = container.getBoundingClientRect();
-  const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH;
-  const availHeight = rect.height - TERMINAL_PADDING;
-
-  // Calculate cols/rows that fit
-  let cols = Math.floor(availWidth / cellWidth);
-  let rows = Math.floor(availHeight / cellHeight);
-
-  // Clamp to valid range
-  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
-  rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
+  const { cols, rows } = fit;
 
   // Resize terminal and notify server
   try {
@@ -647,14 +668,9 @@ export function fitTerminalToContainer(sessionId: string, container: HTMLElement
   }
 
   // Clear any scaling since we just resized to fit
-  const xterm = state.container.querySelector<HTMLElement>('.xterm');
-  if (xterm) {
-    xterm.style.transform = '';
-    xterm.style.transformOrigin = '';
-    state.container.classList.remove('scaled');
-    const overlay = state.container.querySelector<HTMLElement>('.scaled-overlay');
-    if (overlay) overlay.remove();
-  }
+  clearTerminalScaling(state);
+  const overlay = state.container.querySelector<HTMLElement>('.scaled-overlay');
+  if (overlay) overlay.remove();
 }
 
 /**
@@ -1112,7 +1128,11 @@ export function setupVisualViewport(): void {
       document.body.classList.toggle('keyboard-visible', kbVisible);
     }
 
-    rescaleAllTerminals();
+    if ($isMainBrowser.get()) {
+      autoResizeAllTerminalsImmediate();
+    } else {
+      rescaleAllTerminals();
+    }
   };
 
   vv.addEventListener('resize', update);
