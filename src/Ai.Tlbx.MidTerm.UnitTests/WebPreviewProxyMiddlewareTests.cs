@@ -142,6 +142,9 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
         Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
         Assert.Contains("url.searchParams.has(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
+        Assert.Contains("params.get(\"__mtReloadToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.has(\"__mtReloadToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.delete(\"__mtReloadToken\")", script, StringComparison.Ordinal);
         Assert.Contains("url.searchParams.delete(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
         Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
         Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
@@ -152,8 +155,10 @@ public class WebPreviewProxyMiddlewareTests
     [Theory]
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
     [InlineData("?__mtTargetRevision=1", "")]
+    [InlineData("?__mtReloadToken=force-1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
+    [InlineData("?foo=1&__mtReloadToken=force-1&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
     [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
@@ -259,6 +264,31 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("import login from \"/webpreview/route-1/js/login.js\"", rewritten, StringComparison.Ordinal);
         Assert.Contains("export * from \"/webpreview/route-1/router/router-lib.js\"", rewritten, StringComparison.Ordinal);
         Assert.Contains("import(\"/webpreview/route-1/components/PasswordInput/PasswordInput.js\")", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteRootRelativeModuleSpecifiers_AppendsReloadToken_WhenForcedReloadIsActive()
+    {
+        const string source = """
+            <script type="module">
+              import "/js/config.js";
+              export * from "/router/router-lib.js";
+            </script>
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteRootRelativeModuleSpecifiers(
+            source,
+            "/webpreview/route-1",
+            "force-123");
+
+        Assert.Contains(
+            "import \"/webpreview/route-1/js/config.js?__mtReloadToken=force-123\"",
+            rewritten,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "export * from \"/webpreview/route-1/router/router-lib.js?__mtReloadToken=force-123\"",
+            rewritten,
+            StringComparison.Ordinal);
     }
 
     [Fact]

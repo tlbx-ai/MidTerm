@@ -255,11 +255,11 @@ export async function clearWebPreviewState(
   }
 }
 
-/** Trigger a soft or hard reload for a named web preview. */
+/** Trigger a soft, force, or hard reload for a named web preview. */
 export async function reloadWebPreview(
   sessionId: string,
   previewName: string,
-  mode: 'soft' | 'hard',
+  mode: 'soft' | 'force' | 'hard',
 ): Promise<boolean> {
   if (isEmbeddedWebPreviewContext() || !sessionId) {
     return false;

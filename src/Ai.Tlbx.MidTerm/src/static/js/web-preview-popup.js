@@ -49,14 +49,25 @@
     return '/webpreview/' + encodeURIComponent(routeKey);
   }
 
-  function buildProxyUrl(targetUrl) {
+  function buildProxyUrl(targetUrl, reloadToken) {
     var parsed = new URL(targetUrl);
     var path = parsed.pathname || '/';
     var prefix = getProxyPrefix();
     var proxyUrl = new URL(path === '/' ? prefix + '/' : prefix + path, previewOrigin);
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
+    if (reloadToken) {
+      proxyUrl.searchParams.set('__mtReloadToken', reloadToken);
+    }
     return proxyUrl.toString();
+  }
+
+  function createForceReloadToken() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   }
 
   function getSandboxFlags() {
@@ -238,7 +249,7 @@
       });
   }
 
-  function loadFrame(url) {
+  function loadFrame(url, reloadToken) {
     if (!url || !routeKey) {
       frame.removeAttribute('sandbox');
       frame.name = '';
@@ -254,7 +265,7 @@
         frame.removeAttribute('sandbox');
       }
       frame.name = previewContext ? JSON.stringify(previewContext) : '';
-      frame.src = buildProxyUrl(url);
+      frame.src = buildProxyUrl(url, reloadToken);
     } catch (_) {
       frame.removeAttribute('sandbox');
       frame.name = '';
@@ -313,7 +324,7 @@
   });
 
   document.getElementById('refresh-btn').addEventListener('click', function (e) {
-    var mode = e.shiftKey || e.ctrlKey || e.altKey ? 'hard' : 'soft';
+    var mode = e.shiftKey || e.ctrlKey || e.altKey ? 'hard' : 'force';
     if (currentUrl) {
       fetch('/api/webpreview/target', {
         method: 'PUT',
@@ -325,16 +336,18 @@
         }),
       }).catch(function () {});
     }
-    fetch('/api/webpreview/reload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: sessionId,
-        previewName: previewName,
-        mode: mode,
-      }),
-    }).catch(function () {});
-    loadFrame(currentUrl);
+    if (mode === 'hard') {
+      fetch('/api/webpreview/reload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          previewName: previewName,
+          mode: mode,
+        }),
+      }).catch(function () {});
+    }
+    loadFrame(currentUrl, createForceReloadToken());
   });
 
   document.getElementById('dock-back-btn').addEventListener('click', function () {

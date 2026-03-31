@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
@@ -10,12 +12,13 @@ public static partial class WebPreviewEndpoints
     public static void MapWebPreviewEndpoints(
         WebApplication app,
         WebPreviewService webPreviewService,
-        TtyHostSessionManager sessionManager)
+        TtyHostSessionManager sessionManager,
+        BrowserCommandService browserCommandService)
     {
         MapPreviewSessionEndpoints(app, webPreviewService);
         MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
-        MapActionEndpoints(app, webPreviewService, sessionManager);
+        MapActionEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapProxyLogEndpoints(app, webPreviewService);
     }
 
@@ -119,7 +122,11 @@ public static partial class WebPreviewEndpoints
         });
     }
 
-    private static void MapActionEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
+    private static void MapActionEndpoints(
+        WebApplication app,
+        WebPreviewService service,
+        TtyHostSessionManager sessionManager,
+        BrowserCommandService browserCommandService)
     {
         app.MapPost("/api/webpreview/state/clear", (string sessionId, string? previewName) =>
         {
@@ -137,15 +144,42 @@ public static partial class WebPreviewEndpoints
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
-        app.MapPost("/api/webpreview/reload", (WebPreviewReloadRequest request) =>
+        app.MapPost("/api/webpreview/reload", async (WebPreviewReloadRequest request, CancellationToken cancellationToken) =>
         {
-            if (request.Mode.Equals("hard", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(request.SessionId))
             {
-                if (string.IsNullOrWhiteSpace(request.SessionId) || !service.HardReload(request.SessionId, request.PreviewName))
+                return Results.BadRequest("sessionId required");
+            }
+
+            var mode = NormalizeReloadMode(request.Mode);
+            if (mode == "hard")
+            {
+                if (!service.HardReload(request.SessionId, request.PreviewName))
                 {
                     return Results.BadRequest("No active target.");
                 }
             }
+
+            if (mode is "soft" or "force" or "hard")
+            {
+                try
+                {
+                    await browserCommandService.ExecuteCommandAsync(
+                        new BrowserCommandRequest
+                        {
+                            Command = "reload",
+                            Value = mode,
+                            SessionId = request.SessionId,
+                            PreviewName = request.PreviewName
+                        },
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+            }
+
             return Results.Ok();
         });
 
@@ -336,6 +370,21 @@ public static partial class WebPreviewEndpoints
         }
         var result = sb.ToString().Trim('_');
         return string.IsNullOrEmpty(result) ? "style" : result;
+    }
+
+    private static string NormalizeReloadMode(string? mode)
+    {
+        if (string.Equals(mode, "hard", StringComparison.OrdinalIgnoreCase))
+        {
+            return "hard";
+        }
+
+        if (string.Equals(mode, "force", StringComparison.OrdinalIgnoreCase))
+        {
+            return "force";
+        }
+
+        return "soft";
     }
 
     // Strips <base href="..."> or <base target="..."> tags

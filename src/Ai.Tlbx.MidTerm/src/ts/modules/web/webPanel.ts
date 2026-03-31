@@ -101,6 +101,7 @@ let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 let statusRefreshTimer: number | null = null;
+type PreviewReloadMode = 'soft' | 'force' | 'hard';
 
 const FRAME_ALLOW_ATTR = `
   camera *;
@@ -116,6 +117,14 @@ const FRAME_ALLOW_ATTR = `
 /** Get the URL currently loaded in the iframe. */
 export function getLoadedUrl(): string | null {
   return loadedUrl;
+}
+
+function createForceReloadToken(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** Register a callback for preview tab selection. */
@@ -184,7 +193,7 @@ export function initWebPanel(): void {
   });
   refreshBtn?.addEventListener('click', (e: MouseEvent) => {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
-    void handleRefresh(hard ? 'hard' : 'soft');
+    void handleRefresh(hard ? 'hard' : 'force');
   });
   screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
@@ -614,7 +623,7 @@ async function handleCookieBridgeRequest(
 }
 
 /** Load the current active named preview into the iframe. */
-export async function loadPreview(): Promise<void> {
+export async function loadPreview(reloadToken?: string): Promise<void> {
   if (!iframeHost) {
     return;
   }
@@ -672,6 +681,7 @@ export async function loadPreview(): Promise<void> {
       previewClient,
       currentTargetRevision,
       previewClient.origin ?? window.location.origin,
+      reloadToken,
     );
     if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {
       if (frame.src === proxyUrl) {
@@ -695,7 +705,7 @@ export async function loadPreview(): Promise<void> {
   }
 }
 
-async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
+async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   if (!sessionId) {
@@ -713,11 +723,21 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
       log.warn(() => 'Failed to refresh web preview target');
       return;
     }
+    upsertSessionPreview(result);
     setCurrentPreviewUrl(currentUrl, false);
   }
 
-  await reloadWebPreview(sessionId, previewName, mode);
-  await loadPreview();
+  if (mode === 'soft') {
+    await reloadWebPreview(sessionId, previewName, mode);
+    await loadPreview();
+    return;
+  }
+
+  if (mode === 'hard') {
+    await reloadWebPreview(sessionId, previewName, mode);
+  }
+
+  await loadPreview(createForceReloadToken());
 }
 
 /**

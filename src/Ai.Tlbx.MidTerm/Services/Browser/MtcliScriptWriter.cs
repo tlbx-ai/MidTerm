@@ -175,6 +175,8 @@ public static class MtcliScriptWriter
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
         mt_reload()     { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"soft\"}" "$_MT/api/webpreview/reload"; }
+        # mt_forcereload  — force a fresh content reload with cache-busting
+        mt_forcereload() { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"force\"}" "$_MT/api/webpreview/reload"; }
         mt_target()     { _MC "$_MT/api/webpreview/target$(_MQ)"; }
         mt_cookies()    { _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
         mt_previews()   { _MC "$_MT/api/webpreview/previews?sessionId=$(_MSID)"; }
@@ -647,6 +649,8 @@ public static class MtcliScriptWriter
         # Mt-ClosePreview  — close web preview panel
         function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target$(_MQuery)" }
         function Mt-Reload     { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
+        # Mt-ForceReload  — force a fresh content reload with cache-busting
+        function Mt-ForceReload { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="force"}) "$script:_MT/api/webpreview/reload" }
         function Mt-Target     { _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
         function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
         function Mt-Previews   { _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
@@ -932,6 +936,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_navigate -Value Mt-Navigate
         Set-Alias -Name mt_open -Value Mt-Open
         Set-Alias -Name mt_reload -Value Mt-Reload
+        Set-Alias -Name mt_forcereload -Value Mt-ForceReload
         Set-Alias -Name mt_target -Value Mt-Target
         Set-Alias -Name mt_cookies -Value Mt-Cookies
         Set-Alias -Name mt_previews -Value Mt-Previews

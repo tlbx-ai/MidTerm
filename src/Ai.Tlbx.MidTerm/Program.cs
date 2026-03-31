@@ -385,7 +385,7 @@ public class Program
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         HubEndpoints.MapHubEndpoints(app, app.Services.GetRequiredService<HubService>());
-        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager);
+        WebPreviewEndpoints.MapWebPreviewEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         BrowserEndpoints.MapBrowserEndpoints(
             app,
             browserCommandService,
