@@ -229,7 +229,7 @@ interface HistoryRenderedNode {
 }
 
 export interface HistoryBodyPresentation {
-  mode: 'plain' | 'monospace' | 'markdown' | 'streaming';
+  mode: 'plain' | 'monospace' | 'markdown' | 'streaming' | 'diff';
   collapsedByDefault: boolean;
   lineCount: number;
   preview: string;
@@ -2861,16 +2861,17 @@ function createHistoryBodyContent(
   sessionId: string,
   presentation: HistoryBodyPresentation,
 ): HTMLElement {
-  const body = document.createElement(presentation.mode === 'monospace' ? 'pre' : 'div');
-  body.className = 'agent-history-body';
-
   switch (presentation.mode) {
     case 'streaming': {
+      const body = document.createElement('div');
+      body.className = 'agent-history-body';
       body.classList.add('agent-history-streaming-body');
       body.textContent = entry.body;
       return body;
     }
     case 'markdown': {
+      const body = document.createElement('div');
+      body.className = 'agent-history-body';
       body.classList.add('agent-history-markdown');
       const content = document.createElement('div');
       content.className = 'agent-history-markdown-content';
@@ -2879,9 +2880,20 @@ function createHistoryBodyContent(
       body.appendChild(content);
       return body;
     }
-    default:
+    case 'diff':
+      return createDiffHistoryBody(entry.body);
+    case 'monospace': {
+      const body = document.createElement('pre');
+      body.className = 'agent-history-body';
       body.textContent = entry.body;
       return body;
+    }
+    default: {
+      const body = document.createElement('div');
+      body.className = 'agent-history-body';
+      body.textContent = entry.body;
+      return body;
+    }
   }
 }
 
@@ -2894,22 +2906,66 @@ function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
   const bubble = document.createElement('div');
   bubble.className = 'agent-history-busy-bubble';
 
-  const dots = document.createElement('span');
-  dots.className = 'agent-history-busy-dots';
-  for (let index = 0; index < 3; index += 1) {
-    const dot = document.createElement('span');
-    dot.className = 'agent-history-busy-dot';
-    dots.appendChild(dot);
-  }
+  const glyph = document.createElement('span');
+  glyph.className = 'agent-history-busy-glyph';
+  glyph.innerHTML =
+    '<svg class="agent-history-busy-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<g class="agent-history-busy-spinner">' +
+    '<path class="agent-history-busy-triangle" d="M12 3.75 20 18.25H4L12 3.75Z" />' +
+    '<circle class="agent-history-busy-center" cx="12" cy="13" r="2.3" />' +
+    '</g>' +
+    '</svg>';
 
   const label = document.createElement('span');
   label.className = 'agent-history-busy-label';
   label.textContent = entry.body;
 
-  bubble.appendChild(dots);
+  bubble.appendChild(glyph);
   bubble.appendChild(label);
   article.appendChild(bubble);
   return article;
+}
+
+function createDiffHistoryBody(bodyText: string): HTMLElement {
+  const body = document.createElement('div');
+  body.className = 'agent-history-body agent-history-diff-body';
+
+  const content = document.createElement('pre');
+  content.className = 'agent-history-diff-content';
+
+  const lines = normalizeHistoryBodyLines(bodyText);
+  for (const [index, line] of lines.entries()) {
+    const row = document.createElement('span');
+    row.className = `agent-history-diff-line ${resolveDiffLineClassName(line)}`;
+    row.textContent = line || ' ';
+    content.appendChild(row);
+    if (index < lines.length - 1) {
+      content.appendChild(document.createTextNode('\n'));
+    }
+  }
+
+  body.appendChild(content);
+  return body;
+}
+
+function resolveDiffLineClassName(line: string): string {
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff --git')) {
+    return 'agent-history-diff-line-header';
+  }
+
+  if (line.startsWith('@@')) {
+    return 'agent-history-diff-line-hunk';
+  }
+
+  if (line.startsWith('+')) {
+    return 'agent-history-diff-line-add';
+  }
+
+  if (line.startsWith('-')) {
+    return 'agent-history-diff-line-delete';
+  }
+
+  return 'agent-history-diff-line-context';
 }
 
 function createCollapsedHistoryBody(
@@ -3244,17 +3300,9 @@ function createHistoryAttachmentBlock(
  * surface instead of an event log, while still preserving debugging context.
  */
 export function formatHistoryMeta(kind: HistoryKind, statusLabel: string, value: string): string {
-  const timeText = formatAbsoluteTime(value);
-  const normalizedStatus = statusLabel.trim();
-  if (!normalizedStatus) {
-    return timeText;
-  }
-
-  if (shouldHideStatusInMeta(kind, normalizedStatus)) {
-    return timeText;
-  }
-
-  return `${normalizedStatus} • ${timeText}`;
+  void kind;
+  void statusLabel;
+  return formatAbsoluteTime(value);
 }
 
 /**
@@ -3262,25 +3310,9 @@ export function formatHistoryMeta(kind: HistoryKind, statusLabel: string, value:
  * role of a row, which is important for the quieter t3-style conversation UX.
  */
 export function shouldHideStatusInMeta(kind: HistoryKind, statusLabel: string): boolean {
-  const normalizedStatus = statusLabel.trim().toLowerCase();
-  if (!normalizedStatus) {
-    return true;
-  }
-
-  if (kind === 'user' || kind === 'assistant') {
-    return (
-      normalizedStatus === 'completed' ||
-      normalizedStatus === 'updated' ||
-      normalizedStatus === 'assistant text' ||
-      normalizedStatus === 'snapshot'
-    );
-  }
-
-  if (kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff') {
-    return normalizedStatus === 'completed' || normalizedStatus === 'updated';
-  }
-
-  return false;
+  void kind;
+  void statusLabel;
+  return true;
 }
 
 function createRequestActionBlock(
@@ -3395,7 +3427,7 @@ function createRequestActionBlock(
 
 function createRequestPanelHeader(
   request: LensPulseRequestSummary,
-  activeQuestionIndex = 0,
+  _activeQuestionIndex = 0,
 ): HTMLElement {
   const header = document.createElement('div');
   header.className = 'agent-request-panel-header';
@@ -3415,16 +3447,6 @@ function createRequestPanelHeader(
   summary.className = 'agent-request-summary';
   summary.textContent = summarizeRequestInterruption(request);
   topRow.appendChild(summary);
-
-  if (request.kind === 'tool_user_input' && request.questions.length > 1) {
-    const progress = document.createElement('span');
-    progress.className = 'agent-request-progress';
-    progress.textContent = lensFormat('lens.request.progress', '{current}/{total}', {
-      current: activeQuestionIndex + 1,
-      total: request.questions.length,
-    });
-    topRow.appendChild(progress);
-  }
 
   header.appendChild(topRow);
 
@@ -3485,13 +3507,6 @@ function createQuestionField(
 
   const header = document.createElement('div');
   header.className = 'agent-request-field-header';
-
-  if (totalQuestions > 1) {
-    const indexBadge = document.createElement('span');
-    indexBadge.className = 'agent-request-field-index';
-    indexBadge.textContent = `${index + 1}/${totalQuestions}`;
-    header.appendChild(indexBadge);
-  }
 
   if (question.header && question.header.trim()) {
     const fieldHeader = document.createElement('span');
@@ -3866,10 +3881,11 @@ export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): History
     };
   }
 
-  const mode = isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
+  const mode =
+    entry.kind === 'diff' ? 'diff' : isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
   const lineCount = countHistoryBodyLines(entry.body);
   const collapsedByDefault =
-    mode === 'monospace' &&
+    (mode === 'monospace' || mode === 'diff') &&
     !entry.live &&
     !entry.pending &&
     (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
@@ -3888,7 +3904,11 @@ function isMachineHistoryKind(kind: HistoryKind): boolean {
 }
 
 function countHistoryBodyLines(body: string): number {
-  return body.trim() ? body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').length : 0;
+  return body.trim() ? normalizeHistoryBodyLines(body).length : 0;
+}
+
+function normalizeHistoryBodyLines(body: string): string[] {
+  return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 }
 
 function buildHistoryBodyPreview(body: string): string {

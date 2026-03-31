@@ -10388,6 +10388,14 @@ body.shared-session-mode .session-tab-bar {
   --agent-lens-surface: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
   --agent-lens-surface-strong: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
   --agent-lens-user-surface: color-mix(in srgb, var(--accent-blue) 9%, var(--bg-secondary));
+  --agent-lens-machine-surface: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+  --agent-lens-machine-surface-strong: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  --agent-lens-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
+  --agent-lens-user-text: color-mix(in srgb, var(--accent-blue) 20%, var(--text-primary) 80%);
+  --agent-lens-user-label: color-mix(in srgb, var(--accent-blue) 54%, var(--text-muted) 46%);
+  --agent-lens-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
+  --agent-history-user-font-family: 'Segoe UI Variable Text', var(--font-ui);
+  --agent-history-assistant-font-family: 'Segoe UI', var(--font-ui);
   --agent-lens-ready: color-mix(in srgb, var(--accent-green) 74%, white 10%);
   --agent-lens-live: color-mix(in srgb, var(--accent-blue) 82%, white 10%);
   --agent-lens-warning: color-mix(in srgb, var(--accent-gold) 84%, white 8%);
@@ -10446,7 +10454,7 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -10517,11 +10525,11 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-entry {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   position: relative;
   width: var(--agent-lens-content-width);
   max-width: 100%;
-  padding: 12px 0;
+  padding: 10px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -10561,8 +10569,8 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-assistant {
   align-self: flex-start;
   width: var(--agent-lens-content-width);
-  padding: 12px 0 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  padding: 10px 0 12px;
+  border-bottom: 0;
 }
 
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-composer-host,
@@ -10599,7 +10607,6 @@ body.shared-session-mode .session-tab-bar {
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-system,
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-notice {
   padding: 10px 0;
-  border-left: 0;
 }
 
 .agent-history-assistant.agent-history-live .agent-history-badge-assistant {
@@ -10646,8 +10653,8 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-system,
 .agent-history-notice {
   width: var(--agent-lens-content-width);
-  padding: 10px 0 10px 16px;
-  border-left: 2px solid var(--agent-lens-rail);
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--agent-lens-rail) 44%, transparent);
   border-radius: 0;
   background: transparent;
 }
@@ -10657,7 +10664,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-reasoning {
-  border-left-color: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
+  border-top-color: color-mix(in srgb, var(--accent-blue) 24%, transparent);
 }
 
 .agent-history-artifact[data-artifact-position='start'] {
@@ -10684,12 +10691,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-notice {
-  border-left-color: color-mix(in srgb, var(--accent-red) 72%, var(--border-color));
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-red) 8%, transparent),
-    transparent 32%
-  );
+  border-top-color: color-mix(in srgb, var(--accent-red) 28%, transparent);
 }
 
 .agent-history-header {
@@ -10712,10 +10714,10 @@ body.shared-session-mode .session-tab-bar {
   gap: 4px;
   padding: 0;
   border-radius: 0;
-  font-size: 10px;
+  font-size: 8px;
   line-height: 1.2;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   background: transparent;
   color: var(--text-muted);
@@ -10762,7 +10764,14 @@ body.shared-session-mode .session-tab-bar {
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {
   display: inline-flex;
-  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user {
+  color: var(--agent-lens-user-label);
+}
+
+.agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {
+  color: var(--agent-lens-assistant-label);
 }
 
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-header,
@@ -10782,7 +10791,7 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-history-title {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   min-width: 0;
   margin-top: 0;
@@ -10808,7 +10817,8 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-history-meta {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 8px;
+  line-height: 1.2;
   letter-spacing: 0;
   text-transform: none;
   margin-left: auto;
@@ -10822,7 +10832,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-user .agent-history-meta,
 .agent-history-assistant .agent-history-meta {
   margin-left: 0;
-  font-size: 10px;
+  font-size: 8px;
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
 }
 
@@ -10843,20 +10853,21 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-user .agent-history-body {
-  color: color-mix(in srgb, var(--text-primary) 98%, white 2%);
-  font-family: var(--font-ui);
+  color: var(--agent-lens-user-text);
+  font-family: var(--agent-history-user-font-family);
   font-size: 0.92rem;
   line-height: 1.58;
 }
 
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-body {
-  color: color-mix(in srgb, var(--text-primary) 80%, var(--text-secondary) 20%);
+  color: color-mix(in srgb, var(--agent-lens-user-text) 92%, var(--text-secondary) 8%);
   font-size: 0.95rem;
   line-height: 1.64;
 }
 
 .agent-history-assistant .agent-history-body {
   color: var(--text-primary);
+  font-family: var(--agent-history-assistant-font-family);
   font-size: 1rem;
   line-height: 1.7;
 }
@@ -10871,57 +10882,65 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-busy-bubble {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 2.2rem;
-  padding: 0 14px;
+  gap: 9px;
+  min-height: 2rem;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--agent-lens-live) 24%, transparent);
-  background: color-mix(in srgb, var(--agent-lens-live) 8%, transparent);
+  background: color-mix(in srgb, var(--agent-lens-live) 10%, transparent);
   color: color-mix(in srgb, var(--agent-lens-live) 82%, var(--text-primary));
-  box-shadow: 0 10px 22px var(--shadow-color-md);
+  box-shadow: 0 8px 18px var(--shadow-color-md);
 }
 
-.agent-history-busy-dots {
+.agent-history-busy-glyph {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
 }
 
-.agent-history-busy-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.24;
-  animation: agent-history-busy-dot 1.05s ease-in-out infinite;
+.agent-history-busy-svg {
+  display: block;
+  width: 15px;
+  height: 15px;
 }
 
-.agent-history-busy-dot:nth-child(2) {
-  animation-delay: 0.12s;
+.agent-history-busy-spinner {
+  transform-origin: 12px 12px;
+  animation: agent-history-busy-spin 1.15s linear infinite;
 }
 
-.agent-history-busy-dot:nth-child(3) {
-  animation-delay: 0.24s;
+.agent-history-busy-triangle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.92;
+}
+
+.agent-history-busy-center {
+  fill: var(--agent-lens-live);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--agent-lens-live) 72%, transparent));
 }
 
 .agent-history-busy-label {
   color: inherit;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-@keyframes agent-history-busy-dot {
-  0%,
-  100% {
-    opacity: 0.2;
-    transform: translateY(0);
+@keyframes agent-history-busy-spin {
+  from {
+    transform: rotate(0deg);
   }
 
-  50% {
-    opacity: 0.95;
-    transform: translateY(-1px);
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -10951,6 +10970,10 @@ body.shared-session-mode .session-tab-bar {
   cursor: pointer;
   color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
   user-select: none;
+  padding: 8px 12px;
+  border: 1px solid var(--agent-lens-machine-border);
+  border-radius: 12px;
+  background: var(--agent-lens-machine-surface);
 }
 
 .agent-history-disclosure-summary::before {
@@ -10973,14 +10996,13 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-disclosure-meta {
   display: inline-flex;
   align-items: center;
-  min-height: 1.5rem;
-  padding: 0 0.56rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
-  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
-  font-size: 0.68rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -11489,13 +11511,52 @@ body.shared-session-mode .session-tab-bar {
 .agent-history-reasoning .agent-history-body,
 .agent-history-plan .agent-history-body,
 .agent-history-diff .agent-history-body {
-  padding: 2px 0 0;
-  border-radius: 0;
-  background: transparent;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--agent-lens-machine-border);
+  background: var(--agent-lens-machine-surface);
   color: color-mix(in srgb, var(--text-primary) 88%, transparent);
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-size: 0.82rem;
   line-height: 1.52;
+}
+
+.agent-history-diff-body {
+  padding: 0;
+}
+
+.agent-history-diff-content {
+  margin: 0;
+  overflow-x: auto;
+}
+
+.agent-history-diff-line {
+  display: block;
+  padding: 0 12px;
+  white-space: pre;
+}
+
+.agent-history-diff-line-header {
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+}
+
+.agent-history-diff-line-hunk {
+  color: color-mix(in srgb, var(--accent-blue) 84%, white 10%);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.agent-history-diff-line-add {
+  color: color-mix(in srgb, var(--accent-green) 84%, white 8%);
+  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+}
+
+.agent-history-diff-line-delete {
+  color: color-mix(in srgb, var(--accent-red) 84%, white 8%);
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+}
+
+.agent-history-diff-line-context {
+  color: color-mix(in srgb, var(--text-primary) 86%, transparent);
 }
 
 .agent-history-request .agent-history-body,
@@ -11586,16 +11647,10 @@ body.shared-session-mode .session-tab-bar {
   flex-direction: column;
   gap: 12px;
   padding: 14px 14px 12px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
-  border-radius: 14px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--bg-secondary) 90%, transparent),
-      color-mix(in srgb, var(--bg-primary) 94%, transparent)
-    ),
-    var(--terminal-ui-background, var(--terminal-bg));
-  box-shadow: 0 12px 24px var(--shadow-color-md);
+  border: 1px solid var(--agent-lens-machine-border);
+  border-radius: 12px;
+  background: var(--agent-lens-machine-surface-strong);
+  box-shadow: none;
 }
 
 .agent-request-actions-composer {
@@ -11722,9 +11777,9 @@ body.shared-session-mode .session-tab-bar {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-hover) 42%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--agent-lens-machine-surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--agent-lens-machine-border) 92%, transparent);
 }
 
 .agent-request-field-header {
@@ -11900,14 +11955,14 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .agent-history-title {
-    font-size: 9px;
+    font-size: 8px;
   }
 
   .agent-history-meta {
     width: 100%;
     margin-left: 0;
     white-space: normal;
-    font-size: 9px;
+    font-size: 8px;
   }
 
   .agent-history-body,

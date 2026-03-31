@@ -163,6 +163,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
+- That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 
@@ -171,6 +172,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Tool activity should be visible, but compressed by default.
 - Starts, progress, completion, and failure should read as one evolving activity line or block where possible.
 - Raw transport noise must not leak into the UI.
+- Tool, reasoning, plan, diff, request, and system rows should share one restrained structural language instead of mixing rail markers, unrelated borders, and unrelated card treatments.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
@@ -187,6 +189,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ### Diffs and file changes
 
 - Diffs should be surfaced as first-class work artifacts, not buried in generic tool logs.
+- Unified diffs should render as actual diffs with added and removed lines visually separated by green/red treatments, not as undifferentiated plain monospace blocks.
 - Summaries should stay compact, with expansion for detail.
 - File-oriented information should use monospace sparingly and preserve readability.
 
@@ -266,6 +269,11 @@ Status in this branch/work item:
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
+- implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
+- implemented: the only animated history activity element is the trailing global busy bubble, now rendered as a rotating SVG triangle with a blue center dot instead of pulsing ellipsis dots
+- implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
+- implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
+- implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Lens exposes a compact quick-settings strip beneath the main smart input row for model, effort, plan mode, and permission mode
 - implemented: desktop Lens quick settings render as a compact translucent control rail, while mobile renders the same controls as an always-open panel beneath the input row
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer

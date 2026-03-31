@@ -155,6 +155,7 @@ describe('agentView dev errors', () => {
   beforeEach(() => {
     vi.stubGlobal('document', {
       createElement: () => createMockDomNode(),
+      createTextNode: (text: string) => ({ nodeType: 3, textContent: text }),
       createDocumentFragment: () => ({
         appendChild: vi.fn(),
         childNodes: [],
@@ -393,6 +394,21 @@ describe('agentView dev errors', () => {
     expect(resolveHistoryBadgeLabel('user', 'codex')).toBe('User');
     expect(resolveHistoryBadgeLabel('assistant', 'codex')).toBe('Agent');
     expect(resolveHistoryBadgeLabel('assistant', 'claude')).toBe('Assistant');
+  });
+
+  it('renders history metadata as timestamp-only text for every row kind', async () => {
+    const { formatHistoryMeta, shouldHideStatusInMeta } = await import('./index');
+
+    expect(shouldHideStatusInMeta('user', 'In Progress')).toBe(true);
+    expect(shouldHideStatusInMeta('assistant', 'Completed')).toBe(true);
+    expect(shouldHideStatusInMeta('tool', 'Running')).toBe(true);
+    expect(shouldHideStatusInMeta('request', '1/3')).toBe(true);
+    expect(formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z')).toMatch(
+      /\d{2}:\d{2}:\d{2}/,
+    );
+    expect(
+      formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z'),
+    ).not.toContain('In Progress');
   });
 
   it('keeps auto-follow pinned when content grows without user scrolling', async () => {
@@ -4637,6 +4653,26 @@ describe('agentView dev errors', () => {
     expect(presentation.collapsedByDefault).toBe(true);
     expect(presentation.lineCount).toBe(10);
     expect(presentation.preview).toBe('line 1: tool output');
+  });
+
+  it('uses dedicated diff presentation for Lens diff rows', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'diff-1',
+      order: 1,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE',
+      meta: '02:29:00',
+    });
+
+    expect(presentation.mode).toBe('diff');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(4);
+    expect(presentation.preview).toBe('');
   });
 
   it('applies canonical live deltas directly into the materialized history window', async () => {
