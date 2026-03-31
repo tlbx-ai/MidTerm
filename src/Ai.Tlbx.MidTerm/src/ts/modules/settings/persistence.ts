@@ -449,7 +449,6 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const letterSpacing = settings.letterSpacing;
   const fontWeight = settings.fontWeight as TerminalFontWeight;
   const fontWeightBold = settings.fontWeightBold as TerminalFontWeight;
-  const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   let hasFontChanges = false;
 
@@ -478,7 +477,6 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     state.terminal.options.fontWeight = fontWeight;
     state.terminal.options.fontWeightBold = fontWeightBold;
     state.terminal.options.theme = theme;
-    state.terminal.options.minimumContrastRatio = contrastRatio;
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines;
     syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));

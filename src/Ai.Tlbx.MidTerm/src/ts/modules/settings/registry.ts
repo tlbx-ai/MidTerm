@@ -249,12 +249,6 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known tab-title mode',
     applyMode: 'immediate',
   }),
-  controlEntry('minimumContrastRatio', 'setting-contrast', 'float', 1, {
-    editable: true,
-    storage: 'settings.json',
-    validation: 'float from approved presets',
-    applyMode: 'immediate',
-  }),
   controlEntry('smoothScrolling', 'setting-smooth-scrolling', 'checkbox', false, {
     editable: true,
     storage: 'settings.json',
