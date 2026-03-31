@@ -156,6 +156,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - User prompts should be visually distinct but compact.
 - They should anchor the start of a turn without dominating the screen.
 - Repeated rendering of the same user turn is forbidden.
+- In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.
 
 ### Assistant output
 
@@ -272,6 +273,7 @@ Status in this branch/work item:
 - implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
 - implemented: the only animated history activity element is the trailing global busy bubble, now rendered as a rotating SVG triangle with a blue center dot instead of pulsing ellipsis dots
 - implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
+- implemented: Codex Lens now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Lens exposes a compact quick-settings strip beneath the main smart input row for model, effort, plan mode, and permission mode

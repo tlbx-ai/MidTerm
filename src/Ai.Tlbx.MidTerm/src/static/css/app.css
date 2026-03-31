@@ -10729,7 +10729,6 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-history-user .agent-history-header,
 .agent-history-assistant .agent-history-header {
-  order: 1;
   justify-content: space-between;
   margin-top: 0;
 }
@@ -10790,6 +10789,7 @@ body.shared-session-mode .session-tab-bar {
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {
   display: inline-flex;
+  font-size: 7px;
 }
 
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user {
@@ -10813,6 +10813,7 @@ body.shared-session-mode .session-tab-bar {
   .agent-history-assistant
   .agent-history-meta {
   margin-left: 0;
+  font-size: 7px;
 }
 
 .agent-history-title {
