@@ -240,7 +240,7 @@ export function applyUpdate(): void {
     .then(({ response }) => {
       if (response.ok) {
         if (btn) btn.textContent = t('update.restarting');
-        waitForServerAndReload(info.type);
+        waitForServerAndReload(info.type, info.latestVersion);
       } else {
         if (btn) {
           btn.disabled = false;
@@ -261,8 +261,11 @@ export function applyUpdate(): void {
 /**
  * Start the coordinated server restart lifecycle after an update.
  */
-export function waitForServerAndReload(updateType: UpdateType | null = null): void {
-  beginServerRestartLifecycle('update', { updateType });
+export function waitForServerAndReload(
+  updateType: UpdateType | null = null,
+  expectedServerVersion: string | null = null,
+): void {
+  beginServerRestartLifecycle('update', { updateType, expectedServerVersion });
 }
 
 /**
@@ -410,9 +413,10 @@ export function applyLocalUpdate(): void {
     .then(({ response }) => {
       const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
       const updateType = $updateInfo.get()?.localUpdate?.type ?? null;
+      const expectedServerVersion = $updateInfo.get()?.localUpdate?.version ?? null;
       if (response.ok) {
         if (btn) btn.textContent = 'Restarting...';
-        waitForServerAndReload(updateType);
+        waitForServerAndReload(updateType, expectedServerVersion);
       } else {
         if (btn) {
           btn.disabled = false;

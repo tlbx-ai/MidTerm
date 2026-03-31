@@ -10,10 +10,13 @@ type RestartFlowKind = 'update' | 'restart' | 'certificate';
 interface RestartLifecycleState {
   kind: RestartFlowKind;
   updateType: UpdateType | null;
+  expectedServerVersion: string | null;
+  observedServerVersion: string | null;
   overlay: HTMLDivElement;
   pollTimer: number | null;
   timeoutTimer: number | null;
   httpReady: boolean;
+  versionReady: boolean;
   reloadScheduled: boolean;
   completionTimer: number | null;
 }
@@ -29,6 +32,11 @@ let initialized = false;
 function translate(key: string, fallback: string): string {
   const value = t(key);
   return value === key ? fallback : value;
+}
+
+function normalizeVersion(version: string | null | undefined): string | null {
+  const trimmed = version?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function createOverlay(message: string, spinner = true): HTMLDivElement {
@@ -70,6 +78,31 @@ function clearLifecycle(): void {
 
   lifecycle.overlay.remove();
   lifecycle = null;
+}
+
+async function fetchServerVersion(): Promise<string | null> {
+  const response = await fetch('/api/version', { cache: 'no-store' });
+  if (!response.ok) {
+    return null;
+  }
+
+  return normalizeVersion(await response.text());
+}
+
+function canAutoReload(): boolean {
+  if (!lifecycle) {
+    return false;
+  }
+
+  if (lifecycle.kind !== 'update') {
+    return lifecycle.updateType === 'full';
+  }
+
+  if (lifecycle.expectedServerVersion) {
+    return lifecycle.versionReady;
+  }
+
+  return lifecycle.httpReady;
 }
 
 function scheduleReload(): void {
@@ -118,13 +151,13 @@ function finishIfRecovered(): void {
     return;
   }
 
-  const socketsReady = $stateWsConnected.get() && $muxWsConnected.get();
-  if (!socketsReady) {
+  if (canAutoReload()) {
+    scheduleReload();
     return;
   }
 
-  if (lifecycle.updateType === 'full') {
-    scheduleReload();
+  const socketsReady = $stateWsConnected.get() && $muxWsConnected.get();
+  if (!socketsReady) {
     return;
   }
 
@@ -159,20 +192,28 @@ async function pollServerHealth(): Promise<void> {
   }
 
   try {
-    const response = await fetch('/api/health', { cache: 'no-store' });
-    if (!response.ok) {
+    const [healthResponse, serverVersion] = await Promise.all([
+      fetch('/api/health', { cache: 'no-store' }),
+      lifecycle.expectedServerVersion ? fetchServerVersion() : Promise.resolve<string | null>(null),
+    ]);
+    if (!healthResponse.ok) {
       return;
     }
 
     lifecycle.httpReady = true;
-    if (lifecycle.updateType === 'full') {
-      scheduleReload();
-      return;
+    if (lifecycle.expectedServerVersion) {
+      lifecycle.observedServerVersion = serverVersion;
+      lifecycle.versionReady = serverVersion === lifecycle.expectedServerVersion;
+      if (!lifecycle.versionReady) {
+        setOverlayMessage(
+          translate('update.waitingForUpdatedServer', 'Waiting for the updated server...'),
+        );
+        return;
+      }
     }
 
     if (!($stateWsConnected.get() && $muxWsConnected.get())) {
       setOverlayMessage(translate('update.restoringConnections', 'Restoring live connections...'));
-      return;
     }
 
     finishIfRecovered();
@@ -215,19 +256,24 @@ export function initUpdateRuntime(): void {
 
 export function beginServerRestartLifecycle(
   kind: RestartFlowKind,
-  options?: { updateType?: UpdateType | null },
+  options?: { updateType?: UpdateType | null; expectedServerVersion?: string | null },
 ): void {
   clearLifecycle();
+
+  const expectedServerVersion = normalizeVersion(options?.expectedServerVersion ?? null);
 
   lifecycle = {
     kind,
     updateType: options?.updateType ?? null,
+    expectedServerVersion,
+    observedServerVersion: null,
     overlay: createOverlay(
       translate('settings.diagnostics.restartingServer', 'Server is restarting...'),
     ),
     pollTimer: null,
     timeoutTimer: null,
     httpReady: false,
+    versionReady: expectedServerVersion === null,
     reloadScheduled: false,
     completionTimer: null,
   };
@@ -242,7 +288,8 @@ export function beginServerRestartLifecycle(
 
   void pollServerHealth();
   log.info(
-    () => `Server restart lifecycle started (${kind}, updateType=${options?.updateType ?? 'none'})`,
+    () =>
+      `Server restart lifecycle started (${kind}, updateType=${options?.updateType ?? 'none'}, expectedVersion=${expectedServerVersion ?? 'none'})`,
   );
 }
 
