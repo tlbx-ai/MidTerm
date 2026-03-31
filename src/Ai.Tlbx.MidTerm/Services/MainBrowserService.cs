@@ -5,28 +5,21 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class MainBrowserService
 {
-    private static readonly TimeSpan AutoPromoteAfterNoActiveTabs = TimeSpan.FromMinutes(3);
     private readonly Lock _lock = new();
     private readonly Dictionary<string, BrowserRegistration> _browserConnections = new();
-    private readonly SettingsService? _settingsService;
-    private readonly TimeProvider _timeProvider;
     private string? _mainBrowserId;
-    private DateTimeOffset? _noActiveTabsSinceUtc;
+    private bool _hasAssignedInitialMainBrowser;
 
     public MainBrowserService(SettingsService settingsService)
-        : this(settingsService, null)
     {
     }
 
     internal MainBrowserService(TimeProvider? timeProvider = null)
-        : this(null, timeProvider)
     {
     }
 
     internal MainBrowserService(SettingsService? settingsService, TimeProvider? timeProvider)
     {
-        _settingsService = settingsService;
-        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public event Action? OnMainBrowserChanged;
@@ -55,10 +48,11 @@ public sealed class MainBrowserService
 
             registration.ConnectionTokens.Add(connectionToken);
 
-            if (_mainBrowserId is null)
+            if (!_hasAssignedInitialMainBrowser)
             {
                 // First browser ever (cold start) — auto-promote
                 _mainBrowserId = browserId;
+                _hasAssignedInitialMainBrowser = true;
                 Log.Verbose(() => $"[MainBrowser] Initial promote {browserId[..8]}");
                 notify = true;
             }
@@ -84,8 +78,6 @@ public sealed class MainBrowserService
             if (!_browserConnections.TryGetValue(browserId, out var registration))
                 return;
 
-            var hadActiveBrowsers = HasActiveBrowsersLocked();
-
             registration.ConnectionTokens.Remove(connectionToken);
             registration.ActiveConnectionTokens.Remove(connectionToken);
 
@@ -98,8 +90,6 @@ public sealed class MainBrowserService
             // It stays set so the browser retains main status when it reconnects.
             // Only Claim() from another browser can override it.
 
-            UpdateNoActiveTimerLocked(hadActiveBrowsers);
-
             // Notify if multi-client count changed (affects showButton for remaining clients)
             changed = !_browserConnections.ContainsKey(browserId);
         }
@@ -108,16 +98,12 @@ public sealed class MainBrowserService
 
     public void UpdateActivity(string browserId, object connectionToken, bool isActive)
     {
-        var autoPromotionDisabled = _settingsService?.Load().DisableAutoMainBrowserPromotion == true;
-        bool notify = false;
         lock (_lock)
         {
             if (!_browserConnections.TryGetValue(browserId, out var registration))
             {
                 return;
             }
-
-            var hadActiveBrowsers = HasActiveBrowsersLocked();
 
             if (isActive)
             {
@@ -131,20 +117,7 @@ public sealed class MainBrowserService
             {
                 registration.ActiveConnectionTokens.Remove(connectionToken);
             }
-
-            var shouldAutoPromote = !autoPromotionDisabled
-                && ShouldAutoPromoteLocked(browserId, hadActiveBrowsers);
-            UpdateNoActiveTimerLocked(hadActiveBrowsers);
-
-            if (shouldAutoPromote && _mainBrowserId != browserId)
-            {
-                _mainBrowserId = browserId;
-                Log.Verbose(() => $"[MainBrowser] Auto-promoted {browserId[..8]} after inactivity");
-                notify = true;
-            }
         }
-
-        if (notify) OnMainBrowserChanged?.Invoke();
     }
 
     public void Claim(string browserId)
@@ -195,57 +168,6 @@ public sealed class MainBrowserService
         {
             return _browserConnections.Count >= 2
                 || (_mainBrowserId is not null && _mainBrowserId != browserId);
-        }
-    }
-
-    private bool HasActiveBrowsersLocked()
-    {
-        return _browserConnections.Values.Any(x => x.ActiveConnectionTokens.Count > 0);
-    }
-
-    private int GetActiveBrowserCountLocked()
-    {
-        return _browserConnections.Values.Count(x => x.ActiveConnectionTokens.Count > 0);
-    }
-
-    private bool ShouldAutoPromoteLocked(string browserId, bool hadActiveBrowsers)
-    {
-        if (hadActiveBrowsers)
-        {
-            return false;
-        }
-
-        if (_noActiveTabsSinceUtc is null)
-        {
-            return false;
-        }
-
-        if (!_browserConnections.TryGetValue(browserId, out var registration)
-            || registration.ActiveConnectionTokens.Count == 0)
-        {
-            return false;
-        }
-
-        if (GetActiveBrowserCountLocked() != 1)
-        {
-            return false;
-        }
-
-        return (_timeProvider.GetUtcNow() - _noActiveTabsSinceUtc.Value) >= AutoPromoteAfterNoActiveTabs;
-    }
-
-    private void UpdateNoActiveTimerLocked(bool hadActiveBrowsers)
-    {
-        var hasActiveBrowsers = HasActiveBrowsersLocked();
-        if (hasActiveBrowsers)
-        {
-            _noActiveTabsSinceUtc = null;
-            return;
-        }
-
-        if (hadActiveBrowsers || _noActiveTabsSinceUtc is null)
-        {
-            _noActiveTabsSinceUtc = _timeProvider.GetUtcNow();
         }
     }
 
