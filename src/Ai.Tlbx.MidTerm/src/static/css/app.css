@@ -1552,7 +1552,6 @@ body.has-app-background::after {
 
 .sidebar-footer {
   padding: 6px 12px;
-  border-top: 1px solid var(--border-color);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
@@ -8076,6 +8075,10 @@ body.shared-session-mode .session-tab-bar {
   background: var(--terminal-ui-background, var(--terminal-bg));
   border-top: 1px solid var(--border-color);
   margin-right: 0;
+}
+
+.manager-bar:not(.hidden) + .smart-input-docked {
+  border-top: none;
 }
 
 .smart-input-docked.visible {
