@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { $currentSettings, $isMainBrowser } from '../../stores';
+import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
-import { fitSessionToScreen } from './scaling';
+import { fitSessionToScreen, scheduleForegroundResizeRecovery } from './scaling';
 import { sendResize } from '../comms';
 
 const mocks = vi.hoisted(() => ({
@@ -158,6 +158,8 @@ describe('fitSessionToScreen', () => {
       fontSize: 14,
       fontFamily: 'Cascadia Code',
     } as never);
+    $sessions.set({});
+    $activeSessionId.set('s1');
     dom.terminalsArea = {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
@@ -181,6 +183,8 @@ describe('fitSessionToScreen', () => {
   afterEach(() => {
     sessionTerminals.clear();
     dom.terminalsArea = null;
+    $sessions.set({});
+    $activeSessionId.set(null);
     globalThis.document = originalDocument;
     globalThis.localStorage = originalLocalStorage;
     globalThis.requestAnimationFrame = originalRequestAnimationFrame;
@@ -212,6 +216,30 @@ describe('fitSessionToScreen', () => {
     fitSessionToScreen('s1');
 
     expect(harness.terminal.resize).toHaveBeenCalledTimes(1);
+    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+  });
+
+  it('does not rerender or send a resize on foreground recovery when the viewport already matches', () => {
+    const harness = createFitHarness();
+    harness.state.terminal.cols = 81;
+    harness.state.serverCols = 81;
+    sessionTerminals.set('s1', harness.state as never);
+
+    scheduleForegroundResizeRecovery();
+
+    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
+    expect(sendResize).not.toHaveBeenCalled();
+  });
+
+  it('recovers main-browser sizing on foreground recovery when the viewport changed in the background', () => {
+    const harness = createFitHarness();
+    sessionTerminals.set('s1', harness.state as never);
+
+    scheduleForegroundResizeRecovery();
+
+    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });

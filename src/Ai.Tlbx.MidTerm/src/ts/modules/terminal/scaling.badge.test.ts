@@ -265,5 +265,6 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
     expect(harness.getOverlay()).toBeNull();
+    expect(harness.xterm.style.transform ?? '').toBe('');
   });
 });

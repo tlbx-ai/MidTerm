@@ -751,12 +751,12 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   };
 
   if (scale < 1) {
-    // Too big — scale down (flexbox centers automatically)
-    xterm.style.transform = `scale(${scale})`;
-    xterm.style.transformOrigin = 'center center';
-    container.classList.add('scaled');
-
     if (isMainBrowser) {
+      // The leading browser owns the authoritative terminal size. Never leave
+      // it visually scaled; recover by resizing instead.
+      xterm.style.transform = '';
+      xterm.style.transformOrigin = '';
+      container.classList.remove('scaled');
       if (overlay) {
         overlay.remove();
       }
@@ -765,6 +765,11 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       }
       return;
     }
+
+    // Too big — scale down (flexbox centers automatically)
+    xterm.style.transform = `scale(${scale})`;
+    xterm.style.transformOrigin = 'center center';
+    container.classList.add('scaled');
 
     const el = ensureOverlay();
     positionOverlay(el);
@@ -961,6 +966,152 @@ function scheduleMainBrowserResize(): void {
   });
 }
 
+let foregroundResizeRecoveryScheduled = false;
+let mainBrowserGeometryWatchdogTimer: number | null = null;
+let mainBrowserGeometryWatchdogFrame: number | null = null;
+let lastMainBrowserGeometrySignature: string | null = null;
+
+/**
+ * Recover main-browser sizing after the page returns to the foreground.
+ * Uses the lightweight periodic mismatch check so correctly sized terminals
+ * remain untouched and do not trigger unnecessary renderer/layout work.
+ */
+export function scheduleForegroundResizeRecovery(): void {
+  if (foregroundResizeRecoveryScheduled) return;
+  foregroundResizeRecoveryScheduled = true;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      foregroundResizeRecoveryScheduled = false;
+      if (!$isMainBrowser.get()) return;
+      ensureMainBrowserContainerResizeObserver();
+      periodicResizeCheck();
+    });
+  });
+}
+
+function invalidateMainBrowserGeometryWatchdog(): void {
+  lastMainBrowserGeometrySignature = null;
+}
+
+function roundGeometry(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '0';
+  }
+
+  return String(Math.round(value));
+}
+
+function buildMainBrowserGeometrySignature(): string | null {
+  if (!$isMainBrowser.get()) {
+    return null;
+  }
+
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return null;
+  }
+
+  const parts: string[] = [];
+  const visualViewport = window.visualViewport;
+  const terminalsAreaRect = dom.terminalsArea?.getBoundingClientRect() ?? null;
+  const activeId = $activeSessionId.get();
+
+  parts.push(`win:${roundGeometry(window.innerWidth)}x${roundGeometry(window.innerHeight)}`);
+  parts.push(`dpr:${roundGeometry(window.devicePixelRatio * 1000)}`);
+  parts.push(
+    `vv:${roundGeometry(visualViewport?.width)}x${roundGeometry(visualViewport?.height)}@${roundGeometry(visualViewport?.offsetLeft)}:${roundGeometry(visualViewport?.offsetTop)}`,
+  );
+  parts.push(
+    `area:${roundGeometry(terminalsAreaRect?.width)}x${roundGeometry(terminalsAreaRect?.height)}`,
+  );
+  parts.push(`active:${activeId ?? ''}`);
+
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!state.opened) {
+      return;
+    }
+
+    const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
+    if (!layoutPane) {
+      if (sessionId !== activeId || state.container.classList.contains('hidden')) {
+        return;
+      }
+    }
+
+    const measurementRoot = layoutPane ?? state.container;
+    const rect = measurementRoot.getBoundingClientRect();
+    parts.push(
+      [
+        sessionId,
+        layoutPane ? 'layout' : 'standalone',
+        roundGeometry(rect.width),
+        roundGeometry(rect.height),
+        roundGeometry(state.container.clientWidth),
+        roundGeometry(state.container.clientHeight),
+      ].join(':'),
+    );
+  });
+
+  return parts.join('|');
+}
+
+function queueMainBrowserGeometryWatchdog(): void {
+  if (mainBrowserGeometryWatchdogTimer !== null || mainBrowserGeometryWatchdogFrame !== null) {
+    return;
+  }
+
+  mainBrowserGeometryWatchdogTimer = window.setTimeout(() => {
+    mainBrowserGeometryWatchdogTimer = null;
+    mainBrowserGeometryWatchdogFrame = window.requestAnimationFrame(() => {
+      mainBrowserGeometryWatchdogFrame = null;
+      runMainBrowserGeometryWatchdog();
+    });
+  }, 0);
+}
+
+function runMainBrowserGeometryWatchdog(): void {
+  if (!$isMainBrowser.get()) {
+    stopMainBrowserGeometryWatchdog();
+    return;
+  }
+
+  const signature = buildMainBrowserGeometrySignature();
+  if (signature === null) {
+    invalidateMainBrowserGeometryWatchdog();
+    queueMainBrowserGeometryWatchdog();
+    return;
+  }
+
+  if (signature !== lastMainBrowserGeometrySignature) {
+    lastMainBrowserGeometrySignature = signature;
+    scheduleForegroundResizeRecovery();
+  }
+
+  queueMainBrowserGeometryWatchdog();
+}
+
+function ensureMainBrowserGeometryWatchdog(): void {
+  if (mainBrowserGeometryWatchdogTimer !== null || mainBrowserGeometryWatchdogFrame !== null) {
+    return;
+  }
+
+  invalidateMainBrowserGeometryWatchdog();
+  queueMainBrowserGeometryWatchdog();
+}
+
+function stopMainBrowserGeometryWatchdog(): void {
+  if (mainBrowserGeometryWatchdogTimer !== null) {
+    window.clearTimeout(mainBrowserGeometryWatchdogTimer);
+    mainBrowserGeometryWatchdogTimer = null;
+  }
+
+  if (mainBrowserGeometryWatchdogFrame !== null) {
+    window.cancelAnimationFrame(mainBrowserGeometryWatchdogFrame);
+    mainBrowserGeometryWatchdogFrame = null;
+  }
+
+  invalidateMainBrowserGeometryWatchdog();
+}
+
 /**
  * Central dock layout change handler.
  * All dock modules call this after opening/closing/resizing a dock panel.
@@ -1064,12 +1215,32 @@ export function setupResizeObserver(): void {
     }
   });
 
+  const handleForegroundRecovery = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
+    invalidateMainBrowserGeometryWatchdog();
+    scheduleForegroundResizeRecovery();
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    invalidateMainBrowserGeometryWatchdog();
+    if (document.visibilityState === 'visible') {
+      handleForegroundRecovery();
+    }
+  });
+  window.addEventListener('focus', handleForegroundRecovery);
+  window.addEventListener('pageshow', handleForegroundRecovery);
+  window.addEventListener('pagehide', invalidateMainBrowserGeometryWatchdog);
+  window.addEventListener('blur', invalidateMainBrowserGeometryWatchdog);
+
   let periodicResizeInterval: number | undefined;
 
   $isMainBrowser.subscribe((isMain) => {
     if (isMain && periodicResizeInterval === undefined) {
       requestAnimationFrame(() => {
         ensureMainBrowserContainerResizeObserver();
+        ensureMainBrowserGeometryWatchdog();
         autoResizeAllTerminalsImmediate();
       });
       periodicResizeInterval = window.setInterval(periodicResizeCheck, 1000);
@@ -1077,6 +1248,7 @@ export function setupResizeObserver(): void {
       clearInterval(periodicResizeInterval);
       periodicResizeInterval = undefined;
       disconnectMainBrowserContainerResizeObserver();
+      stopMainBrowserGeometryWatchdog();
       requestAnimationFrame(rescaleAllTerminalsImmediate);
     }
   });
