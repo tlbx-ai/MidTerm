@@ -13,11 +13,17 @@ describe('terminal surface wiring', () => {
     expect(constants).toContain('export const TERMINAL_PADDING = 0;');
     expect(appCss).toContain('.terminal-container {');
     expect(appCss).toContain('padding: 0;');
+    expect(appCss).toContain(
+      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
+    );
   });
 
   it('lets the xterm host cover floor-to-cell remainder space inside the panel', () => {
     expect(appCss).toContain('.terminal-container .xterm {');
     expect(appCss).toContain('min-width: 100%;');
     expect(appCss).toContain('min-height: 100%;');
+    expect(appCss).toContain(
+      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
+    );
   });
 });

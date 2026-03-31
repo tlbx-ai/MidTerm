@@ -1694,6 +1694,7 @@ body.has-app-background::after {
   right: 0;
   bottom: 0;
   padding: 0;
+  background-color: var(--terminal-canvas-background, var(--terminal-bg));
   touch-action: manipulation;
   display: flex;
   align-items: flex-start;
@@ -1908,6 +1909,7 @@ body.has-app-background::after {
   flex-shrink: 0;
   min-width: 100%;
   min-height: 100%;
+  background-color: var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 /* Terminal scrollbar visibility — controlled by scrollbarStyle setting */

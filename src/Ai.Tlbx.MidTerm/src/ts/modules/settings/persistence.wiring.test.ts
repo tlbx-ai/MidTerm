@@ -154,6 +154,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-terminal);');
     expect(cssSource).toContain('background: var(--bg-primary);');
     expect(cssSource).toContain('background: var(--terminal-ui-background, var(--terminal-bg));');
+    expect(cssSource).toContain(
+      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
+    );
     expect(xtermCssSource).toContain(
       'background-color: var(--terminal-canvas-background, var(--bg-terminal));',
     );
