@@ -333,6 +333,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'server-only',
     },
   ),
+  controlEntry('resumeMode', 'setting-resume-mode', 'select', 'fullReplay', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'fullReplay or quickResume',
+    applyMode: 'server-only',
+  }),
   controlEntry('inputMode', 'setting-input-mode', 'select', 'keyboard', {
     editable: true,
     storage: 'settings.json',

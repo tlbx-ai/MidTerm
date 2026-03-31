@@ -4065,6 +4065,7 @@ export interface components {
       scrollbackProtection: boolean;
       disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
+      resumeMode: components['schemas']['TerminalResumeModeSetting'];
       inputMode: string;
       fileRadar: boolean;
       showSidebarSessionFilter: boolean;
@@ -4383,6 +4384,8 @@ export interface components {
     };
     /** @enum {unknown} */
     TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
+    /** @enum {unknown} */
+    TerminalResumeModeSetting: 'fullReplay' | 'quickResume';
     TerminalTransportDiagnosticsDto: {
       sourceSeq: string;
       muxReceivedSeq: string;

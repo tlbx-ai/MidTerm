@@ -5,8 +5,8 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
-
 using Ai.Tlbx.MidTerm.Services.WebSockets;
+using Ai.Tlbx.MidTerm.Settings;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 /// <summary>
@@ -31,14 +31,20 @@ public sealed class TtyHostMuxConnectionManager
             new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropWrite });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
+    private readonly SettingsService _settingsService;
     private readonly Action<string, ulong, int, int, ReadOnlyMemory<byte>> _outputHandler;
     private readonly Action<string> _sessionClosedHandler;
     private readonly Action<string, ForegroundChangePayload> _foregroundChangedHandler;
+    private readonly string _settingsListenerId;
+    private TerminalResumeModeSetting _resumeMode;
     private bool _disposed;
 
-    public TtyHostMuxConnectionManager(TtyHostSessionManager sessionManager)
+    public TtyHostMuxConnectionManager(TtyHostSessionManager sessionManager, SettingsService settingsService)
     {
         _sessionManager = sessionManager;
+        _settingsService = settingsService;
+        _resumeMode = settingsService.Load().ResumeMode;
+        _settingsListenerId = settingsService.AddSettingsListener(settings => _resumeMode = settings.ResumeMode);
         _outputHandler = HandleOutput;
         _sessionClosedHandler = HandleSessionClosed;
         _foregroundChangedHandler = HandleForegroundChanged;
@@ -131,10 +137,12 @@ public sealed class TtyHostMuxConnectionManager
 
     public MuxClient AddClient(string clientId, WebSocket webSocket, string? allowedSessionId = null)
     {
-        var client = new MuxClient(clientId, webSocket, allowedSessionId);
+        var client = new MuxClient(clientId, webSocket, GetResumeMode, allowedSessionId);
         _clients[clientId] = client;
         return client;
     }
+
+    private TerminalResumeModeSetting GetResumeMode() => _resumeMode;
 
     public async Task RemoveClientAsync(string clientId)
     {
@@ -213,5 +221,6 @@ public sealed class TtyHostMuxConnectionManager
         _sessionManager.OnOutput -= _outputHandler;
         _sessionManager.OnSessionClosed -= _sessionClosedHandler;
         _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
+        _settingsService.RemoveSettingsListener(_settingsListenerId);
     }
 }

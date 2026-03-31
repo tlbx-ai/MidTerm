@@ -1863,6 +1863,30 @@
                       display may still turn off.
                     </p>
                     <div class="setting-row">
+                      <label for="setting-resume-mode" data-i18n="settings.behavior.resumeMode"
+                        >Session Resume Mode</label
+                      >
+                      <select id="setting-resume-mode">
+                        <option
+                          value="fullReplay"
+                          data-i18n="settings.options.resumeModeFullReplay"
+                        >
+                          Full Replay (Default)
+                        </option>
+                        <option
+                          value="quickResume"
+                          data-i18n="settings.options.resumeModeQuickResume"
+                        >
+                          Quick Resume (Better for More Sessions)
+                        </option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.resumeModeHint">
+                      Quick Resume keeps hidden sessions lighter by catching them up with a smaller
+                      replay burst when you revisit them. Visible sessions remain live, and the heat
+                      indicator still reflects real terminal activity.
+                    </p>
+                    <div class="setting-row">
                       <label
                         for="setting-file-radar"
                         title="Detects file paths in terminal output and makes them clickable. Click to view files remotely."

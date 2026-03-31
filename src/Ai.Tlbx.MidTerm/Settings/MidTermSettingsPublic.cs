@@ -54,6 +54,7 @@ public sealed partial class MidTermSettingsPublic
     public bool ScrollbackProtection { get; set; } = false;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
+    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
     public bool ShowSidebarSessionFilter { get; set; } = false;

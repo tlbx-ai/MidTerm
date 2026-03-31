@@ -43,11 +43,15 @@ public static class MuxProtocol
     public const byte TypeDataLoss = 0x0B; // Server -> Client: background session dropped data, resync recommended
     public const byte TypePong = 0x0C; // Server -> Client: latency measurement pong
     public const byte TypeSyncComplete = 0x0D; // Server -> Client: initial buffer replay finished
+    public const byte TypeVisibleSessionsHint = 0x0E; // Client -> Server: visible terminal sessions for quick resume
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
     public const int CompressionThreshold = 8192; // Only compress payloads > 8KB (buffer replays)
     public const int CompressedOutputHeaderSize = 25; // HeaderSize + seq(8) + dims(4) + uncompressedLen(4)
+
+    public const byte BufferRequestModeFullReplay = 0x00;
+    public const byte BufferRequestModeQuickResume = 0x01;
 
     public static byte[] CreateOutputFrame(string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data)
     {
@@ -356,6 +360,49 @@ public static class MuxProtocol
         return frame;
     }
 
+    public static byte[] CreateBufferRequestFrame(string sessionId, bool quickResume)
+    {
+        var frame = new byte[HeaderSize + 1];
+        frame[0] = TypeBufferRequest;
+        WriteSessionId(frame.AsSpan(1, 8), sessionId);
+        frame[HeaderSize] = quickResume ? BufferRequestModeQuickResume : BufferRequestModeFullReplay;
+        return frame;
+    }
+
+    public static bool ParseBufferRequestQuickResume(ReadOnlySpan<byte> payload)
+    {
+        return payload.Length > 0 && payload[0] == BufferRequestModeQuickResume;
+    }
+
+    public static byte[] CreateVisibleSessionsHintFrame(IReadOnlyCollection<string> sessionIds)
+    {
+        var frame = new byte[HeaderSize + (sessionIds.Count * 8)];
+        frame[0] = TypeVisibleSessionsHint;
+        var offset = HeaderSize;
+        foreach (var sessionId in sessionIds)
+        {
+            WriteSessionId(frame.AsSpan(offset, 8), sessionId);
+            offset += 8;
+        }
+
+        return frame;
+    }
+
+    public static HashSet<string> ParseVisibleSessionsHintPayload(ReadOnlySpan<byte> payload)
+    {
+        var sessionIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var offset = 0; offset + 8 <= payload.Length; offset += 8)
+        {
+            var sessionId = ReadSessionId(payload.Slice(offset, 8));
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                sessionIds.Add(sessionId);
+            }
+        }
+
+        return sessionIds;
+    }
+
     public static void ClearSessionCache(string sessionId)
     {
         Span<byte> bytes = stackalloc byte[8];
@@ -370,5 +417,18 @@ public static class MuxProtocol
         {
             dest[i] = (byte)sessionId[i];
         }
+    }
+
+    private static string ReadSessionId(ReadOnlySpan<byte> src)
+    {
+        Span<byte> sessionIdBytes = stackalloc byte[8];
+        src[..Math.Min(8, src.Length)].CopyTo(sessionIdBytes);
+        var length = sessionIdBytes.IndexOf((byte)0);
+        if (length < 0)
+        {
+            length = sessionIdBytes.Length;
+        }
+
+        return Encoding.ASCII.GetString(sessionIdBytes[..length]);
     }
 }

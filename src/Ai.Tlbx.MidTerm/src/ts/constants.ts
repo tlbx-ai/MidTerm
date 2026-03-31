@@ -48,6 +48,7 @@ export const MUX_TYPE_FOREGROUND_CHANGE = 0x0a; // Server -> Client: Foreground 
 export const MUX_TYPE_DATA_LOSS = 0x0b; // Server -> Client: Background session lost data
 export const MUX_TYPE_PONG = 0x0c; // Server -> Client: Latency measurement pong
 export const MUX_TYPE_SYNC_COMPLETE = 0x0d; // Server -> Client: Initial buffer replay finished
+export const MUX_TYPE_VISIBLE_SESSIONS_HINT = 0x0e; // Client -> Server: Visible terminal sessions
 
 // Custom WebSocket close codes (4000-4999 range)
 export const WS_CLOSE_AUTH_FAILED = 4401;

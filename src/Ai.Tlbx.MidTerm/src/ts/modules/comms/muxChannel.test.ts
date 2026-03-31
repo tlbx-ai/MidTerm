@@ -70,6 +70,7 @@ class MockWebSocket {
 
 interface Harness {
   encodeSessionId: typeof import('./muxChannel')['encodeSessionId'];
+  updateTerminalVisibility: typeof import('./muxChannel')['updateTerminalVisibility'];
   sessionTerminals: typeof import('../../state')['sessionTerminals'];
   stores: typeof import('../../stores');
   constants: typeof import('../../constants');
@@ -202,6 +203,7 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
 
   return {
     encodeSessionId: mux.encodeSessionId,
+    updateTerminalVisibility: mux.updateTerminalVisibility,
     sessionTerminals: state.sessionTerminals,
     stores,
     constants,
@@ -294,11 +296,15 @@ describe('muxChannel', () => {
 
     await Promise.resolve();
 
-    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+    expect(
+      terminal.writeMock.mock.calls.filter((call) => call[0] instanceof Uint8Array),
+    ).toHaveLength(1);
 
     await vi.runOnlyPendingTimersAsync();
 
-    expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+    expect(
+      terminal.writeMock.mock.calls.filter((call) => call[0] instanceof Uint8Array),
+    ).toHaveLength(2);
   });
 
   it('preserves open scrollback on reconnect and ignores duplicate tail replay frames', async () => {
@@ -344,5 +350,33 @@ describe('muxChannel', () => {
     await Promise.resolve();
 
     expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends visible-session hints without quick-resume refreshes in full replay mode', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    harness.stores.$currentSettings.set({ resumeMode: 'fullReplay' } as never);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', ['sess5678']);
+
+    expect(harness.ws.send).toHaveBeenCalledTimes(1);
+    const frame = harness.ws.send.mock.calls[0]?.[0] as Uint8Array;
+    expect(frame[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
+  });
+
+  it('requests quick-resume bursts for sessions that become streamable', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    harness.stores.$currentSettings.set({ resumeMode: 'quickResume' } as never);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', ['sess5678']);
+
+    expect(harness.ws.send).toHaveBeenCalledTimes(3);
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
+    expect(frames[1]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(frames[1]?.[harness.constants.MUX_HEADER_SIZE]).toBe(1);
+    expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe(1);
   });
 });

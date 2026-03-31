@@ -65,11 +65,12 @@ public sealed class MtAgentHostClaudeIntegrationTests
             Assert.Equal("accepted", firstTurnResult.Status);
             Assert.Equal("claude", firstTurnResult.TurnStarted!.Provider);
 
-            var firstTurnEvents = await LensHostTestClient.ReadUntilAsync(
+            var firstTurnEvents = await LensHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingEvents,
                 envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 20);
+                maxEvents: 40,
+                timeout: TimeSpan.FromSeconds(10));
             var threadEvent = Assert.Single(firstTurnEvents, envelope => envelope.Event.Type == "thread.started");
             Assert.Contains(firstTurnEvents, envelope => envelope.Event.Type == "turn.started");
             Assert.Contains(
@@ -103,11 +104,12 @@ public sealed class MtAgentHostClaudeIntegrationTests
             Assert.Equal("accepted", secondTurnResult.Status);
             Assert.Equal(threadEvent.Event.ThreadState!.ProviderThreadId, secondTurnResult.TurnStarted!.ThreadId);
 
-            var secondTurnEvents = await LensHostTestClient.ReadUntilAsync(
+            var secondTurnEvents = await LensHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingEvents,
                 envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 20);
+                maxEvents: 40,
+                timeout: TimeSpan.FromSeconds(10));
             Assert.Contains(
                 secondTurnEvents,
                 envelope => envelope.Event.Type == "content.delta" &&

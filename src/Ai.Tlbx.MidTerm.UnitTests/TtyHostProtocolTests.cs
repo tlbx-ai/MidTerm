@@ -152,6 +152,20 @@ public class TtyHostProtocolTests
     }
 
     [Fact]
+    public void GetBuffer_RoundTrips_QuickResumeReason()
+    {
+        var requestFrame = TtyHostProtocol.CreateGetBuffer(65536, TerminalReplayReason.QuickResumeTailReplay);
+
+        Assert.True(TtyHostProtocol.TryReadHeader(requestFrame, out var requestType, out var requestPayloadLength));
+        Assert.Equal(TtyHostMessageType.GetBuffer, requestType);
+
+        var request = TtyHostProtocol.ParseGetBuffer(requestFrame.AsSpan(TtyHostProtocol.HeaderSize, requestPayloadLength));
+        Assert.NotNull(request);
+        Assert.Equal(65536, request!.MaxBytes);
+        Assert.Equal(TerminalReplayReason.QuickResumeTailReplay, request.Reason);
+    }
+
+    [Fact]
     public void DataLoss_RoundTrips_ReasonAndDroppedBytes()
     {
         var frame = TtyHostProtocol.CreateDataLoss(new TtyHostDataLossPayload

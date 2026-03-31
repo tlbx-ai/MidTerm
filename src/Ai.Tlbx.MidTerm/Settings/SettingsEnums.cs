@@ -48,6 +48,12 @@ public enum TerminalEnterModeSetting
     [JsonStringEnumMemberName("shiftEnterLineFeed")] ShiftEnterLineFeed
 }
 
+public enum TerminalResumeModeSetting
+{
+    [JsonStringEnumMemberName("fullReplay")] FullReplay,
+    [JsonStringEnumMemberName("quickResume")] QuickResume
+}
+
 public enum KeyProtectionMethod
 {
     [JsonStringEnumMemberName("osProtected")] OsProtected,

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -6,13 +7,14 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Settings;
-
 using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
 public sealed class MuxWebSocketHandler
 {
     private const int ReplayFrameChunkBytes = 32 * 1024;
+    private const int QuickResumeShellBurstBytes = 192 * 1024;
+    private const int QuickResumeInteractiveBurstBytes = 64 * 1024;
     private readonly TtyHostSessionManager _sessionManager;
     private readonly TtyHostMuxConnectionManager _muxManager;
     private readonly SettingsService _settingsService;
@@ -66,6 +68,7 @@ public sealed class MuxWebSocketHandler
 
         var client = _muxManager.AddClient(clientId, ws, shareAccess?.SessionId);
         var initialPrioritySessionId = ResolveInitialPrioritySessionId(context, shareAccess);
+        var initialVisibleSessionIds = ResolveInitialVisibleSessionIds(context, shareAccess);
         Task? deferredReplayTask = null;
         using var deferredReplayCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownService.Token);
 
@@ -111,15 +114,17 @@ public sealed class MuxWebSocketHandler
             {
                 client.SetActiveSession(initialPrioritySessionId);
             }
+            client.SetVisibleSessions(initialVisibleSessionIds);
 
             client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
-            if (initialPrioritySessionId is null)
+            var quickResumeEnabled = client.ShouldUseQuickResume();
+            if (initialPrioritySessionId is null || quickResumeEnabled)
             {
                 await SendInitialBuffersAsync(
                     client,
                     shareAccess?.SessionId,
-                    prioritySessionId: null,
+                    prioritySessionId: initialPrioritySessionId,
                     replayMode: InitialReplayMode.All,
                     deferredReplayCts.Token);
             }
@@ -134,7 +139,7 @@ public sealed class MuxWebSocketHandler
             }
             await client.TrySendAsync(MuxProtocol.CreateSyncCompleteFrame());
             client.ResumeFlush();
-            if (initialPrioritySessionId is not null)
+            if (initialPrioritySessionId is not null && !quickResumeEnabled)
             {
                 deferredReplayTask = SendInitialBuffersAsync(
                     client,
@@ -209,12 +214,39 @@ public sealed class MuxWebSocketHandler
         return string.IsNullOrWhiteSpace(sessionId) ? null : sessionId;
     }
 
+    private static HashSet<string> ResolveInitialVisibleSessionIds(HttpContext context, ShareAccessContext? shareAccess)
+    {
+        var visibleSessionIds = new HashSet<string>(StringComparer.Ordinal);
+        if (shareAccess is not null)
+        {
+            visibleSessionIds.Add(shareAccess.SessionId);
+            return visibleSessionIds;
+        }
+
+        var raw = context.Request.Query["visibleSessionIds"].ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return visibleSessionIds;
+        }
+
+        foreach (var token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                visibleSessionIds.Add(token);
+            }
+        }
+
+        return visibleSessionIds;
+    }
+
     private IEnumerable<SessionInfo> GetInitialReplaySessions(
         string? allowedSessionId,
         string? prioritySessionId,
         InitialReplayMode replayMode)
     {
         var sessions = _sessionManager.GetAllSessions();
+        var deferredSessions = new List<SessionInfo>();
         SessionInfo? prioritySession = null;
 
         foreach (var sessionInfo in sessions)
@@ -234,13 +266,18 @@ public sealed class MuxWebSocketHandler
 
             if (replayMode != InitialReplayMode.PriorityOnly)
             {
-                yield return sessionInfo;
+                deferredSessions.Add(sessionInfo);
             }
         }
 
         if (prioritySession is not null && replayMode != InitialReplayMode.NonPriorityOnly)
         {
             yield return prioritySession;
+        }
+
+        foreach (var sessionInfo in deferredSessions)
+        {
+            yield return sessionInfo;
         }
     }
 
@@ -253,6 +290,11 @@ public sealed class MuxWebSocketHandler
     {
         foreach (var sessionInfo in GetInitialReplaySessions(allowedSessionId, prioritySessionId, replayMode))
         {
+            if (client.ShouldUseQuickResume() && !client.ShouldDeliverSession(sessionInfo.Id))
+            {
+                continue;
+            }
+
             ct.ThrowIfCancellationRequested();
             try
             {
@@ -417,11 +459,18 @@ public sealed class MuxWebSocketHandler
                 break;
 
             case MuxProtocol.TypeBufferRequest:
-                await SendBufferForSessionAsync(client, sessionId);
+                await SendBufferForSessionAsync(
+                    client,
+                    sessionId,
+                    MuxProtocol.ParseBufferRequestQuickResume(payload));
                 break;
 
             case MuxProtocol.TypeActiveSessionHint:
                 client.SetActiveSession(sessionId);
+                break;
+
+            case MuxProtocol.TypeVisibleSessionsHint:
+                client.SetVisibleSessions(MuxProtocol.ParseVisibleSessionsHintPayload(payload));
                 break;
 
             case MuxProtocol.TypePing:
@@ -470,7 +519,7 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private async Task SendBufferForSessionAsync(MuxClient client, string sessionId)
+    private async Task SendBufferForSessionAsync(MuxClient client, string sessionId, bool quickResumeRequested)
     {
         try
         {
@@ -481,10 +530,11 @@ public sealed class MuxWebSocketHandler
                 return;
             }
 
+            var quickResume = quickResumeRequested && client.ShouldUseQuickResume();
             var snapshot = await _sessionManager.GetBufferAsync(
                 sessionId,
-                maxBytes: null,
-                TerminalReplayReason.BufferRefreshTailReplay);
+                maxBytes: quickResume ? ResolveQuickResumeBurstBytes(session) : null,
+                quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay);
             if (snapshot is null)
             {
                 Log.Warn(() => $"MuxHandler: BufferRequest for {sessionId}: IPC returned null (session disconnected?)");
@@ -502,6 +552,54 @@ public sealed class MuxWebSocketHandler
         {
             Log.Error(() => $"[MuxHandler] BufferRequest failed for {sessionId}: {ex.Message}");
         }
+    }
+
+    private int ResolveQuickResumeBurstBytes(SessionInfo session)
+    {
+        var configuredScrollbackBytes = Math.Clamp(
+            _settingsService.Load().ScrollbackBytes,
+            MidTermSettings.MinScrollbackBytes,
+            MidTermSettings.MaxScrollbackBytes);
+
+        var burstBytes = IsLikelyLineBasedShell(session)
+            ? QuickResumeShellBurstBytes
+            : QuickResumeInteractiveBurstBytes;
+
+        return Math.Min(configuredScrollbackBytes, burstBytes);
+    }
+
+    private static bool IsLikelyLineBasedShell(SessionInfo session)
+    {
+        var shellIdentity = NormalizeExecutableIdentity(session.ShellType);
+        var foregroundIdentity = NormalizeExecutableIdentity(session.ForegroundName);
+
+        if (string.IsNullOrEmpty(foregroundIdentity))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(shellIdentity) &&
+            string.Equals(shellIdentity, foregroundIdentity, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return foregroundIdentity is "pwsh" or "powershell" or "cmd" or "bash" or "zsh" or "sh" or "fish" or "nu";
+    }
+
+    private static string NormalizeExecutableIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var candidate = value.Trim().Replace('\\', '/');
+        var basename = candidate.Split('/').LastOrDefault() ?? candidate;
+        var token = basename.Split(' ', '\t').FirstOrDefault() ?? basename;
+        return token.EndsWith(".exe", true, CultureInfo.InvariantCulture)
+            ? token[..^4].ToLowerInvariant()
+            : token.ToLowerInvariant();
     }
 
     private async Task CloseWebSocketAsync(WebSocket ws)

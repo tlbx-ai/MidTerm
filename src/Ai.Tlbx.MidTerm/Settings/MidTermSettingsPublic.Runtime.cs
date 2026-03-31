@@ -71,6 +71,7 @@ public sealed partial class MidTermSettingsPublic
             ScrollbackProtection = settings.ScrollbackProtection,
             DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
+            ResumeMode = settings.ResumeMode,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
@@ -162,6 +163,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
+        settings.ResumeMode = ResumeMode;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;

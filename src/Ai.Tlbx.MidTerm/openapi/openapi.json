@@ -4742,6 +4742,7 @@
           "scrollbackProtection",
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
+          "resumeMode",
           "inputMode",
           "fileRadar",
           "showSidebarSessionFilter",
@@ -4910,6 +4911,9 @@
           },
           "keepSystemAwakeWithActiveSessions": {
             "type": "boolean"
+          },
+          "resumeMode": {
+            "$ref": "#/components/schemas/TerminalResumeModeSetting"
           },
           "inputMode": {
             "type": "string"
@@ -6149,6 +6153,12 @@
         "enum": [
           "default",
           "shiftEnterLineFeed"
+        ]
+      },
+      "TerminalResumeModeSetting": {
+        "enum": [
+          "fullReplay",
+          "quickResume"
         ]
       },
       "TerminalTransportDiagnosticsDto": {

@@ -553,7 +553,8 @@ public enum TerminalReplayReason
     BrowserPendingOverflow = 3,
     IpcTimeoutReconnect = 4,
     BufferRefreshTailReplay = 5,
-    ReconnectTailReplay = 6
+    ReconnectTailReplay = 6,
+    QuickResumeTailReplay = 7
 }
 
 [JsonSerializable(typeof(SessionInfo))]

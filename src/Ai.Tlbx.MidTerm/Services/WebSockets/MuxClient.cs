@@ -1,11 +1,13 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
@@ -85,6 +87,8 @@ public sealed class MuxClient : IAsyncDisposable
     private volatile bool _flushSuspended;
     private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new();
     private readonly string? _allowedSessionId;
+    private readonly Func<TerminalResumeModeSetting> _getResumeMode;
+    private FrozenSet<string> _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -171,10 +175,15 @@ public sealed class MuxClient : IAsyncDisposable
         }
     }
 
-    public MuxClient(string id, WebSocket webSocket, string? allowedSessionId = null)
+    public MuxClient(
+        string id,
+        WebSocket webSocket,
+        Func<TerminalResumeModeSetting> getResumeMode,
+        string? allowedSessionId = null)
     {
         Id = id;
         WebSocket = webSocket;
+        _getResumeMode = getResumeMode;
         _allowedSessionId = allowedSessionId;
         _inputChannel = Channel.CreateBounded<OutputItem>(new BoundedChannelOptions(MaxQueuedItems)
         {
@@ -206,6 +215,11 @@ public sealed class MuxClient : IAsyncDisposable
             buffer.Release();
             return;
         }
+        if (!ShouldDeliverSession(sessionId))
+        {
+            buffer.Release();
+            return;
+        }
 
         if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, sequenceEndExclusive, cols, rows, buffer)))
         {
@@ -221,6 +235,22 @@ public sealed class MuxClient : IAsyncDisposable
     public void SetActiveSession(string? sessionId)
     {
         _activeSessionId = sessionId is not null && CanAccessSession(sessionId) ? sessionId : null;
+    }
+
+    public void SetVisibleSessions(HashSet<string> sessionIds)
+    {
+        if (sessionIds.Count == 0)
+        {
+            _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+            return;
+        }
+
+        var visibleSessions = sessionIds
+            .Where(CanAccessSession)
+            .ToArray();
+        _visibleSessionIds = visibleSessions.Length == 0
+            ? FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal)
+            : FrozenSet.ToFrozenSet(visibleSessions, StringComparer.Ordinal);
     }
 
     public int GetFlushDelay(string sessionId)
@@ -328,6 +358,11 @@ public sealed class MuxClient : IAsyncDisposable
     {
         try
         {
+            if (!ShouldDeliverSession(item.SessionId))
+            {
+                return;
+            }
+
             if (!_sessionBuffers.TryGetValue(item.SessionId, out var buffer))
             {
                 buffer = new SessionBuffer();
@@ -353,6 +388,8 @@ public sealed class MuxClient : IAsyncDisposable
     {
         if (WebSocket.State != WebSocketState.Open) return;
         if (_flushSuspended) return;
+
+        DiscardHiddenSessionBuffers();
 
         // Active session first — ensures it gets WebSocket priority ahead of background flushes
         var activeId = _activeSessionId;
@@ -452,6 +489,26 @@ public sealed class MuxClient : IAsyncDisposable
         buffer.Reset();
     }
 
+    private void DiscardHiddenSessionBuffers()
+    {
+        if (_getResumeMode() != TerminalResumeModeSetting.QuickResume)
+        {
+            return;
+        }
+
+        foreach (var (sessionId, buffer) in _sessionBuffers)
+        {
+            if (ShouldDeliverSession(sessionId) || buffer.TotalBytes == 0)
+            {
+                continue;
+            }
+
+            buffer.Reset();
+            buffer.DroppedBytes = 0;
+            buffer.QueuedAtTicks = 0;
+        }
+    }
+
     private async Task SendFrameAsync(byte[] data)
     {
         await _sendLock.WaitAsync().ConfigureAwait(false);
@@ -523,6 +580,27 @@ public sealed class MuxClient : IAsyncDisposable
     private bool CanAccessSession(string sessionId)
     {
         return _allowedSessionId is null || string.Equals(_allowedSessionId, sessionId, StringComparison.Ordinal);
+    }
+
+    public bool ShouldDeliverSession(string sessionId)
+    {
+        if (!CanAccessSession(sessionId))
+        {
+            return false;
+        }
+
+        if (_getResumeMode() != TerminalResumeModeSetting.QuickResume)
+        {
+            return true;
+        }
+
+        return string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal)
+            || _visibleSessionIds.Contains(sessionId);
+    }
+
+    public bool ShouldUseQuickResume()
+    {
+        return _getResumeMode() == TerminalResumeModeSetting.QuickResume;
     }
 
     /// <summary>

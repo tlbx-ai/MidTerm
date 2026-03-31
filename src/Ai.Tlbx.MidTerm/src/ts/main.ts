@@ -18,6 +18,8 @@ import {
   setSelectSessionCallback,
   sendInput,
   sendActiveSessionHint,
+  requestBufferRefresh,
+  updateTerminalVisibility,
   setSessionBytesCallback,
   setSuppressHeatCallback,
   reportBrowserActivity,
@@ -188,9 +190,11 @@ import {
   $stateWsConnected,
   $muxWsConnected,
   $activeSessionId,
+  $settingsOpen,
   $isMainBrowser,
   $sessionList,
   $currentSettings,
+  $layout,
   setSession,
   removeSession,
   getSession,
@@ -329,6 +333,7 @@ async function init(): Promise<void> {
 
   registerCallbacks();
   getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
+  bindTerminalVisibilitySync();
   connectStateWebSocket();
   connectMuxWebSocket();
   connectSettingsWebSocket();
@@ -414,6 +419,7 @@ async function initShared(): Promise<void> {
   });
 
   initSessionTabs();
+  bindTerminalVisibilitySync();
   bindSearchEvents();
   setupGlobalFocusReclaim();
   syncAppModeClasses();
@@ -436,6 +442,65 @@ async function initShared(): Promise<void> {
   connectMuxWebSocket();
 
   log.info(() => 'MidTerm shared frontend initialized');
+}
+
+function getVisibleTerminalSessionIds(): string[] {
+  if ($settingsOpen.get()) {
+    return [];
+  }
+
+  if (!isLayoutActive() || getLayoutRoot()?.classList.contains('hidden')) {
+    return [];
+  }
+
+  return getLayoutSessionIds().filter((sessionId) => !isHubSessionId(sessionId));
+}
+
+function syncMuxTerminalVisibility(): void {
+  updateTerminalVisibility($activeSessionId.get(), getVisibleTerminalSessionIds());
+}
+
+function refreshHiddenSessionsForFullReplay(): void {
+  const activeSessionId = $activeSessionId.get();
+  const visibleSessionIds = new Set(getVisibleTerminalSessionIds());
+
+  sessionTerminals.forEach((_state, sessionId) => {
+    if (
+      isHubSessionId(sessionId) ||
+      sessionId === activeSessionId ||
+      visibleSessionIds.has(sessionId)
+    ) {
+      return;
+    }
+
+    requestBufferRefresh(sessionId);
+  });
+}
+
+function bindTerminalVisibilitySync(): void {
+  syncMuxTerminalVisibility();
+
+  $activeSessionId.subscribe(() => {
+    syncMuxTerminalVisibility();
+  });
+
+  $layout.subscribe(() => {
+    syncMuxTerminalVisibility();
+  });
+
+  $settingsOpen.subscribe(() => {
+    syncMuxTerminalVisibility();
+  });
+
+  let lastResumeMode = $currentSettings.get()?.resumeMode ?? null;
+  $currentSettings.subscribe((settings) => {
+    const nextResumeMode = settings?.resumeMode ?? null;
+    if (lastResumeMode === 'quickResume' && nextResumeMode === 'fullReplay') {
+      refreshHiddenSessionsForFullReplay();
+    }
+    lastResumeMode = nextResumeMode;
+    syncMuxTerminalVisibility();
+  });
 }
 
 // =============================================================================

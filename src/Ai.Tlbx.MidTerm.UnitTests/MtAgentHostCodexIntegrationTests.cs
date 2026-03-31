@@ -76,11 +76,12 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.NotNull(turnResult.TurnStarted);
             Assert.Equal("codex", turnResult.TurnStarted!.Provider);
 
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnEvents = await LensHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingEvents,
                 envelope => envelope.Event.Type == "request.opened",
-                maxEvents: 12);
+                maxEvents: 40,
+                timeout: TimeSpan.FromSeconds(10));
             Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.started");
             Assert.Contains(turnEvents, envelope => envelope.Event.Type == "diff.updated");
             Assert.Contains(
@@ -176,11 +177,12 @@ public sealed class MtAgentHostCodexIntegrationTests
             });
 
             _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-user");
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnEvents = await LensHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingEvents,
                 envelope => envelope.Event.Type == "user-input.requested",
-                maxEvents: 12);
+                maxEvents: 40,
+                timeout: TimeSpan.FromSeconds(10));
             var userInputEvent = Assert.Single(turnEvents, envelope => envelope.Event.Type == "user-input.requested");
             Assert.Equal("choice", Assert.Single(userInputEvent.Event.UserInputRequested!.Questions).Id);
 
@@ -230,6 +232,9 @@ public sealed class MtAgentHostCodexIntegrationTests
     [Fact]
     public async Task MtAgentHost_SpawnsFakeCodexAppServerWithExpectedColdAttachParameters()
     {
+        var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_LENS_CODEX_YOLO_DEFAULT");
+        Environment.SetEnvironmentVariable("MIDTERM_LENS_CODEX_YOLO_DEFAULT", "false");
+
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
         using var process = StartAgentHost(hostDll);
@@ -278,8 +283,8 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.False(string.IsNullOrWhiteSpace(capture.InitializeClientVersion));
             Assert.True(capture.InitializeExperimentalApi);
             Assert.Equal(fakeCodex.Root, capture.ThreadStartCwd);
-            Assert.Equal("never", capture.ThreadStartApprovalPolicy);
-            Assert.Equal("danger-full-access", capture.ThreadStartSandbox);
+            Assert.Equal("on-request", capture.ThreadStartApprovalPolicy);
+            Assert.Equal("workspace-write", capture.ThreadStartSandbox);
             Assert.False(capture.ThreadStartExperimentalRawEvents);
         }
         finally
@@ -291,6 +296,7 @@ public sealed class MtAgentHostCodexIntegrationTests
 
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
+            Environment.SetEnvironmentVariable("MIDTERM_LENS_CODEX_YOLO_DEFAULT", originalYoloDefault);
         }
     }
 
