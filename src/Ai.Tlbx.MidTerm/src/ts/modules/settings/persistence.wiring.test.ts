@@ -170,6 +170,10 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
     );
+    expect(cssSource).toContain('text-shadow: 0 0 10px var(--sidebar-item-text-shadow-color);');
+    expect(cssSource).toContain(
+      '--sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));',
+    );
   });
 
   it('allows both transparency sliders to reach 100 percent', () => {

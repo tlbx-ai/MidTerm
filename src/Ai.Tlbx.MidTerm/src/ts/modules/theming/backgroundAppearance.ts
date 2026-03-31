@@ -28,6 +28,8 @@ const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
   { name: '--bg-sidebar-opaque', source: '--bg-sidebar' },
   { name: '--bg-settings-opaque', source: '--bg-settings' },
   { name: '--bg-dropdown-opaque', source: '--bg-dropdown' },
+  { name: '--bg-session-hover-opaque', source: '--bg-session-hover' },
+  { name: '--bg-session-active-opaque', source: '--bg-session-active' },
   { name: '--bg-hover-opaque', source: '--bg-hover' },
   { name: '--bg-active-opaque', source: '--bg-active' },
 ];

@@ -303,6 +303,8 @@
   --bg-dropdown: #242735; /* Alias for compatibility */
   --bg-elevated-opaque: #161821; /* Opaque modal/card shell */
   --bg-dropdown-opaque: #242735; /* Opaque dropdown/menu shell */
+  --bg-session-hover-opaque: #1c1e2a; /* Sidebar item hover shell */
+  --bg-session-active-opaque: #1c1e2a; /* Sidebar item active shell */
   --bg-dialog: #161821; /* Dialog shell. Duplicate of bg-elevated; use for dialogs so dialogs stay opaque. */
   --bg-dialog-muted: #242735; /* Dialog sub-surface. Duplicate of bg-surface; use inside dialogs, never transparent. */
   --bg-dialog-chrome: #0d0e14; /* Dialog chrome. Duplicate of bg-sidebar; use for dialog framing, never transparent. */
@@ -670,6 +672,7 @@ body.has-app-background::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 0 10px var(--bg-sidebar-opaque, var(--bg-sidebar));
 }
 
 .add-session-btn {
@@ -723,6 +726,7 @@ body.has-app-background::after {
   letter-spacing: 0.08em;
   font-size: var(--fs-xs);
   font-weight: 600;
+  text-shadow: 0 0 10px var(--bg-sidebar-opaque, var(--bg-sidebar));
 }
 
 .session-group-toggle:hover {
@@ -807,6 +811,7 @@ body.has-app-background::after {
   gap: 0;
   position: relative;
   font-family: var(--font-ui-emoji);
+  --sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));
   transition:
     transform 0.2s ease-in-out,
     background-color 0.15s ease-in-out,
@@ -839,10 +844,15 @@ body.has-app-background::after {
 .session-item.dragging {
   opacity: 0.5;
   background-color: var(--sidebar-item-active-background, var(--bg-session-active));
+  --sidebar-item-text-shadow-color: var(
+    --bg-session-active-opaque,
+    var(--bg-session-active)
+  );
 }
 
 .session-item.drag-over {
   background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
+  --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
 }
 
 .session-item.drag-over-above {
@@ -862,11 +872,16 @@ body.has-app-background::after {
   .session-item:hover {
     background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
     transform: translateX(2px);
+    --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
   }
 }
 
 .session-item.active {
   background-color: var(--sidebar-item-active-background, var(--bg-session-active));
+  --sidebar-item-text-shadow-color: var(
+    --bg-session-active-opaque,
+    var(--bg-session-active)
+  );
   border-image: linear-gradient(
       to bottom,
       transparent 0%,
@@ -992,6 +1007,7 @@ body.has-app-background::after {
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
+  text-shadow: 0 0 10px var(--sidebar-item-text-shadow-color);
 }
 
 .session-item.two-line .session-title {
@@ -1006,6 +1022,7 @@ body.has-app-background::after {
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
+  text-shadow: 0 0 10px var(--sidebar-item-text-shadow-color);
 }
 
 .session-details {
@@ -1014,6 +1031,7 @@ body.has-app-background::after {
   display: flex;
   align-items: center;
   gap: 4px;
+  text-shadow: 0 0 10px var(--sidebar-item-text-shadow-color);
 }
 
 .passive-indicator {
@@ -1041,6 +1059,7 @@ body.has-app-background::after {
   align-items: center;
   gap: 0;
   min-width: 0;
+  text-shadow: 0 0 10px var(--sidebar-item-text-shadow-color);
 }
 
 .fg-cwd {
@@ -1555,6 +1574,7 @@ body.has-app-background::after {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
+  text-shadow: 0 0 10px var(--bg-sidebar-opaque, var(--bg-sidebar));
 }
 
 .sidebar-footer .footer-row {
@@ -3586,6 +3606,7 @@ body.has-app-background::after {
   cursor: pointer;
   border-radius: 0;
   text-align: left;
+  text-shadow: 0 0 10px var(--bg-sidebar-opaque, var(--bg-sidebar));
 }
 
 .sidebar-nav-btn:hover {

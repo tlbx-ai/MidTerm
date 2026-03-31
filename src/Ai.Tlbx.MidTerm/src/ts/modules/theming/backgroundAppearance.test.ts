@@ -138,6 +138,8 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-active-opaque')).toBe('#363A50');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#242735');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#161821');
+    expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#1C1E2A');
+    expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#1C1E2A');
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
@@ -161,6 +163,8 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#FEFCF9');
+    expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#DDD4C8');
+    expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#D5CBBD');
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(bodyClassList.contains('has-app-background')).toBe(true);
   });
