@@ -170,6 +170,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known xterm bold font-weight value',
     applyMode: 'immediate',
   }),
+  controlEntry('customGlyphs', 'setting-custom-glyphs', 'checkbox', true, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry('cursorStyle', 'setting-cursor-style', 'select', 'block', {
     editable: true,
     storage: 'settings.json',
@@ -315,6 +321,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry(
+    'disableAutoMainBrowserPromotion',
+    'setting-disable-auto-main-browser-promotion',
+    'checkbox',
+    true,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'lazy',
+    },
+  ),
   controlEntry(
     'keepSystemAwakeWithActiveSessions',
     'setting-keep-system-awake',

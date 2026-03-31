@@ -42,6 +42,7 @@ public sealed partial class MidTermSettingsPublic
             LetterSpacing = settings.LetterSpacing,
             FontWeight = settings.FontWeight,
             FontWeightBold = settings.FontWeightBold,
+            CustomGlyphs = settings.CustomGlyphs,
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
             CursorInactiveStyle = settings.CursorInactiveStyle,
@@ -125,6 +126,7 @@ public sealed partial class MidTermSettingsPublic
         {
             settings.FontWeightBold = FontWeightBold;
         }
+        settings.CustomGlyphs = CustomGlyphs;
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
         settings.CursorInactiveStyle = CursorInactiveStyle;

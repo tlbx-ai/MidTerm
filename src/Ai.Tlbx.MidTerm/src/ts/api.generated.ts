@@ -4032,6 +4032,7 @@ export interface components {
       letterSpacing: number;
       fontWeight: string;
       fontWeightBold: string;
+      customGlyphs: boolean;
       cursorStyle: components['schemas']['CursorStyleSetting'];
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];

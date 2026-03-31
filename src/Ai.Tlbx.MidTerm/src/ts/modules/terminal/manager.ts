@@ -745,6 +745,7 @@ export function getTerminalOptions(): ITerminalOptions {
     DEFAULT_TERMINAL_FONT_WEIGHT) as TerminalFontWeight;
   const fontWeightBold = (currentSettings?.fontWeightBold ??
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) as TerminalFontWeight;
+  const customGlyphs = currentSettings?.customGlyphs ?? true;
   const scrollback = currentSettings?.scrollbackLines ?? 2000;
 
   const options: ITerminalOptions = {
@@ -761,7 +762,7 @@ export function getTerminalOptions(): ITerminalOptions {
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
     allowProposedApi: true,
     allowTransparency: true,
-    customGlyphs: true,
+    customGlyphs: customGlyphs,
     rescaleOverlappingGlyphs: true,
     theme: getEffectiveXtermTheme(),
   };

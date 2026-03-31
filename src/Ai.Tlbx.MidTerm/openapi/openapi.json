@@ -4715,6 +4715,7 @@
           "letterSpacing",
           "fontWeight",
           "fontWeightBold",
+          "customGlyphs",
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
@@ -4815,6 +4816,9 @@
           },
           "fontWeightBold": {
             "type": "string"
+          },
+          "customGlyphs": {
+            "type": "boolean"
           },
           "cursorStyle": {
             "$ref": "#/components/schemas/CursorStyleSetting"

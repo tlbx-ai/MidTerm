@@ -290,6 +290,11 @@ public sealed class SettingsService
             settings.UseWebGL = true;
         }
 
+        if (!json.Contains("\"customGlyphs\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.CustomGlyphs = true;
+        }
+
         if (!json.Contains("\"cursorBlink\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.CursorBlink = true;
@@ -448,6 +453,7 @@ public sealed class SettingsService
         current.ClaudeEnvironmentVariables = old.ClaudeEnvironmentVariables;
         current.FontSize = old.FontSize;
         current.FontFamily = old.FontFamily;
+        current.CustomGlyphs = old.CustomGlyphs;
         current.CursorStyle = old.CursorStyle;
         current.CursorBlink = old.CursorBlink;
         current.CursorInactiveStyle = old.CursorInactiveStyle;
