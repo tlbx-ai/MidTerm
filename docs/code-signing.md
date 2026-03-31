@@ -6,8 +6,8 @@ MidTerm uses three layers of code signing to protect users from tampered or fake
 
 | Layer | Platform | What it signs | How |
 |-------|----------|---------------|-----|
-| **Authenticode** | Windows | `mt.exe`, `mthost.exe` | Certum cloud certificate via SimplySign Desktop + signtool |
-| **Apple codesign** | macOS | `mt`, `mthost` | Apple Developer ID certificate + notarization |
+| **Authenticode** | Windows | `mt.exe`, `mthost.exe`, `mtagenthost.exe` | Certum cloud certificate via SimplySign Desktop + signtool |
+| **Apple codesign** | macOS | `mt`, `mthost`, `mtagenthost` | Apple Developer ID certificate + notarization |
 | **ECDSA manifest** | All | `version.json` checksums | ECDSA P-384 signature over SHA256 hashes of binaries |
 
 ## When Binaries Get Signed
@@ -49,13 +49,13 @@ There is no headless/CLI API. Each signing session requires mobile app confirmat
 1. Tag push triggers release.yml
 2. prepare job outputs is_dev=false
 3. build-windows job dispatched to self-hosted runner [self-hosted, windows, signing]
-4. dotnet publish builds mt.exe + mthost.exe
+4. dotnet publish builds mt.exe + mthost.exe + mtagenthost.exe
 5. scripts/sign-windows-binaries.ps1 runs:
    a. Plays 5× notification sound + Windows toast notification
    b. Checks/launches SimplySign Desktop
    c. Retries signtool sign every 15s for up to 10 minutes
    d. Operator authenticates via SimplySign mobile app
-   e. signtool signs both binaries with SHA-256 digest + RFC 3161 timestamp
+   e. signtool signs all staged Windows binaries with SHA-256 digest + RFC 3161 timestamp
    f. signtool verify + Get-AuthenticodeSignature confirms valid signatures
 6. SHA256SUMS.txt generated (checksums cover the signed binaries)
 7. sign-release.ps1 ECDSA-signs version.json
@@ -102,7 +102,7 @@ Apple Developer ID Application certificate for Johannes Schmidt (Team ID: `FK7G5
 1. Import P12 certificate from GitHub secret into a temporary keychain
 2. codesign --force --sign "Developer ID Application: ..." --options runtime --timestamp
 3. codesign --verify --strict confirms valid signature
-4. Notarize via xcrun notarytool submit (both mt and mthost zipped together)
+4. Notarize via xcrun notarytool submit (mt, mthost when present, and mtagenthost zipped together)
 5. Gatekeeper verifies notarization online when users download the binary
 ```
 
@@ -114,7 +114,7 @@ Every release (dev and stable) gets an ECDSA P-384 signature in `version.json`. 
 
 ### How it works
 
-1. `scripts/sign-release.ps1` computes SHA-256 hashes of `mt` and `mthost` binaries
+1. `scripts/sign-release.ps1` computes SHA-256 hashes of `mt`, `mthost`, and `mtagenthost` binaries when present
 2. Creates a deterministic JSON string of the checksums (sorted keys, compact format)
 3. Signs the JSON with an ECDSA P-384 private key (stored as `SIGNING_PRIVATE_KEY` GitHub secret)
 4. Writes `checksums` and `signature` fields into `version.json`

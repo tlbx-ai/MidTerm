@@ -445,10 +445,37 @@ jobs:
           }
           Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
 
-      - name: Sign Windows binaries (Certum Authenticode)
+      - name: Require stable Windows signing inputs
+        if: needs.prepare.outputs.is_dev != 'true'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'staging/win-x64/mt.exe')) {
+            throw 'mt.exe must be present before stable Windows signing.'
+          }
+          if (-not (Test-Path 'staging/win-x64/mtagenthost.exe')) {
+            throw 'mtagenthost.exe must be present before stable Windows signing.'
+          }
+
+      - name: Sign Windows binaries (mt.exe, mthost.exe, mtagenthost.exe)
         if: needs.prepare.outputs.is_dev != 'true'
         shell: pwsh
         run: ./scripts/sign-windows-binaries.ps1 -StagingPath staging/win-x64
+
+      - name: Verify stable Windows Authenticode signatures
+        if: needs.prepare.outputs.is_dev != 'true'
+        shell: pwsh
+        run: |
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')
+          if (Test-Path 'staging/win-x64/mthost.exe') {
+            $files += 'staging/win-x64/mthost.exe'
+          }
+
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file
+            if ($signature.Status -ne 'Valid') {
+              throw "Authenticode verification failed for $file: $($signature.StatusMessage)"
+            }
+          }
 
       - name: Generate SHA256SUMS
         shell: pwsh
