@@ -29,6 +29,10 @@ export interface SessionLauncherSelection {
   target: SessionLauncherTarget;
 }
 
+interface VisibilityToggleTarget {
+  hidden: boolean;
+}
+
 let activeLauncherPromise: Promise<SessionLauncherSelection | null> | null = null;
 
 interface LauncherDirectoryEntry {
@@ -88,6 +92,19 @@ export function isProviderSupportedOnTarget(
   return target.kind === 'local' || provider === 'terminal';
 }
 
+export function syncLocationPickerVisibility(
+  target: SessionLauncherTarget,
+  sections: {
+    localBrowser: VisibilityToggleTarget;
+    remoteBrowser: VisibilityToggleTarget;
+  },
+): boolean {
+  const isLocalTarget = target.kind === 'local';
+  sections.localBrowser.hidden = !isLocalTarget;
+  sections.remoteBrowser.hidden = isLocalTarget;
+  return isLocalTarget;
+}
+
 export async function openSessionLauncher(): Promise<SessionLauncherSelection | null> {
   if (activeLauncherPromise) {
     return activeLauncherPromise;
@@ -120,7 +137,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
             <button class="modal-close" type="button" data-role="cancel" aria-label="${escapeHtml(t('dialog.cancel'))}">&times;</button>
           </div>
           <div class="modal-body session-launcher-body">
-            <div class="session-launcher-launch hidden" data-role="targets-section">
+            <div class="session-launcher-launch" data-role="targets-section" hidden>
               <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseTarget'))}</div>
               <div class="session-launcher-targets" data-role="targets"></div>
             </div>
@@ -144,10 +161,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
                 />
               </div>
               <div class="session-launcher-roots" data-role="roots"></div>
-              <div class="session-launcher-status hidden" data-role="status"></div>
+              <div class="session-launcher-status" data-role="status" hidden></div>
               <div class="session-launcher-list" data-role="list"></div>
             </div>
-            <div class="session-launcher-remote hidden" data-role="remote-browser">
+            <div class="session-launcher-remote" data-role="remote-browser" hidden>
               <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.remoteWorkingDirectory'))}</div>
               <input
                 type="text"
@@ -163,7 +180,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
             <div class="session-launcher-launch">
               <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseProvider'))}</div>
               <div class="session-launcher-providers" data-role="providers"></div>
-              <div class="session-launcher-provider-hint hidden" data-role="provider-hint"></div>
+              <div class="session-launcher-provider-hint" data-role="provider-hint" hidden></div>
             </div>
           </div>
           <div class="modal-footer session-launcher-footer">
@@ -280,7 +297,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function renderTargets(): void {
       const showTargets = state.targets.length > 1;
-      safeTargetsSectionEl.classList.toggle('hidden', !showTargets);
+      safeTargetsSectionEl.hidden = !showTargets;
       if (!showTargets) {
         safeTargetsEl.innerHTML = '';
         return;
@@ -310,9 +327,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function renderLocationMode(): void {
       const target = getSelectedTarget();
-      const isLocalTarget = target.kind === 'local';
-      safeBrowserEl.classList.toggle('hidden', !isLocalTarget);
-      safeRemoteBrowserEl.classList.toggle('hidden', isLocalTarget);
+      const isLocalTarget = syncLocationPickerVisibility(target, {
+        localBrowser: safeBrowserEl,
+        remoteBrowser: safeRemoteBrowserEl,
+      });
 
       if (!isLocalTarget) {
         const currentDraft = state.remotePathDrafts[target.id] ?? '';
@@ -351,7 +369,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         .join('');
 
       const showProviderHint = target.kind === 'hub';
-      safeProviderHintEl.classList.toggle('hidden', !showProviderHint);
+      safeProviderHintEl.hidden = !showProviderHint;
       safeProviderHintEl.textContent = showProviderHint
         ? t('sessionLauncher.remoteTerminalOnly')
         : '';
@@ -372,7 +390,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function renderStatus(): void {
       const shouldShow = state.loading || Boolean(state.error);
-      safeStatusEl.classList.toggle('hidden', !shouldShow);
+      safeStatusEl.hidden = !shouldShow;
       safeStatusEl.classList.toggle('error', Boolean(state.error));
       safeStatusEl.textContent = state.loading ? t('sessionLauncher.loading') : (state.error ?? '');
     }
