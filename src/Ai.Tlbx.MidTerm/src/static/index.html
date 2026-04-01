@@ -1491,14 +1491,21 @@
                       >
                       <div class="background-image-controls">
                         <div class="background-image-actions">
-                          <button
-                            type="button"
-                            class="settings-action-btn"
+                          <label
+                            class="settings-action-btn settings-file-upload-btn"
                             id="btn-background-upload"
-                            data-i18n="settings.appearance.backgroundUpload"
                           >
-                            Upload Image
-                          </button>
+                            <span data-i18n="settings.appearance.backgroundUpload">
+                              Upload Image
+                            </span>
+                            <input
+                              type="file"
+                              id="setting-background-upload"
+                              class="settings-file-upload-input"
+                              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                              aria-label="Upload background image"
+                            />
+                          </label>
                           <button
                             type="button"
                             class="settings-action-btn"
@@ -1507,12 +1514,6 @@
                           >
                             Remove
                           </button>
-                          <input
-                            type="file"
-                            id="setting-background-upload"
-                            accept=".png,.jpg,.jpeg,image/png,image/jpeg"
-                            hidden
-                          />
                         </div>
                         <div class="background-image-preview-frame">
                           <img

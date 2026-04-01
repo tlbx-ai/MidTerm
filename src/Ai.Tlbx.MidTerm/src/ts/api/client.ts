@@ -515,7 +515,7 @@ export async function uploadBackgroundImage(file: File): Promise<BackgroundImage
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwApiProblem(response, 'Background image upload failed.');
   }
 
   return (await response.json()) as BackgroundImageInfo;
@@ -527,7 +527,7 @@ export async function deleteBackgroundImage(): Promise<BackgroundImageInfo> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    await throwApiProblem(response, 'Background image delete failed.');
   }
 
   return (await response.json()) as BackgroundImageInfo;

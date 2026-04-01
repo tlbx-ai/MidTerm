@@ -35,6 +35,7 @@ import {
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
+import { showAlert } from '../../utils/dialog';
 import {
   getSettings,
   getUsers,
@@ -81,6 +82,9 @@ let settingsFormHydrated = false;
 let settingsSaveArmed = false;
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 type TerminalColorSchemeEditorGroup = 'Core' | 'Standard ANSI' | 'Bright ANSI' | 'Advanced';
+
+const MAX_BACKGROUND_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 
 const TERMINAL_COLOR_SCHEME_EDITOR_GROUPS: readonly TerminalColorSchemeEditorGroup[] = [
   'Core',
@@ -707,16 +711,7 @@ export function bindSettingsAutoSave(): void {
   const uploadInput = document.getElementById(
     'setting-background-upload',
   ) as HTMLInputElement | null;
-  const uploadBtn = document.getElementById('btn-background-upload') as HTMLButtonElement | null;
   const removeBtn = document.getElementById('btn-background-remove') as HTMLButtonElement | null;
-
-  uploadBtn?.addEventListener(
-    'click',
-    () => {
-      uploadInput?.click();
-    },
-    { signal },
-  );
 
   uploadInput?.addEventListener(
     'change',
@@ -1484,7 +1479,30 @@ function validateAgentEnvironmentInputs(): boolean {
   return true;
 }
 
+function validateBackgroundImageFile(file: File): string | null {
+  const extension = file.name.slice(Math.max(0, file.name.lastIndexOf('.'))).toLowerCase();
+  if (!ALLOWED_BACKGROUND_IMAGE_EXTENSIONS.has(extension)) {
+    return 'Only PNG and JPG images are supported.';
+  }
+
+  if (file.size > MAX_BACKGROUND_IMAGE_UPLOAD_BYTES) {
+    return 'Background image is too large. Maximum size is 10 MB.';
+  }
+
+  return null;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function handleBackgroundImageUpload(file: File): Promise<void> {
+  const validationError = validateBackgroundImageFile(file);
+  if (validationError) {
+    await showAlert(validationError, { title: t('settings.appearance.backgroundTitle') });
+    return;
+  }
+
   try {
     const info = await uploadBackgroundImage(file);
     const current = $currentSettings.get();
@@ -1502,6 +1520,7 @@ async function handleBackgroundImageUpload(file: File): Promise<void> {
     applySettingsToTerminals();
   } catch (e) {
     log.error(() => `Background image upload failed: ${String(e)}`);
+    await showAlert(getErrorMessage(e), { title: t('settings.appearance.backgroundTitle') });
   }
 }
 
@@ -1523,6 +1542,7 @@ async function handleBackgroundImageDelete(): Promise<void> {
     applySettingsToTerminals();
   } catch (e) {
     log.error(() => `Background image delete failed: ${String(e)}`);
+    await showAlert(getErrorMessage(e), { title: t('settings.appearance.backgroundTitle') });
   }
 }
 

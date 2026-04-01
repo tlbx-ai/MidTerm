@@ -3879,6 +3879,23 @@ body.has-app-background::after {
     border-color 0.15s ease;
 }
 
+.settings-file-upload-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.settings-file-upload-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .settings-action-btn:hover:not(:disabled) {
   background: var(--btn-secondary-hover);
   border-color: var(--border-emphasis);
