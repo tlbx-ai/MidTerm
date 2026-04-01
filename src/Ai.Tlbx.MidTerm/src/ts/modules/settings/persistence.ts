@@ -377,6 +377,14 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
     'setting-terminal-transparency-value',
     settings.terminalTransparency ?? settings.uiTransparency,
   );
+  updatePercentageValue(
+    'setting-background-ken-burns-zoom-percent-value',
+    settings.backgroundKenBurnsZoomPercent,
+  );
+  updatePixelSpeedValue(
+    'setting-background-ken-burns-speed-value',
+    settings.backgroundKenBurnsSpeedPxPerSecond,
+  );
   updateBackgroundImageUi(settings);
   if (dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
@@ -681,6 +689,7 @@ export function bindSettingsAutoSave(): void {
     'setting-terminal-transparency-value',
     signal,
   );
+  bindBackgroundKenBurnsPreview(signal);
 
   const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
   bindTerminalFontPreview(
@@ -881,6 +890,34 @@ function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): Mid
   };
 }
 
+function resolvePreviewBackgroundKenBurnsSettings(
+  current: MidTermSettingsPublic,
+): MidTermSettingsPublic {
+  const enabled = document.getElementById(
+    'setting-background-ken-burns-enabled',
+  ) as HTMLInputElement | null;
+  const zoomSlider = document.getElementById(
+    'setting-background-ken-burns-zoom-percent',
+  ) as HTMLInputElement | null;
+  const speedSlider = document.getElementById(
+    'setting-background-ken-burns-speed',
+  ) as HTMLInputElement | null;
+
+  const zoomPercent = Number.parseInt(zoomSlider?.value ?? '', 10);
+  const speedPxPerSecond = Number.parseInt(speedSlider?.value ?? '', 10);
+
+  return {
+    ...current,
+    backgroundKenBurnsEnabled: enabled?.checked ?? current.backgroundKenBurnsEnabled,
+    backgroundKenBurnsZoomPercent: Number.isFinite(zoomPercent)
+      ? zoomPercent
+      : current.backgroundKenBurnsZoomPercent,
+    backgroundKenBurnsSpeedPxPerSecond: Number.isFinite(speedPxPerSecond)
+      ? speedPxPerSecond
+      : current.backgroundKenBurnsSpeedPxPerSecond,
+  };
+}
+
 function previewTransparencySettings(settings: MidTermSettingsPublic): void {
   applyBackgroundAppearance(settings);
   syncEffectiveXtermThemeDomOverrides(settings);
@@ -897,6 +934,83 @@ function updateTransparencyValue(labelId: string, value: number): void {
   if (label) {
     label.textContent = `${String(value)}%`;
   }
+}
+
+function updatePercentageValue(labelId: string, value: number): void {
+  const label = document.getElementById(labelId);
+  if (label) {
+    label.textContent = `${String(value)}%`;
+  }
+}
+
+function updatePixelSpeedValue(labelId: string, value: number): void {
+  const label = document.getElementById(labelId);
+  if (label) {
+    label.textContent = `${String(value)} px/s`;
+  }
+}
+
+function bindBackgroundKenBurnsPreview(signal: AbortSignal): void {
+  const enabledCheckbox = document.getElementById(
+    'setting-background-ken-burns-enabled',
+  ) as HTMLInputElement | null;
+  const zoomSlider = document.getElementById(
+    'setting-background-ken-burns-zoom-percent',
+  ) as HTMLInputElement | null;
+  const speedSlider = document.getElementById(
+    'setting-background-ken-burns-speed',
+  ) as HTMLInputElement | null;
+
+  enabledCheckbox?.addEventListener(
+    'change',
+    () => {
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+
+      applyBackgroundAppearance(resolvePreviewBackgroundKenBurnsSettings(current));
+    },
+    { signal },
+  );
+
+  zoomSlider?.addEventListener(
+    'input',
+    () => {
+      const nextZoomPercent = Number.parseInt(zoomSlider.value, 10);
+      updatePercentageValue(
+        'setting-background-ken-burns-zoom-percent-value',
+        Number.isFinite(nextZoomPercent) ? nextZoomPercent : 150,
+      );
+
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+
+      applyBackgroundAppearance(resolvePreviewBackgroundKenBurnsSettings(current));
+    },
+    { signal },
+  );
+
+  speedSlider?.addEventListener(
+    'input',
+    () => {
+      const nextSpeed = Number.parseInt(speedSlider.value, 10);
+      updatePixelSpeedValue(
+        'setting-background-ken-burns-speed-value',
+        Number.isFinite(nextSpeed) ? nextSpeed : 12,
+      );
+
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+
+      applyBackgroundAppearance(resolvePreviewBackgroundKenBurnsSettings(current));
+    },
+    { signal },
+  );
 }
 
 function ensureTerminalColorSchemeEditorRendered(): void {

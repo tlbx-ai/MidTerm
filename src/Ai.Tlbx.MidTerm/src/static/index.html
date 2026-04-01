@@ -1545,18 +1545,51 @@
                     </div>
                     <div class="setting-row">
                       <label
-                        for="setting-background-fit"
-                        data-i18n="settings.appearance.backgroundFit"
-                        >Image Fit</label
+                        for="setting-background-ken-burns-enabled"
+                        data-i18n="settings.appearance.backgroundKenBurns"
+                        >Animated Ken Burns</label
                       >
-                      <select id="setting-background-fit">
-                        <option value="cover" data-i18n="settings.options.backgroundFitCover">
-                          Cover
-                        </option>
-                        <option value="contain" data-i18n="settings.options.backgroundFitContain">
-                          Contain
-                        </option>
-                      </select>
+                      <input type="checkbox" id="setting-background-ken-burns-enabled" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-zoom-percent"
+                        data-i18n="settings.appearance.backgroundKenBurnsZoom"
+                        >Ken Burns Zoom</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-background-ken-burns-zoom-percent"
+                          min="150"
+                          max="300"
+                          step="5"
+                          value="150"
+                        />
+                        <span id="setting-background-ken-burns-zoom-percent-value" class="slider-value">
+                          150%
+                        </span>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-speed"
+                        data-i18n="settings.appearance.backgroundKenBurnsSpeed"
+                        >Ken Burns Speed</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-background-ken-burns-speed"
+                          min="0"
+                          max="120"
+                          step="1"
+                          value="12"
+                        />
+                        <span id="setting-background-ken-burns-speed-value" class="slider-value">
+                          12 px/s
+                        </span>
+                      </div>
                     </div>
                     <div class="setting-row">
                       <label

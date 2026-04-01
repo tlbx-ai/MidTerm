@@ -53,6 +53,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(0, settings.TerminalTransparency);
     }
 
@@ -103,6 +105,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(0, settings.TerminalTransparency);
     }
 
@@ -467,7 +471,9 @@ public sealed class SettingsServiceTests : IDisposable
             BackgroundImageEnabled = true,
             BackgroundImageFileName = "wallpaper.png",
             BackgroundImageRevision = 12345,
-            BackgroundImageFit = "contain",
+            BackgroundKenBurnsEnabled = true,
+            BackgroundKenBurnsZoomPercent = 225,
+            BackgroundKenBurnsSpeedPxPerSecond = 18,
             UiTransparency = 40,
             TerminalEnterMode = TerminalEnterModeSetting.ShiftEnterLineFeed,
             CertificatePath = @"C:\legacy\midterm.pem",
@@ -486,7 +492,9 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(loaded.BackgroundImageEnabled);
         Assert.Equal("wallpaper.png", loaded.BackgroundImageFileName);
         Assert.Equal(12345, loaded.BackgroundImageRevision);
-        Assert.Equal("contain", loaded.BackgroundImageFit);
+        Assert.True(loaded.BackgroundKenBurnsEnabled);
+        Assert.Equal(225, loaded.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(18, loaded.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(40, loaded.UiTransparency);
         Assert.Equal(0, loaded.TerminalTransparency);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, loaded.TerminalEnterMode);

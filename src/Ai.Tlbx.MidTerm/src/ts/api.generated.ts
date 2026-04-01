@@ -4043,7 +4043,11 @@ export interface components {
       backgroundImageFileName: null | string;
       /** Format: int64 */
       backgroundImageRevision: number;
-      backgroundImageFit: string;
+      backgroundKenBurnsEnabled: boolean;
+      /** Format: int32 */
+      backgroundKenBurnsZoomPercent: number;
+      /** Format: int32 */
+      backgroundKenBurnsSpeedPxPerSecond: number;
       /** Format: int32 */
       uiTransparency: number;
       /** Format: int32 */

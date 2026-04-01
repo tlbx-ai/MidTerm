@@ -54,7 +54,9 @@ public sealed partial class MidTermSettingsPublic
             BackgroundImageEnabled = settings.BackgroundImageEnabled,
             BackgroundImageFileName = settings.BackgroundImageFileName,
             BackgroundImageRevision = settings.BackgroundImageRevision,
-            BackgroundImageFit = settings.BackgroundImageFit,
+            BackgroundKenBurnsEnabled = settings.BackgroundKenBurnsEnabled,
+            BackgroundKenBurnsZoomPercent = settings.BackgroundKenBurnsZoomPercent,
+            BackgroundKenBurnsSpeedPxPerSecond = settings.BackgroundKenBurnsSpeedPxPerSecond,
             UiTransparency = settings.UiTransparency,
             TerminalTransparency = settings.TerminalTransparency,
             TabTitleMode = settings.TabTitleMode,
@@ -138,10 +140,15 @@ public sealed partial class MidTermSettingsPublic
             ? terminalColorScheme
             : "auto";
         settings.BackgroundImageEnabled = BackgroundImageEnabled;
-        if (BackgroundImageFit is "cover" or "contain")
-        {
-            settings.BackgroundImageFit = BackgroundImageFit;
-        }
+        settings.BackgroundKenBurnsEnabled = BackgroundKenBurnsEnabled;
+        settings.BackgroundKenBurnsZoomPercent = Math.Clamp(
+            BackgroundKenBurnsZoomPercent,
+            MidTermSettings.MinBackgroundKenBurnsZoomPercent,
+            MidTermSettings.MaxBackgroundKenBurnsZoomPercent);
+        settings.BackgroundKenBurnsSpeedPxPerSecond = Math.Clamp(
+            BackgroundKenBurnsSpeedPxPerSecond,
+            MidTermSettings.MinBackgroundKenBurnsSpeedPxPerSecond,
+            MidTermSettings.MaxBackgroundKenBurnsSpeedPxPerSecond);
         settings.UiTransparency = Math.Clamp(UiTransparency, 0, 100);
         if (TerminalTransparency.HasValue)
         {

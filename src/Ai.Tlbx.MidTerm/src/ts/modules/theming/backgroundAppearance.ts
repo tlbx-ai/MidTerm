@@ -63,6 +63,26 @@ interface RgbColor {
   b: number;
 }
 
+interface BackgroundKenBurnsState {
+  frameId: number | null;
+  enabled: boolean;
+  targetScale: number;
+  speedPxPerSecond: number;
+  orbitRadius: number;
+  angleRadians: number;
+  lastTimestamp: number | null;
+}
+
+const backgroundKenBurnsState: BackgroundKenBurnsState = {
+  frameId: null,
+  enabled: false,
+  targetScale: 1,
+  speedPxPerSecond: 0,
+  orbitRadius: 0,
+  angleRadians: 0,
+  lastTimestamp: null,
+};
+
 export function getBackgroundImageUrl(revision: number): string {
   return `/api/settings/background-image?v=${encodeURIComponent(`${revision}`)}`;
 }
@@ -122,12 +142,10 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     '--app-background-image',
     hasImage ? `url("${getBackgroundImageUrl(settings.backgroundImageRevision)}")` : 'none',
   );
-  root.style.setProperty(
-    '--app-background-size',
-    settings.backgroundImageFit === 'contain' ? 'contain' : 'cover',
-  );
+  root.style.setProperty('--app-background-size', 'cover');
   root.style.setProperty('--app-background-repeat', 'no-repeat');
   root.style.setProperty('--app-background-position', 'center center');
+  syncBackgroundKenBurnsEffect(root, settings, hasImage);
   document.body.classList.toggle('has-app-background', hasImage);
 }
 
@@ -197,4 +215,133 @@ function transparencyToAlpha(transparency: number, response: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function syncBackgroundKenBurnsEffect(
+  root: HTMLElement,
+  settings: MidTermSettingsPublic,
+  hasImage: boolean,
+): void {
+  const enabled = hasImage && settings.backgroundKenBurnsEnabled;
+  const scale = clamp(settings.backgroundKenBurnsZoomPercent / 100, 1.5, 3);
+  const speedPxPerSecond = clamp(settings.backgroundKenBurnsSpeedPxPerSecond, 0, 120);
+  const wasEnabled = backgroundKenBurnsState.enabled;
+
+  root.style.setProperty('--app-background-scale', enabled ? scale.toFixed(3) : '1');
+
+  if (!enabled) {
+    root.style.setProperty('--app-background-offset-x', '0px');
+    root.style.setProperty('--app-background-offset-y', '0px');
+    stopBackgroundKenBurnsEffect();
+    return;
+  }
+
+  if (!wasEnabled) {
+    backgroundKenBurnsState.orbitRadius = 0;
+    backgroundKenBurnsState.angleRadians = 0;
+    root.style.setProperty('--app-background-offset-x', '0px');
+    root.style.setProperty('--app-background-offset-y', '0px');
+  }
+
+  backgroundKenBurnsState.enabled = true;
+  backgroundKenBurnsState.targetScale = scale;
+  backgroundKenBurnsState.speedPxPerSecond = speedPxPerSecond;
+
+  if (backgroundKenBurnsState.frameId !== null) {
+    return;
+  }
+
+  if (typeof requestAnimationFrame !== 'function') {
+    return;
+  }
+
+  backgroundKenBurnsState.lastTimestamp = null;
+  backgroundKenBurnsState.frameId = requestAnimationFrame(stepBackgroundKenBurnsEffect);
+}
+
+function stopBackgroundKenBurnsEffect(): void {
+  backgroundKenBurnsState.enabled = false;
+  backgroundKenBurnsState.speedPxPerSecond = 0;
+  backgroundKenBurnsState.orbitRadius = 0;
+  backgroundKenBurnsState.angleRadians = 0;
+  backgroundKenBurnsState.lastTimestamp = null;
+
+  if (backgroundKenBurnsState.frameId !== null && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(backgroundKenBurnsState.frameId);
+  }
+
+  backgroundKenBurnsState.frameId = null;
+}
+
+function stepBackgroundKenBurnsEffect(timestamp: number): void {
+  backgroundKenBurnsState.frameId = null;
+  if (!backgroundKenBurnsState.enabled) {
+    return;
+  }
+
+  const root = document.documentElement;
+  const lastTimestamp = backgroundKenBurnsState.lastTimestamp;
+  const dtSeconds = lastTimestamp === null ? 0 : clamp((timestamp - lastTimestamp) / 1000, 0, 0.1);
+  backgroundKenBurnsState.lastTimestamp = timestamp;
+
+  const targetRadius =
+    backgroundKenBurnsState.speedPxPerSecond > 0
+      ? computeBackgroundKenBurnsOrbitRadius(backgroundKenBurnsState.targetScale)
+      : 0;
+
+  backgroundKenBurnsState.orbitRadius = easeTowards(
+    backgroundKenBurnsState.orbitRadius,
+    targetRadius,
+    dtSeconds,
+    3.5,
+  );
+
+  if (
+    backgroundKenBurnsState.speedPxPerSecond > 0 &&
+    backgroundKenBurnsState.orbitRadius >= 0.5 &&
+    dtSeconds > 0
+  ) {
+    backgroundKenBurnsState.angleRadians +=
+      (backgroundKenBurnsState.speedPxPerSecond / backgroundKenBurnsState.orbitRadius) * dtSeconds;
+    if (backgroundKenBurnsState.angleRadians >= Math.PI * 2) {
+      backgroundKenBurnsState.angleRadians %= Math.PI * 2;
+    }
+  }
+
+  const offsetX =
+    backgroundKenBurnsState.orbitRadius > 0
+      ? Math.cos(backgroundKenBurnsState.angleRadians) * backgroundKenBurnsState.orbitRadius
+      : 0;
+  const offsetY =
+    backgroundKenBurnsState.orbitRadius > 0
+      ? Math.sin(backgroundKenBurnsState.angleRadians) * backgroundKenBurnsState.orbitRadius
+      : 0;
+
+  root.style.setProperty('--app-background-offset-x', `${offsetX.toFixed(2)}px`);
+  root.style.setProperty('--app-background-offset-y', `${offsetY.toFixed(2)}px`);
+
+  if (typeof requestAnimationFrame === 'function') {
+    backgroundKenBurnsState.frameId = requestAnimationFrame(stepBackgroundKenBurnsEffect);
+  }
+}
+
+function computeBackgroundKenBurnsOrbitRadius(scale: number): number {
+  const width =
+    window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0;
+  const height =
+    window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight || 0;
+
+  if (width <= 0 || height <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(width, height) * (scale - 1) * 0.46);
+}
+
+function easeTowards(current: number, target: number, dtSeconds: number, response: number): number {
+  if (dtSeconds <= 0) {
+    return current;
+  }
+
+  return current + (target - current) * (1 - Math.exp(-response * dtSeconds));
 }

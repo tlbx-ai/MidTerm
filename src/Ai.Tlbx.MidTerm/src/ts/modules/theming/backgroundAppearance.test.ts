@@ -44,6 +44,8 @@ class MockClassList {
 }
 
 const originalDocument = globalThis.document;
+const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
 
 function createSettings(
   partial: Partial<
@@ -55,7 +57,9 @@ function createSettings(
       | 'backgroundImageEnabled'
       | 'backgroundImageFileName'
       | 'backgroundImageRevision'
-      | 'backgroundImageFit'
+      | 'backgroundKenBurnsEnabled'
+      | 'backgroundKenBurnsZoomPercent'
+      | 'backgroundKenBurnsSpeedPxPerSecond'
     >
   >,
 ): MidTermSettingsPublic {
@@ -66,7 +70,9 @@ function createSettings(
     backgroundImageEnabled: false,
     backgroundImageFileName: null,
     backgroundImageRevision: 0,
-    backgroundImageFit: 'cover',
+    backgroundKenBurnsEnabled: false,
+    backgroundKenBurnsZoomPercent: 150,
+    backgroundKenBurnsSpeedPxPerSecond: 12,
     ...partial,
   } as MidTermSettingsPublic;
 }
@@ -95,11 +101,35 @@ beforeEach(() => {
     configurable: true,
     writable: true,
   });
+
+  Object.defineProperty(globalThis, 'requestAnimationFrame', {
+    value: () => 1,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+    value: () => undefined,
+    configurable: true,
+    writable: true,
+  });
 });
 
 afterEach(() => {
   Object.defineProperty(globalThis, 'document', {
     value: originalDocument,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'requestAnimationFrame', {
+    value: originalRequestAnimationFrame,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+    value: originalCancelAnimationFrame,
     configurable: true,
     writable: true,
   });
@@ -151,14 +181,19 @@ describe('backgroundAppearance', () => {
         backgroundImageEnabled: true,
         backgroundImageFileName: 'paper.jpg',
         backgroundImageRevision: 12,
-        backgroundImageFit: 'contain',
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
       }),
     );
 
     expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
       'url("/api/settings/background-image?v=12")',
     );
-    expect(rootStyle.getPropertyValue('--app-background-size')).toBe('contain');
+    expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
+    expect(rootStyle.getPropertyValue('--app-background-scale')).toBe('1.800');
+    expect(rootStyle.getPropertyValue('--app-background-offset-x')).toBe('0px');
+    expect(rootStyle.getPropertyValue('--app-background-offset-y')).toBe('0px');
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#EAE2D8');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
@@ -185,5 +220,20 @@ describe('backgroundAppearance', () => {
       'rgba(28, 30, 42, 0.400)',
     );
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
+  });
+
+  it('resets Ken Burns transform tokens when the effect is disabled', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--app-background-scale')).toBe('1');
+    expect(rootStyle.getPropertyValue('--app-background-offset-x')).toBe('0px');
+    expect(rootStyle.getPropertyValue('--app-background-offset-y')).toBe('0px');
   });
 });

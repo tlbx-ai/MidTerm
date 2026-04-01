@@ -463,7 +463,9 @@ public sealed class SettingsService
         current.BackgroundImageEnabled = old.BackgroundImageEnabled;
         current.BackgroundImageFileName = old.BackgroundImageFileName;
         current.BackgroundImageRevision = old.BackgroundImageRevision;
-        current.BackgroundImageFit = old.BackgroundImageFit;
+        current.BackgroundKenBurnsEnabled = old.BackgroundKenBurnsEnabled;
+        current.BackgroundKenBurnsZoomPercent = old.BackgroundKenBurnsZoomPercent;
+        current.BackgroundKenBurnsSpeedPxPerSecond = old.BackgroundKenBurnsSpeedPxPerSecond;
         current.UiTransparency = old.UiTransparency;
         current.TabTitleMode = old.TabTitleMode;
         current.MinimumContrastRatio = old.MinimumContrastRatio;

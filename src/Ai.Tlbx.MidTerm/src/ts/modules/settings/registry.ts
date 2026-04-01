@@ -231,12 +231,42 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     applyMode: 'server-only',
     specialWriter: 'background image upload/delete endpoints',
   }),
-  controlEntry('backgroundImageFit', 'setting-background-fit', 'select', 'cover', {
-    editable: true,
-    storage: 'settings.json',
-    validation: 'cover or contain',
-    applyMode: 'immediate',
-  }),
+  controlEntry(
+    'backgroundKenBurnsEnabled',
+    'setting-background-ken-burns-enabled',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
+  controlEntry(
+    'backgroundKenBurnsZoomPercent',
+    'setting-background-ken-burns-zoom-percent',
+    'int',
+    150,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'integer, clamped to 150-300',
+      applyMode: 'immediate',
+    },
+  ),
+  controlEntry(
+    'backgroundKenBurnsSpeedPxPerSecond',
+    'setting-background-ken-burns-speed',
+    'int',
+    12,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'integer, clamped to 0-120',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry('uiTransparency', 'setting-ui-transparency', 'int', 0, {
     editable: true,
     storage: 'settings.json',
@@ -247,6 +277,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     editable: true,
     storage: 'settings.json',
     validation: 'integer, clamped to 0-100',
+    applyMode: 'immediate',
+  }),
+  preserveEntry('minimumContrastRatio', 1, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'double, preserved until a dedicated control writes it',
     applyMode: 'immediate',
   }),
   controlEntry('tabTitleMode', 'setting-tab-title', 'select', 'hostname', {

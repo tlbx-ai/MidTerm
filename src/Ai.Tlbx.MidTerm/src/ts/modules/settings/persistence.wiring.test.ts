@@ -22,6 +22,8 @@ const xtermCssSource = readFileSync(path.join(projectRoot, 'src/static/css/xterm
 
 const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-background-upload',
+  'setting-background-ken-burns-speed-value',
+  'setting-background-ken-burns-zoom-percent-value',
   'setting-ui-transparency-value',
   'setting-terminal-transparency-value',
 ]);
@@ -170,7 +172,8 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
     );
-    expect(cssSource).toContain('text-shadow: 0 0 10px var(--sidebar-item-text-shadow-color);');
+    expect(cssSource).toContain('--sidebar-item-text-shadow:');
+    expect(cssSource).toContain('text-shadow: var(--sidebar-item-text-shadow);');
     expect(cssSource).toContain(
       '--sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));',
     );
@@ -197,6 +200,20 @@ describe('settings persistence wiring', () => {
     expect(
       SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalTransparency')?.validation,
     ).toBe('integer, clamped to 0-100');
+  });
+
+  it('wires Ken Burns controls with the requested zoom and speed ranges', () => {
+    expect(html).toMatch(/id="setting-background-ken-burns-zoom-percent"[\s\S]*?min="150"/);
+    expect(html).toMatch(/id="setting-background-ken-burns-zoom-percent"[\s\S]*?max="300"/);
+    expect(html).toMatch(/id="setting-background-ken-burns-speed"[\s\S]*?min="0"/);
+    expect(html).toMatch(/id="setting-background-ken-burns-speed"[\s\S]*?max="120"/);
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'backgroundKenBurnsZoomPercent')?.validation,
+    ).toBe('integer, clamped to 150-300');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'backgroundKenBurnsSpeedPxPerSecond')
+        ?.validation,
+    ).toBe('integer, clamped to 0-120');
   });
 
   it('renders a dedicated custom terminal scheme editor', () => {

@@ -4725,7 +4725,9 @@
           "backgroundImageEnabled",
           "backgroundImageFileName",
           "backgroundImageRevision",
-          "backgroundImageFit",
+          "backgroundKenBurnsEnabled",
+          "backgroundKenBurnsZoomPercent",
+          "backgroundKenBurnsSpeedPxPerSecond",
           "uiTransparency",
           "terminalTransparency",
           "tabTitleMode",
@@ -4854,8 +4856,16 @@
             "type": "integer",
             "format": "int64"
           },
-          "backgroundImageFit": {
-            "type": "string"
+          "backgroundKenBurnsEnabled": {
+            "type": "boolean"
+          },
+          "backgroundKenBurnsZoomPercent": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "backgroundKenBurnsSpeedPxPerSecond": {
+            "type": "integer",
+            "format": "int32"
           },
           "uiTransparency": {
             "type": "integer",

@@ -89,7 +89,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F063` Appearance settings support background-image upload.
 - `F064` Appearance settings can enable or disable the background image.
 - `F065` Appearance settings can remove the background image.
-- `F066` Appearance settings support background fit modes.
+- `F066` Background images always use cover layout and can optionally run a configurable Ken Burns zoom/pan effect.
 - `F067` Appearance settings control UI transparency.
 - `F068` Behavior settings control the default working directory for new sessions.
 - `F069` Behavior settings control scrollback size.

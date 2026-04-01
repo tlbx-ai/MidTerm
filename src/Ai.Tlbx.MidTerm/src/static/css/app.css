@@ -486,6 +486,9 @@
   --app-background-size: cover;
   --app-background-repeat: no-repeat;
   --app-background-position: center center;
+  --app-background-scale: 1;
+  --app-background-offset-x: 0px;
+  --app-background-offset-y: 0px;
 }
 
 select,
@@ -574,7 +577,10 @@ body::before {
   background-size: var(--app-background-size);
   background-repeat: var(--app-background-repeat);
   background-position: var(--app-background-position);
-  transform: scale(1.02);
+  transform: translate3d(var(--app-background-offset-x), var(--app-background-offset-y), 0)
+    scale(var(--app-background-scale));
+  transform-origin: center center;
+  will-change: transform;
   z-index: -2;
   pointer-events: none;
 }

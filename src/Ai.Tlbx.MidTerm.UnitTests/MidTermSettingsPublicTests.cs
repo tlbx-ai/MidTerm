@@ -63,6 +63,51 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripBackgroundKenBurnsSettings()
+    {
+        var settings = new MidTermSettings
+        {
+            BackgroundKenBurnsEnabled = true,
+            BackgroundKenBurnsZoomPercent = 210,
+            BackgroundKenBurnsSpeedPxPerSecond = 28
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.BackgroundKenBurnsEnabled);
+        Assert.Equal(210, publicSettings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(28, publicSettings.BackgroundKenBurnsSpeedPxPerSecond);
+
+        settings.BackgroundKenBurnsEnabled = false;
+        settings.BackgroundKenBurnsZoomPercent = MidTermSettings.DefaultBackgroundKenBurnsZoomPercent;
+        settings.BackgroundKenBurnsSpeedPxPerSecond = MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.BackgroundKenBurnsEnabled);
+        Assert.Equal(210, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(28, settings.BackgroundKenBurnsSpeedPxPerSecond);
+    }
+
+    [Fact]
+    public void ApplyTo_ClampsBackgroundKenBurnsSettings()
+    {
+        var settings = new MidTermSettings();
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            BackgroundKenBurnsEnabled = true,
+            BackgroundKenBurnsZoomPercent = 999,
+            BackgroundKenBurnsSpeedPxPerSecond = -10
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.BackgroundKenBurnsEnabled);
+        Assert.Equal(MidTermSettings.MaxBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(MidTermSettings.MinBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripDisableAutoMainBrowserPromotion()
     {
         var settings = new MidTermSettings
@@ -258,7 +303,9 @@ public sealed class MidTermSettingsPublicTests
             TerminalColorScheme = settings.TerminalColorScheme,
             TerminalColorSchemes = settings.TerminalColorSchemes,
             BackgroundImageEnabled = settings.BackgroundImageEnabled,
-            BackgroundImageFit = settings.BackgroundImageFit,
+            BackgroundKenBurnsEnabled = settings.BackgroundKenBurnsEnabled,
+            BackgroundKenBurnsZoomPercent = settings.BackgroundKenBurnsZoomPercent,
+            BackgroundKenBurnsSpeedPxPerSecond = settings.BackgroundKenBurnsSpeedPxPerSecond,
             UiTransparency = settings.UiTransparency,
             TerminalTransparency = settings.TerminalTransparency,
             TabTitleMode = settings.TabTitleMode,

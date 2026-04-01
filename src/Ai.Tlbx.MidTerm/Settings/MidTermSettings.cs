@@ -11,6 +11,12 @@ public sealed class MidTermSettings
     public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
     public const int MinScrollbackBytes = 64 * 1024;
     public const int MaxScrollbackBytes = 10 * 1024 * 1024;
+    public const int MinBackgroundKenBurnsZoomPercent = 150;
+    public const int DefaultBackgroundKenBurnsZoomPercent = 150;
+    public const int MaxBackgroundKenBurnsZoomPercent = 300;
+    public const int MinBackgroundKenBurnsSpeedPxPerSecond = 0;
+    public const int DefaultBackgroundKenBurnsSpeedPxPerSecond = 12;
+    public const int MaxBackgroundKenBurnsSpeedPxPerSecond = 120;
 
     // Session Defaults
     public ShellType DefaultShell { get; set; } = GetPlatformDefaultShell();
@@ -52,7 +58,9 @@ public sealed class MidTermSettings
     public bool BackgroundImageEnabled { get; set; } = false;
     public string? BackgroundImageFileName { get; set; }
     public long BackgroundImageRevision { get; set; } = 0;
-    public string BackgroundImageFit { get; set; } = "cover";
+    public bool BackgroundKenBurnsEnabled { get; set; } = false;
+    public int BackgroundKenBurnsZoomPercent { get; set; } = DefaultBackgroundKenBurnsZoomPercent;
+    public int BackgroundKenBurnsSpeedPxPerSecond { get; set; } = DefaultBackgroundKenBurnsSpeedPxPerSecond;
     public int UiTransparency { get; set; } = 0;
     public int TerminalTransparency { get; set; } = 0;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
