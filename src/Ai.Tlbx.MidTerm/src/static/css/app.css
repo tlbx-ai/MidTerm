@@ -321,7 +321,8 @@
   --sidebar-item-active-background: var(--bg-session-active);
   --sidebar-text-shadow:
     0 0 14px var(--bg-sidebar-opaque, var(--bg-sidebar)),
-    0 0 28px var(--bg-sidebar-opaque, var(--bg-sidebar));
+    0 0 30px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 92%, transparent),
+    0 0 52px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 72%, transparent);
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -817,7 +818,8 @@ body.has-app-background::after {
   --sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));
   --sidebar-item-text-shadow:
     0 0 14px var(--sidebar-item-text-shadow-color),
-    0 0 28px var(--sidebar-item-text-shadow-color);
+    0 0 30px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 92%, transparent),
+    0 0 52px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 72%, transparent);
   transition:
     transform 0.2s ease-in-out,
     background-color 0.15s ease-in-out,
@@ -1022,7 +1024,7 @@ body.has-app-background::after {
 
 .session-subtitle {
   font-size: var(--fs-sm);
-  color: var(--text-muted);
+  color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
