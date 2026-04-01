@@ -1496,17 +1496,25 @@ public sealed partial class UpdateService : IDisposable
         AppendUpdateLog(artifacts.LogPath, $"Refreshed macOS launcher shim at {launcherPath}");
     }
 
+    internal static string GetAgentHostFallbackPath(string settingsDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsDirectory);
+        return Path.Combine(settingsDirectory, AgentHostBinaryName);
+    }
+
     internal static string GetMacOsLauncherScriptContents(string settingsDirectory, string updateLogPath)
     {
         var installDir = Path.GetDirectoryName(GetCurrentBinaryPath()) ?? "/usr/local/bin";
         var stagingDir = Path.Combine(settingsDirectory, "update-staging");
         var resultPath = Path.Combine(settingsDirectory, "update-result.json");
         var backupDir = Path.Combine(settingsDirectory, "update-backup");
+        var agentHostFallbackPath = GetAgentHostFallbackPath(settingsDirectory);
         return $@"#!/bin/bash
 set -euo pipefail
 
 CONFIG_DIR='{EscapeForBash(settingsDirectory)}'
 INSTALL_DIR='{EscapeForBash(installDir)}'
+CONFIG_AGENTHOST='{EscapeForBash(agentHostFallbackPath)}'
 STAGING='{EscapeForBash(stagingDir)}'
 LOG_FILE='{EscapeForBash(updateLogPath)}'
 RESULT_FILE='{EscapeForBash(resultPath)}'
@@ -1540,6 +1548,18 @@ RESULT_EOF
 staged_update_is_web_only() {{
     local manifest_path=""$STAGING/version.json""
     [[ -f ""$manifest_path"" ]] && grep -Eq '""webOnly""[[:space:]]*:[[:space:]]*true' ""$manifest_path""
+}}
+
+resolve_agenthost_target() {{
+    local primary=""$INSTALL_DIR/{AgentHostBinaryName}""
+    if [[ -f ""$primary"" ]]; then
+        echo ""$primary""
+        return 0
+    fi
+
+    mkdir -p ""$(dirname ""$CONFIG_AGENTHOST"")"" 2>/dev/null || true
+    log ""System install is missing {AgentHostBinaryName}; using writable fallback at $CONFIG_AGENTHOST"" >&2
+    echo ""$CONFIG_AGENTHOST""
 }}
 
 apply_file() {{
@@ -1579,7 +1599,11 @@ rollback() {{
     log ""Rolling back staged macOS update"" ""WARN""
     [[ -f ""$BACKUP_DIR/mt.bak"" ]] && cat ""$BACKUP_DIR/mt.bak"" > ""$INSTALL_DIR/mt"" && chmod +x ""$INSTALL_DIR/mt"" || true
     [[ -f ""$BACKUP_DIR/mthost.bak"" ]] && cat ""$BACKUP_DIR/mthost.bak"" > ""$INSTALL_DIR/mthost"" && chmod +x ""$INSTALL_DIR/mthost"" || true
-    [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]] && cat ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" > ""$INSTALL_DIR/{AgentHostBinaryName}"" && chmod +x ""$INSTALL_DIR/{AgentHostBinaryName}"" || true
+    if [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]]; then
+        cat ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" > ""${{AGENTHOST_DST:-$INSTALL_DIR/{AgentHostBinaryName}}}"" && chmod +x ""${{AGENTHOST_DST:-$INSTALL_DIR/{AgentHostBinaryName}}}"" || true
+    elif [[ -n ""${{AGENTHOST_DST:-}}"" ]] && [[ ""$AGENTHOST_DST"" != ""$INSTALL_DIR/{AgentHostBinaryName}"" ]]; then
+        rm -f ""$AGENTHOST_DST"" 2>/dev/null || true
+    fi
     [[ -f ""$BACKUP_DIR/version.json.bak"" ]] && cat ""$BACKUP_DIR/version.json.bak"" > ""$INSTALL_DIR/version.json"" || true
 }}
 
@@ -1596,14 +1620,19 @@ if [[ -d ""$STAGING"" ]] && [[ -f ""$STAGING/mt"" ]]; then
     log ""Applying staged macOS update from $STAGING""
     log ""Staged update type: $(if [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]]; then echo 'WebOnly'; else echo 'Full'; fi)""
 
+    AGENTHOST_DST=""$INSTALL_DIR/{AgentHostBinaryName}""
+    if [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]]; then
+        AGENTHOST_DST=""$(resolve_agenthost_target)""
+    fi
+
     [[ -f ""$INSTALL_DIR/mt"" ]] && cp -f ""$INSTALL_DIR/mt"" ""$BACKUP_DIR/mt.bak""
     [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$INSTALL_DIR/mthost"" ]] && cp -f ""$INSTALL_DIR/mthost"" ""$BACKUP_DIR/mthost.bak""
-    [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$INSTALL_DIR/{AgentHostBinaryName}"" ]] && cp -f ""$INSTALL_DIR/{AgentHostBinaryName}"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
+    [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$AGENTHOST_DST"" ]] && cp -f ""$AGENTHOST_DST"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
     [[ -f ""$INSTALL_DIR/version.json"" ]] && cp -f ""$INSTALL_DIR/version.json"" ""$BACKUP_DIR/version.json.bak""
 
     if apply_file ""$STAGING/mt"" ""$INSTALL_DIR/mt"" ""mt"" true \
         && {{ [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]] || apply_file ""$STAGING/mthost"" ""$INSTALL_DIR/mthost"" ""mthost"" true; }} \
-        && {{ [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]] || apply_file ""$STAGING/{AgentHostBinaryName}"" ""$INSTALL_DIR/{AgentHostBinaryName}"" ""{AgentHostBinaryName}"" true; }} \
+        && {{ [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]] || apply_file ""$STAGING/{AgentHostBinaryName}"" ""$AGENTHOST_DST"" ""{AgentHostBinaryName}"" true; }} \
         && apply_file ""$STAGING/version.json"" ""$INSTALL_DIR/version.json"" ""version.json"" false; then
         write_result true ""Update applied""
         rm -rf ""$STAGING"" ""$BACKUP_DIR"" 2>/dev/null || true

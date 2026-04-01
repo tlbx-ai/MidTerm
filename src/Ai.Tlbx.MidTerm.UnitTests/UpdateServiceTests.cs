@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Xunit;
 
@@ -390,7 +391,26 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Contains("grep -Eq '\"webOnly\"[[:space:]]*:[[:space:]]*true' \"$manifest_path\"", script, StringComparison.Ordinal);
         Assert.Contains("STAGED_IS_WEB_ONLY=false", script, StringComparison.Ordinal);
         Assert.Contains("Staged update type:", script, StringComparison.Ordinal);
-        Assert.Contains("[[ \"$STAGED_IS_WEB_ONLY\" == \"true\" ]] || apply_file \"$STAGING/mtagenthost\"", script, StringComparison.Ordinal);
+        Assert.Contains("CONFIG_AGENTHOST=", script, StringComparison.Ordinal);
+        Assert.Contains("resolve_agenthost_target()", script, StringComparison.Ordinal);
+        Assert.Contains("AGENTHOST_DST=\"$(resolve_agenthost_target)\"", script, StringComparison.Ordinal);
+        Assert.Contains("[[ \"$STAGED_IS_WEB_ONLY\" == \"true\" ]] || apply_file \"$STAGING/mtagenthost\" \"$AGENTHOST_DST\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveInstalledHostExecutablePath_UsesSettingsFallbackWhenInstallDirectoryDoesNotContainAgentHost()
+    {
+        var settingsDir = Path.Combine(_tempDir, "settings-fallback");
+        var baseDir = Path.Combine(_tempDir, "app-base");
+        Directory.CreateDirectory(settingsDir);
+        Directory.CreateDirectory(baseDir);
+
+        var fallbackPath = UpdateService.GetAgentHostFallbackPath(settingsDir);
+        File.WriteAllText(fallbackPath, "fake-agenthost");
+
+        var resolved = SessionLensHostRuntimeService.ResolveInstalledHostExecutablePath(settingsDir, baseDir);
+
+        Assert.Equal(fallbackPath, resolved);
     }
 
     [Fact]

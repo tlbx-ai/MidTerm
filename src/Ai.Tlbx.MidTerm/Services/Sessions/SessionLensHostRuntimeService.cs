@@ -10,6 +10,7 @@ using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
@@ -196,7 +197,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                     return false;
                 }
 
-                if (!TryResolveLaunch(profile, _mode, out var launch))
+                if (!TryResolveLaunch(profile, _mode, _settingsService.SettingsDirectory, out var launch))
                 {
                     state.Status = HostRuntimeStatus.Error;
                     state.LastError = "mtagenthost executable could not be resolved.";
@@ -1082,21 +1083,30 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             settings.ClaudeDangerouslySkipPermissionsDefault ? "true" : "false";
     }
 
-    private static bool TryResolveLaunch(string profile, string mode, out HostLaunch launch)
+    internal static string? ResolveInstalledHostExecutablePath(string settingsDirectory, string? baseDirectory = null)
     {
         var executableName = OperatingSystem.IsWindows() ? "mtagenthost.exe" : "mtagenthost";
-        var baseDir = AppContext.BaseDirectory;
-        if (IsTestBinaryBaseDirectory(baseDir) && TryResolveDevLaunch(profile, mode, baseDir, out launch))
+        var baseDir = string.IsNullOrWhiteSpace(baseDirectory) ? AppContext.BaseDirectory : baseDirectory;
+        foreach (var candidate in EnumerateInstalledHostExecutableCandidates(baseDir, settingsDirectory, executableName))
         {
-            return true;
+            var installedDll = Path.ChangeExtension(candidate, ".dll");
+            var installedRuntimeConfig = Path.ChangeExtension(candidate, ".runtimeconfig.json");
+            var hasFrameworkPayload = File.Exists(installedDll);
+            var looksLikeBrokenAppHost = OperatingSystem.IsWindows() && File.Exists(installedRuntimeConfig) && !hasFrameworkPayload;
+            if (File.Exists(candidate) && !looksLikeBrokenAppHost)
+            {
+                return candidate;
+            }
         }
 
-        var installedExecutable = Path.Combine(baseDir, executableName);
-        var installedDll = Path.ChangeExtension(installedExecutable, ".dll");
-        var installedRuntimeConfig = Path.ChangeExtension(installedExecutable, ".runtimeconfig.json");
-        var hasFrameworkPayload = File.Exists(installedDll);
-        var looksLikeBrokenAppHost = OperatingSystem.IsWindows() && File.Exists(installedRuntimeConfig) && !hasFrameworkPayload;
-        if (File.Exists(installedExecutable) && !looksLikeBrokenAppHost)
+        return null;
+    }
+
+    private static bool TryResolveLaunch(string profile, string mode, string settingsDirectory, out HostLaunch launch)
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var installedExecutable = ResolveInstalledHostExecutablePath(settingsDirectory, baseDir);
+        if (!string.IsNullOrWhiteSpace(installedExecutable))
         {
             launch = new HostLaunch(
                 installedExecutable,
@@ -1107,6 +1117,21 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
 
         return TryResolveDevLaunch(profile, mode, baseDir, out launch);
+    }
+
+    private static IEnumerable<string> EnumerateInstalledHostExecutableCandidates(string baseDir, string settingsDirectory, string executableName)
+    {
+        var primaryPath = Path.Combine(baseDir, executableName);
+        yield return primaryPath;
+
+        if (!string.IsNullOrWhiteSpace(settingsDirectory))
+        {
+            var fallbackPath = UpdateService.GetAgentHostFallbackPath(settingsDirectory);
+            if (!string.Equals(fallbackPath, primaryPath, StringComparison.Ordinal))
+            {
+                yield return fallbackPath;
+            }
+        }
     }
 
     private static bool TryResolveDevLaunch(string profile, string mode, string baseDir, out HostLaunch launch)

@@ -2,6 +2,7 @@ using System.Text;
 #if WINDOWS
 using System.Threading;
 #endif
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -133,6 +134,11 @@ public sealed class SingleInstanceGuard : IDisposable
 
     private static string GetPidFilePath(string instanceKey)
     {
+        if (TryGetUnixServiceLockDirectory(out var serviceLockDirectory))
+        {
+            return Path.Combine(serviceLockDirectory, $"midterm-{instanceKey}.pid");
+        }
+
         // Running as root (service mode) - use system location
         if (Environment.GetEnvironmentVariable("USER") == "root" ||
             Environment.GetEnvironmentVariable("EUID") == "0")
@@ -147,6 +153,41 @@ public sealed class SingleInstanceGuard : IDisposable
         // User mode - use home directory
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         return Path.Combine(home, ".midterm", $"midterm-{instanceKey}.pid");
+    }
+
+    internal static bool TryGetUnixServiceLockDirectory(out string lockDirectory)
+    {
+        lockDirectory = string.Empty;
+
+        if (OperatingSystem.IsWindows() || !string.IsNullOrWhiteSpace(SettingsService.GetSettingsDirectoryOverride()))
+        {
+            return false;
+        }
+
+        const string serviceSettingsDirectory = "/usr/local/etc/midterm";
+        var serviceSettingsPath = Path.Combine(serviceSettingsDirectory, "settings.json");
+        if (!File.Exists(serviceSettingsPath))
+        {
+            return false;
+        }
+
+        var candidate = Path.Combine(serviceSettingsDirectory, "locks");
+        try
+        {
+            Directory.CreateDirectory(candidate);
+            var probePath = Path.Combine(candidate, $".lock-probe-{Guid.NewGuid():N}");
+            using (File.Open(probePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+            }
+
+            File.Delete(probePath);
+            lockDirectory = candidate;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsProcessRunning(int pid)

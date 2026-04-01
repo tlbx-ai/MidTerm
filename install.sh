@@ -1774,6 +1774,7 @@ set -euo pipefail
 
 CONFIG_DIR="/usr/local/etc/midterm"
 INSTALL_DIR="/usr/local/bin"
+CONFIG_AGENTHOST="$CONFIG_DIR/mtagenthost"
 STAGING="$CONFIG_DIR/update-staging"
 LOG_FILE="/usr/local/var/log/update.log"
 RESULT_FILE="$CONFIG_DIR/update-result.json"
@@ -1802,6 +1803,23 @@ write_result() {
   "logFile": "$LOG_FILE"
 }
 RESULT_EOF
+}
+
+staged_update_is_web_only() {
+    local manifest_path="$STAGING/version.json"
+    [[ -f "$manifest_path" ]] && grep -Eq '"webOnly"[[:space:]]*:[[:space:]]*true' "$manifest_path"
+}
+
+resolve_agenthost_target() {
+    local primary="$INSTALL_DIR/mtagenthost"
+    if [ -f "$primary" ]; then
+        echo "$primary"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$CONFIG_AGENTHOST")" 2>/dev/null || true
+    log "System install is missing mtagenthost; using writable fallback at $CONFIG_AGENTHOST" >&2
+    echo "$CONFIG_AGENTHOST"
 }
 
 apply_file() {
@@ -1841,25 +1859,40 @@ rollback() {
     log "Rolling back staged macOS update" "WARN"
     [ -f "$BACKUP_DIR/mt.bak" ] && cat "$BACKUP_DIR/mt.bak" > "$INSTALL_DIR/mt" && chmod +x "$INSTALL_DIR/mt" || true
     [ -f "$BACKUP_DIR/mthost.bak" ] && cat "$BACKUP_DIR/mthost.bak" > "$INSTALL_DIR/mthost" && chmod +x "$INSTALL_DIR/mthost" || true
-    [ -f "$BACKUP_DIR/mtagenthost.bak" ] && cat "$BACKUP_DIR/mtagenthost.bak" > "$INSTALL_DIR/mtagenthost" && chmod +x "$INSTALL_DIR/mtagenthost" || true
+    if [ -f "$BACKUP_DIR/mtagenthost.bak" ]; then
+        cat "$BACKUP_DIR/mtagenthost.bak" > "${AGENTHOST_DST:-$INSTALL_DIR/mtagenthost}" && chmod +x "${AGENTHOST_DST:-$INSTALL_DIR/mtagenthost}" || true
+    elif [ -n "${AGENTHOST_DST:-}" ] && [ "$AGENTHOST_DST" != "$INSTALL_DIR/mtagenthost" ]; then
+        rm -f "$AGENTHOST_DST" 2>/dev/null || true
+    fi
     [ -f "$BACKUP_DIR/version.json.bak" ] && cat "$BACKUP_DIR/version.json.bak" > "$INSTALL_DIR/version.json" || true
 }
 
 if [ -d "$STAGING" ] && [ -f "$STAGING/mt" ]; then
+    STAGED_IS_WEB_ONLY=false
+    if staged_update_is_web_only; then
+        STAGED_IS_WEB_ONLY=true
+    fi
+
     rm -rf "$BACKUP_DIR" 2>/dev/null || true
     mkdir -p "$BACKUP_DIR"
     rm -f "$RESULT_FILE" 2>/dev/null || true
 
     log "Applying staged macOS update from $STAGING"
+    log "Staged update type: $(if [ "$STAGED_IS_WEB_ONLY" = "true" ]; then echo 'WebOnly'; else echo 'Full'; fi)"
+
+    AGENTHOST_DST="$INSTALL_DIR/mtagenthost"
+    if [ "$STAGED_IS_WEB_ONLY" = "false" ]; then
+        AGENTHOST_DST="$(resolve_agenthost_target)"
+    fi
 
     [ -f "$INSTALL_DIR/mt" ] && cp -f "$INSTALL_DIR/mt" "$BACKUP_DIR/mt.bak"
-    [ -f "$INSTALL_DIR/mthost" ] && cp -f "$INSTALL_DIR/mthost" "$BACKUP_DIR/mthost.bak"
-    [ -f "$INSTALL_DIR/mtagenthost" ] && cp -f "$INSTALL_DIR/mtagenthost" "$BACKUP_DIR/mtagenthost.bak"
+    [ "$STAGED_IS_WEB_ONLY" = "false" ] && [ -f "$INSTALL_DIR/mthost" ] && cp -f "$INSTALL_DIR/mthost" "$BACKUP_DIR/mthost.bak"
+    [ "$STAGED_IS_WEB_ONLY" = "false" ] && [ -f "$AGENTHOST_DST" ] && cp -f "$AGENTHOST_DST" "$BACKUP_DIR/mtagenthost.bak"
     [ -f "$INSTALL_DIR/version.json" ] && cp -f "$INSTALL_DIR/version.json" "$BACKUP_DIR/version.json.bak"
 
     if apply_file "$STAGING/mt" "$INSTALL_DIR/mt" "mt" true \
-        && { [ ! -f "$STAGING/mthost" ] || apply_file "$STAGING/mthost" "$INSTALL_DIR/mthost" "mthost" true; } \
-        && apply_file "$STAGING/mtagenthost" "$INSTALL_DIR/mtagenthost" "mtagenthost" true \
+        && { [ "$STAGED_IS_WEB_ONLY" = "true" ] || apply_file "$STAGING/mthost" "$INSTALL_DIR/mthost" "mthost" true; } \
+        && { [ "$STAGED_IS_WEB_ONLY" = "true" ] || apply_file "$STAGING/mtagenthost" "$AGENTHOST_DST" "mtagenthost" true; } \
         && apply_file "$STAGING/version.json" "$INSTALL_DIR/version.json" "version.json" false; then
         write_result true "Update applied"
         rm -rf "$STAGING" "$BACKUP_DIR" 2>/dev/null || true
@@ -2347,7 +2380,7 @@ detect_existing_install() {
     EXISTING_USER_CERT_DAYS=""
 
     # Service install
-    if [ -f "$UNIX_SERVICE_BIN_DIR/mt" ] || [ -f "$UNIX_SERVICE_BIN_DIR/mthost" ] || \
+    if [ -f "$UNIX_SERVICE_BIN_DIR/mt" ] || [ -f "$UNIX_SERVICE_BIN_DIR/mthost" ] || [ -f "$UNIX_SERVICE_BIN_DIR/mtagenthost" ] || \
         [ -d "$UNIX_SERVICE_SETTINGS_DIR" ] || [ -d "/usr/local/lib/MidTerm" ] || \
         [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] || [ -f "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" ]; then
         EXISTING_SERVICE_PRESENT=true
@@ -2379,7 +2412,7 @@ detect_existing_install() {
     fi
 
     # User install
-    if [ -f "$HOME/.local/bin/mt" ] || [ -f "$HOME/.local/bin/mthost" ] || \
+    if [ -f "$HOME/.local/bin/mt" ] || [ -f "$HOME/.local/bin/mthost" ] || [ -f "$HOME/.local/bin/mtagenthost" ] || \
         [ -d "$HOME/.local/lib/MidTerm" ] || [ -d "$UNIX_USER_SETTINGS_DIR" ]; then
         EXISTING_USER_PRESENT=true
     fi
