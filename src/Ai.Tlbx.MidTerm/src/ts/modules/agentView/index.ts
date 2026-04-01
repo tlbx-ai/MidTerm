@@ -9,9 +9,11 @@ import {
   switchTab,
 } from '../sessionTabs';
 import {
+  clearLensTurnSessionState,
   LENS_TURN_ACCEPTED_EVENT,
   LENS_TURN_FAILED_EVENT,
   LENS_TURN_SUBMITTED_EVENT,
+  syncLensTurnExecutionState,
   type LensTurnAcceptedEventDetail,
   type LensTurnFailedEventDetail,
   type LensTurnSubmittedEventDetail,
@@ -314,6 +316,7 @@ export function destroyAgentView(sessionId: string): void {
   }
 
   viewStates.delete(sessionId);
+  clearLensTurnSessionState(sessionId);
   removeLensQuickSettingsSessionState(sessionId);
 }
 
@@ -1810,6 +1813,7 @@ function renderAgentView(
   syncLensQuickSettingsFromSnapshot(snapshot.sessionId, snapshot.provider, snapshot.quickSettings);
   syncAgentViewPresentation(panel, snapshot.provider);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
+  syncLensTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   syncRequestInteractionState(state, snapshot.requests);
   const historyEntries = buildLensHistoryEntries(snapshot, events);
   const visibleHistoryEntries = suppressActiveComposerRequestEntries(

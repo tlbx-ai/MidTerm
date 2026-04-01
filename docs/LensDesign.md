@@ -215,6 +215,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
+- In Lens sessions, `Esc` from the composer or touch-controller escape button should interrupt the active turn instead of sending a literal terminal escape key.
+- If the user queued follow-up Lens turns while a turn was still running, the first `Esc` should let that queued work drain next, and a second `Esc` should cancel the remaining queued drain.
 
 ## Performance Rules
 
@@ -281,6 +283,7 @@ Status in this branch/work item:
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
+- implemented: Lens `Esc` from the composer and touch-controller now interrupts active Lens turns rather than sending a literal escape key, and queued follow-up turns can be drained or canceled with repeated `Esc`
 
 Still mandatory after this work whenever Lens evolves:
 

@@ -1,6 +1,7 @@
-import { sendLensTurn } from '../../api/client';
+import { interruptLensTurn, sendLensTurn } from '../../api/client';
 import type {
   LensAttachmentReference,
+  LensInterruptRequest,
   LensTurnRequest,
   LensTurnStartResponse,
 } from '../../api/types';
@@ -26,10 +27,36 @@ export interface LensTurnFailedEventDetail extends LensTurnSubmittedEventDetail 
   errorMessage: string;
 }
 
+export interface LensTurnExecutionSummary {
+  turnId?: string | null;
+  state?: string | null;
+}
+
 type LensTurnLifecycleEventDetail =
   | LensTurnSubmittedEventDetail
   | LensTurnAcceptedEventDetail
   | LensTurnFailedEventDetail;
+
+interface QueuedLensTurn {
+  optimisticId: string;
+  request: LensTurnRequest;
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
+interface LensTurnQueueState {
+  currentTurnId: string | null;
+  currentTurnRunning: boolean;
+  queuedTurns: QueuedLensTurn[];
+  submittingTurn: boolean;
+  interruptInFlight: boolean;
+  queueDrainActive: boolean;
+  interruptingForQueuedTurns: boolean;
+  haltQueuedTurns: boolean;
+  activeQueuedTurnId: string | null;
+}
+
+const lensTurnQueueStates = new Map<string, LensTurnQueueState>();
 
 export function isLensActiveSession(sessionId: string | null | undefined): boolean {
   if (!sessionId) {
@@ -63,43 +90,117 @@ export async function submitLensTurn(
   sessionId: string,
   request: LensTurnRequest,
 ): Promise<LensTurnStartResponse> {
-  const optimisticId = createOptimisticTurnId();
-  const normalizedRequest = {
-    ...(request.text === undefined ? {} : { text: request.text }),
-    ...(request.model === undefined ? {} : { model: request.model ?? null }),
-    ...(request.effort === undefined ? {} : { effort: request.effort ?? null }),
-    ...(request.planMode === undefined ? {} : { planMode: request.planMode ?? 'off' }),
-    ...(request.permissionMode === undefined
-      ? {}
-      : { permissionMode: request.permissionMode ?? 'manual' }),
-    attachments: request.attachments.map((attachment) => ({ ...attachment })),
-  };
+  const normalizedRequest = normalizeLensTurnRequest(request);
+  const optimisticId = dispatchSubmittedLensTurn(sessionId, normalizedRequest);
+  return sendLensTurnWithLifecycle(sessionId, optimisticId, normalizedRequest);
+}
 
-  dispatchLensTurnEvent(LENS_TURN_SUBMITTED_EVENT, {
-    optimisticId,
-    sessionId,
-    request: normalizedRequest,
+export function submitQueuedLensTurn(sessionId: string, request: LensTurnRequest): Promise<void> {
+  const normalizedRequest = normalizeLensTurnRequest(request);
+  const optimisticId = dispatchSubmittedLensTurn(sessionId, normalizedRequest);
+  const state = getOrCreateLensTurnQueueState(sessionId);
+
+  return new Promise<void>((resolve, reject) => {
+    const queuedTurn: QueuedLensTurn = {
+      optimisticId,
+      request: normalizedRequest,
+      resolve,
+      reject: (error: Error) => {
+        reject(error);
+      },
+    };
+
+    if (shouldQueueLensTurn(state)) {
+      state.queuedTurns.push(queuedTurn);
+      return;
+    }
+
+    void startQueuedLensTurn(sessionId, state, queuedTurn, false);
   });
+}
 
-  try {
-    const response = await sendLensTurn(sessionId, normalizedRequest);
-    acceptLensQuickSettings(sessionId, response.provider, response.quickSettings);
-    dispatchLensTurnEvent(LENS_TURN_ACCEPTED_EVENT, {
-      optimisticId,
-      sessionId,
-      request: normalizedRequest,
-      response,
-    });
-    return response;
-  } catch (error) {
-    dispatchLensTurnEvent(LENS_TURN_FAILED_EVENT, {
-      optimisticId,
-      sessionId,
-      request: normalizedRequest,
-      errorMessage: String(error),
-    });
-    throw error;
+export async function handleLensEscape(sessionId: string): Promise<boolean> {
+  const state = getOrCreateLensTurnQueueState(sessionId);
+  const hasQueuedWork =
+    state.queuedTurns.length > 0 ||
+    state.queueDrainActive ||
+    state.interruptingForQueuedTurns ||
+    Boolean(state.activeQueuedTurnId);
+
+  if (!state.currentTurnRunning && !hasQueuedWork) {
+    return false;
   }
+
+  if (hasQueuedWork && (state.interruptingForQueuedTurns || state.queueDrainActive)) {
+    state.haltQueuedTurns = true;
+    state.interruptingForQueuedTurns = false;
+    cancelQueuedLensTurns(state, sessionId, 'Canceled queued Lens turn.');
+
+    if (state.currentTurnRunning) {
+      return requestLensTurnInterrupt(sessionId, state);
+    }
+
+    resetQueuedDrainState(state);
+    return true;
+  }
+
+  if (state.queuedTurns.length > 0) {
+    state.interruptingForQueuedTurns = true;
+  }
+
+  if (state.currentTurnRunning) {
+    return requestLensTurnInterrupt(sessionId, state);
+  }
+
+  maybeDrainQueuedLensTurns(sessionId, state);
+  return true;
+}
+
+export function syncLensTurnExecutionState(
+  sessionId: string,
+  currentTurn: LensTurnExecutionSummary | null | undefined,
+): void {
+  const state = getOrCreateLensTurnQueueState(sessionId);
+  state.currentTurnId = currentTurn?.turnId?.trim() || null;
+  state.currentTurnRunning = isRunningLensTurnState(currentTurn?.state);
+
+  if (state.currentTurnRunning) {
+    if (state.queueDrainActive && !state.activeQueuedTurnId && state.currentTurnId) {
+      state.activeQueuedTurnId = state.currentTurnId;
+    }
+    return;
+  }
+
+  state.interruptInFlight = false;
+
+  if (state.activeQueuedTurnId && state.currentTurnId !== state.activeQueuedTurnId) {
+    state.activeQueuedTurnId = null;
+  }
+
+  if (state.haltQueuedTurns) {
+    cancelQueuedLensTurns(state, sessionId, 'Canceled queued Lens turn.');
+    resetQueuedDrainState(state);
+    return;
+  }
+
+  if (state.queuedTurns.length > 0) {
+    maybeDrainQueuedLensTurns(sessionId, state);
+    return;
+  }
+
+  if (!state.activeQueuedTurnId) {
+    resetQueuedDrainState(state);
+  }
+}
+
+export function clearLensTurnSessionState(sessionId: string): void {
+  const state = lensTurnQueueStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  cancelQueuedLensTurns(state, sessionId, 'Lens session closed.');
+  lensTurnQueueStates.delete(sessionId);
 }
 
 function dispatchLensTurnEvent(name: string, detail: LensTurnLifecycleEventDetail): void {
@@ -116,4 +217,185 @@ function createOptimisticTurnId(): string {
   }
 
   return `optimistic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeLensTurnRequest(request: LensTurnRequest): LensTurnRequest {
+  return {
+    ...(request.text === undefined ? {} : { text: request.text }),
+    ...(request.model === undefined ? {} : { model: request.model ?? null }),
+    ...(request.effort === undefined ? {} : { effort: request.effort ?? null }),
+    ...(request.planMode === undefined ? {} : { planMode: request.planMode ?? 'off' }),
+    ...(request.permissionMode === undefined
+      ? {}
+      : { permissionMode: request.permissionMode ?? 'manual' }),
+    attachments: request.attachments.map((attachment) => ({ ...attachment })),
+  };
+}
+
+function dispatchSubmittedLensTurn(sessionId: string, request: LensTurnRequest): string {
+  const optimisticId = createOptimisticTurnId();
+  dispatchLensTurnEvent(LENS_TURN_SUBMITTED_EVENT, {
+    optimisticId,
+    sessionId,
+    request,
+  });
+  return optimisticId;
+}
+
+async function sendLensTurnWithLifecycle(
+  sessionId: string,
+  optimisticId: string,
+  request: LensTurnRequest,
+): Promise<LensTurnStartResponse> {
+  try {
+    const response = await sendLensTurn(sessionId, request);
+    acceptLensQuickSettings(sessionId, response.provider, response.quickSettings);
+    dispatchLensTurnEvent(LENS_TURN_ACCEPTED_EVENT, {
+      optimisticId,
+      sessionId,
+      request,
+      response,
+    });
+    return response;
+  } catch (error) {
+    dispatchLensTurnEvent(LENS_TURN_FAILED_EVENT, {
+      optimisticId,
+      sessionId,
+      request,
+      errorMessage: String(error),
+    });
+    throw error;
+  }
+}
+
+function getOrCreateLensTurnQueueState(sessionId: string): LensTurnQueueState {
+  const existing = lensTurnQueueStates.get(sessionId);
+  if (existing) {
+    return existing;
+  }
+
+  const created: LensTurnQueueState = {
+    currentTurnId: null,
+    currentTurnRunning: false,
+    queuedTurns: [],
+    submittingTurn: false,
+    interruptInFlight: false,
+    queueDrainActive: false,
+    interruptingForQueuedTurns: false,
+    haltQueuedTurns: false,
+    activeQueuedTurnId: null,
+  };
+  lensTurnQueueStates.set(sessionId, created);
+  return created;
+}
+
+function shouldQueueLensTurn(state: LensTurnQueueState): boolean {
+  return state.currentTurnRunning || state.submittingTurn || state.queuedTurns.length > 0;
+}
+
+async function startQueuedLensTurn(
+  sessionId: string,
+  state: LensTurnQueueState,
+  queuedTurn: QueuedLensTurn,
+  fromQueue: boolean,
+): Promise<void> {
+  state.submittingTurn = true;
+
+  try {
+    const response = await sendLensTurnWithLifecycle(
+      sessionId,
+      queuedTurn.optimisticId,
+      queuedTurn.request,
+    );
+    state.currentTurnId = response.turnId ?? state.currentTurnId;
+    state.currentTurnRunning = true;
+    if (fromQueue) {
+      state.queueDrainActive = true;
+      state.activeQueuedTurnId = response.turnId ?? queuedTurn.optimisticId;
+    }
+    queuedTurn.resolve();
+  } catch (error) {
+    const normalized = error instanceof Error ? error : new Error(String(error));
+    queuedTurn.reject(normalized);
+    if (fromQueue && !state.haltQueuedTurns) {
+      maybeDrainQueuedLensTurns(sessionId, state);
+    }
+  } finally {
+    state.submittingTurn = false;
+  }
+}
+
+function maybeDrainQueuedLensTurns(sessionId: string, state: LensTurnQueueState): void {
+  if (state.submittingTurn || state.currentTurnRunning) {
+    return;
+  }
+
+  if (state.haltQueuedTurns) {
+    cancelQueuedLensTurns(state, sessionId, 'Canceled queued Lens turn.');
+    resetQueuedDrainState(state);
+    return;
+  }
+
+  const nextTurn = state.queuedTurns.shift();
+  if (!nextTurn) {
+    if (!state.activeQueuedTurnId) {
+      resetQueuedDrainState(state);
+    }
+    return;
+  }
+
+  state.queueDrainActive = true;
+  state.interruptingForQueuedTurns = false;
+  void startQueuedLensTurn(sessionId, state, nextTurn, true);
+}
+
+function cancelQueuedLensTurns(
+  state: LensTurnQueueState,
+  sessionId: string,
+  errorMessage: string,
+): void {
+  const canceledTurns = state.queuedTurns.splice(0, state.queuedTurns.length);
+  for (const turn of canceledTurns) {
+    dispatchLensTurnEvent(LENS_TURN_FAILED_EVENT, {
+      optimisticId: turn.optimisticId,
+      sessionId,
+      request: turn.request,
+      errorMessage,
+    });
+    queueMicrotask(() => {
+      turn.resolve();
+    });
+  }
+}
+
+function resetQueuedDrainState(state: LensTurnQueueState): void {
+  state.queueDrainActive = false;
+  state.interruptingForQueuedTurns = false;
+  state.haltQueuedTurns = false;
+  state.activeQueuedTurnId = null;
+}
+
+async function requestLensTurnInterrupt(
+  sessionId: string,
+  state: LensTurnQueueState,
+): Promise<boolean> {
+  if (state.interruptInFlight) {
+    return true;
+  }
+
+  state.interruptInFlight = true;
+  const request: LensInterruptRequest = state.currentTurnId ? { turnId: state.currentTurnId } : {};
+
+  try {
+    await interruptLensTurn(sessionId, request);
+    return true;
+  } catch {
+    state.interruptInFlight = false;
+    return false;
+  }
+}
+
+function isRunningLensTurnState(state: string | null | undefined): boolean {
+  const normalized = (state || '').trim().toLowerCase();
+  return normalized === 'running' || normalized === 'in_progress' || normalized === 'submitted';
 }

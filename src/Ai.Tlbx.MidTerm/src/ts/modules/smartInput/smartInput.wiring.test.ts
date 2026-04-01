@@ -23,4 +23,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-lens-settings[hidden] {');
     expect(css).toContain('display: none !important;');
   });
+
+  it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {
+    expect(source).toContain("if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {");
+    expect(source).toContain('void handleLensEscape(sessionId);');
+  });
 });

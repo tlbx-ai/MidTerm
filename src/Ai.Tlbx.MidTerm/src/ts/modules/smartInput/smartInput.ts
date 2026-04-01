@@ -15,7 +15,7 @@
 import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../stores';
 import { t } from '../i18n';
 import { submitSessionText } from '../input/submit';
-import { isLensActiveSession } from '../lens/input';
+import { handleLensEscape, isLensActiveSession } from '../lens/input';
 import {
   LENS_QUICK_SETTINGS_CHANGED_EVENT,
   getLensQuickSettingsDraft,
@@ -448,6 +448,15 @@ function createInputElements(): {
 
   // Enter to send, Shift+Enter for newline
   textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const sessionId = $activeSessionId.get();
+      if (sessionId && isLensActiveSession(sessionId)) {
+        e.preventDefault();
+        void handleLensEscape(sessionId);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendText(textarea);

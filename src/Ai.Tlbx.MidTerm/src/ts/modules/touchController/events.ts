@@ -7,6 +7,7 @@
 
 import { $activeSessionId } from '../../stores';
 import { sendInput } from '../comms/muxChannel';
+import { handleLensEscape, isLensActiveSession } from '../lens/input';
 import { KEY_SEQUENCES, KEY_LABELS } from './constants';
 import { toggleModifier, consumeModifiers, getModifierCode, type ModifierKey } from './modifiers';
 import { togglePopup } from './popups';
@@ -151,6 +152,11 @@ function handleKeyPress(key: string): void {
   if (!sessionId) return;
 
   const mods = consumeModifiers();
+  if (key === 'esc' && !mods.ctrl && !mods.alt && !mods.shift && isLensActiveSession(sessionId)) {
+    void handleLensEscape(sessionId);
+    return;
+  }
+
   const sequence = buildKeySequence(key, mods);
 
   if (sequence) {
