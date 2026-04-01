@@ -176,6 +176,11 @@ describe('settings persistence wiring', () => {
     );
   });
 
+  it('keeps manager bar buttons readable under UI transparency', () => {
+    expect(cssSource).toContain('background: var(--bg-elevated-opaque, var(--bg-elevated));');
+    expect(cssSource).toContain('background: var(--bg-active-opaque, var(--bg-active));');
+  });
+
   it('allows both transparency sliders to reach 100 percent', () => {
     expect(html).toMatch(/id="setting-ui-transparency"[\s\S]*?max="100"/);
     expect(html).toMatch(/id="setting-terminal-transparency"[\s\S]*?max="100"/);

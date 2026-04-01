@@ -9860,7 +9860,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   padding: 3px 10px;
   border-radius: 4px;
-  background: none;
+  background: var(--bg-elevated-opaque, var(--bg-elevated));
   color: var(--text-secondary);
   font-size: var(--fs-base);
   line-height: 1;
@@ -9873,6 +9873,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .manager-btn:hover {
+  background: var(--bg-active-opaque, var(--bg-active));
   border-color: var(--text-secondary);
   color: var(--text-primary);
 }
@@ -9922,7 +9923,7 @@ body.shared-session-mode .session-tab-bar {
 .manager-bar-add {
   padding: 3px 10px;
   border-radius: 4px;
-  background: none;
+  background: var(--bg-elevated-opaque, var(--bg-elevated));
   border: 1px dashed var(--border-color);
   color: var(--text-muted);
   cursor: pointer;
@@ -9935,6 +9936,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .manager-bar-add:hover {
+  background: var(--bg-active-opaque, var(--bg-active));
   color: var(--text-secondary);
   border-color: var(--text-secondary);
 }
