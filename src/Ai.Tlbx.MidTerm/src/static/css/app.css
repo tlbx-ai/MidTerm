@@ -8695,25 +8695,6 @@ body.shared-session-mode .session-tab-bar {
   outline: none;
 }
 
-/* Accessibility: Reduced motion support */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  /* Exempt subtle ambient animations */
-  .login-logo,
-  .empty-state-logo {
-    animation-duration: 4s !important;
-    animation-iteration-count: infinite !important;
-  }
-}
-
 /* =============================================================================
    File Viewer Modal
    ============================================================================= */
