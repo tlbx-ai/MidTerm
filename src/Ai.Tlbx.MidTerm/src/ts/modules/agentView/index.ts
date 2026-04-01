@@ -55,6 +55,7 @@ const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
 const COLLAPSIBLE_HISTORY_BODY_MIN_LINES = 8;
 const COLLAPSIBLE_HISTORY_BODY_MIN_CHARS = 320;
 const COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS = 160;
+const MAX_VISIBLE_DIFF_LINES = 200;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 const NON_USER_SCROLL_DRIFT_TOLERANCE_PX = 4;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
@@ -235,6 +236,13 @@ export interface HistoryBodyPresentation {
   collapsedByDefault: boolean;
   lineCount: number;
   preview: string;
+}
+
+export interface DiffRenderLine {
+  text: string;
+  className: string;
+  oldLineNumber?: number;
+  newLineNumber?: number;
 }
 
 interface ArtifactClusterInfo {
@@ -2937,19 +2945,34 @@ function createDiffHistoryBody(bodyText: string): HTMLElement {
   const content = document.createElement('pre');
   content.className = 'agent-history-diff-content';
 
-  const lines = normalizeHistoryBodyLines(bodyText);
-  for (const [index, line] of lines.entries()) {
+  for (const line of buildRenderedDiffLines(bodyText)) {
     const row = document.createElement('span');
-    row.className = `agent-history-diff-line ${resolveDiffLineClassName(line)}`;
-    row.textContent = line || ' ';
+    row.className = `agent-history-diff-line ${line.className}`;
+    row.appendChild(createDiffLineNumberNode(line.oldLineNumber));
+    row.appendChild(createDiffLineNumberNode(line.newLineNumber));
+
+    const text = document.createElement('span');
+    text.className = 'agent-history-diff-line-text';
+    text.textContent = line.text || ' ';
+    row.appendChild(text);
     content.appendChild(row);
-    if (index < lines.length - 1) {
-      content.appendChild(document.createTextNode('\n'));
-    }
   }
 
   body.appendChild(content);
   return body;
+}
+
+function createDiffLineNumberNode(value: number | undefined): HTMLElement {
+  const cell = document.createElement('span');
+  cell.className = 'agent-history-diff-line-number';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    cell.textContent = String(value);
+  } else {
+    cell.textContent = '';
+    cell.setAttribute('aria-hidden', 'true');
+  }
+
+  return cell;
 }
 
 function resolveDiffLineClassName(line: string): string {
@@ -2970,6 +2993,334 @@ function resolveDiffLineClassName(line: string): string {
   }
 
   return 'agent-history-diff-line-context';
+}
+
+export function buildRenderedDiffLines(bodyText: string): DiffRenderLine[] {
+  const normalizedLines = normalizeHistoryBodyLines(bodyText);
+  if (normalizedLines.length === 0) {
+    return [];
+  }
+
+  const rendered = buildDiffSections(normalizedLines);
+  const lines = rendered.length > 0 ? rendered : buildFallbackDiffLines(normalizedLines);
+  if (lines.length <= MAX_VISIBLE_DIFF_LINES) {
+    return lines;
+  }
+
+  return [
+    ...lines.slice(0, MAX_VISIBLE_DIFF_LINES),
+    {
+      text: lensFormat('lens.diff.omittedLines', '... {count} more diff lines omitted ...', {
+        count: lines.length - MAX_VISIBLE_DIFF_LINES,
+      }),
+      className: 'agent-history-diff-line-ellipsis',
+    },
+  ];
+}
+
+interface ParsedDiffSection {
+  oldPath: string;
+  newPath: string;
+  lines: string[];
+  lineState: DiffLineState;
+}
+
+interface DiffLineState {
+  oldLineNumber: number | null;
+  newLineNumber: number | null;
+}
+
+function buildDiffSections(lines: readonly string[]): DiffRenderLine[] {
+  const sections: ParsedDiffSection[] = [];
+  let current: ParsedDiffSection | null = null;
+  let seenHunk = false;
+
+  const ensureCurrent = (): ParsedDiffSection => {
+    if (current) {
+      return current;
+    }
+
+    current = {
+      oldPath: '',
+      newPath: '',
+      lines: [],
+      lineState: {
+        oldLineNumber: null,
+        newLineNumber: null,
+      },
+    };
+    sections.push(current);
+    return current;
+  };
+
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      current = {
+        oldPath: extractDiffGitPath(line, 'a/'),
+        newPath: extractDiffGitPath(line, 'b/'),
+        lines: [],
+        lineState: {
+          oldLineNumber: null,
+          newLineNumber: null,
+        },
+      };
+      sections.push(current);
+      seenHunk = false;
+      continue;
+    }
+
+    const section = ensureCurrent();
+    if (line.startsWith('--- ')) {
+      section.oldPath = normalizeDiffPath(line.slice(4));
+      continue;
+    }
+
+    if (line.startsWith('+++ ')) {
+      section.newPath = normalizeDiffPath(line.slice(4));
+      continue;
+    }
+
+    if (
+      line.startsWith('index ') ||
+      line.startsWith('new file mode ') ||
+      line.startsWith('deleted file mode ') ||
+      line.startsWith('old mode ') ||
+      line.startsWith('new mode ') ||
+      line.startsWith('similarity index ') ||
+      line.startsWith('rename from ') ||
+      line.startsWith('rename to ') ||
+      line.startsWith('copy from ') ||
+      line.startsWith('copy to ')
+    ) {
+      continue;
+    }
+
+    if (line.startsWith('@@')) {
+      seenHunk = true;
+      section.lines.push(line);
+      continue;
+    }
+
+    if (
+      line.startsWith('Binary files ') ||
+      line.startsWith('GIT binary patch') ||
+      line.startsWith('literal ') ||
+      line.startsWith('delta ')
+    ) {
+      section.lines.push(line);
+      continue;
+    }
+
+    if (!seenHunk && !section.lines.length) {
+      continue;
+    }
+
+    section.lines.push(line);
+  }
+
+  const rendered: DiffRenderLine[] = [];
+  for (const section of sections) {
+    if (section.lines.length === 0) {
+      continue;
+    }
+
+    const sectionHeader = formatDiffSectionHeader(section.oldPath, section.newPath);
+    if (sectionHeader) {
+      rendered.push({
+        text: sectionHeader,
+        className: 'agent-history-diff-line-file',
+      });
+    }
+
+    for (const line of section.lines) {
+      rendered.push(...buildRenderedDiffChunk(section, line));
+    }
+  }
+
+  return rendered;
+}
+
+function buildFallbackDiffLines(lines: readonly string[]): DiffRenderLine[] {
+  const trimmedLines = lines.filter(
+    (line) =>
+      line.trim().length > 0 &&
+      !line.startsWith('diff --git ') &&
+      !line.startsWith('index ') &&
+      !line.startsWith('new file mode ') &&
+      !line.startsWith('deleted file mode ') &&
+      !line.startsWith('old mode ') &&
+      !line.startsWith('new mode '),
+  );
+  const source = trimmedLines.length > 0 ? trimmedLines : lines;
+  return source.map((line) => ({
+    text: line || ' ',
+    className: resolveDiffLineClassName(line),
+  }));
+}
+
+function buildRenderedDiffChunk(section: ParsedDiffSection, line: string): DiffRenderLine[] {
+  const rendered: DiffRenderLine[] = [];
+  const state = getOrCreateDiffLineState(section);
+
+  if (line.startsWith('@@')) {
+    applyDiffHunkHeader(state, line);
+    rendered.push({
+      text: line,
+      className: resolveDiffLineClassName(line),
+    });
+    return rendered;
+  }
+
+  if (state.oldLineNumber === null && state.newLineNumber === null) {
+    rendered.push({
+      text: line || ' ',
+      className: resolveDiffLineClassName(line),
+    });
+    return rendered;
+  }
+
+  if (line.startsWith('+')) {
+    rendered.push(
+      createDiffRenderLine(
+        line,
+        resolveDiffLineClassName(line),
+        undefined,
+        state.newLineNumber ?? undefined,
+      ),
+    );
+    if (state.newLineNumber !== null) {
+      state.newLineNumber += 1;
+    }
+
+    return rendered;
+  }
+
+  if (line.startsWith('-')) {
+    rendered.push(
+      createDiffRenderLine(line, resolveDiffLineClassName(line), state.oldLineNumber ?? undefined),
+    );
+    if (state.oldLineNumber !== null) {
+      state.oldLineNumber += 1;
+    }
+
+    return rendered;
+  }
+
+  if (line.startsWith('\\')) {
+    rendered.push({
+      text: line,
+      className: resolveDiffLineClassName(line),
+    });
+    return rendered;
+  }
+
+  rendered.push(
+    createDiffRenderLine(
+      line || ' ',
+      resolveDiffLineClassName(line),
+      state.oldLineNumber ?? undefined,
+      state.newLineNumber ?? undefined,
+    ),
+  );
+  if (state.oldLineNumber !== null) {
+    state.oldLineNumber += 1;
+  }
+
+  if (state.newLineNumber !== null) {
+    state.newLineNumber += 1;
+  }
+
+  return rendered;
+}
+
+function getOrCreateDiffLineState(section: ParsedDiffSection): DiffLineState {
+  return section.lineState;
+}
+
+function applyDiffHunkHeader(state: DiffLineState, line: string): void {
+  const match = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if (!match) {
+    state.oldLineNumber = null;
+    state.newLineNumber = null;
+    return;
+  }
+
+  state.oldLineNumber = Number.parseInt(match[1] || '0', 10);
+  state.newLineNumber = Number.parseInt(match[2] || '0', 10);
+}
+
+function createDiffRenderLine(
+  text: string,
+  className: string,
+  oldLineNumber?: number,
+  newLineNumber?: number,
+): DiffRenderLine {
+  const line: DiffRenderLine = {
+    text,
+    className,
+  };
+  if (typeof oldLineNumber === 'number') {
+    line.oldLineNumber = oldLineNumber;
+  }
+
+  if (typeof newLineNumber === 'number') {
+    line.newLineNumber = newLineNumber;
+  }
+
+  return line;
+}
+
+function extractDiffGitPath(line: string, prefix: 'a/' | 'b/'): string {
+  const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+  if (!match) {
+    return '';
+  }
+
+  return normalizeDiffPath(prefix === 'a/' ? `a/${match[1]}` : `b/${match[2]}`);
+}
+
+function normalizeDiffPath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed === '/dev/null') {
+    return trimmed;
+  }
+
+  return trimmed.replace(/^["']|["']$/g, '').replace(/^[ab]\//, '');
+}
+
+function formatDiffSectionHeader(oldPath: string, newPath: string): string {
+  const normalizedOld = normalizeDiffPath(oldPath);
+  const normalizedNew = normalizeDiffPath(newPath);
+  if (!normalizedOld && !normalizedNew) {
+    return '';
+  }
+
+  if (normalizedOld === '/dev/null') {
+    return normalizedNew;
+  }
+
+  if (normalizedNew === '/dev/null') {
+    return lensFormat('lens.diff.deletedFile', '{path} (deleted)', {
+      path: normalizedOld,
+    });
+  }
+
+  if (!normalizedOld || normalizedOld === normalizedNew) {
+    return normalizedNew;
+  }
+
+  if (!normalizedNew) {
+    return normalizedOld;
+  }
+
+  return lensFormat('lens.diff.renamedFile', '{from} -> {to}', {
+    from: normalizedOld,
+    to: normalizedNew,
+  });
 }
 
 function createCollapsedHistoryBody(
@@ -3771,13 +4122,18 @@ export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidt
       ? 7.4
       : 8.1;
   const charsPerLine = Math.max(18, Math.floor(contentWidth / avgCharWidthPx));
-  const wrappedLines = entry.body
-    .split('\n')
-    .reduce(
-      (sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / charsPerLine)),
-      0,
-    );
-  const textLines = Math.max(1, wrappedLines);
+  const textLines =
+    entry.kind === 'diff'
+      ? Math.max(1, buildRenderedDiffLines(entry.body).length)
+      : Math.max(
+          1,
+          entry.body
+            .split('\n')
+            .reduce(
+              (sum, line) => sum + Math.max(1, Math.ceil(Math.max(1, line.length) / charsPerLine)),
+              0,
+            ),
+        );
   const presentation = resolveHistoryBodyPresentation(entry);
   const bodyHeight = presentation.collapsedByDefault ? 40 : Math.min(420, 18 * textLines);
 
@@ -3885,7 +4241,7 @@ export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): History
     entry.kind === 'diff' ? 'diff' : isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
   const lineCount = countHistoryBodyLines(entry.body);
   const collapsedByDefault =
-    (mode === 'monospace' || mode === 'diff') &&
+    mode === 'monospace' &&
     !entry.live &&
     !entry.pending &&
     (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||

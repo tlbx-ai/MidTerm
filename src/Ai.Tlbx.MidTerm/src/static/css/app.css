@@ -11542,13 +11542,39 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .agent-history-diff-line {
-  display: block;
-  padding: 0 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 4.5ch) minmax(0, 4.5ch) minmax(0, 1fr);
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.agent-history-diff-line-number {
+  min-width: 0;
+  padding: 0 8px 0 12px;
+  color: color-mix(in srgb, currentColor 54%, transparent);
+  text-align: right;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.agent-history-diff-line-number:empty::before {
+  content: ' ';
+}
+
+.agent-history-diff-line-text {
+  min-width: 0;
+  padding-right: 12px;
   white-space: pre;
 }
 
 .agent-history-diff-line-header {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+}
+
+.agent-history-diff-line-file {
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+  font-weight: 700;
 }
 
 .agent-history-diff-line-hunk {
@@ -11568,6 +11594,11 @@ body.shared-session-mode .session-tab-bar {
 
 .agent-history-diff-line-context {
   color: color-mix(in srgb, var(--text-primary) 86%, transparent);
+}
+
+.agent-history-diff-line-ellipsis {
+  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
+  font-style: italic;
 }
 
 .agent-history-request .agent-history-body,

@@ -4675,6 +4675,99 @@ describe('agentView dev errors', () => {
     expect(presentation.preview).toBe('');
   });
 
+  it('keeps long Lens diff rows expanded instead of collapsing them', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'diff-2',
+      order: 1,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: Array.from({ length: 240 }, (_, index) => `+line ${index + 1}`).join('\n'),
+      meta: '02:29:00',
+    });
+
+    expect(presentation.mode).toBe('diff');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(240);
+    expect(presentation.preview).toBe('');
+  });
+
+  it('trims diff preamble noise and caps rendered Lens diffs with an ellipsis row', async () => {
+    const { buildRenderedDiffLines } = await import('./index');
+
+    const body =
+      'diff --git a/report.md b/report.md\n' +
+      'new file mode 100644\n' +
+      'index 0000000..1111111\n' +
+      '--- /dev/null\n' +
+      '+++ b/report.md\n' +
+      '@@ -0,0 +1,205 @@\n' +
+      Array.from({ length: 205 }, (_, index) => `+line ${index + 1}`).join('\n');
+    const rendered = buildRenderedDiffLines(body);
+
+    expect(rendered).toHaveLength(201);
+    expect(rendered[0]).toEqual({
+      text: 'report.md',
+      className: 'agent-history-diff-line-file',
+    });
+    expect(rendered[1]).toEqual({
+      text: '@@ -0,0 +1,205 @@',
+      className: 'agent-history-diff-line-hunk',
+    });
+    expect(rendered.some((line) => line.text.startsWith('diff --git'))).toBe(false);
+    expect(rendered.some((line) => line.text.startsWith('new file mode'))).toBe(false);
+    expect(rendered.at(-1)).toEqual({
+      text: '... 7 more diff lines omitted ...',
+      className: 'agent-history-diff-line-ellipsis',
+    });
+  });
+
+  it('derives old and new line numbers from diff hunks', async () => {
+    const { buildRenderedDiffLines } = await import('./index');
+
+    const rendered = buildRenderedDiffLines(
+      [
+        'diff --git a/report.md b/report.md',
+        '--- a/report.md',
+        '+++ b/report.md',
+        '@@ -4,3 +4,4 @@',
+        ' line 4',
+        '-line 5 old',
+        '+line 5 new',
+        '+line 6 new',
+      ].join('\n'),
+    );
+
+    expect(rendered[1]).toEqual({
+      text: '@@ -4,3 +4,4 @@',
+      className: 'agent-history-diff-line-hunk',
+    });
+    expect(rendered[2]).toEqual({
+      text: ' line 4',
+      className: 'agent-history-diff-line-context',
+      oldLineNumber: 4,
+      newLineNumber: 4,
+    });
+    expect(rendered[3]).toEqual({
+      text: '-line 5 old',
+      className: 'agent-history-diff-line-delete',
+      oldLineNumber: 5,
+    });
+    expect(rendered[4]).toEqual({
+      text: '+line 5 new',
+      className: 'agent-history-diff-line-add',
+      newLineNumber: 5,
+    });
+    expect(rendered[5]).toEqual({
+      text: '+line 6 new',
+      className: 'agent-history-diff-line-add',
+      newLineNumber: 6,
+    });
+  });
+
   it('applies canonical live deltas directly into the materialized history window', async () => {
     const { applyCanonicalLensDelta } = await import('./index');
 

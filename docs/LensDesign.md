@@ -191,7 +191,10 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 
 - Diffs should be surfaced as first-class work artifacts, not buried in generic tool logs.
 - Unified diffs should render as actual diffs with added and removed lines visually separated by green/red treatments, not as undifferentiated plain monospace blocks.
-- Summaries should stay compact, with expansion for detail.
+- Diff rows should stay expanded by default instead of hiding behind the generic machine-output disclosure treatment.
+- Lens should trim non-essential unified-diff preamble noise where possible and prioritize the file header plus actual hunk content.
+- When unified diff hunks provide old/new coordinates, Lens should show a subtle old/new line-number gutter beside the diff text.
+- Extremely large diff bodies should remain bounded in the timeline: render the first 200 visible diff lines, then end with an ellipsis marker instead of dumping the full tail.
 - File-oriented information should use monospace sparingly and preserve readability.
 
 ## Composer And Ready State
@@ -224,7 +227,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Live Lens transport should flow as `provider event -> mt canonical stream state -> /ws/lens delta -> visible row patch`.
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
-- Rich items such as diffs or tool logs should support collapsed rendering by default.
+- Rich tool/log items should support collapsed rendering by default, but working diffs should stay expanded with a bounded visible body.
 
 ## Dev Diagnostics
 
@@ -265,7 +268,9 @@ Status in this branch/work item:
 - implemented: i18n-backed MidTerm Lens labels, buttons, helper copy, ready-state text, and interruption text
 - implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
 - implemented: hidden/background Lens sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
-- implemented: long machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
+- implemented: long non-diff machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
+- implemented: Lens diff rows stay expanded by default, suppress non-essential unified-diff preamble noise where possible, and cap visible diff rendering at 200 lines plus an ellipsis marker
+- implemented: Lens diff rows remove artificial blank spacing between lines and show old/new hunk line numbers when the diff provides them
 - implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
 - implemented: dev mode writes one GUID-named per-session Lens screen log derived from canonical history deltas and render hints
 - implemented: Lens uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries

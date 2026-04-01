@@ -1059,6 +1059,75 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void Append_WritesDiffScreenLogUsingDiffRenderHintsInsteadOfRawGitPreamble()
+    {
+        var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
+        var screenLogDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-screen-log-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storeDirectory);
+        Directory.CreateDirectory(screenLogDirectory);
+
+        try
+        {
+            var service = new SessionLensPulseService(
+                storeDirectory: storeDirectory,
+                enableScreenLogging: true,
+                screenLogDirectory: screenLogDirectory);
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "diff-updated",
+                SessionId = "s-diff-log",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                CreatedAt = DateTimeOffset.Parse("2026-04-01T00:43:33Z"),
+                Type = "diff.updated",
+                DiffUpdated = new LensPulseDiffUpdatedPayload
+                {
+                    UnifiedDiff = string.Join(
+                        '\n',
+                        new[]
+                        {
+                            "diff --git a/report.md b/report.md",
+                            "new file mode 100644",
+                            "index 0000000..1111111",
+                            "--- /dev/null",
+                            "+++ b/report.md",
+                            "@@ -0,0 +1,3 @@",
+                            "+line 1",
+                            "+line 2",
+                            "+line 3"
+                        })
+                }
+            });
+
+            var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.lenslog.jsonl"));
+            var lastLine = File.ReadLines(logPath).Last();
+            using var delta = JsonDocument.Parse(lastLine);
+            var diffEntry = Assert.Single(delta.RootElement.GetProperty("historyUpserts").EnumerateArray());
+
+            Assert.Equal("diff", diffEntry.GetProperty("kind").GetString());
+            Assert.Equal("diff", diffEntry.GetProperty("renderMode").GetString());
+            Assert.False(diffEntry.GetProperty("collapsedByDefault").GetBoolean());
+            Assert.Equal("report.md", diffEntry.GetProperty("preview").GetString());
+            Assert.DoesNotContain("diff --git", diffEntry.GetProperty("body").GetString(), StringComparison.Ordinal);
+            Assert.Contains("@@ -0,0 +1,3 @@", diffEntry.GetProperty("body").GetString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(storeDirectory))
+            {
+                Directory.Delete(storeDirectory, recursive: true);
+            }
+
+            if (Directory.Exists(screenLogDirectory))
+            {
+                Directory.Delete(screenLogDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Append_CompactsHugeToolOutputAcrossEventsSnapshotAndScreenLog()
     {
         var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));

@@ -17,6 +17,7 @@ public sealed partial class SessionLensPulseService
     private const int CollapsibleHistoryBodyMinLines = 8;
     private const int CollapsibleHistoryBodyMinChars = 320;
     private const int HistoryPreviewMaxChars = 160;
+    private const int MaxVisibleDiffScreenLogLines = 200;
     private const int MaxVisibleCommandOutputLines = 10;
     private const int MaxAssistantStreamChars = 262144;
     private const int MaxReasoningStreamChars = 8192;
@@ -2341,7 +2342,12 @@ public sealed partial class SessionLensPulseService
         var statusLabel = entry.Streaming
             ? "Streaming"
             : Prettify(entry.Status);
-        var collapsedByDefault = ShouldCollapseHistoryBodyByDefault(entry, kind);
+        var diffScreenBody = kind == "diff"
+            ? BuildScreenLogDiffBody(entry.Body)
+            : entry.Body;
+        var collapsedByDefault = kind == "diff"
+            ? false
+            : ShouldCollapseHistoryBodyByDefault(entry, kind);
 
         return new LensScreenLogHistoryEntry
         {
@@ -2353,11 +2359,11 @@ public sealed partial class SessionLensPulseService
             Label = ResolveHistoryLabel(kind),
             Title = entry.Title ?? string.Empty,
             Meta = FormatHistoryMeta(kind, statusLabel, entry.UpdatedAt),
-            Body = entry.Body,
+            Body = diffScreenBody,
             RenderMode = ResolveHistoryRenderMode(kind, entry.Streaming),
             CollapsedByDefault = collapsedByDefault,
-            Preview = BuildHistoryPreview(entry.Body),
-            LineCount = CountHistoryBodyLines(entry.Body),
+            Preview = kind == "diff" ? BuildHistoryPreview(diffScreenBody) : BuildHistoryPreview(entry.Body),
+            LineCount = kind == "diff" ? CountHistoryBodyLines(diffScreenBody) : CountHistoryBodyLines(entry.Body),
             Streaming = entry.Streaming,
             UpdatedAt = entry.UpdatedAt,
             Attachments = CloneAttachments(entry.Attachments)
@@ -2434,12 +2440,17 @@ public sealed partial class SessionLensPulseService
             return streaming ? "streaming_text" : "markdown";
         }
 
-        return kind is "tool" or "reasoning" or "plan" or "diff" ? "monospace" : "plain";
+        if (kind == "diff")
+        {
+            return "diff";
+        }
+
+        return kind is "tool" or "reasoning" or "plan" ? "monospace" : "plain";
     }
 
     private static bool ShouldCollapseHistoryBodyByDefault(LensPulseTranscriptEntry entry, string kind)
     {
-        if (entry.Streaming || kind is not ("tool" or "reasoning" or "plan" or "diff"))
+        if (entry.Streaming || kind is not ("tool" or "reasoning" or "plan"))
         {
             return false;
         }
@@ -2479,6 +2490,193 @@ public sealed partial class SessionLensPulseService
         }
 
         return singleLine[..(HistoryPreviewMaxChars - 1)] + "…";
+    }
+
+    private static string BuildScreenLogDiffBody(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return string.Empty;
+        }
+
+        var normalized = NormalizeTranscriptText(body);
+        var renderedLines = BuildScreenLogDiffLines(normalized);
+        if (renderedLines.Count == 0)
+        {
+            return normalized.Trim();
+        }
+
+        if (renderedLines.Count > MaxVisibleDiffScreenLogLines)
+        {
+            var omittedCount = renderedLines.Count - MaxVisibleDiffScreenLogLines;
+            renderedLines = renderedLines.Take(MaxVisibleDiffScreenLogLines)
+                .Append($"... {omittedCount} more diff lines omitted ...")
+                .ToList();
+        }
+
+        return string.Join('\n', renderedLines);
+    }
+
+    private static List<string> BuildScreenLogDiffLines(string normalizedBody)
+    {
+        var sourceLines = normalizedBody.Split('\n');
+        var rendered = new List<string>();
+        string oldPath = string.Empty;
+        string newPath = string.Empty;
+        var currentBody = new List<string>();
+        var sawHunk = false;
+
+        void FlushSection()
+        {
+            if (currentBody.Count == 0)
+            {
+                oldPath = string.Empty;
+                newPath = string.Empty;
+                sawHunk = false;
+                return;
+            }
+
+            var header = FormatDiffSectionHeader(oldPath, newPath);
+            if (!string.IsNullOrWhiteSpace(header))
+            {
+                rendered.Add(header);
+            }
+
+            rendered.AddRange(currentBody);
+            currentBody.Clear();
+            oldPath = string.Empty;
+            newPath = string.Empty;
+            sawHunk = false;
+        }
+
+        foreach (var line in sourceLines)
+        {
+            if (line.StartsWith("diff --git ", StringComparison.Ordinal))
+            {
+                FlushSection();
+                oldPath = ExtractDiffGitPath(line, "a/");
+                newPath = ExtractDiffGitPath(line, "b/");
+                continue;
+            }
+
+            if (line.StartsWith("--- ", StringComparison.Ordinal))
+            {
+                oldPath = NormalizeDiffPath(line[4..]);
+                continue;
+            }
+
+            if (line.StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                newPath = NormalizeDiffPath(line[4..]);
+                continue;
+            }
+
+            if (line.StartsWith("index ", StringComparison.Ordinal) ||
+                line.StartsWith("new file mode ", StringComparison.Ordinal) ||
+                line.StartsWith("deleted file mode ", StringComparison.Ordinal) ||
+                line.StartsWith("old mode ", StringComparison.Ordinal) ||
+                line.StartsWith("new mode ", StringComparison.Ordinal) ||
+                line.StartsWith("similarity index ", StringComparison.Ordinal) ||
+                line.StartsWith("rename from ", StringComparison.Ordinal) ||
+                line.StartsWith("rename to ", StringComparison.Ordinal) ||
+                line.StartsWith("copy from ", StringComparison.Ordinal) ||
+                line.StartsWith("copy to ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (line.StartsWith("@@", StringComparison.Ordinal))
+            {
+                sawHunk = true;
+                currentBody.Add(line);
+                continue;
+            }
+
+            if (line.StartsWith("Binary files ", StringComparison.Ordinal) ||
+                line.StartsWith("GIT binary patch", StringComparison.Ordinal) ||
+                line.StartsWith("literal ", StringComparison.Ordinal) ||
+                line.StartsWith("delta ", StringComparison.Ordinal))
+            {
+                currentBody.Add(line);
+                continue;
+            }
+
+            if (!sawHunk && currentBody.Count == 0)
+            {
+                continue;
+            }
+
+            currentBody.Add(line);
+        }
+
+        FlushSection();
+        if (rendered.Count > 0)
+        {
+            return rendered;
+        }
+
+        return sourceLines.Where(line => !string.IsNullOrWhiteSpace(line)).ToList();
+    }
+
+    private static string ExtractDiffGitPath(string line, string prefix)
+    {
+        if (!line.StartsWith("diff --git ", StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        var parts = line["diff --git ".Length..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            return string.Empty;
+        }
+
+        return NormalizeDiffPath(string.Equals(prefix, "a/", StringComparison.Ordinal) ? parts[0] : parts[1]);
+    }
+
+    private static string NormalizeDiffPath(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim().Trim('"', '\'');
+        if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, "/dev/null", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        return trimmed.StartsWith("a/", StringComparison.Ordinal) || trimmed.StartsWith("b/", StringComparison.Ordinal)
+            ? trimmed[2..]
+            : trimmed;
+    }
+
+    private static string FormatDiffSectionHeader(string oldPath, string newPath)
+    {
+        var normalizedOld = NormalizeDiffPath(oldPath);
+        var normalizedNew = NormalizeDiffPath(newPath);
+        if (string.IsNullOrWhiteSpace(normalizedOld) && string.IsNullOrWhiteSpace(normalizedNew))
+        {
+            return string.Empty;
+        }
+
+        if (string.Equals(normalizedOld, "/dev/null", StringComparison.Ordinal))
+        {
+            return normalizedNew;
+        }
+
+        if (string.Equals(normalizedNew, "/dev/null", StringComparison.Ordinal))
+        {
+            return $"{normalizedOld} (deleted)";
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedOld) || string.Equals(normalizedOld, normalizedNew, StringComparison.Ordinal))
+        {
+            return normalizedNew;
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedNew))
+        {
+            return normalizedOld;
+        }
+
+        return $"{normalizedOld} -> {normalizedNew}";
     }
 
     private static string Prettify(string? value)
