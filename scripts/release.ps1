@@ -27,13 +27,18 @@
     This is NOT optional. Users deserve to know what changed in each release.
 
 .PARAMETER mthostUpdate
-    MANDATORY: Does this release require updating mthost?
+    MANDATORY: Is this a low-level runtime refresh?
+
+    This is intentionally a single release decision. There is no separate
+    mtagenthost release switch.
 
     Answer 'yes' if ANY of these are true:
       - Changed Ai.Tlbx.MidTerm.TtyHost/ code
+      - Changed Ai.Tlbx.MidTerm.AgentHost/ in a way that must ship to running installs
       - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol code)
       - Changed mux WebSocket binary protocol format
       - Changed named pipe protocol between mt and mthost
+      - Changed Lens runtime IPC/attach contracts
       - Changed session ID encoding/format
       - Changed any IPC mechanism
 
@@ -42,9 +47,10 @@
       - CSS/HTML
       - REST API endpoints (not used by mthost)
       - Web-only C# code (endpoints, auth, settings)
+      - Lens/UI changes that do not require refreshing installed host binaries
 
-    When 'yes': Both mt and mthost versions bumped, terminals restart on update
-    When 'no':  Only mt version bumped, terminals survive the update
+    When 'yes': Full update. Running installs refresh both mthost and mtagenthost.
+    When 'no':  Web-only update. Running installs preserve their current mthost and mtagenthost.
 
 .EXAMPLE
     .\release.ps1 -Bump patch -ReleaseTitle "Fix settings panel closing unexpectedly" -ReleaseNotes @(
@@ -67,7 +73,7 @@
     .\release.ps1 -Bump patch -ReleaseTitle "Fix PTY handle leak on session close" -ReleaseNotes @(
         "Fixed memory leak where PTY handles were not released when closing sessions",
         "Improved cleanup sequence ensures all resources are freed",
-        "Affects mthost - terminals will restart during update"
+        "Affects the low-level host runtimes - terminals and Lens runtimes restart during update"
     ) -mthostUpdate yes
 #>
 
@@ -222,16 +228,16 @@ Write-Host "New version: $newVersion" -ForegroundColor Green
 # Determine release type
 $isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
-    Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
+    Write-Host "Release type: FULL runtime refresh (running installs replace mthost + mtagenthost)" -ForegroundColor Yellow
 } else {
-    Write-Host "Release type: Web-only updater (release archives still include mthost; running installs keep their current host)" -ForegroundColor Green
+    Write-Host "Release type: Web-only updater (running installs preserve mthost + mtagenthost; archives may still include host binaries)" -ForegroundColor Green
 }
 
 # Update version.json
 $versionJson.web = $newVersion
 if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
-    # Remove webOnly flag for PTY-breaking releases (mthost checksum will be included)
+    # Remove webOnly flag for low-level runtime refreshes.
     if ($versionJson.PSObject.Properties["webOnly"]) {
         $versionJson.PSObject.Properties.Remove("webOnly")
     }
@@ -241,7 +247,7 @@ if ($isPtyBreaking) {
     if ($ptyParts.Count -eq 4) {
         $versionJson.pty = "$($ptyParts[0]).$($ptyParts[1]).$($ptyParts[2])"
     }
-    # Mark as web-only so the updater preserves the installed mthost/checksum contract
+    # Mark as web-only so running installs preserve the currently installed host runtimes.
     $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
@@ -257,7 +263,7 @@ Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 if ($isPtyBreaking) {
     Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  TtyHost: binary still ships in release archives; updater remains web-only" -ForegroundColor DarkGray
+    Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
 }
 
 # Git operations

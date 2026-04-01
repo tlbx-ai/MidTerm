@@ -9883,6 +9883,7 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   padding: 3px 10px;
   border-radius: 4px;
   background: var(--bg-elevated-opaque, var(--bg-elevated));
@@ -9898,10 +9899,22 @@ body.shared-session-mode .session-tab-bar {
     color 0.15s;
 }
 
+.manager-btn-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease;
+}
+
 .manager-btn:hover {
   background: var(--bg-active-opaque, var(--bg-active));
   border-color: var(--text-secondary);
   color: var(--text-primary);
+}
+
+.manager-btn:hover .manager-btn-label,
+.manager-btn:focus-within .manager-btn-label {
+  opacity: 0;
 }
 
 .manager-btn-input {
@@ -9917,19 +9930,19 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .manager-btn-actions {
-  display: inline-flex;
+  position: absolute;
+  inset: 0;
+  display: flex;
   align-items: center;
-  margin-left: 4px;
+  justify-content: center;
   gap: 2px;
-  visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s ease;
 }
 
 .manager-btn:hover .manager-btn-actions,
 .manager-btn:focus-within .manager-btn-actions {
-  visibility: visible;
   opacity: 1;
   pointer-events: auto;
 }
@@ -9937,6 +9950,8 @@ body.shared-session-mode .session-tab-bar {
 .manager-btn-edit,
 .manager-btn-delete {
   font-size: var(--fs-sm);
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: none;
   background: none;

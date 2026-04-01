@@ -78,10 +78,13 @@ try {
         $versionJson = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
         $isWebOnly = $versionJson.webOnly -eq $true
 
-        # Compute checksums for binaries. Web-only releases still ship mthost in archives,
-        # but the signed manifest intentionally omits it so in-place updaters can preserve
-        # the currently installed PTY host binary. mtagenthost is managed by the web update
-        # line and should always be signed when present.
+        # Compute checksums for binaries. Web-only releases remain a single release mode:
+        # running installs preserve their current mthost + mtagenthost, but release archives
+        # may still include host binaries for fresh installs and offline/manual flows.
+        # The signed manifest intentionally omits mthost for web-only releases so the PTY host
+        # preservation contract stays explicit. mtagenthost stays signed when present because
+        # it still ships in the archive set even though durable self-updaters preserve the
+        # installed runtime on web-only updates.
         $checksums = @{}
         $binaries = if ($isWebOnly) { @("mt", "mtagenthost") } else { @("mt", "mthost", "mtagenthost") }
         $ext = if ($platform -eq "win-x64") { ".exe" } else { "" }
@@ -89,7 +92,7 @@ try {
         $checksumManifestPath = Join-Path $platformDir "SHA256SUMS.txt"
 
         if ($isWebOnly) {
-            Write-Host "    Web-only updater: signing mt + mtagenthost; archive may still include mthost" -ForegroundColor Cyan
+            Write-Host "    Web-only release: signing mt + mtagenthost; running installs still preserve mthost + mtagenthost" -ForegroundColor Cyan
         }
 
         if (Test-Path $checksumManifestPath) {

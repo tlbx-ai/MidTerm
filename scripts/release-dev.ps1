@@ -19,7 +19,29 @@
     MANDATORY: Array of detailed changelog entries for this release.
 
 .PARAMETER mthostUpdate
-    MANDATORY: Does this release require updating mthost? (yes/no)
+    MANDATORY: Is this a low-level runtime refresh? (yes/no)
+
+    This is intentionally a single release decision. There is no separate
+    mtagenthost release switch.
+
+    Answer 'yes' if ANY of these are true:
+      - Changed Ai.Tlbx.MidTerm.TtyHost/ code
+      - Changed Ai.Tlbx.MidTerm.AgentHost/ in a way that must ship to running installs
+      - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol/runtime code)
+      - Changed mux WebSocket binary protocol format
+      - Changed named pipe protocol between mt and mthost
+      - Changed Lens runtime IPC/attach contracts
+      - Changed any IPC mechanism
+
+    Answer 'no' if ONLY these changed:
+      - TypeScript/frontend code
+      - CSS/HTML
+      - REST API endpoints
+      - Web-only C# code
+      - Lens/UI changes that do not require refreshing installed host binaries
+
+    When 'yes': Full update. Running installs refresh both mthost and mtagenthost.
+    When 'no':  Web-only update. Running installs preserve their current mthost and mtagenthost.
 
 .EXAMPLE
     .\release-dev.ps1 -Bump patch -ReleaseTitle "Test new feature" -ReleaseNotes @(
@@ -146,9 +168,9 @@ Write-Host "New version: $newVersion" -ForegroundColor Green
 # Determine release type
 $isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
-    Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
+    Write-Host "Release type: FULL runtime refresh (running installs replace mthost + mtagenthost)" -ForegroundColor Yellow
 } else {
-    Write-Host "Release type: Web-only updater (release archives still include mthost; running installs keep their current host)" -ForegroundColor Green
+    Write-Host "Release type: Web-only updater (running installs preserve mthost + mtagenthost; archives may still include host binaries)" -ForegroundColor Green
 }
 
 # Update version.json
@@ -170,6 +192,7 @@ if ($isPtyBreaking) {
     } catch {
         # mainJson may not exist if main fetch failed
     }
+    # Mark as web-only so running installs preserve the currently installed host runtimes.
     $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
@@ -185,7 +208,7 @@ Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 if ($isPtyBreaking) {
     Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  TtyHost: binary still ships in release archives; updater remains web-only" -ForegroundColor DarkGray
+    Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
 }
 
 # Pre-release build verification (catches ESLint, TypeScript, C# errors before committing)

@@ -110,14 +110,22 @@ Stapling is not supported for standalone Mach-O binaries distributed as tarballs
 
 ## ECDSA Manifest Signing
 
-Every release (dev and stable) gets an ECDSA P-384 signature in `version.json`. This lets the update client verify that the binary checksums haven't been tampered with.
+Every release (dev and stable) gets an ECDSA P-384 signature in `version.json`. This lets the update client verify that the release contract for that update mode has not been tampered with.
 
 ### How it works
 
-1. `scripts/sign-release.ps1` computes SHA-256 hashes of `mt`, `mthost`, and `mtagenthost` binaries when present
+1. `scripts/sign-release.ps1` computes SHA-256 hashes for the binaries that belong to that release mode
+   - Full update: `mt`, `mthost`, and `mtagenthost`
+   - Web-only update: `mt` and `mtagenthost`; `mthost` is intentionally omitted so running installs preserve the current PTY host
 2. Creates a deterministic JSON string of the checksums (sorted keys, compact format)
 3. Signs the JSON with an ECDSA P-384 private key (stored as `SIGNING_PRIVATE_KEY` GitHub secret)
 4. Writes `checksums` and `signature` fields into `version.json`
+
+MidTerm intentionally keeps this as a two-mode model:
+- `webOnly=true`: frequent web/UI/web-facing releases; running installs preserve their current `mthost` and `mtagenthost`
+- full update: low-level runtime refresh; running installs replace both host binaries
+
+Release archives may still carry host binaries in web-only releases for fresh installs, offline/manual installation flows, and signing/notarization steps. That does not create a third release decision.
 
 ### Verification
 
@@ -125,7 +133,7 @@ Every release (dev and stable) gets an ECDSA P-384 signature in `version.json`. 
 1. Reads `checksums` and `signature` from the downloaded `version.json`
 2. Reconstructs the deterministic JSON from checksums
 3. Verifies the ECDSA P-384 signature against the hardcoded public key
-4. Verifies SHA-256 hashes of the downloaded binaries match the checksums
+4. Verifies SHA-256 hashes of the downloaded binaries listed in the manifest match the checksums
 
 The public key is embedded in the binary. Unsigned releases (missing `signature` field) are accepted with a warning — this maintains backward compatibility.
 

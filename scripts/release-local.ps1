@@ -14,18 +14,21 @@
     - Any important technical details
 
 .PARAMETER mthostUpdate
-    MANDATORY: Does this release affect mthost or the protocol between mt and mthost?
+    MANDATORY: Is this a low-level runtime refresh?
 
     Answer 'yes' if ANY of these are true:
       - Changed Ai.Tlbx.MidTerm.TtyHost/ code
+      - Changed Ai.Tlbx.MidTerm.AgentHost/ in a way that must ship to running installs
       - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol code)
       - Changed IPC/protocol between mt and mthost
+      - Changed Lens runtime IPC/attach contracts
 
     Answer 'no' if ONLY these changed:
       - TypeScript/frontend code
       - CSS/HTML
       - REST API endpoints
       - Web-only C# code
+      - Lens/UI changes that do not require refreshing installed host binaries
 
 .EXAMPLE
     .\release-local.ps1 -ReleaseNotes @(
@@ -149,8 +152,10 @@ if ($webParts.Count -eq 4) {
 
 $localWebVersion = "$baseWebVersion.$buildNum"
 
-# When mthostUpdate=yes, PTY syncs to web version (full update)
-# When mthostUpdate=no, PTY keeps its current version unchanged
+# Single release decision:
+# - yes = full runtime refresh for running installs (mthost + mtagenthost)
+# - no  = web-only update; installed host runtimes stay in place
+# PTY version only moves on the full-runtime path.
 if ($mthostUpdate -eq "yes") {
     $localPtyVersion = $localWebVersion
 } else {
@@ -163,6 +168,8 @@ Write-Host "  Local version: $localWebVersion" -ForegroundColor White
 Write-Host "  Update type: $updateType" -ForegroundColor White
 if ($mthostUpdate -eq "yes") {
     Write-Host "  PTY synced to: $localPtyVersion" -ForegroundColor White
+} else {
+    Write-Host "  Running installs preserve: current mthost + mtagenthost" -ForegroundColor DarkGray
 }
 Write-Host ""
 
