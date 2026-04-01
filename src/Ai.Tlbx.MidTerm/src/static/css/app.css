@@ -7815,23 +7815,6 @@ body.shared-session-mode .session-tab-bar {
   border-radius: 8px;
 }
 
-.tool-group-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.tool-group-icon {
-  font-size: var(--fs-md);
-}
-
-.tool-group-count {
-  color: var(--accent-gold);
-  font-weight: 600;
-  font-size: var(--fs-sm);
-}
-
 .tool-group-entries {
   display: flex;
   flex-direction: column;
@@ -7841,6 +7824,7 @@ body.shared-session-mode .session-tab-bar {
 .tool-group-entry-row {
   border-radius: 4px;
   overflow: hidden;
+  font-family: var(--font-mono);
 }
 
 .tool-group-entry-header {

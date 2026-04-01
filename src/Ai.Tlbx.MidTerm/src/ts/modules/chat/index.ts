@@ -29,7 +29,6 @@ interface ToolEntry {
 interface ActiveToolGroup {
   element: HTMLElement;
   entriesContainer: HTMLElement;
-  headerCountEl: HTMLElement;
   timeEl: HTMLElement;
   entries: ToolEntry[];
 }
@@ -107,7 +106,6 @@ export function addChatMessage(message: ChatMessage): void {
     }
 
     addToolEntry(activeToolGroup, toolName, args, message.timestamp);
-    updateGroupCount(activeToolGroup);
   } else if (message.role === 'tool' && activeToolGroup) {
     const lastEntry = activeToolGroup.entries[activeToolGroup.entries.length - 1];
     if (lastEntry) {
@@ -180,21 +178,6 @@ function createToolGroup(timestamp: string): ActiveToolGroup {
   const el = document.createElement('div');
   el.className = 'chat-msg chat-msg-tool-group';
 
-  const header = document.createElement('div');
-  header.className = 'tool-group-header';
-
-  const icon = document.createElement('span');
-  icon.className = 'tool-group-icon';
-  icon.textContent = '⚡';
-
-  const countEl = document.createElement('span');
-  countEl.className = 'tool-group-count';
-  countEl.textContent = `0 ${t('chat.toolCalls')}`;
-
-  header.appendChild(icon);
-  header.appendChild(countEl);
-  el.appendChild(header);
-
   const entriesContainer = document.createElement('div');
   entriesContainer.className = 'tool-group-entries';
   el.appendChild(entriesContainer);
@@ -204,7 +187,7 @@ function createToolGroup(timestamp: string): ActiveToolGroup {
   timeEl.textContent = formatTime(timestamp);
   el.appendChild(timeEl);
 
-  return { element: el, entriesContainer, headerCountEl: countEl, timeEl, entries: [] };
+  return { element: el, entriesContainer, timeEl, entries: [] };
 }
 
 /**
@@ -319,15 +302,6 @@ function updateToolEntryResponse(entry: ToolEntry, content: string): void {
   if (detailEl && entry.rowEl.classList.contains('fully-expanded')) {
     rebuildDetail(entry, detailEl);
   }
-}
-
-/**
- * Update the count display in the group header
- */
-function updateGroupCount(group: ActiveToolGroup): void {
-  const n = group.entries.length;
-  const label = n === 1 ? t('chat.toolCall') : t('chat.toolCalls');
-  group.headerCountEl.textContent = `${n} ${label}`;
 }
 
 /**

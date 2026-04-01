@@ -3200,11 +3200,7 @@ function resolveArtifactCluster(
   const clusterEntries = entries.slice(start, end + 1);
   const onlyTools = clusterEntries.every((candidate) => candidate.kind === 'tool');
   const label =
-    position === 'start' && (count > 1 || !onlyTools)
-      ? onlyTools
-        ? lensText('lens.cluster.toolCalls', 'Tool calls')
-        : lensText('lens.cluster.workLog', 'Work log')
-      : null;
+    position === 'start' && !onlyTools ? lensText('lens.cluster.workLog', 'Work log') : null;
 
   return {
     position,
