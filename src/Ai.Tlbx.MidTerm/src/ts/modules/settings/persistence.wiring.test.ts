@@ -181,6 +181,13 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-active-opaque, var(--bg-active));');
   });
 
+  it('keeps manager bar hover actions layout-stable', () => {
+    expect(cssSource).toContain('.manager-btn:focus-within .manager-btn-actions');
+    expect(cssSource).toContain('visibility: hidden;');
+    expect(cssSource).toContain('opacity: 0;');
+    expect(cssSource).toContain('pointer-events: none;');
+  });
+
   it('allows both transparency sliders to reach 100 percent', () => {
     expect(html).toMatch(/id="setting-ui-transparency"[\s\S]*?max="100"/);
     expect(html).toMatch(/id="setting-terminal-transparency"[\s\S]*?max="100"/);

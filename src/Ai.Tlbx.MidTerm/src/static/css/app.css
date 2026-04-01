@@ -9887,6 +9887,7 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
   border: 1px solid var(--border-color);
   transition:
+    background-color 0.15s,
     border-color 0.15s,
     color 0.15s;
 }
@@ -9910,13 +9911,21 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .manager-btn-actions {
-  display: none;
+  display: inline-flex;
+  align-items: center;
   margin-left: 4px;
   gap: 2px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
 }
 
-.manager-btn:hover .manager-btn-actions {
-  display: flex;
+.manager-btn:hover .manager-btn-actions,
+.manager-btn:focus-within .manager-btn-actions {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .manager-btn-edit,
@@ -9950,6 +9959,7 @@ body.shared-session-mode .session-tab-bar {
   font-family: inherit;
   line-height: 1;
   transition:
+    background-color 0.15s,
     color 0.15s,
     border-color 0.15s;
 }
