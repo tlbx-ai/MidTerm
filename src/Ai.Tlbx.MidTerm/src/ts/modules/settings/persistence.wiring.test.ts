@@ -185,7 +185,11 @@ describe('settings persistence wiring', () => {
   });
 
   it('keeps manager bar hover actions layout-stable', () => {
-    expect(cssSource).toContain('.manager-btn:focus-within .manager-btn-actions');
+    expect(cssSource).toContain('padding: 3px 10px;');
+    expect(cssSource).toContain('.manager-btn:hover .manager-btn-menu');
+    expect(cssSource).toContain('.manager-btn.menu-open .manager-btn-actions');
+    expect(cssSource).toContain('top: calc(100% + 6px);');
+    expect(cssSource).toContain('min-width: 120px;');
     expect(cssSource).toContain('visibility: hidden;');
     expect(cssSource).toContain('opacity: 0;');
     expect(cssSource).toContain('pointer-events: none;');

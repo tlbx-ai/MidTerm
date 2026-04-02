@@ -8,6 +8,7 @@
 
 import { $activeSessionId, $currentSettings, $sessions } from '../../stores';
 import { updateSettings } from '../../api/client';
+import { icon } from '../../constants';
 import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
@@ -195,10 +196,24 @@ export function initManagerBar(): void {
     const target = event.target as HTMLElement | null;
     if (!target) return;
 
+    const menuBtn = target.closest<HTMLButtonElement>('.manager-btn-menu');
+    if (menuBtn) {
+      event.stopPropagation();
+      const button = menuBtn.closest<HTMLElement>('.manager-btn');
+      if (button) {
+        const shouldOpen = !button.classList.contains('menu-open');
+        closeOpenManagerMenus();
+        button.classList.toggle('menu-open', shouldOpen);
+        menuBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      }
+      return;
+    }
+
     const editBtn = target.closest('.manager-btn-edit');
     if (editBtn) {
       const button = editBtn.closest<HTMLElement>('.manager-btn');
       if (button?.dataset.id) {
+        closeOpenManagerMenus();
         const action = renderedButtons.find((entry) => entry.id === button.dataset.id);
         if (action) openActionModal(action);
       }
@@ -208,18 +223,28 @@ export function initManagerBar(): void {
     const deleteBtn = target.closest('.manager-btn-delete');
     if (deleteBtn) {
       const button = deleteBtn.closest<HTMLElement>('.manager-btn');
-      if (button?.dataset.id) deleteButton(button.dataset.id);
+      if (button?.dataset.id) {
+        closeOpenManagerMenus();
+        deleteButton(button.dataset.id);
+      }
       return;
     }
 
-    const labelEl = target.closest('.manager-btn-label');
-    if (labelEl) {
-      const button = labelEl.closest<HTMLElement>('.manager-btn');
+    if (target.closest('.manager-btn-actions')) {
+      return;
+    }
+
+    const button = target.closest<HTMLElement>('.manager-btn');
+    if (button) {
+      closeOpenManagerMenus();
       if (button?.dataset.id) runButton(button.dataset.id);
     }
   });
 
+  document.addEventListener('click', handleDocumentClickForManagerMenu);
+
   addBtn.addEventListener('click', () => {
+    closeOpenManagerMenus();
     openActionModal();
   });
 
@@ -295,6 +320,7 @@ function bindModalEvents(): void {
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    if (closeOpenManagerMenus()) return;
     if (!modalEl || modalEl.classList.contains('hidden')) return;
     closeActionModal();
   });
@@ -310,12 +336,37 @@ function renderButtons(buttons: NormalizedManagerButton[]): void {
     wrapper.dataset.id = button.id;
     wrapper.innerHTML =
       `<span class="manager-btn-label">${escapeHtml(button.label)}</span>` +
+      `<button class="manager-btn-menu" title="${escapeHtml(t('session.actions'))}" aria-label="${escapeHtml(t('session.actions'))}" aria-haspopup="menu" aria-expanded="false" type="button">${icon('menu')}</button>` +
       `<span class="manager-btn-actions">` +
-      `<button class="manager-btn-edit" title="${escapeHtml(t('managerBar.edit'))}" type="button"><span class="icon">\ue91f</span></button>` +
-      `<button class="manager-btn-delete" title="${escapeHtml(t('managerBar.remove'))}" type="button"><span class="icon">\ue909</span></button>` +
+      `<button class="manager-btn-edit" title="${escapeHtml(t('managerBar.edit'))}" aria-label="${escapeHtml(t('managerBar.edit'))}" role="menuitem" type="button"><span class="icon">\ue91f</span><span class="manager-btn-action-label">${escapeHtml(t('managerBar.edit'))}</span></button>` +
+      `<button class="manager-btn-delete" title="${escapeHtml(t('managerBar.remove'))}" aria-label="${escapeHtml(t('managerBar.remove'))}" role="menuitem" type="button"><span class="icon">\ue909</span><span class="manager-btn-action-label">${escapeHtml(t('managerBar.remove'))}</span></button>` +
       `</span>`;
     buttonsEl.appendChild(wrapper);
   }
+}
+
+function handleDocumentClickForManagerMenu(event: MouseEvent): void {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('.manager-btn')) {
+    return;
+  }
+
+  closeOpenManagerMenus();
+}
+
+function closeOpenManagerMenus(): boolean {
+  if (!buttonsEl) return false;
+
+  let closedAny = false;
+  buttonsEl.querySelectorAll<HTMLElement>('.manager-btn.menu-open').forEach((button) => {
+    button.classList.remove('menu-open');
+    closedAny = true;
+  });
+  buttonsEl.querySelectorAll<HTMLButtonElement>('.manager-btn-menu[aria-expanded="true"]').forEach((button) => {
+    button.setAttribute('aria-expanded', 'false');
+  });
+
+  return closedAny;
 }
 
 function renderMobileButtons(buttons: NormalizedManagerButton[]): void {

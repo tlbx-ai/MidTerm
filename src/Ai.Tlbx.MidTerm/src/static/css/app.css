@@ -9903,18 +9903,42 @@ body.shared-session-mode .session-tab-bar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.15s ease;
+}
+
+.manager-btn-menu {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-hover) 68%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease,
+    visibility 0s linear 0.15s;
+}
+
+.manager-btn-menu .icon {
+  font-size: 12px;
 }
 
 .manager-btn:hover {
   background: var(--bg-active-opaque, var(--bg-active));
   border-color: var(--text-secondary);
   color: var(--text-primary);
-}
-
-.manager-btn:hover .manager-btn-label,
-.manager-btn:focus-within .manager-btn-label {
-  opacity: 0;
 }
 
 .manager-btn-input {
@@ -9931,42 +9955,82 @@ body.shared-session-mode .session-tab-bar {
 
 .manager-btn-actions {
   position: absolute;
-  inset: 0;
+  top: calc(100% + 6px);
+  right: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 120px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-dropdown-opaque, var(--bg-elevated-opaque));
+  box-shadow: 0 10px 24px var(--shadow-color-lg);
+  z-index: 4;
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    visibility 0s linear 0.15s;
+  transform: translateY(-4px);
 }
 
-.manager-btn:hover .manager-btn-actions,
-.manager-btn:focus-within .manager-btn-actions {
+.manager-btn:hover .manager-btn-menu,
+.manager-btn:focus-within .manager-btn-menu,
+.manager-btn.menu-open .manager-btn-menu {
+  visibility: visible;
   opacity: 1;
   pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.manager-btn-menu:hover,
+.manager-btn-menu:focus-visible,
+.manager-btn.menu-open .manager-btn-menu {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.manager-btn.menu-open .manager-btn-actions {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0s;
+  transform: translateY(0);
 }
 
 .manager-btn-edit,
 .manager-btn-delete {
-  font-size: var(--fs-sm);
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  background: none;
+  font-size: var(--fs-base);
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
   color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 8px;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .manager-btn-edit:hover {
+  background: color-mix(in srgb, var(--accent-blue) 20%, var(--bg-hover));
   color: var(--accent-blue);
 }
 .manager-btn-delete:hover {
+  background: color-mix(in srgb, var(--accent-red) 20%, var(--bg-hover));
   color: var(--accent-red);
+}
+
+.manager-btn-action-label {
+  font-size: var(--fs-sm);
 }
 
 .manager-bar-add {
