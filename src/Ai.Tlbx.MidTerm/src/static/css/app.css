@@ -5923,6 +5923,12 @@ body.has-app-background::after {
   font-size: var(--fs-sm);
 }
 
+.session-launcher-launch[hidden],
+.session-launcher-browser[hidden],
+.session-launcher-remote[hidden] {
+  display: none !important;
+}
+
 .session-launcher-browser {
   display: flex;
   flex-direction: column;
