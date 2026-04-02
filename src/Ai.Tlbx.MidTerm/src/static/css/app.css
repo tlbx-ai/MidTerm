@@ -10238,6 +10238,11 @@ body.shared-session-mode .session-tab-bar {
   overflow: hidden;
 }
 
+body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],
+body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
+  background: var(--bg-terminal);
+}
+
 .session-wrapper.hidden {
   display: none;
 }
@@ -10485,6 +10490,7 @@ body.shared-session-mode .session-tab-bar {
   overflow: hidden;
   min-width: 0;
   min-height: 0;
+  position: relative;
 }
 
 .session-tab-panel.active {

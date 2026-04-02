@@ -137,6 +137,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const wrapper = document.createElement('div');
   wrapper.className = 'session-wrapper';
   wrapper.dataset.sessionId = sessionId;
+  wrapper.dataset.activeTab = defaultTab;
 
   const tabBar = createTabBar(
     sessionId,
@@ -335,6 +336,7 @@ export function switchTab(
   invokeTabDeactivated(sessionId, previousTab);
 
   state.activeTab = tab;
+  state.wrapper.dataset.activeTab = tab;
   state.panels[tab].classList.add('active');
   setActiveTab(state.tabBar, tab);
   persistSessionTab(sessionId, tab);

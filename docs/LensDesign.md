@@ -130,6 +130,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Use lightweight blocks with strong spacing and alignment.
 - Borders, fills, and backgrounds should be sparse and purposeful.
 - Only exceptional states such as approvals, errors, or diff summaries may justify stronger containment.
+- Lens must own the visible backdrop of its active surface. When terminal transparency is configured as fully opaque, Lens should sit on an opaque terminal-toned underlay so wallpaper or hidden sibling panels cannot bleed through the active Lens surface.
 
 ### Color and emphasis
 
@@ -289,6 +290,7 @@ Status in this branch/work item:
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 - implemented: Lens `Esc` from the composer and touch-controller now interrupts active Lens turns rather than sending a literal escape key, and queued follow-up turns can be drained or canceled with repeated `Esc`
+- implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface
 
 Still mandatory after this work whenever Lens evolves:
 

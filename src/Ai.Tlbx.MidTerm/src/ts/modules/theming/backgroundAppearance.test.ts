@@ -170,6 +170,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#161821');
     expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#1C1E2A');
     expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#1C1E2A');
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
@@ -202,6 +203,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#D5CBBD');
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(bodyClassList.contains('has-app-background')).toBe(true);
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
   });
 
   it('allows the UI transparency slider to reach a fully transparent UI shell', () => {
@@ -220,6 +222,7 @@ describe('backgroundAppearance', () => {
       'rgba(28, 30, 42, 0.400)',
     );
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
   });
 
   it('resets Ken Burns transform tokens when the effect is disabled', () => {

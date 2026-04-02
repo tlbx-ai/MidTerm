@@ -147,6 +147,7 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
   root.style.setProperty('--app-background-position', 'center center');
   syncBackgroundKenBurnsEffect(root, settings, hasImage);
   document.body.classList.toggle('has-app-background', hasImage);
+  document.body.classList.toggle('opaque-terminal-surfaces', terminalTransparency === 0);
 }
 
 function parseColor(value: string | undefined): RgbColor | null {

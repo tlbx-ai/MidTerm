@@ -159,15 +159,17 @@ describe('tabManager', () => {
     const { ensureSessionWrapper, getTabPanel, switchTab, getActiveTab } =
       await import('./tabManager');
 
-    ensureSessionWrapper('s1');
+    const wrapper = ensureSessionWrapper('s1');
     const terminalPanel = getTabPanel('s1', 'terminal');
     const filesPanel = getTabPanel('s1', 'files');
 
+    expect(wrapper.wrapper.dataset.activeTab).toBe('terminal');
     expect(terminalPanel?.children).toContain(terminalContainer);
 
     switchTab('s1', 'files');
 
     expect(getActiveTab('s1')).toBe('files');
+    expect(wrapper.wrapper.dataset.activeTab).toBe('files');
     expect(terminalPanel?.children).toContain(terminalContainer);
     expect(filesPanel?.children).not.toContain(terminalContainer);
     expect(terminalPanel?.classList.remove).toHaveBeenCalledWith('active');
@@ -176,6 +178,7 @@ describe('tabManager', () => {
     switchTab('s1', 'terminal');
 
     expect(getActiveTab('s1')).toBe('terminal');
+    expect(wrapper.wrapper.dataset.activeTab).toBe('terminal');
     expect(refreshTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
     expect(applyTerminalScalingSyncSpy).toHaveBeenCalledWith(expect.anything());
     expect(fitSessionToScreenSpy).not.toHaveBeenCalled();
