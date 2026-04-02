@@ -13455,3 +13455,27 @@ body.shared-session-mode .session-tab-bar {
     padding-right: var(--wco-inset-right);
   }
 }
+
+/* Sidebar experiment: force all sidebar text to the primary text color. */
+.sidebar,
+.sidebar :is(
+    span,
+    div,
+    p,
+    a,
+    button,
+    label,
+    input,
+    select,
+    option,
+    optgroup,
+    small,
+    strong
+  ) {
+  color: var(--text-primary);
+}
+
+.sidebar .session-filter-input::placeholder,
+.sidebar .network-section-title::after {
+  color: var(--text-primary);
+}
