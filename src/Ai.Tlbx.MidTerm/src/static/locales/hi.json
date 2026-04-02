@@ -123,6 +123,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Ken Burns गति",
   "settings.appearance.uiTransparency": "UI पारदर्शिता",
   "settings.appearance.terminalTransparency": "टर्मिनल पारदर्शिता",
+  "settings.appearance.terminalCellBackgroundTransparency": "टर्मिनल सेल पृष्ठभूमि पारदर्शिता",
   "settings.appearance.browserTabTitle": "ब्राउज़र टैब शीर्षक",
   "settings.appearance.minimumContrast": "न्यूनतम कंट्रास्ट",
   "settings.appearance.terminalScrollbar": "टर्मिनल स्क्रॉलबार",

@@ -34,6 +34,8 @@ import {
   DEFAULT_TERMINAL_LINE_HEIGHT,
   ensureTerminalFontLoaded,
   getConfiguredTerminalFontFamily,
+  normalizeTerminalFontWeight,
+  normalizeTerminalLetterSpacing,
 } from './fontConfig';
 import { claimMainBrowser, sendResize } from '../comms';
 import { t } from '../i18n';
@@ -346,6 +348,10 @@ export async function calculateOptimalDimensions(
   fontWeightBold: string = DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
   sessionIdForLog?: string,
 ): Promise<{ cols: number; rows: number } | null> {
+  letterSpacing = normalizeTerminalLetterSpacing(letterSpacing);
+  fontWeight = normalizeTerminalFontWeight(fontWeight, DEFAULT_TERMINAL_FONT_WEIGHT);
+  fontWeightBold = normalizeTerminalFontWeight(fontWeightBold, DEFAULT_TERMINAL_FONT_WEIGHT_BOLD);
+
   // Allow layout to settle for very small containers before giving up
   let rect = container.getBoundingClientRect();
   if (rect.width < 100 || rect.height < 100) {

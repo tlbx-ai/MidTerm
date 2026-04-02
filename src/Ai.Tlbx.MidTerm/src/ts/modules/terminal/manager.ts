@@ -82,6 +82,8 @@ import {
   ensureTerminalFontLoaded,
   getBundledTerminalFontFamilies,
   getConfiguredTerminalFontFamily,
+  normalizeTerminalFontWeight,
+  normalizeTerminalLetterSpacing,
 } from './fontConfig';
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
@@ -744,11 +746,17 @@ export function getTerminalOptions(): ITerminalOptions {
   const fontSize = getEffectiveTerminalFontSize(baseFontSize);
   const fontFamily = getConfiguredTerminalFontFamily();
   const lineHeight = currentSettings?.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT;
-  const letterSpacing = currentSettings?.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING;
-  const fontWeight = (currentSettings?.fontWeight ??
-    DEFAULT_TERMINAL_FONT_WEIGHT) as TerminalFontWeight;
-  const fontWeightBold = (currentSettings?.fontWeightBold ??
-    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) as TerminalFontWeight;
+  const letterSpacing = normalizeTerminalLetterSpacing(
+    currentSettings?.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING,
+  );
+  const fontWeight = normalizeTerminalFontWeight(
+    currentSettings?.fontWeight,
+    DEFAULT_TERMINAL_FONT_WEIGHT,
+  ) as TerminalFontWeight;
+  const fontWeightBold = normalizeTerminalFontWeight(
+    currentSettings?.fontWeightBold,
+    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  ) as TerminalFontWeight;
   const customGlyphs = currentSettings?.customGlyphs ?? true;
   const scrollback = currentSettings?.scrollbackLines ?? 2000;
 

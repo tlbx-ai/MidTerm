@@ -52,6 +52,8 @@ import {
   ensureTerminalFontLoaded,
   DEFAULT_TERMINAL_FONT_WEIGHT,
   DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  normalizeTerminalFontWeight,
+  normalizeTerminalLetterSpacing,
 } from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import { syncTerminalRgbBackgroundTransparency } from '../terminal/rgbBackgroundTransparency';
@@ -230,6 +232,13 @@ function buildSettingsUpdateFromRegistry(
     (result as Record<string, unknown>)[entry.key] = readRegistryControlValue(entry, prevSettings);
   });
 
+  result.letterSpacing = normalizeTerminalLetterSpacing(result.letterSpacing);
+  result.fontWeight = normalizeTerminalFontWeight(result.fontWeight, DEFAULT_TERMINAL_FONT_WEIGHT);
+  result.fontWeightBold = normalizeTerminalFontWeight(
+    result.fontWeightBold,
+    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  );
+
   return result as MidTermSettingsUpdate;
 }
 
@@ -378,6 +387,12 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
     'setting-terminal-transparency-value',
     settings.terminalTransparency ?? settings.uiTransparency,
   );
+  updateTransparencyValue(
+    'setting-terminal-cell-background-transparency-value',
+    settings.terminalCellBackgroundTransparency ??
+      settings.terminalTransparency ??
+      settings.uiTransparency,
+  );
   updatePercentageValue(
     'setting-background-ken-burns-zoom-percent-value',
     settings.backgroundKenBurnsZoomPercent,
@@ -459,9 +474,15 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const fontFamily = buildTerminalFontStack(settings.fontFamily);
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
   const lineHeight = settings.lineHeight;
-  const letterSpacing = settings.letterSpacing;
-  const fontWeight = settings.fontWeight as TerminalFontWeight;
-  const fontWeightBold = settings.fontWeightBold as TerminalFontWeight;
+  const letterSpacing = normalizeTerminalLetterSpacing(settings.letterSpacing);
+  const fontWeight = normalizeTerminalFontWeight(
+    settings.fontWeight,
+    DEFAULT_TERMINAL_FONT_WEIGHT,
+  ) as TerminalFontWeight;
+  const fontWeightBold = normalizeTerminalFontWeight(
+    settings.fontWeightBold,
+    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  ) as TerminalFontWeight;
   const customGlyphs = settings.customGlyphs;
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
@@ -691,6 +712,14 @@ export function bindSettingsAutoSave(): void {
     'setting-terminal-transparency-value',
     signal,
   );
+  const terminalCellBackgroundTransparencySlider = document.getElementById(
+    'setting-terminal-cell-background-transparency',
+  ) as HTMLInputElement | null;
+  bindTransparencyPreview(
+    terminalCellBackgroundTransparencySlider,
+    'setting-terminal-cell-background-transparency-value',
+    signal,
+  );
   bindBackgroundKenBurnsPreview(signal);
 
   const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
@@ -715,7 +744,7 @@ export function bindSettingsAutoSave(): void {
   bindTerminalFontPreview(
     letterSpacingInput,
     (current, letterSpacing) => ({ ...current, letterSpacing }),
-    (value) => Number.parseFloat(value),
+    (value) => normalizeTerminalLetterSpacing(Number.parseFloat(value)),
     signal,
   );
 
@@ -879,9 +908,16 @@ function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): Mid
   const terminalSlider = document.getElementById(
     'setting-terminal-transparency',
   ) as HTMLInputElement | null;
+  const terminalCellBackgroundSlider = document.getElementById(
+    'setting-terminal-cell-background-transparency',
+  ) as HTMLInputElement | null;
 
   const uiTransparency = Number.parseInt(uiSlider?.value ?? '', 10);
   const terminalTransparency = Number.parseInt(terminalSlider?.value ?? '', 10);
+  const terminalCellBackgroundTransparency = Number.parseInt(
+    terminalCellBackgroundSlider?.value ?? '',
+    10,
+  );
 
   return {
     ...current,
@@ -889,6 +925,11 @@ function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): Mid
     terminalTransparency: Number.isFinite(terminalTransparency)
       ? terminalTransparency
       : (current.terminalTransparency ?? current.uiTransparency),
+    terminalCellBackgroundTransparency: Number.isFinite(terminalCellBackgroundTransparency)
+      ? terminalCellBackgroundTransparency
+      : (current.terminalCellBackgroundTransparency ??
+        current.terminalTransparency ??
+        current.uiTransparency),
   };
 }
 

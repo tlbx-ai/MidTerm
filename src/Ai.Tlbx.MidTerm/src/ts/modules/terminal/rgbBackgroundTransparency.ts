@@ -1,5 +1,5 @@
 import type { MidTermSettingsPublic, TerminalState } from '../../types';
-import { getEffectiveTerminalBackgroundAlpha } from '../theming/themes';
+import { getEffectiveTerminalCellBackgroundAlpha } from '../theming/themes';
 
 interface ParsedColor {
   r: number;
@@ -24,7 +24,7 @@ export function syncTerminalRgbBackgroundTransparency(
   state: TerminalState,
   settings: MidTermSettingsPublic | null,
 ): void {
-  const alpha = getEffectiveTerminalBackgroundAlpha(settings);
+  const alpha = getEffectiveTerminalCellBackgroundAlpha(settings);
   const shouldRewriteInlineBackgrounds = state.opened && !state.hasWebgl && alpha < 1;
 
   if (shouldRewriteInlineBackgrounds) {

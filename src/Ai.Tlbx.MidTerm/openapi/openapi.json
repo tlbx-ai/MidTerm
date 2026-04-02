@@ -4730,6 +4730,7 @@
           "backgroundKenBurnsSpeedPxPerSecond",
           "uiTransparency",
           "terminalTransparency",
+          "terminalCellBackgroundTransparency",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -4872,6 +4873,13 @@
             "format": "int32"
           },
           "terminalTransparency": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "terminalCellBackgroundTransparency": {
             "type": [
               "null",
               "integer"

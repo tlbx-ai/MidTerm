@@ -123,6 +123,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Ken Burns 速度",
   "settings.appearance.uiTransparency": "UI の透明度",
   "settings.appearance.terminalTransparency": "ターミナルの透明度",
+  "settings.appearance.terminalCellBackgroundTransparency": "ターミナルのセル背景の透明度",
   "settings.appearance.browserTabTitle": "ブラウザタブタイトル",
   "settings.appearance.minimumContrast": "最小コントラスト",
   "settings.appearance.terminalScrollbar": "ターミナルスクロールバー",

@@ -123,6 +123,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Скорость Ken Burns",
   "settings.appearance.uiTransparency": "Прозрачность интерфейса",
   "settings.appearance.terminalTransparency": "Прозрачность терминала",
+  "settings.appearance.terminalCellBackgroundTransparency": "Прозрачность фона ячеек терминала",
   "settings.appearance.browserTabTitle": "Заголовок вкладки браузера",
   "settings.appearance.minimumContrast": "Минимальная контрастность",
   "settings.appearance.terminalScrollbar": "Полоса прокрутки терминала",

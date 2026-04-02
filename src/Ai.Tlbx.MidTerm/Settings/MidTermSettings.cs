@@ -63,6 +63,7 @@ public sealed class MidTermSettings
     public int BackgroundKenBurnsSpeedPxPerSecond { get; set; } = DefaultBackgroundKenBurnsSpeedPxPerSecond;
     public int UiTransparency { get; set; } = 0;
     public int TerminalTransparency { get; set; } = 0;
+    public int TerminalCellBackgroundTransparency { get; set; } = 0;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;

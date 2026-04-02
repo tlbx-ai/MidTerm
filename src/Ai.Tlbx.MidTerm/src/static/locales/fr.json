@@ -123,6 +123,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Vitesse Ken Burns",
   "settings.appearance.uiTransparency": "Transparence de l'interface",
   "settings.appearance.terminalTransparency": "Transparence du terminal",
+  "settings.appearance.terminalCellBackgroundTransparency": "Transparence du fond des cellules du terminal",
   "settings.appearance.browserTabTitle": "Titre de l'Onglet du Navigateur",
   "settings.appearance.minimumContrast": "Contraste Minimum",
   "settings.appearance.terminalScrollbar": "Barre de Défilement du Terminal",

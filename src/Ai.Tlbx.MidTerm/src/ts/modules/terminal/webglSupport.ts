@@ -1,5 +1,5 @@
 import type { MidTermSettingsPublic } from '../../types';
-import { getEffectiveTerminalBackgroundAlpha } from '../theming/themes';
+import { getEffectiveTerminalCellBackgroundAlpha } from '../theming/themes';
 
 export function shouldUseWebglRenderer(
   settings: MidTermSettingsPublic | null | undefined,
@@ -8,5 +8,5 @@ export function shouldUseWebglRenderer(
     return false;
   }
 
-  return getEffectiveTerminalBackgroundAlpha(settings ?? null) >= 1;
+  return getEffectiveTerminalCellBackgroundAlpha(settings ?? null) >= 1;
 }

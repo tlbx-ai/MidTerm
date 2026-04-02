@@ -4052,6 +4052,8 @@ export interface components {
       uiTransparency: number;
       /** Format: int32 */
       terminalTransparency: null | number;
+      /** Format: int32 */
+      terminalCellBackgroundTransparency: null | number;
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
       /** Format: double */
       minimumContrastRatio: number;

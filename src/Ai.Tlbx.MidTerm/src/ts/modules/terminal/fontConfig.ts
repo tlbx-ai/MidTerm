@@ -12,6 +12,10 @@ export const DEFAULT_TERMINAL_LINE_HEIGHT = 1;
 export const DEFAULT_TERMINAL_LETTER_SPACING = 0;
 export const DEFAULT_TERMINAL_FONT_WEIGHT = 'normal';
 export const DEFAULT_TERMINAL_FONT_WEIGHT_BOLD = 'bold';
+export const TERMINAL_FONT_WEIGHT_OPTIONS = [
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+] as const;
 
 const FONT_LOAD_SAMPLE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const BUNDLED_TERMINAL_FONT_FAMILIES = [
@@ -51,4 +55,35 @@ export async function ensureTerminalFontLoaded(
   } catch {
     // Font loading is best-effort only.
   }
+}
+
+export function normalizeTerminalLetterSpacing(value: number | null | undefined): number {
+  const finiteValue =
+    typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_TERMINAL_LETTER_SPACING;
+  return Math.min(10, Math.max(-2, Math.round(finiteValue)));
+}
+
+export function normalizeTerminalFontWeight(
+  value: string | null | undefined,
+  fallback: (typeof TERMINAL_FONT_WEIGHT_OPTIONS)[number] = DEFAULT_TERMINAL_FONT_WEIGHT,
+): (typeof TERMINAL_FONT_WEIGHT_OPTIONS)[number] {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) {
+    return DEFAULT_TERMINAL_FONT_WEIGHT_BOLD;
+  }
+
+  if (normalized === DEFAULT_TERMINAL_FONT_WEIGHT) {
+    return DEFAULT_TERMINAL_FONT_WEIGHT;
+  }
+
+  const numericWeight = Number.parseInt(normalized, 10);
+  if (Number.isFinite(numericWeight)) {
+    return numericWeight >= 600 ? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD : DEFAULT_TERMINAL_FONT_WEIGHT;
+  }
+
+  return fallback;
 }

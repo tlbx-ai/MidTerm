@@ -123,6 +123,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Ken-Burns-Geschwindigkeit",
   "settings.appearance.uiTransparency": "UI-Transparenz",
   "settings.appearance.terminalTransparency": "Terminal-Transparenz",
+  "settings.appearance.terminalCellBackgroundTransparency": "Transparenz von Terminal-Zellhintergründen",
   "settings.appearance.browserTabTitle": "Browser-Tab-Titel",
   "settings.appearance.minimumContrast": "Minimaler Kontrast",
   "settings.appearance.terminalScrollbar": "Terminal-Bildlaufleiste",

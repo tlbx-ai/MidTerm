@@ -1,6 +1,10 @@
 import { dom } from '../../state';
 import { $isMainBrowser } from '../../stores';
-import { getConfiguredTerminalFontFamily } from './fontConfig';
+import {
+  getConfiguredTerminalFontFamily,
+  normalizeTerminalFontWeight,
+  normalizeTerminalLetterSpacing,
+} from './fontConfig';
 import { getEffectiveTerminalFontSize } from './fontSize';
 import { calculateOptimalDimensions } from './scaling';
 
@@ -34,9 +38,9 @@ export async function resolveLaunchDimensions(
     getEffectiveTerminalFontSize(settings?.fontSize ?? 14),
     getConfiguredTerminalFontFamily(),
     settings?.lineHeight ?? 1,
-    settings?.letterSpacing ?? 0,
-    settings?.fontWeight ?? 'normal',
-    settings?.fontWeightBold ?? 'bold',
+    normalizeTerminalLetterSpacing(settings?.letterSpacing ?? 0),
+    normalizeTerminalFontWeight(settings?.fontWeight, 'normal'),
+    normalizeTerminalFontWeight(settings?.fontWeightBold, 'bold'),
     `${logPrefix}-${crypto.randomUUID().slice(0, 8)}`,
   );
 

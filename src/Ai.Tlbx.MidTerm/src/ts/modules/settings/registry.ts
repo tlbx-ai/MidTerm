@@ -155,19 +155,19 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
   controlEntry('letterSpacing', 'setting-letter-spacing', 'float', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'float, UI clamps to -2.0-10.0',
+    validation: 'integer, clamped to -2-10',
     applyMode: 'immediate',
   }),
   controlEntry('fontWeight', 'setting-font-weight', 'select', 'normal', {
     editable: true,
     storage: 'settings.json',
-    validation: 'known xterm font-weight value',
+    validation: 'normal or bold',
     applyMode: 'immediate',
   }),
   controlEntry('fontWeightBold', 'setting-font-weight-bold', 'select', 'bold', {
     editable: true,
     storage: 'settings.json',
-    validation: 'known xterm bold font-weight value',
+    validation: 'normal or bold',
     applyMode: 'immediate',
   }),
   controlEntry('customGlyphs', 'setting-custom-glyphs', 'checkbox', true, {
@@ -279,6 +279,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'integer, clamped to 0-100',
     applyMode: 'immediate',
   }),
+  controlEntry(
+    'terminalCellBackgroundTransparency',
+    'setting-terminal-cell-background-transparency',
+    'int',
+    0,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'integer, clamped to 0-100',
+      applyMode: 'immediate',
+    },
+  ),
   preserveEntry('minimumContrastRatio', 1, {
     editable: true,
     storage: 'settings.json',

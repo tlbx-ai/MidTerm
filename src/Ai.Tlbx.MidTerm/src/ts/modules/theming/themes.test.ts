@@ -11,6 +11,7 @@ function createSettings(
       | 'terminalColorScheme'
       | 'uiTransparency'
       | 'terminalTransparency'
+      | 'terminalCellBackgroundTransparency'
       | 'backgroundImageEnabled'
       | 'backgroundImageFileName'
     >
@@ -22,6 +23,7 @@ function createSettings(
     terminalColorSchemes: [],
     uiTransparency: 0,
     terminalTransparency: 0,
+    terminalCellBackgroundTransparency: 0,
     backgroundImageEnabled: false,
     backgroundImageFileName: null,
     ...partial,
@@ -43,7 +45,7 @@ describe('themes', () => {
   it('applies terminal transparency to ANSI background palette colors', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
-        terminalTransparency: 60,
+        terminalCellBackgroundTransparency: 60,
       }),
     );
 
@@ -66,6 +68,7 @@ describe('themes', () => {
       createSettings({
         uiTransparency: 35,
         terminalTransparency: null,
+        terminalCellBackgroundTransparency: null,
       }),
     );
 
@@ -157,6 +160,7 @@ describe('themes', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
         terminalTransparency: 25,
+        terminalCellBackgroundTransparency: 25,
         terminalColorScheme: 'Ocean Copy',
         terminalColorSchemes: [
           {
@@ -193,5 +197,17 @@ describe('themes', () => {
     expect(theme.background).toBe('rgba(16, 24, 32, 0.750)');
     expect(theme.blue).toBe('rgba(102, 179, 255, 0.750)');
     expect(theme.brightWhite).toBe('rgba(242, 247, 255, 0.750)');
+  });
+
+  it('keeps ANSI backgrounds opaque when the cell background slider is off', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalTransparency: 60,
+        terminalCellBackgroundTransparency: 0,
+      }),
+    );
+
+    expect(theme.background).toBe('rgba(12, 12, 12, 0.400)');
+    expect(theme.red).toBe('#FF4055');
   });
 });

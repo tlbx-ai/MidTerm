@@ -18,6 +18,8 @@ vi.mock('../../stores', () => ({
 
 vi.mock('./fontConfig', () => ({
   getConfiguredTerminalFontFamily: () => 'Cascadia Code',
+  normalizeTerminalFontWeight: (value: string | undefined, fallback: string) => value ?? fallback,
+  normalizeTerminalLetterSpacing: (value: number | undefined) => value ?? 0,
 }));
 
 vi.mock('./fontSize', () => ({

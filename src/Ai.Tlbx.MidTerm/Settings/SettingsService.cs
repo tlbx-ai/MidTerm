@@ -339,6 +339,11 @@ public sealed class SettingsService
         {
             settings.TerminalTransparency = settings.UiTransparency;
         }
+
+        if (!json.Contains("\"terminalCellBackgroundTransparency\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalCellBackgroundTransparency = settings.TerminalTransparency;
+        }
     }
 
     private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
@@ -467,6 +472,8 @@ public sealed class SettingsService
         current.BackgroundKenBurnsZoomPercent = old.BackgroundKenBurnsZoomPercent;
         current.BackgroundKenBurnsSpeedPxPerSecond = old.BackgroundKenBurnsSpeedPxPerSecond;
         current.UiTransparency = old.UiTransparency;
+        current.TerminalTransparency = old.TerminalTransparency;
+        current.TerminalCellBackgroundTransparency = old.TerminalCellBackgroundTransparency;
         current.TabTitleMode = old.TabTitleMode;
         current.MinimumContrastRatio = old.MinimumContrastRatio;
         current.SmoothScrolling = old.SmoothScrolling;

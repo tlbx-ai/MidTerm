@@ -5,10 +5,8 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed partial class MidTermSettingsPublic
 {
-    private static readonly HashSet<string> ValidFontWeights =
-    [
-        "100", "200", "300", "400", "500", "600", "700", "800", "900", "normal", "bold"
-    ];
+    private const string NormalFontWeight = "normal";
+    private const string BoldFontWeight = "bold";
     private static readonly HashSet<string> BuiltInTerminalColorSchemeNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "auto",
@@ -39,9 +37,9 @@ public sealed partial class MidTermSettingsPublic
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             LineHeight = settings.LineHeight,
-            LetterSpacing = settings.LetterSpacing,
-            FontWeight = settings.FontWeight,
-            FontWeightBold = settings.FontWeightBold,
+            LetterSpacing = NormalizeLetterSpacing(settings.LetterSpacing),
+            FontWeight = NormalizeFontWeight(settings.FontWeight, NormalFontWeight),
+            FontWeightBold = NormalizeFontWeight(settings.FontWeightBold, BoldFontWeight),
             CustomGlyphs = settings.CustomGlyphs,
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
@@ -59,6 +57,7 @@ public sealed partial class MidTermSettingsPublic
             BackgroundKenBurnsSpeedPxPerSecond = settings.BackgroundKenBurnsSpeedPxPerSecond,
             UiTransparency = settings.UiTransparency,
             TerminalTransparency = settings.TerminalTransparency,
+            TerminalCellBackgroundTransparency = settings.TerminalCellBackgroundTransparency,
             TabTitleMode = settings.TabTitleMode,
             MinimumContrastRatio = settings.MinimumContrastRatio,
             SmoothScrolling = settings.SmoothScrolling,
@@ -119,15 +118,9 @@ public sealed partial class MidTermSettingsPublic
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);
-        settings.LetterSpacing = Math.Clamp(LetterSpacing, -2.0, 10.0);
-        if (ValidFontWeights.Contains(FontWeight))
-        {
-            settings.FontWeight = FontWeight;
-        }
-        if (ValidFontWeights.Contains(FontWeightBold))
-        {
-            settings.FontWeightBold = FontWeightBold;
-        }
+        settings.LetterSpacing = NormalizeLetterSpacing(LetterSpacing);
+        settings.FontWeight = NormalizeFontWeight(FontWeight, NormalFontWeight);
+        settings.FontWeightBold = NormalizeFontWeight(FontWeightBold, BoldFontWeight);
         settings.CustomGlyphs = CustomGlyphs;
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
@@ -153,6 +146,13 @@ public sealed partial class MidTermSettingsPublic
         if (TerminalTransparency.HasValue)
         {
             settings.TerminalTransparency = Math.Clamp(TerminalTransparency.Value, 0, 100);
+        }
+        if (TerminalCellBackgroundTransparency.HasValue)
+        {
+            settings.TerminalCellBackgroundTransparency = Math.Clamp(
+                TerminalCellBackgroundTransparency.Value,
+                0,
+                100);
         }
         settings.TabTitleMode = TabTitleMode;
         settings.MinimumContrastRatio = MinimumContrastRatio;
@@ -251,5 +251,36 @@ public sealed partial class MidTermSettingsPublic
         }
 
         return normalized;
+    }
+
+    private static double NormalizeLetterSpacing(double value)
+    {
+        return Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), -2.0, 10.0);
+    }
+
+    private static string NormalizeFontWeight(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, BoldFontWeight, StringComparison.OrdinalIgnoreCase))
+        {
+            return BoldFontWeight;
+        }
+
+        if (string.Equals(trimmed, NormalFontWeight, StringComparison.OrdinalIgnoreCase))
+        {
+            return NormalFontWeight;
+        }
+
+        if (int.TryParse(trimmed, out var numericWeight))
+        {
+            return numericWeight >= 600 ? BoldFontWeight : NormalFontWeight;
+        }
+
+        return fallback;
     }
 }

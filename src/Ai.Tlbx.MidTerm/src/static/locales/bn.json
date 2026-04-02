@@ -123,6 +123,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Ken Burns গতি",
   "settings.appearance.uiTransparency": "UI স্বচ্ছতা",
   "settings.appearance.terminalTransparency": "টার্মিনাল স্বচ্ছতা",
+  "settings.appearance.terminalCellBackgroundTransparency": "টার্মিনাল সেল ব্যাকগ্রাউন্ড স্বচ্ছতা",
   "settings.appearance.browserTabTitle": "ব্রাউজার ট্যাব শিরোনাম",
   "settings.appearance.minimumContrast": "ন্যূনতম কন্ট্রাস্ট",
   "settings.appearance.terminalScrollbar": "টার্মিনাল স্ক্রলবার",

@@ -26,6 +26,7 @@ const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-background-ken-burns-zoom-percent-value',
   'setting-ui-transparency-value',
   'setting-terminal-transparency-value',
+  'setting-terminal-cell-background-transparency-value',
 ]);
 
 function getPersistedSettingIds(): string[] {
@@ -101,6 +102,23 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain('const letterSpacingInput = document.getElementById(');
     expect(persistenceSource).toContain("'setting-letter-spacing'");
     expect(persistenceSource).toContain('bindTerminalFontPreview(');
+  });
+
+  it('limits bundled terminal font controls to distinct supported values', () => {
+    expect(html).toMatch(/id="setting-letter-spacing"[\s\S]*?step="1"/);
+    expect(html).toContain('<option value="normal" data-i18n="settings.options.fontWeightNormal">');
+    expect(html).toContain('<option value="bold" data-i18n="settings.options.fontWeightBold">');
+    expect(html).not.toContain('<option value="100">100</option>');
+    expect(html).not.toContain('<option value="900">900</option>');
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'letterSpacing')?.validation).toBe(
+      'integer, clamped to -2-10',
+    );
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'fontWeight')?.validation).toBe(
+      'normal or bold',
+    );
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'fontWeightBold')?.validation).toBe(
+      'normal or bold',
+    );
   });
 
   it('flushes pending settings before detaching handlers', () => {
@@ -195,14 +213,22 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('pointer-events: none;');
   });
 
-  it('allows both transparency sliders to reach 100 percent', () => {
+  it('allows all transparency sliders to reach 100 percent', () => {
     expect(html).toMatch(/id="setting-ui-transparency"[\s\S]*?max="100"/);
     expect(html).toMatch(/id="setting-terminal-transparency"[\s\S]*?max="100"/);
+    expect(html).toMatch(
+      /id="setting-terminal-cell-background-transparency"[\s\S]*?max="100"/,
+    );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'uiTransparency')?.validation).toBe(
       'integer, clamped to 0-100',
     );
     expect(
       SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalTransparency')?.validation,
+    ).toBe('integer, clamped to 0-100');
+    expect(
+      SETTINGS_REGISTRY.find(
+        (entry) => entry.key === 'terminalCellBackgroundTransparency',
+      )?.validation,
     ).toBe('integer, clamped to 0-100');
   });
 

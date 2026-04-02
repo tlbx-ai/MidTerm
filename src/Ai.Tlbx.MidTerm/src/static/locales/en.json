@@ -318,6 +318,7 @@
   "settings.appearance.backgroundKenBurnsSpeed": "Ken Burns Speed",
   "settings.appearance.uiTransparency": "UI Transparency",
   "settings.appearance.terminalTransparency": "Terminal Transparency",
+  "settings.appearance.terminalCellBackgroundTransparency": "Terminal Cell Background Transparency",
   "settings.appearance.browserTabTitle": "Browser Tab Title",
   "settings.appearance.minimumContrast": "Minimum Contrast",
   "settings.appearance.terminalScrollbar": "Terminal Scrollbar",
