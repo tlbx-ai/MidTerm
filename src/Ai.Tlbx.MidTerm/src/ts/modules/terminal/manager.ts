@@ -85,6 +85,10 @@ import {
 } from './fontConfig';
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
+import {
+  disposeTerminalRgbBackgroundTransparency,
+  syncTerminalRgbBackgroundTransparency,
+} from './rgbBackgroundTransparency';
 import { shouldUseWebglRenderer } from './webglSupport';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 
@@ -924,6 +928,7 @@ export function createTerminalForSession(
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
     syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer($currentSettings.get()));
+    syncTerminalRgbBackgroundTransparency(state, $currentSettings.get());
 
     // Load Web-Links addon for clickable URLs
     try {
@@ -1643,6 +1648,7 @@ export function destroyTerminalForSession(sessionId: string): void {
 
   // Clean up WebGL context tracking
   syncTerminalWebglState(sessionId, state, false);
+  disposeTerminalRgbBackgroundTransparency(state);
 
   // Clean up file path allowlist
   clearPathAllowlist(sessionId);

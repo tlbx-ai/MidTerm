@@ -39,6 +39,16 @@ type ResolvedTerminalTheme = {
   alpha: number;
 };
 
+export function getEffectiveTerminalBackgroundAlpha(
+  settings: MidTermSettingsPublic | null,
+): number {
+  const transparency = Math.min(
+    Math.max(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0, 0),
+    100,
+  );
+  return Math.max(0, 1 - transparency / 100);
+}
+
 /**
  * Resolve the effective xterm color scheme.
  * If terminalColorScheme is 'auto', falls back to the UI theme.
@@ -100,7 +110,7 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
     settings.backgroundImageFileName !== null;
   let alpha = 1;
   if (hasWallpaper || transparency > 0) {
-    alpha = Math.max(0, 1 - transparency / 100);
+    alpha = getEffectiveTerminalBackgroundAlpha(settings);
     theme.background = withAlpha(theme.background, alpha);
     applyAnsiTransparency(theme, alpha);
   }

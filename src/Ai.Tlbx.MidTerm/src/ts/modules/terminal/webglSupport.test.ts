@@ -5,10 +5,12 @@ import { shouldUseWebglRenderer } from './webglSupport';
 
 function createSettings(
   partial: Partial<
-    Pick<MidTermSettingsPublic, 'useWebGL'>
+    Pick<MidTermSettingsPublic, 'terminalTransparency' | 'uiTransparency' | 'useWebGL'>
   >,
 ): MidTermSettingsPublic {
   return {
+    terminalTransparency: 0,
+    uiTransparency: 0,
     useWebGL: true,
     ...partial,
   } as MidTermSettingsPublic;
@@ -23,7 +25,7 @@ describe('webglSupport', () => {
     expect(shouldUseWebglRenderer(createSettings({ useWebGL: false }))).toBe(false);
   });
 
-  it('ignores transparency and wallpaper settings when WebGL stays enabled', () => {
+  it('falls back to the DOM renderer when terminal transparency is active', () => {
     expect(
       shouldUseWebglRenderer({
         ...createSettings({}),
@@ -32,6 +34,6 @@ describe('webglSupport', () => {
         backgroundImageEnabled: true,
         backgroundImageFileName: 'wallpaper.png',
       } as MidTermSettingsPublic),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

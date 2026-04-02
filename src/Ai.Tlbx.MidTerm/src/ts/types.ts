@@ -100,6 +100,8 @@ export interface TerminalState {
   enterOverrideHandler?: (e: KeyboardEvent) => void;
   hasWebgl?: boolean;
   webglAddon?: WebglAddon | null;
+  richBackgroundTransparencyAlpha?: number | null;
+  richBackgroundTransparencyDisposable?: { dispose: () => void } | undefined;
   disposables?: Array<{ dispose: () => void }>;
   mouseMoveHandler?: () => void;
   mouseLeaveHandler?: () => void;

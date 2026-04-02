@@ -54,6 +54,7 @@ import {
   DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
 } from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
+import { syncTerminalRgbBackgroundTransparency } from '../terminal/rgbBackgroundTransparency';
 import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
@@ -496,6 +497,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
     state.terminal.options.scrollback = settings.scrollbackLines;
     syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+    syncTerminalRgbBackgroundTransparency(state, settings);
 
     applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
 
