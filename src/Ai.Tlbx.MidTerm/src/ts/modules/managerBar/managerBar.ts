@@ -237,7 +237,7 @@ export function initManagerBar(): void {
     const button = target.closest<HTMLElement>('.manager-btn');
     if (button) {
       closeOpenManagerMenus();
-      if (button?.dataset.id) runButton(button.dataset.id);
+      if (button.dataset.id) runButton(button.dataset.id);
     }
   });
 
@@ -362,9 +362,11 @@ function closeOpenManagerMenus(): boolean {
     button.classList.remove('menu-open');
     closedAny = true;
   });
-  buttonsEl.querySelectorAll<HTMLButtonElement>('.manager-btn-menu[aria-expanded="true"]').forEach((button) => {
-    button.setAttribute('aria-expanded', 'false');
-  });
+  buttonsEl
+    .querySelectorAll<HTMLButtonElement>('.manager-btn-menu[aria-expanded="true"]')
+    .forEach((button) => {
+      button.setAttribute('aria-expanded', 'false');
+    });
 
   return closedAny;
 }
