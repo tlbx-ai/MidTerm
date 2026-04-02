@@ -13520,26 +13520,34 @@ body.shared-session-mode .session-tab-bar {
   }
 }
 
-/* Sidebar experiment: force all sidebar text to the primary text color. */
-.sidebar,
-.sidebar :is(
-    span,
-    div,
-    p,
-    a,
-    button,
-    label,
-    input,
-    select,
-    option,
-    optgroup,
-    small,
-    strong
-  ) {
+/* Sidebar experiment: limit the primary text override to session rows only. */
+.sidebar .session-item {
   color: var(--text-primary);
+  --sidebar-session-secondary-text: color-mix(
+    in srgb,
+    var(--text-primary) 62%,
+    var(--text-muted)
+  );
 }
 
-.sidebar .session-filter-input::placeholder,
-.sidebar .network-section-title::after {
-  color: var(--text-primary);
+.sidebar .session-item :is(
+    .session-title,
+    .session-role-badge,
+    .session-state-badge,
+    .session-foreground.process-title
+  ) {
+  color: var(--text-primary) !important;
+}
+
+.sidebar .session-item :is(.session-subtitle, .session-details, .passive-indicator) {
+  color: var(--sidebar-session-secondary-text) !important;
+}
+
+.sidebar .session-item .session-process-info :is(
+    .session-foreground,
+    .fg-cwd,
+    .fg-separator,
+    .fg-process
+  ) {
+  color: var(--sidebar-session-secondary-text) !important;
 }
