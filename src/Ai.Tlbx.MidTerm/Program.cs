@@ -369,6 +369,7 @@ public class Program
         SessionApiEndpoints.MapSessionEndpoints(
             app,
             sessionManager,
+            layoutStateService,
             clipboardService,
             updateService,
             webPreviewService,

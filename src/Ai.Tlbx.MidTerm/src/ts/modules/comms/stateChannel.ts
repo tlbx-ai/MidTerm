@@ -83,6 +83,7 @@ interface BrowserUiMessage {
 }
 
 interface LayoutStateMessage {
+  revision?: number;
   root: LayoutNode | null;
   focusedSessionId: string | null;
 }

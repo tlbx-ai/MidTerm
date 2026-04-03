@@ -18,11 +18,16 @@ public static class SessionLayoutEndpoints
 
         app.MapPut("/api/layout", (SessionLayoutState request) =>
         {
-            var snapshot = layoutStateService.UpdateLayout(
+            var result = layoutStateService.TryUpdateLayout(
                 request.Root,
                 request.FocusedSessionId,
+                request.Revision,
                 sessionManager.GetAllSessions().Select(s => s.Id));
-            return Results.Json(snapshot, AppJsonContext.Default.SessionLayoutState);
+
+            return Results.Json(
+                result.Snapshot,
+                AppJsonContext.Default.SessionLayoutState,
+                statusCode: result.Conflict ? StatusCodes.Status409Conflict : StatusCodes.Status200OK);
         });
     }
 }

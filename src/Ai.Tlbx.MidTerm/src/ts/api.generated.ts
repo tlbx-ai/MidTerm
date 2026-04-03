@@ -4243,6 +4243,8 @@ export interface components {
       literal: boolean;
     };
     SessionLayoutState: {
+      /** Format: int64 */
+      revision: number;
       root: null | components['schemas']['LayoutNode'];
       focusedSessionId: null | string;
     };

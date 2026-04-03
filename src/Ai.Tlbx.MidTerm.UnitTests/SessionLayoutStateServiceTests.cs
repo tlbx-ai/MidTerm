@@ -13,7 +13,7 @@ public sealed class SessionLayoutStateServiceTests
         try
         {
             var initialService = new SessionLayoutStateService(stateDir);
-            initialService.UpdateLayout(
+            var initialSnapshot = initialService.UpdateLayout(
                 new LayoutNode
                 {
                     Type = "split",
@@ -33,6 +33,7 @@ public sealed class SessionLayoutStateServiceTests
             Assert.NotNull(snapshot.Root);
             Assert.Equal("split", snapshot.Root!.Type);
             Assert.Equal("s2", snapshot.FocusedSessionId);
+            Assert.Equal(initialSnapshot.Revision, snapshot.Revision);
         }
         finally
         {
@@ -109,6 +110,97 @@ public sealed class SessionLayoutStateServiceTests
             Assert.Equal("split", snapshot.Root!.Type);
             Assert.Equal("s1", snapshot.FocusedSessionId);
             Assert.Equal(["s1", "s3"], GetLeafSessionIds(snapshot.Root));
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RemoveSession_ReclaimsSpaceByCollapsingSingleChildSplits()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            var service = new SessionLayoutStateService(stateDir);
+            service.UpdateLayout(
+                new LayoutNode
+                {
+                    Type = "split",
+                    Direction = "horizontal",
+                    Children =
+                    [
+                        new LayoutNode
+                        {
+                            Type = "split",
+                            Direction = "vertical",
+                            Children =
+                            [
+                                new LayoutNode { Type = "leaf", SessionId = "s1" },
+                                new LayoutNode { Type = "leaf", SessionId = "s2" }
+                            ]
+                        },
+                        new LayoutNode { Type = "leaf", SessionId = "s3" }
+                    ]
+                },
+                focusedSessionId: "s2",
+                validSessionIds: ["s1", "s2", "s3"]);
+
+            var snapshot = service.RemoveSession("s2");
+
+            Assert.NotNull(snapshot.Root);
+            Assert.Equal("split", snapshot.Root!.Type);
+            Assert.Equal("horizontal", snapshot.Root.Direction);
+            Assert.Equal(["s1", "s3"], GetLeafSessionIds(snapshot.Root));
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TryUpdateLayout_RejectsStaleRevisionAndReturnsCurrentSnapshot()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            var service = new SessionLayoutStateService(stateDir);
+            var first = service.UpdateLayout(
+                new LayoutNode
+                {
+                    Type = "split",
+                    Direction = "horizontal",
+                    Children =
+                    [
+                        new LayoutNode { Type = "leaf", SessionId = "s1" },
+                        new LayoutNode { Type = "leaf", SessionId = "s2" }
+                    ]
+                },
+                focusedSessionId: "s2",
+                validSessionIds: ["s1", "s2"]);
+
+            var second = service.TryUpdateLayout(
+                new LayoutNode
+                {
+                    Type = "split",
+                    Direction = "vertical",
+                    Children =
+                    [
+                        new LayoutNode { Type = "leaf", SessionId = "s1" },
+                        new LayoutNode { Type = "leaf", SessionId = "s2" }
+                    ]
+                },
+                focusedSessionId: "s1",
+                expectedRevision: first.Revision - 1,
+                validSessionIds: ["s1", "s2"]);
+
+            Assert.False(second.Applied);
+            Assert.True(second.Conflict);
+            Assert.Equal(first.Revision, second.Snapshot.Revision);
+            Assert.Equal("horizontal", second.Snapshot.Root!.Direction);
+            Assert.Equal("s2", second.Snapshot.FocusedSessionId);
         }
         finally
         {

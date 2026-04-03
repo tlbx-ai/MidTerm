@@ -19,6 +19,7 @@ public sealed class LayoutNode
 
 public sealed class SessionLayoutState
 {
+    public long Revision { get; set; }
     public LayoutNode? Root { get; set; }
     public string? FocusedSessionId { get; set; }
 }

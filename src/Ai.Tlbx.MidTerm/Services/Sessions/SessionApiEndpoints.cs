@@ -51,6 +51,7 @@ public static partial class SessionApiEndpoints
     public static void MapSessionEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
+        SessionLayoutStateService layoutStateService,
         ClipboardService clipboardService,
         UpdateService updateService,
         WebPreviewService webPreviewService,
@@ -69,7 +70,8 @@ public static partial class SessionApiEndpoints
             var response = new StateUpdate
             {
                 Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensPulse),
-                Update = updateService.LatestUpdate
+                Update = updateService.LatestUpdate,
+                Layout = layoutStateService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id))
             };
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
         });

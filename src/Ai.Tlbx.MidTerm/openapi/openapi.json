@@ -5604,11 +5604,16 @@
       },
       "SessionLayoutState": {
         "required": [
+          "revision",
           "root",
           "focusedSessionId"
         ],
         "type": "object",
         "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
           "root": {
             "oneOf": [
               {

@@ -46,6 +46,58 @@ public sealed class SessionLayoutStateService
         return ApplyNormalizedState(root, focusedSessionId, validSessionIds);
     }
 
+    public LayoutUpdateResult TryUpdateLayout(
+        LayoutNode? root,
+        string? focusedSessionId,
+        long expectedRevision,
+        IEnumerable<string>? validSessionIds = null)
+    {
+        SessionLayoutState snapshot;
+        var changed = false;
+        var conflict = false;
+
+        lock (_lock)
+        {
+            var normalized = Normalize(root, focusedSessionId, validSessionIds);
+            var normalizedComparable = SerializeComparable(normalized);
+            var currentComparable = SerializeComparable(_state);
+
+            if (expectedRevision != _state.Revision)
+            {
+                if (string.Equals(normalizedComparable, currentComparable, StringComparison.Ordinal))
+                {
+                    snapshot = CloneState(_state);
+                }
+                else
+                {
+                    snapshot = CloneState(_state);
+                    conflict = true;
+                }
+            }
+            else if (!string.Equals(normalizedComparable, currentComparable, StringComparison.Ordinal))
+            {
+                normalized.Revision = _state.Revision + 1;
+                var serialized = Serialize(normalized);
+                _state = normalized;
+                _serializedState = serialized;
+                PersistLocked(serialized);
+                snapshot = CloneState(_state);
+                changed = true;
+            }
+            else
+            {
+                snapshot = CloneState(_state);
+            }
+        }
+
+        if (changed)
+        {
+            OnChanged?.Invoke();
+        }
+
+        return new LayoutUpdateResult(snapshot, !conflict, conflict);
+    }
+
     public SessionLayoutState PruneToValidSessions(IEnumerable<string>? validSessionIds)
     {
         LayoutNode? root;
@@ -207,6 +259,7 @@ public sealed class SessionLayoutStateService
 
         return new SessionLayoutState
         {
+            Revision = 0,
             Root = normalizedRoot,
             FocusedSessionId = normalizedFocusedSessionId
         };
@@ -339,6 +392,7 @@ public sealed class SessionLayoutStateService
     {
         return new SessionLayoutState
         {
+            Revision = state.Revision,
             Root = CloneNode(state.Root),
             FocusedSessionId = state.FocusedSessionId
         };
@@ -364,4 +418,20 @@ public sealed class SessionLayoutStateService
     {
         return JsonSerializer.Serialize(state, SessionLayoutStateJsonContext.Default.SessionLayoutState);
     }
+
+    private static string SerializeComparable(SessionLayoutState state)
+    {
+        return JsonSerializer.Serialize(
+            new SessionLayoutState
+            {
+                Root = CloneNode(state.Root),
+                FocusedSessionId = state.FocusedSessionId
+            },
+            SessionLayoutStateJsonContext.Default.SessionLayoutState);
+    }
 }
+
+public readonly record struct LayoutUpdateResult(
+    SessionLayoutState Snapshot,
+    bool Applied,
+    bool Conflict);
