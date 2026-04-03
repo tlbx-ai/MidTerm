@@ -149,6 +149,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionBufferTextResponse))]
 [JsonSerializable(typeof(TerminalTransportDiagnosticsDto))]
 [JsonSerializable(typeof(SessionStateResponse))]
+[JsonSerializable(typeof(SessionLayoutState))]
 
 // --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]
@@ -278,6 +279,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(StateUpdate))]
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(MainBrowserStatusMessage))]
+[JsonSerializable(typeof(LayoutNode))]
+[JsonSerializable(typeof(List<LayoutNode>))]
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext

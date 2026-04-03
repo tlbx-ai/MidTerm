@@ -9,6 +9,11 @@ import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../.
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
 import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
 import { createTerminalForSession } from '../terminal/manager';
+
+interface LayoutSnapshot {
+  root: LayoutNode | null;
+  focusedSessionId: string | null;
+}
 /**
  * Ensure a terminal exists for a session.
  */
@@ -381,22 +386,41 @@ export function isLayoutActive(): boolean {
 }
 
 // =============================================================================
-// Layout Persistence (localStorage)
+// Layout Persistence (server-authoritative with local fallback)
 // =============================================================================
 
 const LAYOUT_STORAGE_KEY = 'midterm-layout';
 const FOCUSED_STORAGE_KEY = 'midterm-layout-focused';
+const LAYOUT_SYNC_ENDPOINT = '/api/layout';
+const EMPTY_LAYOUT_SNAPSHOT_KEY = JSON.stringify({ root: null, focusedSessionId: null });
+let lastServerSnapshotKey = EMPTY_LAYOUT_SNAPSHOT_KEY;
+let persistenceReady = false;
+
+function getCurrentLayoutSnapshot(): LayoutSnapshot {
+  return {
+    root: $layout.get().root,
+    focusedSessionId: $focusedSessionId.get(),
+  };
+}
+
+function serializeLayoutSnapshot(snapshot: LayoutSnapshot): string {
+  return JSON.stringify({
+    root: snapshot.root ?? null,
+    focusedSessionId: snapshot.focusedSessionId ?? null,
+  });
+}
 
 /**
- * Save current layout to localStorage.
+ * Save current layout to localStorage as a compatibility fallback.
  */
 export function saveLayoutToStorage(): void {
-  const layout = $layout.get();
-  if (layout.root) {
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
-    const focusedId = $focusedSessionId.get();
-    if (focusedId) {
-      localStorage.setItem(FOCUSED_STORAGE_KEY, focusedId);
+  const snapshot = getCurrentLayoutSnapshot();
+  if (snapshot.root) {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ root: snapshot.root }));
+    if (snapshot.focusedSessionId) {
+      localStorage.setItem(FOCUSED_STORAGE_KEY, snapshot.focusedSessionId);
+    } else {
+      localStorage.removeItem(FOCUSED_STORAGE_KEY);
     }
   } else {
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
@@ -493,6 +517,42 @@ export function restoreLayoutFromStorage(): void {
   }
 }
 
+export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefined): void {
+  const normalized: LayoutSnapshot = {
+    root: snapshot?.root ?? null,
+    focusedSessionId: snapshot?.focusedSessionId ?? null,
+  };
+  const nextSnapshotKey = serializeLayoutSnapshot(normalized);
+  lastServerSnapshotKey = nextSnapshotKey;
+
+  if (nextSnapshotKey === serializeLayoutSnapshot(getCurrentLayoutSnapshot())) {
+    return;
+  }
+
+  if (normalized.root) {
+    setSuppressLayoutAutoFit(true);
+  }
+
+  $layout.set({ root: normalized.root });
+
+  if (!normalized.root) {
+    $focusedSessionId.set(null);
+    return;
+  }
+
+  const ids: string[] = [];
+  collectSessionIdsFromNode(normalized.root, ids);
+  const focusedId =
+    normalized.focusedSessionId && ids.includes(normalized.focusedSessionId)
+      ? normalized.focusedSessionId
+      : (ids[0] ?? null);
+
+  $focusedSessionId.set(focusedId);
+  if (focusedId) {
+    $activeSessionId.set(focusedId);
+  }
+}
+
 /**
  * Clear layout data from localStorage.
  */
@@ -501,36 +561,58 @@ function clearLayoutStorage(): void {
   localStorage.removeItem(FOCUSED_STORAGE_KEY);
 }
 
-/**
- * Sync layout tree to the server for tmux directional pane selection.
- */
-function syncLayoutToServer(): void {
-  const layout = $layout.get();
-  const root = layout.root;
+export function markLayoutPersistenceReady(): void {
+  if (persistenceReady) {
+    return;
+  }
 
-  fetch('/api/tmux/layout', {
-    method: 'POST',
+  persistenceReady = true;
+  scheduleLayoutSync();
+}
+
+function syncLayoutToServer(): void {
+  const snapshot = getCurrentLayoutSnapshot();
+  const snapshotKey = serializeLayoutSnapshot(snapshot);
+  if (snapshotKey === lastServerSnapshotKey) {
+    return;
+  }
+
+  lastServerSnapshotKey = snapshotKey;
+  fetch(LAYOUT_SYNC_ENDPOINT, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(root ?? { type: 'leaf', sessionId: null }),
+    body: snapshotKey,
   }).catch(() => {
-    // Best-effort sync
+    // Best-effort sync; allow a later change to retry.
+    lastServerSnapshotKey = EMPTY_LAYOUT_SNAPSHOT_KEY;
   });
 }
 
-/**
- * Initialize layout persistence - subscribe to changes.
- */
+function scheduleLayoutSync(): void {
+  if (!persistenceReady) {
+    return;
+  }
+
+  saveLayoutToStorage();
+
+  if (syncTimer !== undefined) {
+    clearTimeout(syncTimer);
+  }
+
+  syncTimer = window.setTimeout(() => {
+    syncTimer = undefined;
+    syncLayoutToServer();
+  }, 300);
+}
+
 let syncTimer: number | undefined;
 
 export function initLayoutPersistence(): void {
   $layout.subscribe(() => {
-    saveLayoutToStorage();
-    if (syncTimer !== undefined) {
-      clearTimeout(syncTimer);
-    }
-    syncTimer = window.setTimeout(() => {
-      syncTimer = undefined;
-      syncLayoutToServer();
-    }, 300);
+    scheduleLayoutSync();
+  });
+
+  $focusedSessionId.subscribe(() => {
+    scheduleLayoutSync();
   });
 }

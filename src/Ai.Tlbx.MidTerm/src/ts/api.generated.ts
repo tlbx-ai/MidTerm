@@ -3955,6 +3955,12 @@ export interface components {
       launchMode: string;
       profile: null | string;
     };
+    LayoutNode: {
+      type: string;
+      sessionId: null | string;
+      direction: null | string;
+      children: null | components['schemas']['LayoutNode'][];
+    };
     LocalUpdateInfo: {
       available: boolean;
       version: string;
@@ -4236,6 +4242,10 @@ export interface components {
       keys: string[];
       literal: boolean;
     };
+    SessionLayoutState: {
+      root: null | components['schemas']['LayoutNode'];
+      focusedSessionId: null | string;
+    };
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];
     };
@@ -4322,6 +4332,7 @@ export interface components {
     StateUpdate: {
       sessions: null | components['schemas']['SessionListDto'];
       update: null | components['schemas']['UpdateInfo'];
+      layout: null | components['schemas']['SessionLayoutState'];
     };
     SystemHealth: {
       healthy: boolean;

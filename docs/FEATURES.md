@@ -196,7 +196,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F164` Sessions can be undocked back out of a layout.
 - `F165` Layout sessions can be swapped.
 - `F166` Focus can move between sessions inside a split layout.
-- `F167` Layout trees persist in `localStorage`.
+- `F167` Layout trees persist in backend layout state.
 - `F168` Layout restore reattaches sessions without auto-resizing them.
 - `F169` Resize observers keep terminal presentation aligned with container changes.
 - `F170` Visual viewport listeners adapt the UI to mobile keyboards and viewport changes.

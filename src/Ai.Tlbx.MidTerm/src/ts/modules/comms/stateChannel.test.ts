@@ -28,8 +28,10 @@ const mocks = vi.hoisted(() => ({
   syncActiveWebPreview: vi.fn().mockResolvedValue(undefined),
   isSessionInLayout: vi.fn(() => false),
   restoreLayoutFromStorage: vi.fn(),
+  applyServerLayoutState: vi.fn(),
   dockSession: vi.fn(),
   swapLayoutSessions: vi.fn(),
+  markLayoutPersistenceReady: vi.fn(),
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
   checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
@@ -127,8 +129,10 @@ vi.mock('../share', () => ({
 
 vi.mock('../layout/layoutStore', () => ({
   restoreLayoutFromStorage: mocks.restoreLayoutFromStorage,
+  applyServerLayoutState: mocks.applyServerLayoutState,
   dockSession: mocks.dockSession,
   isSessionInLayout: mocks.isSessionInLayout,
+  markLayoutPersistenceReady: mocks.markLayoutPersistenceReady,
   swapLayoutSessions: mocks.swapLayoutSessions,
 }));
 
@@ -375,5 +379,59 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.selectSession).toHaveBeenCalledWith('session-b', {
       closeSettingsPanel: false,
     });
+  });
+
+  it('applies server layout snapshots from state updates', async () => {
+    await loadHarness();
+
+    const stateChannel = await import('./stateChannel');
+    stateChannel.handleStateUpdate(
+      [
+        {
+          id: 'session-a',
+          cols: 120,
+          rows: 30,
+          lensOnly: false,
+          foregroundPid: null,
+          foregroundName: null,
+          foregroundCommandLine: null,
+          currentDirectory: 'Q:/repos/MidTerm',
+        } as any,
+        {
+          id: 'session-b',
+          cols: 120,
+          rows: 30,
+          lensOnly: false,
+          foregroundPid: null,
+          foregroundName: null,
+          foregroundCommandLine: null,
+          currentDirectory: 'Q:/repos/MidTerm',
+        } as any,
+      ],
+      {
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'leaf', sessionId: 'session-a' },
+            { type: 'leaf', sessionId: 'session-b' },
+          ],
+        },
+        focusedSessionId: 'session-b',
+      },
+    );
+
+    expect(mocks.applyServerLayoutState).toHaveBeenCalledWith({
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', sessionId: 'session-a' },
+          { type: 'leaf', sessionId: 'session-b' },
+        ],
+      },
+      focusedSessionId: 'session-b',
+    });
+    expect(mocks.markLayoutPersistenceReady).toHaveBeenCalled();
   });
 });

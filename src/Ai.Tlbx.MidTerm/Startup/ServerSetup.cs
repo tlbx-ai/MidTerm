@@ -135,6 +135,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<SessionControlStateService>();
+        builder.Services.AddSingleton<SessionLayoutStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
         builder.Services.AddSingleton<AiCliProfileService>();
         builder.Services.AddSingleton<AiCliCapabilityService>();
@@ -154,6 +155,7 @@ public static class ServerSetup
                 runAsUserSid: settings.RunAsUserSid,
                 isServiceMode: settingsService.IsRunningAsService,
                 sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
+                sessionLayoutStateService: _.GetRequiredService<SessionLayoutStateService>(),
                 instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),
                 foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>(),
                 settingsService: _.GetRequiredService<SettingsService>()));

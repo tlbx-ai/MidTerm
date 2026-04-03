@@ -189,6 +189,7 @@ public class Program
         MidtermDirectory.Initialize(port, authService);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
+        var layoutStateService = app.Services.GetRequiredService<SessionLayoutStateService>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
         var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
         var agentFeed = app.Services.GetRequiredService<SessionAgentFeedService>();
@@ -220,6 +221,11 @@ public class Program
             var tmuxTargetResolver = new TmuxTargetResolver(tmuxPaneMapper);
             var tmuxFormatter = new TmuxFormatter(tmuxPaneMapper, sessionManager);
             tmuxLayoutBridge = new TmuxLayoutBridge();
+            layoutStateService.OnChanged += () =>
+            {
+                var snapshot = layoutStateService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id));
+                tmuxLayoutBridge.UpdateLayout(snapshot.Root);
+            };
             var tmuxSessionCommands = new SessionCommands(sessionManager, tmuxPaneMapper, tmuxFormatter);
             var tmuxIoCommands = new IoCommands(sessionManager, tmuxTargetResolver, tmuxFormatter);
             var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge);
@@ -375,9 +381,15 @@ public class Program
             agentVibe,
             aiCliProfileService,
             workerSessionRegistry);
+        SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
-            TmuxEndpoints.MapTmuxEndpoints(app, tmuxDispatcher, tmuxLayoutBridge);
+            TmuxEndpoints.MapTmuxEndpoints(
+                app,
+                tmuxDispatcher,
+                tmuxLayoutBridge,
+                sessionManager,
+                layoutStateService);
         }
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
@@ -407,6 +419,7 @@ public class Program
             shareGrantService,
             shutdownService,
             mainBrowserService,
+            layoutStateService,
             gitWatcher,
             browserCommandService,
             browserPreviewRegistry,
@@ -440,6 +453,8 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync();
+        var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
+        tmuxLayoutBridge?.UpdateLayout(layoutSnapshot.Root);
         await lensRuntime.DiscoverExistingSessionsAsync(sessionManager);
         sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 

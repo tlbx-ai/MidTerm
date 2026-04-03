@@ -8,6 +8,7 @@
 
 import type {
   DockPosition,
+  LayoutNode,
   Session,
   UpdateInfo,
   WsCommand,
@@ -81,10 +82,16 @@ interface BrowserUiMessage {
   activateSession?: boolean;
 }
 
+interface LayoutStateMessage {
+  root: LayoutNode | null;
+  focusedSessionId: string | null;
+}
+
 interface StateUpdateMessage {
   type?: undefined;
   sessions?: { sessions: Session[] };
-  update: UpdateInfo | null;
+  update?: UpdateInfo | null;
+  layout?: LayoutStateMessage | null;
 }
 
 interface CommandResponseMessage {
@@ -137,13 +144,15 @@ import {
 } from '../../stores';
 import {
   restoreLayoutFromStorage,
+  applyServerLayoutState,
   dockSession,
   isSessionInLayout,
+  markLayoutPersistenceReady,
   swapLayoutSessions,
 } from '../layout/layoutStore';
 
-// Track if we've restored layout from storage (only do once on first session list)
-let layoutRestoredFromStorage = false;
+// Track if we've hydrated layout state yet (server snapshot or fallback restore).
+let layoutHydrated = false;
 let stateWsHasConnected = false;
 
 // Pending dock instructions for sessions that haven't appeared in state yet
@@ -270,8 +279,8 @@ export function connectStateWebSocket(): void {
 
       // Handle state updates
       const sessionList = data.sessions?.sessions ?? [];
-      handleStateUpdate(sessionList);
-      handleUpdateInfo(data.update);
+      handleStateUpdate(sessionList, data.layout);
+      handleUpdateInfo(data.update ?? null);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       log.error(() => `Error parsing state: ${message}`);
@@ -301,7 +310,10 @@ export function connectStateWebSocket(): void {
  * Removes terminals for deleted sessions, updates dimensions, and manages selection.
  * Creates terminals proactively for all sessions so they receive data in the background.
  */
-export function handleStateUpdate(newSessions: Session[]): void {
+export function handleStateUpdate(
+  newSessions: Session[],
+  layoutState?: LayoutStateMessage | null,
+): void {
   // Filter out sessions without required id field
   const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
 
@@ -373,10 +385,16 @@ export function handleStateUpdate(newSessions: Session[]): void {
     }
   }
 
-  // Restore layout from localStorage on first session list (after page load)
-  if (!layoutRestoredFromStorage && newSessions.length >= 2) {
-    layoutRestoredFromStorage = true;
+  if (layoutState !== undefined) {
+    applyServerLayoutState(layoutState ?? null);
+    if (!layoutHydrated) {
+      layoutHydrated = true;
+      markLayoutPersistenceReady();
+    }
+  } else if (!layoutHydrated && newSessions.length >= 2) {
     restoreLayoutFromStorage();
+    layoutHydrated = true;
+    markLayoutPersistenceReady();
   }
 
   // Auto-select first session if none active (but not if settings are open)

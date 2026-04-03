@@ -33,6 +33,7 @@ public sealed class StateWebSocketHandler
     private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
     private readonly MainBrowserService _mainBrowserService;
+    private readonly SessionLayoutStateService _sessionLayoutStateService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
     private readonly BrowserUiBridge? _browserUiBridge;
 
@@ -46,6 +47,7 @@ public sealed class StateWebSocketHandler
         ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
+        SessionLayoutStateService sessionLayoutStateService,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
@@ -58,6 +60,7 @@ public sealed class StateWebSocketHandler
         _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
         _mainBrowserService = mainBrowserService;
+        _sessionLayoutStateService = sessionLayoutStateService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
         _browserUiBridge = browserUiBridge;
     }
@@ -125,7 +128,10 @@ public sealed class StateWebSocketHandler
             var state = new StateUpdate
             {
                 Sessions = sessionList,
-                Update = shareAccess is null ? lastUpdate : null
+                Update = shareAccess is null ? lastUpdate : null,
+                Layout = shareAccess is null
+                    ? _sessionLayoutStateService.GetSnapshot(sessionList.Sessions.Select(s => s.Id))
+                    : null
             };
             await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
         }
@@ -187,6 +193,11 @@ public sealed class StateWebSocketHandler
             _ = SendStateWithRetryAsync();
         }
 
+        void OnLayoutChanged()
+        {
+            _ = SendStateWithRetryAsync();
+        }
+
         var connectionToken = new object();
         var browserId = BuildBrowserConnectionId(context.Request);
 
@@ -207,6 +218,7 @@ public sealed class StateWebSocketHandler
 
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
+        _sessionLayoutStateService.OnChanged += OnLayoutChanged;
         var shutdownToken = _shutdownService.Token;
         var browserUiListenerId = Guid.NewGuid().ToString("N");
 
@@ -389,6 +401,7 @@ public sealed class StateWebSocketHandler
         {
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
+            _sessionLayoutStateService.OnChanged -= OnLayoutChanged;
             if (shareAccess is null)
             {
                 _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;

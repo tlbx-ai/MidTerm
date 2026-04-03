@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 

@@ -4474,6 +4474,41 @@
           }
         }
       },
+      "LayoutNode": {
+        "required": [
+          "type",
+          "sessionId",
+          "direction",
+          "children"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "direction": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "children": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/LayoutNode"
+            }
+          }
+        }
+      },
       "LocalUpdateInfo": {
         "required": [
           "available",
@@ -5567,6 +5602,31 @@
           }
         }
       },
+      "SessionLayoutState": {
+        "required": [
+          "root",
+          "focusedSessionId"
+        ],
+        "type": "object",
+        "properties": {
+          "root": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LayoutNode"
+              }
+            ]
+          },
+          "focusedSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SessionListDto": {
         "required": [
           "sessions"
@@ -5912,7 +5972,8 @@
       "StateUpdate": {
         "required": [
           "sessions",
-          "update"
+          "update",
+          "layout"
         ],
         "type": "object",
         "properties": {
@@ -5933,6 +5994,16 @@
               },
               {
                 "$ref": "#/components/schemas/UpdateInfo"
+              }
+            ]
+          },
+          "layout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionLayoutState"
               }
             ]
           }

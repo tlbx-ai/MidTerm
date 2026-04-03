@@ -66,11 +66,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string? runAsUserSid = null,
         bool isServiceMode = false,
         SessionControlStateService? sessionControlStateService = null,
+        SessionLayoutStateService? sessionLayoutStateService = null,
         MidTermInstanceIdentity? instanceIdentity = null,
         SessionForegroundProcessService? foregroundProcessService = null,
         SettingsService? settingsService = null)
     {
-        _registry = new SessionRegistry(isServiceMode, sessionControlStateService);
+        _registry = new SessionRegistry(isServiceMode, sessionControlStateService, sessionLayoutStateService);
         _clients = _registry.Clients;
         _sessionCache = _registry.SessionCache;
         _expectedTtyHostVersion = expectedVersion ?? TtyHostSpawner.GetTtyHostVersion();
@@ -1020,7 +1021,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                     {
                         await removed.DisposeAsync().ConfigureAwait(false);
                     }
-                    _sessionCache.TryRemove(sessionId, out _);
+                    _registry.RemoveSessionState(sessionId);
                     _transportState.TryRemove(sessionId, out _);
                     _ownershipRegistry.Remove(sessionId);
                 }

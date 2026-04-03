@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
@@ -13,7 +14,9 @@ public static class TmuxEndpoints
     public static void MapTmuxEndpoints(
         WebApplication app,
         TmuxCommandDispatcher dispatcher,
-        TmuxLayoutBridge layoutBridge)
+        TmuxLayoutBridge layoutBridge,
+        TtyHostSessionManager sessionManager,
+        SessionLayoutStateService layoutStateService)
     {
         app.MapPost("/api/tmux", async (HttpContext ctx) =>
         {
@@ -46,7 +49,11 @@ public static class TmuxEndpoints
             {
                 var node = await ctx.Request.ReadFromJsonAsync<LayoutNode>(
                     TmuxJsonContext.Default.LayoutNode, ctx.RequestAborted);
-                layoutBridge.UpdateLayout(node);
+                var snapshot = layoutStateService.UpdateLayout(
+                    node,
+                    focusedSessionId: null,
+                    sessionManager.GetAllSessions().Select(s => s.Id));
+                layoutBridge.UpdateLayout(snapshot.Root);
                 return Results.Ok();
             }
             catch

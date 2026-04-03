@@ -11,12 +11,17 @@ internal sealed class SessionRegistry
     private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
     private readonly string _dropsBasePath;
     private readonly SessionControlStateService? _sessionControlStateService;
+    private readonly SessionLayoutStateService? _sessionLayoutStateService;
     private int _nextOrder;
 
-    public SessionRegistry(bool isServiceMode, SessionControlStateService? sessionControlStateService = null)
+    public SessionRegistry(
+        bool isServiceMode,
+        SessionControlStateService? sessionControlStateService = null,
+        SessionLayoutStateService? sessionLayoutStateService = null)
     {
         _dropsBasePath = GetDropsBasePath(isServiceMode);
         _sessionControlStateService = sessionControlStateService;
+        _sessionLayoutStateService = sessionLayoutStateService;
     }
 
     public ConcurrentDictionary<string, TtyHostClient> Clients { get; } = new();
@@ -174,6 +179,7 @@ internal sealed class SessionRegistry
         LensOnlySessions.TryRemove(sessionId, out _);
         ProfileHints.TryRemove(sessionId, out _);
         _sessionControlStateService?.RemoveSession(sessionId);
+        _sessionLayoutStateService?.RemoveSession(sessionId);
 
         foreach (var kvp in TmuxParentSessions.ToArray())
         {

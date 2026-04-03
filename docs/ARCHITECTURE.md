@@ -181,7 +181,7 @@ The sidebar is a full control surface, not just a tab strip. It handles:
 - update notices, voice controls, network/share helpers, and footer telemetry
 - mobile open/close behavior and desktop collapse/resize persistence
 
-The layout subsystem stores split trees in browser storage and reattaches sessions into panes without resizing them behind the user's back.
+The layout subsystem stores split trees in backend state and reattaches sessions into panes without resizing them behind the user's back.
 
 ### Files, Git, and Commands
 
@@ -373,7 +373,7 @@ MidTerm uses a mix of server-side and browser-side storage:
 | Secrets                      | platform-specific secret storage              |
 | Certificates and keys        | settings directory plus protected key storage |
 | History and share data       | server-side files/services                    |
-| Split layout                 | browser `localStorage`                        |
+| Split layout                 | server-side `session-layout.json`            |
 | Sidebar width/collapse       | cookies                                       |
 | Smart Input/chat/touch prefs | browser `localStorage`                        |
 | Preview snapshots            | `.midterm/snapshot_*` under the working tree  |
