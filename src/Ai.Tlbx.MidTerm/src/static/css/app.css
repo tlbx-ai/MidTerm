@@ -577,9 +577,9 @@ body::before {
   background-size: var(--app-background-size);
   background-repeat: var(--app-background-repeat);
   background-position: var(--app-background-position);
-  transform: translate3d(var(--app-background-offset-x), var(--app-background-offset-y), 0)
-    scale(var(--app-background-scale));
+  transform: var(--app-background-transform, translate3d(0px, 0px, 0) scale(1));
   transform-origin: center center;
+  animation: var(--app-background-animation, none);
   will-change: transform;
   z-index: -2;
   pointer-events: none;

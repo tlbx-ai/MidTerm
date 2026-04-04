@@ -56,6 +56,7 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
     response: 0.6,
   },
 ];
+const BACKGROUND_KEN_BURNS_KEYFRAME_STEPS = 64;
 
 interface RgbColor {
   r: number;
@@ -64,23 +65,27 @@ interface RgbColor {
 }
 
 interface BackgroundKenBurnsState {
-  frameId: number | null;
   enabled: boolean;
+  root: HTMLElement | null;
   targetScale: number;
   speedPxPerSecond: number;
-  orbitRadius: number;
-  angleRadians: number;
-  lastTimestamp: number | null;
+  styleElement: HTMLStyleElement | null;
+  styleElementDocument: Document | null;
+  animationVersion: number;
+  resizeListenerWindow: Window | null;
+  resizeFrameId: number | null;
 }
 
 const backgroundKenBurnsState: BackgroundKenBurnsState = {
-  frameId: null,
   enabled: false,
+  root: null,
   targetScale: 1,
   speedPxPerSecond: 0,
-  orbitRadius: 0,
-  angleRadians: 0,
-  lastTimestamp: null,
+  styleElement: null,
+  styleElementDocument: null,
+  animationVersion: 0,
+  resizeListenerWindow: null,
+  resizeFrameId: null,
 };
 
 export function getBackgroundImageUrl(revision: number): string {
@@ -223,107 +228,93 @@ function syncBackgroundKenBurnsEffect(
   settings: MidTermSettingsPublic,
   hasImage: boolean,
 ): void {
+  ensureBackgroundKenBurnsResizeListener();
   const enabled = hasImage && settings.backgroundKenBurnsEnabled;
   const scale = clamp(settings.backgroundKenBurnsZoomPercent / 100, 1.5, 3);
   const speedPxPerSecond = clamp(settings.backgroundKenBurnsSpeedPxPerSecond, 0, 120);
-  const wasEnabled = backgroundKenBurnsState.enabled;
+  const staticScale = enabled ? scale : 1;
 
-  root.style.setProperty('--app-background-scale', enabled ? scale.toFixed(3) : '1');
+  root.style.setProperty('--app-background-transform', buildBackgroundTransform(0, 0, staticScale));
 
   if (!enabled) {
-    root.style.setProperty('--app-background-offset-x', '0px');
-    root.style.setProperty('--app-background-offset-y', '0px');
     stopBackgroundKenBurnsEffect();
     return;
   }
 
-  if (!wasEnabled) {
-    backgroundKenBurnsState.orbitRadius = 0;
-    backgroundKenBurnsState.angleRadians = 0;
-    root.style.setProperty('--app-background-offset-x', '0px');
-    root.style.setProperty('--app-background-offset-y', '0px');
-  }
-
   backgroundKenBurnsState.enabled = true;
+  backgroundKenBurnsState.root = root;
   backgroundKenBurnsState.targetScale = scale;
   backgroundKenBurnsState.speedPxPerSecond = speedPxPerSecond;
-
-  if (backgroundKenBurnsState.frameId !== null) {
-    return;
-  }
-
-  if (typeof requestAnimationFrame !== 'function') {
-    return;
-  }
-
-  backgroundKenBurnsState.lastTimestamp = null;
-  backgroundKenBurnsState.frameId = requestAnimationFrame(stepBackgroundKenBurnsEffect);
+  refreshBackgroundKenBurnsAnimation();
 }
 
 function stopBackgroundKenBurnsEffect(): void {
   backgroundKenBurnsState.enabled = false;
+  backgroundKenBurnsState.root = null;
   backgroundKenBurnsState.speedPxPerSecond = 0;
-  backgroundKenBurnsState.orbitRadius = 0;
-  backgroundKenBurnsState.angleRadians = 0;
-  backgroundKenBurnsState.lastTimestamp = null;
-
-  if (backgroundKenBurnsState.frameId !== null && typeof cancelAnimationFrame === 'function') {
-    cancelAnimationFrame(backgroundKenBurnsState.frameId);
-  }
-
-  backgroundKenBurnsState.frameId = null;
+  backgroundKenBurnsState.targetScale = 1;
+  clearBackgroundKenBurnsAnimation();
 }
 
-function stepBackgroundKenBurnsEffect(timestamp: number): void {
-  backgroundKenBurnsState.frameId = null;
+function ensureBackgroundKenBurnsResizeListener(): void {
+  if (typeof window === 'undefined' || backgroundKenBurnsState.resizeListenerWindow === window) {
+    return;
+  }
+
+  window.addEventListener('resize', scheduleBackgroundKenBurnsAnimationRefresh, { passive: true });
+  backgroundKenBurnsState.resizeListenerWindow = window;
+}
+
+function scheduleBackgroundKenBurnsAnimationRefresh(): void {
   if (!backgroundKenBurnsState.enabled) {
     return;
   }
 
-  const root = document.documentElement;
-  const lastTimestamp = backgroundKenBurnsState.lastTimestamp;
-  const dtSeconds = lastTimestamp === null ? 0 : clamp((timestamp - lastTimestamp) / 1000, 0, 0.1);
-  backgroundKenBurnsState.lastTimestamp = timestamp;
-
-  const targetRadius =
-    backgroundKenBurnsState.speedPxPerSecond > 0
-      ? computeBackgroundKenBurnsOrbitRadius(backgroundKenBurnsState.targetScale)
-      : 0;
-
-  backgroundKenBurnsState.orbitRadius = easeTowards(
-    backgroundKenBurnsState.orbitRadius,
-    targetRadius,
-    dtSeconds,
-    3.5,
-  );
-
-  if (
-    backgroundKenBurnsState.speedPxPerSecond > 0 &&
-    backgroundKenBurnsState.orbitRadius >= 0.5 &&
-    dtSeconds > 0
-  ) {
-    backgroundKenBurnsState.angleRadians +=
-      (backgroundKenBurnsState.speedPxPerSecond / backgroundKenBurnsState.orbitRadius) * dtSeconds;
-    if (backgroundKenBurnsState.angleRadians >= Math.PI * 2) {
-      backgroundKenBurnsState.angleRadians %= Math.PI * 2;
-    }
+  if (backgroundKenBurnsState.resizeFrameId !== null) {
+    return;
   }
-
-  const offsetX =
-    backgroundKenBurnsState.orbitRadius > 0
-      ? Math.cos(backgroundKenBurnsState.angleRadians) * backgroundKenBurnsState.orbitRadius
-      : 0;
-  const offsetY =
-    backgroundKenBurnsState.orbitRadius > 0
-      ? Math.sin(backgroundKenBurnsState.angleRadians) * backgroundKenBurnsState.orbitRadius
-      : 0;
-
-  root.style.setProperty('--app-background-offset-x', `${offsetX.toFixed(2)}px`);
-  root.style.setProperty('--app-background-offset-y', `${offsetY.toFixed(2)}px`);
 
   if (typeof requestAnimationFrame === 'function') {
-    backgroundKenBurnsState.frameId = requestAnimationFrame(stepBackgroundKenBurnsEffect);
+    backgroundKenBurnsState.resizeFrameId = requestAnimationFrame(() => {
+      backgroundKenBurnsState.resizeFrameId = null;
+      refreshBackgroundKenBurnsAnimation();
+    });
+    return;
   }
+
+  refreshBackgroundKenBurnsAnimation();
+}
+
+function refreshBackgroundKenBurnsAnimation(): void {
+  const root = backgroundKenBurnsState.root;
+  if (!backgroundKenBurnsState.enabled || !root) {
+    return;
+  }
+
+  const scale = backgroundKenBurnsState.targetScale;
+  root.style.setProperty('--app-background-transform', buildBackgroundTransform(0, 0, scale));
+
+  const orbitRadius =
+    backgroundKenBurnsState.speedPxPerSecond > 0 ? computeBackgroundKenBurnsOrbitRadius(scale) : 0;
+
+  if (backgroundKenBurnsState.speedPxPerSecond <= 0 || orbitRadius < 0.5) {
+    clearBackgroundKenBurnsAnimation();
+    return;
+  }
+
+  const animationName = `midterm-app-background-ken-burns-${++backgroundKenBurnsState.animationVersion}`;
+  const durationSeconds = clamp(
+    (2 * Math.PI * orbitRadius) / backgroundKenBurnsState.speedPxPerSecond,
+    0.1,
+    86400,
+  );
+  const keyframes = buildBackgroundKenBurnsKeyframes(animationName, orbitRadius, scale);
+
+  ensureBackgroundKenBurnsStyleElement().textContent = keyframes;
+  root.style.setProperty(
+    '--app-background-animation',
+    `${animationName} ${durationSeconds.toFixed(3)}s linear infinite`,
+  );
 }
 
 function computeBackgroundKenBurnsOrbitRadius(scale: number): number {
@@ -339,10 +330,58 @@ function computeBackgroundKenBurnsOrbitRadius(scale: number): number {
   return Math.max(0, Math.min(width, height) * (scale - 1) * 0.46);
 }
 
-function easeTowards(current: number, target: number, dtSeconds: number, response: number): number {
-  if (dtSeconds <= 0) {
-    return current;
+function ensureBackgroundKenBurnsStyleElement(): HTMLStyleElement {
+  if (
+    backgroundKenBurnsState.styleElement &&
+    backgroundKenBurnsState.styleElementDocument === document
+  ) {
+    return backgroundKenBurnsState.styleElement;
   }
 
-  return current + (target - current) * (1 - Math.exp(-response * dtSeconds));
+  const styleElement = document.createElement('style');
+  styleElement.setAttribute('data-midterm-background-ken-burns', 'true');
+  document.head.appendChild(styleElement);
+  backgroundKenBurnsState.styleElement = styleElement;
+  backgroundKenBurnsState.styleElementDocument = document;
+  return styleElement;
+}
+
+function clearBackgroundKenBurnsAnimation(): void {
+  if (
+    backgroundKenBurnsState.resizeFrameId !== null &&
+    typeof cancelAnimationFrame === 'function'
+  ) {
+    cancelAnimationFrame(backgroundKenBurnsState.resizeFrameId);
+  }
+
+  backgroundKenBurnsState.resizeFrameId = null;
+  document.documentElement.style.setProperty('--app-background-animation', 'none');
+
+  if (backgroundKenBurnsState.styleElement) {
+    backgroundKenBurnsState.styleElement.textContent = '';
+  }
+}
+
+function buildBackgroundKenBurnsKeyframes(
+  animationName: string,
+  orbitRadius: number,
+  scale: number,
+): string {
+  const frames: string[] = [];
+
+  for (let index = 0; index <= BACKGROUND_KEN_BURNS_KEYFRAME_STEPS; index += 1) {
+    const progress = index / BACKGROUND_KEN_BURNS_KEYFRAME_STEPS;
+    const angle = progress * Math.PI * 2;
+    const offsetX = Math.cos(angle) * orbitRadius;
+    const offsetY = Math.sin(angle) * orbitRadius;
+    frames.push(
+      `  ${(progress * 100).toFixed(3)}% { transform: ${buildBackgroundTransform(offsetX, offsetY, scale)}; }`,
+    );
+  }
+
+  return `@keyframes ${animationName} {\n${frames.join('\n')}\n}`;
+}
+
+function buildBackgroundTransform(offsetX: number, offsetY: number, scale: number): string {
+  return `translate3d(${offsetX.toFixed(2)}px, ${offsetY.toFixed(2)}px, 0) scale(${scale.toFixed(3)})`;
 }

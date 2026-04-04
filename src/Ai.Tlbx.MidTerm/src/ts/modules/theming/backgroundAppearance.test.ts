@@ -15,6 +15,12 @@ class MockStyle {
   }
 }
 
+class MockStyleElement {
+  public textContent = '';
+
+  public setAttribute(): void {}
+}
+
 class MockClassList {
   private readonly values = new Set<string>();
 
@@ -46,6 +52,7 @@ class MockClassList {
 const originalDocument = globalThis.document;
 const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
 const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+const originalWindow = globalThis.window;
 
 function createSettings(
   partial: Partial<
@@ -88,22 +95,50 @@ function alphaOf(value: string): number {
 
 let rootStyle: MockStyle;
 let bodyClassList: MockClassList;
+let appendedStyleElements: MockStyleElement[];
+let resizeListeners: Array<() => void>;
 
 beforeEach(() => {
   rootStyle = new MockStyle();
   bodyClassList = new MockClassList();
+  appendedStyleElements = [];
+  resizeListeners = [];
 
   Object.defineProperty(globalThis, 'document', {
     value: {
       documentElement: { style: rootStyle },
       body: { classList: bodyClassList },
+      head: {
+        appendChild: (element: MockStyleElement) => {
+          appendedStyleElements.push(element);
+          return element;
+        },
+      },
+      createElement: () => new MockStyleElement(),
+    },
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'window', {
+    value: {
+      innerWidth: 1280,
+      innerHeight: 720,
+      addEventListener: (eventName: string, listener: () => void) => {
+        if (eventName === 'resize') {
+          resizeListeners.push(listener);
+        }
+      },
     },
     configurable: true,
     writable: true,
   });
 
   Object.defineProperty(globalThis, 'requestAnimationFrame', {
-    value: () => 1,
+    value: (callback: FrameRequestCallback) => {
+      callback(16);
+      return 1;
+    },
     configurable: true,
     writable: true,
   });
@@ -130,6 +165,12 @@ afterEach(() => {
 
   Object.defineProperty(globalThis, 'cancelAnimationFrame', {
     value: originalCancelAnimationFrame,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'window', {
+    value: originalWindow,
     configurable: true,
     writable: true,
   });
@@ -192,9 +233,15 @@ describe('backgroundAppearance', () => {
       'url("/api/settings/background-image?v=12")',
     );
     expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
-    expect(rootStyle.getPropertyValue('--app-background-scale')).toBe('1.800');
-    expect(rootStyle.getPropertyValue('--app-background-offset-x')).toBe('0px');
-    expect(rootStyle.getPropertyValue('--app-background-offset-y')).toBe('0px');
+    expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
+      'translate3d(0.00px, 0.00px, 0) scale(1.800)',
+    );
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toMatch(
+      /^midterm-app-background-ken-burns-\d+ \d+\.\d{3}s linear infinite$/,
+    );
+    expect(appendedStyleElements).toHaveLength(1);
+    expect(appendedStyleElements[0]?.textContent).toContain('@keyframes midterm-app-background-ken-burns-');
+    expect(appendedStyleElements[0]?.textContent?.match(/transform:/g)).toHaveLength(65);
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#EAE2D8');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
@@ -235,8 +282,34 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    expect(rootStyle.getPropertyValue('--app-background-scale')).toBe('1');
-    expect(rootStyle.getPropertyValue('--app-background-offset-x')).toBe('0px');
-    expect(rootStyle.getPropertyValue('--app-background-offset-y')).toBe('0px');
+    expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
+      'translate3d(0.00px, 0.00px, 0) scale(1.000)',
+    );
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
+  });
+
+  it('rebuilds the generated animation when the viewport changes', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
+      }),
+    );
+
+    const firstAnimation = rootStyle.getPropertyValue('--app-background-animation');
+    const firstKeyframes = appendedStyleElements[0]?.textContent;
+
+    Object.assign(globalThis.window, {
+      innerWidth: 900,
+      innerHeight: 900,
+    });
+    resizeListeners[0]?.();
+
+    expect(rootStyle.getPropertyValue('--app-background-animation')).not.toBe(firstAnimation);
+    expect(appendedStyleElements[0]?.textContent).not.toBe(firstKeyframes);
   });
 });
