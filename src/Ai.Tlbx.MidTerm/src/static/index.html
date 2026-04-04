@@ -21,17 +21,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MidTerm" />
-    <script>
-      (function () {
-        try {
-          if (sessionStorage.getItem('midterm.pendingAppRefresh') === '1') {
-            document.documentElement.classList.add('midterm-app-refreshing');
-          }
-        } catch {
-          // Ignore sessionStorage failures and continue with the normal shell.
-        }
-      })();
-    </script>
+    <script src="/js/appRefreshBootstrap.js?v=__MIDTERM_ASSET_VERSION__"></script>
     <style>
       html.midterm-app-refreshing,
       html.midterm-app-refreshing body {
