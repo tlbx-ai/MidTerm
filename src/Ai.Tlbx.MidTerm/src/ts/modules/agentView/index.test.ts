@@ -415,6 +415,45 @@ describe('agentView dev errors', () => {
     ).not.toContain('In Progress');
   });
 
+  it('suppresses timestamp meta for command-execution and diff history rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      transcript: [
+        {
+          entryId: 'tool-1',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_execution',
+          title: 'Tool completed',
+          body: 'git status --short',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:00Z',
+          updatedAt: '2026-04-04T20:00:00Z',
+        },
+        {
+          entryId: 'diff-1',
+          order: 2,
+          kind: 'diff',
+          status: 'completed',
+          itemType: 'diff',
+          title: 'Working diff',
+          body: 'diff --git a/a.txt b/a.txt\n@@\n-a\n+b',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:01Z',
+          updatedAt: '2026-04-04T20:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+    expect(history[0]?.meta).toBe('');
+    expect(history[1]?.meta).toBe('');
+  });
+
   it('keeps auto-follow pinned when content grows without user scrolling', async () => {
     const { resolveHistoryAutoScrollPinned } = await import('./index');
 
@@ -3360,6 +3399,47 @@ describe('agentView dev errors', () => {
     expect(assistantEntry?.body).toContain('| alpha | 3 | Ada |');
   });
 
+  it('keeps up to 12 tail lines when folding command output into a command row', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      transcript: [
+        {
+          entryId: 'tool-command',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_execution',
+          title: 'Tool completed',
+          body: 'git log --oneline',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:00Z',
+          updatedAt: '2026-04-04T20:00:00Z',
+        },
+        {
+          entryId: 'tool-output',
+          order: 2,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Command output',
+          body: Array.from({ length: 15 }, (_, index) => `line ${index + 1}`).join('\n'),
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:01Z',
+          updatedAt: '2026-04-04T20:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandOutputTail).toEqual(
+      Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
+    );
+  });
+
   it.skip('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
@@ -4648,6 +4728,7 @@ describe('agentView dev errors', () => {
     expect(running).toHaveLength(2);
     expect(running[1]?.busyIndicator).toBe(true);
     expect(running[1]?.body).toBe('Working');
+    expect(running[1]?.busyElapsedText).toBe('0s');
 
     const settled = withTrailingBusyIndicator(
       {
@@ -4661,6 +4742,14 @@ describe('agentView dev errors', () => {
 
     expect(settled).toHaveLength(1);
     expect(settled.some((entry: any) => entry.busyIndicator)).toBe(false);
+  });
+
+  it('formats turn durations using compact wall-clock units', async () => {
+    const { formatLensTurnDuration } = await import('./index');
+
+    expect(formatLensTurnDuration(42_000)).toBe('42s');
+    expect(formatLensTurnDuration(65_000)).toBe('1m 5s');
+    expect(formatLensTurnDuration(3_661_000)).toBe('1h 1m 1s');
   });
 
   it('uses the latest provider in-progress item detail as the busy bubble label before falling back to Working', async () => {

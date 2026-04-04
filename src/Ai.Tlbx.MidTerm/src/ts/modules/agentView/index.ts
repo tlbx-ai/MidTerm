@@ -106,6 +106,8 @@ interface SessionLensViewState {
   pendingHistoryPrependOffsetPx: number;
   historyExpandedEntries: Set<string>;
   runtimeStats: LensRuntimeStatsSummary | null;
+  busyIndicatorTickHandle: number | null;
+  completedTurnDurationEntries: Map<string, LensHistoryEntry>;
 }
 
 export interface LensRuntimeStatsSummary {
@@ -200,6 +202,8 @@ export interface LensHistoryEntry {
   sourceTurnId?: string | null;
   sourceItemType?: string | null;
   busyIndicator?: boolean;
+  busyElapsedText?: string | null;
+  turnDurationNote?: boolean;
   commandText?: string | null;
   commandOutputTail?: string[];
 }
@@ -333,6 +337,9 @@ export function destroyAgentView(sessionId: string): void {
   const state = viewStates.get(sessionId);
   if (state && state.historyRenderScheduled !== null) {
     window.cancelAnimationFrame(state.historyRenderScheduled);
+  }
+  if (state && state.busyIndicatorTickHandle !== null) {
+    window.clearTimeout(state.busyIndicatorTickHandle);
   }
   state?.historyRenderedNodes.clear();
   if (state) {
@@ -668,6 +675,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     pendingHistoryPrependOffsetPx: 0,
     historyExpandedEntries: new Set<string>(),
     runtimeStats: null,
+    busyIndicatorTickHandle: null,
+    completedTurnDurationEntries: new Map<string, LensHistoryEntry>(),
   };
 
   viewStates.set(sessionId, created);
@@ -1886,18 +1895,23 @@ function renderAgentView(
   );
   state.optimisticTurns = optimistic.optimisticTurns;
   const renderedEntries = stabilizeHistoryEntryOrder(
-    withTrailingBusyIndicator(
+    withTurnDurationNotes(
       snapshot,
-      withLiveAssistantState(
+      withTrailingBusyIndicator(
         snapshot,
-        withActivationIssueNotice(
-          withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
-          state.activationIssue,
+        withLiveAssistantState(
+          snapshot,
+          withActivationIssueNotice(
+            withInlineLensStatus(snapshot, optimistic.entries, streamConnected),
+            state.activationIssue,
+          ),
         ),
+        snapshot.requests,
       ),
-      snapshot.requests,
+      state,
     ),
   );
+  syncBusyIndicatorTicker(snapshot, state, renderedEntries);
   renderRuntimeStats(panel, runtimeStats);
   renderHistory(panel, renderedEntries, snapshot.sessionId);
   renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
@@ -2214,6 +2228,8 @@ function buildHistoryEntrySignature(
     entry.pending ? '1' : '0',
     entry.live ? '1' : '0',
     entry.busyIndicator ? '1' : '0',
+    entry.busyElapsedText ?? '',
+    entry.turnDurationNote ? '1' : '0',
     entry.sourceItemType ?? '',
     entry.commandText ?? '',
     commandTailToken,
@@ -2611,7 +2627,7 @@ function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHisto
     label: historyLabel(kind),
     title: entry.title || '',
     body: entry.body || '',
-    meta: formatHistoryMeta(kind, statusLabel, entry.updatedAt),
+    meta: resolveHistoryEntryMeta(entry, kind, statusLabel),
     attachments: cloneHistoryAttachments(entry.attachments),
     live: entry.streaming,
     sourceItemId: entry.itemId ?? null,
@@ -2623,6 +2639,28 @@ function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHisto
   }
 
   return mapped;
+}
+
+function resolveHistoryEntryMeta(
+  entry: LensPulseHistoryEntry,
+  kind: HistoryKind,
+  statusLabel: string,
+): string {
+  if (kind === 'diff' || isCommandExecutionSnapshotEntry(entry)) {
+    return '';
+  }
+
+  return formatHistoryMeta(kind, statusLabel, entry.updatedAt);
+}
+
+function isCommandExecutionSnapshotEntry(
+  entry: Pick<LensPulseHistoryEntry, 'kind' | 'itemType'>,
+): boolean {
+  return (
+    normalizeSnapshotHistoryKind(entry.kind) === 'tool' &&
+    normalizeComparableHistoryText(entry.itemType ?? '').replace(/[_-]+/g, ' ') ===
+      'command execution'
+  );
 }
 
 function mergeCommandHistoryEntries(
@@ -2925,6 +2963,7 @@ export function withTrailingBusyIndicator(
     body: resolveTrailingBusyIndicatorLabel(snapshot, nextEntries),
     meta: '',
     busyIndicator: true,
+    busyElapsedText: formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot)),
   });
   return nextEntries;
 }
@@ -2958,6 +2997,37 @@ function resolveTrailingBusyIndicatorLabel(
   }
 
   return lensText('lens.status.working', 'Working');
+}
+
+function resolveBusyIndicatorElapsedMs(snapshot: LensPulseSnapshotResponse): number | null {
+  const startedAt = resolveTurnStartIso(snapshot);
+  if (!startedAt) {
+    return null;
+  }
+
+  const startMs = Date.parse(startedAt);
+  if (!Number.isFinite(startMs)) {
+    return null;
+  }
+
+  return Math.max(0, Date.now() - startMs);
+}
+
+function resolveTurnStartIso(snapshot: LensPulseSnapshotResponse): string | null {
+  if (snapshot.currentTurn.startedAt) {
+    return snapshot.currentTurn.startedAt;
+  }
+
+  const currentTurnId = snapshot.currentTurn.turnId ?? null;
+  const transcriptEntries = Array.isArray(snapshot.transcript) ? snapshot.transcript : [];
+  const matchingUserEntry = [...transcriptEntries]
+    .reverse()
+    .find(
+      (entry) =>
+        normalizeSnapshotHistoryKind(entry.kind) === 'user' &&
+        (!currentTurnId || !entry.turnId || entry.turnId === currentTurnId),
+    );
+  return matchingUserEntry?.createdAt ?? null;
 }
 
 function resolveBusyIndicatorLabelFromSnapshotItems(
@@ -3032,6 +3102,128 @@ function isGenericBusyIndicatorTitle(value: string, itemType: string): boolean {
     normalizedValue.endsWith(' updated') ||
     normalizedValue.endsWith(' running')
   );
+}
+
+function withTurnDurationNotes(
+  snapshot: LensPulseSnapshotResponse,
+  entries: LensHistoryEntry[],
+  state: SessionLensViewState,
+): LensHistoryEntry[] {
+  rememberCompletedTurnDurationEntry(snapshot, state);
+  if (state.completedTurnDurationEntries.size === 0) {
+    return entries;
+  }
+
+  const nextEntries = [...entries];
+  for (const durationEntry of state.completedTurnDurationEntries.values()) {
+    const insertionOrder = resolveTurnDurationInsertionOrder(entries, durationEntry.sourceTurnId);
+    if (insertionOrder === null) {
+      continue;
+    }
+
+    nextEntries.push({
+      ...durationEntry,
+      order: insertionOrder + 0.01,
+    });
+  }
+
+  return nextEntries.sort((left, right) => left.order - right.order);
+}
+
+function rememberCompletedTurnDurationEntry(
+  snapshot: LensPulseSnapshotResponse,
+  state: SessionLensViewState,
+): void {
+  const turnId = snapshot.currentTurn.turnId ?? null;
+  if (!turnId || state.completedTurnDurationEntries.has(turnId)) {
+    return;
+  }
+
+  const currentTurnState = normalizeComparableHistoryText(snapshot.currentTurn.state || '');
+  if (currentTurnState === 'running' || currentTurnState === 'in progress') {
+    return;
+  }
+
+  const startedAt = resolveTurnStartIso(snapshot);
+  const completedAt = snapshot.currentTurn.completedAt || snapshot.generatedAt;
+  if (!startedAt || !completedAt) {
+    return;
+  }
+
+  const durationMs = Date.parse(completedAt) - Date.parse(startedAt);
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return;
+  }
+
+  state.completedTurnDurationEntries.set(turnId, {
+    id: `turn-duration:${turnId}`,
+    order: Number.MAX_SAFE_INTEGER,
+    kind: 'system',
+    tone: 'info',
+    label: '',
+    title: '',
+    body: `(Turn took ${formatLensTurnDuration(durationMs)})`,
+    meta: '',
+    sourceTurnId: turnId,
+    turnDurationNote: true,
+  });
+  pruneCompletedTurnDurationEntries(state);
+}
+
+function resolveTurnDurationInsertionOrder(
+  entries: readonly LensHistoryEntry[],
+  turnId: string | null | undefined,
+): number | null {
+  const matchingEntries = entries.filter((entry) => !turnId || entry.sourceTurnId === turnId);
+  if (matchingEntries.length === 0) {
+    return null;
+  }
+
+  return matchingEntries.reduce(
+    (maxOrder, entry) => Math.max(maxOrder, entry.order),
+    Number.MIN_SAFE_INTEGER,
+  );
+}
+
+function pruneCompletedTurnDurationEntries(state: SessionLensViewState): void {
+  const turnIds = [...state.completedTurnDurationEntries.keys()];
+  if (turnIds.length <= 64) {
+    return;
+  }
+
+  for (const turnId of turnIds.slice(0, turnIds.length - 64)) {
+    state.completedTurnDurationEntries.delete(turnId);
+  }
+}
+
+function syncBusyIndicatorTicker(
+  snapshot: LensPulseSnapshotResponse,
+  state: SessionLensViewState,
+  entries: readonly LensHistoryEntry[],
+): void {
+  const hasBusyIndicator = entries.some((entry) => entry.busyIndicator);
+  if (!hasBusyIndicator) {
+    if (state.busyIndicatorTickHandle !== null) {
+      window.clearTimeout(state.busyIndicatorTickHandle);
+      state.busyIndicatorTickHandle = null;
+    }
+
+    return;
+  }
+
+  if (state.busyIndicatorTickHandle !== null) {
+    return;
+  }
+
+  state.busyIndicatorTickHandle = window.setTimeout(() => {
+    const current = viewStates.get(snapshot.sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.busyIndicatorTickHandle = null;
+    renderCurrentAgentView(snapshot.sessionId, { immediate: true });
+  }, 1000);
 }
 
 /**
@@ -3136,6 +3328,10 @@ function createHistoryEntry(
   if (entry.live) {
     article.dataset.live = 'true';
     article.classList.add('agent-history-live');
+  }
+  if (entry.turnDurationNote) {
+    article.dataset.turnDurationNote = 'true';
+    article.classList.add('agent-history-turn-duration');
   }
   if (entry.kind === 'assistant' && isAssistantPlaceholderEntry(entry)) {
     article.dataset.placeholder = 'true';
@@ -3301,8 +3497,22 @@ function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
     label.appendChild(letter);
   }
 
+  const status = document.createElement('span');
+  status.className = 'agent-history-busy-status';
+
+  const elapsed = document.createElement('span');
+  elapsed.className = 'agent-history-busy-elapsed';
+  elapsed.textContent = entry.busyElapsedText ?? '0s';
+  status.appendChild(elapsed);
+
+  const cancelHint = document.createElement('span');
+  cancelHint.className = 'agent-history-busy-cancel';
+  cancelHint.textContent = '(Press Esc to cancel)';
+  status.appendChild(cancelHint);
+
   bubble.appendChild(glyph);
   bubble.appendChild(label);
+  bubble.appendChild(status);
   article.appendChild(bubble);
   return article;
 }
@@ -4700,7 +4910,7 @@ function extractCommandOutputTail(body: string): string[] {
       (line, index, array) =>
         line.length > 0 || array.slice(index + 1).some((next) => next.length > 0),
     );
-  return lines.slice(Math.max(0, lines.length - 8));
+  return lines.slice(Math.max(0, lines.length - 12));
 }
 
 export function tokenizeCommandText(commandText: string): CommandToken[] {
@@ -4781,6 +4991,28 @@ export function tokenizeCommandText(commandText: string): CommandToken[] {
   }
 
   return tokens;
+}
+
+export function formatLensTurnDuration(durationMs: number | null | undefined): string {
+  if (durationMs === null || durationMs === undefined || !Number.isFinite(durationMs)) {
+    return '0s';
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  if (totalMinutes > 0) {
+    return `${totalMinutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
 }
 
 export function hasActiveLensSelectionInPanel(

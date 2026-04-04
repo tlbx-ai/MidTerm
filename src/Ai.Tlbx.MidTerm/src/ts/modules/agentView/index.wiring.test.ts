@@ -59,6 +59,7 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-command-output-tail {');
     expect(lensDesign).toContain('Command-execution rows should render in a console-like `Ran …` form');
     expect(lensDesign).toContain('Command-execution rows should remain fully flat.');
+    expect(lensDesign).toContain('fold up to 12 tail lines');
   });
 
   it('styles diff rows as Edited path headers with tight colored hunk blocks', () => {
@@ -67,6 +68,7 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-diff-line-delete {');
     expect(source).toContain("Edited ${displayPath}");
     expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
+    expect(lensDesign).toContain('Command-execution rows and diff rows should not repeat timestamp meta.');
   });
 
   it('keeps runtime token stats in a compact hovering overlay instead of history rows', () => {
@@ -87,8 +89,15 @@ describe('agent view Lens wiring', () => {
     expect(source).toContain("lensText('lens.status.working', 'Working')");
     expect(source).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');
     expect(source).toContain('agent-history-busy-label-letter');
+    expect(source).toContain('agent-history-busy-elapsed');
+    expect(source).toContain('(Press Esc to cancel)');
     expect(css).toContain('.agent-history-busy-label-letter {');
+    expect(css).toContain('.agent-history-busy-status {');
+    expect(css).toContain('.agent-history-busy-cancel {');
+    expect(css).toContain('.agent-history-turn-duration .agent-history-body {');
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
     expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
+    expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
+    expect(lensDesign).toContain('append one muted inline duration note');
   });
 });
