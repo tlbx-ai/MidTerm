@@ -8,6 +8,13 @@ public static class LaunchEntryLaunchModes
     public const string Lens = "lens";
 }
 
+public static class HistorySurfaceTypes
+{
+    public const string Terminal = "trm";
+    public const string Codex = "cdx";
+    public const string Claude = "cld";
+}
+
 public sealed class LaunchEntry
 {
     public string Id { get; set; } = "";
@@ -21,6 +28,11 @@ public sealed class LaunchEntry
     public int Order { get; set; }
     public string LaunchMode { get; set; } = LaunchEntryLaunchModes.Terminal;
     public string? Profile { get; set; }
+    public string SurfaceType { get; set; } = HistorySurfaceTypes.Terminal;
+    public string? ForegroundProcessName { get; set; }
+    public string? ForegroundProcessCommandLine { get; set; }
+    public string? ForegroundProcessDisplayName { get; set; }
+    public string? ForegroundProcessIdentity { get; set; }
 }
 
 public sealed class HistoryReorderRequest

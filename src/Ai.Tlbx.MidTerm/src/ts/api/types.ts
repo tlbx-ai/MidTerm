@@ -433,9 +433,20 @@ export type DirectoryEntry = Schemas['DirectoryEntry'];
 export type DirectoryListResponse = Schemas['DirectoryListResponse'];
 
 // History
-export type LaunchEntry = Schemas['LaunchEntry'];
+export type LaunchEntry = Schemas['LaunchEntry'] & {
+  surfaceType?: string | null;
+  foregroundProcessName?: string | null;
+  foregroundProcessCommandLine?: string | null;
+  foregroundProcessDisplayName?: string | null;
+  foregroundProcessIdentity?: string | null;
+};
 export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
   dedupeKey?: string | null;
+  surfaceType?: 'trm' | 'cdx' | 'cld';
+  foregroundProcessName?: string | null;
+  foregroundProcessCommandLine?: string | null;
+  foregroundProcessDisplayName?: string | null;
+  foregroundProcessIdentity?: string | null;
 };
 export type HistoryPatchRequest = Schemas['HistoryPatchRequest'];
 

@@ -129,7 +129,12 @@ public sealed class HistoryService : IDisposable
             LastUsed = entry.LastUsed,
             Order = entry.Order,
             LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
-            Profile = NormalizeProfile(entry.Profile)
+            Profile = NormalizeProfile(entry.Profile),
+            SurfaceType = NormalizeSurfaceType(entry.SurfaceType, entry.LaunchMode, entry.Profile),
+            ForegroundProcessName = entry.ForegroundProcessName,
+            ForegroundProcessCommandLine = entry.ForegroundProcessCommandLine,
+            ForegroundProcessDisplayName = entry.ForegroundProcessDisplayName,
+            ForegroundProcessIdentity = entry.ForegroundProcessIdentity
         };
     }
 
@@ -141,11 +146,17 @@ public sealed class HistoryService : IDisposable
         string? label = null,
         string? dedupeKey = null,
         string? launchMode = null,
-        string? profile = null)
+        string? profile = null,
+        string? surfaceType = null,
+        string? foregroundProcessName = null,
+        string? foregroundProcessCommandLine = null,
+        string? foregroundProcessDisplayName = null,
+        string? foregroundProcessIdentity = null)
     {
         var normalizedLaunchMode = NormalizeLaunchMode(launchMode);
         var normalizedProfile = NormalizeProfile(profile);
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}");
+        var normalizedSurfaceType = NormalizeSurfaceType(surfaceType, normalizedLaunchMode, normalizedProfile);
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}, surfaceType={normalizedSurfaceType}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -181,6 +192,11 @@ public sealed class HistoryService : IDisposable
                 existing.LastUsed = DateTime.UtcNow;
                 existing.LaunchMode = normalizedLaunchMode;
                 existing.Profile = normalizedProfile;
+                existing.SurfaceType = normalizedSurfaceType;
+                existing.ForegroundProcessName = foregroundProcessName;
+                existing.ForegroundProcessCommandLine = foregroundProcessCommandLine;
+                existing.ForegroundProcessDisplayName = foregroundProcessDisplayName;
+                existing.ForegroundProcessIdentity = foregroundProcessIdentity;
                 if (!string.IsNullOrWhiteSpace(label))
                 {
                     existing.Label = label;
@@ -199,7 +215,12 @@ public sealed class HistoryService : IDisposable
                     Label = string.IsNullOrWhiteSpace(label) ? null : label,
                     LastUsed = DateTime.UtcNow,
                     LaunchMode = normalizedLaunchMode,
-                    Profile = normalizedProfile
+                    Profile = normalizedProfile,
+                    SurfaceType = normalizedSurfaceType,
+                    ForegroundProcessName = foregroundProcessName,
+                    ForegroundProcessCommandLine = foregroundProcessCommandLine,
+                    ForegroundProcessDisplayName = foregroundProcessDisplayName,
+                    ForegroundProcessIdentity = foregroundProcessIdentity
                 };
                 _history.Entries.Add(entry);
             }
@@ -253,7 +274,12 @@ public sealed class HistoryService : IDisposable
                 LastUsed = entry.LastUsed,
                 Order = entry.Order,
                 LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
-                Profile = NormalizeProfile(entry.Profile)
+                Profile = NormalizeProfile(entry.Profile),
+                SurfaceType = NormalizeSurfaceType(entry.SurfaceType, entry.LaunchMode, entry.Profile),
+                ForegroundProcessName = entry.ForegroundProcessName,
+                ForegroundProcessCommandLine = entry.ForegroundProcessCommandLine,
+                ForegroundProcessDisplayName = entry.ForegroundProcessDisplayName,
+                ForegroundProcessIdentity = entry.ForegroundProcessIdentity
             };
         }
     }
@@ -443,6 +469,22 @@ public sealed class HistoryService : IDisposable
             "codex" => "codex",
             "claude" => "claude",
             _ => null
+        };
+    }
+
+    private static string NormalizeSurfaceType(string? surfaceType, string? launchMode, string? profile)
+    {
+        var normalized = surfaceType?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            HistorySurfaceTypes.Terminal => HistorySurfaceTypes.Terminal,
+            HistorySurfaceTypes.Codex => HistorySurfaceTypes.Codex,
+            HistorySurfaceTypes.Claude => HistorySurfaceTypes.Claude,
+            _ => NormalizeLaunchMode(launchMode) == LaunchEntryLaunchModes.Lens
+                ? NormalizeProfile(profile) == "claude"
+                    ? HistorySurfaceTypes.Claude
+                    : HistorySurfaceTypes.Codex
+                : HistorySurfaceTypes.Terminal
         };
     }
 

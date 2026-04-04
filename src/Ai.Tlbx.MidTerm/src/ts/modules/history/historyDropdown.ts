@@ -225,10 +225,11 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
     infoDiv.appendChild(labelSpan);
   }
 
+  const runtime = getHistoryRuntimeSummary(entry);
   const fgIndicator = createForegroundIndicator(
-    entry.workingDirectory,
-    entry.commandLine,
-    entry.executable,
+    runtime.cwd,
+    runtime.commandLine,
+    runtime.processName,
   );
   infoDiv.appendChild(fgIndicator);
 
@@ -367,6 +368,23 @@ function createForegroundIndicator(
   container.appendChild(processSpan);
 
   return container;
+}
+
+export function getHistoryRuntimeSummary(
+  entry: Pick<
+    LaunchEntry,
+    | 'workingDirectory'
+    | 'commandLine'
+    | 'executable'
+    | 'foregroundProcessCommandLine'
+    | 'foregroundProcessName'
+  >,
+): { cwd: string; commandLine: string | null; processName: string } {
+  return {
+    cwd: entry.workingDirectory,
+    commandLine: entry.foregroundProcessCommandLine ?? entry.commandLine ?? null,
+    processName: entry.foregroundProcessName ?? entry.executable,
+  };
 }
 
 // ---------------------------------------------------------------------------

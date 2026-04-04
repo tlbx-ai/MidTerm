@@ -219,6 +219,36 @@ import type { ShellType } from './api/types';
 
 // Create logger for main module
 const log = createLogger('main');
+const PIN_SUCCESS_ANIMATION_MS = 560;
+
+function getBookmarkSurfaceType(
+  session: Session,
+  profile: 'codex' | 'claude' | null,
+): 'trm' | 'cdx' | 'cld' {
+  if (session.lensOnly && profile === 'claude') {
+    return 'cld';
+  }
+
+  if (session.lensOnly && profile === 'codex') {
+    return 'cdx';
+  }
+
+  return 'trm';
+}
+
+function animateBookmarkSaveSuccess(sessionId: string): void {
+  const pinButtons = document.querySelectorAll<HTMLButtonElement>(
+    `.session-item[data-session-id="${sessionId}"] .session-pin`,
+  );
+  for (const pinButton of pinButtons) {
+    pinButton.classList.remove('save-success');
+    void pinButton.offsetWidth;
+    pinButton.classList.add('save-success');
+    window.setTimeout(() => {
+      pinButton.classList.remove('save-success');
+    }, PIN_SUCCESS_ANIMATION_MS);
+  }
+}
 
 // Debug export for console access (typed in types/xterm-extensions.d.ts)
 window.mmDebug = {
@@ -1269,10 +1299,15 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
   const trimmedName = (session.name || '').trim();
   const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
   const previousBookmarkId = session.bookmarkId ?? null;
+  const surfaceType = getBookmarkSurfaceType(session, historyMode.profile);
   let executable: string;
   let commandLine: string | null;
   let workingDirectory: string;
   let dedupeKey: string | null;
+  let foregroundProcessName: string | null = null;
+  let foregroundProcessCommandLine: string | null = null;
+  let foregroundProcessDisplayName: string | null = null;
+  let foregroundProcessIdentity: string | null = null;
 
   if (historyMode.launchMode === 'lens' && historyMode.profile) {
     workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
@@ -1302,30 +1337,47 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
     commandLine = fgInfo.commandLine;
     workingDirectory = fgInfo.cwd ?? '';
     dedupeKey = tupleKey;
+    foregroundProcessName = fgInfo.name;
+    foregroundProcessCommandLine = fgInfo.commandLine;
+    foregroundProcessDisplayName = fgInfo.displayName;
+    foregroundProcessIdentity = fgInfo.processIdentity;
   }
 
-  const id = await createHistoryEntry({
-    shellType: session.shellType,
-    executable,
-    commandLine,
-    workingDirectory,
-    isStarred: true,
-    label,
-    dedupeKey,
-    launchMode: historyMode.launchMode,
-    profile: historyMode.profile,
-  });
+  try {
+    const id = await createHistoryEntry({
+      shellType: session.shellType,
+      executable,
+      commandLine,
+      workingDirectory,
+      isStarred: true,
+      label,
+      dedupeKey,
+      launchMode: historyMode.launchMode,
+      profile: historyMode.profile,
+      surfaceType,
+      foregroundProcessName,
+      foregroundProcessCommandLine,
+      foregroundProcessDisplayName,
+      foregroundProcessIdentity,
+    });
 
-  if (id) {
+    if (!id) {
+      throw new Error('The bookmark service did not return an id.');
+    }
+
     const current = getSession(sessionId) ?? session;
     const bookmarkChanged = current.bookmarkId !== id;
 
     if (bookmarkChanged) {
+      const { response } = await setSessionBookmark(sessionId, id);
+      if (!response.ok) {
+        throw new Error(`Bookmark link failed with status ${response.status}.`);
+      }
       setSession({ ...current, bookmarkId: id });
-      setSessionBookmark(sessionId, id).catch(() => {});
     }
 
     refreshHistory();
+    animateBookmarkSaveSuccess(sessionId);
     if (previousBookmarkId && previousBookmarkId !== id) {
       log.info(() => `Pinned to history (new tuple): ${fgInfo.name} (id=${id})`);
     } else if (previousBookmarkId === id) {
@@ -1333,6 +1385,11 @@ async function pinSessionToHistory(sessionId: string): Promise<void> {
     } else {
       log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
     }
+  } catch (error) {
+    log.error(() => `Failed to pin session ${sessionId} to history: ${String(error)}`);
+    await showAlert(error instanceof Error ? error.message : String(error), {
+      title: 'Bookmark save failed',
+    });
   }
 }
 

@@ -11,4 +11,9 @@ public sealed class CreateHistoryRequest
     public string? Label { get; init; }
     public string LaunchMode { get; init; } = LaunchEntryLaunchModes.Terminal;
     public string? Profile { get; init; }
+    public string SurfaceType { get; init; } = HistorySurfaceTypes.Terminal;
+    public string? ForegroundProcessName { get; init; }
+    public string? ForegroundProcessCommandLine { get; init; }
+    public string? ForegroundProcessDisplayName { get; init; }
+    public string? ForegroundProcessIdentity { get; init; }
 }

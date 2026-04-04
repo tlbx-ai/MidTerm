@@ -82,5 +82,35 @@ public sealed class HistoryServiceTests : IDisposable
         Assert.NotNull(entry);
         Assert.Equal(LaunchEntryLaunchModes.Lens, entry!.LaunchMode);
         Assert.Equal("codex", entry.Profile);
+        Assert.Equal(HistorySurfaceTypes.Codex, entry.SurfaceType);
+    }
+
+    [Fact]
+    public void RecordEntry_PersistsTerminalSurfaceAndForegroundProcess()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var service = new HistoryService(new SettingsService(_tempDir));
+
+        var id = service.RecordEntry(
+            "Pwsh",
+            "dotnet",
+            "dotnet test",
+            @"Q:\repo",
+            surfaceType: HistorySurfaceTypes.Terminal,
+            foregroundProcessName: "dotnet",
+            foregroundProcessCommandLine: "dotnet test",
+            foregroundProcessDisplayName: "dotnet test",
+            foregroundProcessIdentity: "dotnet");
+
+        Assert.NotNull(id);
+
+        var entry = service.GetEntry(id!);
+        Assert.NotNull(entry);
+        Assert.Equal(HistorySurfaceTypes.Terminal, entry!.SurfaceType);
+        Assert.Equal("dotnet", entry.ForegroundProcessName);
+        Assert.Equal("dotnet test", entry.ForegroundProcessCommandLine);
+        Assert.Equal("dotnet test", entry.ForegroundProcessDisplayName);
+        Assert.Equal("dotnet", entry.ForegroundProcessIdentity);
     }
 }

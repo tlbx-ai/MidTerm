@@ -1528,6 +1528,28 @@ body.has-app-background::after {
   color: var(--accent-gold);
 }
 
+.session-pin.save-success {
+  animation: bookmark-save-success .56s cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes bookmark-save-success {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+
+  35% {
+    transform: scale(1.22) rotate(-12deg);
+    color: var(--cta-primary);
+    box-shadow: 0 0 0 8px var(--cta-primary-25);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
 .session-control.active {
   color: var(--accent-blue);
 }

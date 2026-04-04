@@ -28,7 +28,12 @@ public static class HistoryEndpoints
                 request.Label,
                 request.DedupeKey,
                 request.LaunchMode,
-                request.Profile);
+                request.Profile,
+                request.SurfaceType,
+                request.ForegroundProcessName,
+                request.ForegroundProcessCommandLine,
+                request.ForegroundProcessDisplayName,
+                request.ForegroundProcessIdentity);
 
             if (id is null)
             {

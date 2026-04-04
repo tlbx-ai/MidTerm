@@ -3811,6 +3811,11 @@ export interface components {
       label?: null | string;
       launchMode: string;
       profile?: null | string;
+      surfaceType: string;
+      foregroundProcessName?: null | string;
+      foregroundProcessCommandLine?: null | string;
+      foregroundProcessDisplayName?: null | string;
+      foregroundProcessIdentity?: null | string;
     };
     CreateSessionRequest: {
       /** Format: int32 */
@@ -3954,6 +3959,11 @@ export interface components {
       order: number;
       launchMode: string;
       profile: null | string;
+      surfaceType: string;
+      foregroundProcessName: null | string;
+      foregroundProcessCommandLine: null | string;
+      foregroundProcessDisplayName: null | string;
+      foregroundProcessIdentity: null | string;
     };
     LayoutNode: {
       type: string;

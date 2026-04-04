@@ -453,6 +453,9 @@ export function applyPinButtonState(pinBtn: HTMLButtonElement, isPinned: boolean
   pinBtn.classList.toggle('pinned', isPinned);
   setActionButtonContent(pinBtn, label, isPinned ? '\u2605' : '\u2606', true);
   pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+  if (!isPinned) {
+    pinBtn.classList.remove('save-success');
+  }
 }
 
 /**

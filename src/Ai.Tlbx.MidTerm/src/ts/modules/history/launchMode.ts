@@ -6,6 +6,7 @@ export type HistoryLensProfile = 'codex' | 'claude';
 export interface HistoryModeEntry {
   launchMode?: string | null;
   profile?: string | null;
+  surfaceType?: string | null;
 }
 
 export interface HistoryModeSessionLike {
@@ -54,6 +55,14 @@ export function resolveSessionHistoryMode(session: HistoryModeSessionLike): {
 }
 
 export function getHistoryModeDisplayText(entry: HistoryModeEntry): string {
+  if ((entry.surfaceType ?? '').toLowerCase() === 'cld') {
+    return `${t('sessionTabs.agent')} · ${t('sessionLauncher.claudeTitle')}`;
+  }
+
+  if ((entry.surfaceType ?? '').toLowerCase() === 'cdx') {
+    return `${t('sessionTabs.agent')} · ${t('sessionLauncher.codexTitle')}`;
+  }
+
   if (!isLensHistoryEntry(entry)) {
     return t('session.terminal');
   }
@@ -65,6 +74,15 @@ export function getHistoryModeDisplayText(entry: HistoryModeEntry): string {
 }
 
 export function getHistoryModeBadgeText(entry: HistoryModeEntry): string {
+  const normalizedSurfaceType = (entry.surfaceType ?? '').toLowerCase();
+  if (normalizedSurfaceType === 'cld') {
+    return 'CLD';
+  }
+
+  if (normalizedSurfaceType === 'cdx') {
+    return 'CDX';
+  }
+
   if (!isLensHistoryEntry(entry)) {
     return 'TRM';
   }
