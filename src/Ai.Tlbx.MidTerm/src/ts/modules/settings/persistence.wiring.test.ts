@@ -162,6 +162,12 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('.background-image-empty.hidden');
   });
 
+  it('keeps background image enablement synchronized after upload and delete flows', () => {
+    expect(persistenceSource).toContain(
+      'enabledCheckbox.checked = hasImage && settings.backgroundImageEnabled;',
+    );
+  });
+
   it('keeps settings surfaces opaque under UI transparency', () => {
     expect(cssSource).toContain('background-color: var(--bg-settings-opaque, var(--bg-settings));');
     expect(cssSource).toContain('background: var(--bg-elevated-opaque, var(--bg-elevated));');

@@ -1599,9 +1599,7 @@ function updateBackgroundImageUi(settings: MidTermSettingsPublic): void {
   }
   if (enabledCheckbox) {
     enabledCheckbox.disabled = !hasImage;
-    if (!hasImage) {
-      enabledCheckbox.checked = false;
-    }
+    enabledCheckbox.checked = hasImage && settings.backgroundImageEnabled;
   }
 }
 
