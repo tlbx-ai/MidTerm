@@ -33,6 +33,7 @@ describe('mobile responsive chrome wiring', () => {
   it('keeps the smart input textarea on its own row only in mobile layouts', () => {
     expect(css).toContain('.mobile-topbar.has-mobile-tabs .topbar-title {');
     expect(css).toContain('.mobile-topbar .mobile-tab-strip[hidden] {');
+    expect(css).toContain('.mobile-tab-pill[hidden] {');
     expect(css).toContain('.mobile-topbar.has-mobile-tabs .topbar-actions {');
     expect(css).toContain('background: var(--bg-terminal);');
     expect(css).toContain('border-image: linear-gradient(');

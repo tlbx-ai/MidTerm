@@ -2730,6 +2730,10 @@ body.has-app-background::after {
     gap: 8px;
   }
 
+  .mobile-tab-pill[hidden] {
+    display: none !important;
+  }
+
   .mobile-tab-pill.active {
     color: var(--text-primary);
     border-image: linear-gradient(
