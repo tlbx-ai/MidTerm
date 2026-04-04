@@ -4723,6 +4723,172 @@ describe('agentView dev errors', () => {
     ]);
   });
 
+  it('suppresses Codex context and rate-limit notices from history and derives compact runtime stats', async () => {
+    const { buildLensHistoryEntries, buildLensRuntimeStats } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-04-04T20:00:00Z',
+      latestSequence: 8,
+      totalHistoryCount: 4,
+      historyWindowStart: 0,
+      historyWindowEnd: 4,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-04T20:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-04-04T19:59:50Z',
+        completedAt: '2026-04-04T20:00:00Z',
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: null,
+        permissionMode: null,
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [
+        {
+          entryId: 'system-context',
+          order: 1,
+          kind: 'system',
+          status: 'completed',
+          itemType: null,
+          title: 'Codex context window updated.',
+          body: 'Used 12838 tokens, window 258400, last turn in/out 12630/208',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T19:59:58Z',
+          updatedAt: '2026-04-04T19:59:58Z',
+        },
+        {
+          entryId: 'system-rate',
+          order: 2,
+          kind: 'system',
+          status: 'completed',
+          itemType: null,
+          title: 'Codex rate limits updated.',
+          body: '{"rateLimits":{"primary":{"usedPercent":2},"secondary":{"usedPercent":38}}}',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T19:59:59Z',
+          updatedAt: '2026-04-04T19:59:59Z',
+        },
+        {
+          entryId: 'assistant-1',
+          order: 3,
+          kind: 'assistant',
+          status: 'completed',
+          itemType: 'assistant_message',
+          title: null,
+          body: 'Repo is up to date.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:00Z',
+          updatedAt: '2026-04-04T20:00:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [
+        {
+          eventId: 'notice-context-1',
+          type: 'codex/contextWindowUpdated',
+          message: 'Codex context window updated.',
+          detail: 'Used 12838 tokens, window 258400, last turn in/out 12630/208',
+          createdAt: '2026-04-04T19:59:58Z',
+        },
+        {
+          eventId: 'notice-context-2',
+          type: 'codex/contextWindowUpdated',
+          message: 'Codex context window updated.',
+          detail: 'Used 27446 tokens, window 258400, last turn in/out 14511/97',
+          createdAt: '2026-04-04T20:00:01Z',
+        },
+        {
+          eventId: 'notice-rate-1',
+          type: 'account/rateLimits/updated',
+          message: 'Codex rate limits updated.',
+          detail: '{"rateLimits":{"primary":{"usedPercent":2},"secondary":{"usedPercent":38}}}',
+          createdAt: '2026-04-04T20:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+    const stats = buildLensRuntimeStats(snapshot);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.kind).toBe('assistant');
+    expect(stats).toEqual({
+      windowUsedTokens: 27446,
+      windowTokenLimit: 258400,
+      accumulatedInputTokens: 27141,
+      accumulatedOutputTokens: 305,
+      primaryRateLimitUsedPercent: 2,
+      secondaryRateLimitUsedPercent: 38,
+    });
+  });
+
+  it('detects active non-collapsed Lens selections inside the panel', async () => {
+    const { hasActiveLensSelectionInPanel } = await import('./index');
+
+    const selectedTextNode = {} as Node;
+    const outsideTextNode = {} as Node;
+    const panel = {
+      contains: (node: Node | null) => node === selectedTextNode,
+    } as ParentNode;
+
+    expect(
+      hasActiveLensSelectionInPanel(panel, {
+        rangeCount: 1,
+        isCollapsed: false,
+        getRangeAt: () =>
+          ({
+            startContainer: selectedTextNode,
+            endContainer: selectedTextNode,
+          }) as Range,
+      } as Selection),
+    ).toBe(true);
+
+    expect(
+      hasActiveLensSelectionInPanel(panel, {
+        rangeCount: 1,
+        isCollapsed: false,
+        getRangeAt: () =>
+          ({
+            startContainer: outsideTextNode,
+            endContainer: outsideTextNode,
+          }) as Range,
+      } as Selection),
+    ).toBe(false);
+  });
+
   it('uses dedicated diff presentation for Lens diff rows', async () => {
     const { resolveHistoryBodyPresentation } = await import('./index');
 

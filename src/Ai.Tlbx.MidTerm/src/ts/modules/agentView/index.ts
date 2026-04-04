@@ -24,7 +24,7 @@ import {
 } from '../lens/quickSettings';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdownFragment } from '../../utils/markdown';
-import type { LensAttachmentReference } from '../../api/types';
+import type { LensAttachmentReference, LensPulseRuntimeNotice } from '../../api/types';
 import {
   attachSessionLens,
   detachSessionLens,
@@ -60,6 +60,7 @@ const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
+let lensSelectionGuardBound = false;
 
 interface SessionLensViewState {
   panel: HTMLDivElement;
@@ -104,6 +105,16 @@ interface SessionLensViewState {
   historyEmptyState: HTMLDivElement | null;
   pendingHistoryPrependOffsetPx: number;
   historyExpandedEntries: Set<string>;
+  runtimeStats: LensRuntimeStatsSummary | null;
+}
+
+export interface LensRuntimeStatsSummary {
+  windowUsedTokens: number | null;
+  windowTokenLimit: number | null;
+  accumulatedInputTokens: number;
+  accumulatedOutputTokens: number;
+  primaryRateLimitUsedPercent: number | null;
+  secondaryRateLimitUsedPercent: number | null;
 }
 
 interface PendingLensTurn {
@@ -287,6 +298,7 @@ function lensFormat(
 export function initAgentView(): void {
   bindLensTurnLifecycle();
   bindActiveLensSessionRendering();
+  bindLensSelectionGuard();
   onTabActivated('agent', (sessionId, panel) => {
     ensureAgentViewSkeleton(sessionId, panel);
     const state = getOrCreateViewState(sessionId, panel);
@@ -601,9 +613,9 @@ function hasRenderableLensHistory(snapshot: LensPulseSnapshotResponse | null | u
 
   return (
     snapshot.latestSequence > 0 ||
+    buildCanonicalSnapshotHistoryEntries(snapshot).length > 0 ||
     snapshot.items.length > 0 ||
     snapshot.requests.length > 0 ||
-    snapshot.notices.length > 0 ||
     Boolean(snapshot.streams.assistantText.trim()) ||
     Boolean(snapshot.streams.reasoningText.trim()) ||
     Boolean(snapshot.streams.reasoningSummaryText.trim()) ||
@@ -655,6 +667,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyEmptyState: null,
     pendingHistoryPrependOffsetPx: 0,
     historyExpandedEntries: new Set<string>(),
+    runtimeStats: null,
   };
 
   viewStates.set(sessionId, created);
@@ -1075,6 +1088,7 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
   panel.innerHTML = `
     <section class="agent-view">
       <div class="agent-chat-shell">
+        <div class="agent-runtime-stats" data-agent-field="runtime-stats" hidden></div>
         <div class="agent-history" data-agent-field="history"></div>
         <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
         <section class="agent-composer-shell">
@@ -1773,6 +1787,11 @@ function commitAgentViewRender(sessionId: string, force = false): void {
     return;
   }
 
+  if (!force && hasActiveLensSelectionInPanel(state.panel)) {
+    state.renderDirty = true;
+    return;
+  }
+
   state.renderDirty = false;
 
   if (!state.snapshot) {
@@ -1803,6 +1822,31 @@ function bindActiveLensSessionRendering(): void {
   lensActiveSessionBound = true;
 }
 
+function bindLensSelectionGuard(): void {
+  if (
+    lensSelectionGuardBound ||
+    typeof document === 'undefined' ||
+    typeof document.addEventListener !== 'function'
+  ) {
+    return;
+  }
+
+  document.addEventListener('selectionchange', () => {
+    for (const [sessionId, state] of viewStates) {
+      if (!state.renderDirty || !isLensViewVisible(sessionId, state)) {
+        continue;
+      }
+
+      if (hasActiveLensSelectionInPanel(state.panel)) {
+        continue;
+      }
+
+      renderCurrentAgentView(sessionId, { immediate: true });
+    }
+  });
+  lensSelectionGuardBound = true;
+}
+
 function isLensViewVisible(sessionId: string, state: SessionLensViewState): boolean {
   if (state.debugScenarioActive) {
     return true;
@@ -1829,6 +1873,8 @@ function renderAgentView(
   syncLensTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   syncRequestInteractionState(state, snapshot.requests);
   const historyEntries = buildLensHistoryEntries(snapshot, events);
+  const runtimeStats = buildLensRuntimeStats(snapshot);
+  state.runtimeStats = runtimeStats;
   const visibleHistoryEntries = suppressActiveComposerRequestEntries(
     historyEntries,
     snapshot.requests,
@@ -1852,6 +1898,7 @@ function renderAgentView(
       snapshot.requests,
     ),
   );
+  renderRuntimeStats(panel, runtimeStats);
   renderHistory(panel, renderedEntries, snapshot.sessionId);
   renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
 }
@@ -1954,12 +2001,70 @@ function renderActivationView(
 ): void {
   syncAgentViewPresentation(panel, state.snapshot?.provider ?? null);
   panel.dataset.agentTurnId = '';
+  renderRuntimeStats(panel, state.runtimeStats);
   renderComposerInterruption(panel, sessionId, [], state);
   renderHistory(
     panel,
     withActivationIssueNotice(buildActivationHistoryEntries(state), state.activationIssue),
     sessionId,
   );
+}
+
+function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
+  const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
+  if (!host) {
+    return;
+  }
+
+  if (!stats) {
+    host.hidden = true;
+    host.replaceChildren();
+    if (typeof host.removeAttribute === 'function') {
+      host.removeAttribute('aria-label');
+      host.removeAttribute('title');
+    } else if (typeof host.setAttribute === 'function') {
+      host.setAttribute('aria-label', '');
+      host.setAttribute('title', '');
+    }
+    return;
+  }
+
+  const compact = [
+    formatTokenWindowSummary(stats),
+    `I ${formatTokenCount(stats.accumulatedInputTokens)}`,
+    `O ${formatTokenCount(stats.accumulatedOutputTokens)}`,
+  ].join('  ');
+  const detailParts = [
+    `Context ${formatTokenWindowSummary(stats)}`,
+    `Session in ${formatTokenCount(stats.accumulatedInputTokens)}`,
+    `Session out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
+  ];
+  if (stats.primaryRateLimitUsedPercent !== null || stats.secondaryRateLimitUsedPercent !== null) {
+    detailParts.push(
+      `Rate ${formatPercent(stats.primaryRateLimitUsedPercent)} / ${formatPercent(stats.secondaryRateLimitUsedPercent)}`,
+    );
+  }
+
+  host.hidden = false;
+  host.setAttribute('aria-label', detailParts.join(' | '));
+  host.title = detailParts.join('\n');
+  host.replaceChildren();
+
+  const compactText = document.createElement('span');
+  compactText.className = 'agent-runtime-stats-compact';
+  compactText.textContent = compact;
+  host.appendChild(compactText);
+
+  const detail = document.createElement('div');
+  detail.className = 'agent-runtime-stats-detail';
+  for (const part of detailParts) {
+    const line = document.createElement('div');
+    line.className = 'agent-runtime-stats-detail-line';
+    line.textContent = part;
+    detail.appendChild(line);
+  }
+
+  host.appendChild(detail);
 }
 
 function renderHistory(
@@ -2432,6 +2537,7 @@ function buildCanonicalSnapshotHistoryEntries(
 
   return historyEntries
     .map(mapSnapshotEntryToHistoryEntry)
+    .filter((entry) => !isSuppressedLensRuntimeNoticeEntry(entry))
     .sort((left, right) => left.order - right.order)
     .reduce<LensHistoryEntry[]>(mergeCommandHistoryEntries, [])
     .filter(
@@ -2443,6 +2549,53 @@ function buildCanonicalSnapshotHistoryEntries(
         entry.kind === 'system' ||
         entry.kind === 'notice',
     );
+}
+
+export function buildLensRuntimeStats(
+  snapshot: LensPulseSnapshotResponse,
+): LensRuntimeStatsSummary | null {
+  const stats: LensRuntimeStatsSummary = {
+    windowUsedTokens: null,
+    windowTokenLimit: null,
+    accumulatedInputTokens: 0,
+    accumulatedOutputTokens: 0,
+    primaryRateLimitUsedPercent: null,
+    secondaryRateLimitUsedPercent: null,
+  };
+  let hasStats = false;
+  const sources =
+    snapshot.notices.length > 0
+      ? snapshot.notices
+      : snapshot.transcript
+          .filter((entry) => isSuppressedLensRuntimeNoticeHistoryEntry(entry))
+          .map<LensPulseRuntimeNotice>((entry) => ({
+            eventId: entry.entryId,
+            type: entry.kind,
+            message: entry.title ?? '',
+            detail: entry.body,
+            createdAt: entry.updatedAt,
+          }));
+
+  for (const notice of sources) {
+    const contextWindow = parseCodexContextWindowNotice(notice);
+    if (contextWindow) {
+      stats.windowUsedTokens = contextWindow.usedTokens;
+      stats.windowTokenLimit = contextWindow.windowTokens;
+      stats.accumulatedInputTokens += contextWindow.lastTurnInputTokens;
+      stats.accumulatedOutputTokens += contextWindow.lastTurnOutputTokens;
+      hasStats = true;
+      continue;
+    }
+
+    const rateLimits = parseCodexRateLimitNotice(notice);
+    if (rateLimits) {
+      stats.primaryRateLimitUsedPercent = rateLimits.primaryUsedPercent;
+      stats.secondaryRateLimitUsedPercent = rateLimits.secondaryUsedPercent;
+      hasStats = true;
+    }
+  }
+
+  return hasStats ? stats : null;
 }
 
 function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHistoryEntry {
@@ -2497,6 +2650,105 @@ function mergeCommandHistoryEntries(
     commandOutputTail,
   };
   return mergedEntries;
+}
+
+export function isSuppressedLensRuntimeNoticeEntry(
+  entry: Pick<LensHistoryEntry, 'kind' | 'title' | 'body'>,
+): boolean {
+  return isSuppressedLensRuntimeNoticeHistoryEntry({
+    kind: entry.kind,
+    title: entry.title,
+    body: entry.body,
+  });
+}
+
+function isSuppressedLensRuntimeNoticeHistoryEntry(
+  entry: Pick<LensPulseHistoryEntry, 'kind' | 'title' | 'body'>,
+): boolean {
+  if (!['system', 'notice'].includes(normalizeSnapshotHistoryKind(entry.kind))) {
+    return false;
+  }
+
+  const title = normalizeComparableHistoryText(entry.title ?? '');
+  const body = normalizeComparableHistoryText(entry.body);
+  return (
+    title === normalizeComparableHistoryText('Codex context window updated.') ||
+    title === normalizeComparableHistoryText('Codex rate limits updated.') ||
+    body.includes(normalizeComparableHistoryText('Used 0 tokens').replace('0', '')) ||
+    body.includes('"ratelimits"')
+  );
+}
+
+function parseCodexContextWindowNotice(
+  notice: Pick<LensPulseRuntimeNotice, 'message' | 'detail'>,
+): {
+  usedTokens: number;
+  windowTokens: number;
+  lastTurnInputTokens: number;
+  lastTurnOutputTokens: number;
+} | null {
+  const message = normalizeComparableHistoryText(notice.message);
+  const detail = notice.detail ?? '';
+  if (
+    message !== normalizeComparableHistoryText('Codex context window updated.') &&
+    !normalizeComparableHistoryText(detail).includes(
+      normalizeComparableHistoryText('last turn in/out'),
+    )
+  ) {
+    return null;
+  }
+
+  const match = detail.match(
+    /Used\s+(\d+)\s+tokens,\s+window\s+(\d+),\s+last turn in\/out\s+(\d+)\/(\d+)/i,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const [, usedTokensText, windowTokensText, inputTokensText, outputTokensText] = match;
+  if (!usedTokensText || !windowTokensText || !inputTokensText || !outputTokensText) {
+    return null;
+  }
+
+  return {
+    usedTokens: Number.parseInt(usedTokensText, 10),
+    windowTokens: Number.parseInt(windowTokensText, 10),
+    lastTurnInputTokens: Number.parseInt(inputTokensText, 10),
+    lastTurnOutputTokens: Number.parseInt(outputTokensText, 10),
+  };
+}
+
+function parseCodexRateLimitNotice(
+  notice: Pick<LensPulseRuntimeNotice, 'message' | 'detail'>,
+): { primaryUsedPercent: number | null; secondaryUsedPercent: number | null } | null {
+  if (
+    normalizeComparableHistoryText(notice.message) !==
+      normalizeComparableHistoryText('Codex rate limits updated.') ||
+    !notice.detail
+  ) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(notice.detail) as {
+      rateLimits?: {
+        primary?: { usedPercent?: number | null };
+        secondary?: { usedPercent?: number | null };
+      };
+    };
+    return {
+      primaryUsedPercent:
+        typeof parsed.rateLimits?.primary?.usedPercent === 'number'
+          ? parsed.rateLimits.primary.usedPercent
+          : null,
+      secondaryUsedPercent:
+        typeof parsed.rateLimits?.secondary?.usedPercent === 'number'
+          ? parsed.rateLimits.secondary.usedPercent
+          : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -4440,8 +4692,57 @@ export function tokenizeCommandText(commandText: string): CommandToken[] {
   return tokens;
 }
 
+export function hasActiveLensSelectionInPanel(
+  panel: ParentNode | null | undefined,
+  selection:
+    | Pick<Selection, 'rangeCount' | 'isCollapsed' | 'getRangeAt'>
+    | null
+    | undefined = resolveCurrentSelection(),
+): boolean {
+  if (!panel || !selection || selection.isCollapsed || selection.rangeCount <= 0) {
+    return false;
+  }
+
+  const range = selection.getRangeAt(0);
+  const startNode = range.startContainer;
+  const endNode = range.endContainer;
+  return panel.contains(startNode) || panel.contains(endNode);
+}
+
 function normalizeComparableHistoryText(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function resolveCurrentSelection(): Pick<
+  Selection,
+  'rangeCount' | 'isCollapsed' | 'getRangeAt'
+> | null {
+  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
+    return null;
+  }
+
+  return window.getSelection();
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1000) {
+    const compact = (value / 1000).toFixed(value >= 100000 ? 0 : 1);
+    return `${compact.replace(/\.0$/, '')}k`;
+  }
+
+  return String(value);
+}
+
+function formatTokenWindowSummary(stats: LensRuntimeStatsSummary): string {
+  if (stats.windowUsedTokens === null || stats.windowTokenLimit === null) {
+    return 'ctx --';
+  }
+
+  return `ctx ${formatTokenCount(stats.windowUsedTokens)}/${formatTokenCount(stats.windowTokenLimit)}`;
+}
+
+function formatPercent(value: number | null): string {
+  return value === null ? '--' : `${Math.round(value)}%`;
 }
 
 async function handleApproveRequest(sessionId: string, requestId: string): Promise<void> {

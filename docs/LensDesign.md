@@ -110,6 +110,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - If the user scrolls away from the bottom, automatic scrolling must stop immediately.
 - Automatic scrolling may resume only after the user reaches the bottom again or explicitly presses a "back to bottom" control.
 - When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
+- Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage
 
@@ -185,6 +186,9 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Generic command output should prefer compact head/tail or tail-oriented summaries with omitted-line markers over unbounded dumps.
 - Command-execution rows should render in a console-like `Ran …` form with lightweight syntax coloring: command name, flags/parameters, quoted strings, and shell operators should be visually distinct without turning the row into a card.
 - When command output is available immediately after a command-execution row, Lens should fold up to 8 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
+- Command-execution rows should remain fully flat. Do not wrap them in bordered cards, bubble shells, or inset containers that break text selection or console-like continuity.
+- Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Lens should interpret them as session telemetry instead of timeline content.
+- Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing the current context-window usage and accumulated session input/output token totals.
 
 ### Plan-mode questions and approvals
 

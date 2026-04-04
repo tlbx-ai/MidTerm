@@ -10619,6 +10619,51 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   background: var(--terminal-canvas-background, var(--terminal-bg));
 }
 
+.agent-runtime-stats {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  z-index: 3;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  padding: 4px 8px;
+  border: 0;
+  background: color-mix(in srgb, var(--terminal-canvas-background, var(--terminal-bg)) 90%, transparent);
+  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 0.68rem;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  user-select: none;
+  pointer-events: auto;
+  backdrop-filter: blur(5px);
+}
+
+.agent-runtime-stats[hidden] {
+  display: none;
+}
+
+.agent-runtime-stats-compact {
+  white-space: nowrap;
+}
+
+.agent-runtime-stats-detail {
+  display: none;
+  min-width: 0;
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+}
+
+.agent-runtime-stats:hover .agent-runtime-stats-detail,
+.agent-runtime-stats:focus-within .agent-runtime-stats-detail {
+  display: block;
+}
+
+.agent-runtime-stats-detail-line {
+  white-space: nowrap;
+}
+
 .agent-history {
   display: flex;
   flex: 1;
@@ -11110,6 +11155,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-size: 0.84rem;
   line-height: 1.55;

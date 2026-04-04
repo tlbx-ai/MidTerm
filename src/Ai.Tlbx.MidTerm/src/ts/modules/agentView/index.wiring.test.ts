@@ -52,10 +52,13 @@ describe('agent view Lens wiring', () => {
 
   it('styles command-execution rows as console-like Ran blocks with terminal monospace', () => {
     expect(css).toContain('.agent-history-command-body {');
+    expect(css).toContain('background: transparent;');
+    expect(css).toContain('border: 0;');
     expect(css).toContain('font-family: var(--agent-history-mono-font-family, var(--font-mono));');
     expect(css).toContain('.agent-history-command-token-command {');
     expect(css).toContain('.agent-history-command-output-tail {');
     expect(lensDesign).toContain('Command-execution rows should render in a console-like `Ran …` form');
+    expect(lensDesign).toContain('Command-execution rows should remain fully flat.');
   });
 
   it('styles diff rows as Edited path headers with tight colored hunk blocks', () => {
@@ -64,5 +67,19 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-diff-line-delete {');
     expect(source).toContain("Edited ${displayPath}");
     expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
+  });
+
+  it('keeps runtime token stats in a compact hovering overlay instead of history rows', () => {
+    expect(source).toContain('data-agent-field="runtime-stats"');
+    expect(source).toContain('buildLensRuntimeStats(snapshot)');
+    expect(css).toContain('.agent-runtime-stats {');
+    expect(css).toContain('.agent-runtime-stats-detail {');
+    expect(lensDesign).toContain('Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows.');
+    expect(lensDesign).toContain('Lens should expose that telemetry in a compact hovering stats display');
+  });
+
+  it('documents the selection-preservation rule for passive Lens rerenders', () => {
+    expect(source).toContain('hasActiveLensSelectionInPanel');
+    expect(lensDesign).toContain('Passive rerenders must not clear an active text selection inside Lens.');
   });
 });
