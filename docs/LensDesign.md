@@ -43,6 +43,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - New items must append in a predictable order.
 - Existing items may update in place while streaming, but must not jump above or between older completed items unless the underlying turn/item identity itself is wrong.
 - Reordering bugs are correctness bugs, not cosmetic issues.
+- Future updates must not mutate an already-rendered older row into a different row identity. When a visible item's rendered shape changes materially, Lens should replace that item's DOM node at the same canonical position instead of reinterpreting a past node for new content.
 
 ### 2. Minimal clutter
 
@@ -131,6 +132,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Borders, fills, and backgrounds should be sparse and purposeful.
 - Only exceptional states such as approvals, errors, or diff summaries may justify stronger containment.
 - Lens must own the visible backdrop of its active surface. When terminal transparency is configured as fully opaque, Lens should sit on an opaque terminal-toned underlay so wallpaper or hidden sibling panels cannot bleed through the active Lens surface.
+- Lens pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.
 
 ### Color and emphasis
 
@@ -261,7 +263,9 @@ Status in this branch/work item:
 
 - implemented: stable history virtualization with a bounded render window instead of keeping the full long history in the DOM
 - implemented: deterministic history render planning plus keyed visible-row reconciliation instead of rebuilding the whole visible history subtree on every update
+- implemented: when a visible history row changes materially, Lens now replaces that row node by stable key instead of mutating an older DOM node into a new future shape
 - implemented: scroll-follow suppression while the user is away from the live edge, plus an explicit return-to-bottom control
+- implemented: non-user layout growth and sizing changes no longer clear live-edge follow state by themselves; only explicit user scrolling moves Lens out of follow mode
 - implemented: terminal-font monospace rendering for machine-oriented Lens content
 - implemented: provider-stream-driven assistant rendering so partial assistant text can appear before the final provider message lands
 - implemented: responsive Lens styling for mobile-sized layouts
@@ -291,6 +295,8 @@ Status in this branch/work item:
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 - implemented: Lens `Esc` from the composer and touch-controller now interrupts active Lens turns rather than sending a literal escape key, and queued follow-up turns can be drained or canceled with repeated `Esc`
 - implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface
+- implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
+- implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 
 Still mandatory after this work whenever Lens evolves:
 

@@ -57,7 +57,6 @@ const COLLAPSIBLE_HISTORY_BODY_MIN_CHARS = 320;
 const COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS = 160;
 const MAX_VISIBLE_DIFF_LINES = 200;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
-const NON_USER_SCROLL_DRIFT_TOLERANCE_PX = 4;
 const STALE_LENS_ACTIVATION = '__midterm_stale_lens_activation__';
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
@@ -1068,10 +1067,8 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
   panel.innerHTML = `
     <section class="agent-view">
       <div class="agent-chat-shell">
-        <section class="agent-history-card">
-          <div class="agent-history" data-agent-field="history"></div>
-          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
-        </section>
+        <div class="agent-history" data-agent-field="history"></div>
+        <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
         <section class="agent-composer-shell">
           <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
           <div class="agent-composer-host" data-agent-field="composer-host"></div>
@@ -1997,32 +1994,7 @@ function renderHistory(
       }
 
       const previousScrollTop = viewport.scrollTop;
-      const focusCandidates =
-        typeof viewport.getElementsByClassName === 'function'
-          ? Array.from(viewport.getElementsByClassName('agent-history-entry'))
-              .filter((node): node is HTMLElement => isElementLike(node))
-              .filter((node) => node.dataset.pending === 'true' || node.dataset.live === 'true')
-          : [];
-      const viewportChildren =
-        typeof viewport.children !== 'undefined'
-          ? Array.from(viewport.children).filter(
-              (node): node is HTMLElement =>
-                isElementLike(node) && node.classList.contains('agent-history-entry'),
-            )
-          : [];
-      const focusTarget =
-        focusCandidates[focusCandidates.length - 1] ??
-        viewportChildren[viewportChildren.length - 1] ??
-        null;
-
-      if (focusTarget && typeof focusTarget.scrollIntoView === 'function') {
-        focusTarget.scrollIntoView({
-          block: 'end',
-          inline: 'nearest',
-        });
-      } else {
-        viewport.scrollTop = viewport.scrollHeight;
-      }
+      viewport.scrollTop = viewport.scrollHeight;
 
       if (
         entries.length > HISTORY_VIRTUALIZE_AFTER &&
@@ -2039,16 +2011,6 @@ function renderHistory(
       }
     });
   }
-}
-
-function isElementLike(node: unknown): node is HTMLElement {
-  return (
-    typeof node === 'object' &&
-    node !== null &&
-    'classList' in node &&
-    'dataset' in node &&
-    'appendChild' in node
-  );
 }
 
 function buildHistoryRenderPlan(
@@ -2226,17 +2188,6 @@ function resolveRenderedHistoryNode(
 ): HTMLElement {
   const existing = state.historyRenderedNodes.get(visibleEntry.key);
   if (existing && existing.signature === visibleEntry.signature) {
-    return existing.node;
-  }
-
-  if (existing) {
-    updateHistoryEntryNode(existing.node, visibleEntry.entry, sessionId, visibleEntry.cluster);
-    state.historyRenderedNodes.set(visibleEntry.key, {
-      node: existing.node,
-      signature: visibleEntry.signature,
-      entry: visibleEntry.entry,
-      cluster: visibleEntry.cluster,
-    });
     return existing.node;
   }
 
@@ -3380,35 +3331,6 @@ function isHistoryEntryExpanded(sessionId: string, entryId: string): boolean {
   return viewStates.get(sessionId)?.historyExpandedEntries.has(entryId) === true;
 }
 
-function updateHistoryEntryNode(
-  node: HTMLElement,
-  entry: LensHistoryEntry,
-  sessionId: string,
-  artifactCluster: ArtifactClusterInfo | null = null,
-): void {
-  const nextNode = createHistoryEntry(entry, sessionId, artifactCluster);
-  syncHistoryNodeAttributes(node, nextNode);
-  node.replaceChildren(...Array.from(nextNode.childNodes));
-}
-
-function syncHistoryNodeAttributes(target: HTMLElement, source: HTMLElement): void {
-  target.className = source.className;
-
-  const datasetTarget = target.dataset as Record<string, string | undefined>;
-  const datasetSource = source.dataset as Record<string, string | undefined>;
-  for (const key of Object.keys(datasetTarget)) {
-    if (!(key in datasetSource)) {
-      Reflect.deleteProperty(target.dataset, key);
-    }
-  }
-
-  for (const [key, value] of Object.entries(datasetSource)) {
-    if (typeof value === 'string') {
-      datasetTarget[key] = value;
-    }
-  }
-}
-
 function createArtifactClusterLabel(cluster: ArtifactClusterInfo): HTMLElement {
   const label = document.createElement('div');
   label.className = 'agent-history-artifact-cluster-label';
@@ -4073,22 +3995,16 @@ export function resolveHistoryAutoScrollPinned(args: {
   userInitiated: boolean;
 }): boolean {
   const nearBottom = isScrollContainerNearBottom(args.current);
-  if (!args.wasPinned || nearBottom) {
+
+  if (args.userInitiated) {
     return nearBottom;
   }
 
-  if (args.userInitiated || !args.previous) {
-    return false;
+  if (args.wasPinned) {
+    return true;
   }
 
-  const scrollTopDropped =
-    args.current.scrollTop < args.previous.scrollTop - NON_USER_SCROLL_DRIFT_TOLERANCE_PX;
-  const layoutShifted =
-    args.current.scrollHeight > args.previous.scrollHeight + NON_USER_SCROLL_DRIFT_TOLERANCE_PX ||
-    Math.abs(args.current.clientHeight - args.previous.clientHeight) >
-      NON_USER_SCROLL_DRIFT_TOLERANCE_PX;
-
-  return layoutShifted && !scrollTopDropped;
+  return nearBottom;
 }
 
 /**

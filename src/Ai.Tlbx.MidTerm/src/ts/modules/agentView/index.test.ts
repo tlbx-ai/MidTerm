@@ -453,6 +453,27 @@ describe('agentView dev errors', () => {
     ).toBe(false);
   });
 
+  it('does not repin auto-follow just because layout changed while already detached from the live edge', async () => {
+    const { resolveHistoryAutoScrollPinned } = await import('./index');
+
+    expect(
+      resolveHistoryAutoScrollPinned({
+        wasPinned: false,
+        previous: {
+          scrollTop: 240,
+          clientHeight: 600,
+          scrollHeight: 2400,
+        },
+        current: {
+          scrollTop: 240,
+          clientHeight: 600,
+          scrollHeight: 2760,
+        },
+        userInitiated: false,
+      }),
+    ).toBe(false);
+  });
+
   it('keeps debug scenarios isolated from the live Lens attach path', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);

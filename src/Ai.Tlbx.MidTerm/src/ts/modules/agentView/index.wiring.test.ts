@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const lensDesign = readFileSync(path.join(__dirname, '../../../../../../docs/LensDesign.md'), 'utf8');
+const source = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 
 describe('agent view Lens wiring', () => {
   it('keeps Codex Lens user and assistant metadata above the message body', () => {
@@ -25,6 +26,27 @@ describe('agent view Lens wiring', () => {
   it('documents the above-body metadata rule in the Lens design contract', () => {
     expect(lensDesign).toContain(
       'In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.',
+    );
+  });
+
+  it('binds the Lens pane background to terminal transparency tokens', () => {
+    expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
+    expect(lensDesign).toContain(
+      'Lens pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.',
+    );
+  });
+
+  it('keeps the history shell flat instead of reintroducing wrapper cards', () => {
+    expect(source).not.toContain('agent-history-card');
+    expect(lensDesign).toContain(
+      'Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened',
+    );
+  });
+
+  it('replaces changed history rows instead of mutating past DOM nodes in place', () => {
+    expect(source).not.toContain('updateHistoryEntryNode(');
+    expect(lensDesign).toContain(
+      "Future updates must not mutate an already-rendered older row into a different row identity.",
     );
   });
 });

@@ -10573,14 +10573,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-view-panel {
   --agent-lens-max-width: min(100%, 68rem);
   --agent-lens-content-width: min(100%, 62rem);
-  --agent-lens-user-width: min(100%, 38rem);
+  --agent-lens-user-width: min(100%, 62rem);
   --agent-lens-rail: color-mix(in srgb, var(--border-color) 82%, transparent);
   --agent-lens-rail-strong: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
-  --agent-lens-surface: color-mix(in srgb, var(--bg-secondary) 40%, transparent);
-  --agent-lens-surface-strong: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
-  --agent-lens-user-surface: color-mix(in srgb, var(--accent-blue) 9%, var(--bg-secondary));
-  --agent-lens-machine-surface: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
-  --agent-lens-machine-surface-strong: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  --agent-lens-surface: transparent;
+  --agent-lens-surface-strong: transparent;
+  --agent-lens-user-surface: transparent;
+  --agent-lens-machine-surface: transparent;
+  --agent-lens-machine-surface-strong: transparent;
   --agent-lens-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
   --agent-lens-user-text: color-mix(in srgb, var(--accent-blue) 20%, var(--text-primary) 80%);
   --agent-lens-user-label: color-mix(in srgb, var(--accent-blue) 54%, var(--text-muted) 46%);
@@ -10592,7 +10592,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-lens-warning: color-mix(in srgb, var(--accent-gold) 84%, white 8%);
   --agent-lens-attention: color-mix(in srgb, var(--accent-red) 82%, white 6%);
   --agent-history-mono-font-family: var(--font-mono);
-  background: var(--terminal-ui-background, var(--terminal-bg));
+  background: var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .agent-view-panel[data-lens-layout='full-width-left'] {
@@ -10615,30 +10615,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  background:
-    radial-gradient(
-      circle at top center,
-      color-mix(in srgb, var(--accent-blue) 8%, transparent),
-      transparent 42%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 86%, transparent),
-      var(--terminal-ui-background, var(--terminal-bg))
-    );
-}
-
-.agent-history-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
   position: relative;
+  background: var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .agent-history {
@@ -10659,16 +10637,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-composer-shell {
   flex: 0 0 auto;
   padding: 14px 18px 18px;
-  border-top: 0;
-  background:
-    linear-gradient(
-      180deg,
-      transparent,
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 40%, transparent) 18%,
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, transparent)
-    ),
-    var(--terminal-ui-background, var(--terminal-bg));
-  backdrop-filter: blur(14px);
+  border-top: 1px solid color-mix(in srgb, var(--agent-lens-rail) 44%, transparent);
+  background: var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .agent-composer-interruption {
@@ -10692,15 +10662,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   bottom: 20px;
   z-index: 2;
   min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-elevated-opaque) 94%, transparent);
-  color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
-  font-size: 0.76rem;
-  font-weight: 600;
-  box-shadow: 0 10px 22px var(--shadow-color-md);
-  backdrop-filter: blur(10px);
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--agent-lens-live) 26%, transparent);
+  border-radius: 0;
+  background: var(--terminal-canvas-background, var(--terminal-bg));
+  color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -10716,20 +10686,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-entry {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   position: relative;
   width: var(--agent-lens-content-width);
   max-width: 100%;
-  padding: 10px 0;
+  padding: 8px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
   margin: 0 auto;
   isolation: isolate;
-  transition:
-    border-color 140ms ease,
-    background-color 140ms ease,
-    opacity 140ms ease;
 }
 
 .agent-history-positive {
@@ -10745,22 +10711,18 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-user {
-  align-self: flex-end;
+  align-self: flex-start;
   width: min(100%, var(--agent-lens-user-width));
-  padding: 10px 14px 12px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--accent-blue) 20%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--agent-lens-user-surface) 92%, transparent),
-    color-mix(in srgb, var(--agent-lens-user-surface) 72%, transparent)
-  );
+  padding: 8px 0;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
 }
 
 .agent-history-assistant {
   align-self: flex-start;
   width: var(--agent-lens-content-width);
-  padding: 10px 0 12px;
+  padding: 8px 0;
   border-bottom: 0;
 }
 
@@ -10784,7 +10746,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user {
   align-self: stretch;
   width: 100%;
-  padding: 12px 0;
+  padding: 8px 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -10797,7 +10759,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-request,
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-system,
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-notice {
-  padding: 10px 0;
+  padding: 8px 0;
 }
 
 .agent-history-assistant.agent-history-live .agent-history-badge-assistant {
@@ -10844,7 +10806,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-system,
 .agent-history-notice {
   width: var(--agent-lens-content-width);
-  padding: 10px 0;
+  padding: 8px 0;
   border-top: 1px solid color-mix(in srgb, var(--agent-lens-rail) 44%, transparent);
   border-radius: 0;
   background: transparent;
@@ -11067,21 +11029,20 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-busy-indicator {
   align-self: flex-start;
   width: var(--agent-lens-content-width);
-  padding: 8px 0 14px;
+  padding: 8px 0;
   border-bottom: 0;
 }
 
 .agent-history-busy-bubble {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 2rem;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--agent-lens-live) 24%, transparent);
-  background: color-mix(in srgb, var(--agent-lens-live) 10%, transparent);
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
   color: color-mix(in srgb, var(--agent-lens-live) 82%, var(--text-primary));
-  box-shadow: 0 8px 18px var(--shadow-color-md);
 }
 
 .agent-history-busy-glyph {
@@ -11162,10 +11123,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   cursor: pointer;
   color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
   user-select: none;
-  padding: 8px 12px;
-  border: 1px solid var(--agent-lens-machine-border);
-  border-radius: 12px;
-  background: var(--agent-lens-machine-surface);
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .agent-history-disclosure-summary::before {
@@ -11280,9 +11241,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-markdown code {
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-hover) 80%, transparent);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-size: 0.92em;
@@ -11290,10 +11251,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown pre {
   overflow-x: auto;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  padding: 8px 0 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
 }
 
 .agent-history-markdown pre code {
@@ -12127,10 +12088,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 @media (max-width: 900px) {
-  .agent-history-card {
-    padding: 0;
-  }
-
   .agent-history {
     padding: 14px 14px 24px;
   }
@@ -12141,10 +12098,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 @media (max-width: 720px) {
-  .agent-history-card {
-    padding: 0;
-  }
-
   .agent-history {
     padding: 10px 12px 20px;
     scroll-padding-bottom: 20px;
