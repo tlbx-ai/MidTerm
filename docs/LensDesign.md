@@ -183,6 +183,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Command/file-read noise should be summarized for screen use instead of dumping full raw terminal-like output into Lens history.
 - File-read commands should surface the path and a compact excerpt policy, not the full file body.
 - Generic command output should prefer compact head/tail or tail-oriented summaries with omitted-line markers over unbounded dumps.
+- Command-execution rows should render in a console-like `Ran …` form with lightweight syntax coloring: command name, flags/parameters, quoted strings, and shell operators should be visually distinct without turning the row into a card.
+- When command output is available immediately after a command-execution row, Lens should fold up to 8 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 
 ### Plan-mode questions and approvals
 
@@ -197,6 +199,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Diff rows should stay expanded by default instead of hiding behind the generic machine-output disclosure treatment.
 - Lens should trim non-essential unified-diff preamble noise where possible and prioritize the file header plus actual hunk content.
 - When unified diff hunks provide old/new coordinates, Lens should show a subtle old/new line-number gutter beside the diff text.
+- Diff file headers should read like console work artifacts, preferring `Edited {full path}` above the hunk blocks rather than raw `diff --git` preamble.
 - Extremely large diff bodies should remain bounded in the timeline: render the first 200 visible diff lines, then end with an ellipsis marker instead of dumping the full tail.
 - File-oriented information should use monospace sparingly and preserve readability.
 
@@ -280,6 +283,8 @@ Status in this branch/work item:
 - implemented: dev mode writes one GUID-named per-session Lens screen log derived from canonical history deltas and render hints
 - implemented: Lens uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
+- implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
+- implemented: immediate command output is folded into the command row as a muted up-to-8-line tail instead of always rendering as a separate noisy row
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
@@ -288,6 +293,7 @@ Status in this branch/work item:
 - implemented: Codex Lens now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
+- implemented: Lens diff rows now use console-style `Edited {path}` file headers and tighter green/red hunk blocks with line numbers
 - implemented: Lens exposes a compact quick-settings strip beneath the main smart input row for model, effort, plan mode, and permission mode
 - implemented: desktop Lens quick settings render as a compact translucent control rail, while mobile renders the same controls as an always-open panel beneath the input row
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer

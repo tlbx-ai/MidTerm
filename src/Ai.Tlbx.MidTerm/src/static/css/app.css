@@ -11106,6 +11106,59 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   overflow-wrap: anywhere;
 }
 
+.agent-history-command-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.agent-history-command-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-history-command-prefix {
+  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
+}
+
+.agent-history-command-token-command {
+  color: color-mix(in srgb, var(--accent-gold) 84%, white 10%);
+}
+
+.agent-history-command-token-parameter {
+  color: color-mix(in srgb, var(--accent-blue) 78%, white 12%);
+}
+
+.agent-history-command-token-string {
+  color: color-mix(in srgb, var(--accent-green) 72%, white 10%);
+}
+
+.agent-history-command-token-operator {
+  color: color-mix(in srgb, var(--accent-red) 74%, white 8%);
+}
+
+.agent-history-command-token-text {
+  color: color-mix(in srgb, var(--text-primary) 94%, white 4%);
+}
+
+.agent-history-command-token-whitespace {
+  color: inherit;
+}
+
+.agent-history-command-output-tail {
+  margin: 0 0 0 2ch;
+  color: color-mix(in srgb, var(--text-muted) 82%, transparent);
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .agent-history-disclosure-shell {
   margin-top: 2px;
 }
@@ -11665,7 +11718,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-plan .agent-history-body,
 .agent-history-diff .agent-history-body {
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--agent-lens-machine-border);
   background: var(--agent-lens-machine-surface);
   color: color-mix(in srgb, var(--text-primary) 88%, transparent);
@@ -11688,11 +11741,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   grid-template-columns: minmax(0, 4.5ch) minmax(0, 4.5ch) minmax(0, 1fr);
   align-items: baseline;
   white-space: nowrap;
+  border-radius: 4px;
 }
 
 .agent-history-diff-line-number {
   min-width: 0;
-  padding: 0 8px 0 12px;
+  padding: 1px 8px 1px 10px;
   color: color-mix(in srgb, currentColor 54%, transparent);
   text-align: right;
   font-size: 0.74rem;
@@ -11706,7 +11760,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-diff-line-text {
   min-width: 0;
-  padding-right: 12px;
+  padding: 1px 10px 1px 0;
   white-space: pre;
 }
 
@@ -11717,21 +11771,23 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-diff-line-file {
   color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
   font-weight: 700;
+  display: block;
+  padding: 0 0 4px;
 }
 
 .agent-history-diff-line-hunk {
-  color: color-mix(in srgb, var(--accent-blue) 84%, white 10%);
-  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  color: color-mix(in srgb, var(--accent-blue) 80%, white 10%);
+  background: transparent;
 }
 
 .agent-history-diff-line-add {
   color: color-mix(in srgb, var(--accent-green) 84%, white 8%);
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
 }
 
 .agent-history-diff-line-delete {
   color: color-mix(in srgb, var(--accent-red) 84%, white 8%);
-  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-red) 16%, transparent);
 }
 
 .agent-history-diff-line-context {

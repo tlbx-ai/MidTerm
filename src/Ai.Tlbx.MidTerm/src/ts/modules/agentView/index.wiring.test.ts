@@ -49,4 +49,20 @@ describe('agent view Lens wiring', () => {
       "Future updates must not mutate an already-rendered older row into a different row identity.",
     );
   });
+
+  it('styles command-execution rows as console-like Ran blocks with terminal monospace', () => {
+    expect(css).toContain('.agent-history-command-body {');
+    expect(css).toContain('font-family: var(--agent-history-mono-font-family, var(--font-mono));');
+    expect(css).toContain('.agent-history-command-token-command {');
+    expect(css).toContain('.agent-history-command-output-tail {');
+    expect(lensDesign).toContain('Command-execution rows should render in a console-like `Ran …` form');
+  });
+
+  it('styles diff rows as Edited path headers with tight colored hunk blocks', () => {
+    expect(css).toContain('.agent-history-diff-line-file {');
+    expect(css).toContain('.agent-history-diff-line-add {');
+    expect(css).toContain('.agent-history-diff-line-delete {');
+    expect(source).toContain("Edited ${displayPath}");
+    expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
+  });
 });

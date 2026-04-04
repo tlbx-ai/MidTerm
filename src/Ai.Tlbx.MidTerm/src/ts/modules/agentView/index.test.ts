@@ -109,6 +109,10 @@ vi.mock('../../stores', () => ({
       return () => {};
     },
   },
+  getSession: () => ({
+    id: 's1',
+    currentDirectory: 'Q:\\repos\\MidTerm',
+  }),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -3333,10 +3337,10 @@ describe('agentView dev errors', () => {
     const history = buildLensHistoryEntries(snapshot, events);
     const userEntry = history.find((entry) => entry.kind === 'user');
     const commandCallEntry = history.find(
-      (entry) => entry.kind === 'tool' && entry.body.includes('Get-Content report.md'),
-    );
-    const commandOutputEntry = history.find(
-      (entry) => entry.kind === 'tool' && entry.title === 'Command output',
+      (entry) =>
+        entry.kind === 'tool' &&
+        (entry.commandText?.includes('Get-Content report.md') ||
+          entry.body.includes('Get-Content report.md')),
     );
     const fileChangeEntry = history.find(
       (entry) =>
@@ -3346,8 +3350,11 @@ describe('agentView dev errors', () => {
     const assistantEntry = history.find((entry) => entry.kind === 'assistant');
 
     expect(userEntry?.body).toContain('update report.md');
-    expect(commandCallEntry?.body).toContain('Get-Content report.md');
-    expect(commandOutputEntry?.body).toContain('status: TODO');
+    expect(commandCallEntry?.commandText ?? commandCallEntry?.body).toContain('Get-Content report.md');
+    expect(commandCallEntry?.commandOutputTail).toEqual(['status: TODO']);
+    expect(history.some((entry) => entry.kind === 'tool' && entry.title === 'Command output')).toBe(
+      false,
+    );
     expect(fileChangeEntry?.body).toContain('report.md');
     expect(diffEntry?.body).toContain('+status: DONE');
     expect(assistantEntry?.body).toContain('| alpha | 3 | Ada |');
@@ -4676,6 +4683,46 @@ describe('agentView dev errors', () => {
     expect(presentation.preview).toBe('line 1: tool output');
   });
 
+  it('renders command-execution rows with a dedicated command presentation', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'tool-command-1',
+      order: 1,
+      kind: 'tool',
+      tone: 'positive',
+      label: 'Tool',
+      title: 'Tool completed',
+      body: 'pwsh -Command Get-Location',
+      meta: '20:00:00',
+      sourceItemType: 'command_execution',
+      commandText: 'pwsh -Command Get-Location',
+      commandOutputTail: ['Q:\\repos\\MidTerm'],
+    });
+
+    expect(presentation.mode).toBe('command');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(2);
+  });
+
+  it('tokenizes command text into command, parameter, string, operator, and text parts', async () => {
+    const { tokenizeCommandText } = await import('./index');
+
+    expect(
+      tokenizeCommandText('pwsh -Command "git status" > out.txt'),
+    ).toEqual([
+      { text: 'pwsh', kind: 'command' },
+      { text: ' ', kind: 'whitespace' },
+      { text: '-Command', kind: 'parameter' },
+      { text: ' ', kind: 'whitespace' },
+      { text: '"git status"', kind: 'string' },
+      { text: ' ', kind: 'whitespace' },
+      { text: '>', kind: 'operator' },
+      { text: ' ', kind: 'whitespace' },
+      { text: 'out.txt', kind: 'text' },
+    ]);
+  });
+
   it('uses dedicated diff presentation for Lens diff rows', async () => {
     const { resolveHistoryBodyPresentation } = await import('./index');
 
@@ -4731,7 +4778,7 @@ describe('agentView dev errors', () => {
 
     expect(rendered).toHaveLength(201);
     expect(rendered[0]).toEqual({
-      text: 'report.md',
+      text: 'Edited report.md',
       className: 'agent-history-diff-line-file',
     });
     expect(rendered[1]).toEqual({
@@ -4786,6 +4833,27 @@ describe('agentView dev errors', () => {
       text: '+line 6 new',
       className: 'agent-history-diff-line-add',
       newLineNumber: 6,
+    });
+  });
+
+  it('resolves diff file headers against the session working directory when available', async () => {
+    const { buildRenderedDiffLines } = await import('./index');
+
+    const rendered = buildRenderedDiffLines(
+      [
+        'diff --git a/src/report.md b/src/report.md',
+        '--- a/src/report.md',
+        '+++ b/src/report.md',
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n'),
+      'Q:\\repos\\MidTerm',
+    );
+
+    expect(rendered[0]).toEqual({
+      text: 'Edited Q:\\repos\\MidTerm\\src\\report.md',
+      className: 'agent-history-diff-line-file',
     });
   });
 

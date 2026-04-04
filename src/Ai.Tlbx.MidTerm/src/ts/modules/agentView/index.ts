@@ -42,7 +42,7 @@ import {
 } from '../../api/client';
 import { t } from '../i18n';
 import { buildTerminalFontStack, getConfiguredTerminalFontFamily } from '../terminal/fontConfig';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, getSession } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
@@ -187,7 +187,10 @@ export interface LensHistoryEntry {
   pending?: boolean;
   sourceItemId?: string | null;
   sourceTurnId?: string | null;
+  sourceItemType?: string | null;
   busyIndicator?: boolean;
+  commandText?: string | null;
+  commandOutputTail?: string[];
 }
 
 export interface HistoryVirtualWindow {
@@ -231,10 +234,15 @@ interface HistoryRenderedNode {
 }
 
 export interface HistoryBodyPresentation {
-  mode: 'plain' | 'monospace' | 'markdown' | 'streaming' | 'diff';
+  mode: 'plain' | 'monospace' | 'markdown' | 'streaming' | 'diff' | 'command';
   collapsedByDefault: boolean;
   lineCount: number;
   preview: string;
+}
+
+interface CommandToken {
+  text: string;
+  kind: 'command' | 'parameter' | 'string' | 'operator' | 'text' | 'whitespace';
 }
 
 export interface DiffRenderLine {
@@ -2084,6 +2092,7 @@ function buildHistoryEntrySignature(
   const actionToken = (entry.actions ?? [])
     .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
     .join('|');
+  const commandTailToken = (entry.commandOutputTail ?? []).join('\n');
   const clusterToken = cluster
     ? [cluster.position, cluster.label ?? '', cluster.count, cluster.onlyTools ? '1' : '0'].join(
         ':',
@@ -2100,6 +2109,9 @@ function buildHistoryEntrySignature(
     entry.pending ? '1' : '0',
     entry.live ? '1' : '0',
     entry.busyIndicator ? '1' : '0',
+    entry.sourceItemType ?? '',
+    entry.commandText ?? '',
+    commandTailToken,
     attachmentToken,
     actionToken,
     clusterToken,
@@ -2420,15 +2432,17 @@ function buildCanonicalSnapshotHistoryEntries(
 
   return historyEntries
     .map(mapSnapshotEntryToHistoryEntry)
+    .sort((left, right) => left.order - right.order)
+    .reduce<LensHistoryEntry[]>(mergeCommandHistoryEntries, [])
     .filter(
       (entry) =>
         entry.body.trim() ||
+        (entry.commandText?.trim() ?? '').length > 0 ||
         (entry.attachments?.length ?? 0) > 0 ||
         entry.kind === 'request' ||
         entry.kind === 'system' ||
         entry.kind === 'notice',
-    )
-    .sort((left, right) => left.order - right.order);
+    );
 }
 
 function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHistoryEntry {
@@ -2449,12 +2463,40 @@ function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHisto
     live: entry.streaming,
     sourceItemId: entry.itemId ?? null,
     sourceTurnId: entry.turnId ?? null,
+    sourceItemType: entry.itemType ?? null,
   };
   if (entry.requestId) {
     mapped.requestId = entry.requestId;
   }
 
   return mapped;
+}
+
+function mergeCommandHistoryEntries(
+  mergedEntries: LensHistoryEntry[],
+  entry: LensHistoryEntry,
+): LensHistoryEntry[] {
+  const previousEntry = mergedEntries[mergedEntries.length - 1];
+  if (
+    !previousEntry ||
+    !isCommandOutputHistoryEntry(entry) ||
+    !isCommandExecutionHistoryEntry(previousEntry)
+  ) {
+    mergedEntries.push(entry);
+    return mergedEntries;
+  }
+
+  const commandOutputTail = extractCommandOutputTail(entry.body);
+  if (commandOutputTail.length === 0) {
+    return mergedEntries;
+  }
+
+  mergedEntries[mergedEntries.length - 1] = {
+    ...previousEntry,
+    commandText: previousEntry.commandText ?? previousEntry.body,
+    commandOutputTail,
+  };
+  return mergedEntries;
 }
 
 /**
@@ -2825,6 +2867,8 @@ function createHistoryBodyContent(
   presentation: HistoryBodyPresentation,
 ): HTMLElement {
   switch (presentation.mode) {
+    case 'command':
+      return createCommandHistoryBody(entry);
     case 'streaming': {
       const body = document.createElement('div');
       body.className = 'agent-history-body';
@@ -2844,7 +2888,7 @@ function createHistoryBodyContent(
       return body;
     }
     case 'diff':
-      return createDiffHistoryBody(entry.body);
+      return createDiffHistoryBody(entry.body, sessionId);
     case 'monospace': {
       const body = document.createElement('pre');
       body.className = 'agent-history-body';
@@ -2858,6 +2902,37 @@ function createHistoryBodyContent(
       return body;
     }
   }
+}
+
+function createCommandHistoryBody(entry: LensHistoryEntry): HTMLElement {
+  const body = document.createElement('div');
+  body.className = 'agent-history-body agent-history-command-body';
+
+  const commandLine = document.createElement('div');
+  commandLine.className = 'agent-history-command-line';
+
+  const prefix = document.createElement('span');
+  prefix.className = 'agent-history-command-prefix';
+  prefix.textContent = 'Ran ';
+  commandLine.appendChild(prefix);
+
+  for (const token of tokenizeCommandText(entry.commandText ?? entry.body)) {
+    const part = document.createElement('span');
+    part.className = `agent-history-command-token agent-history-command-token-${token.kind}`;
+    part.textContent = token.text;
+    commandLine.appendChild(part);
+  }
+
+  body.appendChild(commandLine);
+
+  if ((entry.commandOutputTail?.length ?? 0) > 0) {
+    const output = document.createElement('pre');
+    output.className = 'agent-history-command-output-tail';
+    output.textContent = entry.commandOutputTail?.join('\n') ?? '';
+    body.appendChild(output);
+  }
+
+  return body;
 }
 
 function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
@@ -2889,14 +2964,14 @@ function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
   return article;
 }
 
-function createDiffHistoryBody(bodyText: string): HTMLElement {
+function createDiffHistoryBody(bodyText: string, sessionId: string): HTMLElement {
   const body = document.createElement('div');
   body.className = 'agent-history-body agent-history-diff-body';
 
   const content = document.createElement('pre');
   content.className = 'agent-history-diff-content';
 
-  for (const line of buildRenderedDiffLines(bodyText)) {
+  for (const line of buildRenderedDiffLines(bodyText, resolveSessionWorkingDirectory(sessionId))) {
     const row = document.createElement('span');
     row.className = `agent-history-diff-line ${line.className}`;
     row.appendChild(createDiffLineNumberNode(line.oldLineNumber));
@@ -2946,13 +3021,16 @@ function resolveDiffLineClassName(line: string): string {
   return 'agent-history-diff-line-context';
 }
 
-export function buildRenderedDiffLines(bodyText: string): DiffRenderLine[] {
+export function buildRenderedDiffLines(
+  bodyText: string,
+  sessionCwd?: string | null,
+): DiffRenderLine[] {
   const normalizedLines = normalizeHistoryBodyLines(bodyText);
   if (normalizedLines.length === 0) {
     return [];
   }
 
-  const rendered = buildDiffSections(normalizedLines);
+  const rendered = buildDiffSections(normalizedLines, sessionCwd);
   const lines = rendered.length > 0 ? rendered : buildFallbackDiffLines(normalizedLines);
   if (lines.length <= MAX_VISIBLE_DIFF_LINES) {
     return lines;
@@ -2981,7 +3059,7 @@ interface DiffLineState {
   newLineNumber: number | null;
 }
 
-function buildDiffSections(lines: readonly string[]): DiffRenderLine[] {
+function buildDiffSections(lines: readonly string[], sessionCwd?: string | null): DiffRenderLine[] {
   const sections: ParsedDiffSection[] = [];
   let current: ParsedDiffSection | null = null;
   let seenHunk = false;
@@ -3075,7 +3153,7 @@ function buildDiffSections(lines: readonly string[]): DiffRenderLine[] {
       continue;
     }
 
-    const sectionHeader = formatDiffSectionHeader(section.oldPath, section.newPath);
+    const sectionHeader = formatDiffSectionHeader(section.oldPath, section.newPath, sessionCwd);
     if (sectionHeader) {
       rendered.push({
         text: sectionHeader,
@@ -3243,35 +3321,65 @@ function normalizeDiffPath(value: string): string {
   return trimmed.replace(/^["']|["']$/g, '').replace(/^[ab]\//, '');
 }
 
-function formatDiffSectionHeader(oldPath: string, newPath: string): string {
+function formatDiffSectionHeader(
+  oldPath: string,
+  newPath: string,
+  sessionCwd?: string | null,
+): string {
   const normalizedOld = normalizeDiffPath(oldPath);
   const normalizedNew = normalizeDiffPath(newPath);
+  const preferredPath =
+    normalizedNew && normalizedNew !== '/dev/null' ? normalizedNew : normalizedOld;
+  const displayPath = resolveDisplayDiffPath(preferredPath, sessionCwd);
   if (!normalizedOld && !normalizedNew) {
     return '';
   }
 
   if (normalizedOld === '/dev/null') {
-    return normalizedNew;
+    return displayPath ? `Edited ${displayPath}` : '';
   }
 
   if (normalizedNew === '/dev/null') {
-    return lensFormat('lens.diff.deletedFile', '{path} (deleted)', {
-      path: normalizedOld,
+    return lensFormat('lens.diff.deletedFile', 'Edited {path} (deleted)', {
+      path: resolveDisplayDiffPath(normalizedOld, sessionCwd),
     });
   }
 
   if (!normalizedOld || normalizedOld === normalizedNew) {
-    return normalizedNew;
+    return displayPath ? `Edited ${displayPath}` : '';
   }
 
-  if (!normalizedNew) {
-    return normalizedOld;
-  }
-
-  return lensFormat('lens.diff.renamedFile', '{from} -> {to}', {
-    from: normalizedOld,
-    to: normalizedNew,
+  return lensFormat('lens.diff.renamedFile', 'Edited {to} (from {from})', {
+    from: resolveDisplayDiffPath(normalizedOld, sessionCwd),
+    to: resolveDisplayDiffPath(normalizedNew, sessionCwd),
   });
+}
+
+function resolveSessionWorkingDirectory(sessionId: string): string | null {
+  const cwd = getSession(sessionId)?.currentDirectory?.trim();
+  return cwd && cwd.length > 0 ? cwd : null;
+}
+
+function resolveDisplayDiffPath(path: string, sessionCwd?: string | null): string {
+  const normalizedPath = normalizeDiffPath(path);
+  if (!normalizedPath || normalizedPath === '/dev/null') {
+    return normalizedPath;
+  }
+
+  if (
+    /^[A-Za-z]:[\\/]/.test(normalizedPath) ||
+    normalizedPath.startsWith('/') ||
+    normalizedPath.startsWith('\\\\')
+  ) {
+    return normalizedPath;
+  }
+
+  const cwd = (sessionCwd ?? '').trim();
+  if (!cwd) {
+    return normalizedPath;
+  }
+
+  return `${cwd.replace(/[\\/]+$/g, '')}\\${normalizedPath.replace(/\//g, '\\')}`;
 }
 
 function createCollapsedHistoryBody(
@@ -3504,6 +3612,10 @@ function isAssistantPlaceholderEntry(entry: LensHistoryEntry): boolean {
 function normalizeHistoryTitle(entry: LensHistoryEntry): string {
   const title = entry.title.trim();
   if (!title) {
+    return '';
+  }
+
+  if (isCommandExecutionHistoryEntry(entry)) {
     return '';
   }
 
@@ -4051,7 +4163,12 @@ export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidt
             ),
         );
   const presentation = resolveHistoryBodyPresentation(entry);
-  const bodyHeight = presentation.collapsedByDefault ? 40 : Math.min(420, 18 * textLines);
+  const bodyHeight =
+    presentation.mode === 'command'
+      ? 24 + Math.min(8, entry.commandOutputTail?.length ?? 0) * 16
+      : presentation.collapsedByDefault
+        ? 40
+        : Math.min(420, 18 * textLines);
 
   switch (entry.kind) {
     case 'tool':
@@ -4153,6 +4270,15 @@ export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): History
     };
   }
 
+  if (isCommandExecutionHistoryEntry(entry)) {
+    return {
+      mode: 'command',
+      collapsedByDefault: false,
+      lineCount: 1 + (entry.commandOutputTail?.length ?? 0),
+      preview: '',
+    };
+  }
+
   const mode =
     entry.kind === 'diff' ? 'diff' : isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
   const lineCount = countHistoryBodyLines(entry.body);
@@ -4173,6 +4299,31 @@ export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): History
 
 function isMachineHistoryKind(kind: HistoryKind): boolean {
   return kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff';
+}
+
+function isCommandExecutionHistoryEntry(entry: LensHistoryEntry): boolean {
+  const normalized = normalizeHistoryItemType(entry.sourceItemType);
+  return (
+    entry.kind === 'tool' &&
+    (normalized === 'commandexecution' ||
+      normalized === 'command' ||
+      normalized === 'commandcall' ||
+      normalized === 'commandrun')
+  );
+}
+
+function isCommandOutputHistoryEntry(entry: LensHistoryEntry): boolean {
+  return (
+    entry.kind === 'tool' &&
+    normalizeComparableHistoryText(entry.title) === normalizeComparableHistoryText('Command output')
+  );
+}
+
+function normalizeHistoryItemType(value: string | null | undefined): string {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
 }
 
 function countHistoryBodyLines(body: string): number {
@@ -4197,6 +4348,96 @@ function buildHistoryBodyPreview(body: string): string {
   }
 
   return `${singleLine.slice(0, COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS - 1)}…`;
+}
+
+function extractCommandOutputTail(body: string): string[] {
+  const lines = normalizeHistoryBodyLines(body)
+    .map((line) => line.replace(/\s+$/g, ''))
+    .filter(
+      (line, index, array) =>
+        line.length > 0 || array.slice(index + 1).some((next) => next.length > 0),
+    );
+  return lines.slice(Math.max(0, lines.length - 8));
+}
+
+export function tokenizeCommandText(commandText: string): CommandToken[] {
+  const source = commandText || '';
+  const tokens: CommandToken[] = [];
+  let index = 0;
+  let firstWordSeen = false;
+
+  while (index < source.length) {
+    const current = source[index];
+    if (!current) {
+      break;
+    }
+
+    if (/\s/.test(current)) {
+      let end = index + 1;
+      while (end < source.length && /\s/.test(source[end] || '')) {
+        end += 1;
+      }
+      tokens.push({ text: source.slice(index, end), kind: 'whitespace' });
+      index = end;
+      continue;
+    }
+
+    if (current === '"' || current === "'") {
+      const quote = current;
+      let end = index + 1;
+      while (end < source.length) {
+        const value = source[end];
+        if (value === '\\') {
+          end += 2;
+          continue;
+        }
+
+        end += 1;
+        if (value === quote) {
+          break;
+        }
+      }
+      tokens.push({ text: source.slice(index, Math.min(end, source.length)), kind: 'string' });
+      index = Math.min(end, source.length);
+      continue;
+    }
+
+    const operatorMatch = source.slice(index).match(/^(?:\|\||&&|>>|<<|[><=|&])/);
+    if (operatorMatch?.[0]) {
+      tokens.push({ text: operatorMatch[0], kind: 'operator' });
+      index += operatorMatch[0].length;
+      continue;
+    }
+
+    let end = index + 1;
+    while (end < source.length) {
+      const value = source[end];
+      if (!value || /\s/.test(value) || value === '"' || value === "'") {
+        break;
+      }
+
+      const nextOperator = source.slice(end).match(/^(?:\|\||&&|>>|<<|[><=|&])/);
+      if (nextOperator?.[0]) {
+        break;
+      }
+
+      end += 1;
+    }
+
+    const text = source.slice(index, end);
+    const kind: CommandToken['kind'] = !firstWordSeen
+      ? 'command'
+      : text.startsWith('-')
+        ? 'parameter'
+        : 'text';
+    tokens.push({ text, kind });
+    if (!firstWordSeen && text.trim().length > 0) {
+      firstWordSeen = true;
+    }
+    index = end;
+  }
+
+  return tokens;
 }
 
 function normalizeComparableHistoryText(value: string): string {
