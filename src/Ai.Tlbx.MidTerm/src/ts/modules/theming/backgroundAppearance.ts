@@ -6,7 +6,11 @@
 
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
-import { isMobileBackgroundSuppressed, shouldRenderBackgroundImage } from './backgroundVisibility';
+import {
+  isMobileBackgroundSuppressed,
+  isMobilePresentationContext,
+  shouldRenderBackgroundImage,
+} from './backgroundVisibility';
 
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
@@ -96,12 +100,11 @@ export function getBackgroundImageUrl(revision: number): string {
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {
   const root = document.documentElement;
   const palette = getCssThemePalette(settings.theme);
-  const uiTransparency = clamp(settings.uiTransparency, 0, 100);
-  const terminalTransparency = clamp(
-    settings.terminalTransparency ?? settings.uiTransparency,
-    0,
-    100,
-  );
+  const mobilePresentation = isMobilePresentationContext();
+  const uiTransparency = mobilePresentation ? 0 : clamp(settings.uiTransparency, 0, 100);
+  const terminalTransparency = mobilePresentation
+    ? 0
+    : clamp(settings.terminalTransparency ?? settings.uiTransparency, 0, 100);
   const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
 
   for (const variable of OPAQUE_SURFACE_VARIABLES) {

@@ -325,6 +325,26 @@ describe('backgroundAppearance', () => {
     expect(bodyClassList.contains('hide-app-background-on-mobile')).toBe(true);
   });
 
+  it('forces opaque ui surfaces on mobile even when transparency is enabled in settings', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: () => ({ matches: true }),
+    });
+
+    applyBackgroundAppearance(
+      createSettings({
+        uiTransparency: 100,
+        terminalTransparency: 100,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 1.000)');
+    expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(5, 5, 10, 1.000)',
+    );
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
+  });
+
   it('rebuilds the generated animation when the viewport changes', () => {
     applyBackgroundAppearance(
       createSettings({

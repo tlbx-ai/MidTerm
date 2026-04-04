@@ -2,9 +2,9 @@ import type { MidTermSettingsPublic } from '../../types';
 import { MOBILE_BREAKPOINT } from '../../constants';
 
 export function isMobileBackgroundSuppressed(
-  settings: Pick<MidTermSettingsPublic, 'hideBackgroundImageOnMobile'> | null | undefined,
+  _settings: Pick<MidTermSettingsPublic, 'hideBackgroundImageOnMobile'> | null | undefined,
 ): boolean {
-  return Boolean(settings?.hideBackgroundImageOnMobile) && isMobilePresentationContext();
+  return isMobilePresentationContext();
 }
 
 export function shouldRenderBackgroundImage(
@@ -27,7 +27,7 @@ export function shouldRenderBackgroundImage(
   );
 }
 
-function isMobilePresentationContext(): boolean {
+export function isMobilePresentationContext(): boolean {
   if (typeof window === 'undefined') {
     return false;
   }

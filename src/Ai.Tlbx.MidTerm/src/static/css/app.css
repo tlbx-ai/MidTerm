@@ -2673,15 +2673,15 @@ body.has-app-background::after {
   .mobile-topbar {
     display: flex;
     align-items: center;
-    padding: 4px 8px;
+    padding: 0;
     padding-top: calc(4px + var(--mobile-safe-top));
-    padding-left: calc(8px + env(safe-area-inset-left, 0));
-    padding-right: calc(8px + env(safe-area-inset-right, 0));
-    background-color: var(--bg-sidebar);
-    border-bottom: 1px solid var(--border-color);
-    gap: 6px;
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+    background: var(--bg-terminal);
+    border-bottom: none;
+    gap: 0;
     flex-shrink: 0;
-    min-height: 44px;
+    min-height: calc(var(--bar-height) + var(--mobile-safe-top));
   }
 
   .mobile-topbar.has-mobile-tabs .topbar-title {
@@ -2691,7 +2691,7 @@ body.has-app-background::after {
   .mobile-topbar .mobile-tab-strip {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 0;
     min-width: 0;
     flex: 1;
     overflow-x: auto;
@@ -2709,31 +2709,40 @@ body.has-app-background::after {
 
   .mobile-tab-pill {
     min-width: 0;
-    min-height: 36px;
-    padding: 8px 14px;
-    border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    min-height: var(--bar-height);
+    height: var(--bar-height);
+    padding: 6px 14px;
+    border: none;
+    border-bottom: 1px solid transparent;
+    border-radius: 0;
+    background: none;
     color: var(--text-secondary);
     font: inherit;
-    font-size: var(--fs-sm);
-    font-weight: 600;
+    font-size: var(--fs-base);
+    font-weight: 400;
     white-space: nowrap;
     flex-shrink: 0;
     transition:
-      background-color 0.15s,
       border-color 0.15s,
       color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .mobile-tab-pill.active {
-    background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
-    border-color: color-mix(in srgb, var(--accent-blue) 42%, transparent);
     color: var(--text-primary);
+    border-image: linear-gradient(
+        to right,
+        transparent 0%,
+        var(--accent-gold-muted) 20%,
+        var(--accent-gold-muted) 80%,
+        transparent 100%
+      )
+      1;
   }
 
   .mobile-tab-pill:active {
-    background: color-mix(in srgb, var(--accent-blue) 24%, transparent);
     color: var(--text-primary);
   }
 
@@ -2744,18 +2753,18 @@ body.has-app-background::after {
     width: 40px;
     height: 40px;
     border: none;
-    background: transparent;
+    background: none;
     color: var(--text-primary);
     font-size: var(--fs-2xl);
     cursor: pointer;
-    border-radius: 8px;
+    border-radius: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
-    transition: background-color 0.15s;
+    transition: color 0.15s;
   }
 
   .topbar-btn:active {
@@ -2778,7 +2787,7 @@ body.has-app-background::after {
     text-overflow: ellipsis;
     color: var(--text-primary);
     text-align: left;
-    padding: 0 4px;
+    padding: 0 12px;
   }
 
   /* Actions container */
@@ -2797,6 +2806,10 @@ body.has-app-background::after {
   .topbar-menu-toggle[aria-expanded='true'] {
     color: var(--text-primary);
     background-color: var(--btn-secondary);
+  }
+
+  .mobile-topbar.has-mobile-tabs .topbar-actions {
+    display: none;
   }
 
   .mobile-actions-dropdown {
@@ -3353,9 +3366,9 @@ body.has-app-background::after {
    ============================================================================ */
 @media (max-width: 480px) {
   .mobile-topbar {
-    padding: 3px 6px;
+    padding: 0;
     padding-top: calc(3px + var(--mobile-safe-top));
-    gap: 3px;
+    gap: 0;
   }
 
   .topbar-btn {
@@ -8674,10 +8687,10 @@ body.shared-session-mode .session-tab-bar {
   /* Keep critical controls reachable while keyboard is open, but compact them. */
   body.keyboard-visible .mobile-topbar {
     display: flex;
-    padding: 2px 6px;
+    padding: 0;
     padding-top: calc(2px + var(--mobile-safe-top));
-    gap: 4px;
-    min-height: 38px;
+    gap: 0;
+    min-height: calc(38px + var(--mobile-safe-top));
   }
 
   body.keyboard-visible .topbar-btn {

@@ -10,7 +10,7 @@ import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
-import { shouldRenderBackgroundImage } from './backgroundVisibility';
+import { isMobilePresentationContext, shouldRenderBackgroundImage } from './backgroundVisibility';
 import { getTerminalThemeByName } from './terminalColorSchemes';
 
 const ANSI_COLOR_KEYS = [
@@ -44,12 +44,20 @@ type ResolvedTerminalTheme = {
 export function getEffectiveTerminalBackgroundAlpha(
   settings: MidTermSettingsPublic | null,
 ): number {
+  if (isMobilePresentationContext()) {
+    return 1;
+  }
+
   return transparencyToAlpha(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0);
 }
 
 export function getEffectiveTerminalCellBackgroundAlpha(
   settings: MidTermSettingsPublic | null,
 ): number {
+  if (isMobilePresentationContext()) {
+    return 1;
+  }
+
   return transparencyToAlpha(
     settings?.terminalCellBackgroundTransparency ??
       settings?.terminalTransparency ??

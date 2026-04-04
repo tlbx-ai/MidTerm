@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { MidTermSettingsPublic } from '../../api/types';
-import { getEffectiveXtermThemeForSettings } from './themes';
+import {
+  getEffectiveTerminalBackgroundAlpha,
+  getEffectiveTerminalCellBackgroundAlpha,
+  getEffectiveXtermThemeForSettings,
+} from './themes';
 
 const originalWindow = globalThis.window;
 const originalNavigator = globalThis.navigator;
@@ -258,6 +262,25 @@ describe('themes', () => {
       }),
     );
 
+    expect(theme.background).toBe('#0C0C0C');
+    expect(theme.red).toBe('#FF4055');
+  });
+
+  it('forces terminal background opacity on mobile even when transparency is enabled', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: () => ({ matches: true }),
+    });
+
+    const settings = createSettings({
+      uiTransparency: 80,
+      terminalTransparency: 60,
+      terminalCellBackgroundTransparency: 40,
+    });
+
+    expect(getEffectiveTerminalBackgroundAlpha(settings)).toBe(1);
+    expect(getEffectiveTerminalCellBackgroundAlpha(settings)).toBe(1);
+
+    const theme = getEffectiveXtermThemeForSettings(settings);
     expect(theme.background).toBe('#0C0C0C');
     expect(theme.red).toBe('#FF4055');
   });
