@@ -11924,6 +11924,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   content: ' ';
 }
 
+.agent-history-diff-line-add > .agent-history-diff-line-number:first-child,
+.agent-history-diff-line-delete > .agent-history-diff-line-number:nth-child(2) {
+  display: none;
+}
+
+.agent-history-diff-line-add > .agent-history-diff-line-number:nth-child(2),
+.agent-history-diff-line-delete > .agent-history-diff-line-number:first-child {
+  grid-column: 1 / span 2;
+}
+
 .agent-history-diff-line-text {
   min-width: 0;
   padding: 1px 10px 1px 0;
