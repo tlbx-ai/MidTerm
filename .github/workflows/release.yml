@@ -545,3 +545,22 @@ jobs:
             exit 0
           fi
           npm publish --access public --provenance --tag latest
+
+  prune-artifacts:
+    needs: [prepare, build, build-windows, publish-npm]
+    if: needs.prepare.outputs.is_dev != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Prune old workflow artifacts outside retained release lines
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/prune-release-artifacts.ps1 `
+            -Repository "${{ github.repository }}" `
+            -CurrentTag "${{ github.ref_name }}"
