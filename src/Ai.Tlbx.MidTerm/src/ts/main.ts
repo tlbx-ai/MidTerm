@@ -137,6 +137,7 @@ import {
   setSessionLensAvailability,
   switchTab,
 } from './modules/sessionTabs';
+import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from './modules/sessionSurface';
 import {
   initAgentView,
   destroyAgentView,
@@ -1675,7 +1676,10 @@ function clickActiveSessionTabBarControl(selector: string): void {
 function syncMobileTabActionState(): void {
   const activeSessionId = $activeSessionId.get();
   const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
-  const agentVisible = activeSessionId ? isTabAvailable(activeSessionId, 'agent') : false;
+  const activeSession = activeSessionId ? getSession(activeSessionId) : null;
+  const agentSurfaceSession = resolveSessionSurfaceMode(activeSession) === 'agent';
+  const agentVisible =
+    activeSessionId !== null && agentSurfaceSession && isTabAvailable(activeSessionId, 'agent');
   const strip = document.getElementById('mobile-tab-strip');
   const topbar = document.getElementById('mobile-topbar');
   const title = document.getElementById('mobile-title');
@@ -1711,9 +1715,7 @@ function syncMobileTabActionState(): void {
   const terminalLabel = activeSessionId
     ? getTabLabelForSession(activeSessionId, 'terminal')
     : t('session.terminal');
-  const agentLabel = activeSessionId
-    ? getTabLabelForSession(activeSessionId, 'agent')
-    : t('sessionTabs.agent');
+  const agentLabel = activeSession ? getAgentSurfaceLabel(activeSession) : t('sessionTabs.agent');
 
   strip?.toggleAttribute('hidden', !activeSessionId);
   title?.toggleAttribute('hidden', Boolean(activeSessionId));

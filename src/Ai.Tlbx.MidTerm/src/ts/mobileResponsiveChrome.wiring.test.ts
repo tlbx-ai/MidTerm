@@ -22,6 +22,12 @@ describe('mobile responsive chrome wiring', () => {
     expect(mainSource).toContain(
       "topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));",
     );
+    expect(mainSource).toContain(
+      "const agentSurfaceSession = resolveSessionSurfaceMode(activeSession) === 'agent';",
+    );
+    expect(mainSource).toContain(
+      "activeSessionId !== null && agentSurfaceSession && isTabAvailable(activeSessionId, 'agent');",
+    );
   });
 
   it('keeps the smart input textarea on its own row only in mobile layouts', () => {
