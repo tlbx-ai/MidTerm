@@ -17,10 +17,10 @@ describe('agent view Lens wiring', () => {
     expect(css).not.toContain('order: 1;');
   });
 
-  it('uses 7px user and assistant metadata in full-width Lens layout', () => {
+  it('uses slightly larger user and assistant metadata in full-width Lens layout', () => {
     expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,");
     expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-meta,");
-    expect(css).toContain('font-size: 7px;');
+    expect(css).toContain('font-size: 9px;');
   });
 
   it('documents the above-body metadata rule in the Lens design contract', () => {
@@ -81,5 +81,14 @@ describe('agent view Lens wiring', () => {
   it('documents the selection-preservation rule for passive Lens rerenders', () => {
     expect(source).toContain('hasActiveLensSelectionInPanel');
     expect(lensDesign).toContain('Passive rerenders must not clear an active text selection inside Lens.');
+  });
+
+  it('renders the busy indicator as Working with per-letter sweep animation', () => {
+    expect(source).toContain("lensText('lens.status.working', 'Working')");
+    expect(source).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');
+    expect(source).toContain('agent-history-busy-label-letter');
+    expect(css).toContain('.agent-history-busy-label-letter {');
+    expect(css).toContain('@keyframes agent-history-busy-sweep {');
+    expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
   });
 });

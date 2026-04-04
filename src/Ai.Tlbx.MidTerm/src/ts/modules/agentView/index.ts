@@ -2671,11 +2671,16 @@ function isSuppressedLensRuntimeNoticeHistoryEntry(
 
   const title = normalizeComparableHistoryText(entry.title ?? '');
   const body = normalizeComparableHistoryText(entry.body);
+  const contextMarker = normalizeComparableHistoryText('Codex context window updated.');
+  const rateLimitMarker = normalizeComparableHistoryText('Codex rate limits updated.');
   return (
-    title === normalizeComparableHistoryText('Codex context window updated.') ||
-    title === normalizeComparableHistoryText('Codex rate limits updated.') ||
-    body.includes(normalizeComparableHistoryText('Used 0 tokens').replace('0', '')) ||
-    body.includes('"ratelimits"')
+    title === contextMarker ||
+    body === contextMarker ||
+    title === rateLimitMarker ||
+    body === rateLimitMarker ||
+    body.includes(normalizeComparableHistoryText('last turn in/out')) ||
+    body.includes('"ratelimits"') ||
+    body.includes('"usedpercent"')
   );
 }
 
@@ -2946,10 +2951,87 @@ function resolveTrailingBusyIndicatorLabel(
   snapshot: LensPulseSnapshotResponse,
   entries: readonly LensHistoryEntry[],
 ): string {
-  const hasLiveAssistant = entries.some((entry) => entry.kind === 'assistant' && entry.live);
-  return hasLiveAssistant || Boolean(snapshot.streams.assistantText.trim())
-    ? lensText('lens.status.generating', 'Generating')
-    : lensText('lens.status.working', 'Working');
+  void entries;
+  const providerBusyLabel = resolveBusyIndicatorLabelFromSnapshotItems(snapshot);
+  if (providerBusyLabel) {
+    return providerBusyLabel;
+  }
+
+  return lensText('lens.status.working', 'Working');
+}
+
+function resolveBusyIndicatorLabelFromSnapshotItems(
+  snapshot: LensPulseSnapshotResponse,
+): string | null {
+  const currentTurnId = snapshot.currentTurn.turnId ?? null;
+  const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+  const candidates = items
+    .filter((item) => isLiveBusyIndicatorItem(item, currentTurnId))
+    .sort(compareBusyIndicatorItemsNewestFirst);
+
+  for (const item of candidates) {
+    const detailLabel = normalizeBusyIndicatorLabel(item.detail ?? '');
+    if (detailLabel) {
+      return detailLabel;
+    }
+
+    const titleLabel = normalizeBusyIndicatorLabel(item.title ?? '');
+    if (titleLabel && !isGenericBusyIndicatorTitle(titleLabel, item.itemType)) {
+      return titleLabel;
+    }
+  }
+
+  return null;
+}
+
+function isLiveBusyIndicatorItem(
+  item: LensPulseSnapshotResponse['items'][number],
+  currentTurnId: string | null,
+): boolean {
+  const status = item.status.trim().toLowerCase();
+  if (!['in_progress', 'running', 'started'].includes(status)) {
+    return false;
+  }
+
+  if (currentTurnId && item.turnId && item.turnId !== currentTurnId) {
+    return false;
+  }
+
+  const itemType = normalizeComparableHistoryText(item.itemType);
+  return itemType !== 'assistant_message' && itemType !== 'user_message';
+}
+
+function compareBusyIndicatorItemsNewestFirst(
+  left: LensPulseSnapshotResponse['items'][number],
+  right: LensPulseSnapshotResponse['items'][number],
+): number {
+  return right.updatedAt.localeCompare(left.updatedAt);
+}
+
+function normalizeBusyIndicatorLabel(value: string): string {
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  if (!collapsed) {
+    return '';
+  }
+
+  const singleLine = collapsed.replace(/[`*_#>]+/g, '').trim();
+  if (!singleLine) {
+    return '';
+  }
+
+  return singleLine.length > 72 ? `${singleLine.slice(0, 69).trimEnd()}...` : singleLine;
+}
+
+function isGenericBusyIndicatorTitle(value: string, itemType: string): boolean {
+  const normalizedValue = normalizeComparableHistoryText(value);
+  const normalizedItemType = normalizeComparableHistoryText(itemType).replace(/[_-]+/g, ' ');
+  return (
+    normalizedValue === normalizedItemType ||
+    normalizedValue === prettify(itemType).toLowerCase() ||
+    normalizedValue.endsWith(' started') ||
+    normalizedValue.endsWith(' updated') ||
+    normalizedValue.endsWith(' running')
+  );
 }
 
 /**
@@ -3208,7 +3290,16 @@ function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
 
   const label = document.createElement('span');
   label.className = 'agent-history-busy-label';
-  label.textContent = entry.body;
+  const busyLabel = entry.body || 'Working';
+  for (const [index, character] of Array.from(busyLabel).entries()) {
+    const letter = document.createElement('span');
+    letter.className = 'agent-history-busy-label-letter';
+    if (typeof letter.style.setProperty === 'function') {
+      letter.style.setProperty('--agent-busy-letter-index', String(index));
+    }
+    letter.textContent = character;
+    label.appendChild(letter);
+  }
 
   bubble.appendChild(glyph);
   bubble.appendChild(label);

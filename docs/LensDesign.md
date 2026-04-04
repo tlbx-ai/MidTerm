@@ -169,6 +169,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - The assistant row should not visually reset between deltas.
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
+- When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. Only fall back to a generic `Working` label when no meaningful live provider label is available.
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 

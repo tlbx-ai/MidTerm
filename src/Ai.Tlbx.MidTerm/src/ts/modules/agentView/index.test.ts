@@ -4647,7 +4647,7 @@ describe('agentView dev errors', () => {
 
     expect(running).toHaveLength(2);
     expect(running[1]?.busyIndicator).toBe(true);
-    expect(running[1]?.body).toBe('Generating');
+    expect(running[1]?.body).toBe('Working');
 
     const settled = withTrailingBusyIndicator(
       {
@@ -4661,6 +4661,59 @@ describe('agentView dev errors', () => {
 
     expect(settled).toHaveLength(1);
     expect(settled.some((entry: any) => entry.busyIndicator)).toBe(false);
+  });
+
+  it('uses the latest provider in-progress item detail as the busy bubble label before falling back to Working', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-2', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: '' },
+        items: [
+          {
+            itemId: 'reasoning-1',
+            turnId: 'turn-2',
+            itemType: 'reasoning',
+            status: 'in_progress',
+            title: 'Reasoning',
+            detail: 'Scanning repository layout',
+            attachments: [],
+            updatedAt: '2026-04-04T20:00:10Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(running[0]?.busyIndicator).toBe(true);
+    expect(running[0]?.body).toBe('Scanning repository layout');
+
+    const fallback = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-2', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: '' },
+        items: [
+          {
+            itemId: 'reasoning-1',
+            turnId: 'turn-2',
+            itemType: 'reasoning',
+            status: 'in_progress',
+            title: 'Reasoning',
+            detail: '',
+            attachments: [],
+            updatedAt: '2026-04-04T20:00:10Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(fallback[0]?.body).toBe('Working');
   });
 
   it('collapses long tool-style history bodies by default while keeping them monospace', async () => {
@@ -4787,8 +4840,21 @@ describe('agentView dev errors', () => {
           updatedAt: '2026-04-04T19:59:58Z',
         },
         {
-          entryId: 'system-rate',
+          entryId: 'system-context-body-only',
           order: 2,
+          kind: 'system',
+          status: 'completed',
+          itemType: null,
+          title: '',
+          body: 'Codex context window updated.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T19:59:58Z',
+          updatedAt: '2026-04-04T19:59:58Z',
+        },
+        {
+          entryId: 'system-rate',
+          order: 3,
           kind: 'system',
           status: 'completed',
           itemType: null,
@@ -4801,7 +4867,7 @@ describe('agentView dev errors', () => {
         },
         {
           entryId: 'assistant-1',
-          order: 3,
+          order: 4,
           kind: 'assistant',
           status: 'completed',
           itemType: 'assistant_message',
