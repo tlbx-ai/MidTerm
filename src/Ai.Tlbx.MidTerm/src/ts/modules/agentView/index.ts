@@ -2044,12 +2044,12 @@ function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummar
   }
 
   const compact = [
-    formatTokenWindowSummary(stats),
-    `I ${formatTokenCount(stats.accumulatedInputTokens)}`,
-    `O ${formatTokenCount(stats.accumulatedOutputTokens)}`,
+    formatTokenWindowCompact(stats),
+    `in ${formatTokenCount(stats.accumulatedInputTokens)}`,
+    `out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
   ].join('  ');
   const detailParts = [
-    `Context ${formatTokenWindowSummary(stats)}`,
+    formatTokenWindowDetail(stats),
     `Session in ${formatTokenCount(stats.accumulatedInputTokens)}`,
     `Session out ${formatTokenCount(stats.accumulatedOutputTokens)}`,
   ];
@@ -5056,12 +5056,37 @@ function formatTokenCount(value: number): string {
   return String(value);
 }
 
-function formatTokenWindowSummary(stats: LensRuntimeStatsSummary): string {
+function formatTokenWindowCompact(stats: LensRuntimeStatsSummary): string {
   if (stats.windowUsedTokens === null || stats.windowTokenLimit === null) {
-    return 'ctx --';
+    return '-- of --';
   }
 
-  return `ctx ${formatTokenCount(stats.windowUsedTokens)}/${formatTokenCount(stats.windowTokenLimit)}`;
+  return `${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)}`;
+}
+
+function formatTokenWindowDetail(stats: LensRuntimeStatsSummary): string {
+  if (stats.windowUsedTokens === null || stats.windowTokenLimit === null) {
+    return 'Context -- of --';
+  }
+
+  return `Context ${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)} (${formatTokenCount(stats.windowUsedTokens)} used)`;
+}
+
+function formatTokenWindowPercent(usedTokens: number, windowTokenLimit: number): string {
+  if (windowTokenLimit <= 0) {
+    return '--';
+  }
+
+  const percent = (usedTokens / windowTokenLimit) * 100;
+  if (!Number.isFinite(percent)) {
+    return '--';
+  }
+
+  if (percent >= 10) {
+    return `${Math.round(percent)}%`;
+  }
+
+  return `${percent.toFixed(1).replace(/\.0$/, '')}%`;
 }
 
 function formatPercent(value: number | null): string {

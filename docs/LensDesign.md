@@ -195,7 +195,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows. Tool, reasoning, plan, diff, and command artifacts should stay flat unless a future design contract explicitly reintroduces structure.
 - Markdown paragraph and list spacing should be dense and terminal-like. Simple line breaks and bullet lists must not create chat-style empty-line gaps between adjacent lines.
 - Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Lens should interpret them as session telemetry instead of timeline content.
-- Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing the current context-window usage and accumulated session input/output token totals.
+- Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing context-window usage as a percent-of-limit summary plus accumulated session input/output token totals.
 
 ### Plan-mode questions and approvals
 

@@ -5010,6 +5010,51 @@ describe('agentView dev errors', () => {
     });
   });
 
+  it('renders runtime stats as percent of context limit plus session in/out totals', async () => {
+    getLensSnapshot.mockResolvedValue(
+      createSnapshot({
+        notices: [
+          {
+            eventId: 'notice-context-1',
+            type: 'codex/contextWindowUpdated',
+            message: 'Codex context window updated.',
+            detail: 'Used 12838 tokens, window 258400, last turn in/out 12630/208',
+            createdAt: '2026-04-04T19:59:58Z',
+          },
+        ],
+      }),
+    );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      const host = panel.querySelector('[data-agent-field="runtime-stats"]') as any;
+      expect(host.hidden).toBe(false);
+      expect(host.childNodes[0]?.textContent).toBe('5% of 258k  in 12.6k  out 208');
+    });
+
+    const host = panel.querySelector('[data-agent-field="runtime-stats"]') as any;
+    expect(host.title).toBe('Context 5% of 258k (12.8k used)\nSession in 12.6k\nSession out 208');
+    expect(host.setAttribute).toHaveBeenCalledWith(
+      'aria-label',
+      'Context 5% of 258k (12.8k used) | Session in 12.6k | Session out 208',
+    );
+  });
+
   it('detects active non-collapsed Lens selections inside the panel', async () => {
     const { hasActiveLensSelectionInPanel } = await import('./index');
 
