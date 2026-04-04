@@ -17,11 +17,11 @@ import { getSessionHeat } from '../sidebar/heatIndicator';
 import {
   computeNextScheduleTime,
   createDefaultManagerButton,
+  evaluateManagerBarCooldown,
   formatPromptPreview,
   getManagerBarHeatResumeAt,
   intervalToMs,
   isImmediateManagerAction,
-  isManagerBarCooldownReady,
   normalizeManagerBarButton,
   normalizeManagerBarButtons,
   shouldManagerActionWaitForInitialCooldown,
@@ -55,6 +55,7 @@ interface QueueEntry {
   completedCycles: number;
   nextRunAt: number | null;
   ignoreHeatUntilMs: number | null;
+  awaitingHeatRise: boolean;
 }
 
 let barEl: HTMLElement | null = null;
@@ -798,6 +799,7 @@ function enqueueAction(sessionId: string, action: NormalizedManagerButton): void
     completedCycles: 0,
     nextRunAt,
     ignoreHeatUntilMs: null,
+    awaitingHeatRise: false,
   });
 
   syncQueueProcessor();
@@ -872,7 +874,14 @@ function isQueueEntryReady(entry: QueueEntry): boolean {
     return true;
   }
   if (entry.phase === 'pendingCooldown' || entry.phase === 'chainCooldown') {
-    return isManagerBarCooldownReady(getSessionHeat(entry.sessionId), now, entry.ignoreHeatUntilMs);
+    const cooldown = evaluateManagerBarCooldown(
+      getSessionHeat(entry.sessionId),
+      now,
+      entry.ignoreHeatUntilMs,
+      entry.awaitingHeatRise,
+    );
+    entry.awaitingHeatRise = cooldown.awaitingHeatRise;
+    return cooldown.ready;
   }
   return entry.nextRunAt !== null && now >= entry.nextRunAt;
 }
@@ -882,6 +891,7 @@ function advanceQueueEntry(entry: QueueEntry, index: number): void {
   if (entry.nextPromptIndex < entry.action.prompts.length) {
     entry.phase = 'chainCooldown';
     entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
+    entry.awaitingHeatRise = true;
     return;
   }
 
@@ -901,6 +911,7 @@ function advanceQueueEntry(entry: QueueEntry, index: number): void {
     }
     entry.phase = 'pendingCooldown';
     entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
+    entry.awaitingHeatRise = true;
     return;
   }
 
@@ -908,12 +919,14 @@ function advanceQueueEntry(entry: QueueEntry, index: number): void {
     entry.phase = 'pendingInterval';
     entry.nextRunAt = Date.now() + intervalToMs(trigger);
     entry.ignoreHeatUntilMs = null;
+    entry.awaitingHeatRise = false;
     return;
   }
 
   entry.phase = 'pendingSchedule';
   entry.nextRunAt = computeNextScheduleTime(trigger.schedule, Date.now());
   entry.ignoreHeatUntilMs = null;
+  entry.awaitingHeatRise = false;
   if (entry.nextRunAt === null) {
     queueEntries.splice(index, 1);
   }

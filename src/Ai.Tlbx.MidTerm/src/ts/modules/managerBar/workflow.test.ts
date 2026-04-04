@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeNextScheduleTime,
+  evaluateManagerBarCooldown,
   getManagerBarHeatResumeAt,
   intervalToMs,
   isManagerBarCooldownReady,
@@ -109,5 +110,25 @@ describe('managerBar workflow', () => {
       ),
     ).toBe(true);
     expect(isManagerBarCooldownReady(0.26, ignoreUntil, ignoreUntil)).toBe(false);
+  });
+
+  it('requires a fresh heat rise before re-firing a cooldown-based repeat', () => {
+    const ignoreUntil = getManagerBarHeatResumeAt(1_000);
+
+    const stillCooling = evaluateManagerBarCooldown(0.1, ignoreUntil - 1, ignoreUntil, true);
+    expect(stillCooling.ready).toBe(false);
+    expect(stillCooling.awaitingHeatRise).toBe(true);
+
+    const stillIdle = evaluateManagerBarCooldown(0.1, ignoreUntil, ignoreUntil, true);
+    expect(stillIdle.ready).toBe(false);
+    expect(stillIdle.awaitingHeatRise).toBe(true);
+
+    const rearmed = evaluateManagerBarCooldown(0.6, ignoreUntil, ignoreUntil, true);
+    expect(rearmed.ready).toBe(false);
+    expect(rearmed.awaitingHeatRise).toBe(false);
+
+    const cooledAgain = evaluateManagerBarCooldown(0.1, ignoreUntil + 1, ignoreUntil, false);
+    expect(cooledAgain.ready).toBe(true);
+    expect(cooledAgain.awaitingHeatRise).toBe(false);
   });
 });

@@ -53,6 +53,11 @@ const VALID_SCHEDULE_REPEATS = new Set<ManagerScheduleRepeat>(['daily', 'weekday
 export const MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD = 0.25;
 export const MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS = 5000;
 
+export interface ManagerBarCooldownEvaluation {
+  ready: boolean;
+  awaitingHeatRise: boolean;
+}
+
 export function createDefaultManagerButton(): NormalizedManagerButton {
   return {
     id: '',
@@ -139,6 +144,37 @@ export function isManagerBarCooldownReady(
   }
 
   return currentHeat <= MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD;
+}
+
+export function evaluateManagerBarCooldown(
+  currentHeat: number,
+  nowMs: number,
+  ignoreHeatUntilMs: number | null,
+  awaitingHeatRise: boolean,
+): ManagerBarCooldownEvaluation {
+  let nextAwaitingHeatRise = awaitingHeatRise;
+  if (nextAwaitingHeatRise && currentHeat > MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD) {
+    nextAwaitingHeatRise = false;
+  }
+
+  if (!isManagerBarCooldownReady(currentHeat, nowMs, ignoreHeatUntilMs)) {
+    return {
+      ready: false,
+      awaitingHeatRise: nextAwaitingHeatRise,
+    };
+  }
+
+  if (nextAwaitingHeatRise) {
+    return {
+      ready: false,
+      awaitingHeatRise: true,
+    };
+  }
+
+  return {
+    ready: true,
+    awaitingHeatRise: false,
+  };
 }
 
 export function intervalToMs(trigger: ManagerBarTrigger): number {
