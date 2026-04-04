@@ -770,6 +770,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
         SessionLayoutStateService sessionLayoutStateService,
+        ManagerBarQueueService managerBarQueueService,
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
         BrowserPreviewRegistry browserPreviewRegistry,
@@ -778,7 +779,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, tmuxLayoutBridge, browserUiBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
         var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);

@@ -192,6 +192,7 @@ public class Program
         var layoutStateService = app.Services.GetRequiredService<SessionLayoutStateService>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
         var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();
+        var managerBarQueueService = app.Services.GetRequiredService<ManagerBarQueueService>();
         var agentFeed = app.Services.GetRequiredService<SessionAgentFeedService>();
         var sessionSupervisor = app.Services.GetRequiredService<SessionSupervisorService>();
         var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
@@ -290,6 +291,7 @@ public class Program
             gitWatcher.UnregisterSession(sessionId);
             shareGrantService.RevokeBySession(sessionId);
             sessionTelemetry.ClearSession(sessionId);
+            managerBarQueueService.RemoveSession(sessionId);
             workerSessionRegistry.Forget(sessionId);
             agentFeed.Forget(sessionId);
         };
@@ -370,6 +372,7 @@ public class Program
             app,
             sessionManager,
             layoutStateService,
+            managerBarQueueService,
             clipboardService,
             updateService,
             webPreviewService,
@@ -421,6 +424,7 @@ public class Program
             shutdownService,
             mainBrowserService,
             layoutStateService,
+            managerBarQueueService,
             gitWatcher,
             browserCommandService,
             browserPreviewRegistry,
@@ -454,6 +458,8 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync();
+        managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
+        managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         tmuxLayoutBridge?.UpdateLayout(layoutSnapshot.Root);
         await lensRuntime.DiscoverExistingSessionsAsync(sessionManager);

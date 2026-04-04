@@ -9,6 +9,7 @@
 import type {
   DockPosition,
   LayoutNode,
+  ManagerBarQueueEntry,
   Session,
   UpdateInfo,
   WsCommand,
@@ -93,6 +94,7 @@ interface StateUpdateMessage {
   sessions?: { sessions: Session[] };
   update?: UpdateInfo | null;
   layout?: LayoutStateMessage | null;
+  managerBarQueue?: ManagerBarQueueEntry[];
 }
 
 interface CommandResponseMessage {
@@ -140,6 +142,7 @@ import {
   $isMainBrowser,
   $showMainBrowserButton,
   $webPreviewUrl,
+  $managerBarQueue,
   setSessions,
   getParentSessionId,
 } from '../../stores';
@@ -281,6 +284,9 @@ export function connectStateWebSocket(): void {
       // Handle state updates
       const sessionList = data.sessions?.sessions ?? [];
       handleStateUpdate(sessionList, data.layout);
+      if (data.managerBarQueue !== undefined) {
+        $managerBarQueue.set(data.managerBarQueue);
+      }
       handleUpdateInfo(data.update ?? null);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

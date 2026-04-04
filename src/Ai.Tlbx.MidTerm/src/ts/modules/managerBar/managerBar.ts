@@ -6,25 +6,20 @@
  * session that was active when the action was triggered.
  */
 
-import { $activeSessionId, $currentSettings, $sessions } from '../../stores';
+import { $activeSessionId, $currentSettings, $managerBarQueue } from '../../stores';
 import { updateSettings } from '../../api/client';
 import { icon } from '../../constants';
+import type { ManagerBarQueueEntry } from '../../types';
 import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
-import { getSessionHeat } from '../sidebar/heatIndicator';
 import {
-  computeNextScheduleTime,
   createDefaultManagerButton,
-  evaluateManagerBarCooldown,
   formatPromptPreview,
-  getManagerBarHeatResumeAt,
-  intervalToMs,
   isImmediateManagerAction,
   normalizeManagerBarButton,
   normalizeManagerBarButtons,
-  shouldManagerActionWaitForInitialCooldown,
   type ManagerActionType,
   type ManagerBarScheduleEntry,
   type ManagerButton,
@@ -36,27 +31,6 @@ import {
 import { shouldShowManagerBar } from './visibility';
 
 const log = createLogger('managerBar');
-
-const QUEUE_POLL_INTERVAL_MS = 500;
-
-type QueuePhase =
-  | 'pendingImmediate'
-  | 'pendingCooldown'
-  | 'chainCooldown'
-  | 'pendingInterval'
-  | 'pendingSchedule';
-
-interface QueueEntry {
-  queueId: string;
-  sessionId: string;
-  action: NormalizedManagerButton;
-  phase: QueuePhase;
-  nextPromptIndex: number;
-  completedCycles: number;
-  nextRunAt: number | null;
-  ignoreHeatUntilMs: number | null;
-  awaitingHeatRise: boolean;
-}
 
 let barEl: HTMLElement | null = null;
 let queueEl: HTMLElement | null = null;
@@ -94,8 +68,7 @@ let scheduleGroupEl: HTMLElement | null = null;
 
 let editingActionId: string | null = null;
 let renderedButtons: NormalizedManagerButton[] = [];
-const queueEntries: QueueEntry[] = [];
-let queueTimerId: number | null = null;
+let queueEntries: ManagerBarQueueEntry[] = [];
 let releaseBackButtonLayer: (() => void) | null = null;
 
 export function sendCommand(sessionId: string, text: string): void {
@@ -170,17 +143,8 @@ export function initManagerBar(): void {
     syncManagerBarVisibility();
   });
 
-  $sessions.subscribe((sessions) => {
-    let changed = false;
-    for (let index = queueEntries.length - 1; index >= 0; index -= 1) {
-      if (!sessions[queueEntries[index]?.sessionId ?? '']) {
-        queueEntries.splice(index, 1);
-        changed = true;
-      }
-    }
-    if (changed) {
-      syncQueueProcessor();
-    }
+  $managerBarQueue.subscribe((entries) => {
+    queueEntries = [...entries];
     syncManagerBarVisibility();
   });
 
@@ -190,7 +154,7 @@ export function initManagerBar(): void {
     const queueId = deleteBtn?.dataset.queueId;
     if (!queueId) return;
 
-    removeQueueEntry(queueId);
+    void removeQueueEntry(queueId);
   });
 
   buttonsEl.addEventListener('click', (event) => {
@@ -440,7 +404,7 @@ function renderQueue(): void {
   }
 }
 
-function describeQueueTitle(entry: QueueEntry): string {
+function describeQueueTitle(entry: ManagerBarQueueEntry): string {
   const action = entry.action;
   if (action.actionType === 'chain') {
     const step = Math.min(action.prompts.length, entry.nextPromptIndex + 1);
@@ -454,7 +418,7 @@ function describeQueueTitle(entry: QueueEntry): string {
   return action.label || formatPromptPreview(action.prompts[0] ?? '');
 }
 
-function describeQueueCondition(entry: QueueEntry): string {
+function describeQueueCondition(entry: ManagerBarQueueEntry): string {
   if (entry.phase === 'chainCooldown') {
     return t('managerBar.queue.chainCooldown');
   }
@@ -775,160 +739,34 @@ function runButton(id: string): void {
     return;
   }
 
-  enqueueAction(sessionId, action);
+  void enqueueAction(sessionId, action);
 }
 
-function enqueueAction(sessionId: string, action: NormalizedManagerButton): void {
-  const phase = getInitialQueuePhase(action);
-  const nextRunAt =
-    phase === 'pendingSchedule'
-      ? computeNextScheduleTime(action.trigger.schedule, Date.now())
-      : null;
-
-  if (phase === 'pendingSchedule' && nextRunAt === null) {
-    log.warn(() => `Unable to schedule manager action ${action.id}`);
-    return;
-  }
-
-  queueEntries.push({
-    queueId: `${action.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    sessionId,
-    action,
-    phase,
-    nextPromptIndex: 0,
-    completedCycles: 0,
-    nextRunAt,
-    ignoreHeatUntilMs: null,
-    awaitingHeatRise: false,
-  });
-
-  syncQueueProcessor();
-  processQueueEntries();
-  renderQueue();
-}
-
-function removeQueueEntry(queueId: string): void {
-  const index = queueEntries.findIndex((entry) => entry.queueId === queueId);
-  if (index < 0) return;
-
-  queueEntries.splice(index, 1);
-  syncQueueProcessor();
-  renderQueue();
-}
-
-function getInitialQueuePhase(action: NormalizedManagerButton): QueuePhase {
-  if (action.trigger.kind === 'schedule') return 'pendingSchedule';
-  if (shouldManagerActionWaitForInitialCooldown(action)) return 'pendingCooldown';
-  return 'pendingImmediate';
-}
-
-function syncQueueProcessor(): void {
-  if (queueEntries.length === 0) {
-    if (queueTimerId !== null) {
-      window.clearInterval(queueTimerId);
-      queueTimerId = null;
+async function enqueueAction(sessionId: string, action: NormalizedManagerButton): Promise<void> {
+  try {
+    const response = await fetch('/api/manager-bar/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, action }),
+    });
+    if (!response.ok) {
+      log.error(() => `Failed to enqueue manager bar action: ${response.status}`);
     }
-    return;
-  }
-
-  if (queueTimerId === null) {
-    queueTimerId = window.setInterval(processQueueEntries, QUEUE_POLL_INTERVAL_MS);
+  } catch (error) {
+    log.error(() => `Failed to enqueue manager bar action: ${String(error)}`);
   }
 }
 
-function processQueueEntries(): void {
-  const sessions = $sessions.get();
-  let changed = false;
-
-  for (let index = queueEntries.length - 1; index >= 0; index -= 1) {
-    const entry = queueEntries[index];
-    if (!entry || !sessions[entry.sessionId]) {
-      queueEntries.splice(index, 1);
-      changed = true;
-      continue;
+async function removeQueueEntry(queueId: string): Promise<void> {
+  try {
+    const response = await fetch(`/api/manager-bar/queue/${encodeURIComponent(queueId)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok && response.status !== 404) {
+      log.error(() => `Failed to dequeue manager bar action: ${response.status}`);
     }
-
-    if (!isQueueEntryReady(entry)) continue;
-
-    const prompt = entry.action.prompts[entry.nextPromptIndex];
-    if (!prompt) {
-      queueEntries.splice(index, 1);
-      changed = true;
-      continue;
-    }
-
-    sendCommand(entry.sessionId, prompt);
-    changed = true;
-    advanceQueueEntry(entry, index);
-  }
-
-  if (changed) {
-    renderQueue();
-  }
-  syncQueueProcessor();
-}
-
-function isQueueEntryReady(entry: QueueEntry): boolean {
-  const now = Date.now();
-  if (entry.phase === 'pendingImmediate') {
-    return true;
-  }
-  if (entry.phase === 'pendingCooldown' || entry.phase === 'chainCooldown') {
-    const cooldown = evaluateManagerBarCooldown(
-      getSessionHeat(entry.sessionId),
-      now,
-      entry.ignoreHeatUntilMs,
-      entry.awaitingHeatRise,
-    );
-    entry.awaitingHeatRise = cooldown.awaitingHeatRise;
-    return cooldown.ready;
-  }
-  return entry.nextRunAt !== null && now >= entry.nextRunAt;
-}
-
-function advanceQueueEntry(entry: QueueEntry, index: number): void {
-  entry.nextPromptIndex += 1;
-  if (entry.nextPromptIndex < entry.action.prompts.length) {
-    entry.phase = 'chainCooldown';
-    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
-    entry.awaitingHeatRise = true;
-    return;
-  }
-
-  entry.completedCycles += 1;
-  entry.nextPromptIndex = 0;
-
-  const trigger = entry.action.trigger;
-  if (trigger.kind === 'fireAndForget' || trigger.kind === 'onCooldown') {
-    queueEntries.splice(index, 1);
-    return;
-  }
-
-  if (trigger.kind === 'repeatCount') {
-    if (entry.completedCycles >= trigger.repeatCount) {
-      queueEntries.splice(index, 1);
-      return;
-    }
-    entry.phase = 'pendingCooldown';
-    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
-    entry.awaitingHeatRise = true;
-    return;
-  }
-
-  if (trigger.kind === 'repeatInterval') {
-    entry.phase = 'pendingInterval';
-    entry.nextRunAt = Date.now() + intervalToMs(trigger);
-    entry.ignoreHeatUntilMs = null;
-    entry.awaitingHeatRise = false;
-    return;
-  }
-
-  entry.phase = 'pendingSchedule';
-  entry.nextRunAt = computeNextScheduleTime(trigger.schedule, Date.now());
-  entry.ignoreHeatUntilMs = null;
-  entry.awaitingHeatRise = false;
-  if (entry.nextRunAt === null) {
-    queueEntries.splice(index, 1);
+  } catch (error) {
+    log.error(() => `Failed to dequeue manager bar action: ${String(error)}`);
   }
 }
 

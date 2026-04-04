@@ -150,6 +150,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(TerminalTransportDiagnosticsDto))]
 [JsonSerializable(typeof(SessionStateResponse))]
 [JsonSerializable(typeof(SessionLayoutState))]
+[JsonSerializable(typeof(ManagerBarQueueEntryDto))]
+[JsonSerializable(typeof(List<ManagerBarQueueEntryDto>))]
+[JsonSerializable(typeof(ManagerBarQueueEnqueueRequest))]
 
 // --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]

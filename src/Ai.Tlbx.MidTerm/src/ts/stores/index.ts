@@ -22,6 +22,7 @@ import type {
   ProcessState,
   DisplayLayout,
   ShareAccessMode,
+  ManagerBarQueueEntry,
 } from '../types';
 
 // =============================================================================
@@ -207,6 +208,7 @@ export const $currentSettings = atom<MidTermSettingsPublic | null>(null);
 
 /** Update info from server */
 export const $updateInfo = atom<UpdateInfo | null>(null);
+export const $managerBarQueue = atom<ManagerBarQueueEntry[]>([]);
 
 export interface FrontendRefreshState {
   clientVersion: string;

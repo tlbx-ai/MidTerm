@@ -471,6 +471,49 @@ export interface DisplayLayout {
 }
 
 // =============================================================================
+// Manager Bar Queue Types
+// =============================================================================
+
+export interface ManagerBarQueueScheduleEntry {
+  timeOfDay: string;
+  repeat: 'daily' | 'weekdays' | 'weekends';
+}
+
+export interface ManagerBarQueueTrigger {
+  kind: 'fireAndForget' | 'onCooldown' | 'repeatCount' | 'repeatInterval' | 'schedule';
+  repeatCount: number;
+  repeatEveryValue: number;
+  repeatEveryUnit: 'seconds' | 'minutes' | 'hours' | 'days';
+  schedule: ManagerBarQueueScheduleEntry[];
+}
+
+export interface ManagerBarQueueAction {
+  id: string;
+  label: string;
+  text: string;
+  actionType: 'single' | 'chain';
+  prompts: string[];
+  trigger: ManagerBarQueueTrigger;
+}
+
+export interface ManagerBarQueueEntry {
+  queueId: string;
+  sessionId: string;
+  action: ManagerBarQueueAction;
+  phase:
+    | 'pendingImmediate'
+    | 'pendingCooldown'
+    | 'chainCooldown'
+    | 'pendingInterval'
+    | 'pendingSchedule';
+  nextPromptIndex: number;
+  completedCycles: number;
+  nextRunAt: string | null;
+  ignoreHeatUntil: string | null;
+  awaitingHeatRise: boolean;
+}
+
+// =============================================================================
 // DOM Element Cache
 // =============================================================================
 

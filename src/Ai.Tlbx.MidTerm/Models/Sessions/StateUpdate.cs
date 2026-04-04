@@ -10,4 +10,5 @@ public sealed class StateUpdate
     public SessionListDto? Sessions { get; init; }
     public UpdateInfo? Update { get; init; }
     public SessionLayoutState? Layout { get; init; }
+    public List<ManagerBarQueueEntryDto>? ManagerBarQueue { get; init; }
 }

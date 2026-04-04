@@ -4687,6 +4687,59 @@
           }
         }
       },
+      "ManagerBarQueueEntryDto": {
+        "required": [
+          "queueId",
+          "sessionId",
+          "action",
+          "phase",
+          "nextPromptIndex",
+          "completedCycles",
+          "nextRunAt",
+          "ignoreHeatUntil",
+          "awaitingHeatRise"
+        ],
+        "type": "object",
+        "properties": {
+          "queueId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/components/schemas/ManagerBarButton"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "nextPromptIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "completedCycles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRunAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "ignoreHeatUntil": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "awaitingHeatRise": {
+            "type": "boolean"
+          }
+        }
+      },
       "ManagerBarScheduleEntry": {
         "required": [
           "timeOfDay",
@@ -5978,7 +6031,8 @@
         "required": [
           "sessions",
           "update",
-          "layout"
+          "layout",
+          "managerBarQueue"
         ],
         "type": "object",
         "properties": {
@@ -6011,6 +6065,15 @@
                 "$ref": "#/components/schemas/SessionLayoutState"
               }
             ]
+          },
+          "managerBarQueue": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManagerBarQueueEntryDto"
+            }
           }
         }
       },

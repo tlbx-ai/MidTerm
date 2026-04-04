@@ -4005,6 +4005,21 @@ export interface components {
       prompts: string[];
       trigger: components['schemas']['ManagerBarTrigger'];
     };
+    ManagerBarQueueEntryDto: {
+      queueId: string;
+      sessionId: string;
+      action: components['schemas']['ManagerBarButton'];
+      phase: string;
+      /** Format: int32 */
+      nextPromptIndex: number;
+      /** Format: int32 */
+      completedCycles: number;
+      /** Format: date-time */
+      nextRunAt: null | string;
+      /** Format: date-time */
+      ignoreHeatUntil: null | string;
+      awaitingHeatRise: boolean;
+    };
     ManagerBarScheduleEntry: {
       timeOfDay: string;
       repeat: string;
@@ -4335,6 +4350,7 @@ export interface components {
       sessions: null | components['schemas']['SessionListDto'];
       update: null | components['schemas']['UpdateInfo'];
       layout: null | components['schemas']['SessionLayoutState'];
+      managerBarQueue: null | components['schemas']['ManagerBarQueueEntryDto'][];
     };
     SystemHealth: {
       healthy: boolean;

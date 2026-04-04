@@ -52,6 +52,7 @@ public static partial class SessionApiEndpoints
         WebApplication app,
         TtyHostSessionManager sessionManager,
         SessionLayoutStateService layoutStateService,
+        ManagerBarQueueService managerBarQueueService,
         ClipboardService clipboardService,
         UpdateService updateService,
         WebPreviewService webPreviewService,
@@ -71,9 +72,43 @@ public static partial class SessionApiEndpoints
             {
                 Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensPulse),
                 Update = updateService.LatestUpdate,
-                Layout = layoutStateService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id))
+                Layout = layoutStateService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id)),
+                ManagerBarQueue = managerBarQueueService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id)).ToList()
             };
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
+        });
+
+        app.MapPost("/api/manager-bar/queue", (ManagerBarQueueEnqueueRequest request) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (request.Action is null)
+            {
+                return Results.BadRequest("action required");
+            }
+
+            if (sessionManager.GetSession(request.SessionId) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var entry = managerBarQueueService.Enqueue(request.SessionId, request.Action);
+            if (entry is null)
+            {
+                return Results.BadRequest("Only queued manager-bar actions can be enqueued.");
+            }
+
+            return Results.Json(entry, AppJsonContext.Default.ManagerBarQueueEntryDto);
+        });
+
+        app.MapDelete("/api/manager-bar/queue/{queueId}", (string queueId) =>
+        {
+            return managerBarQueueService.Remove(queueId)
+                ? Results.Ok()
+                : Results.NotFound();
         });
 
         app.MapGet("/api/sessions", () =>
