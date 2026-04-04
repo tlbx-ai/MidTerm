@@ -320,9 +320,10 @@
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
   --sidebar-text-shadow:
-    0 0 14px var(--bg-sidebar-opaque, var(--bg-sidebar)),
-    0 0 30px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 92%, transparent),
-    0 0 52px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 72%, transparent);
+    0 0 8px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent),
+    0 0 16px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent),
+    0 0 28px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent);
+  --sidebar-text-shadow-inline-bleed: 8px;
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -690,7 +691,9 @@ body.has-app-background::after {
   overflow: hidden;
   text-overflow: ellipsis;
   padding-block: 10px;
+  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -10px;
+  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
   text-shadow: var(--sidebar-text-shadow);
 }
 
@@ -745,6 +748,7 @@ body.has-app-background::after {
   letter-spacing: 0.08em;
   font-size: var(--fs-xs);
   font-weight: 600;
+  overflow: visible;
   text-shadow: var(--sidebar-text-shadow);
 }
 
@@ -832,9 +836,9 @@ body.has-app-background::after {
   font-family: var(--font-ui-emoji);
   --sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));
   --sidebar-item-text-shadow:
-    0 0 14px var(--sidebar-item-text-shadow-color),
-    0 0 30px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 92%, transparent),
-    0 0 52px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 72%, transparent);
+    0 0 8px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 96%, transparent),
+    0 0 16px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 84%, transparent),
+    0 0 28px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 62%, transparent);
   transition:
     transform 0.2s ease-in-out,
     background-color 0.15s ease-in-out,
@@ -1031,7 +1035,9 @@ body.has-app-background::after {
   flex-shrink: 1;
   min-width: 0;
   padding-block: 10px;
+  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -10px;
+  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -1047,6 +1053,8 @@ body.has-app-background::after {
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
+  padding-inline: var(--sidebar-text-shadow-inline-bleed);
+  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -1057,7 +1065,9 @@ body.has-app-background::after {
   align-items: center;
   gap: 4px;
   padding-block: 8px;
+  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -8px;
+  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -1087,7 +1097,9 @@ body.has-app-background::after {
   gap: 0;
   min-width: 0;
   padding-block: 8px;
+  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -8px;
+  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -3667,6 +3679,7 @@ body.has-app-background::after {
   cursor: pointer;
   border-radius: 0;
   text-align: left;
+  overflow: visible;
   text-shadow: var(--sidebar-text-shadow);
 }
 
