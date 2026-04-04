@@ -304,13 +304,13 @@ async function saveMachineFromModal(): Promise<void> {
 
 export function bindHubSettings(): void {
   const openButton = document.getElementById('btn-hub-open-machine-modal');
-  const saveButton = document.getElementById('btn-save-hub-machine-modal');
+  const form = document.getElementById('hub-machine-form') as HTMLFormElement | null;
   const cancelButton = document.getElementById('btn-cancel-hub-machine-modal');
   const closeButton = document.getElementById('btn-close-hub-machine-modal');
   const updateButton = document.getElementById('btn-hub-control-updates');
   const modal = getMachineModal();
 
-  if (!openButton || !saveButton || !cancelButton || !closeButton || !updateButton || !modal) {
+  if (!openButton || !form || !cancelButton || !closeButton || !updateButton || !modal) {
     return;
   }
 
@@ -318,7 +318,8 @@ export function bindHubSettings(): void {
     openMachineModal();
   });
 
-  saveButton.addEventListener('click', () => {
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
     void saveMachineFromModal();
   });
 
@@ -338,12 +339,6 @@ export function bindHubSettings(): void {
     if (event.key === 'Escape') {
       event.preventDefault();
       closeMachineModal();
-      return;
-    }
-
-    if (event.key === 'Enter' && (event.target as HTMLElement | null)?.tagName === 'INPUT') {
-      event.preventDefault();
-      void saveMachineFromModal();
     }
   });
 

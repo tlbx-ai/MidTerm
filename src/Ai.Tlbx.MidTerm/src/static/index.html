@@ -1045,66 +1045,70 @@
                           &times;
                         </button>
                       </div>
-                      <div class="modal-body hub-machine-modal-body">
-                        <input id="hub-machine-id" type="hidden" />
-                        <div class="hub-machine-modal-grid">
-                          <div class="hub-machine-modal-field">
-                            <label for="hub-machine-url" data-i18n="settings.hub.machineUrl"
-                              >URL</label
-                            >
-                            <input
-                              id="hub-machine-url"
-                              type="text"
-                              placeholder="https://192.168.1.24:2000"
-                              data-i18n-placeholder="settings.hub.machineUrlPlaceholder"
-                            />
-                          </div>
-                          <div class="hub-machine-modal-field">
-                            <label for="hub-machine-api-key" data-i18n="settings.hub.apiKey"
-                              >API Key</label
-                            >
-                            <input
-                              id="hub-machine-api-key"
-                              type="text"
-                              placeholder="mtk_..."
-                              data-i18n-placeholder="settings.hub.apiKeyPlaceholder"
-                            />
-                          </div>
-                          <div class="hub-machine-modal-field">
-                            <label for="hub-machine-password" data-i18n="settings.hub.password"
-                              >Password</label
-                            >
-                            <input
-                              id="hub-machine-password"
-                              type="password"
-                              placeholder="Optional fallback"
-                              data-i18n-placeholder="settings.hub.passwordPlaceholder"
-                            />
-                            <p
-                              class="setting-hint hub-machine-modal-hint"
-                              data-i18n="settings.hub.passwordHint"
-                            >
-                              Used if the API key is missing or rejected.
-                            </p>
+                      <form id="hub-machine-form">
+                        <div class="modal-body hub-machine-modal-body">
+                          <input id="hub-machine-id" type="hidden" />
+                          <div class="hub-machine-modal-grid">
+                            <div class="hub-machine-modal-field">
+                              <label for="hub-machine-url" data-i18n="settings.hub.machineUrl"
+                                >URL</label
+                              >
+                              <input
+                                id="hub-machine-url"
+                                type="text"
+                                placeholder="https://192.168.1.24:2000"
+                                data-i18n-placeholder="settings.hub.machineUrlPlaceholder"
+                              />
+                            </div>
+                            <div class="hub-machine-modal-field">
+                              <label for="hub-machine-api-key" data-i18n="settings.hub.apiKey"
+                                >API Key</label
+                              >
+                              <input
+                                id="hub-machine-api-key"
+                                type="text"
+                                placeholder="mtk_..."
+                                data-i18n-placeholder="settings.hub.apiKeyPlaceholder"
+                              />
+                            </div>
+                            <div class="hub-machine-modal-field">
+                              <label for="hub-machine-password" data-i18n="settings.hub.password"
+                                >Password</label
+                              >
+                              <input
+                                id="hub-machine-password"
+                                type="password"
+                                placeholder="Optional fallback"
+                                data-i18n-placeholder="settings.hub.passwordPlaceholder"
+                              />
+                              <p
+                                class="setting-hint hub-machine-modal-hint"
+                                data-i18n="settings.hub.passwordHint"
+                              >
+                                Used if the API key is missing or rejected.
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div class="modal-footer">
-                        <button
-                          id="btn-cancel-hub-machine-modal"
-                          class="btn-secondary"
-                          data-i18n="modal.cancel"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          id="btn-save-hub-machine-modal"
-                          class="btn-primary"
-                          data-i18n="settings.hub.saveHost"
-                        >
-                          Save Host
-                        </button>
-                      </div>
+                        <div class="modal-footer">
+                          <button
+                            type="button"
+                            id="btn-cancel-hub-machine-modal"
+                            class="btn-secondary"
+                            data-i18n="modal.cancel"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            id="btn-save-hub-machine-modal"
+                            class="btn-primary"
+                            data-i18n="settings.hub.saveHost"
+                          >
+                            Save Host
+                          </button>
+                        </div>
+                      </form>
                     </div>
                   </div>
                 </section>
