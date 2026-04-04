@@ -1853,11 +1853,27 @@ public sealed partial class SessionLensPulseService
             "assistant" when !string.IsNullOrWhiteSpace(lensEvent.ItemId) => $"assistant:{lensEvent.ItemId}",
             "assistant" when !string.IsNullOrWhiteSpace(turnId) => $"assistant-stream:{turnId}",
             "assistant" => $"assistant-stream:{lensEvent.EventId}",
-            "tool" when !string.IsNullOrWhiteSpace(lensEvent.ItemId) => $"tool:{lensEvent.ItemId}",
-            "tool" => $"tool:{streamKind}:{turnId ?? lensEvent.EventId}",
+            "tool" => ResolveToolTranscriptEntryIdForStream(state.Items, lensEvent, turnId, streamKind),
             "reasoning" => $"reasoning:{streamKind}:{turnId ?? lensEvent.ItemId ?? lensEvent.EventId}",
             _ => $"{transcriptKind}:{turnId ?? lensEvent.ItemId ?? lensEvent.EventId}"
         };
+    }
+
+    private static string ResolveToolTranscriptEntryIdForStream(
+        IReadOnlyDictionary<string, LensPulseItemSummary> items,
+        LensPulseEvent lensEvent,
+        string? turnId,
+        string streamKind)
+    {
+        if (!string.IsNullOrWhiteSpace(lensEvent.ItemId))
+        {
+            return $"tool:{lensEvent.ItemId}";
+        }
+
+        var ownerItemId = ResolveOwningToolItemIdForStream(items, turnId, streamKind);
+        return !string.IsNullOrWhiteSpace(ownerItemId)
+            ? $"tool:{ownerItemId}"
+            : $"tool:{streamKind}:{turnId ?? lensEvent.EventId}";
     }
 
     private static string TranscriptKindFromItem(string itemType)
@@ -1981,6 +1997,34 @@ public sealed partial class SessionLensPulseService
 
         itemId = string.Empty;
         return false;
+    }
+
+    private static string? ResolveOwningToolItemIdForStream(
+        IReadOnlyDictionary<string, LensPulseItemSummary> items,
+        string? turnId,
+        string? streamKind)
+    {
+        var normalizedStreamKind = NormalizeItemType(streamKind);
+        if (string.IsNullOrWhiteSpace(normalizedStreamKind))
+        {
+            return null;
+        }
+
+        string[] preferredItemTypes = normalizedStreamKind switch
+        {
+            "command_output" => ["command_execution", "command_output"],
+            "file_change_output" => ["file_change", "file_change_output"],
+            _ => [normalizedStreamKind]
+        };
+
+        return items.Values
+            .Where(item =>
+                preferredItemTypes.Contains(NormalizeItemType(item.ItemType), StringComparer.Ordinal) &&
+                (string.IsNullOrWhiteSpace(turnId) ||
+                 string.Equals(item.TurnId, turnId, StringComparison.Ordinal)))
+            .OrderByDescending(item => item.UpdatedAt)
+            .Select(item => item.ItemId)
+            .FirstOrDefault();
     }
 
     private static string ChoosePreferredUserMessageStatus(string? existingStatus, string? incomingStatus)

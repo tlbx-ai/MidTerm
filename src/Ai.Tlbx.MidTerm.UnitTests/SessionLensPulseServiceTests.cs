@@ -972,6 +972,110 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_KeepsSeparateCommandOutputHistoryPerCommandWhenStreamsLackItemIds()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-start",
+            SessionId = "s-multi-command",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-05T00:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-1-start",
+            SessionId = "s-multi-command",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-1",
+            CreatedAt = ParseUtc("2026-04-05T00:00:01Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command_execution",
+                Status = "in_progress",
+                Title = "Tool started",
+                Detail = "git describe --tags --abbrev=0"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-1-out",
+            SessionId = "s-multi-command",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-05T00:00:02Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "command_output",
+                Delta = "v9.0.15-dev"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-2-start",
+            SessionId = "s-multi-command",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-2",
+            CreatedAt = ParseUtc("2026-04-05T00:00:03Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command_execution",
+                Status = "in_progress",
+                Title = "Tool started",
+                Detail = "git show --stat --summary --format=fuller -n 1 HEAD"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-2-out",
+            SessionId = "s-multi-command",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-05T00:00:04Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "command_output",
+                Delta = "commit f1b5a5d5"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-multi-command");
+        Assert.NotNull(snapshot);
+
+        var toolEntries = snapshot!.Transcript
+            .Where(entry => entry.Kind == "tool")
+            .OrderBy(entry => entry.Order)
+            .ToList();
+
+        Assert.Equal(2, toolEntries.Count);
+        Assert.Equal("tool:cmd-1", toolEntries[0].EntryId);
+        Assert.Equal("tool:cmd-2", toolEntries[1].EntryId);
+        Assert.Contains("git describe --tags --abbrev=0", toolEntries[0].Body, StringComparison.Ordinal);
+        Assert.Contains("v9.0.15-dev", toolEntries[0].Body, StringComparison.Ordinal);
+        Assert.Contains("git show --stat --summary --format=fuller -n 1 HEAD", toolEntries[1].Body, StringComparison.Ordinal);
+        Assert.Contains("commit f1b5a5d5", toolEntries[1].Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Append_WritesGuidNamedScreenLogWithRenderHintsInDevMode()
     {
         var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
