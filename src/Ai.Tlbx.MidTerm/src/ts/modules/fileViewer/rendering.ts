@@ -324,6 +324,7 @@ export function createLineNumberedEditor(
   textarea.className = 'file-viewer-textarea';
   textarea.wrap = 'off';
   textarea.spellcheck = false;
+  let syncingScroll = false;
 
   const updateMetrics = (text: string): void => {
     const lineCount = getLineCount(text);
@@ -336,7 +337,20 @@ export function createLineNumberedEditor(
     updateMetrics(textarea.value);
   });
   textarea.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
     gutter.scrollTop = textarea.scrollTop;
+    syncingScroll = false;
+  });
+  gutter.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
+    textarea.scrollTop = gutter.scrollTop;
+    syncingScroll = false;
   });
 
   const setText = (text: string): void => {
@@ -374,6 +388,7 @@ export function createLineNumberedViewer(
   const pre = document.createElement('pre');
   pre.className = 'file-viewer-text';
   scroller.appendChild(pre);
+  let syncingScroll = false;
 
   const setText = (nextText: string, nextHtml?: string): void => {
     const lineCount = getLineCount(nextText);
@@ -388,7 +403,20 @@ export function createLineNumberedViewer(
   };
 
   scroller.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
     gutter.scrollTop = scroller.scrollTop;
+    syncingScroll = false;
+  });
+  gutter.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
+    scroller.scrollTop = gutter.scrollTop;
+    syncingScroll = false;
   });
 
   setText(text, html);

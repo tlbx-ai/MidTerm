@@ -689,6 +689,8 @@ body.has-app-background::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-block: 10px;
+  margin-block: -10px;
   text-shadow: var(--sidebar-text-shadow);
 }
 
@@ -1028,6 +1030,8 @@ body.has-app-background::after {
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
+  padding-block: 10px;
+  margin-block: -10px;
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -1052,6 +1056,8 @@ body.has-app-background::after {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding-block: 8px;
+  margin-block: -8px;
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -1080,6 +1086,8 @@ body.has-app-background::after {
   align-items: center;
   gap: 0;
   min-width: 0;
+  padding-block: 8px;
+  margin-block: -8px;
   text-shadow: var(--sidebar-item-text-shadow);
 }
 
@@ -1596,6 +1604,16 @@ body.has-app-background::after {
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
   text-shadow: var(--sidebar-text-shadow);
+  overflow: visible;
+}
+
+.sidebar-footer:has(> .voice-section:not(.hidden):not(.collapsed)),
+.sidebar-footer:has(> .network-section:not(.collapsed)) {
+  background-color: color-mix(
+    in srgb,
+    var(--bg-sidebar) 50%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 50%
+  );
 }
 
 .sidebar-footer .footer-row {
@@ -4631,6 +4649,11 @@ body.has-app-background::after {
   background-color: var(--bg-success);
   border: 1px solid var(--border-success);
   border-radius: 4px;
+  text-shadow: none;
+}
+
+.update-panel * {
+  text-shadow: none;
 }
 
 .update-dismiss-btn {
@@ -4713,12 +4736,12 @@ body.has-app-background::after {
   width: 100%;
   padding: 6px 12px;
   background-color: var(--btn-primary);
-  color: var(--bg-primary);
+  color: color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 92%, black);
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: var(--fs-md);
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .update-btn:hover {
@@ -7153,6 +7176,12 @@ body.shared-session-mode .session-tab-bar {
 /* Network & Remote Access Section */
 .network-section {
   margin-bottom: 8px;
+}
+
+.network-section-title,
+.voice-section-title {
+  padding-block: 8px;
+  margin-block: -8px;
 }
 
 .network-section-header {
