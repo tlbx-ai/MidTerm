@@ -2,6 +2,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
+using System.Globalization;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -10,25 +11,37 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private const double CooldownHeatThreshold = 0.25;
     private const int PostTriggerIgnoreHeatMs = 5000;
     private const int PollIntervalMs = 500;
+    private const int DuplicateEnqueueWindowMs = 1500;
 
     private readonly string _statePath;
     private readonly IManagerBarQueueRuntime _runtime;
+    private readonly TimeProvider _timeProvider;
     private readonly Lock _lock = new();
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly TaskCompletionSource _startedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private List<ManagerBarQueueEntryDto> _entries = [];
+    private readonly Dictionary<string, RecentEnqueue> _recentEnqueues = new(StringComparer.Ordinal);
     private string _serializedState = string.Empty;
     private Task? _processingTask;
 
-    public ManagerBarQueueService(SettingsService settingsService, IManagerBarQueueRuntime runtime)
-        : this(settingsService.SettingsDirectory, runtime)
+    private sealed record RecentEnqueue(string QueueId, DateTimeOffset EnqueuedAt);
+
+    public ManagerBarQueueService(
+        SettingsService settingsService,
+        IManagerBarQueueRuntime runtime,
+        TimeProvider? timeProvider = null)
+        : this(settingsService.SettingsDirectory, runtime, timeProvider)
     {
     }
 
-    public ManagerBarQueueService(string settingsDirectory, IManagerBarQueueRuntime runtime)
+    public ManagerBarQueueService(
+        string settingsDirectory,
+        IManagerBarQueueRuntime runtime,
+        TimeProvider? timeProvider = null)
     {
         _statePath = Path.Combine(settingsDirectory, "manager-bar-queue.json");
         _runtime = runtime;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         Load();
     }
 
@@ -72,7 +85,8 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return null;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var trimmedSessionId = sessionId.Trim();
+        var now = _timeProvider.GetUtcNow();
         var phase = GetInitialQueuePhase(normalizedAction);
         var nextRunAt = phase == QueuePhase.PendingSchedule
             ? ComputeNextScheduleTime(normalizedAction.Trigger.Schedule, now)
@@ -85,10 +99,17 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         ManagerBarQueueEntryDto entry;
         lock (_lock)
         {
+            PruneRecentEnqueuesLocked(now);
+            var enqueueSignature = BuildEnqueueSignature(trimmedSessionId, normalizedAction);
+            if (TryGetRecentDuplicateLocked(enqueueSignature, now, out var existing))
+            {
+                return existing;
+            }
+
             entry = new ManagerBarQueueEntryDto
             {
                 QueueId = $"{normalizedAction.Id}-{Guid.NewGuid():N}",
-                SessionId = sessionId.Trim(),
+                SessionId = trimmedSessionId,
                 Action = normalizedAction,
                 Phase = phase,
                 NextPromptIndex = 0,
@@ -99,6 +120,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             };
 
             _entries.Add(CloneEntry(entry));
+            _recentEnqueues[enqueueSignature] = new RecentEnqueue(entry.QueueId, now);
             PersistLocked();
         }
 
@@ -443,6 +465,71 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         {
             Log.Warn(() => $"Failed to save manager bar queue: {ex.Message}");
         }
+    }
+
+    private bool TryGetRecentDuplicateLocked(
+        string enqueueSignature,
+        DateTimeOffset now,
+        out ManagerBarQueueEntryDto? entry)
+    {
+        entry = null;
+        if (!_recentEnqueues.TryGetValue(enqueueSignature, out var recent))
+        {
+            return false;
+        }
+
+        if ((now - recent.EnqueuedAt).TotalMilliseconds > DuplicateEnqueueWindowMs)
+        {
+            _recentEnqueues.Remove(enqueueSignature);
+            return false;
+        }
+
+        var existing = _entries.FirstOrDefault(candidate =>
+            string.Equals(candidate.QueueId, recent.QueueId, StringComparison.Ordinal));
+        if (existing is null)
+        {
+            _recentEnqueues.Remove(enqueueSignature);
+            return false;
+        }
+
+        entry = CloneEntry(existing);
+        return true;
+    }
+
+    private void PruneRecentEnqueuesLocked(DateTimeOffset now)
+    {
+        foreach (var pair in _recentEnqueues.ToArray())
+        {
+            if ((now - pair.Value.EnqueuedAt).TotalMilliseconds <= DuplicateEnqueueWindowMs)
+            {
+                continue;
+            }
+
+            _recentEnqueues.Remove(pair.Key);
+        }
+    }
+
+    private static string BuildEnqueueSignature(string sessionId, ManagerBarButton action)
+    {
+        var prompts = string.Join(
+            "\u001f",
+            action.Prompts.Select(static prompt => prompt.Trim()));
+        var schedule = string.Join(
+            "\u001e",
+            action.Trigger.Schedule.Select(static scheduleEntry => $"{scheduleEntry.Repeat}@{scheduleEntry.TimeOfDay}"));
+
+        return string.Join(
+            "\u001d",
+            sessionId,
+            action.Id,
+            action.Label,
+            action.ActionType,
+            action.Trigger.Kind,
+            action.Trigger.RepeatCount.ToString(CultureInfo.InvariantCulture),
+            action.Trigger.RepeatEveryValue.ToString(CultureInfo.InvariantCulture),
+            action.Trigger.RepeatEveryUnit,
+            prompts,
+            schedule);
     }
 
     private static ManagerBarQueueEntryDto? NormalizeEntry(ManagerBarQueueEntryDto? entry)

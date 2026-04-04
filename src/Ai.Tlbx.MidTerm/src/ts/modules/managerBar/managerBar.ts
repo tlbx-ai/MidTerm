@@ -31,6 +31,7 @@ import {
 import { shouldShowManagerBar } from './visibility';
 
 const log = createLogger('managerBar');
+const QUEUE_ENQUEUE_DEDUP_WINDOW_MS = 1500;
 
 let barEl: HTMLElement | null = null;
 let queueEl: HTMLElement | null = null;
@@ -70,6 +71,8 @@ let editingActionId: string | null = null;
 let renderedButtons: NormalizedManagerButton[] = [];
 let queueEntries: ManagerBarQueueEntry[] = [];
 let releaseBackButtonLayer: (() => void) | null = null;
+const pendingEnqueueGuards = new Map<string, number>();
+const pendingQueueRemovals = new Set<string>();
 
 export function sendCommand(sessionId: string, text: string): void {
   void submitSessionText(sessionId, text).catch((error: unknown) => {
@@ -145,16 +148,13 @@ export function initManagerBar(): void {
 
   $managerBarQueue.subscribe((entries) => {
     queueEntries = [...entries];
+    const liveQueueIds = new Set(entries.map((entry) => entry.queueId));
+    for (const queueId of pendingQueueRemovals) {
+      if (!liveQueueIds.has(queueId)) {
+        pendingQueueRemovals.delete(queueId);
+      }
+    }
     syncManagerBarVisibility();
-  });
-
-  queueEl.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement | null;
-    const deleteBtn = target?.closest<HTMLElement>('.manager-queue-delete');
-    const queueId = deleteBtn?.dataset.queueId;
-    if (!queueId) return;
-
-    void removeQueueEntry(queueId);
   });
 
   buttonsEl.addEventListener('click', (event) => {
@@ -369,7 +369,9 @@ function renderQueue(): void {
   const activeSessionId = $activeSessionId.get();
   const visibleQueue =
     settings?.managerBarEnabled && activeSessionId
-      ? queueEntries.filter((entry) => entry.sessionId === activeSessionId)
+      ? queueEntries
+          .filter((entry) => entry.sessionId === activeSessionId)
+          .filter((entry) => !pendingQueueRemovals.has(entry.queueId))
       : [];
 
   queueEl.innerHTML = '';
@@ -396,6 +398,11 @@ function renderQueue(): void {
     deleteBtn.title = t('managerBar.queue.dequeue');
     deleteBtn.setAttribute('aria-label', t('managerBar.queue.dequeue'));
     deleteBtn.innerHTML = '<span class="icon">\ue909</span>';
+    deleteBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void removeQueueEntry(entry.queueId);
+    });
 
     item.appendChild(title);
     item.appendChild(condition);
@@ -743,6 +750,16 @@ function runButton(id: string): void {
 }
 
 async function enqueueAction(sessionId: string, action: NormalizedManagerButton): Promise<void> {
+  const now = Date.now();
+  pruneExpiredEnqueueGuards(now);
+  const enqueueGuardKey = buildEnqueueGuardKey(sessionId, action);
+  const blockedUntil = pendingEnqueueGuards.get(enqueueGuardKey) ?? 0;
+  if (blockedUntil > now) {
+    return;
+  }
+
+  pendingEnqueueGuards.set(enqueueGuardKey, now + QUEUE_ENQUEUE_DEDUP_WINDOW_MS);
+
   try {
     const response = await fetch('/api/manager-bar/queue', {
       method: 'POST',
@@ -757,15 +774,49 @@ async function enqueueAction(sessionId: string, action: NormalizedManagerButton)
   }
 }
 
+function buildEnqueueGuardKey(sessionId: string, action: NormalizedManagerButton): string {
+  return [
+    sessionId,
+    action.id,
+    action.actionType,
+    action.trigger.kind,
+    action.prompts.join('\u001f'),
+  ].join('\u001d');
+}
+
+function pruneExpiredEnqueueGuards(now: number): void {
+  for (const [key, expiresAt] of pendingEnqueueGuards.entries()) {
+    if (expiresAt <= now) {
+      pendingEnqueueGuards.delete(key);
+    }
+  }
+}
+
 async function removeQueueEntry(queueId: string): Promise<void> {
+  if (pendingQueueRemovals.has(queueId)) {
+    return;
+  }
+
+  pendingQueueRemovals.add(queueId);
+  renderQueue();
+
   try {
     const response = await fetch(`/api/manager-bar/queue/${encodeURIComponent(queueId)}`, {
       method: 'DELETE',
     });
     if (!response.ok && response.status !== 404) {
+      pendingQueueRemovals.delete(queueId);
+      renderQueue();
       log.error(() => `Failed to dequeue manager bar action: ${response.status}`);
+      return;
     }
+
+    queueEntries = queueEntries.filter((entry) => entry.queueId !== queueId);
+    pendingQueueRemovals.delete(queueId);
+    renderQueue();
   } catch (error) {
+    pendingQueueRemovals.delete(queueId);
+    renderQueue();
     log.error(() => `Failed to dequeue manager bar action: ${String(error)}`);
   }
 }

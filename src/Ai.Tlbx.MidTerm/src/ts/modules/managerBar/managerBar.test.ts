@@ -33,4 +33,16 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain("button.classList.toggle('menu-open', shouldOpen);");
     expect(managerBarSource).toContain("if (target.closest('.manager-btn-actions')) {");
   });
+
+  it('guards burst enqueue clicks before sending duplicate queue requests', () => {
+    expect(managerBarSource).toContain('const QUEUE_ENQUEUE_DEDUP_WINDOW_MS = 1500;');
+    expect(managerBarSource).toContain('const pendingEnqueueGuards = new Map<string, number>();');
+    expect(managerBarSource).toContain('const enqueueGuardKey = buildEnqueueGuardKey(sessionId, action);');
+  });
+
+  it('uses a direct queue cancel handler with optimistic removal state', () => {
+    expect(managerBarSource).toContain('const pendingQueueRemovals = new Set<string>();');
+    expect(managerBarSource).toContain("deleteBtn.addEventListener('click', (event) => {");
+    expect(managerBarSource).toContain('pendingQueueRemovals.add(queueId);');
+  });
 });

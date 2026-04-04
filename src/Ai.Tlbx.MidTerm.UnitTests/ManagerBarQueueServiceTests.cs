@@ -1,6 +1,7 @@
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -8,18 +9,20 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 {
     private readonly string _stateDir;
+    private readonly FakeTimeProvider _timeProvider;
 
     public ManagerBarQueueServiceTests()
     {
         _stateDir = Path.Combine(Path.GetTempPath(), "midterm-manager-bar-queue-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_stateDir);
+        _timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-04-04T12:00:00Z"));
     }
 
     [Fact]
     public async Task Enqueue_PersistsAcrossRestart()
     {
         var runtime = new FakeRuntime(["session-1"]);
-        await using (var initial = new ManagerBarQueueService(_stateDir, runtime))
+        await using (var initial = new ManagerBarQueueService(_stateDir, runtime, _timeProvider))
         {
             var entry = initial.Enqueue("session-1", new ManagerBarButton
             {
@@ -38,7 +41,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             Assert.Single(initial.GetSnapshot(["session-1"]));
         }
 
-        await using var restarted = new ManagerBarQueueService(_stateDir, runtime);
+        await using var restarted = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
         var snapshot = Assert.Single(restarted.GetSnapshot(["session-1"]));
         Assert.Equal("session-1", snapshot.SessionId);
         Assert.Equal("Build", snapshot.Action.Label);
@@ -50,7 +53,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     public async Task GetSnapshot_FiltersQueueEntriesToValidSessions()
     {
         var runtime = new FakeRuntime(["session-1", "session-2"]);
-        await using var service = new ManagerBarQueueService(_stateDir, runtime);
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
 
         service.Enqueue("session-1", new ManagerBarButton
         {
@@ -72,6 +75,39 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         Assert.Equal("Two", entry.Action.Label);
     }
 
+    [Fact]
+    public async Task Enqueue_DeduplicatesBurstRequestsForSameAction()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        var action = CreateRepeatCountAction();
+
+        var first = service.Enqueue("session-1", action);
+        var second = service.Enqueue("session-1", action);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(first!.QueueId, second!.QueueId);
+        Assert.Single(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task Enqueue_AllowsSameActionAgainAfterDedupWindowExpires()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        var action = CreateRepeatCountAction();
+
+        var first = service.Enqueue("session-1", action);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        var second = service.Enqueue("session-1", action);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotEqual(first!.QueueId, second!.QueueId);
+        Assert.Equal(2, service.GetSnapshot(["session-1"]).Count);
+    }
+
     public async ValueTask DisposeAsync()
     {
         try
@@ -86,6 +122,22 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         }
 
         await ValueTask.CompletedTask;
+    }
+
+    private static ManagerBarButton CreateRepeatCountAction()
+    {
+        return new ManagerBarButton
+        {
+            Id = "build",
+            Label = "Build",
+            ActionType = "single",
+            Prompts = ["dotnet build"],
+            Trigger = new ManagerBarTrigger
+            {
+                Kind = "repeatCount",
+                RepeatCount = 3
+            }
+        };
     }
 
     private sealed class FakeRuntime : IManagerBarQueueRuntime

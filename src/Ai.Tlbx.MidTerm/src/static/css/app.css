@@ -9863,6 +9863,8 @@ body.shared-session-mode .session-tab-bar {
 
 .manager-queue-delete {
   margin-left: auto;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: none;
   background: none;
@@ -9872,10 +9874,16 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   justify-content: center;
   font-size: var(--fs-sm);
+  border-radius: 999px;
+  flex: 0 0 auto;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 }
 
 .manager-queue-delete:hover {
   color: var(--accent-red);
+  background: var(--accent-red-10);
 }
 
 .manager-bar-buttons {
