@@ -3,7 +3,7 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 public sealed class BrowserUiBridge
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, ListenerRegistration> _listeners = new();
+    private readonly Dictionary<string, ListenerRegistration> _listeners = new(StringComparer.Ordinal);
     private readonly MainBrowserService _mainBrowserService;
 
     public BrowserUiBridge(MainBrowserService mainBrowserService)

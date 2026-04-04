@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   setFrontendRefreshState: vi.fn(),
   clearFrontendRefreshState: vi.fn(),
   requestFrontendRefresh: vi.fn(),
+  fetch: vi.fn(),
 }));
 
 vi.mock('../constants', () => ({
@@ -31,8 +32,26 @@ vi.mock('../modules/updating/runtime', () => ({
 }));
 
 describe('versionCheck', () => {
+  const setCurrentAssetVersion = (version: string | null): void => {
+    vi.stubGlobal('window', { location: { href: 'https://127.0.0.1:2100/' } });
+    vi.stubGlobal('document', {
+      querySelector: vi.fn((selector: string) => {
+        if (selector !== 'script[src*="/js/terminal.min.js"]' || !version) {
+          return null;
+        }
+
+        return {
+          getAttribute: vi.fn((name: string) => (name === 'src' ? `/js/terminal.min.js?v=${version}` : null)),
+        };
+      }),
+    });
+  };
+
   beforeEach(() => {
+    vi.resetModules();
     Object.values(mocks).forEach((mock) => mock.mockReset());
+    vi.stubGlobal('fetch', mocks.fetch);
+    setCurrentAssetVersion(null);
   });
 
   it('clears pending refresh state when the server version matches the client', async () => {
@@ -82,5 +101,40 @@ describe('versionCheck', () => {
       updateType: 'unknown',
     });
     expect(mocks.requestFrontendRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses source-dev asset versions instead of server version strings', async () => {
+    setCurrentAssetVersion('dev-123');
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(
+        '<!doctype html><script src="/js/terminal.min.js?v=dev-123"></script>',
+      ),
+    });
+
+    const { checkVersionAndReload } = await import('./versionCheck');
+    await checkVersionAndReload();
+
+    expect(mocks.fetch).toHaveBeenCalledWith('/index.html', { cache: 'no-store' });
+    expect(mocks.clearFrontendRefreshState).toHaveBeenCalledTimes(1);
+    expect(mocks.setFrontendRefreshState).not.toHaveBeenCalled();
+    expect(mocks.requestFrontendRefresh).not.toHaveBeenCalled();
+  });
+
+  it('forces a refresh when source-dev asset stamps diverge after reconnect', async () => {
+    setCurrentAssetVersion('dev-123');
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(
+        '<!doctype html><script src="/js/terminal.min.js?v=dev-456"></script>',
+      ),
+    });
+
+    const { checkVersionAndReload } = await import('./versionCheck');
+    await checkVersionAndReload();
+
+    expect(mocks.requestFrontendRefresh).toHaveBeenCalledTimes(1);
+    expect(mocks.clearFrontendRefreshState).not.toHaveBeenCalled();
+    expect(mocks.setFrontendRefreshState).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.InteropServices;
 #if WINDOWS
 using System.ComponentModel;
@@ -29,7 +31,7 @@ public static class TtyHostSpawner
     private static string? _cachedVersion;
     private static bool _versionChecked;
     private const string MacOsLaunchAgentLabelPrefix = "ai.tlbx.midterm.mthost.";
-    private static readonly Regex MacOsPidRegex = new(@"\bpid = (?<pid>\d+)\b", RegexOptions.Compiled);
+    private static readonly Regex MacOsPidRegex = new(@"\bpid = (?<pid>\d+)\b", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     /// <summary>
     /// Gets the expected full path to mthost for this mt installation.
@@ -321,7 +323,7 @@ public static class TtyHostSpawner
         string instanceId, string ownerToken, int scrollbackBytes,
         int? mtPort, string? mtToken, int? paneIndex, string? tmuxBinDir)
     {
-        var args = $"--session {sessionId} --cols {cols} --rows {rows} --scrollback {scrollbackBytes} --mt-instance-id {instanceId} --mt-owner-token {ownerToken}";
+        var args = string.Create(CultureInfo.InvariantCulture, $"--session {sessionId} --cols {cols} --rows {rows} --scrollback {scrollbackBytes} --mt-instance-id {instanceId} --mt-owner-token {ownerToken}");
         if (!string.IsNullOrEmpty(shellType))
         {
             args += $" --shell {shellType}";
@@ -332,7 +334,7 @@ public static class TtyHostSpawner
         }
         if (mtPort.HasValue)
         {
-            args += $" --mt-port {mtPort.Value}";
+            args += string.Create(CultureInfo.InvariantCulture, $" --mt-port {mtPort.Value}");
         }
         if (!string.IsNullOrEmpty(mtToken))
         {
@@ -340,7 +342,7 @@ public static class TtyHostSpawner
         }
         if (paneIndex.HasValue)
         {
-            args += $" --pane-index {paneIndex.Value}";
+            args += string.Create(CultureInfo.InvariantCulture, $" --pane-index {paneIndex.Value}");
         }
         if (!string.IsNullOrEmpty(tmuxBinDir))
         {
@@ -376,45 +378,7 @@ public static class TtyHostSpawner
         out RedirectedProcessHandle? launchedProcess,
         out string? failure)
     {
-        launchedProcess = null;
-        failure = null;
-
-        try
-        {
-            var process = new Process
-            {
-                StartInfo = startInfo,
-                EnableRaisingEvents = true
-            };
-
-            if (!process.Start())
-            {
-                failure = "Process.Start returned false.";
-                process.Dispose();
-                return false;
-            }
-
-#if !WINDOWS
-            // Detached redirected helpers are also used for persistent sidecars such as
-            // mtagenthost, so they need their own process group to survive mt restarts.
-            if (setpgid(process.Id, 0) != 0)
-            {
-                Log.Warn(() => $"TtyHostSpawner: setpgid failed for redirected PID {process.Id} (errno: {Marshal.GetLastPInvokeError()})");
-            }
-#endif
-
-            launchedProcess = new RedirectedProcessHandle(
-                process,
-                process.StandardInput,
-                process.StandardOutput,
-                process.StandardError);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            failure = ex.Message;
-            return false;
-        }
+        return RedirectedProcessHandle.TryStartOwnedDirect(startInfo, out launchedProcess, out failure);
     }
 
     private static void ApplyEnvironmentOverrides(
@@ -488,16 +452,166 @@ public static class TtyHostSpawner
             : directory + Path.PathSeparator + existingPath;
     }
 
-    internal sealed class RedirectedProcessHandle(
-        Process process,
-        StreamWriter input,
-        StreamReader output,
-        StreamReader error)
+    [SuppressMessage("IDisposableAnalyzers.Correctness", "IDISP003:Dispose previous before re-assigning", Justification = "RedirectedProcessHandle is the dedicated ownership wrapper for the launched process transport and intentionally transitions ownership state during attach and detach.")]
+    [SuppressMessage("IDisposableAnalyzers.Correctness", "IDISP007:Don't dispose injected", Justification = "Ownership of the redirected process and stream handles is explicitly transferred into RedirectedProcessHandle when it is created.")]
+    internal sealed class RedirectedProcessHandle : IDisposable
     {
-        public Process Process { get; } = process;
-        public StreamWriter Input { get; } = input;
-        public StreamReader Output { get; } = output;
-        public StreamReader Error { get; } = error;
+        private readonly Process _process;
+        private readonly StreamWriter _input;
+        private readonly StreamReader _output;
+        private readonly StreamReader _error;
+        private bool _processDetached;
+        private bool _inputDetached;
+        private bool _outputDetached;
+        private bool _errorDetached;
+        private bool _disposed;
+
+        private RedirectedProcessHandle(ProcessStartInfo startInfo)
+        {
+            _process = new Process
+            {
+                StartInfo = startInfo,
+                EnableRaisingEvents = true
+            };
+
+            if (!_process.Start())
+            {
+                throw new InvalidOperationException("Process.Start returned false.");
+            }
+
+#if !WINDOWS
+            // Detached redirected helpers are also used for persistent sidecars such as
+            // mtagenthost, so they need their own process group to survive mt restarts.
+            if (setpgid(_process.Id, 0) != 0)
+            {
+                Log.Warn(() => $"TtyHostSpawner: setpgid failed for redirected PID {_process.Id} (errno: {Marshal.GetLastPInvokeError()})");
+            }
+#endif
+
+            _input = _process.StandardInput;
+            _output = _process.StandardOutput;
+            _error = _process.StandardError;
+        }
+
+        private RedirectedProcessHandle(
+            int processId,
+            Microsoft.Win32.SafeHandles.SafeFileHandle stdinSafe,
+            Microsoft.Win32.SafeHandles.SafeFileHandle stdoutSafe,
+            Microsoft.Win32.SafeHandles.SafeFileHandle stderrSafe)
+        {
+            _process = Process.GetProcessById(processId);
+            _process.EnableRaisingEvents = true;
+            _input = new StreamWriter(new FileStream(stdinSafe, FileAccess.Write), new UTF8Encoding(false)) { AutoFlush = true };
+            _output = new StreamReader(new FileStream(stdoutSafe, FileAccess.Read), Encoding.UTF8);
+            _error = new StreamReader(new FileStream(stderrSafe, FileAccess.Read), Encoding.UTF8);
+        }
+
+        public static bool TryStartOwnedDirect(
+            ProcessStartInfo startInfo,
+            out RedirectedProcessHandle? launchedProcess,
+            out string? failure)
+        {
+            try
+            {
+                launchedProcess = new RedirectedProcessHandle(startInfo);
+                failure = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                launchedProcess = null;
+                failure = ex.Message;
+                return false;
+            }
+        }
+
+        public static RedirectedProcessHandle CreateOwnedFromPipeHandles(
+            int processId,
+            ref Microsoft.Win32.SafeHandles.SafeFileHandle? stdinSafe,
+            ref Microsoft.Win32.SafeHandles.SafeFileHandle? stdoutSafe,
+            ref Microsoft.Win32.SafeHandles.SafeFileHandle? stderrSafe)
+        {
+            var transferredStdin = stdinSafe ?? throw new InvalidOperationException("Redirected process input handle was not created.");
+            var transferredStdout = stdoutSafe ?? throw new InvalidOperationException("Redirected process output handle was not created.");
+            var transferredStderr = stderrSafe ?? throw new InvalidOperationException("Redirected process error handle was not created.");
+            stdinSafe = null;
+            stdoutSafe = null;
+            stderrSafe = null;
+
+            try
+            {
+                return new RedirectedProcessHandle(processId, transferredStdin, transferredStdout, transferredStderr);
+            }
+            catch
+            {
+                transferredStderr?.Dispose();
+                transferredStdout?.Dispose();
+                transferredStdin?.Dispose();
+                throw;
+            }
+        }
+
+        public Process Process => !_disposed && !_processDetached ? _process : throw new ObjectDisposedException(nameof(RedirectedProcessHandle));
+        public StreamWriter Input => !_disposed && !_inputDetached ? _input : throw new ObjectDisposedException(nameof(RedirectedProcessHandle));
+        public StreamReader Output => !_disposed && !_outputDetached ? _output : throw new ObjectDisposedException(nameof(RedirectedProcessHandle));
+        public StreamReader Error => !_disposed && !_errorDetached ? _error : throw new ObjectDisposedException(nameof(RedirectedProcessHandle));
+
+        public (Process Process, StreamReader Error) DetachForIpc()
+        {
+            if (_disposed || _processDetached || _errorDetached)
+            {
+                throw new ObjectDisposedException(nameof(RedirectedProcessHandle));
+            }
+
+            if (!_inputDetached)
+            {
+                try { _input.Dispose(); } catch { }
+                _inputDetached = true;
+            }
+
+            if (!_outputDetached)
+            {
+                try { _output.Dispose(); } catch { }
+                _outputDetached = true;
+            }
+
+            _processDetached = true;
+            return (_process, _error);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            if (!_inputDetached)
+            {
+                try { _input.Dispose(); } catch { }
+                _inputDetached = true;
+            }
+
+            if (!_outputDetached)
+            {
+                try { _output.Dispose(); } catch { }
+                _outputDetached = true;
+            }
+
+            if (!_errorDetached)
+            {
+                try { _error.Dispose(); } catch { }
+                _errorDetached = true;
+            }
+
+            if (!_processDetached)
+            {
+                try { _process.Dispose(); } catch { }
+                _processDetached = true;
+            }
+        }
     }
 
 #if !WINDOWS
@@ -615,13 +729,14 @@ public static class TtyHostSpawner
                 Log.Warn(() => $"TtyHostSpawner: setpgid failed for PID {process.Id} (errno: {Marshal.GetLastPInvokeError()})");
             }
 
+            var processIdForLog = process.Id;
             if (isRoot && !string.IsNullOrEmpty(runAsUser))
             {
-                Log.Info(() => $"TtyHostSpawner: Spawned via sudo (PID: {process.Id} is sudo, not mthost). Socket discovery will use glob pattern.");
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned via sudo (PID: {processIdForLog} is sudo, not mthost). Socket discovery will use glob pattern."));
             }
             else
             {
-                Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {process.Id})");
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost (PID: {processIdForLog})"));
             }
             return TtyHostSpawnResult.Success(processId);
         }
@@ -923,10 +1038,10 @@ public static class TtyHostSpawner
         {
             var errorCode = Marshal.GetLastWin32Error();
             var detail = new Win32Exception(errorCode).Message;
-            Log.Error(() => $"TtyHostSpawner: CreateProcess failed: {errorCode} ({detail})");
+            Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: CreateProcess failed: {errorCode} ({detail})"));
             return TtyHostSpawnResult.Failed(
                 "Windows blocked the mthost process launch.",
-                detail: $"CreateProcess failed with Win32 error {errorCode}: {detail}",
+                detail: string.Create(CultureInfo.InvariantCulture, $"CreateProcess failed with Win32 error {errorCode}: {detail}"),
                 exceptionType: nameof(Win32Exception),
                 nativeErrorCode: errorCode);
         }
@@ -936,7 +1051,7 @@ public static class TtyHostSpawner
         CloseHandle(pi.hProcess);
 
         var pid = processId;
-        Log.Info(() => $"TtyHostSpawner: Spawned mthost (PID: {pid})");
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost (PID: {pid})"));
         return TtyHostSpawnResult.Success(processId);
     }
 
@@ -956,10 +1071,10 @@ public static class TtyHostSpawner
             {
                 var errorCode = Marshal.GetLastWin32Error();
                 var detail = new Win32Exception(errorCode).Message;
-                Log.Error(() => $"TtyHostSpawner: CreateEnvironmentBlock failed: {errorCode} ({detail})");
+                Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: CreateEnvironmentBlock failed: {errorCode} ({detail})"));
                 return TtyHostSpawnResult.Failed(
                     "Failed to prepare the Windows environment block for mthost.",
-                    detail: $"CreateEnvironmentBlock failed with Win32 error {errorCode}: {detail}",
+                    detail: string.Create(CultureInfo.InvariantCulture, $"CreateEnvironmentBlock failed with Win32 error {errorCode}: {detail}"),
                     exceptionType: nameof(Win32Exception),
                     nativeErrorCode: errorCode);
             }
@@ -991,10 +1106,10 @@ public static class TtyHostSpawner
                     {
                         var errorCode = Marshal.GetLastWin32Error();
                         var detail = new Win32Exception(errorCode).Message;
-                        Log.Error(() => $"TtyHostSpawner: CreateProcessAsUser failed: {errorCode} ({detail})");
+                        Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: CreateProcessAsUser failed: {errorCode} ({detail})"));
                         return TtyHostSpawnResult.Failed(
                             "Windows blocked the mthost process launch for the target user.",
-                            detail: $"CreateProcessAsUser failed with Win32 error {errorCode}: {detail}",
+                            detail: string.Create(CultureInfo.InvariantCulture, $"CreateProcessAsUser failed with Win32 error {errorCode}: {detail}"),
                             exceptionType: nameof(Win32Exception),
                             nativeErrorCode: errorCode);
                     }
@@ -1005,7 +1120,7 @@ public static class TtyHostSpawner
 
                     var pid = processId;
                     var sess = sessionId;
-                    Log.Info(() => $"TtyHostSpawner: Spawned mthost as user (PID: {pid}, Session: {sess})");
+                    Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost as user (PID: {pid}, Session: {sess})"));
                     return TtyHostSpawnResult.Success(processId);
                 }
                 finally
@@ -1062,7 +1177,7 @@ public static class TtyHostSpawner
                 }
             }
 
-            Log.Warn(() => $"TtyHostSpawner: Failed to get user token for preferred session {preferredSessionId.Value} (error: {Marshal.GetLastWin32Error()})");
+            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Failed to get user token for preferred session {preferredSessionId.Value} (error: {Marshal.GetLastWin32Error()})"));
         }
 
         if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out _))
@@ -1091,12 +1206,12 @@ public static class TtyHostSpawner
         sa.nLength = Marshal.SizeOf(sa);
 
         if (!CreatePipe(out var stdoutRead, out var stdoutWrite, ref sa, 0))
-            return (-1, "", $"CreatePipe stdout failed: {Marshal.GetLastWin32Error()}");
+            return (-1, "", string.Create(CultureInfo.InvariantCulture, $"CreatePipe stdout failed: {Marshal.GetLastWin32Error()}"));
         if (!CreatePipe(out var stderrRead, out var stderrWrite, ref sa, 0))
         {
             CloseHandle(stdoutRead);
             CloseHandle(stdoutWrite);
-            return (-1, "", $"CreatePipe stderr failed: {Marshal.GetLastWin32Error()}");
+            return (-1, "", string.Create(CultureInfo.InvariantCulture, $"CreatePipe stderr failed: {Marshal.GetLastWin32Error()}"));
         }
 
         SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0);
@@ -1106,7 +1221,7 @@ public static class TtyHostSpawner
         {
             CloseHandle(stdoutRead); CloseHandle(stdoutWrite);
             CloseHandle(stderrRead); CloseHandle(stderrWrite);
-            return (-1, "", $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}");
+            return (-1, "", string.Create(CultureInfo.InvariantCulture, $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}"));
         }
 
         try
@@ -1139,7 +1254,7 @@ public static class TtyHostSpawner
 
                 if (!success)
                 {
-                    return (-1, "", $"CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}");
+                    return (-1, "", string.Create(CultureInfo.InvariantCulture, $"CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}"));
                 }
 
                 CloseHandle(pi.hThread);
@@ -1221,19 +1336,19 @@ public static class TtyHostSpawner
 
             if (!CreatePipe(out stdinRead, out stdinWrite, ref sa, 0))
             {
-                failure = $"CreatePipe stdin failed: {Marshal.GetLastWin32Error()}";
+                failure = string.Create(CultureInfo.InvariantCulture, $"CreatePipe stdin failed: {Marshal.GetLastWin32Error()}");
                 return false;
             }
 
             if (!CreatePipe(out stdoutRead, out stdoutWrite, ref sa, 0))
             {
-                failure = $"CreatePipe stdout failed: {Marshal.GetLastWin32Error()}";
+                failure = string.Create(CultureInfo.InvariantCulture, $"CreatePipe stdout failed: {Marshal.GetLastWin32Error()}");
                 return false;
             }
 
             if (!CreatePipe(out stderrRead, out stderrWrite, ref sa, 0))
             {
-                failure = $"CreatePipe stderr failed: {Marshal.GetLastWin32Error()}";
+                failure = string.Create(CultureInfo.InvariantCulture, $"CreatePipe stderr failed: {Marshal.GetLastWin32Error()}");
                 return false;
             }
 
@@ -1243,7 +1358,7 @@ public static class TtyHostSpawner
 
             if (!CreateEnvironmentBlock(out var baseEnvironmentBlock, userToken, false))
             {
-                failure = $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}";
+                failure = string.Create(CultureInfo.InvariantCulture, $"CreateEnvironmentBlock failed: {Marshal.GetLastWin32Error()}");
                 return false;
             }
 
@@ -1283,7 +1398,7 @@ public static class TtyHostSpawner
 
                         if (!success)
                         {
-                            failure = $"CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}";
+                            failure = string.Create(CultureInfo.InvariantCulture, $"CreateProcessAsUser failed: {Marshal.GetLastWin32Error()}");
                             return false;
                         }
 
@@ -1292,26 +1407,29 @@ public static class TtyHostSpawner
                         CloseHandle(stdoutWrite); stdoutWrite = IntPtr.Zero;
                         CloseHandle(stderrWrite); stderrWrite = IntPtr.Zero;
 
-                        var process = Process.GetProcessById(pi.dwProcessId);
-                        process.EnableRaisingEvents = true;
                         CloseHandle(pi.hProcess);
 
-                        var stdinSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stdinWrite, ownsHandle: true);
-                        var stdoutSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stdoutRead, ownsHandle: true);
-                        var stderrSafe = new Microsoft.Win32.SafeHandles.SafeFileHandle(stderrRead, ownsHandle: true);
+                        Microsoft.Win32.SafeHandles.SafeFileHandle? stdinSafe = new(stdinWrite, ownsHandle: true);
+                        Microsoft.Win32.SafeHandles.SafeFileHandle? stdoutSafe = new(stdoutRead, ownsHandle: true);
+                        Microsoft.Win32.SafeHandles.SafeFileHandle? stderrSafe = new(stderrRead, ownsHandle: true);
                         stdinWrite = IntPtr.Zero;
                         stdoutRead = IntPtr.Zero;
                         stderrRead = IntPtr.Zero;
 
-                        var inputStream = new FileStream(stdinSafe, FileAccess.Write);
-                        var outputStream = new FileStream(stdoutSafe, FileAccess.Read);
-                        var errorStream = new FileStream(stderrSafe, FileAccess.Read);
-
-                        launchedProcess = new RedirectedProcessHandle(
-                            process,
-                            new StreamWriter(inputStream, new UTF8Encoding(false)) { AutoFlush = true },
-                            new StreamReader(outputStream, Encoding.UTF8),
-                            new StreamReader(errorStream, Encoding.UTF8));
+                        try
+                        {
+                            launchedProcess = RedirectedProcessHandle.CreateOwnedFromPipeHandles(
+                                pi.dwProcessId,
+                                ref stdinSafe,
+                                ref stdoutSafe,
+                                ref stderrSafe);
+                        }
+                        finally
+                        {
+                            stderrSafe?.Dispose();
+                            stdoutSafe?.Dispose();
+                            stdinSafe?.Dispose();
+                        }
                         return true;
                     }
                     finally
@@ -1397,8 +1515,8 @@ public static class TtyHostSpawner
         }
 
         var separatorIndex = entry[0] == '='
-            ? entry.IndexOf('=', 1)
-            : entry.IndexOf('=');
+            ? entry.IndexOf("=", 1, StringComparison.Ordinal)
+            : entry.IndexOf('=', StringComparison.Ordinal);
         if (separatorIndex <= 0)
         {
             return false;
@@ -1417,9 +1535,9 @@ public static class TtyHostSpawner
         foreach (var arg in args)
         {
             sb.Append(' ');
-            if (arg.Contains(' ') || arg.Contains('"'))
+            if (arg.AsSpan().IndexOf(' ') >= 0 || arg.AsSpan().IndexOf('\"') >= 0)
             {
-                sb.Append('"').Append(arg.Replace("\"", "\\\"")).Append('"');
+                sb.Append('"').Append(arg.Replace("\"", "\\\"", StringComparison.Ordinal)).Append('"');
             }
             else
             {
@@ -1452,7 +1570,8 @@ public static class TtyHostSpawner
         // Enumerate all sessions to find the right user (or any user as fallback)
         if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var pSessionInfo, out var sessionCount))
         {
-            Log.Error(() => $"TtyHostSpawner: WTSEnumerateSessions failed: {Marshal.GetLastWin32Error()}");
+            var errorCode = Marshal.GetLastWin32Error();
+            Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: WTSEnumerateSessions failed: {errorCode}"));
             return false;
         }
 

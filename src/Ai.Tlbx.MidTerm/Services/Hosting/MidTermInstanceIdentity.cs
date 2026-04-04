@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -116,7 +117,7 @@ public sealed class MidTermInstanceIdentity
 
     private static string ComputeInstanceId(string installScopeId, int port)
     {
-        var input = Encoding.UTF8.GetBytes($"{installScopeId}|{port}");
+        var input = Encoding.UTF8.GetBytes(string.Create(CultureInfo.InvariantCulture, $"{installScopeId}|{port}"));
         return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant()[..16];
     }
 

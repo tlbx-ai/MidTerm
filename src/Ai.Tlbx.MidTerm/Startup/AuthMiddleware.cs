@@ -91,7 +91,7 @@ public static class AuthMiddleware
                 return;
             }
 
-            if (path.StartsWith("/api/") || path.StartsWith("/ws/"))
+            if (path.StartsWith("/api/", StringComparison.Ordinal) || path.StartsWith("/ws/", StringComparison.Ordinal))
             {
                 context.Response.StatusCode = 401;
                 return;
@@ -164,17 +164,17 @@ public static class AuthMiddleware
                path == "/api/paths" ||
                path == "/api/security/status" ||
                path == "/api/share/claim" ||
-               path.StartsWith("/api/certificate/") ||
-               path.StartsWith("/api/auth/") ||
-               path.StartsWith("/css/") ||
-               path.StartsWith("/js/") ||
-               path.StartsWith("/fonts/") ||
-               path.StartsWith("/locales/") ||
-               path.EndsWith(".ico") ||
-               path.EndsWith(".png") ||
-               path.EndsWith(".webmanifest") ||
-               path.EndsWith(".woff") ||
-               path.EndsWith(".woff2");
+               path.StartsWith("/api/certificate/", StringComparison.Ordinal) ||
+               path.StartsWith("/api/auth/", StringComparison.Ordinal) ||
+               path.StartsWith("/css/", StringComparison.Ordinal) ||
+               path.StartsWith("/js/", StringComparison.Ordinal) ||
+               path.StartsWith("/fonts/", StringComparison.Ordinal) ||
+               path.StartsWith("/locales/", StringComparison.Ordinal) ||
+               path.EndsWith(".ico", StringComparison.Ordinal) ||
+               path.EndsWith(".png", StringComparison.Ordinal) ||
+               path.EndsWith(".webmanifest", StringComparison.Ordinal) ||
+               path.EndsWith(".woff", StringComparison.Ordinal) ||
+               path.EndsWith(".woff2", StringComparison.Ordinal);
     }
 
     private static bool IsShareProtectedPath(string path)

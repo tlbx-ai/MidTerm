@@ -104,7 +104,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
     private List<LensHostEventEnvelope> StartTurn(LensHostCommandEnvelope command)
     {
         _threadId ??= "thread-synthetic";
-        _activeTurnId = $"turn-{_sequence + 1}";
+        _activeTurnId = string.Create(CultureInfo.InvariantCulture, $"turn-{_sequence + 1}");
         _pendingRequestId = "req-approval-1";
 
         return

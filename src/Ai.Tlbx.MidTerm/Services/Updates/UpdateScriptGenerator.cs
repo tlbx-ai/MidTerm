@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
 
@@ -732,7 +733,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         var isWebOnly = updateType != UpdateType.Full;
         var generatingVersion = typeof(UpdateScriptGenerator).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-        var plusIdx = generatingVersion.IndexOf('+');
+        var plusIdx = generatingVersion.IndexOf('+', StringComparison.Ordinal);
         if (plusIdx > 0) generatingVersion = generatingVersion[..plusIdx];
 
         // macOS uses the launcher shim approach (staging + launchd respawn) — see EndpointSetup.cs.
@@ -1440,7 +1441,7 @@ write_result true ""Update completed successfully""
                 RedirectStandardError = false
             };
 
-            System.Diagnostics.Process.Start(psi);
+            using var detachedProcess = System.Diagnostics.Process.Start(psi);
         }
         else
         {
@@ -1486,7 +1487,7 @@ write_result true ""Update completed successfully""
                     var details = string.Join(" | ", new[] { stderr, stdout }.Where(s => !string.IsNullOrWhiteSpace(s)));
                     if (string.IsNullOrWhiteSpace(details))
                     {
-                        details = $"exit code {process.ExitCode}";
+                        details = string.Create(CultureInfo.InvariantCulture, $"exit code {process.ExitCode}");
                     }
 
                     throw new InvalidOperationException(
@@ -1515,7 +1516,7 @@ write_result true ""Update completed successfully""
             psi.ArgumentList.Add("/bin/bash");
             psi.ArgumentList.Add(scriptPath);
 
-            System.Diagnostics.Process.Start(psi);
+            using var detachedProcess = System.Diagnostics.Process.Start(psi);
         }
     }
 
@@ -1579,12 +1580,12 @@ write_result true ""Update completed successfully""
     private static string EscapeForPowerShell(string value)
     {
         // Escape single quotes for PowerShell single-quoted strings
-        return value.Replace("'", "''");
+        return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
     private static string EscapeForBash(string value)
     {
         // Escape single quotes for bash single-quoted strings
-        return value.Replace("'", "'\\''");
+        return value.Replace("'", "'\\''", StringComparison.Ordinal);
     }
 }

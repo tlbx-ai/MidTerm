@@ -96,19 +96,21 @@ public sealed class StateWebSocketHandler
         Timer? expiryTimer = null;
         Action<string>? revokeHandler = null;
         UpdateInfo? lastUpdate = null;
+        var shutdownToken = _shutdownService.Token;
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
             if (ws.State != WebSocketState.Open) return;
-            await sendLock.WaitAsync();
+            await sendLock.WaitAsync(shutdownToken);
             try
             {
                 if (ws.State != WebSocketState.Open) return;
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken);
             }
             catch (WebSocketException) { }
             catch (ObjectDisposedException) { }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 Log.Verbose(() => $"[StateWS] SendJsonAsync failed: {ex.GetType().Name}: {ex.Message}");
@@ -178,7 +180,7 @@ public sealed class StateWebSocketHandler
                 }
                 catch (WebSocketException) when (attempt < 2)
                 {
-                    await Task.Delay(100);
+                    await Task.Delay(100, shutdownToken);
                 }
                 catch (Exception ex)
                 {
@@ -231,7 +233,6 @@ public sealed class StateWebSocketHandler
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         _sessionLayoutStateService.OnChanged += OnLayoutChanged;
         _managerBarQueueService.OnChanged += OnManagerBarQueueChanged;
-        var shutdownToken = _shutdownService.Token;
         var browserUiListenerId = Guid.NewGuid().ToString("N");
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
@@ -395,7 +396,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, connectionToken, shareAccess);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, connectionToken, shareAccess, shutdownToken);
                         }
                     }
                 }
@@ -465,7 +466,8 @@ public sealed class StateWebSocketHandler
         Func<string, bool, object?, string?, Task> sendResponse,
         string browserId,
         object connectionToken,
-        ShareAccessContext? shareAccess)
+        ShareAccessContext? shareAccess,
+        CancellationToken ct)
     {
         WsCommand? cmd;
         try
@@ -493,15 +495,15 @@ public sealed class StateWebSocketHandler
             switch (cmd.Action)
             {
                 case "session.create":
-                    await HandleSessionCreateAsync(cmd, sendResponse);
+                    await HandleSessionCreateAsync(cmd, sendResponse, ct);
                     break;
 
                 case "session.close":
-                    await HandleSessionCloseAsync(cmd, sendResponse);
+                    await HandleSessionCloseAsync(cmd, sendResponse, ct);
                     break;
 
                 case "session.rename":
-                    await HandleSessionRenameAsync(cmd, sendResponse);
+                    await HandleSessionRenameAsync(cmd, sendResponse, ct);
                     break;
 
                 case "session.reorder":
@@ -539,14 +541,17 @@ public sealed class StateWebSocketHandler
         }
     }
 
-    private async Task HandleSessionCreateAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionCreateAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        CancellationToken ct)
     {
         var payload = cmd.Payload;
         var cols = payload?.Cols ?? 80;
         var rows = payload?.Rows ?? 24;
         var workingDir = payload?.WorkingDirectory;
 
-        var creation = await _sessionManager.CreateSessionDetailedAsync(payload?.Shell, cols, rows, workingDir);
+        var creation = await _sessionManager.CreateSessionDetailedAsync(payload?.Shell, cols, rows, workingDir, ct);
 
         if (!creation.Succeeded)
         {
@@ -571,7 +576,10 @@ public sealed class StateWebSocketHandler
         await sendResponse(cmd.Id, true, data, null);
     }
 
-    private async Task HandleSessionCloseAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionCloseAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        CancellationToken ct)
     {
         var sessionId = cmd.Payload?.SessionId;
         if (string.IsNullOrEmpty(sessionId))
@@ -580,11 +588,14 @@ public sealed class StateWebSocketHandler
             return;
         }
 
-        var closed = await _sessionManager.CloseSessionAsync(sessionId);
+        var closed = await _sessionManager.CloseSessionAsync(sessionId, ct);
         await sendResponse(cmd.Id, closed, null, closed ? null : "Session not found");
     }
 
-    private async Task HandleSessionRenameAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionRenameAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        CancellationToken ct)
     {
         var sessionId = cmd.Payload?.SessionId;
         if (string.IsNullOrEmpty(sessionId))
@@ -595,7 +606,7 @@ public sealed class StateWebSocketHandler
 
         var name = cmd.Payload?.Name;
         var isManual = cmd.Payload?.Auto != true;
-        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual);
+        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual, ct);
         await sendResponse(cmd.Id, renamed, null, renamed ? null : "Session not found");
     }
 

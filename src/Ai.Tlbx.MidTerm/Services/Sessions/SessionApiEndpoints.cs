@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -122,7 +123,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
-        app.MapPost("/api/sessions", async (CreateSessionRequest? request) =>
+        app.MapPost("/api/sessions", async (CreateSessionRequest? request, CancellationToken ct) =>
         {
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
@@ -134,7 +135,7 @@ public static partial class SessionApiEndpoints
             }
 
             var creation = await sessionManager.CreateSessionDetailedAsync(
-                shellType?.ToString(), cols, rows, request?.WorkingDirectory);
+                shellType?.ToString(), cols, rows, request?.WorkingDirectory, ct);
 
             if (!creation.Succeeded)
             {
@@ -268,17 +269,17 @@ public static partial class SessionApiEndpoints
                 : Results.BadRequest("Invalid session IDs");
         });
 
-        app.MapDelete("/api/sessions/{id}", async (string id) =>
+        app.MapDelete("/api/sessions/{id}", async (string id, CancellationToken ct) =>
         {
             workerSessionRegistry.Forget(id);
             agentFeed.Forget(id);
-            await sessionManager.CloseSessionAsync(id);
+            await sessionManager.CloseSessionAsync(id, ct);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request) =>
+        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, CancellationToken ct) =>
         {
-            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows);
+            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, ct);
             if (!success)
             {
                 return Results.NotFound();
@@ -291,14 +292,14 @@ public static partial class SessionApiEndpoints
             }, AppJsonContext.Default.ResizeResponse);
         });
 
-        app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false) =>
+        app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            await sessionManager.GetSessionFreshAsync(id).ConfigureAwait(false);
+            await sessionManager.GetSessionFreshAsync(id, ct).ConfigureAwait(false);
 
             var response = new SessionStateResponse
             {
@@ -309,7 +310,7 @@ public static partial class SessionApiEndpoints
 
             if (includeBuffer)
             {
-                var snapshot = await sessionManager.GetBufferAsync(id);
+                var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
                 if (snapshot is not null)
                 {
                     response.BufferByteLength = snapshot.Data.Length;
@@ -323,7 +324,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionStateResponse);
         });
 
-        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request) =>
+        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -335,11 +336,11 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request) =>
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -351,7 +352,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             agentFeed.NoteKeyInput(id, request);
             return Results.Ok();
         });
@@ -397,14 +398,14 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
+        app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
             if (snapshot is null)
             {
                 return Results.NotFound();
@@ -421,14 +422,14 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionBufferTextResponse);
         });
 
-        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, int lines = 120, bool stripAnsi = true) =>
+        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, int lines = 120, bool stripAnsi = true, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
             if (snapshot is null)
             {
                 return Results.NotFound();
@@ -485,9 +486,9 @@ public static partial class SessionApiEndpoints
             return Results.Json(feed, AppJsonContext.Default.AgentSessionFeedResponse);
         });
 
-        app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
+        app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false, CancellationToken ct = default) =>
         {
-            if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto))
+            if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto, ct))
             {
                 return Results.NotFound();
             }
@@ -513,7 +514,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id), AppJsonContext.Default.SessionInfoDto);
         });
 
-        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
+        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -526,7 +527,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("No file provided");
             }
 
-            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
+            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file, ct);
 
             // To make Johannes happy
             if (!File.Exists(targetPath))
@@ -540,7 +541,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
 
-        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file) =>
+        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -553,7 +554,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("No file provided");
             }
 
-            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
+            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file, ct);
 
             var success = await TrySetClipboardImageAsync(
                 sessionManager,
@@ -561,13 +562,14 @@ public static partial class SessionApiEndpoints
                 session,
                 id,
                 targetPath,
-                file.ContentType);
+                file.ContentType,
+                ct);
             if (!success)
             {
                 return Results.Problem("Failed to set clipboard");
             }
 
-            await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 });
+            await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 }, ct);
 
             return Results.Ok();
         }).DisableAntiforgery();
@@ -805,7 +807,7 @@ public static partial class SessionApiEndpoints
 
         var followupSubmitCount = request.FollowupSubmitCount;
         if (followupSubmitCount <= 0 &&
-            request.Text?.Contains('\n') == true &&
+            request.Text?.AsSpan().Contains("\n", StringComparison.Ordinal) == true &&
             aiCliProfileService.IsInteractiveAi(profile))
         {
             followupSubmitCount = 1;
@@ -1012,12 +1014,12 @@ public static partial class SessionApiEndpoints
     }
 
     private static async Task<string> SaveUploadedFileAsync(
-        TtyHostSessionManager sessionManager, string sessionId, IFormFile file)
+        TtyHostSessionManager sessionManager, string sessionId, IFormFile file, CancellationToken ct = default)
     {
         var fileName = Path.GetFileName(file.FileName);
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            fileName = $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+            fileName = string.Create(CultureInfo.InvariantCulture, $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
         }
 
         var uploadDir = GetUploadDirectory(sessionManager, sessionId);
@@ -1028,14 +1030,14 @@ public static partial class SessionApiEndpoints
         var extension = Path.GetExtension(fileName);
         while (File.Exists(targetPath))
         {
-            fileName = $"{baseName}_{counter}{extension}";
+            fileName = string.Create(CultureInfo.InvariantCulture, $"{baseName}_{counter}{extension}");
             targetPath = Path.Combine(uploadDir, fileName);
             counter++;
         }
 
         await using (var stream = File.Create(targetPath))
         {
-            await file.CopyToAsync(stream);
+            await file.CopyToAsync(stream, ct);
         }
 
         return targetPath;

@@ -56,7 +56,11 @@ import {
   cleanupSearchForTerminal,
 } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
-import { isCopyShortcut, isPasteShortcut, isNativeImagePasteShortcut } from './clipboardShortcuts';
+import {
+  resolveCopyShortcutAction,
+  isPasteShortcut,
+  isNativeImagePasteShortcut,
+} from './clipboardShortcuts';
 import {
   getTerminalEnterOverride,
   isTerminalEnterRemapEnabled,
@@ -1198,14 +1202,23 @@ export function setupTerminalEvents(
     const foreground = getForegroundInfo(sessionId);
     const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
 
-    if (isCopyShortcut(event, style)) {
-      if (terminal.hasSelection()) {
+    switch (resolveCopyShortcutAction(event, style, terminal.hasSelection())) {
+      case 'copy':
         navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
         terminal.clearSelection();
         keyDownHandled = true;
         cancelTerminalInputEvent(event);
-      }
-      return;
+        return;
+      case 'sendKey':
+        if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey) {
+          sendInput(sessionId, '\x03');
+          keyDownHandled = true;
+          cancelTerminalInputEvent(event);
+          return;
+        }
+        break;
+      default:
+        break;
     }
 
     if (isNativeImagePasteShortcut(event)) {
@@ -1461,14 +1474,19 @@ export function setupTerminalEvents(
     const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
 
     // Copy shortcut remains style-specific to preserve existing terminal behavior.
-    if (isCopyShortcut(e, style)) {
-      if (terminal.hasSelection()) {
+    switch (resolveCopyShortcutAction(e, style, terminal.hasSelection())) {
+      case 'copy':
         navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
         terminal.clearSelection();
         return false;
-      }
-      // No selection: let terminal handle Ctrl+C (SIGINT).
-      return true;
+      case 'sendKey':
+        if (e.key.toLowerCase() === 'c' && e.ctrlKey && !e.altKey && !e.metaKey) {
+          sendInput(sessionId, '\x03');
+          return false;
+        }
+        return true;
+      default:
+        break;
     }
 
     // Alt+V: clipboard image paste.

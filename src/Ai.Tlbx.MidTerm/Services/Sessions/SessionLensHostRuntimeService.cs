@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
@@ -204,43 +205,50 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                     return false;
                 }
 
-                if (!_launcher(
-                        launch.FileName,
-                        BuildIpcLaunchArguments(launch.Arguments, sessionId, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken),
-                        workingDirectory,
-                        environmentOverrides,
-                        pathPrependEntries,
-                        settings.RunAsUser,
-                        settings.RunAsUserSid,
-                        out var launchedProcess,
-                        out var launchFailure))
+                TtyHostSpawner.RedirectedProcessHandle? launchedProcess = null;
+                try
                 {
-                    state.Status = HostRuntimeStatus.Error;
-                    state.LastError = string.IsNullOrWhiteSpace(launchFailure)
-                        ? "mtagenthost process failed to start."
-                        : launchFailure;
-                    return false;
+                    if (!_launcher(
+                            launch.FileName,
+                            BuildIpcLaunchArguments(launch.Arguments, sessionId, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken),
+                            workingDirectory,
+                            environmentOverrides,
+                            pathPrependEntries,
+                            settings.RunAsUser,
+                            settings.RunAsUserSid,
+                            out launchedProcess,
+                            out var launchFailure))
+                    {
+                        state.Status = HostRuntimeStatus.Error;
+                        state.LastError = string.IsNullOrWhiteSpace(launchFailure)
+                            ? "mtagenthost process failed to start."
+                            : launchFailure;
+                        return false;
+                    }
+
+                    if (launchedProcess is null)
+                    {
+                        state.Status = HostRuntimeStatus.Error;
+                        state.LastError = "mtagenthost process launcher returned no handle.";
+                        return false;
+                    }
+
+                    var launchedResources = launchedProcess.DetachForIpc();
+                    state.AttachOwnedLaunch(launchedResources.Process, launchedResources.Error);
+                    launchedProcess.Dispose();
+                    launchedProcess = null;
+
+                    if (!await ConnectToSpawnedHostAsync(state, ct).ConfigureAwait(false))
+                    {
+                        state.LastError = "mtagenthost IPC endpoint did not become available.";
+                        await DisposeStateAsync(state, terminateHost: true).ConfigureAwait(false);
+                        state.Status = HostRuntimeStatus.Error;
+                        return false;
+                    }
                 }
-
-                if (launchedProcess is null)
+                finally
                 {
-                    state.Status = HostRuntimeStatus.Error;
-                    state.LastError = "mtagenthost process launcher returned no handle.";
-                    return false;
-                }
-
-                try { launchedProcess.Input.Dispose(); } catch { }
-                try { launchedProcess.Output.Dispose(); } catch { }
-
-                state.Process = launchedProcess.Process;
-                state.Error = launchedProcess.Error;
-
-                if (!await ConnectToSpawnedHostAsync(state, ct).ConfigureAwait(false))
-                {
-                    state.LastError = "mtagenthost IPC endpoint did not become available.";
-                    await DisposeStateAsync(state, terminateHost: true).ConfigureAwait(false);
-                    state.Status = HostRuntimeStatus.Error;
-                    return false;
+                    launchedProcess?.Dispose();
                 }
             }
 
@@ -695,7 +703,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             var command = createCommand(commandId);
             var payload = JsonSerializer.Serialize(command, LensHostJsonContext.Default.LensHostCommandEnvelope);
             await state.Input!.WriteLineAsync(payload).ConfigureAwait(false);
-            await state.Input.FlushAsync().ConfigureAwait(false);
+            await state.Input.FlushAsync(ct).ConfigureAwait(false);
 
             var result = await pending.Task.WaitAsync(CommandTimeout, ct).ConfigureAwait(false);
             if (!string.Equals(result.Status, "accepted", StringComparison.OrdinalIgnoreCase))
@@ -749,6 +757,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         return false;
     }
 
+    [SuppressMessage("IDisposableAnalyzers.Correctness", "IDISP001:Dispose created", Justification = "The connected host transport is transferred into HostRuntimeState on success and disposed explicitly on failure paths.")]
     private async Task<bool> ConnectToSpawnedHostAsync(HostRuntimeState state, CancellationToken ct)
     {
         if (state.Process is null)
@@ -794,17 +803,19 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         var endpoint = LensHostEndpoint.GetSessionEndpoint(_instanceIdentity.InstanceId, state.SessionId, hostPid);
         HostTransportConnection? connection = null;
+        var attached = false;
         try
         {
+#pragma warning disable IDISP001
             connection = await HostTransportConnection.ConnectAsync(endpoint, connectTimeoutMs, ct).ConfigureAwait(false);
+#pragma warning restore IDISP001
             var helloLine = await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false);
             var hello = JsonSerializer.Deserialize(helloLine, LensHostJsonContext.Default.LensHostHello)
                         ?? throw new InvalidOperationException("Lens host hello payload was empty.");
             _ingress.ValidateHello(hello);
 
-            state.Connection = connection;
-            state.Input = connection.Writer;
-            state.Output = connection.Reader;
+            state.AttachOwnedConnection(connection);
+            attached = true;
             state.HostPid = hostPid;
             state.TransportKey = "mtagenthost-ipc";
             state.TransportLabel = "mtagenthost owned IPC";
@@ -819,7 +830,15 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
         catch
         {
-            connection?.Dispose();
+            if (attached)
+            {
+                await DisposeStreamsAsync(state).ConfigureAwait(false);
+            }
+            else
+            {
+                connection?.Dispose();
+            }
+
             return false;
         }
     }
@@ -1200,7 +1219,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         if (state.Input is null)
         {
             throw new InvalidOperationException(
-                $"Lens host runtime is not attached: state exists for {sessionId} but input is null (status={state.Status}, hostPid={state.HostPid}, hasConnection={(state.Connection is not null).ToString().ToLowerInvariant()}, hasProcess={(state.Process is not null).ToString().ToLowerInvariant()}).");
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Lens host runtime is not attached: state exists for {sessionId} but input is null (status={state.Status}, hostPid={state.HostPid}, hasConnection={(state.Connection is not null).ToString().ToLowerInvariant()}, hasProcess={(state.Process is not null).ToString().ToLowerInvariant()})."));
         }
 
         return state;
@@ -1214,10 +1235,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
 
         state.PendingCommands.Clear();
-        state.Connection?.Dispose();
-        state.Connection = null;
-        state.Input = null;
-        state.Output = null;
+        state.DisposeConnection();
 
         if (state.ReaderTask is not null)
         {
@@ -1280,12 +1298,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         {
         }
 
-        state.Connection?.Dispose();
-        state.Connection = null;
-        state.Input = null;
-        state.Output = null;
-        try { state.Error?.Dispose(); } catch { }
-        try { state.Process?.Dispose(); } catch { }
+        state.DisposeConnection();
+        state.DisposeOwnedLaunch();
 
         if (state.ReaderTask is not null)
         {
@@ -1351,13 +1365,47 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         public string? LastError { get; set; }
         public HostRuntimeStatus Status { get; set; }
         public int HostPid { get; set; }
-        public HostTransportConnection? Connection { get; set; }
-        public Process? Process { get; set; }
-        public StreamWriter? Input { get; set; }
-        public StreamReader? Output { get; set; }
-        public StreamReader? Error { get; set; }
+        public HostTransportConnection? Connection { get; private set; }
+        public Process? Process { get; private set; }
+        public StreamWriter? Input { get; private set; }
+        public StreamReader? Output { get; private set; }
+        public StreamReader? Error { get; private set; }
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
+
+        public void AttachOwnedConnection(HostTransportConnection connection)
+        {
+            DisposeConnection();
+            Connection = connection;
+            Input = connection.Writer;
+            Output = connection.Reader;
+        }
+
+        public void AttachOwnedLaunch(Process process, StreamReader error)
+        {
+            DisposeOwnedLaunch();
+            Process = process;
+            Error = error;
+        }
+
+        public void DisposeConnection()
+        {
+            var connection = Connection;
+            Connection = null;
+            Input = null;
+            Output = null;
+            try { connection?.Dispose(); } catch { }
+        }
+
+        public void DisposeOwnedLaunch()
+        {
+            var error = Error;
+            var process = Process;
+            Error = null;
+            Process = null;
+            try { error?.Dispose(); } catch { }
+            try { process?.Dispose(); } catch { }
+        }
     }
 
     private sealed class HostTransportConnection : IDisposable
@@ -1374,6 +1422,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         public StreamReader Reader { get; }
         public StreamWriter Writer { get; }
 
+        [SuppressMessage("IDisposableAnalyzers.Correctness", "IDISP001:Dispose created", Justification = "Ownership of the created pipe or socket transport is transferred into HostTransportConnection.")]
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "Socket ownership is transferred to NetworkStream with ownsSocket: true and disposed on failure.")]
         public static async Task<HostTransportConnection> ConnectAsync(string endpoint, int timeoutMs, CancellationToken ct)
         {
             if (OperatingSystem.IsWindows())
@@ -1384,11 +1434,19 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             }
 
             var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(timeoutMs);
-            await socket.ConnectAsync(new UnixDomainSocketEndPoint(endpoint), timeoutCts.Token).ConfigureAwait(false);
-            var stream = new NetworkStream(socket, ownsSocket: true);
-            return new HostTransportConnection(stream, stream);
+            try
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(timeoutMs);
+                await socket.ConnectAsync(new UnixDomainSocketEndPoint(endpoint), timeoutCts.Token).ConfigureAwait(false);
+                var stream = new NetworkStream(socket, ownsSocket: true);
+                return new HostTransportConnection(stream, stream);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
         }
 
         public void Dispose()

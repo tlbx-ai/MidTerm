@@ -54,7 +54,7 @@ public sealed class HistoryServiceTests : IDisposable
         """;
         File.WriteAllText(Path.Combine(_tempDir, "history.json"), payload);
 
-        var service = new HistoryService(new SettingsService(_tempDir));
+        using var service = new HistoryService(new SettingsService(_tempDir));
 
         var entry = Assert.Single(service.GetEntries());
         Assert.Equal(LaunchEntryLaunchModes.Terminal, entry.LaunchMode);
@@ -66,7 +66,7 @@ public sealed class HistoryServiceTests : IDisposable
     {
         if (!OperatingSystem.IsWindows()) return;
 
-        var service = new HistoryService(new SettingsService(_tempDir));
+        using var service = new HistoryService(new SettingsService(_tempDir));
 
         var id = service.RecordEntry(
             "Pwsh",

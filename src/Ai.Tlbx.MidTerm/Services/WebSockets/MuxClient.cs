@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Channels;
@@ -71,7 +72,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<OutputItem> _inputChannel;
-    private readonly Dictionary<string, SessionBuffer> _sessionBuffers = new();
+    private readonly Dictionary<string, SessionBuffer> _sessionBuffers = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _sessionsToRemove = new();
     private readonly ConcurrentQueue<string> _droppedSessions = new();
     private readonly CancellationTokenSource _cts = new();
@@ -85,7 +86,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     private volatile string? _activeSessionId;
     private volatile bool _flushSuspended;
-    private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new();
+    private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new(StringComparer.Ordinal);
     private readonly string? _allowedSessionId;
     private readonly Func<TerminalResumeModeSetting> _getResumeMode;
     private FrozenSet<string> _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
@@ -281,7 +282,7 @@ public sealed class MuxClient : IAsyncDisposable
     public HashSet<string>? DrainDroppedSessions()
     {
         if (_droppedSessions.IsEmpty) return null;
-        var result = new HashSet<string>();
+        var result = new HashSet<string>(StringComparer.Ordinal);
         while (_droppedSessions.TryDequeue(out var sessionId))
         {
             result.Add(sessionId);
@@ -363,11 +364,7 @@ public sealed class MuxClient : IAsyncDisposable
                 return;
             }
 
-            if (!_sessionBuffers.TryGetValue(item.SessionId, out var buffer))
-            {
-                buffer = new SessionBuffer();
-                _sessionBuffers[item.SessionId] = buffer;
-            }
+            var buffer = GetOrCreateSessionBuffer(item.SessionId);
 
             if (buffer.TotalBytes == 0)
             {
@@ -382,6 +379,26 @@ public sealed class MuxClient : IAsyncDisposable
         {
             item.Buffer.Release();
         }
+    }
+
+    private SessionBuffer GetOrCreateSessionBuffer(string sessionId)
+    {
+        if (_sessionBuffers.TryGetValue(sessionId, out var existing))
+        {
+            return existing;
+        }
+
+        SessionBuffer? created = new();
+        if (_sessionBuffers.TryGetValue(sessionId, out existing))
+        {
+            created.Dispose();
+            return existing;
+        }
+
+        _sessionBuffers[sessionId] = created;
+        var owned = created;
+        created = null;
+        return owned!;
     }
 
     private async Task FlushDueBuffersAsync(long nowTicks)
@@ -401,7 +418,7 @@ public sealed class MuxClient : IAsyncDisposable
             _lastFlushDelayMs[activeId] = delayMs;
             if (delayMs > 50)
             {
-                Log.Warn(() => $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms");
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
             }
             await FlushBufferAsync(activeId, activeBuffer, compress: false).ConfigureAwait(false);
             activeBuffer.LastFlushTicks = nowTicks;
@@ -433,7 +450,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes, TerminalReplayReason.MuxOverflow);
             await SendFrameAsync(lossFrame).ConfigureAwait(false);
-            Log.Warn(() => $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)");
+            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)"));
             buffer.DroppedBytes = 0;
         }
 
@@ -511,7 +528,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     private async Task SendFrameAsync(byte[] data)
     {
-        await _sendLock.WaitAsync().ConfigureAwait(false);
+        await _sendLock.WaitAsync(_cts.Token).ConfigureAwait(false);
         try
         {
             if (WebSocket.State == WebSocketState.Open)
@@ -533,7 +550,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     private async Task SendFrameAsync(byte[] data, int length)
     {
-        await _sendLock.WaitAsync().ConfigureAwait(false);
+        await _sendLock.WaitAsync(_cts.Token).ConfigureAwait(false);
         try
         {
             if (WebSocket.State == WebSocketState.Open)
@@ -610,7 +627,7 @@ public sealed class MuxClient : IAsyncDisposable
     {
         if (WebSocket.State != WebSocketState.Open) return false;
 
-        await _sendLock.WaitAsync().ConfigureAwait(false);
+        await _sendLock.WaitAsync(_cts.Token).ConfigureAwait(false);
         try
         {
             if (WebSocket.State == WebSocketState.Open)
@@ -645,7 +662,7 @@ public sealed class MuxClient : IAsyncDisposable
     {
         if (WebSocket.State != WebSocketState.Open) return false;
 
-        await _sendLock.WaitAsync().ConfigureAwait(false);
+        await _sendLock.WaitAsync(_cts.Token).ConfigureAwait(false);
         try
         {
             if (WebSocket.State == WebSocketState.Open)

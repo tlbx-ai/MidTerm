@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class TerminalOutputSanitizer
 {
-    [GeneratedRegex(@"\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|\([AB012]|[@-Z\\-_])")]
+    [GeneratedRegex(@"\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|\([AB012]|[@-Z\\-_])", RegexOptions.None, 1000)]
     private static partial Regex AnsiEscapePattern();
 
     public static string Decode(ReadOnlySpan<byte> buffer)

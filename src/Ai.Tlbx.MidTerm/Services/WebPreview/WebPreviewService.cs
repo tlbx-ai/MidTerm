@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -19,8 +20,8 @@ public sealed class WebPreviewService
     private readonly int _serverPort;
     private readonly BrowserPreviewOriginService? _previewOriginService;
     private readonly string? _cookiesDirectory;
-    private readonly ConcurrentDictionary<string, PreviewState> _previews = new();
-    private readonly ConcurrentDictionary<string, string> _routeKeyToPreviewKey = new();
+    private readonly ConcurrentDictionary<string, PreviewState> _previews = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _routeKeyToPreviewKey = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _leakedPathToRouteKey = new(StringComparer.OrdinalIgnoreCase);
 
     public WebPreviewService(int serverPort, string? cookiesDirectory = null)
@@ -401,7 +402,7 @@ public sealed class WebPreviewService
         }
     }
 
-    public HttpClient GetHttpClient(string routeKey)
+    public PreviewHttpInvoker GetHttpClient(string routeKey)
     {
         return ResolveStateByRouteKey(routeKey).HttpClient;
     }
@@ -713,7 +714,7 @@ public sealed class WebPreviewService
         }
 
         var normalized = path.Trim();
-        if (!normalized.StartsWith('/'))
+        if (!normalized.StartsWith("/", StringComparison.Ordinal))
         {
             normalized = "/" + normalized;
         }
@@ -743,9 +744,9 @@ public sealed class WebPreviewService
         }
     }
 
-    private HttpClient CreateHttpClientForState(PreviewState state, CookieContainer cookieContainer)
+    private PreviewHttpInvoker CreateHttpClientForState(PreviewState state, CookieContainer cookieContainer)
     {
-        var handler = new SocketsHttpHandler
+        SocketsHttpHandler? handler = new()
         {
             AllowAutoRedirect = false,
             UseCookies = true,
@@ -759,7 +760,16 @@ public sealed class WebPreviewService
             }
         };
 
-        return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+        try
+        {
+            var invoker = new PreviewHttpInvoker(handler, TimeSpan.FromMinutes(5));
+            handler = null;
+            return invoker;
+        }
+        finally
+        {
+            handler?.Dispose();
+        }
     }
 
     private bool ValidateCertificate(
@@ -901,7 +911,7 @@ public sealed class WebPreviewService
 
         var host = target.Host.Replace(':', '_');
         var previewKey = SanitizeCookieFileSegment($"{state.SessionId}_{state.PreviewName}");
-        var fileName = $"{previewKey}_{host}_{target.Port}.txt";
+        var fileName = string.Create(CultureInfo.InvariantCulture, $"{previewKey}_{host}_{target.Port}.txt");
         return Path.Combine(_cookiesDirectory, fileName);
     }
 
@@ -1010,13 +1020,13 @@ public sealed class WebPreviewService
     private static bool PathMatches(string cookiePath, string requestPath)
     {
         var normalizedCookiePath = string.IsNullOrWhiteSpace(cookiePath) ? "/" : cookiePath;
-        if (!normalizedCookiePath.StartsWith('/'))
+        if (!normalizedCookiePath.StartsWith("/", StringComparison.Ordinal))
         {
             normalizedCookiePath = "/" + normalizedCookiePath;
         }
 
         var normalizedRequestPath = string.IsNullOrEmpty(requestPath) ? "/" : requestPath;
-        if (!normalizedRequestPath.StartsWith('/'))
+        if (!normalizedRequestPath.StartsWith("/", StringComparison.Ordinal))
         {
             normalizedRequestPath = "/" + normalizedRequestPath;
         }
@@ -1101,7 +1111,7 @@ public sealed class WebPreviewService
 
     private static IEnumerable<IPAddress> ResolveHostAddresses(string host)
     {
-        if (IPAddress.TryParse(host, out var parsed))
+        if (IPAddress.TryParse(host.AsSpan(), out var parsed))
         {
             yield return parsed;
             yield break;
@@ -1183,7 +1193,7 @@ public sealed class WebPreviewService
             return url;
         }
 
-        if (!url.Contains("://"))
+        if (!url.Contains("://", StringComparison.Ordinal))
         {
             if (url.StartsWith("localhost", StringComparison.OrdinalIgnoreCase)
                 || url.StartsWith("127.0.0.1", StringComparison.Ordinal)
@@ -1210,7 +1220,7 @@ public sealed class WebPreviewService
         }
 
         var first = parts[0];
-        var eqIdx = first.IndexOf('=');
+        var eqIdx = first.IndexOf('=', StringComparison.Ordinal);
         if (eqIdx <= 0)
         {
             return false;
@@ -1233,7 +1243,7 @@ public sealed class WebPreviewService
         for (var i = 1; i < parts.Length; i++)
         {
             var part = parts[i];
-            var idx = part.IndexOf('=');
+            var idx = part.IndexOf('=', StringComparison.Ordinal);
             var key = (idx >= 0 ? part[..idx] : part).Trim();
             var attrValue = idx >= 0 ? part[(idx + 1)..].Trim() : "";
 
@@ -1261,14 +1271,14 @@ public sealed class WebPreviewService
             }
             else if (key.Equals("Expires", StringComparison.OrdinalIgnoreCase))
             {
-                if (DateTime.TryParse(attrValue, out var expires))
+                if (DateTime.TryParse(attrValue, CultureInfo.InvariantCulture, DateTimeStyles.None, out var expires))
                 {
                     cookie.Expires = expires.ToUniversalTime();
                 }
             }
             else if (key.Equals("Max-Age", StringComparison.OrdinalIgnoreCase))
             {
-                if (int.TryParse(attrValue, out var seconds))
+                if (int.TryParse(attrValue, CultureInfo.InvariantCulture, out var seconds))
                 {
                     cookie.Expires = DateTime.UtcNow.AddSeconds(seconds);
                 }
@@ -1290,13 +1300,13 @@ public sealed class WebPreviewService
         public Uri? TargetUri;
         public long TargetRevision;
         public CookieContainer CookieContainer { get; set; }
-        public HttpClient HttpClient { get; set; }
+        public PreviewHttpInvoker HttpClient { get; set; }
 
         public PreviewState(
             string sessionId,
             string previewName,
             string routeKey,
-            Func<PreviewState, CookieContainer, HttpClient> clientFactory)
+            Func<PreviewState, CookieContainer, PreviewHttpInvoker> clientFactory)
         {
             SessionId = sessionId;
             PreviewName = previewName;
@@ -1308,6 +1318,42 @@ public sealed class WebPreviewService
         public void Dispose()
         {
             HttpClient.Dispose();
+        }
+    }
+
+    public sealed class PreviewHttpInvoker : IDisposable
+    {
+        private readonly HttpMessageInvoker _invoker;
+        private readonly TimeSpan _timeout;
+
+        public PreviewHttpInvoker(SocketsHttpHandler handler, TimeSpan timeout)
+        {
+            _invoker = new HttpMessageInvoker(handler, disposeHandler: true);
+            _timeout = timeout;
+        }
+
+        public async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            HttpCompletionOption completionOption,
+            CancellationToken cancellationToken)
+        {
+            _ = completionOption;
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(_timeout);
+            return await _invoker.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
+        }
+
+        public async Task<string> GetStringAsync(string uri, CancellationToken cancellationToken)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            using var response = await SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            _invoker.Dispose();
         }
     }
 }

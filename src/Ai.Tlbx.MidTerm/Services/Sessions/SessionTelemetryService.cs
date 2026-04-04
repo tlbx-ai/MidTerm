@@ -33,7 +33,7 @@ public sealed class SessionTelemetryService
         public DateTimeOffset? LastBellAt { get; set; }
     }
 
-    private readonly ConcurrentDictionary<string, SessionTelemetryState> _sessions = new();
+    private readonly ConcurrentDictionary<string, SessionTelemetryState> _sessions = new(StringComparer.Ordinal);
 
     public void RecordOutput(string sessionId, ReadOnlySpan<byte> data)
     {

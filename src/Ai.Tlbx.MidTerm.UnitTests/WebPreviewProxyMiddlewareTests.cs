@@ -317,7 +317,8 @@ public class WebPreviewProxyMiddlewareTests
             await middleware.InvokeAsync(context);
 
             responseBody.Position = 0;
-            var html = await new StreamReader(responseBody, Encoding.UTF8).ReadToEndAsync();
+            using var reader = new StreamReader(responseBody, Encoding.UTF8);
+            var html = await reader.ReadToEndAsync(context.RequestAborted);
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
             Assert.Contains("<body>preview</body>", html, StringComparison.Ordinal);

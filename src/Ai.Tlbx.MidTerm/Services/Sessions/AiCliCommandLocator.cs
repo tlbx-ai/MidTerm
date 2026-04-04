@@ -5,8 +5,11 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 internal static partial class AiCliCommandLocator
 {
-    [GeneratedRegex(@"(?ix)(?<path>[A-Z]:[^\r\n""']*?node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js)")]
+    [GeneratedRegex(@"(?ix)(?<path>[A-Z]:[^\r\n""']*?node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js)", RegexOptions.None, 1000)]
     private static partial Regex CodexScriptPathRegex();
+
+    [GeneratedRegex(@"[A-Za-z]:\\[^\r\n""']+", RegexOptions.None, 1000)]
+    private static partial Regex AbsoluteWindowsPathTokenRegex();
 
     public static string? ResolveExecutablePath(string profile, SessionInfoDto session, string? userProfileDirectory = null)
     {
@@ -202,7 +205,7 @@ internal static partial class AiCliCommandLocator
 
     private static IEnumerable<string> ExtractAbsolutePathTokens(string commandLine)
     {
-        foreach (Match match in Regex.Matches(commandLine, @"[A-Za-z]:\\[^\r\n""']+"))
+        foreach (Match match in AbsoluteWindowsPathTokenRegex().Matches(commandLine))
         {
             if (match.Success)
             {

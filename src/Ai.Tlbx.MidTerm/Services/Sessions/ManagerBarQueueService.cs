@@ -56,7 +56,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 return;
             }
 
-            _processingTask = Task.Run(ProcessLoopAsync);
+            _processingTask = Task.Run(ProcessLoopAsync, _shutdownCts.Token);
             _startedTcs.TrySetResult();
         }
     }
@@ -677,8 +677,8 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
                 var parts = normalized.TimeOfDay.Split(':', StringSplitOptions.TrimEntries);
                 if (parts.Length != 2 ||
-                    !int.TryParse(parts[0], out var hours) ||
-                    !int.TryParse(parts[1], out var minutes))
+                    !int.TryParse(parts[0], CultureInfo.InvariantCulture, out var hours) ||
+                    !int.TryParse(parts[1], CultureInfo.InvariantCulture, out var minutes))
                 {
                     continue;
                 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -8,7 +9,7 @@ namespace Ai.Tlbx.MidTerm.Services.StaticFiles;
 internal static class StaticAssetCacheHeaders
 {
     private static readonly Regex AssetVersionQueryRegex =
-        new(@"\?v=[^""'\s>]+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        new(@"\?v=[^""'\s>]+", RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     public static string CreateETag(string requestPath, IFileInfo fileInfo)
     {
@@ -18,7 +19,7 @@ internal static class StaticAssetCacheHeaders
             normalizedPath = "/" + normalizedPath;
         }
 
-        var material = $"{normalizedPath}|{fileInfo.Length}|{fileInfo.LastModified.ToUniversalTime().Ticks}";
+        var material = string.Create(CultureInfo.InvariantCulture, $"{normalizedPath}|{fileInfo.Length}|{fileInfo.LastModified.ToUniversalTime().Ticks}");
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
         return $"\"{Convert.ToHexString(hash.AsSpan(0, 8))}\"";
     }

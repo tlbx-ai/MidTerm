@@ -185,7 +185,11 @@ public sealed class SessionAgentFeedService
                     delta == 1
                         ? "1 terminal bell was captured."
                         : $"{delta.ToString(CultureInfo.InvariantCulture)} new terminal bells were captured.",
-                    activity.LastBellAt is null ? null : $"Most recent bell at {activity.LastBellAt.Value.ToLocalTime():HH:mm:ss}.");
+                    activity.LastBellAt is null
+                        ? null
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Most recent bell at {activity.LastBellAt.Value.ToLocalTime():HH:mm:ss}."));
             }
 
             var hasTailPreview = !string.IsNullOrWhiteSpace(tailText);

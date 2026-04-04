@@ -858,7 +858,7 @@ public sealed partial class WebPreviewProxyMiddleware
             {
                 context.Response.StatusCode = 502;
                 context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("No web preview target configured.");
+                await context.Response.WriteAsync("No web preview target configured.", context.RequestAborted);
                 return;
             }
 
@@ -891,7 +891,7 @@ public sealed partial class WebPreviewProxyMiddleware
         // Guard: if web preview is active and a proxied page's JS leaks calls to
         // /api/webpreview/* (e.g. inner MidTerm calling DELETE /api/webpreview/target),
         // proxy those upstream instead of letting them hit our local handlers.
-        if (path.StartsWithSegments("/api/webpreview")
+        if (path.StartsWithSegments("/api/webpreview", StringComparison.Ordinal)
             && ShouldProxyWebPreviewApiRequest(context.Request)
             && TryResolvePreviewFromRequest(context.Request, out routeKey, out var apiTargetUri))
         {
@@ -1017,7 +1017,7 @@ public sealed partial class WebPreviewProxyMiddleware
         routeKey = "";
         remainingPath = "/";
 
-        if (!path.StartsWithSegments(ProxyPrefix, out var remaining))
+        if (!path.StartsWithSegments(ProxyPrefix, StringComparison.Ordinal, out var remaining))
         {
             return false;
         }
@@ -1239,12 +1239,12 @@ public sealed partial class WebPreviewProxyMiddleware
             if (errorCode == 502)
             {
                 context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Failed to connect to upstream server.");
+                await context.Response.WriteAsync("Failed to connect to upstream server.", context.RequestAborted);
             }
             else if (errorCode == 504)
             {
                 context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Upstream server timed out.");
+                await context.Response.WriteAsync("Upstream server timed out.", context.RequestAborted);
             }
             return;
         }
@@ -1472,7 +1472,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             context.Response.StatusCode = 400;
             context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("Missing or invalid 'u' parameter.");
+            await context.Response.WriteAsync("Missing or invalid 'u' parameter.", context.RequestAborted);
             return;
         }
 
@@ -1907,7 +1907,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             context.Response.StatusCode = 400;
             context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("Missing or invalid 'u' parameter.");
+            await context.Response.WriteAsync("Missing or invalid 'u' parameter.", context.RequestAborted);
             return;
         }
 
@@ -2001,11 +2001,10 @@ public sealed partial class WebPreviewProxyMiddleware
         if (!Uri.TryCreate(refererValues.ToString(), UriKind.Absolute, out var refererUri))
             return targetUri;
 
-        if (!TryParseProxyRoute(refererUri.AbsolutePath, out _, out _))
+        if (!TryParseProxyRoute(refererUri.AbsolutePath, out _, out var refererRemainingPath))
             return targetUri;
 
-        if (TryParseProxyRoute(refererUri.AbsolutePath, out _, out var refererRemainingPath)
-            && string.Equals(refererRemainingPath, "/_ext", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(refererRemainingPath, "/_ext", StringComparison.OrdinalIgnoreCase))
         {
             var externalUrl = QueryHelpers.ParseQuery(refererUri.Query)["u"].FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(externalUrl)
@@ -2017,9 +2016,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return targetUri;
         }
 
-        TryParseProxyRoute(refererUri.AbsolutePath, out _, out var upstreamPath);
-
-        var upstreamUrl = BuildUpstreamUrlFromPath(targetUri, upstreamPath, refererUri.Query);
+        var upstreamUrl = BuildUpstreamUrlFromPath(targetUri, refererRemainingPath, refererUri.Query);
         return Uri.TryCreate(upstreamUrl, UriKind.Absolute, out var upstreamUri)
             ? upstreamUri
             : targetUri;
@@ -2079,17 +2076,29 @@ public sealed partial class WebPreviewProxyMiddleware
         var contentEncoding = response.Content.Headers.ContentEncoding.FirstOrDefault();
         await using var rawStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
-        Stream decompressed = contentEncoding?.ToLowerInvariant() switch
+        if (contentEncoding is "gzip")
         {
-            "gzip" => new GZipStream(rawStream, CompressionMode.Decompress),
-            "br" => new BrotliStream(rawStream, CompressionMode.Decompress),
-            "deflate" => new DeflateStream(rawStream, CompressionMode.Decompress),
-            _ => rawStream
-        };
-
-        await using (decompressed)
-        {
+            await using var decompressed = new GZipStream(rawStream, CompressionMode.Decompress);
             using var reader = new StreamReader(decompressed, Encoding.UTF8);
+            return await reader.ReadToEndAsync(cancellationToken);
+        }
+
+        if (contentEncoding is "br")
+        {
+            await using var decompressed = new BrotliStream(rawStream, CompressionMode.Decompress);
+            using var reader = new StreamReader(decompressed, Encoding.UTF8);
+            return await reader.ReadToEndAsync(cancellationToken);
+        }
+
+        if (contentEncoding is "deflate")
+        {
+            await using var decompressed = new DeflateStream(rawStream, CompressionMode.Decompress);
+            using var reader = new StreamReader(decompressed, Encoding.UTF8);
+            return await reader.ReadToEndAsync(cancellationToken);
+        }
+
+        using (var reader = new StreamReader(rawStream, Encoding.UTF8, leaveOpen: true))
+        {
             return await reader.ReadToEndAsync(cancellationToken);
         }
     }
@@ -2165,7 +2174,7 @@ public sealed partial class WebPreviewProxyMiddleware
             upstream.Options.AddSubProtocol(protocol);
         }
 
-        var wsType = context.Request.Path.Value?.Contains("/_ext") == true ? "ext-ws" : "ws";
+        var wsType = context.Request.Path.Value?.Contains("/_ext", StringComparison.Ordinal) == true ? "ext-ws" : "ws";
         var wsSw = Stopwatch.StartNew();
 
         try
@@ -2514,7 +2523,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var normalized = string.IsNullOrEmpty(path) ? "/" : path;
         if (!normalized.StartsWith('/'))
             normalized = "/" + normalized;
-        var queryIdx = normalized.IndexOf('?');
+        var queryIdx = normalized.IndexOf('?', StringComparison.Ordinal);
         if (queryIdx >= 0)
             normalized = normalized[..queryIdx];
         if (normalized == "/")
@@ -2523,63 +2532,63 @@ public sealed partial class WebPreviewProxyMiddleware
         return secondSlash > 0 ? normalized[..secondSlash] + "/" : normalized + "/";
     }
 
-    [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex HeadTagRegex();
 
     // Matches existing <base ...> tags (self-closing or not) to remove before injecting ours
-    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExistingBaseTagRegex();
 
     // Extracts the href value from a <base href="..."> tag
-    [GeneratedRegex(@"<base\s[^>]*href\s*=\s*[""']([^""']*)[""']", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<base\s[^>]*href\s*=\s*[""']([^""']*)[""']", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex BaseHrefValueRegex();
 
     // Matches <meta http-equiv="content-security-policy" ...> and <meta http-equiv="x-frame-options" ...>
     // Upstream CSP/XFO meta tags must be stripped: after proxying, 'self' resolves to MidTerm's origin,
     // which would block framing of the upstream site's own resources.
-    [GeneratedRegex(@"<meta\s[^>]*http-equiv\s*=\s*[""']\s*(?:content-security-policy|x-frame-options)\s*[""'][^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<meta\s[^>]*http-equiv\s*=\s*[""']\s*(?:content-security-policy|x-frame-options)\s*[""'][^>]*>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex UpstreamSecurityMetaTagRegex();
 
     // Matches <meta http-equiv="refresh" content="N;url=/path"> for PHP-style redirects
-    [GeneratedRegex(@"(<meta\s[^>]*content\s*=\s*[""']\d+\s*;\s*url\s*=\s*)([^""'>\s]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(<meta\s[^>]*content\s*=\s*[""']\d+\s*;\s*url\s*=\s*)([^""'>\s]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex MetaRefreshRegex();
 
     // Matches src="/foo", href="/bar", action="/baz", poster="/img.png" with the full URL value.
     // Requires at least one path character after / to avoid matching broken attributes like href="/".
-    [GeneratedRegex(@"(\b(?:src|href|action|poster)\s*=\s*[""'])(/(?!/)[^""'\s>]+)([""'])", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(\b(?:src|href|action|poster)\s*=\s*[""'])(/(?!/)[^""'\s>]+)([""'])", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex RootRelativeAttrRegex();
 
     // Matches root-relative URLs in srcset attributes (e.g., srcset="/img/foo.png 2x")
-    [GeneratedRegex(@"(\bsrcset\s*=\s*[""'](?:[^""']*,\s*)?)/(?![/""'\s>])", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(\bsrcset\s*=\s*[""'](?:[^""']*,\s*)?)/(?![/""'\s>])", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex RootRelativeSrcsetRegex();
 
     // Matches url(/...) in inline CSS (with optional quotes), capturing the full URL.
-    [GeneratedRegex(@"(url\(\s*[""']?)(/(?!/)[^""')\s]+)([""']?\s*\))", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(url\(\s*[""']?)(/(?!/)[^""')\s]+)([""']?\s*\))", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex RootRelativeCssUrlRegex();
 
     // Matches absolute http(s) URLs in HTML attributes: src="https://...", href="http://..."
-    [GeneratedRegex(@"(\b(?:src|href|action|poster)\s*=\s*[""'])(https?://[^""'\s>]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(\b(?:src|href|action|poster)\s*=\s*[""'])(https?://[^""'\s>]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex AbsoluteUrlAttrRegex();
 
     // Matches absolute http(s) URLs in CSS url(): url(https://...) or url("https://...")
-    [GeneratedRegex(@"(url\(\s*[""']?)(https?://[^""')>\s]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(url\(\s*[""']?)(https?://[^""')>\s]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex AbsoluteUrlCssRegex();
 
-    [GeneratedRegex(@"(\bimport\s+[^;""'\r\n]*?\bfrom\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(\bimport\s+[^;""'\r\n]*?\bfrom\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex JSImportFromRegex();
 
-    [GeneratedRegex(@"(\bimport\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(\bimport\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex JSImportBareRegex();
 
-    [GeneratedRegex(@"(\bimport\s*\(\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(\bimport\s*\(\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex JSImportDynamicRegex();
 
-    [GeneratedRegex(@"(\bexport\s+[^;""'\r\n]*?\bfrom\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(\bexport\s+[^;""'\r\n]*?\bfrom\s*[""'])/(?!/|webpreview/)([^""']+)([""'])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex JSExportFromRegex();
 
     // Matches rewritten proxy paths in HTML/CSS attributes so we can prime root
     // fallback prefixes before the browser requests them.
-    [GeneratedRegex(@"[""'(=]\s*(/webpreview/[^""')\s,>]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"[""'(=]\s*(/webpreview/[^""')\s,>]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ProxiedPathRegex();
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Share;
 using Ai.Tlbx.MidTerm.Services;
@@ -29,7 +30,7 @@ public sealed class ShareGrantServiceTests : IDisposable
         _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_share_tests_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
         _settingsService = new SettingsService(_tempDir);
-        _timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-03-10T12:00:00Z"));
+        _timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-03-10T12:00:00Z", CultureInfo.InvariantCulture));
         _service = new ShareGrantService(_settingsService, _timeProvider);
     }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text;
 
@@ -125,7 +126,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     RecordMethod(launchCapture, method);
                     PersistLaunchCapture(capturePath, launchCapture);
                     var (imageCount, hasFileRef, textValue) = GetInputStats(root);
-                    lastAssistant = $"Fake Codex reply. images={imageCount.ToString()} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
+                    lastAssistant = $"Fake Codex reply. images={imageCount.ToString(CultureInfo.InvariantCulture)} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
                     var requestUserInput = textValue.Contains("ask user", StringComparison.OrdinalIgnoreCase);
 
                     await WriteJsonAsync(new

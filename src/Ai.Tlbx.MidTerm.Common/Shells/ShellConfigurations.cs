@@ -117,12 +117,12 @@ public abstract class ShellConfigurationBase : IShellConfiguration
             return;
         }
 
-        if (env.TryGetValue("TEMP", out var temp) && temp.Contains('~'))
+        if (env.TryGetValue("TEMP", out var temp) && temp.AsSpan().Contains("~", StringComparison.Ordinal))
         {
             env["TEMP"] = longTempPath;
         }
 
-        if (env.TryGetValue("TMP", out var tmp) && tmp.Contains('~'))
+        if (env.TryGetValue("TMP", out var tmp) && tmp.AsSpan().Contains("~", StringComparison.Ordinal))
         {
             env["TMP"] = longTempPath;
         }

@@ -58,7 +58,7 @@ public sealed class FileService
             return false;
         }
 
-        if (path.Contains(".."))
+        if (path.Contains("..", StringComparison.Ordinal))
         {
             errorResult = Results.BadRequest("Path traversal not allowed");
             return false;
@@ -85,7 +85,7 @@ public sealed class FileService
     {
         yield return path;
 
-        if (path.Contains('/'))
+        if (path.Contains('/', StringComparison.Ordinal))
         {
             var windowsPath = path.Replace('/', '\\');
             if (windowsPath != path)
@@ -93,7 +93,7 @@ public sealed class FileService
                 yield return windowsPath;
             }
         }
-        else if (path.Contains('\\'))
+        else if (path.Contains('\\', StringComparison.Ordinal))
         {
             var unixPath = path.Replace('\\', '/');
             if (unixPath != path)
@@ -105,7 +105,7 @@ public sealed class FileService
 
     public static string? SearchTree(string rootDir, string searchPattern, int maxDepth)
     {
-        var hasDirectory = searchPattern.Contains('/') || searchPattern.Contains('\\');
+        var hasDirectory = searchPattern.Contains('/', StringComparison.Ordinal) || searchPattern.Contains('\\', StringComparison.Ordinal);
         var normalizedPattern = searchPattern.Replace('\\', '/');
 
         try
@@ -203,7 +203,7 @@ public sealed class FileService
     {
         var info = new FilePathInfo { Exists = false };
 
-        if (string.IsNullOrWhiteSpace(path) || path.Contains(".."))
+        if (string.IsNullOrWhiteSpace(path) || path.Contains("..", StringComparison.Ordinal))
         {
             return info;
         }

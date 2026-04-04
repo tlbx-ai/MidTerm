@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
@@ -15,7 +16,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     {
         _stateDir = Path.Combine(Path.GetTempPath(), "midterm-manager-bar-queue-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_stateDir);
-        _timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-04-04T12:00:00Z"));
+        _timeProvider = new FakeTimeProvider(DateTimeOffset.Parse("2026-04-04T12:00:00Z", CultureInfo.InvariantCulture));
     }
 
     [Fact]

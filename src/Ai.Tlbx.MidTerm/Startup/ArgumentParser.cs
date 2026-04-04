@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class ArgumentParser
@@ -12,7 +14,7 @@ public static class ArgumentParser
 
         for (int i = 0; i < args.Length; i++)
         {
-            if (args[i] == "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+            if (args[i] == "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var p))
             {
                 port = p;
                 i++;

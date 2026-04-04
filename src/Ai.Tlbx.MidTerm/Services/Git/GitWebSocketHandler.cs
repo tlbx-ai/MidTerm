@@ -41,22 +41,24 @@ public sealed class GitWebSocketHandler
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         var sendLock = new SemaphoreSlim(1, 1);
-        var subscribedSessions = new HashSet<string>();
+        var subscribedSessions = new HashSet<string>(StringComparer.Ordinal);
+        var shutdownToken = _shutdownService.Token;
 
         async Task SendMessageAsync(GitWsMessage message)
         {
             if (ws.State != WebSocketState.Open) return;
 
-            await sendLock.WaitAsync();
+            await sendLock.WaitAsync(shutdownToken);
             try
             {
                 if (ws.State != WebSocketState.Open) return;
 
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(message, GitJsonContext.Default.GitWsMessage);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken);
             }
             catch (WebSocketException) { }
             catch (ObjectDisposedException) { }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 Log.Verbose(() => $"[GitWS] SendMessageAsync failed: {ex.GetType().Name}: {ex.Message}");
@@ -88,7 +90,6 @@ public sealed class GitWebSocketHandler
         }
 
         _gitWatcher.OnStatusChanged += OnStatusChanged;
-        var shutdownToken = _shutdownService.Token;
 
         try
         {

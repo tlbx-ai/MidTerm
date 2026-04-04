@@ -9,31 +9,95 @@ public sealed class GitWatcherService : IDisposable
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
     private readonly ConcurrentDictionary<string, RepoWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, string> _sessionToRepo = new();
+    private readonly ConcurrentDictionary<string, string> _sessionToRepo = new(StringComparer.Ordinal);
     private static readonly SemaphoreSlim _globalRefreshThrottle = new(2, 2);
 
     private sealed class RepoWatcher : IDisposable
     {
-        public FileSystemWatcher? IndexWatcher { get; set; }
+        private sealed class OwnedCancellationSource : IDisposable
+        {
+            private CancellationTokenSource? _cts = new();
+
+            public CancellationToken Token => _cts?.Token ?? CancellationToken.None;
+
+            public CancellationToken Replace()
+            {
+                var previous = _cts;
+                var next = new CancellationTokenSource();
+                _cts = next;
+                previous?.Cancel();
+                previous?.Dispose();
+                return next.Token;
+            }
+
+            public void Dispose()
+            {
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null;
+            }
+        }
+
+        private FileSystemWatcher? _indexWatcher;
         public int RefCount;
-        public CancellationTokenSource? DebounceCts;
+        private readonly OwnedCancellationSource _debounce = new();
         public GitStatusResponse? CachedStatus;
         public string? LastFingerprint;
         public volatile bool IsDisposed;
         public readonly SemaphoreSlim RefreshGate = new(1, 1);
         public volatile bool RefreshPending;
         public int SubscriberCount;
-        public CancellationTokenSource? PollCts;
+        private readonly OwnedCancellationSource _poll = new();
+
+        public void StartIndexWatcher(string gitDir, FileSystemEventHandler onIndexChange)
+        {
+            var watcher = new FileSystemWatcher(gitDir)
+            {
+                IncludeSubdirectories = false,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
+            };
+
+            watcher.Filters.Add("index");
+            watcher.Filters.Add("HEAD");
+            watcher.Filters.Add("FETCH_HEAD");
+            watcher.Changed += onIndexChange;
+            watcher.Created += onIndexChange;
+            watcher.Renamed += (s, e) => onIndexChange(s, e);
+            watcher.EnableRaisingEvents = true;
+            var previous = _indexWatcher;
+            _indexWatcher = watcher;
+            if (previous is not null)
+            {
+                previous.EnableRaisingEvents = false;
+                previous.Dispose();
+            }
+        }
+
+        public CancellationToken DebounceToken => _debounce.Token;
+        public CancellationToken PollToken => _poll.Token;
+
+        public CancellationToken ReplaceDebounce()
+        {
+            return _debounce.Replace();
+        }
+
+        public CancellationToken ReplacePoll()
+        {
+            return _poll.Replace();
+        }
+
+        public void StopPolling()
+        {
+            _poll.Dispose();
+        }
 
         public void Dispose()
         {
             IsDisposed = true;
-            PollCts?.Cancel();
-            PollCts?.Dispose();
-            if (IndexWatcher is not null) IndexWatcher.EnableRaisingEvents = false;
-            DebounceCts?.Cancel();
-            DebounceCts?.Dispose();
-            IndexWatcher?.Dispose();
+            _poll.Dispose();
+            if (_indexWatcher is not null) _indexWatcher.EnableRaisingEvents = false;
+            _debounce.Dispose();
+            _indexWatcher?.Dispose();
             RefreshGate.Dispose();
         }
     }
@@ -169,25 +233,12 @@ public sealed class GitWatcherService : IDisposable
 
         if (Directory.Exists(gitDir))
         {
-            var fsw = new FileSystemWatcher(gitDir)
-            {
-                IncludeSubdirectories = false,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
-            };
-            fsw.Filters.Add("index");
-            fsw.Filters.Add("HEAD");
-            fsw.Filters.Add("FETCH_HEAD");
-
             void OnIndexChange(object? s, FileSystemEventArgs e)
             {
                 DebouncedRefresh(repoRoot, watcher);
             }
 
-            fsw.Changed += OnIndexChange;
-            fsw.Created += OnIndexChange;
-            fsw.Renamed += (s, e) => OnIndexChange(s, e);
-            fsw.EnableRaisingEvents = true;
-            watcher.IndexWatcher = fsw;
+            watcher.StartIndexWatcher(gitDir, OnIndexChange);
         }
 
         return watcher;
@@ -199,13 +250,7 @@ public sealed class GitWatcherService : IDisposable
 
         try
         {
-            var oldCts = watcher.DebounceCts;
-            var newCts = new CancellationTokenSource();
-            watcher.DebounceCts = newCts;
-            var token = newCts.Token;
-
-            oldCts?.Cancel();
-            oldCts?.Dispose();
+            var token = watcher.ReplaceDebounce();
 
             _ = Task.Delay(500, token).ContinueWith(async _ =>
             {
@@ -222,7 +267,13 @@ public sealed class GitWatcherService : IDisposable
 
     private async Task CoalescedRefreshAsync(string repoRoot, RepoWatcher watcher)
     {
-        if (!watcher.RefreshGate.Wait(0))
+        var refreshToken = watcher.DebounceToken;
+        if (refreshToken == CancellationToken.None)
+        {
+            refreshToken = watcher.PollToken;
+        }
+
+        if (!watcher.RefreshGate.Wait(0, refreshToken))
         {
             watcher.RefreshPending = true;
             return;
@@ -230,7 +281,7 @@ public sealed class GitWatcherService : IDisposable
 
         try
         {
-            await _globalRefreshThrottle.WaitAsync();
+            await _globalRefreshThrottle.WaitAsync(refreshToken);
             try
             {
                 do
@@ -266,19 +317,14 @@ public sealed class GitWatcherService : IDisposable
         if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
         if (Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
         {
-            watcher.PollCts?.Cancel();
-            watcher.PollCts?.Dispose();
-            watcher.PollCts = null;
+            watcher.StopPolling();
         }
     }
 
     private void StartPolling(string repoRoot, RepoWatcher watcher)
     {
-        watcher.PollCts?.Cancel();
-        watcher.PollCts?.Dispose();
-        var cts = new CancellationTokenSource();
-        watcher.PollCts = cts;
-        _ = PollLoopAsync(repoRoot, watcher, cts.Token);
+        var token = watcher.ReplacePoll();
+        _ = PollLoopAsync(repoRoot, watcher, token);
     }
 
     private async Task PollLoopAsync(string repoRoot, RepoWatcher watcher, CancellationToken ct)

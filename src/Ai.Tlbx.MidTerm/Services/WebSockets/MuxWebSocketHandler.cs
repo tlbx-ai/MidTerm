@@ -301,7 +301,8 @@ public sealed class MuxWebSocketHandler
                 var snapshot = await _sessionManager.GetBufferAsync(
                     sessionInfo.Id,
                     maxBytes: null,
-                    TerminalReplayReason.ReconnectTailReplay);
+                    TerminalReplayReason.ReconnectTailReplay,
+                    ct);
                 if (snapshot is null || snapshot.Data.Length == 0) continue;
 
                 await SendSgrResetFrameAsync(client, sessionInfo.Id, sessionInfo.Cols, sessionInfo.Rows);
@@ -534,7 +535,8 @@ public sealed class MuxWebSocketHandler
             var snapshot = await _sessionManager.GetBufferAsync(
                 sessionId,
                 maxBytes: quickResume ? ResolveQuickResumeBurstBytes(session) : null,
-                quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay);
+                quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay,
+                _shutdownService.Token);
             if (snapshot is null)
             {
                 Log.Warn(() => $"MuxHandler: BufferRequest for {sessionId}: IPC returned null (session disconnected?)");

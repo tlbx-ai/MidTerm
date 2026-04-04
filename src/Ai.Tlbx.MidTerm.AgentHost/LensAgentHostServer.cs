@@ -31,13 +31,10 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
 
     public async Task RunStdioAsync()
     {
-        using var reader = new StreamReader(Console.OpenStandardInput());
-        using var writer = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
-        using var connection = new ConnectionState(reader, writer, null, _shutdown.Token);
+        using var connection = ConnectionState.CreateStdioOwned(_shutdown.Token);
 
         PromoteCurrentClient(connection);
-        await EnqueueHelloAsync(connection).ConfigureAwait(false);
-        await ProcessIncomingAsync(connection, requireOwnership: false, promoteOnAttach: false).ConfigureAwait(false);
+        await ProcessConnectionAsync(connection, requireOwnership: false, promoteOnAttach: false).ConfigureAwait(false);
     }
 
     public async Task RunIpcAsync(string endpoint)
@@ -46,15 +43,11 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
 
         while (!_shutdown.IsCancellationRequested)
         {
-            IIpcClientConnection? client = null;
             try
             {
-                client = await server.AcceptAsync(_shutdown.Token).ConfigureAwait(false);
-                var stream = client.Stream;
-                var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: false);
-                var writer = new StreamWriter(stream, System.Text.Encoding.UTF8, bufferSize: 1024, leaveOpen: false) { AutoFlush = true };
-                var connection = new ConnectionState(reader, writer, client, _shutdown.Token);
-                var task = Task.Run(() => ProcessConnectionAsync(connection), CancellationToken.None);
+#pragma warning disable IDISP004
+                var task = ProcessAcceptedConnectionAsync(await server.AcceptAsync(_shutdown.Token).ConfigureAwait(false));
+#pragma warning restore IDISP004
                 lock (_connectionTasks)
                 {
                     _connectionTasks.Add(task);
@@ -74,12 +67,10 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                client?.Dispose();
                 break;
             }
             catch
             {
-                client?.Dispose();
                 await Task.Delay(100, _shutdown.Token).ConfigureAwait(false);
             }
         }
@@ -125,19 +116,32 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         _shutdown.Dispose();
     }
 
-    private async Task ProcessConnectionAsync(ConnectionState connection)
+    private async Task ProcessAcceptedConnectionAsync(IIpcClientConnection client)
     {
-        using (connection)
+        using var connection = ConnectionState.CreateOwned(client.Stream, _shutdown.Token);
+        await ProcessConnectionAsync(connection, requireOwnership: true, promoteOnAttach: true).ConfigureAwait(false);
+    }
+
+    private async Task ProcessConnectionAsync(ConnectionState connection, bool requireOwnership, bool promoteOnAttach)
+    {
+        try
         {
             await EnqueueHelloAsync(connection).ConfigureAwait(false);
-            await ProcessIncomingAsync(connection, requireOwnership: true, promoteOnAttach: true).ConfigureAwait(false);
+            await ProcessIncomingAsync(connection, requireOwnership, promoteOnAttach).ConfigureAwait(false);
         }
+        finally
+        {
+            ClearCurrentClient(connection);
+        }
+    }
 
+    private void ClearCurrentClient(ConnectionState connection)
+    {
         lock (_clientLock)
         {
             if (ReferenceEquals(_currentClient, connection))
             {
-                _currentClient = null;
+                Interlocked.CompareExchange(ref _currentClient, null, connection);
             }
         }
     }
@@ -635,16 +639,23 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         private readonly CancellationTokenSource _cts;
         private bool _disposed;
 
-        public ConnectionState(
-            StreamReader reader,
-            StreamWriter writer,
-            IIpcClientConnection? connection,
+        public static ConnectionState CreateStdioOwned(CancellationToken shutdownToken)
+        {
+            return new ConnectionState(Console.OpenStandardInput(), Console.OpenStandardOutput(), shutdownToken);
+        }
+
+        public static ConnectionState CreateOwned(
+            Stream stream,
             CancellationToken shutdownToken)
         {
-            Reader = reader;
-            Writer = writer;
-            Connection = connection;
+            return new ConnectionState(stream, stream, shutdownToken);
+        }
+
+        private ConnectionState(Stream inputStream, Stream outputStream, CancellationToken shutdownToken)
+        {
             _cts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            Reader = new StreamReader(inputStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: false);
+            Writer = new StreamWriter(outputStream, System.Text.Encoding.UTF8, bufferSize: 1024, leaveOpen: false) { AutoFlush = true };
             Outbound = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
             {
                 SingleReader = true,
@@ -655,7 +666,6 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
 
         public StreamReader Reader { get; }
         public StreamWriter Writer { get; }
-        public IIpcClientConnection? Connection { get; }
         public Channel<string> Outbound { get; }
         public Task WriterTask { get; }
         public CancellationToken Token => _cts.Token;
@@ -690,8 +700,7 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             Outbound.Writer.TryComplete();
             try { Writer.Dispose(); } catch { }
             try { Reader.Dispose(); } catch { }
-            try { Connection?.Dispose(); } catch { }
-            try { WriterTask.Wait(250); } catch { }
+            try { WriterTask.WaitAsync(TimeSpan.FromMilliseconds(250), CancellationToken.None).GetAwaiter().GetResult(); } catch { }
             _cts.Dispose();
         }
     }

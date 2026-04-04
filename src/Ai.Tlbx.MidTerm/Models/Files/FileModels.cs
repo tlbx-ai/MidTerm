@@ -13,7 +13,7 @@ public sealed class FileCheckRequest
 /// </summary>
 public sealed class FileCheckResponse
 {
-    public Dictionary<string, FilePathInfo> Results { get; set; } = new();
+    public Dictionary<string, FilePathInfo> Results { get; set; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>

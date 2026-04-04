@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -9,6 +10,8 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MtAgentHostRealCodexSmokeTests
 {
+    private static readonly HttpClient ReadyClient = new();
+
     [Fact]
     [Trait("Category", "RealCodex")]
     public async Task MtAgentHost_CanAttachAndCompleteRealCodexTurn()
@@ -119,7 +122,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         var workdir = Path.Combine(Path.GetTempPath(), "midterm-real-codex-remote-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workdir);
         var port = GetFreePort();
-        var appServerEndpoint = $"ws://127.0.0.1:{port}";
+        var appServerEndpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{port}");
         using var appServer = StartCodexAppServer(appServerEndpoint);
         using var process = StartAgentHost(hostDll);
         var pendingEvents = new Queue<LensHostEventEnvelope>();
@@ -636,14 +639,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
 
     private static async Task WaitForCodexAppServerReadyAsync(int port)
     {
-        using var client = new HttpClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         while (true)
         {
             cts.Token.ThrowIfCancellationRequested();
             try
             {
-                using var response = await client.GetAsync($"http://127.0.0.1:{port}/readyz", cts.Token);
+                var readyUrl = string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/readyz");
+                using var response = await ReadyClient.GetAsync(readyUrl, cts.Token);
                 if (response.IsSuccessStatusCode)
                 {
                     return;
@@ -691,7 +694,9 @@ public sealed class MtAgentHostRealCodexSmokeTests
 
         Assert.True(
             process.ExitCode == 0,
-            $"Command '{fileName} {arguments}' failed in '{workingDirectory}' with exit code {process.ExitCode}.{Environment.NewLine}STDOUT:{Environment.NewLine}{stdout}{Environment.NewLine}STDERR:{Environment.NewLine}{stderr}");
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Command '{fileName} {arguments}' failed in '{workingDirectory}' with exit code {process.ExitCode}.{Environment.NewLine}STDOUT:{Environment.NewLine}{stdout}{Environment.NewLine}STDERR:{Environment.NewLine}{stderr}"));
     }
 
     private static string ResolveAgentHostDll()

@@ -47,7 +47,7 @@ public sealed class TtyHostSessionManagerStateTests
         var removed = manager.ClearBookmarksByHistoryId("history-a");
 
         Assert.Equal(2, removed);
-        var list = manager.GetSessionList().Sessions.ToDictionary(s => s.Id, s => s.BookmarkId);
+        var list = manager.GetSessionList().Sessions.ToDictionary(s => s.Id, s => s.BookmarkId, StringComparer.Ordinal);
         Assert.Null(list["s1"]);
         Assert.Equal("history-b", list["s2"]);
         Assert.Null(list["s3"]);
@@ -100,7 +100,7 @@ public sealed class TtyHostSessionManagerStateTests
         var ok = manager.SetAgentControlled("child-a", true);
 
         Assert.True(ok);
-        var flags = manager.GetSessionList().Sessions.ToDictionary(s => s.Id, s => s.AgentControlled);
+        var flags = manager.GetSessionList().Sessions.ToDictionary(s => s.Id, s => s.AgentControlled, StringComparer.Ordinal);
         Assert.True(flags["root"]);
         Assert.True(flags["child-a"]);
         Assert.True(flags["child-b"]);

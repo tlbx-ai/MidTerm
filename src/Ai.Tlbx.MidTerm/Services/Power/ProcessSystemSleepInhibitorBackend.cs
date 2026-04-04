@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Power;
@@ -33,7 +34,7 @@ internal sealed class ProcessSystemSleepInhibitorBackend : ISystemSleepInhibitor
 
             DisposeProcessLocked();
 
-            var process = new Process
+            Process? process = new Process
             {
                 StartInfo = _startInfoFactory()
             };
@@ -42,7 +43,6 @@ internal sealed class ProcessSystemSleepInhibitorBackend : ISystemSleepInhibitor
             {
                 if (!process.Start())
                 {
-                    process.Dispose();
                     return false;
                 }
 
@@ -51,19 +51,21 @@ internal sealed class ProcessSystemSleepInhibitorBackend : ISystemSleepInhibitor
                     var stderr = process.StandardError.ReadToEnd().Trim();
                     var detail = string.IsNullOrWhiteSpace(stderr) ? "no error output" : stderr;
                     var exitCode = process.ExitCode;
-                    process.Dispose();
-                    Log.Warn(() => $"Sleep inhibitor backend {_backendName} exited immediately with code {exitCode}: {detail}");
+                    Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Sleep inhibitor backend {_backendName} exited immediately with code {exitCode}: {detail}"));
                     return false;
                 }
 
-                _process = process;
+                StoreOwnedProcess(process);
                 return true;
             }
             catch (Exception ex)
             {
-                process.Dispose();
                 Log.Warn(() => $"Sleep inhibitor backend {_backendName} failed to start: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                process?.Dispose();
             }
         }
     }
@@ -92,17 +94,20 @@ internal sealed class ProcessSystemSleepInhibitorBackend : ISystemSleepInhibitor
 
     private void DisposeProcessLocked()
     {
-        if (_process is null)
+        var process = _process;
+        if (process is null)
         {
             return;
         }
 
+        _process = null;
+
         try
         {
-            if (!_process.HasExited)
+            if (!process.HasExited)
             {
-                _process.Kill(entireProcessTree: true);
-                _process.WaitForExit(2000);
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(2000);
             }
         }
         catch (Exception ex)
@@ -111,8 +116,14 @@ internal sealed class ProcessSystemSleepInhibitorBackend : ISystemSleepInhibitor
         }
         finally
         {
-            _process.Dispose();
-            _process = null;
+            process.Dispose();
         }
+    }
+
+    private void StoreOwnedProcess(Process process)
+    {
+        var previous = _process;
+        _process = process;
+        previous?.Dispose();
     }
 }

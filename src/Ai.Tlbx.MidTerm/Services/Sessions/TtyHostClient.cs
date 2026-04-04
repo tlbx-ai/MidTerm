@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Net.Sockets;
 #if WINDOWS
 using System.IO.Pipes;
@@ -104,7 +105,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             : IpcEndpoint.GetSessionEndpoint(instanceId!, sessionId, hostPid);
     }
 
-    public async Task<bool> ConnectAsync(int timeoutMs = 5000, CancellationToken ct = default, int maxAttempts = 3)
+    public async Task<bool> ConnectAsync(int timeoutMs = 5000, int maxAttempts = 3, CancellationToken ct = default)
     {
         if (_disposed) return false;
 
@@ -161,7 +162,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                Log.Verbose(() => $"[IPC] {_sessionId}: Connect attempt {attempt} failed: {ex.GetType().Name}: {ex.Message}");
+                Log.Verbose(() => string.Create(CultureInfo.InvariantCulture, $"[IPC] {_sessionId}: Connect attempt {attempt} failed: {ex.GetType().Name}: {ex.Message}"));
             }
 
             if (attempt + 1 < attempts)
@@ -176,6 +177,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     public void StartReadLoop()
     {
         if (_readTask is not null) return;
+        _cts?.Dispose();
         _cts = new CancellationTokenSource();
         _readTask = ReadLoopWithReconnectAsync(_cts.Token);
         _heartbeatTask = HeartbeatLoopAsync(_cts.Token);
@@ -825,7 +827,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         if (_disposed || _intentionalDisconnect) return;
         lock (_responseLock)
         {
-            _pendingResponse?.TrySetCanceled();
+            _pendingResponse?.TrySetCanceled(_cts?.Token ?? CancellationToken.None);
         }
         OnDisconnected?.Invoke(_sessionId);
         TriggerReconnect();
@@ -976,7 +978,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             return;
         }
 
-        Log.Warn(() => $"[IPC] {_sessionId}: { _consecutiveReadTimeouts } consecutive read timeouts while waiting for a response; reconnecting");
+        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[IPC] {_sessionId}: {_consecutiveReadTimeouts} consecutive read timeouts while waiting for a response; reconnecting"));
         _consecutiveReadTimeouts = 0;
         TriggerReconnect();
         try
@@ -996,7 +998,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             return;
         }
 
-        Log.Warn(() => $"[IPC] {_sessionId}: {_consecutiveRequestTimeouts} consecutive request timeouts; reconnecting");
+        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[IPC] {_sessionId}: {_consecutiveRequestTimeouts} consecutive request timeouts; reconnecting"));
         _consecutiveRequestTimeouts = 0;
         TriggerReconnect();
         try
@@ -1018,7 +1020,7 @@ public sealed class TtyHostClient : IAsyncDisposable
 
         lock (_responseLock)
         {
-            _pendingResponse?.TrySetCanceled();
+            _pendingResponse?.TrySetCanceled(_cts?.Token ?? CancellationToken.None);
         }
 
         if (_readTask is not null)

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -62,7 +63,7 @@ public sealed class UnixFileSecretStorage : ISecretStorage
             return;
         }
 
-        _cache = new Dictionary<string, string>();
+        _cache = new Dictionary<string, string>(StringComparer.Ordinal);
 
         if (!File.Exists(_secretsPath))
         {
@@ -98,7 +99,12 @@ public sealed class UnixFileSecretStorage : ISecretStorage
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
-                chmod(dir, 0b111_000_000); // 0700 for directory
+                var chmodDirectoryResult = chmod(dir, 0b111_000_000); // 0700 for directory
+                if (chmodDirectoryResult != 0)
+                {
+                    var errno = Marshal.GetLastWin32Error();
+                    throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture, $"Failed to set permissions on secrets directory '{dir}': errno {errno}"));
+                }
             }
 
             var json = JsonSerializer.Serialize(_cache, SecretsJsonContext.Default.DictionaryStringString);
@@ -116,7 +122,7 @@ public sealed class UnixFileSecretStorage : ISecretStorage
             if (result != 0)
             {
                 var errno = Marshal.GetLastWin32Error();
-                throw new InvalidOperationException($"Failed to set permissions on secrets file '{tmpPath}': errno {errno}");
+                throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture, $"Failed to set permissions on secrets file '{tmpPath}': errno {errno}"));
             }
 
             File.Move(tmpPath, _secretsPath, overwrite: true);

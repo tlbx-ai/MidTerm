@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Threading.Channels;
 
@@ -155,7 +156,7 @@ internal sealed class LogWriter : IDisposable
     private static void FormatEntry(StringBuilder buffer, LogEntry entry)
     {
         buffer.Append('[');
-        buffer.Append(entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+        buffer.Append(entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
         buffer.Append("] [");
         buffer.Append(GetLevelString(entry.Level));
         buffer.Append("] [");
@@ -190,7 +191,7 @@ internal sealed class LogWriter : IDisposable
             buffer.Clear();
 
             await _currentWriter!.WriteAsync(text).ConfigureAwait(false);
-            await _currentWriter.FlushAsync().ConfigureAwait(false);
+            await _currentWriter.FlushAsync(_cts.Token).ConfigureAwait(false);
             _currentFileSize += textSize;
         }
         catch
@@ -216,17 +217,7 @@ internal sealed class LogWriter : IDisposable
         Directory.CreateDirectory(_logDirectory);
         _currentSegment = GetCurrentSegment(today);
         _currentFilePath = BuildLogFilePath(today, _currentSegment);
-
-        _currentFile = new FileStream(
-            _currentFilePath,
-            FileMode.Append,
-            FileAccess.Write,
-            FileShare.ReadWrite | FileShare.Delete,
-            bufferSize: 4096,
-            useAsync: true);
-
-        _currentWriter = new StreamWriter(_currentFile, Encoding.UTF8, leaveOpen: false);
-        _currentFileSize = _currentFile.Length;
+        OpenCurrentFile(_currentFilePath);
     }
 
     private void RotateIfNeeded(int pendingWriteBytes)
@@ -244,23 +235,34 @@ internal sealed class LogWriter : IDisposable
         CloseCurrentFile();
         _currentSegment++;
         _currentFilePath = BuildLogFilePath(_currentDate, _currentSegment);
+        OpenCurrentFile(_currentFilePath);
+        EnforceDirectorySizeLimit();
+    }
 
-        _currentFile = new FileStream(
-            _currentFilePath,
+    private void OpenCurrentFile(string filePath)
+    {
+        var file = new FileStream(
+            filePath,
             FileMode.Append,
             FileAccess.Write,
             FileShare.ReadWrite | FileShare.Delete,
             bufferSize: 4096,
             useAsync: true);
+        var writer = new StreamWriter(file, Encoding.UTF8, leaveOpen: true);
+        var previousWriter = _currentWriter;
+        var previousFile = _currentFile;
 
-        _currentWriter = new StreamWriter(_currentFile, Encoding.UTF8, leaveOpen: false);
-        _currentFileSize = _currentFile.Length;
-        EnforceDirectorySizeLimit();
+        _currentWriter = writer;
+        _currentFile = file;
+        _currentFileSize = file.Length;
+
+        previousWriter?.Dispose();
+        previousFile?.Dispose();
     }
 
     private int GetCurrentSegment(DateOnly today)
     {
-        var pattern = $"{_filePrefix}-{today:yyyy-MM-dd}*.log";
+        var pattern = string.Create(CultureInfo.InvariantCulture, $"{_filePrefix}-{today:yyyy-MM-dd}*.log");
         var files = Directory.EnumerateFiles(_logDirectory, pattern)
             .Select(path => (Path: path, Segment: TryParseSegment(Path.GetFileName(path))))
             .Where(item => item.Segment >= 0)
@@ -279,7 +281,11 @@ internal sealed class LogWriter : IDisposable
 
     private string BuildLogFilePath(DateOnly today, int segment)
     {
-        return Path.Combine(_logDirectory, $"{_filePrefix}-{today:yyyy-MM-dd}.{segment.ToString($"D{SegmentDigits}")}.log");
+        return Path.Combine(
+            _logDirectory,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{_filePrefix}-{today:yyyy-MM-dd}.{segment.ToString($"D{SegmentDigits}", CultureInfo.InvariantCulture)}.log"));
     }
 
     private static int TryParseSegment(string fileName)
@@ -291,17 +297,17 @@ internal sealed class LogWriter : IDisposable
         }
 
         var segmentText = fileName[(dotIndex + 1)..^4];
-        return int.TryParse(segmentText, out var segment) ? segment : -1;
+        return int.TryParse(segmentText, CultureInfo.InvariantCulture, out var segment) ? segment : -1;
     }
 
     private void EnforceDirectorySizeLimit()
     {
         try
         {
-            var files = Directory.GetFiles(_logDirectory, $"{_filePrefix}-*.log")
-                .Select(f => new FileInfo(f))
-                .OrderByDescending(f => f.Name)
-                .ToList();
+        var files = Directory.GetFiles(_logDirectory, $"{_filePrefix}-*.log")
+            .Select(f => new FileInfo(f))
+            .OrderByDescending(f => f.Name, StringComparer.Ordinal)
+            .ToList();
 
             var totalSize = files.Sum(f => f.Length);
 
@@ -345,16 +351,19 @@ internal sealed class LogWriter : IDisposable
     {
         _cleanupTimer.Dispose();
         _queue.Writer.Complete();
-        _cts.Cancel();
 
         try
         {
-            _writerTask.Wait(TimeSpan.FromSeconds(2));
+            using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            shutdownCts.CancelAfter(TimeSpan.FromSeconds(2));
+            _writerTask.WaitAsync(shutdownCts.Token).GetAwaiter().GetResult();
         }
         catch
         {
+            _cts.Cancel();
         }
 
+        CloseCurrentFile();
         _cts.Dispose();
     }
 

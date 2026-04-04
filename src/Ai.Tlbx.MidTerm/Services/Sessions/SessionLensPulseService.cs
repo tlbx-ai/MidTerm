@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -35,6 +37,12 @@ public sealed partial class SessionLensPulseService
     private readonly string _storeDirectory;
     private readonly bool _screenLoggingEnabled;
     private readonly string? _screenLogDirectory;
+
+    [GeneratedRegex("-Command\\s+(?:'(?<cmd>[^']+)'|\"(?<cmd>[^\"]+)\"|(?<cmd>.+))", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex InlineCommandRegex();
+
+    [GeneratedRegex("^(?:Get-Content|cat|type)\\s+(?:-[^\\s]+\\s+)*(?:'(?<path>[^']+)'|\"(?<path>[^\"]+)\"|(?<path>\\S+))", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ReadFileTargetRegex();
 
     public SessionLensPulseService(
         SettingsService? settingsService = null,
@@ -139,13 +147,9 @@ public sealed partial class SessionLensPulseService
             channel.Writer.TryWrite(lensEvent);
         }
 
-        CancellationTokenRegistration registration = default;
-
-        var subscription = new LensPulseSubscription(
-            channel.Reader,
+        var state = new SubscriptionState(
             () =>
             {
-                registration.Dispose();
                 lock (log.SyncRoot)
                 {
                     log.Subscribers.Remove(subscriber);
@@ -153,16 +157,17 @@ public sealed partial class SessionLensPulseService
 
                 channel.Writer.TryComplete();
             });
+        var subscription = new LensPulseSubscription(channel.Reader, state);
 
         if (cancellationToken.CanBeCanceled)
         {
-            registration = cancellationToken.Register(static state =>
+            cancellationToken.Register(static state =>
             {
-                if (state is LensPulseSubscription subscription)
+                if (state is SubscriptionState subscriptionState)
                 {
-                    subscription.Dispose();
+                    subscriptionState.Close();
                 }
-            }, subscription);
+            }, state);
         }
 
         return subscription;
@@ -209,13 +214,9 @@ public sealed partial class SessionLensPulseService
             log.DeltaSubscribers.Add(subscriber);
         }
 
-        CancellationTokenRegistration registration = default;
-
-        var subscription = new LensPulseDeltaSubscription(
-            channel.Reader,
+        var state = new SubscriptionState(
             () =>
             {
-                registration.Dispose();
                 lock (log.SyncRoot)
                 {
                     log.DeltaSubscribers.Remove(subscriber);
@@ -223,16 +224,17 @@ public sealed partial class SessionLensPulseService
 
                 channel.Writer.TryComplete();
             });
+        var subscription = new LensPulseDeltaSubscription(channel.Reader, state);
 
         if (cancellationToken.CanBeCanceled)
         {
-            registration = cancellationToken.Register(static state =>
+            cancellationToken.Register(static state =>
             {
-                if (state is LensPulseDeltaSubscription subscription)
+                if (state is SubscriptionState subscriptionState)
                 {
-                    subscription.Dispose();
+                    subscriptionState.Close();
                 }
-            }, subscription);
+            }, state);
         }
 
         return subscription;
@@ -1157,7 +1159,7 @@ public sealed partial class SessionLensPulseService
 
             if (omittedLineCount > 0 && !takeHead)
             {
-                sections.Add($"... {omittedLineCount} earlier lines omitted ...");
+                sections.Add(string.Create(CultureInfo.InvariantCulture, $"... {omittedLineCount} earlier lines omitted ..."));
             }
 
             sections.AddRange(visibleLines.Select(CompactHistoryLine));
@@ -1165,7 +1167,7 @@ public sealed partial class SessionLensPulseService
             if (omittedLineCount > 0 && takeHead)
             {
                 sections.Add(string.Empty);
-                sections.Add($"... {omittedLineCount} more lines omitted ...");
+                sections.Add(string.Create(CultureInfo.InvariantCulture, $"... {omittedLineCount} more lines omitted ..."));
             }
         }
         else if (streaming && !string.IsNullOrWhiteSpace(header))
@@ -1209,10 +1211,7 @@ public sealed partial class SessionLensPulseService
     private static bool TryExtractInlineCommand(string value, out string command)
     {
         command = string.Empty;
-        var commandMatch = System.Text.RegularExpressions.Regex.Match(
-            value,
-            "-Command\\s+(?:'(?<cmd>[^']+)'|\"(?<cmd>[^\"]+)\"|(?<cmd>.+))",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var commandMatch = InlineCommandRegex().Match(value);
         if (commandMatch.Success)
         {
             command = commandMatch.Groups["cmd"].Value.Trim();
@@ -1230,10 +1229,7 @@ public sealed partial class SessionLensPulseService
             return false;
         }
 
-        var match = System.Text.RegularExpressions.Regex.Match(
-            commandText,
-            "^(?:Get-Content|cat|type)\\s+(?:-[^\\s]+\\s+)*(?:'(?<path>[^']+)'|\"(?<path>[^\"]+)\"|(?<path>\\S+))",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var match = ReadFileTargetRegex().Match(commandText);
         if (!match.Success)
         {
             return false;
@@ -2510,7 +2506,7 @@ public sealed partial class SessionLensPulseService
         {
             var omittedCount = renderedLines.Count - MaxVisibleDiffScreenLogLines;
             renderedLines = renderedLines.Take(MaxVisibleDiffScreenLogLines)
-                .Append($"... {omittedCount} more diff lines omitted ...")
+                .Append(string.Create(CultureInfo.InvariantCulture, $"... {omittedCount} more diff lines omitted ..."))
                 .ToList();
         }
 
@@ -2698,7 +2694,7 @@ public sealed partial class SessionLensPulseService
 
     private static string FormatHistoryMeta(string kind, string statusLabel, DateTimeOffset value)
     {
-        var timeText = value.ToString("HH:mm:ss");
+        var timeText = value.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
         var normalizedStatus = statusLabel.Trim();
         if (string.IsNullOrWhiteSpace(normalizedStatus) || ShouldHideStatusInMeta(kind, normalizedStatus))
         {
@@ -2849,20 +2845,17 @@ public sealed partial class SessionLensPulseService
     private sealed partial class LensScreenLogJsonContext : JsonSerializerContext;
 }
 
-public sealed class LensPulseSubscription : IDisposable
+internal sealed class SubscriptionState
 {
     private readonly Action _dispose;
     private int _disposed;
 
-    public LensPulseSubscription(ChannelReader<LensPulseEvent> reader, Action dispose)
+    public SubscriptionState(Action dispose)
     {
-        Reader = reader;
         _dispose = dispose;
     }
 
-    public ChannelReader<LensPulseEvent> Reader { get; }
-
-    public void Dispose()
+    public void Close()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
@@ -2871,24 +2864,50 @@ public sealed class LensPulseSubscription : IDisposable
     }
 }
 
-public sealed class LensPulseDeltaSubscription : IDisposable
+public sealed class LensPulseSubscription : IDisposable
 {
-    private readonly Action _dispose;
+    private readonly SubscriptionState _state;
     private int _disposed;
 
-    public LensPulseDeltaSubscription(ChannelReader<LensPulseDeltaResponse> reader, Action dispose)
+    internal LensPulseSubscription(ChannelReader<LensPulseEvent> reader, SubscriptionState state)
     {
         Reader = reader;
-        _dispose = dispose;
+        _state = state;
+    }
+
+    public ChannelReader<LensPulseEvent> Reader { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _state.Close();
+    }
+}
+
+public sealed class LensPulseDeltaSubscription : IDisposable
+{
+    private readonly SubscriptionState _state;
+    private int _disposed;
+
+    internal LensPulseDeltaSubscription(ChannelReader<LensPulseDeltaResponse> reader, SubscriptionState state)
+    {
+        Reader = reader;
+        _state = state;
     }
 
     public ChannelReader<LensPulseDeltaResponse> Reader { get; }
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            _dispose();
+            return;
         }
+
+        _state.Close();
     }
 }

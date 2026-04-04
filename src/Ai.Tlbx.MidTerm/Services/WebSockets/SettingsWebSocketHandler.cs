@@ -44,6 +44,7 @@ public sealed class SettingsWebSocketHandler
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         var sendLock = new SemaphoreSlim(1, 1);
+        var shutdownToken = _shutdownService.Token;
 
         async Task SendMessageAsync(SettingsWsMessage message)
         {
@@ -52,7 +53,7 @@ public sealed class SettingsWebSocketHandler
                 return;
             }
 
-            await sendLock.WaitAsync();
+            await sendLock.WaitAsync(shutdownToken);
             try
             {
                 if (ws.State != WebSocketState.Open)
@@ -62,7 +63,10 @@ public sealed class SettingsWebSocketHandler
 
                 var json = JsonSerializer.Serialize(message, AppJsonContext.Default.SettingsWsMessage);
                 var bytes = Encoding.UTF8.GetBytes(json);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken);
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch
             {
@@ -87,7 +91,6 @@ public sealed class SettingsWebSocketHandler
 
         var settingsListenerId = _settingsService.AddSettingsListener(OnSettingsChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateChange);
-        var shutdownToken = _shutdownService.Token;
 
         try
         {

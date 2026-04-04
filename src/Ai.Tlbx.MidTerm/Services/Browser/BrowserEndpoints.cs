@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -189,7 +190,7 @@ public static class BrowserEndpoints
         app.MapPost("/api/browser", async (HttpContext ctx) =>
         {
             using var ms = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(ms);
+            await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
             var body = ms.ToArray();
 
             var args = TmuxCommandParser.ParseNullDelimitedArgs(body);
@@ -459,7 +460,7 @@ public static class BrowserEndpoints
             {
                 Command = "outline",
                 MaxDepth = GetIntFlag(args, "--depth") ??
-                    (args.Count > 1 && int.TryParse(args[1], out var od) ? od : 4)
+                    (args.Count > 1 && int.TryParse(args[1], CultureInfo.InvariantCulture, out var od) ? od : 4)
             },
             "attrs" => new BrowserCommandRequest
             {
@@ -540,14 +541,14 @@ public static class BrowserEndpoints
         {
             var screenshotsDir = MidtermDirectory.EnsureSubdirectory(cwd, "screenshots");
 
-            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}.png");
 
             try
             {
                 var base64 = result.Result;
-                if (base64.Contains(','))
-                    base64 = base64[(base64.IndexOf(',') + 1)..];
+                if (base64.Contains(',', StringComparison.Ordinal))
+                    base64 = base64[(base64.IndexOf(',', StringComparison.Ordinal) + 1)..];
 
                 var bytes = Convert.FromBase64String(base64);
                 await File.WriteAllBytesAsync(filePath, bytes);
@@ -562,7 +563,7 @@ public static class BrowserEndpoints
 
         if (command == "snapshot" && result.Result is not null)
         {
-            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
 
             try
@@ -612,7 +613,7 @@ public static class BrowserEndpoints
     {
         for (int i = 1, pos = 0; i < args.Count; i++)
         {
-            if (args[i].StartsWith("--"))
+            if (args[i].StartsWith("--", StringComparison.Ordinal))
             {
                 i++;
                 continue;
@@ -637,12 +638,12 @@ public static class BrowserEndpoints
     private static int? GetIntFlag(List<string> args, string flag)
     {
         var value = GetFlagValue(args, flag);
-        return value is not null && int.TryParse(value, out var n) ? n : null;
+        return value is not null && int.TryParse(value, CultureInfo.InvariantCulture, out var n) ? n : null;
     }
 
     private static bool HasFlag(List<string> args, string flag)
     {
-        return args.Any(a => a.Equals(flag, StringComparison.OrdinalIgnoreCase));
+        return args.Any(a => a.Equals(flag, StringComparison.Ordinal));
     }
 
     private static string? NormalizeOptional(string? value)

@@ -130,7 +130,7 @@ public sealed class ShareGrantService
             return false;
         }
 
-        var separator = cookieValue.IndexOf('.');
+        var separator = cookieValue.IndexOf('.', StringComparison.Ordinal);
         if (separator <= 0 || separator == cookieValue.Length - 1)
         {
             return false;

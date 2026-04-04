@@ -9,7 +9,7 @@
     - Run a separate source instance on another port (default: 2100)
     - Reuse the installed release mthost for PTY sessions
     - Rebuild and use the local Debug mtagenthost for Lens/runtime work
-    - Restart the local source server when C# changes land because dotnet watch is not reliable enough here
+    - Restart the local source server when C# changes land without dotnet watch because watch breaks terminal Ctrl+C under heavy output
 
 .EXAMPLE
     ./scripts/dev.ps1
@@ -103,6 +103,18 @@ function Build-AgentHost {
     & dotnet build $AgentHostProjectFile -c Debug --nologo
     if ($LASTEXITCODE -ne 0) {
         throw "mtagenthost build failed"
+    }
+}
+
+function Build-WebServer {
+    Write-Host "  Building local mt..." -ForegroundColor DarkGray
+    & dotnet build $WebProjectFile -c Debug --nologo `
+        "-p:UseSharedCompilation=false" `
+        "-m:1" `
+        "--property:SkipFrontendBuild=true" `
+        "--property:DevWatch=true"
+    if ($LASTEXITCODE -ne 0) {
+        throw "mt build failed"
     }
 }
 
@@ -257,16 +269,12 @@ function Stop-DevProcess($state, [string]$reason) {
 
 function Start-DevServer([string]$resolvedTtyHostPath) {
     Build-AgentHost
+    Build-WebServer
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = "dotnet"
     foreach ($arg in @(
-        "watch",
-        "run",
-        "--project", $WebProjectFile,
-        "--property:SkipFrontendBuild=true",
-        "--property:DevWatch=true",
-        "--",
+        (Join-Path $DebugWebOutputDir "mt.dll"),
         "--port", $Port.ToString(),
         "--bind", $BindAddress
     )) {
@@ -339,7 +347,7 @@ Write-Host "  mthost         : $resolvedTtyHostPath" -ForegroundColor DarkGray
 Write-Host "  mtagenthost    : local Debug build" -ForegroundColor DarkGray
 Write-Host "  TS changes     : esbuild watch rebuilds" -ForegroundColor DarkGray
 Write-Host "  CSS changes    : refresh browser" -ForegroundColor DarkGray
-Write-Host "  C# changes     : script rebuilds agent host and restarts dotnet watch" -ForegroundColor DarkGray
+Write-Host "  C# changes     : script rebuilds and restarts local source MidTerm" -ForegroundColor DarkGray
 Write-Host ""
 
 Invoke-FrontendBuild

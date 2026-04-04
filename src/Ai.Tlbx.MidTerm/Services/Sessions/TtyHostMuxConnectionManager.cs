@@ -12,7 +12,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 /// <summary>
 /// WebSocket mux manager for con-host mode.
 /// </summary>
-public sealed class TtyHostMuxConnectionManager
+public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 {
     private readonly record struct PooledOutputItem(
         string SessionId,
@@ -22,9 +22,9 @@ public sealed class TtyHostMuxConnectionManager
         SharedOutputBuffer Buffer);
 
     private readonly TtyHostSessionManager _sessionManager;
-    private readonly ConcurrentDictionary<string, MuxClient> _clients = new();
-    private readonly ConcurrentDictionary<string, long> _inputTimestamps = new();
-    private readonly ConcurrentDictionary<string, int> _lastServerRttMs = new();
+    private readonly ConcurrentDictionary<string, MuxClient> _clients = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _inputTimestamps = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, int> _lastServerRttMs = new(StringComparer.Ordinal);
     private const int MaxQueuedOutputs = 1000;
     private readonly Channel<PooledOutputItem> _outputQueue =
         Channel.CreateBounded<PooledOutputItem>(
@@ -155,7 +155,7 @@ public sealed class TtyHostMuxConnectionManager
     public async Task HandleInputAsync(string sessionId, ReadOnlyMemory<byte> data)
     {
         _inputTimestamps[sessionId] = Environment.TickCount64;
-        await _sessionManager.SendInputAsync(sessionId, data).ConfigureAwait(false);
+        await _sessionManager.SendInputAsync(sessionId, data, _cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
     }
 
     public int GetServerRtt(string sessionId)
@@ -165,7 +165,7 @@ public sealed class TtyHostMuxConnectionManager
 
     public async Task HandlePingAsync(string sessionId, byte[] pingData, MuxClient client)
     {
-        var pongData = await _sessionManager.PingAsync(sessionId, pingData);
+        var pongData = await _sessionManager.PingAsync(sessionId, pingData, _cts?.Token ?? CancellationToken.None);
         if (pongData is null) return;
 
         var pong = new byte[MuxProtocol.HeaderSize + 1 + pongData.Length];
@@ -178,7 +178,7 @@ public sealed class TtyHostMuxConnectionManager
 
     public async Task HandleResizeAsync(string sessionId, int cols, int rows)
     {
-        await _sessionManager.ResizeSessionAsync(sessionId, cols, rows).ConfigureAwait(false);
+        await _sessionManager.ResizeSessionAsync(sessionId, cols, rows, _cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
     }
 
     public void BroadcastTerminalOutput(string sessionId, ReadOnlyMemory<byte> data)
@@ -210,17 +210,37 @@ public sealed class TtyHostMuxConnectionManager
         }
         _disposed = true;
 
-        _cts?.Cancel();
+        var cts = _cts;
+        _cts = null;
+        cts?.Cancel();
+        _outputQueue.Writer.TryComplete();
         if (_outputProcessor is not null)
         {
             try { await _outputProcessor.ConfigureAwait(false); } catch { }
         }
-        _outputQueue.Writer.Complete();
-        _cts?.Dispose();
+        cts?.Dispose();
+
+        var clients = _clients.ToArray();
+        _clients.Clear();
+        foreach (var (_, client) in clients)
+        {
+            try
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
 
         _sessionManager.OnOutput -= _outputHandler;
         _sessionManager.OnSessionClosed -= _sessionClosedHandler;
         _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
         _settingsService.RemoveSettingsListener(_settingsListenerId);
+    }
+
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

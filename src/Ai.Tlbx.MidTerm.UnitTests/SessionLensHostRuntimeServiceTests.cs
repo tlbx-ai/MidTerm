@@ -21,7 +21,7 @@ public sealed class SessionLensHostRuntimeServiceTests
     {
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "synthetic");
+        await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "synthetic");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -89,7 +89,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -181,7 +181,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         {
             var pulse = new SessionLensPulseService();
             var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, settingsService, mode: "codex");
+            await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, settingsService, mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
             await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -264,7 +264,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -316,7 +316,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -385,7 +385,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
         await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -452,7 +452,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         {
             var pulse = new SessionLensPulseService();
             var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+            await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
             await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -489,7 +489,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         {
             var pulse = new SessionLensPulseService();
             var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+            await using var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
             await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
@@ -550,7 +550,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(
+        await using var hostRuntime = new SessionLensHostRuntimeService(
             ingress,
             pulse,
             CreateSettingsService(),
@@ -634,12 +634,10 @@ public sealed class SessionLensHostRuntimeServiceTests
             ProfileHint = "codex"
         };
 
-        SessionLensHostRuntimeService? initialRuntime = null;
-        SessionLensHostRuntimeService? restartedRuntime = null;
         try
         {
             var initialPulse = new SessionLensPulseService();
-            initialRuntime = new SessionLensHostRuntimeService(
+            await using var initialRuntime = new SessionLensHostRuntimeService(
                 new SessionLensHostIngressService(initialPulse),
                 initialPulse,
                 CreateSettingsService(settingsRoot),
@@ -650,7 +648,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             var hostPid = await WaitForHostPidAsync(instanceIdentity, session.Id);
 
             var restartedPulse = new SessionLensPulseService();
-            restartedRuntime = new SessionLensHostRuntimeService(
+            await using var restartedRuntime = new SessionLensHostRuntimeService(
                 new SessionLensHostIngressService(restartedPulse),
                 restartedPulse,
                 CreateSettingsService(settingsRoot),
@@ -667,16 +665,6 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
         finally
         {
-            if (restartedRuntime is not null)
-            {
-                await restartedRuntime.DisposeAsync();
-            }
-
-            if (initialRuntime is not null)
-            {
-                await initialRuntime.DisposeAsync();
-            }
-
             try
             {
                 Directory.Delete(settingsRoot, recursive: true);
@@ -702,12 +690,10 @@ public sealed class SessionLensHostRuntimeServiceTests
             ProfileHint = "codex"
         };
 
-        SessionLensHostRuntimeService? initialRuntime = null;
-        SessionLensHostRuntimeService? restartedRuntime = null;
         try
         {
             var initialPulse = new SessionLensPulseService();
-            initialRuntime = new SessionLensHostRuntimeService(
+            await using var initialRuntime = new SessionLensHostRuntimeService(
                 new SessionLensHostIngressService(initialPulse),
                 initialPulse,
                 CreateSettingsService(settingsRoot),
@@ -734,7 +720,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.NotNull(initialSnapshot);
 
             var restartedPulse = new SessionLensPulseService();
-            restartedRuntime = new SessionLensHostRuntimeService(
+            await using var restartedRuntime = new SessionLensHostRuntimeService(
                 new SessionLensHostIngressService(restartedPulse),
                 restartedPulse,
                 CreateSettingsService(settingsRoot),
@@ -762,20 +748,10 @@ public sealed class SessionLensHostRuntimeServiceTests
                 entry => entry.ItemType == "user_message" &&
                          entry.Body.Contains("Persist this Lens conversation across restart.", StringComparison.Ordinal));
             Assert.Equal(initialSnapshot!.Streams.AssistantText, recoveredSnapshot.Streams.AssistantText);
+            await restartedRuntime.DetachAsync(session.Id);
         }
         finally
         {
-            if (restartedRuntime is not null)
-            {
-                await restartedRuntime.DetachAsync(session.Id);
-                await restartedRuntime.DisposeAsync();
-            }
-
-            if (initialRuntime is not null)
-            {
-                await initialRuntime.DisposeAsync();
-            }
-
             try
             {
                 Directory.Delete(settingsRoot, recursive: true);
@@ -801,12 +777,10 @@ public sealed class SessionLensHostRuntimeServiceTests
             ProfileHint = "codex"
         };
 
-        SessionLensHostRuntimeService? initialRuntime = null;
-        SessionLensHostRuntimeService? recoveredRuntime = null;
         try
         {
             var initialPulse = new SessionLensPulseService();
-            initialRuntime = new SessionLensHostRuntimeService(
+            await using var initialRuntime = new SessionLensHostRuntimeService(
                 new SessionLensHostIngressService(initialPulse),
                 initialPulse,
                 CreateSettingsService(settingsRoot),
@@ -820,7 +794,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.True(ProcessExists(hostPid));
 
             var recoveredPulse = new SessionLensPulseService();
-            recoveredRuntime = new SessionLensHostRuntimeService(
+            await using var recoveredRuntime = new SessionLensHostRuntimeService(
                 new SessionLensHostIngressService(recoveredPulse),
                 recoveredPulse,
                 CreateSettingsService(settingsRoot),
@@ -836,16 +810,6 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
         finally
         {
-            if (recoveredRuntime is not null)
-            {
-                await recoveredRuntime.DisposeAsync();
-            }
-
-            if (initialRuntime is not null)
-            {
-                await initialRuntime.DisposeAsync();
-            }
-
             try
             {
                 Directory.Delete(settingsRoot, recursive: true);
@@ -907,8 +871,10 @@ public sealed class SessionLensHostRuntimeServiceTests
                 using var document = JsonDocument.Parse(await File.ReadAllTextAsync(registryPath));
                 if (document.RootElement.TryGetProperty("Sessions", out var sessions))
                 {
-                    foreach (var entry in sessions.EnumerateArray())
+                    using var entries = sessions.EnumerateArray();
+                    while (entries.MoveNext())
                     {
+                        var entry = entries.Current;
                         if (!entry.TryGetProperty("SessionId", out var sessionIdProperty) ||
                             !string.Equals(sessionIdProperty.GetString(), sessionId, StringComparison.Ordinal))
                         {

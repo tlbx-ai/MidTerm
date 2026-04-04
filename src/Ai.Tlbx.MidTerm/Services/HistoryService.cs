@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,7 +14,7 @@ using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Services;
 
-public sealed class HistoryService
+public sealed class HistoryService : IDisposable
 {
     private const int MaxRecentEntries = 50;
     private static readonly TimeSpan SaveDebounceDelay = TimeSpan.FromMilliseconds(250);
@@ -23,6 +24,7 @@ public sealed class HistoryService
     private readonly Timer _saveTimer;
     private LaunchHistory _history = new();
     private bool _savePending;
+    private bool _disposed;
 
     public HistoryService(SettingsService settingsService)
     {
@@ -59,6 +61,8 @@ public sealed class HistoryService
 
     private void ScheduleSave()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         lock (_lock)
         {
             _savePending = true;
@@ -379,7 +383,7 @@ public sealed class HistoryService
         if (snapshot is not null)
         {
             PersistSnapshot(snapshot);
-            Log.Info(() => $"Migrated {migratedCount} starred history entries with sequential order");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Migrated {migratedCount} starred history entries with sequential order"));
         }
     }
 
@@ -440,5 +444,38 @@ public sealed class HistoryService
             "claude" => "claude",
             _ => null
         };
+    }
+
+    public void Dispose()
+    {
+        LaunchHistory? snapshot = null;
+
+        lock (_lock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            if (_savePending)
+            {
+                _savePending = false;
+                snapshot = CloneHistory(_history);
+            }
+        }
+
+        try
+        {
+            _saveTimer.Dispose();
+        }
+        catch
+        {
+        }
+
+        if (snapshot is not null)
+        {
+            PersistSnapshot(snapshot);
+        }
     }
 }

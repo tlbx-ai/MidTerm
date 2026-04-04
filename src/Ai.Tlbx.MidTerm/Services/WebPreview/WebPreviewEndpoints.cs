@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.Browser;
@@ -184,7 +185,8 @@ public static partial class WebPreviewEndpoints
         });
 
         app.MapPost("/api/webpreview/snapshot", async (
-            WebPreviewSnapshotRequest request) =>
+            WebPreviewSnapshotRequest request,
+            CancellationToken cancellationToken) =>
         {
             var session = sessionManager.GetSession(request.SessionId);
             if (session is null)
@@ -194,7 +196,7 @@ public static partial class WebPreviewEndpoints
             if (string.IsNullOrEmpty(cwd) || !Directory.Exists(cwd))
                 return Results.BadRequest("Session has no valid working directory");
 
-            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
             var cssDir = Path.Combine(snapshotDir, "css");
             Directory.CreateDirectory(cssDir);
@@ -204,7 +206,7 @@ public static partial class WebPreviewEndpoints
             html = DecodeExtUrls(html);
 
             // Download CSS files and rewrite hrefs
-            foreach (var cssUrl in request.CssUrls.Distinct())
+            foreach (var cssUrl in request.CssUrls.Distinct(StringComparer.Ordinal))
             {
                 if (!TryExtractProxyPath(cssUrl, out var routeKey, out var proxyPath))
                     continue;
@@ -235,14 +237,14 @@ public static partial class WebPreviewEndpoints
                 var counter = 1;
                 while (File.Exists(Path.Combine(cssDir, finalFileName)))
                 {
-                    finalFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_{counter}.css";
+                    finalFileName = string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileNameWithoutExtension(fileName)}_{counter}.css");
                     counter++;
                 }
 
                 try
                 {
-                    var cssContent = await service.GetHttpClient(routeKey).GetStringAsync(upstreamUrl);
-                    await File.WriteAllTextAsync(Path.Combine(cssDir, finalFileName), cssContent);
+                    var cssContent = await service.GetHttpClient(routeKey).GetStringAsync(upstreamUrl, cancellationToken);
+                    await File.WriteAllTextAsync(Path.Combine(cssDir, finalFileName), cssContent, cancellationToken);
 
                     html = html.Replace(cssUrl, $"css/{finalFileName}", StringComparison.Ordinal);
 
@@ -256,7 +258,7 @@ public static partial class WebPreviewEndpoints
                 }
             }
 
-            await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
+            await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html, cancellationToken);
 
             return Results.Json(
                 new WebPreviewSnapshotResponse { SnapshotPath = snapshotDir },
@@ -388,18 +390,18 @@ public static partial class WebPreviewEndpoints
     }
 
     // Strips <base href="..."> or <base target="..."> tags
-    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex BaseTagRegex();
 
     // Strips the MT proxy shim script (the minified IIFE containing window.__mtProxy)
-    [GeneratedRegex(@"<script>\(function\(\)\{.*?window\.__mtProxy.*?</script>", RegexOptions.Singleline)]
+    [GeneratedRegex(@"<script>\(function\(\)\{.*?window\.__mtProxy.*?</script>", RegexOptions.Singleline, 1000)]
     private static partial Regex ProxyScriptRegex();
 
     // Strips <script src="blob:..."> tags injected at runtime (e.g. by html2canvas loader)
-    [GeneratedRegex(@"<script[^>]+src=[""']blob:[^""'>]+[""'][^>]*></script>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex(@"<script[^>]+src=[""']blob:[^""'>]+[""'][^>]*></script>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]
     private static partial Regex BlobScriptRegex();
 
     // Matches /_ext?u=ENCODED_URL patterns for decoding
-    [GeneratedRegex(@"/_ext\?u=([^&""'\s>]+)")]
+    [GeneratedRegex(@"/_ext\?u=([^&""'\s>]+)", RegexOptions.None, 1000)]
     private static partial Regex ExtUrlRegex();
 }

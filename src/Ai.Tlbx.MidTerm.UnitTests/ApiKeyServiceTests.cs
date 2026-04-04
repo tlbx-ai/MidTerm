@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public class ApiKeyServiceTests : IDisposable
+public sealed class ApiKeyServiceTests : IDisposable
 {
     private readonly string _tempDir;
     private readonly SettingsService _settingsService;
@@ -44,6 +44,8 @@ public class ApiKeyServiceTests : IDisposable
         catch
         {
         }
+
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
@@ -54,7 +56,7 @@ public class ApiKeyServiceTests : IDisposable
         var created = _apiKeyService.CreateApiKey("Primary Agent");
         var listed = _apiKeyService.ListApiKeys();
 
-        Assert.StartsWith("mtk_", created.Token);
+        Assert.StartsWith("mtk_", created.Token, StringComparison.Ordinal);
         Assert.Single(listed.ApiKeys);
         Assert.Equal("Primary Agent", listed.ApiKeys[0].Name);
         Assert.True(_apiKeyService.TryValidateApiKey(created.Token, out var validated));

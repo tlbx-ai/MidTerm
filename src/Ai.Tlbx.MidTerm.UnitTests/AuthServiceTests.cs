@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public class AuthServiceTests : IDisposable
+public sealed class AuthServiceTests : IDisposable
 {
     private readonly string _tempDir;
     private readonly SettingsService _settingsService;
@@ -52,6 +52,8 @@ public class AuthServiceTests : IDisposable
         {
             // Best effort cleanup
         }
+
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

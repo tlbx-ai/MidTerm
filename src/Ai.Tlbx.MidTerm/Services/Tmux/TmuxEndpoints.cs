@@ -21,7 +21,7 @@ public static class TmuxEndpoints
         app.MapPost("/api/tmux", async (HttpContext ctx) =>
         {
             using var ms = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(ms);
+            await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
             var body = ms.ToArray();
 
             var args = TmuxCommandParser.ParseNullDelimitedArgs(body);
@@ -78,7 +78,7 @@ public static class TmuxEndpoints
             }
 
             using var ms = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(ms);
+            await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
             var data = ms.ToArray();
 
             if (data.Length == 0)
@@ -90,14 +90,14 @@ public static class TmuxEndpoints
             return Results.Ok();
         });
 
-        app.MapGet("/api/sessions/{id}/buffer", async (string id) =>
+        app.MapGet("/api/sessions/{id}/buffer", async (string id, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
             if (snapshot is null)
             {
                 return Results.NotFound();

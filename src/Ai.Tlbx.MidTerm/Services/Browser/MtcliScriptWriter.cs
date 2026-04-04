@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class MtcliScriptWriter
@@ -27,7 +29,7 @@ public static class MtcliScriptWriter
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
         # It only works on this machine's MidTerm instance. Not a security risk.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
-        _MT="https://localhost:{{port}}"
+        _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         _MK="mm-session={{token}}"
         _MC() {
           if [ -n "${MT_API_KEY:-}" ]; then
@@ -445,7 +447,7 @@ public static class MtcliScriptWriter
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
         # It only works on this machine's MidTerm instance. Not a security risk.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
-        $script:_MT = "https://localhost:{{port}}"
+        $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         $script:_MK = "mm-session={{token}}"
 
         function script:_MC {

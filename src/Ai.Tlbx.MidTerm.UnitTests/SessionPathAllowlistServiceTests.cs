@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Services;
 using Xunit;
 
@@ -52,7 +53,8 @@ public class SessionPathAllowlistServiceTests
     {
         for (var i = 0; i < 1001; i++)
         {
-            _service.RegisterPath("s1", Path.Combine(Path.GetTempPath(), $"file_{i:D4}.txt"));
+            var fileName = string.Create(CultureInfo.InvariantCulture, $"file_{i:D4}.txt");
+            _service.RegisterPath("s1", Path.Combine(Path.GetTempPath(), fileName));
         }
 
         // First path should have been evicted

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Models.Browser;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
@@ -6,8 +7,8 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 public sealed class BrowserCommandService
 {
     private readonly Lock _clientGate = new();
-    private readonly ConcurrentDictionary<string, PendingCommand> _pending = new();
-    private readonly ConcurrentDictionary<string, BrowserClient> _clients = new();
+    private readonly ConcurrentDictionary<string, PendingCommand> _pending = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, BrowserClient> _clients = new(StringComparer.Ordinal);
     private readonly MainBrowserService? _mainBrowserService;
 
     public BrowserCommandService(MainBrowserService? mainBrowserService = null)
@@ -147,11 +148,11 @@ public sealed class BrowserCommandService
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _pending.TryRemove(id, out _);
-            BrowserLog.Result(request.Command, false, $"Timed out after {timeoutSeconds}s");
+            BrowserLog.Result(request.Command, false, string.Create(CultureInfo.InvariantCulture, $"Timed out after {timeoutSeconds}s"));
             return new BrowserWsResult
             {
                 Success = false,
-                Error = $"Command timed out after {timeoutSeconds} seconds."
+                Error = string.Create(CultureInfo.InvariantCulture, $"Command timed out after {timeoutSeconds} seconds.")
             };
         }
         catch (OperationCanceledException)
@@ -229,9 +230,9 @@ public sealed class BrowserCommandService
             $"scope: {status.ScopeDescription ?? "(global)"}",
             $"target configured: {(status.HasTarget ? "yes" : "no")}",
             $"target: {status.TargetUrl ?? "(none)"}",
-            $"ui clients: {status.ConnectedUiClientCount}",
-            $"matching browser clients: {status.ConnectedClientCount}",
-            $"browser clients total: {status.TotalConnectedClientCount}"
+            string.Create(CultureInfo.InvariantCulture, $"ui clients: {status.ConnectedUiClientCount}"),
+            string.Create(CultureInfo.InvariantCulture, $"matching browser clients: {status.ConnectedClientCount}"),
+            string.Create(CultureInfo.InvariantCulture, $"browser clients total: {status.TotalConnectedClientCount}")
         };
 
         if (status.DefaultClient is { } client)

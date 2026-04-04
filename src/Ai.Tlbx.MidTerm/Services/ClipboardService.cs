@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -13,7 +14,7 @@ public sealed class ClipboardService
 {
     private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
     private const string MacOsClipboardLabelPrefix = "ai.tlbx.midterm.clipboard.set.";
-    private static readonly Regex MacOsExitCodeRegex = new(@"\blast exit code = (?<code>-?\d+)\b", RegexOptions.Compiled);
+    private static readonly Regex MacOsExitCodeRegex = new(@"\blast exit code = (?<code>-?\d+)\b", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
     private readonly SettingsService _settingsService;
 
     [DllImport("libc", EntryPoint = "geteuid")]
@@ -183,7 +184,7 @@ public sealed class ClipboardService
             return false;
         }
 
-        var label = $"{MacOsClipboardLabelPrefix}{Guid.NewGuid():N}";
+        var label = string.Create(CultureInfo.InvariantCulture, $"{MacOsClipboardLabelPrefix}{Guid.NewGuid():N}");
         var tempDir = Path.Combine(Path.GetTempPath(), "midterm-launchagents");
         Directory.CreateDirectory(tempDir);
 
@@ -200,9 +201,9 @@ public sealed class ClipboardService
         await File.WriteAllTextAsync(plistPath, plist, Encoding.UTF8);
 
         // Defensive cleanup from previous failed attempt with same label.
-        await RunProcessAsync("launchctl", ["bootout", $"gui/{uid}/{label}"], logFailures: false);
+        await RunProcessAsync("launchctl", [string.Create(CultureInfo.InvariantCulture, $"bootout"), string.Create(CultureInfo.InvariantCulture, $"gui/{uid}/{label}")], logFailures: false);
 
-        var bootstrapResult = await RunProcessCaptureAsync("launchctl", ["bootstrap", $"gui/{uid}", plistPath]);
+        var bootstrapResult = await RunProcessCaptureAsync("launchctl", ["bootstrap", string.Create(CultureInfo.InvariantCulture, $"gui/{uid}"), plistPath]);
         if (!bootstrapResult.Started || bootstrapResult.ExitCode != 0)
         {
             if (!string.IsNullOrWhiteSpace(bootstrapResult.Stderr))
@@ -231,7 +232,7 @@ public sealed class ClipboardService
         }
         finally
         {
-            await RunProcessAsync("launchctl", ["bootout", $"gui/{uid}/{label}"], logFailures: false);
+            await RunProcessAsync("launchctl", ["bootout", string.Create(CultureInfo.InvariantCulture, $"gui/{uid}/{label}")], logFailures: false);
             TryDeleteFile(plistPath);
             TryDeleteFile(stdoutPath);
             TryDeleteFile(stderrPath);
@@ -247,12 +248,12 @@ public sealed class ClipboardService
 
         while (DateTime.UtcNow < deadline)
         {
-            var result = await RunProcessCaptureAsync("launchctl", ["print", $"gui/{uid}/{label}"]);
+            var result = await RunProcessCaptureAsync("launchctl", ["print", string.Create(CultureInfo.InvariantCulture, $"gui/{uid}/{label}")]);
             if (result.Started && result.ExitCode == 0)
             {
                 var match = MacOsExitCodeRegex.Match(result.Stdout);
                 if (match.Success &&
-                    int.TryParse(match.Groups["code"].Value, out var parsedExit))
+                    int.TryParse(match.Groups["code"].Value, CultureInfo.InvariantCulture, out var parsedExit))
                 {
                     return parsedExit;
                 }
@@ -404,7 +405,7 @@ public sealed class ClipboardService
             return false;
         }
 
-        Log.Warn(() => $"[Clipboard] Command failed ({fileName}, exit {result.ExitCode}): {result.Stderr.Trim()}");
+        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[Clipboard] Command failed ({fileName}, exit {result.ExitCode}): {result.Stderr.Trim()}"));
         return false;
     }
 

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public class FileServiceTests : IDisposable
+public sealed class FileServiceTests : IDisposable
 {
     private readonly string _tempDir;
 
@@ -25,6 +25,8 @@ public class FileServiceTests : IDisposable
         catch
         {
         }
+
+        GC.SuppressFinalize(this);
     }
 
     // =======================================================================
@@ -176,7 +178,7 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "readme.md", maxDepth: 5);
 
         Assert.NotNull(result);
-        Assert.EndsWith("readme.md", result);
+        Assert.EndsWith("readme.md", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -187,7 +189,7 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "src/main.ts", maxDepth: 5);
 
         Assert.NotNull(result);
-        Assert.EndsWith("main.ts", result);
+        Assert.EndsWith("main.ts", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -199,7 +201,7 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "components", maxDepth: 5);
 
         Assert.NotNull(result);
-        Assert.Contains("components", result);
+        Assert.Contains("components", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

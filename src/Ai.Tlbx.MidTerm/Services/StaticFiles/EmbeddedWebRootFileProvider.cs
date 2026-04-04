@@ -134,14 +134,14 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
 
         var files = _resourceMap
             .Where(kvp => kvp.Key.StartsWith(normalizedPath, StringComparison.OrdinalIgnoreCase)
-                          || (string.IsNullOrEmpty(normalizedPath) && !kvp.Key.Contains('/')))
+                          || (string.IsNullOrEmpty(normalizedPath) && kvp.Key.AsSpan().IndexOf('/') < 0))
             .Select(kvp => new EmbeddedFileInfo(_assembly, kvp.Value.Name, Path.GetFileName(kvp.Key), kvp.Value.Length, _assemblyLastModified))
             .ToList<IFileInfo>();
 
         if (files.Count == 0 && string.IsNullOrEmpty(normalizedPath.TrimEnd('/')))
         {
             files = _resourceMap
-                .Where(kvp => !kvp.Key.Contains('/'))
+                .Where(kvp => kvp.Key.AsSpan().IndexOf('/') < 0)
                 .Select(kvp => new EmbeddedFileInfo(_assembly, kvp.Value.Name, Path.GetFileName(kvp.Key), kvp.Value.Length, _assemblyLastModified))
                 .ToList<IFileInfo>();
         }

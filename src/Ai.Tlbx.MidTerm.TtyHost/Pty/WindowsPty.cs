@@ -1,5 +1,6 @@
 #if WINDOWS
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -213,6 +214,8 @@ public sealed class WindowsPty : IPtyConnection
 
             // Keep PTY input writes effectively unbuffered so interactive keystrokes do not
             // depend on explicit Stream.FlushAsync calls for visibility in the child shell.
+            _writerStream?.Dispose();
+            _readerStream?.Dispose();
             _writerStream = new FileStream(_inputWriteHandle, FileAccess.Write, 1, false);
             _readerStream = new FileStream(_outputReadHandle, FileAccess.Read, 16384, false);
         }
@@ -228,7 +231,7 @@ public sealed class WindowsPty : IPtyConnection
     {
         var sb = new StringBuilder();
 
-        if (app.Contains(' '))
+        if (app.AsSpan().IndexOf(' ') >= 0)
         {
             sb.Append('"').Append(app).Append('"');
         }
@@ -240,9 +243,9 @@ public sealed class WindowsPty : IPtyConnection
         foreach (var arg in args)
         {
             sb.Append(' ');
-            if (arg.Contains(' ') || arg.Contains('"'))
+            if (arg.AsSpan().IndexOf(' ') >= 0 || arg.AsSpan().IndexOf('\"') >= 0)
             {
-                sb.Append('"').Append(arg.Replace("\"", "\\\"")).Append('"');
+                sb.Append('"').Append(arg.Replace("\"", "\\\"", StringComparison.Ordinal)).Append('"');
             }
             else
             {
@@ -288,7 +291,11 @@ public sealed class WindowsPty : IPtyConnection
                 try
                 {
                     var size = new Coord((short)cols, (short)rows);
-                    ResizePseudoConsole(_pseudoConsoleHandle, size);
+                    var hr = ResizePseudoConsole(_pseudoConsoleHandle, size);
+                    if (hr != 0)
+                    {
+                        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Failed to resize pseudo console for PID {Pid}: HRESULT=0x{hr:X8}"));
+                    }
                 }
                 catch { }
             }
@@ -312,7 +319,7 @@ public sealed class WindowsPty : IPtyConnection
                 }
                 catch (Exception ex)
                 {
-                    Log.Warn(() => $"Failed to terminate process {Pid}: {ex.Message}");
+                    Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Failed to terminate process {Pid}: {ex.Message}"));
                 }
             }
         }
@@ -338,6 +345,45 @@ public sealed class WindowsPty : IPtyConnection
 
     public void Dispose()
     {
+        DisposeManagedResources();
+        DisposeNativeResources();
+        GC.SuppressFinalize(this);
+    }
+
+    ~WindowsPty()
+    {
+        if (_attributeList != IntPtr.Zero)
+        {
+            try
+            {
+                DeleteProcThreadAttributeList(_attributeList);
+                Marshal.FreeHGlobal(_attributeList);
+            }
+            catch { }
+            _attributeList = IntPtr.Zero;
+        }
+
+        if (_pseudoConsoleHandle != IntPtr.Zero)
+        {
+            try { ClosePseudoConsole(_pseudoConsoleHandle); } catch { }
+            _pseudoConsoleHandle = IntPtr.Zero;
+        }
+
+        if (_threadHandle != IntPtr.Zero)
+        {
+            try { CloseHandle(_threadHandle); } catch { }
+            _threadHandle = IntPtr.Zero;
+        }
+
+        if (_processHandle != IntPtr.Zero)
+        {
+            try { CloseHandle(_processHandle); } catch { }
+            _processHandle = IntPtr.Zero;
+        }
+    }
+
+    private void DisposeManagedResources()
+    {
         if (_disposed)
         {
             return;
@@ -356,6 +402,17 @@ public sealed class WindowsPty : IPtyConnection
             try { _inputWriteHandle?.Dispose(); } catch { }
             try { _outputReadHandle?.Dispose(); } catch { }
 
+            _writerStream = null;
+            _readerStream = null;
+            _inputWriteHandle = null;
+            _outputReadHandle = null;
+        }
+    }
+
+    private void DisposeNativeResources()
+    {
+        lock (_lock)
+        {
             if (_attributeList != IntPtr.Zero)
             {
                 try
@@ -385,13 +442,6 @@ public sealed class WindowsPty : IPtyConnection
                 _processHandle = IntPtr.Zero;
             }
         }
-
-        GC.SuppressFinalize(this);
-    }
-
-    ~WindowsPty()
-    {
-        Dispose();
     }
 }
 #endif

@@ -12,7 +12,7 @@ public static class TmuxCommandParser
     public sealed class ParsedCommand
     {
         public string Name { get; init; } = "";
-        public Dictionary<string, string?> Flags { get; init; } = new();
+        public Dictionary<string, string?> Flags { get; init; } = new(StringComparer.Ordinal);
         public List<string> Positional { get; init; } = [];
 
         /// <summary>Check whether a flag (e.g. "-l") was present.</summary>
@@ -88,7 +88,7 @@ public static class TmuxCommandParser
         }
 
         var name = args[0];
-        var flags = new Dictionary<string, string?>();
+        var flags = new Dictionary<string, string?>(StringComparer.Ordinal);
         var positional = new List<string>();
 
         var i = 1;

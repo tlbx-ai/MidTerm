@@ -61,7 +61,7 @@ public sealed class LensWebSocketHandler
                 return;
             }
 
-            await sendLock.WaitAsync().ConfigureAwait(false);
+            await sendLock.WaitAsync(shutdownToken).ConfigureAwait(false);
             try
             {
                 if (ws.State != WebSocketState.Open)
@@ -70,7 +70,7 @@ public sealed class LensWebSocketHandler
                 }
 
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken).ConfigureAwait(false);
             }
             catch (WebSocketException) { }
             catch (ObjectDisposedException) { }
@@ -129,9 +129,9 @@ public sealed class LensWebSocketHandler
                 snapshotWindow?.StartIndex,
                 snapshotWindow?.Count);
 
-            var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
-            var subscription = _lensPulse.SubscribeDeltas(sessionId, cancellation.Token);
-            var state = new LensSocketSubscription(subscription, cancellation);
+            var state = LensSocketSubscription.Create(_lensPulse, sessionId, shutdownToken);
+            var cancellation = state.Cancellation;
+            var subscription = state.Subscription;
             subscriptions[sessionId] = state;
             state.ReaderTask = Task.Run(async () =>
             {
@@ -543,10 +543,20 @@ public sealed class LensWebSocketHandler
 
     private sealed class LensSocketSubscription : IDisposable
     {
-        public LensSocketSubscription(LensPulseDeltaSubscription subscription, CancellationTokenSource cancellation)
+        private LensSocketSubscription(LensPulseDeltaSubscription subscription, CancellationTokenSource cancellation)
         {
             Subscription = subscription;
             Cancellation = cancellation;
+        }
+
+        public static LensSocketSubscription Create(
+            SessionLensPulseService lensPulse,
+            string sessionId,
+            CancellationToken shutdownToken)
+        {
+            var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            var subscription = lensPulse.SubscribeDeltas(sessionId, cancellation.Token);
+            return new LensSocketSubscription(subscription, cancellation);
         }
 
         public LensPulseDeltaSubscription Subscription { get; }

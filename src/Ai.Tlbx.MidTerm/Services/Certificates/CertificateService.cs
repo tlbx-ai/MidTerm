@@ -21,15 +21,18 @@ public static class CertificateService
 
         var dnsNames = CertificateGenerator.GetDnsNames();
         var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
-        var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
-
+        using var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
         CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
-        var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
-                              ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
-                              ?? throw new InvalidOperationException("Failed to export private key");
-        protector.StorePrivateKey(privateKeyBytes, keyId);
-        System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+        var privateKeyBytes = CertificateGenerator.ExportPrivateKeyPkcs8(cert);
+        try
+        {
+            protector.StorePrivateKey(privateKeyBytes, keyId);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+        }
 
         var settings = settingsService.Load();
         settings.CertificatePath = certPath;

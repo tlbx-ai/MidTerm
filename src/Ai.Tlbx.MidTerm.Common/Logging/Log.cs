@@ -38,7 +38,7 @@ public static class Log
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             var ex = e.ExceptionObject as Exception;
-            Exception(ex ?? new Exception($"Unknown exception: {e.ExceptionObject}"), "UNHANDLED_CRASH");
+            Exception(ex ?? new InvalidOperationException($"Unknown exception: {e.ExceptionObject}"), "UNHANDLED_CRASH");
             Shutdown();
         };
 

@@ -7,8 +7,8 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 internal sealed class SessionRegistry
 {
-    private readonly ConcurrentDictionary<string, Action> _stateListeners = new();
-    private readonly ConcurrentDictionary<string, string> _tempDirectories = new();
+    private readonly ConcurrentDictionary<string, Action> _stateListeners = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _tempDirectories = new(StringComparer.Ordinal);
     private readonly string _dropsBasePath;
     private readonly SessionControlStateService? _sessionControlStateService;
     private readonly SessionLayoutStateService? _sessionLayoutStateService;
@@ -24,27 +24,27 @@ internal sealed class SessionRegistry
         _sessionLayoutStateService = sessionLayoutStateService;
     }
 
-    public ConcurrentDictionary<string, TtyHostClient> Clients { get; } = new();
+    public ConcurrentDictionary<string, TtyHostClient> Clients { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, SessionInfo> SessionCache { get; } = new();
+    public ConcurrentDictionary<string, SessionInfo> SessionCache { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, int> SessionOrder { get; } = new();
+    public ConcurrentDictionary<string, int> SessionOrder { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, byte> TmuxCreatedSessions { get; } = new();
+    public ConcurrentDictionary<string, byte> TmuxCreatedSessions { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, byte> TmuxCommandStarted { get; } = new();
+    public ConcurrentDictionary<string, byte> TmuxCommandStarted { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, byte> HiddenSessions { get; } = new();
+    public ConcurrentDictionary<string, byte> HiddenSessions { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, string> TmuxParentSessions { get; } = new();
+    public ConcurrentDictionary<string, string> TmuxParentSessions { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, string> BookmarkLinks { get; } = new();
+    public ConcurrentDictionary<string, string> BookmarkLinks { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new();
+    public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, byte> LensOnlySessions { get; } = new();
+    public ConcurrentDictionary<string, byte> LensOnlySessions { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, string> ProfileHints { get; } = new();
+    public ConcurrentDictionary<string, string> ProfileHints { get; } = new(StringComparer.Ordinal);
 
     public int ClientCount => Clients.Count;
 

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
@@ -31,7 +32,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly TtyHostOwnershipRegistry _ownershipRegistry;
     private readonly SessionForegroundProcessService _foregroundProcessService;
     private readonly SettingsService? _settingsService;
-    private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new();
+    private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new(StringComparer.Ordinal);
     private string? _runAsUser;
     private string? _runAsUserSid;
     private bool _disposed;
@@ -181,7 +182,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         // Set _nextOrder to max discovered + 1 to avoid collisions
         _registry.SetNextOrder(discoveredOrders.Count > 0 ? discoveredOrders.Max() + 1 : 0);
 
-        Log.Info(() => $"TtyHostSessionManager: Discovered {_registry.ClientCount} active sessions, nextOrder={_registry.NextOrder}");
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Discovered {_registry.ClientCount} active sessions, nextOrder={_registry.NextOrder}"));
     }
 
     private void HandleDiscoveryResult(
@@ -198,21 +199,21 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 break;
 
             case DiscoveryResult.Incompatible incompatible:
-                Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}");
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Session {sessionId} incompatible (v{incompatible.Version}), killing PID {hostPid}"));
                 KillProcess(hostPid);
                 SessionEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid, legacyEndpoint);
                 _ownershipRegistry.Remove(sessionId);
                 break;
 
             case DiscoveryResult.Unresponsive:
-                Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} unresponsive, killing PID {hostPid}");
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Session {sessionId} unresponsive, killing PID {hostPid}"));
                 KillProcess(hostPid);
                 SessionEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid, legacyEndpoint);
                 _ownershipRegistry.Remove(sessionId);
                 break;
 
             case DiscoveryResult.NoProcess:
-                Log.Warn(() => $"TtyHostSessionManager: Session {sessionId} has stale endpoint (PID {hostPid} not running)");
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Session {sessionId} has stale endpoint (PID {hostPid} not running)"));
                 SessionEndpointDiscovery.CleanupEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid, legacyEndpoint);
                 _ownershipRegistry.Remove(sessionId);
                 break;
@@ -226,66 +227,102 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         bool allowLegacyOwnerless,
         CancellationToken ct)
     {
-        var client = new TtyHostClient(sessionId, hostPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, useLegacyEndpoint: isLegacyEndpoint);
-
+        DiscoveryConnectResult connectResult;
         try
         {
-            // Short timeout for discovery - don't wait forever
-            if (!await client.ConnectAsync(1500, ct).ConfigureAwait(false))
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-                return new DiscoveryResult.NoProcess();
-            }
-
-            var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
-            if (info is null)
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-                return new DiscoveryResult.Unresponsive();
-            }
-
-            if (!string.IsNullOrWhiteSpace(info.OwnerInstanceId) &&
-                !string.Equals(info.OwnerInstanceId, _instanceIdentity.InstanceId, StringComparison.Ordinal))
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-                return new DiscoveryResult.Unresponsive();
-            }
-
-            if (string.IsNullOrWhiteSpace(info.OwnerInstanceId) && !allowLegacyOwnerless)
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-                return new DiscoveryResult.Unresponsive();
-            }
-
-            // Check version compatibility
-            if (!IsVersionCompatible(info.TtyHostVersion))
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-                return new DiscoveryResult.Incompatible(hostPid, info.TtyHostVersion);
-            }
-
-            // Success - register the client
-            SubscribeToClient(client);
-            client.StartReadLoop();
-            _registry.Clients[sessionId] = client;
-            _registry.SessionCache[sessionId] = info;
-            _transportState.TryAdd(sessionId, new TerminalTransportRuntimeState());
-            _ownershipRegistry.Upsert(sessionId, hostPid, isLegacyEndpoint || string.IsNullOrWhiteSpace(info.OwnerInstanceId));
-
-            // Use order from mthost if available, otherwise use discovery sequence
-            var order = info.Order;
-            _registry.SessionOrder.TryAdd(sessionId, order);
-            OnSessionCreated?.Invoke(sessionId, order);
-            Log.Info(() => $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid}, order={order})");
-
-            return new DiscoveryResult.Connected(order);
+            connectResult = await ConnectDiscoveredSessionAsync(
+                sessionId,
+                hostPid,
+                isLegacyEndpoint,
+                allowLegacyOwnerless,
+                ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Log.Warn(() => $"TtyHostSessionManager: Failed to connect to {sessionId}: {ex.Message}");
             Log.Exception(ex, $"TtyHostSessionManager.TryConnect({sessionId})");
-            await client.DisposeAsync().ConfigureAwait(false);
             return new DiscoveryResult.Unresponsive();
+        }
+
+        switch (connectResult)
+        {
+            case DiscoveryConnectResult.NoProcess:
+                return new DiscoveryResult.NoProcess();
+
+            case DiscoveryConnectResult.Unresponsive:
+                return new DiscoveryResult.Unresponsive();
+
+            case DiscoveryConnectResult.Incompatible incompatible:
+                return new DiscoveryResult.Incompatible(hostPid, incompatible.Version);
+
+            case DiscoveryConnectResult.Connected connected:
+                _registry.Clients[sessionId] = connected.Client;
+                SubscribeToClient(connected.Client);
+                connected.Client.StartReadLoop();
+                _registry.SessionCache[sessionId] = connected.Info;
+                _transportState.TryAdd(sessionId, new TerminalTransportRuntimeState());
+                _ownershipRegistry.Upsert(sessionId, hostPid, isLegacyEndpoint || string.IsNullOrWhiteSpace(connected.Info.OwnerInstanceId));
+
+                var order = connected.Info.Order;
+                _registry.SessionOrder.TryAdd(sessionId, order);
+                OnSessionCreated?.Invoke(sessionId, order);
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Reconnected to session {sessionId} (PID {hostPid}, order={order})"));
+
+                return new DiscoveryResult.Connected(order);
+
+            default:
+                throw new InvalidOperationException("Unexpected discovery connect result.");
+        }
+    }
+
+    private async Task<DiscoveryConnectResult> ConnectDiscoveredSessionAsync(
+        string sessionId,
+        int hostPid,
+        bool isLegacyEndpoint,
+        bool allowLegacyOwnerless,
+        CancellationToken ct)
+    {
+        TtyHostClient? ownedClient = null;
+
+        try
+        {
+            ownedClient = new TtyHostClient(sessionId, hostPid, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, useLegacyEndpoint: isLegacyEndpoint);
+
+            if (!await ownedClient.ConnectAsync(1500, ct: ct).ConfigureAwait(false))
+            {
+                return DiscoveryConnectResult.NoProcess.Instance;
+            }
+
+            var info = await ownedClient.GetInfoAsync(ct).ConfigureAwait(false);
+            if (info is null)
+            {
+                return DiscoveryConnectResult.Unresponsive.Instance;
+            }
+
+            if (!string.IsNullOrWhiteSpace(info.OwnerInstanceId) &&
+                !string.Equals(info.OwnerInstanceId, _instanceIdentity.InstanceId, StringComparison.Ordinal))
+            {
+                return DiscoveryConnectResult.Unresponsive.Instance;
+            }
+
+            if (string.IsNullOrWhiteSpace(info.OwnerInstanceId) && !allowLegacyOwnerless)
+            {
+                return DiscoveryConnectResult.Unresponsive.Instance;
+            }
+
+            if (!IsVersionCompatible(info.TtyHostVersion))
+            {
+                return new DiscoveryConnectResult.Incompatible(info.TtyHostVersion);
+            }
+
+            return DiscoveryConnectResult.Connected.CreateOwned(ref ownedClient, info);
+        }
+        finally
+        {
+            if (ownedClient is not null)
+            {
+                await ownedClient.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -303,6 +340,30 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         public sealed record Incompatible(int HostPid, string? Version) : DiscoveryResult;
         public sealed record Unresponsive() : DiscoveryResult;
         public sealed record NoProcess() : DiscoveryResult;
+    }
+
+    private abstract record DiscoveryConnectResult
+    {
+        public sealed record Connected(TtyHostClient Client, SessionInfo Info) : DiscoveryConnectResult
+        {
+            public static Connected CreateOwned(ref TtyHostClient? client, SessionInfo info)
+            {
+                var ownedClient = client ?? throw new ArgumentNullException(nameof(client));
+                client = null;
+                return new Connected(ownedClient, info);
+            }
+        }
+        public sealed record Incompatible(string? Version) : DiscoveryConnectResult;
+
+        public sealed record Unresponsive : DiscoveryConnectResult
+        {
+            public static Unresponsive Instance { get; } = new();
+        }
+
+        public sealed record NoProcess : DiscoveryConnectResult
+        {
+            public static NoProcess Instance { get; } = new();
+        }
     }
 
     public async Task<SessionInfo?> CreateSessionAsync(
@@ -385,7 +446,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         for (var attempt = 0; attempt < connectAttempts && !connected; attempt++)
         {
-            connected = await client.ConnectAsync(connectTimeoutMs, ct, maxAttempts: 1).ConfigureAwait(false);
+            connected = await client.ConnectAsync(connectTimeoutMs, maxAttempts: 1, ct: ct).ConfigureAwait(false);
             if (!connected && attempt + 1 < connectAttempts)
             {
                 if (!IsProcessRunning(connectPid))
@@ -403,15 +464,15 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             var processRunning = IsProcessRunning(connectPid);
             var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
             Log.Error(() =>
-                $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process(es) [{processDescription}] " +
-                $"after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={failedConnectElapsedMs} ms)");
-            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid, client).ConfigureAwait(false);
+                string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Failed to connect to new session {sessionId}, killing orphan process(es) [{processDescription}] after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={failedConnectElapsedMs} ms)"));
+            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
+            await client.DisposeAsync().ConfigureAwait(false);
             return SessionCreationResult.Failed(new SessionLaunchFailure(
                 "connect",
                 processRunning
                     ? "The terminal host did not open its IPC channel in time."
                     : "The terminal host exited before MidTerm could attach to it.",
-                $"MidTerm launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms.",
+                string.Create(CultureInfo.InvariantCulture, $"MidTerm launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms."),
                 processRunning ? null : "ProcessExited"));
         }
 
@@ -423,13 +484,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             var failedInfoElapsedMs = infoTimer.ElapsedMilliseconds;
             var processDescription = DescribeSpawnedProcesses(hostPid, connectPid);
             Log.Error(() =>
-                $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process(es) [{processDescription}] " +
-                $"after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={failedInfoElapsedMs} ms)");
-            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid, client).ConfigureAwait(false);
+                string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Failed to get info for session {sessionId}, killing orphan process(es) [{processDescription}] after {creationTimer.ElapsedMilliseconds} ms (spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={failedInfoElapsedMs} ms)"));
+            await CleanupFailedSessionCreationAsync(sessionId, hostPid, connectPid).ConfigureAwait(false);
+            await client.DisposeAsync().ConfigureAwait(false);
             return SessionCreationResult.Failed(new SessionLaunchFailure(
                 "handshake",
                 "The terminal host connected but never returned session metadata.",
-                $"MidTerm established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms."));
+                string.Create(CultureInfo.InvariantCulture, $"MidTerm established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms.")));
         }
 
         info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);
@@ -448,8 +509,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         var infoElapsedMs = infoTimer.ElapsedMilliseconds;
         Log.Info(() =>
-            $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid}) in {creationTimer.ElapsedMilliseconds} ms " +
-            $"[spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={infoElapsedMs} ms]");
+            string.Create(CultureInfo.InvariantCulture, $"TtyHostSessionManager: Created session {sessionId} (PID {connectPid}) in {creationTimer.ElapsedMilliseconds} ms [spawn={spawnElapsedMs} ms, connect={connectElapsedMs} ms, info={infoElapsedMs} ms]"));
         OnSessionCreated?.Invoke(sessionId, paneIndex);
         OnStateChanged?.Invoke(sessionId);
         NotifyStateChange();
@@ -1090,8 +1150,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         foreach (var client in _clients.Values)
         {
+            var clientSessionId = client.SessionId;
+
             try { await client.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception ex) { Log.Exception(ex, $"TtyHostSessionManager.Dispose({client.SessionId})"); }
+            catch (Exception ex) { Log.Exception(ex, $"TtyHostSessionManager.Dispose({clientSessionId})"); }
         }
 
         // Clean up all temp directories
@@ -1132,15 +1194,14 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private static string DescribeSpawnedProcesses(int hostPid, int connectPid)
     {
         return hostPid == connectPid
-            ? $"PID {connectPid}"
-            : $"spawn PID {hostPid}, attach PID {connectPid}";
+            ? string.Create(CultureInfo.InvariantCulture, $"PID {connectPid}")
+            : string.Create(CultureInfo.InvariantCulture, $"spawn PID {hostPid}, attach PID {connectPid}");
     }
 
-    private static async Task CleanupFailedSessionCreationAsync(
+    private static Task CleanupFailedSessionCreationAsync(
         string sessionId,
         int hostPid,
-        int connectPid,
-        TtyHostClient client)
+        int connectPid)
     {
         KillProcess(connectPid);
         if (hostPid != connectPid)
@@ -1149,7 +1210,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
-        await client.DisposeAsync().ConfigureAwait(false);
+        return Task.CompletedTask;
     }
 
     public sealed class TerminalTransportRuntimeSnapshot

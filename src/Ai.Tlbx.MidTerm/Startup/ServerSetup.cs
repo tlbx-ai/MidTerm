@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -70,6 +71,7 @@ public static class ServerSetup
 
             writeEventLog?.Invoke($"ConfigureKestrel: Certificate loaded - Subject={cert.Subject}, HasPrivateKey={cert.HasPrivateKey}", false);
 
+            LoadedCertificate?.Dispose();
             LoadedCertificate = cert;
 
             options.ConfigureHttpsDefaults(httpsOptions =>
@@ -199,6 +201,9 @@ public static class ServerSetup
     public static void ConfigureStaticFiles(WebApplication app)
     {
         var sourceDevMode = IsSourceDevLaunchMode();
+        var sourceDevAssetVersion = sourceDevMode
+            ? string.Create(CultureInfo.InvariantCulture, $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}")
+            : null;
 #if DEBUG
         var configuredSourceWebRoot = Environment.GetEnvironmentVariable("MIDTERM_SOURCE_WWWROOT");
         var wwwrootPath = !string.IsNullOrWhiteSpace(configuredSourceWebRoot)
@@ -268,16 +273,16 @@ public static class ServerSetup
 
                 await using var stream = fileInfo.CreateReadStream();
                 using var reader = new StreamReader(stream);
-                var html = await reader.ReadToEndAsync();
+                var html = await reader.ReadToEndAsync(context.RequestAborted);
                 var stampedHtml = StaticAssetCacheHeaders.StampHtmlAssetUrls(
                     html,
-                    $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+                    sourceDevAssetVersion ?? "dev");
 
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
                 context.Response.Headers.Pragma = "no-cache";
-                await context.Response.WriteAsync(stampedHtml);
+                await context.Response.WriteAsync(stampedHtml, context.RequestAborted);
             });
         }
 

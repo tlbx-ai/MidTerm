@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -33,7 +34,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitMcpToolProgress = emitMcpToolProgress;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
-        _acceptLoopTask = Task.Run(AcceptLoopAsync);
+        _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
     }
 
     public string Endpoint { get; }
@@ -58,7 +59,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitLateDiffAfterCompletion = false,
         bool emitMcpToolProgress = false)
     {
-        var endpoint = $"ws://127.0.0.1:{GetFreePort()}/";
+        var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
         return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply, emitRichTranscriptItems, emitTurnIds, emitLateDiffAfterCompletion, emitMcpToolProgress);
     }
 
@@ -490,8 +491,10 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         }
 
         var parts = new List<string>();
-        foreach (var entry in input.EnumerateArray())
+        using var entries = input.EnumerateArray();
+        while (entries.MoveNext())
         {
+            var entry = entries.Current;
             var text = GetString(entry, "text");
             if (!string.IsNullOrWhiteSpace(text))
             {

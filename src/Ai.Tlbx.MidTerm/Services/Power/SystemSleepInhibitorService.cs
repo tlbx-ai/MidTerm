@@ -1,10 +1,12 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Power;
 
 internal sealed class SystemSleepInhibitorService : IDisposable
 {
-    private readonly ISystemSleepInhibitorBackend _backend;
+    private readonly ISystemSleepInhibitorBackend? _ownedBackend;
+    private readonly ISystemSleepInhibitorBackend? _injectedBackend;
     private readonly object _lock = new();
     private bool _enabled;
     private int _sessionCount;
@@ -13,14 +15,16 @@ internal sealed class SystemSleepInhibitorService : IDisposable
     private bool _disposed;
 
     public SystemSleepInhibitorService()
-        : this(SystemSleepInhibitorBackendFactory.Create())
     {
+        _ownedBackend = SystemSleepInhibitorBackendFactory.Create();
     }
 
     internal SystemSleepInhibitorService(ISystemSleepInhibitorBackend backend)
     {
-        _backend = backend;
+        _injectedBackend = backend;
     }
+
+    private ISystemSleepInhibitorBackend Backend => _ownedBackend ?? _injectedBackend!;
 
     public void UpdateEnabled(bool enabled)
     {
@@ -65,7 +69,7 @@ internal sealed class SystemSleepInhibitorService : IDisposable
             {
                 if (_inhibiting)
                 {
-                    _backend.Deactivate();
+                    Backend.Deactivate();
                     _inhibiting = false;
                 }
             }
@@ -75,7 +79,7 @@ internal sealed class SystemSleepInhibitorService : IDisposable
             }
             finally
             {
-                _backend.Dispose();
+                _ownedBackend?.Dispose();
             }
         }
     }
@@ -92,10 +96,10 @@ internal sealed class SystemSleepInhibitorService : IDisposable
 
         if (shouldInhibit)
         {
-            _inhibiting = _backend.Activate();
+            _inhibiting = Backend.Activate();
             if (_inhibiting)
             {
-                Log.Info(() => $"Sleep inhibitor enabled for {_sessionCount} active session(s)");
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Sleep inhibitor enabled for {_sessionCount} active session(s)"));
             }
             else
             {
@@ -109,7 +113,7 @@ internal sealed class SystemSleepInhibitorService : IDisposable
         {
             if (_inhibiting)
             {
-                _backend.Deactivate();
+                Backend.Deactivate();
                 Log.Info(() => "Sleep inhibitor disabled");
             }
         }

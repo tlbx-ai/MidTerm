@@ -11,8 +11,8 @@ public sealed class WebPreviewProxyLogEntry
     public int StatusCode { get; set; }
     public string? Error { get; set; }
     public long DurationMs { get; set; }
-    public Dictionary<string, string> RequestHeaders { get; set; } = new();
-    public Dictionary<string, string> ResponseHeaders { get; set; } = new();
+    public Dictionary<string, string> RequestHeaders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> ResponseHeaders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string? RequestCookies { get; set; }
     public string? ResponseCookies { get; set; }
     public string? ContentType { get; set; }

@@ -6,7 +6,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public sealed class MainBrowserService
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, BrowserRegistration> _browserConnections = new();
+    private readonly Dictionary<string, BrowserRegistration> _browserConnections = new(StringComparer.Ordinal);
     private string? _mainBrowserId;
     private bool _hasAssignedInitialMainBrowser;
 

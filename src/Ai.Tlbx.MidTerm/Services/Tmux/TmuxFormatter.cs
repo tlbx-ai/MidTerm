@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models;
@@ -25,7 +26,7 @@ public sealed partial class TmuxFormatter
         _sessionManager = sessionManager;
     }
 
-    [GeneratedRegex(@"#\{([^}]+)\}")]
+    [GeneratedRegex(@"#\{([^}]+)\}", RegexOptions.None, 1000)]
     private static partial Regex FormatVariableRegex();
 
     /// <summary>
@@ -52,11 +53,11 @@ public sealed partial class TmuxFormatter
     {
         return variable switch
         {
-            "pane_id" => $"%{paneIndex}",
-            "pane_index" => paneIndex.ToString(),
-            "pane_pid" => session.Pid.ToString(),
-            "pane_width" => session.Cols.ToString(),
-            "pane_height" => session.Rows.ToString(),
+            "pane_id" => string.Create(CultureInfo.InvariantCulture, $"%{paneIndex}"),
+            "pane_index" => paneIndex.ToString(CultureInfo.InvariantCulture),
+            "pane_pid" => session.Pid.ToString(CultureInfo.InvariantCulture),
+            "pane_width" => session.Cols.ToString(CultureInfo.InvariantCulture),
+            "pane_height" => session.Rows.ToString(CultureInfo.InvariantCulture),
             "pane_current_path" => session.CurrentDirectory ?? "",
             "pane_current_command" => session.ForegroundName ?? "",
             "pane_title" => session.Name ?? session.TerminalTitle ?? "",
@@ -69,14 +70,14 @@ public sealed partial class TmuxFormatter
             "session_windows" => "1",
             "session_attached" => "1",
             "session_group" => "",
-            "session_created" => new DateTimeOffset(session.CreatedAt).ToUnixTimeSeconds().ToString(),
+            "session_created" => new DateTimeOffset(session.CreatedAt).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture),
 
             "window_id" => "@0",
             "window_index" => "0",
             "window_name" => "MidTerm",
-            "window_width" => session.Cols.ToString(),
-            "window_height" => session.Rows.ToString(),
-            "window_panes" => totalPanes.ToString(),
+            "window_width" => session.Cols.ToString(CultureInfo.InvariantCulture),
+            "window_height" => session.Rows.ToString(CultureInfo.InvariantCulture),
+            "window_panes" => totalPanes.ToString(CultureInfo.InvariantCulture),
             "window_active" => "1",
             "window_flags" => "*",
 
@@ -97,7 +98,7 @@ public sealed partial class TmuxFormatter
     {
         var paneIndex = _paneMapper.SessionIdToPaneIndex(session.Id) ?? 0;
         var active = isActive ? " (active)" : "";
-        return $"{paneIndex}: [{session.Cols}x{session.Rows}] [history 0/2000, 0 bytes] %{paneIndex}{active}";
+        return string.Create(CultureInfo.InvariantCulture, $"{paneIndex}: [{session.Cols}x{session.Rows}] [history 0/2000, 0 bytes] %{paneIndex}{active}");
     }
 
     /// <summary>
@@ -108,7 +109,7 @@ public sealed partial class TmuxFormatter
         var sessions = _sessionManager.GetSessionList().Sessions;
         var paneCount = sessions.Count;
         var created = sessions.Count > 0 ? sessions[0].CreatedAt : DateTime.UtcNow;
-        return $"MidTerm: {paneCount} windows (created {created:ddd MMM dd HH:mm:ss yyyy}) (attached)";
+        return string.Create(CultureInfo.InvariantCulture, $"MidTerm: {paneCount} windows (created {created:ddd MMM dd HH:mm:ss yyyy}) (attached)");
     }
 
     /// <summary>
@@ -118,6 +119,6 @@ public sealed partial class TmuxFormatter
     {
         var sessions = _sessionManager.GetSessionList().Sessions;
         var paneCount = sessions.Count;
-        return $"0: MidTerm* ({paneCount} panes) [active]";
+        return string.Create(CultureInfo.InvariantCulture, $"0: MidTerm* ({paneCount} panes) [active]");
     }
 }

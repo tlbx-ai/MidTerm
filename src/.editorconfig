@@ -1,0 +1,74 @@
+root = true
+
+[*.cs]
+charset = utf-8
+indent_style = space
+indent_size = 4
+end_of_line = crlf
+insert_final_newline = true
+
+dotnet_analyzer_diagnostic.severity = none
+
+# Built-in .NET analyzers: correctness, resource ownership, async, platform, and culture.
+dotnet_diagnostic.CA1305.severity = warning
+dotnet_diagnostic.CA1416.severity = warning
+dotnet_diagnostic.CA2000.severity = warning
+dotnet_diagnostic.CA2012.severity = warning
+dotnet_diagnostic.CA2016.severity = warning
+dotnet_diagnostic.CA2201.severity = warning
+dotnet_diagnostic.CA2213.severity = warning
+dotnet_diagnostic.CA1001.severity = warning
+dotnet_diagnostic.CA1806.severity = warning
+dotnet_diagnostic.CA1816.severity = warning
+dotnet_diagnostic.CA2020.severity = warning
+
+# Disable lower-value naming, design, and micro-performance noise from the SDK analyzers.
+dotnet_diagnostic.CA1513.severity = none
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1711.severity = none
+dotnet_diagnostic.CA1805.severity = none
+dotnet_diagnostic.CA1822.severity = none
+dotnet_diagnostic.CA1836.severity = none
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1859.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1865.severity = none
+dotnet_diagnostic.CA1866.severity = none
+dotnet_diagnostic.CA1868.severity = none
+dotnet_diagnostic.CA1870.severity = none
+dotnet_diagnostic.CA1873.severity = none
+
+# Meziantou: keep only bug-prone, culture-sensitive, cancellation, and async lifecycle rules.
+dotnet_diagnostic.MA0001.severity = warning
+dotnet_diagnostic.MA0002.severity = warning
+dotnet_diagnostic.MA0009.severity = warning
+dotnet_diagnostic.MA0011.severity = warning
+dotnet_diagnostic.MA0040.severity = warning
+dotnet_diagnostic.MA0074.severity = warning
+dotnet_diagnostic.MA0076.severity = warning
+dotnet_diagnostic.MA0100.severity = warning
+dotnet_diagnostic.MA0134.severity = warning
+dotnet_diagnostic.MA0147.severity = warning
+dotnet_diagnostic.MA0163.severity = warning
+
+# IDisposableAnalyzers: ownership and disposal correctness.
+dotnet_diagnostic.IDISP001.severity = warning
+dotnet_diagnostic.IDISP002.severity = warning
+dotnet_diagnostic.IDISP003.severity = warning
+dotnet_diagnostic.IDISP004.severity = warning
+dotnet_diagnostic.IDISP006.severity = warning
+dotnet_diagnostic.IDISP007.severity = warning
+dotnet_diagnostic.IDISP008.severity = warning
+dotnet_diagnostic.IDISP013.severity = warning
+dotnet_diagnostic.IDISP014.severity = warning
+dotnet_diagnostic.IDISP015.severity = warning
+dotnet_diagnostic.IDISP016.severity = warning
+dotnet_diagnostic.IDISP017.severity = warning
+dotnet_diagnostic.IDISP023.severity = warning
+dotnet_diagnostic.IDISP025.severity = warning
+
+[*.g.cs]
+generated_code = true
+
+[*.Designer.cs]
+generated_code = true

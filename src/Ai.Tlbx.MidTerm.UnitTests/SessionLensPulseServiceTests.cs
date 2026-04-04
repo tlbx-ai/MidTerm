@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -18,7 +19,7 @@ public sealed class SessionLensPulseServiceTests
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:00Z"),
             Type = "session.started",
             SessionState = new LensPulseSessionStatePayload
             {
@@ -34,7 +35,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:01Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload
             {
@@ -50,7 +51,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "local-user:turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:01.5000000Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:01.5000000Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -77,7 +78,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             ItemId = "item-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:02Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:02Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -92,7 +93,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             RequestId = "req-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "user-input.requested",
             UserInputRequested = new LensPulseUserInputRequestedPayload
             {
@@ -115,7 +116,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             ItemId = "item-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -130,7 +131,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             ItemId = "item-3",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -145,7 +146,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             RequestId = "approval-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "request.opened",
             RequestOpened = new LensPulseRequestOpenedPayload
             {
@@ -161,7 +162,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             RequestId = "approval-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:04Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:04Z"),
             Type = "request.resolved",
             RequestResolved = new LensPulseRequestResolvedPayload
             {
@@ -175,7 +176,7 @@ public sealed class SessionLensPulseServiceTests
             SessionId = "s1",
             Provider = "codex",
             ThreadId = "thread-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:05Z"),
+            CreatedAt = ParseUtc("2026-03-20T14:00:05Z"),
             Type = "diff.updated",
             DiffUpdated = new LensPulseDiffUpdatedPayload
             {
@@ -246,19 +247,19 @@ public sealed class SessionLensPulseServiceTests
         {
             service.Append(new LensPulseEvent
             {
-                EventId = $"e{i}",
+                EventId = string.Create(CultureInfo.InvariantCulture, $"e{i}"),
                 SessionId = "s-window",
                 Provider = "codex",
                 ThreadId = "thread-window",
-                ItemId = $"item-{i}",
-                CreatedAt = DateTimeOffset.Parse("2026-03-20T14:00:00Z").AddSeconds(i),
+                ItemId = string.Create(CultureInfo.InvariantCulture, $"item-{i}"),
+                CreatedAt = ParseUtc("2026-03-20T14:00:00Z").AddSeconds(i),
                 Type = "item.completed",
                 Item = new LensPulseItemPayload
                 {
                     ItemType = i % 2 == 0 ? "user_message" : "assistant_message",
                     Status = "completed",
                     Title = "Message",
-                    Detail = $"entry-{i}"
+                    Detail = string.Create(CultureInfo.InvariantCulture, $"entry-{i}")
                 }
             });
         }
@@ -287,7 +288,7 @@ public sealed class SessionLensPulseServiceTests
             SessionId = "s-settings",
             Provider = "codex",
             ThreadId = "thread-settings",
-            CreatedAt = DateTimeOffset.Parse("2026-03-30T08:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-30T08:00:00Z"),
             Type = "quick-settings.updated",
             QuickSettingsUpdated = new LensPulseQuickSettingsPayload
             {
@@ -304,7 +305,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-settings",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-30T08:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-30T08:00:01Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload
             {
@@ -341,7 +342,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-22T01:00:00Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload()
         });
@@ -352,7 +353,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-22T01:00:01Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -367,7 +368,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:02Z"),
+            CreatedAt = ParseUtc("2026-03-22T01:00:02Z"),
             Type = "turn.completed",
             TurnCompleted = new LensPulseTurnCompletedPayload
             {
@@ -382,7 +383,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-22T01:00:03Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload()
         });
@@ -393,7 +394,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T01:00:04Z"),
+            CreatedAt = ParseUtc("2026-03-22T01:00:04Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -422,7 +423,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "local-user:turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T02:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-22T02:00:00Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -440,7 +441,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "provider-item-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-22T02:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-22T02:00:01Z"),
             Type = "item.started",
             Item = new LensPulseItemPayload
             {
@@ -474,7 +475,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:00:00Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload()
         });
@@ -486,7 +487,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "local-user:turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:00:01Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -502,7 +503,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:02Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:00:02Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -517,7 +518,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:00:03Z"),
             Type = "turn.completed",
             TurnCompleted = new LensPulseTurnCompletedPayload
             {
@@ -533,7 +534,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:00Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:01:00Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload()
         });
@@ -545,7 +546,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-2",
             ItemId = "local-user:turn-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:01Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:01:01Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -561,7 +562,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:02Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:01:02Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -577,7 +578,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-2",
             ItemId = "assistant-item-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:03Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:01:03Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -593,7 +594,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-2",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T10:01:04Z"),
+            CreatedAt = ParseUtc("2026-03-27T10:01:04Z"),
             Type = "turn.completed",
             TurnCompleted = new LensPulseTurnCompletedPayload
             {
@@ -655,7 +656,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-27T11:00:00Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload()
         });
@@ -666,7 +667,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-27T11:00:01Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -682,7 +683,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "tool-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:02Z"),
+            CreatedAt = ParseUtc("2026-03-27T11:00:02Z"),
             Type = "item.started",
             Item = new LensPulseItemPayload
             {
@@ -700,7 +701,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "assistant-item-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T11:00:03Z"),
+            CreatedAt = ParseUtc("2026-03-27T11:00:03Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -752,7 +753,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "tool-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T12:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-27T12:00:00Z"),
             Type = "item.started",
             Item = new LensPulseItemPayload
             {
@@ -770,7 +771,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "tool-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T12:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-27T12:00:01Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -786,7 +787,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "tool-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-27T12:00:02Z"),
+            CreatedAt = ParseUtc("2026-03-27T12:00:02Z"),
             Type = "item.completed",
             Item = new LensPulseItemPayload
             {
@@ -804,8 +805,8 @@ public sealed class SessionLensPulseServiceTests
         var tool = Assert.Single(toolEntries);
         Assert.Equal("tool:tool-1", tool.EntryId);
         Assert.Equal("Run tests", tool.Title);
-        Assert.Contains("npm test", tool.Body);
-        Assert.Contains("All green", tool.Body);
+        Assert.Contains("npm test", tool.Body, StringComparison.Ordinal);
+        Assert.Contains("All green", tool.Body, StringComparison.Ordinal);
         Assert.False(tool.Streaming);
     }
 
@@ -858,7 +859,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-28T10:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-28T10:00:00Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload
             {
@@ -878,7 +879,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "assistant-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-28T10:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-28T10:00:01Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
@@ -914,7 +915,7 @@ public sealed class SessionLensPulseServiceTests
             Provider = "codex",
             ThreadId = "thread-1",
             TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-29T09:00:00Z"),
+            CreatedAt = ParseUtc("2026-03-29T09:00:00Z"),
             Type = "turn.started",
             TurnStarted = new LensPulseTurnStartedPayload()
         });
@@ -927,7 +928,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "cmd-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-29T09:00:01Z"),
+            CreatedAt = ParseUtc("2026-03-29T09:00:01Z"),
             Type = "item.started",
             Item = new LensPulseItemPayload
             {
@@ -946,12 +947,14 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             TurnId = "turn-1",
             ItemId = "cmd-1",
-            CreatedAt = DateTimeOffset.Parse("2026-03-29T09:00:02Z"),
+            CreatedAt = ParseUtc("2026-03-29T09:00:02Z"),
             Type = "content.delta",
             ContentDelta = new LensPulseContentDeltaPayload
             {
                 StreamKind = "command_output",
-                Delta = string.Join('\n', Enumerable.Range(1, 12).Select(index => $"line {index}"))
+                Delta = string.Join(
+                    '\n',
+                    Enumerable.Range(1, 12).Select(index => string.Create(CultureInfo.InvariantCulture, $"line {index}")))
             }
         });
 
@@ -960,12 +963,12 @@ public sealed class SessionLensPulseServiceTests
         var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
         Assert.Equal("Read file", toolEntry.Title);
         Assert.Equal("command_output", toolEntry.ItemType);
-        Assert.Contains(".midterm/AGENTS.md", toolEntry.Body);
-        Assert.Contains("line 1", toolEntry.Body);
-        Assert.Contains("line 10", toolEntry.Body);
-        Assert.DoesNotContain("line 11", toolEntry.Body);
-        Assert.DoesNotContain("line 12", toolEntry.Body);
-        Assert.Contains("2 more lines omitted", toolEntry.Body);
+        Assert.Contains(".midterm/AGENTS.md", toolEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("line 1", toolEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("line 10", toolEntry.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("line 11", toolEntry.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("line 12", toolEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("2 more lines omitted", toolEntry.Body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -990,7 +993,7 @@ public sealed class SessionLensPulseServiceTests
                 Provider = "codex",
                 ThreadId = "thread-1",
                 TurnId = "turn-1",
-                CreatedAt = DateTimeOffset.Parse("2026-03-28T11:00:00Z"),
+                CreatedAt = ParseUtc("2026-03-28T11:00:00Z"),
                 Type = "turn.started",
                 TurnStarted = new LensPulseTurnStartedPayload
                 {
@@ -1007,7 +1010,7 @@ public sealed class SessionLensPulseServiceTests
                 ThreadId = "thread-1",
                 TurnId = "turn-1",
                 ItemId = "tool-1",
-                CreatedAt = DateTimeOffset.Parse("2026-03-28T11:00:01Z"),
+                CreatedAt = ParseUtc("2026-03-28T11:00:01Z"),
                 Type = "item.completed",
                 Item = new LensPulseItemPayload
                 {
@@ -1016,7 +1019,8 @@ public sealed class SessionLensPulseServiceTests
                     Title = "git diff --stat",
                     Detail = string.Join(
                         '\n',
-                        Enumerable.Range(1, 10).Select(index => $"line {index}: tool output"))
+                        Enumerable.Range(1, 10).Select(
+                            index => string.Create(CultureInfo.InvariantCulture, $"line {index}: tool output")))
                 }
             });
 
@@ -1035,14 +1039,15 @@ public sealed class SessionLensPulseServiceTests
             Assert.Equal("screen_delta", delta.RootElement.GetProperty("recordType").GetString());
             Assert.Equal(2, delta.RootElement.GetProperty("latestSequence").GetInt64());
             var historyUpserts = delta.RootElement.GetProperty("historyUpserts");
-            var toolEntry = historyUpserts.EnumerateArray().Single();
+            Assert.Equal(1, historyUpserts.GetArrayLength());
+            var toolEntry = historyUpserts[0];
             Assert.Equal("tool", toolEntry.GetProperty("kind").GetString());
             Assert.Equal("Tool", toolEntry.GetProperty("label").GetString());
             Assert.Equal("monospace", toolEntry.GetProperty("renderMode").GetString());
             Assert.True(toolEntry.GetProperty("collapsedByDefault").GetBoolean());
             Assert.Equal(10, toolEntry.GetProperty("lineCount").GetInt32());
             Assert.Equal("line 1: tool output", toolEntry.GetProperty("preview").GetString());
-            Assert.Contains("line 10: tool output", toolEntry.GetProperty("body").GetString());
+            Assert.Contains("line 10: tool output", toolEntry.GetProperty("body").GetString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -1080,7 +1085,7 @@ public sealed class SessionLensPulseServiceTests
                 Provider = "codex",
                 ThreadId = "thread-1",
                 TurnId = "turn-1",
-                CreatedAt = DateTimeOffset.Parse("2026-04-01T00:43:33Z"),
+                CreatedAt = ParseUtc("2026-04-01T00:43:33Z"),
                 Type = "diff.updated",
                 DiffUpdated = new LensPulseDiffUpdatedPayload
                 {
@@ -1104,7 +1109,9 @@ public sealed class SessionLensPulseServiceTests
             var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.lenslog.jsonl"));
             var lastLine = File.ReadLines(logPath).Last();
             using var delta = JsonDocument.Parse(lastLine);
-            var diffEntry = Assert.Single(delta.RootElement.GetProperty("historyUpserts").EnumerateArray());
+            var historyUpserts = delta.RootElement.GetProperty("historyUpserts");
+            Assert.Equal(1, historyUpserts.GetArrayLength());
+            var diffEntry = historyUpserts[0];
 
             Assert.Equal("diff", diffEntry.GetProperty("kind").GetString());
             Assert.Equal("diff", diffEntry.GetProperty("renderMode").GetString());
@@ -1150,7 +1157,7 @@ public sealed class SessionLensPulseServiceTests
                 ThreadId = "thread-1",
                 TurnId = "turn-1",
                 ItemId = "cmd-1",
-                CreatedAt = DateTimeOffset.Parse("2026-03-29T11:00:00Z"),
+                CreatedAt = ParseUtc("2026-03-29T11:00:00Z"),
                 Type = "item.started",
                 Item = new LensPulseItemPayload
                 {
@@ -1170,7 +1177,7 @@ public sealed class SessionLensPulseServiceTests
                 ThreadId = "thread-1",
                 TurnId = "turn-1",
                 ItemId = "cmd-1",
-                CreatedAt = DateTimeOffset.Parse("2026-03-29T11:00:01Z"),
+                CreatedAt = ParseUtc("2026-03-29T11:00:01Z"),
                 Type = "content.delta",
                 ContentDelta = new LensPulseContentDeltaPayload
                 {
@@ -1189,7 +1196,7 @@ public sealed class SessionLensPulseServiceTests
 
             var toolEntry = Assert.Single(snapshot.Transcript, entry => entry.Kind == "tool");
             Assert.True(toolEntry.Body.Length <= 4_096);
-            Assert.Contains("Read file", toolEntry.Title);
+            Assert.Contains("Read file", toolEntry.Title, StringComparison.Ordinal);
             Assert.Contains("output truncated", toolEntry.Body, StringComparison.OrdinalIgnoreCase);
 
             var logPath = Assert.Single(Directory.GetFiles(screenLogDirectory, "*.lenslog.jsonl"));
@@ -1230,4 +1237,7 @@ public sealed class SessionLensPulseServiceTests
         Assert.True(service.HasHistory("s1"));
         Assert.False(service.HasHistory("s2"));
     }
+
+    private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
+

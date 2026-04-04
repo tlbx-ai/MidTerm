@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Git;
@@ -55,7 +56,11 @@ public class Program
                     var logDir = LogPaths.GetLogDirectory(isService);
                     Directory.CreateDirectory(logDir);
                     var logPath = Path.Combine(logDir, "startup-debug.log");
-                    File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}{Environment.NewLine}");
+                    File.AppendAllText(
+                        logPath,
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}{Environment.NewLine}"));
                 }
                 catch
                 {
@@ -98,7 +103,7 @@ public class Program
         var (port, bindAddress) = ArgumentParser.Parse(args);
         var preflightSettings = new SettingsService();
         var instanceIdentity = MidTermInstanceIdentity.Load(preflightSettings.SettingsDirectory, port);
-        var settingsGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.SettingsGuardName, out var settingsGuardInfo);
+        using var settingsGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.SettingsGuardName, out var settingsGuardInfo);
         if (settingsGuard is null)
         {
             Console.ForegroundColor = ConsoleColor.Red;
@@ -109,20 +114,18 @@ public class Program
             Environment.Exit(1);
             return;
         }
-        using var settingsGuardLifetime = settingsGuard;
 
-        var portGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.PortGuardName, out var portGuardInfo);
+        using var portGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.PortGuardName, out var portGuardInfo);
         if (portGuard is null)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"Error: {portGuardInfo}");
             Console.ResetColor();
-            Console.WriteLine($"Another MidTerm instance is already running for port {port}.");
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Another MidTerm instance is already running for port {port}."));
             Console.WriteLine("Use a different port or stop the existing instance first.");
             Environment.Exit(1);
             return;
         }
-        using var portGuardLifetime = portGuard;
 
         WriteEventLog("MainCore: Parsing args and creating builder");
         var builder = ServerSetup.CreateBuilder(args, WriteEventLogWrapper);
@@ -162,15 +165,15 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
-        Log.Info(() => $"MidTerm server starting (instance={resolvedInstanceIdentity.GetShortInstanceId()}, port={port})");
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"MidTerm server starting (instance={resolvedInstanceIdentity.GetShortInstanceId()}, port={port})"));
 
         // Validate security state and log any warnings (informational only - does not block)
         var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();
         var securityStatus = securityStatusService.GetStatus();
         foreach (var warning in securityStatus.Warnings)
         {
-            Log.Warn(() => $"SECURITY: {warning}");
-            WriteEventLog($"Security Warning: {warning}", DiagLogLevel.Warning);
+            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"SECURITY: {warning}"));
+            WriteEventLog(string.Create(CultureInfo.InvariantCulture, $"Security Warning: {warning}"), DiagLogLevel.Warning);
         }
 
         WelcomeScreen.LogStartupStatus(settingsService, settings, port, bindAddress,
@@ -316,44 +319,6 @@ public class Program
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
         var cleanupStarted = 0;
 
-        async Task CleanupAsync()
-        {
-            if (Interlocked.Exchange(ref cleanupStarted, 1) != 0)
-            {
-                return;
-            }
-
-            Log.Info(() => "Disposing managers...");
-
-            try
-            {
-                using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                await muxManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
-                await sessionManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                Log.Warn(() => "Cleanup timed out after 8 seconds");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(() => $"Cleanup error: {ex.Message}");
-            }
-            finally
-            {
-                sessionManager.RemoveStateListener(sleepInhibitorStateListenerId);
-                sleepInhibitorService.Dispose();
-                gitWatcher.Dispose();
-                TmuxLog.Shutdown();
-                TmuxScriptWriter.Cleanup();
-                BrowserLog.Shutdown();
-                BrowserScriptWriter.Cleanup();
-                tempCleanupService.CleanupAllMidTermFiles();
-                Log.Shutdown();
-                shutdownService.Dispose();
-            }
-        }
-
         _ = EndpointSetup.DetectGitAsync();
         EndpointSetup.DetectCodeSigning();
 
@@ -434,7 +399,7 @@ public class Program
 
         lifetime.ApplicationStarted.Register(() =>
         {
-            Log.Info(() => $"Server fully operational - listening on https://{bindAddress}:{port}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Server fully operational - listening on https://{bindAddress}:{port}"));
         });
 
         lifetime.ApplicationStopping.Register(() =>
@@ -457,19 +422,57 @@ public class Program
 
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
-        await sessionManager.DiscoverExistingSessionsAsync();
+        await sessionManager.DiscoverExistingSessionsAsync(shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         tmuxLayoutBridge?.UpdateLayout(layoutSnapshot.Root);
-        await lensRuntime.DiscoverExistingSessionsAsync(sessionManager);
+        await lensRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
         sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 
-        WriteEventLog($"MainCore: Starting server on https://{bindAddress}:{port}");
+        async Task CleanupAsync()
+        {
+            if (Interlocked.Exchange(ref cleanupStarted, 1) != 0)
+            {
+                return;
+            }
+
+            Log.Info(() => "Disposing managers...");
+
+            try
+            {
+                sessionManager.RemoveStateListener(sleepInhibitorStateListenerId);
+                using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                await muxManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
+                await sessionManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Log.Warn(() => "Cleanup timed out after 8 seconds");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Cleanup error: {ex.Message}");
+            }
+            finally
+            {
+                sleepInhibitorService.Dispose();
+                gitWatcher.Dispose();
+                TmuxLog.Shutdown();
+                TmuxScriptWriter.Cleanup();
+                BrowserLog.Shutdown();
+                BrowserScriptWriter.Cleanup();
+                tempCleanupService.CleanupAllMidTermFiles();
+                Log.Shutdown();
+                shutdownService.Dispose();
+            }
+        }
+
+        WriteEventLog(string.Create(CultureInfo.InvariantCulture, $"MainCore: Starting server on https://{bindAddress}:{port}"));
 
         try
         {
-            app.Urls.Add($"https://{bindAddress}:{port}");
+            app.Urls.Add(string.Create(CultureInfo.InvariantCulture, $"https://{bindAddress}:{port}"));
             browserPreviewOriginService.ApplyUrls(app, bindAddress);
             WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
         }

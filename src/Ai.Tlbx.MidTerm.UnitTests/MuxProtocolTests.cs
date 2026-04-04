@@ -183,7 +183,7 @@ public class MuxProtocolTests
 
         var result = MuxProtocol.TryParseFrame(frame, out _, out var parsedId, out _);
         Assert.True(result);
-        Assert.StartsWith("abc", parsedId);
+        Assert.StartsWith("abc", parsedId, StringComparison.Ordinal);
         Assert.Equal(8, parsedId.Length);
     }
 

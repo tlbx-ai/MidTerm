@@ -13,9 +13,9 @@ public static class CommandEndpoints
 {
     public static void MapCommandEndpoints(WebApplication app, CommandService commandService, TtyHostSessionManager sessionManager)
     {
-        app.MapGet("/api/commands", async (string sessionId) =>
+        app.MapGet("/api/commands", async (string sessionId, CancellationToken ct) =>
         {
-            var session = await sessionManager.GetSessionFreshAsync(sessionId);
+            var session = await sessionManager.GetSessionFreshAsync(sessionId, ct);
             if (session is null)
             {
                 return Results.BadRequest("Invalid session");
@@ -31,9 +31,9 @@ public static class CommandEndpoints
             return Results.Json(result, AppJsonContext.Default.ScriptListResponse);
         });
 
-        app.MapPost("/api/commands", async (CreateScriptRequest request) =>
+        app.MapPost("/api/commands", async (CreateScriptRequest request, CancellationToken ct) =>
         {
-            var session = await sessionManager.GetSessionFreshAsync(request.SessionId);
+            var session = await sessionManager.GetSessionFreshAsync(request.SessionId, ct);
             if (session is null)
             {
                 return Results.BadRequest("Invalid session");
@@ -49,9 +49,9 @@ public static class CommandEndpoints
             return Results.Json(script, AppJsonContext.Default.ScriptDefinition);
         });
 
-        app.MapPut("/api/commands/{filename}", async (string filename, UpdateScriptRequest request) =>
+        app.MapPut("/api/commands/{filename}", async (string filename, UpdateScriptRequest request, CancellationToken ct) =>
         {
-            var session = await sessionManager.GetSessionFreshAsync(request.SessionId);
+            var session = await sessionManager.GetSessionFreshAsync(request.SessionId, ct);
             if (session is null)
             {
                 return Results.BadRequest("Invalid session");
@@ -67,9 +67,9 @@ public static class CommandEndpoints
             return script is null ? Results.NotFound() : Results.Json(script, AppJsonContext.Default.ScriptDefinition);
         });
 
-        app.MapDelete("/api/commands/{filename}", async (string filename, string sessionId) =>
+        app.MapDelete("/api/commands/{filename}", async (string filename, string sessionId, CancellationToken ct) =>
         {
-            var session = await sessionManager.GetSessionFreshAsync(sessionId);
+            var session = await sessionManager.GetSessionFreshAsync(sessionId, ct);
             if (session is null)
             {
                 return Results.BadRequest("Invalid session");
@@ -84,9 +84,9 @@ public static class CommandEndpoints
             return commandService.DeleteScript(cwd, filename) ? Results.Ok() : Results.NotFound();
         });
 
-        app.MapPost("/api/commands/run", async (RunScriptRequest request) =>
+        app.MapPost("/api/commands/run", async (RunScriptRequest request, CancellationToken ct) =>
         {
-            var session = await sessionManager.GetSessionFreshAsync(request.SessionId);
+            var session = await sessionManager.GetSessionFreshAsync(request.SessionId, ct);
             if (session is null)
             {
                 return Results.BadRequest("Invalid session");
@@ -100,7 +100,7 @@ public static class CommandEndpoints
 
             try
             {
-                var result = await commandService.RunScriptAsync(cwd, request.Filename, sessionManager);
+                var result = await commandService.RunScriptAsync(cwd, request.Filename, sessionManager, ct);
                 return Results.Json(result, AppJsonContext.Default.RunScriptResponse);
             }
             catch (InvalidOperationException ex)
@@ -109,14 +109,14 @@ public static class CommandEndpoints
             }
         });
 
-        app.MapPost("/api/commands/stop", async (StopScriptRequest request) =>
+        app.MapPost("/api/commands/stop", async (StopScriptRequest request, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(request.HiddenSessionId))
             {
                 return Results.BadRequest("Missing hiddenSessionId");
             }
 
-            await sessionManager.CloseSessionAsync(request.HiddenSessionId);
+            await sessionManager.CloseSessionAsync(request.HiddenSessionId, ct);
             return Results.Ok();
         });
     }

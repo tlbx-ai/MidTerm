@@ -95,7 +95,7 @@ public static class MidtermDirectory
         if (File.Exists(path))
         {
             var existing = File.ReadAllText(path);
-            if (existing.Contains($"guidance-version: {GuidanceVersion}"))
+            if (existing.Contains($"guidance-version: {GuidanceVersion}", StringComparison.Ordinal))
                 return;
         }
 

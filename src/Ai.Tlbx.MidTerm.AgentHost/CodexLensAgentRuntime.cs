@@ -80,7 +80,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch
@@ -94,12 +94,12 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         if (_readerTask is not null)
         {
-            await Task.WhenAny(_readerTask, Task.Delay(250)).ConfigureAwait(false);
+            await Task.WhenAny(_readerTask, Task.Delay(250, CancellationToken.None)).ConfigureAwait(false);
         }
 
         if (_errorTask is not null)
         {
-            await Task.WhenAny(_errorTask, Task.Delay(250)).ConfigureAwait(false);
+            await Task.WhenAny(_errorTask, Task.Delay(250, CancellationToken.None)).ConfigureAwait(false);
         }
 
         _shutdown.Dispose();
@@ -1017,7 +1017,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         await _input!.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
-        await _input.FlushAsync().ConfigureAwait(false);
+        await _input.FlushAsync(ct).ConfigureAwait(false);
     }
 
     private void EnsureAttachedOrStarting()
@@ -1048,23 +1048,15 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch
         {
         }
 
-        try { _input?.Dispose(); } catch { }
-        try { _output?.Dispose(); } catch { }
-        try { _error?.Dispose(); } catch { }
-        try { _process?.Dispose(); } catch { }
-
-        _process = null;
-        _input = null;
-        _output = null;
-        _error = null;
-        _webSocket = null;
+        DisposeOwnedProcessHandles();
+        DisposeOwnedWebSocket();
         _readerTask = null;
         _errorTask = null;
         _remoteEndpoint = null;
@@ -1074,6 +1066,47 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         return _webSocket is { State: WebSocketState.Open } ||
                (_process is { HasExited: false } && _input is not null);
+    }
+
+    private void AttachOwnedWebSocket(ClientWebSocket webSocket)
+    {
+        try { _webSocket?.Dispose(); } catch { }
+        _webSocket = null;
+        _webSocket = webSocket;
+    }
+
+    private void DisposeOwnedWebSocket()
+    {
+        try { _webSocket?.Dispose(); } catch { }
+        _webSocket = null;
+    }
+
+    private void AttachOwnedProcess(Process process)
+    {
+        try { _input?.Dispose(); } catch { }
+        try { _output?.Dispose(); } catch { }
+        try { _error?.Dispose(); } catch { }
+        try { _process?.Dispose(); } catch { }
+        _process = null;
+        _input = null;
+        _output = null;
+        _error = null;
+        _process = process;
+        _output = process.StandardOutput;
+        _error = process.StandardError;
+        _input = process.StandardInput;
+    }
+
+    private void DisposeOwnedProcessHandles()
+    {
+        try { _input?.Dispose(); } catch { }
+        try { _output?.Dispose(); } catch { }
+        try { _error?.Dispose(); } catch { }
+        try { _process?.Dispose(); } catch { }
+        _process = null;
+        _input = null;
+        _output = null;
+        _error = null;
     }
 
     private bool IsAttachSatisfied(SessionAgentAttachPoint? attachPoint)
@@ -1112,7 +1145,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         var webSocket = new ClientWebSocket();
         await webSocket.ConnectAsync(endpoint, ct).ConfigureAwait(false);
-        _webSocket = webSocket;
+        AttachOwnedWebSocket(webSocket);
     }
 
     private void StartSpawnedProcess(string binaryPath, string workingDirectory, string? userProfileDirectory)
@@ -1130,10 +1163,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             throw new InvalidOperationException("Codex app-server could not be started.");
         }
 
-        _process = process;
-        _output = process.StandardOutput;
-        _error = process.StandardError;
-        _input = process.StandardInput;
+        AttachOwnedProcess(process);
         process.Exited += (_, _) =>
         {
             EmitRuntimeMessage(
@@ -1188,13 +1218,24 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return null;
         }
 
-        var threadIds = data.EnumerateArray()
-            .Where(static element => element.ValueKind == JsonValueKind.String)
-            .Select(static element => element.GetString())
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .Take(2)
-            .ToList();
+        var threadIds = new List<string>(capacity: 2);
+        using (var threadItems = data.EnumerateArray())
+        {
+            while (threadItems.MoveNext() && threadIds.Count < 2)
+            {
+                var element = threadItems.Current;
+                if (element.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var value = element.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    threadIds.Add(value);
+                }
+            }
+        }
 
         if (threadIds.Count > 1)
         {
@@ -1874,8 +1915,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         var chunks = new List<string>();
-        foreach (var part in content.EnumerateArray())
+        using var contentItems = content.EnumerateArray();
+        while (contentItems.MoveNext())
         {
+            var part = contentItems.Current;
             var text = GetString(part, "text");
             if (!string.IsNullOrWhiteSpace(text))
             {
@@ -1917,8 +1960,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             payload.TryGetProperty("plan", out var planElement) &&
             planElement.ValueKind == JsonValueKind.Array)
         {
-            foreach (var step in planElement.EnumerateArray())
+            using var planItems = planElement.EnumerateArray();
+            while (planItems.MoveNext())
             {
+                var step = planItems.Current;
                 var stepText = GetString(step, "step");
                 if (string.IsNullOrWhiteSpace(stepText))
                 {
@@ -1992,12 +2037,16 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return "Codex is waiting for user input.";
         }
 
-        foreach (var question in questions.EnumerateArray())
+        using (var questionItems = questions.EnumerateArray())
         {
-            var prompt = GetString(question, "question");
-            if (!string.IsNullOrWhiteSpace(prompt))
+            while (questionItems.MoveNext())
             {
-                return prompt;
+                var question = questionItems.Current;
+                var prompt = GetString(question, "question");
+                if (!string.IsNullOrWhiteSpace(prompt))
+                {
+                    return prompt;
+                }
             }
         }
 
@@ -2014,8 +2063,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return ids;
         }
 
-        foreach (var question in questions.EnumerateArray())
+        using var questionIdItems = questions.EnumerateArray();
+        while (questionIdItems.MoveNext())
         {
+            var question = questionIdItems.Current;
             var id = GetString(question, "id");
             if (!string.IsNullOrWhiteSpace(id))
             {
@@ -2036,8 +2087,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return questions;
         }
 
-        foreach (var question in questionArray.EnumerateArray())
+        using var questionItems = questionArray.EnumerateArray();
+        while (questionItems.MoveNext())
         {
+            var question = questionItems.Current;
             var item = new LensPulseQuestion
             {
                 Id = GetString(question, "id") ?? string.Empty,
@@ -2048,8 +2101,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             if (question.TryGetProperty("options", out var options) && options.ValueKind == JsonValueKind.Array)
             {
-                foreach (var option in options.EnumerateArray())
+                using var optionItems = options.EnumerateArray();
+                while (optionItems.MoveNext())
                 {
+                    var option = optionItems.Current;
                     item.Options.Add(new LensPulseQuestionOption
                     {
                         Label = GetString(option, "label") ?? string.Empty,

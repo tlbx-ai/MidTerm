@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 
@@ -169,7 +170,8 @@ internal static class LensHostTestClient
         var completed = await Task.WhenAny(readTask, Task.Delay(effectiveTimeout));
         if (!ReferenceEquals(completed, readTask))
         {
-            throw new TimeoutException($"Timed out waiting {effectiveTimeout.TotalSeconds:0.###}s for mtagenthost stdout.");
+            var secondsText = effectiveTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+            throw new TimeoutException($"Timed out waiting {secondsText}s for mtagenthost stdout.");
         }
 
         var line = await readTask;

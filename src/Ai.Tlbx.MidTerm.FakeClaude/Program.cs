@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 var prompt = (await Console.In.ReadToEndAsync().ConfigureAwait(false)).Trim();
@@ -180,7 +181,7 @@ if (questionHarnessRequested)
 }
 
 var assistantText =
-    $"Fake Claude reply. resumed={(resumeSessionId is not null).ToString().ToLowerInvariant()} danger={dangerous.ToString().ToLowerInvariant()} effort={effort} env={envMarker} attachments={attachmentsCount.ToString()} images={imageCount.ToString()} prompt={normalizedPrompt}";
+    $"Fake Claude reply. resumed={(resumeSessionId is not null).ToString().ToLowerInvariant()} danger={dangerous.ToString().ToLowerInvariant()} effort={effort} env={envMarker} attachments={attachmentsCount.ToString(CultureInfo.InvariantCulture)} images={imageCount.ToString(CultureInfo.InvariantCulture)} prompt={normalizedPrompt}";
 
 await WriteJsonAsync(new
 {

@@ -322,7 +322,7 @@ public sealed class SessionForegroundProcessService
             }
         }
 
-        var spaceIndex = trimmed.IndexOf(' ');
+        var spaceIndex = trimmed.IndexOf(' ', StringComparison.Ordinal);
         if (spaceIndex < 0)
         {
             return NormalizeIdentity(Basename(trimmed));

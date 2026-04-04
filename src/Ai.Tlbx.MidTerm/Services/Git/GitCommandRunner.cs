@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
@@ -33,7 +34,7 @@ internal static class GitCommandRunner
                 ExitCode = exit,
                 Stdout = stdout.Length > 500 ? stdout[..500] + "..." : stdout,
                 Stderr = stderr.Length > 500 ? stderr[..500] + "..." : stderr,
-                Timestamp = ts.ToString("O")
+                Timestamp = ts.ToString("O", CultureInfo.InvariantCulture)
             };
         }
     }
@@ -103,28 +104,28 @@ internal static class GitCommandRunner
 
         foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (line.StartsWith("# branch.head "))
+            if (line.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
                 response.Branch = line["# branch.head ".Length..];
             }
-            else if (line.StartsWith("# branch.ab "))
+            else if (line.StartsWith("# branch.ab ", StringComparison.Ordinal))
             {
                 var parts = line["# branch.ab ".Length..].Split(' ');
                 if (parts.Length >= 2)
                 {
-                    if (int.TryParse(parts[0], out var ahead)) response.Ahead = ahead;
-                    if (int.TryParse(parts[1], out var behind)) response.Behind = Math.Abs(behind);
+                    if (int.TryParse(parts[0], CultureInfo.InvariantCulture, out var ahead)) response.Ahead = ahead;
+                    if (int.TryParse(parts[1], CultureInfo.InvariantCulture, out var behind)) response.Behind = Math.Abs(behind);
                 }
             }
-            else if (line.StartsWith("1 ") || line.StartsWith("2 "))
+            else if (line.StartsWith("1 ", StringComparison.Ordinal) || line.StartsWith("2 ", StringComparison.Ordinal))
             {
                 ParseChangedEntry(line, staged, modified);
             }
-            else if (line.StartsWith("u "))
+            else if (line.StartsWith("u ", StringComparison.Ordinal))
             {
                 ParseUnmergedEntry(line, conflicted);
             }
-            else if (line.StartsWith("? "))
+            else if (line.StartsWith("? ", StringComparison.Ordinal))
             {
                 untracked.Add(new GitFileEntry
                 {
@@ -144,7 +145,8 @@ internal static class GitCommandRunner
     internal static async Task<GitLogEntry[]> GetLogAsync(string repoRoot, int count = 20)
     {
         var format = "%H%n%h%n%s%n%an%n%ai";
-        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "log", $"--format={format}", $"-{count}");
+        var countArgument = string.Create(CultureInfo.InvariantCulture, $"-{count}");
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "log", $"--format={format}", countArgument);
 
         if (exitCode != 0) return [];
 
@@ -199,8 +201,8 @@ internal static class GitCommandRunner
             if (parts.Length < 3) continue;
             if (parts[0] == "-" || parts[1] == "-") continue;
 
-            if (!int.TryParse(parts[0], out var additions)) continue;
-            if (!int.TryParse(parts[1], out var deletions)) continue;
+            if (!int.TryParse(parts[0], CultureInfo.InvariantCulture, out var additions)) continue;
+            if (!int.TryParse(parts[1], CultureInfo.InvariantCulture, out var deletions)) continue;
 
             var path = parts[2];
             if (result.TryGetValue(path, out var existing))
@@ -237,9 +239,9 @@ internal static class GitCommandRunner
         string? originalPath = null;
         string filePath;
 
-        if (line.StartsWith("2 "))
+        if (line.StartsWith("2 ", StringComparison.Ordinal))
         {
-            var tabIndex = line.IndexOf('\t');
+            var tabIndex = line.IndexOf('\t', StringComparison.Ordinal);
             if (tabIndex >= 0)
             {
                 var pathParts = line[tabIndex..].Split('\t');

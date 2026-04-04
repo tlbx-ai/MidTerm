@@ -97,7 +97,7 @@ public static class FileEndpoints
 
         app.MapPost("/api/files/check", async (FileCheckRequest request, string? sessionId) =>
         {
-            var results = new Dictionary<string, FilePathInfo>();
+            var results = new Dictionary<string, FilePathInfo>(StringComparer.Ordinal);
             var workingDir = await fileService.GetSessionWorkingDirectoryAsync(sessionId);
 
             foreach (var path in request.Paths)
@@ -193,7 +193,7 @@ public static class FileEndpoints
             }
         });
 
-        app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId) =>
+        app.MapPut("/api/files/save", async (FileSaveRequest request, string? sessionId, CancellationToken ct) =>
         {
             if (!FileService.ValidatePath(request.Path, out var errorResult))
             {
@@ -216,7 +216,7 @@ public static class FileEndpoints
 
             try
             {
-                await File.WriteAllTextAsync(fullPath, request.Content);
+                await File.WriteAllTextAsync(fullPath, request.Content, ct);
                 var fileInfo = new FileInfo(fullPath);
                 return Results.Json(
                     new FileSaveResponse { Success = true, Size = fileInfo.Length },
@@ -242,14 +242,14 @@ public static class FileEndpoints
             return await ServeFileAsync(path, inline: false, sessionId, fileService);
         });
 
-        app.MapGet("/api/files/resolve", async (string sessionId, string path, bool deep = false) =>
+        app.MapGet("/api/files/resolve", async (string sessionId, string path, bool deep = false, CancellationToken ct = default) =>
         {
-            if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path) || path.Contains(".."))
+            if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path) || path.Contains("..", StringComparison.Ordinal))
             {
                 return Results.Json(new FileResolveResponse { Exists = false }, AppJsonContext.Default.FileResolveResponse);
             }
 
-            var session = await sessionManager.GetSessionFreshAsync(sessionId);
+            var session = await sessionManager.GetSessionFreshAsync(sessionId, ct);
             var cwd = session?.CurrentDirectory;
             if (string.IsNullOrEmpty(cwd) || !Directory.Exists(cwd))
             {
@@ -284,7 +284,7 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/tree", async (string path, string? sessionId, int depth) =>
         {
-            if (string.IsNullOrWhiteSpace(path) || path.Contains(".."))
+            if (string.IsNullOrWhiteSpace(path) || path.Contains("..", StringComparison.Ordinal))
             {
                 return Results.BadRequest("Invalid path");
             }
@@ -459,16 +459,10 @@ public static class FileEndpoints
             var mimeType = FileService.GetMimeType(fileInfo.Name);
             var fileName = fileInfo.Name;
 
-            var stream = new FileStream(
+            return Results.File(
                 fullPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-
-            return Results.Stream(
-                stream,
                 mimeType,
-                inline ? null : fileName,
+                fileDownloadName: inline ? null : fileName,
                 enableRangeProcessing: true);
         }
         catch (UnauthorizedAccessException)

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Models.Hub;
 
@@ -276,7 +277,7 @@ public sealed partial class MidTermSettingsPublic
             return NormalFontWeight;
         }
 
-        if (int.TryParse(trimmed, out var numericWeight))
+        if (int.TryParse(trimmed, CultureInfo.InvariantCulture, out var numericWeight))
         {
             return numericWeight >= 600 ? BoldFontWeight : NormalFontWeight;
         }

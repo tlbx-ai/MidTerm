@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -261,18 +262,33 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     {
         pulse = new SessionLensPulseService();
         var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, new SettingsService(), mode: "off");
-        var sessionManager = new TtyHostSessionManager();
-        var lensRuntime = new SessionLensRuntimeService(sessionManager, new AiCliProfileService(), pulse, hostRuntime);
+        SessionLensHostRuntimeService? hostRuntime = new(ingress, pulse, new SettingsService(), mode: "off");
+        TtyHostSessionManager? sessionManager = new();
+        SessionLensRuntimeService? lensRuntime = new(sessionManager, new AiCliProfileService(), pulse, hostRuntime);
         var foregroundProcessService = new SessionForegroundProcessService();
-        return new SessionCodexHandoffService(
-            sessionManager,
-            new WorkerSessionRegistryService(),
-            new AiCliProfileService(),
-            foregroundProcessService,
-            pulse,
-            lensRuntime,
-            _tempRoot);
+
+        try
+        {
+            var service = new SessionCodexHandoffService(
+                sessionManager,
+                new WorkerSessionRegistryService(),
+                new AiCliProfileService(),
+                foregroundProcessService,
+                pulse,
+                lensRuntime,
+                _tempRoot);
+
+            hostRuntime = null;
+            sessionManager = null;
+            lensRuntime = null;
+            return service;
+        }
+        finally
+        {
+            lensRuntime?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            sessionManager?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            hostRuntime?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     private SessionCodexHandoffService CreateService()
@@ -283,9 +299,18 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     private string WriteSessionMeta(string sessionId, string cwd, DateTimeOffset timestamp)
     {
         Directory.CreateDirectory(cwd);
-        var datePath = Path.Combine(_tempRoot, "sessions", timestamp.ToString("yyyy", null), timestamp.ToString("MM", null), timestamp.ToString("dd", null));
+        var datePath = Path.Combine(
+            _tempRoot,
+            "sessions",
+            timestamp.ToString("yyyy", CultureInfo.InvariantCulture),
+            timestamp.ToString("MM", CultureInfo.InvariantCulture),
+            timestamp.ToString("dd", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(datePath);
-        var filePath = Path.Combine(datePath, $"rollout-{timestamp:yyyy-MM-ddTHH-mm-ss}-{sessionId}.jsonl");
+        var filePath = Path.Combine(
+            datePath,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"rollout-{timestamp:yyyy-MM-ddTHH-mm-ss}-{sessionId}.jsonl"));
         var payload = JsonSerializer.Serialize(new
         {
             timestamp,

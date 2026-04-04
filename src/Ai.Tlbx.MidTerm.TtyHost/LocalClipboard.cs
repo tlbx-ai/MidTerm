@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -11,7 +12,10 @@ internal static class LocalClipboard
 {
     private const string MtBinaryPathEnvironmentVariable = "MT_BINARY_PATH";
     private const string MacOsClipboardLabelPrefix = "ai.tlbx.midterm.clipboard.set.";
-    private static readonly Regex MacOsExitCodeRegex = new(@"\blast exit code = (?<code>-?\d+)\b", RegexOptions.Compiled);
+    private static readonly Regex MacOsExitCodeRegex = new(
+        @"\blast exit code = (?<code>-?\d+)\b",
+        RegexOptions.Compiled,
+        TimeSpan.FromSeconds(1));
 
     [DllImport("libc", EntryPoint = "geteuid")]
     private static extern uint geteuid();
@@ -199,7 +203,7 @@ internal static class LocalClipboard
             {
                 var match = MacOsExitCodeRegex.Match(result.Stdout);
                 if (match.Success &&
-                    int.TryParse(match.Groups["code"].Value, out var parsedExit))
+                    int.TryParse(match.Groups["code"].Value, CultureInfo.InvariantCulture, out var parsedExit))
                 {
                     return parsedExit;
                 }
@@ -348,9 +352,9 @@ internal static class LocalClipboard
         }
 
         var error = string.IsNullOrWhiteSpace(result.Stderr)
-            ? $"{fileName} exited with code {result.ExitCode}"
+            ? string.Create(CultureInfo.InvariantCulture, $"{fileName} exited with code {result.ExitCode}")
             : result.Stderr.Trim();
-        Log.Warn(() => $"[Clipboard] Command failed ({fileName}, exit {result.ExitCode}): {error}");
+        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[Clipboard] Command failed ({fileName}, exit {result.ExitCode}): {error}"));
         return (false, error);
     }
 

@@ -7,6 +7,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class UpdateScriptGeneratorTests : IDisposable
 {
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
     private readonly string _tempDir;
     private readonly string _extractedDir;
     private readonly string _settingsDir;
@@ -69,15 +70,15 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
                 UpdateType.WebOnly,
                 deleteSourceAfter: true));
 
-        Assert.Contains("Web-only", scriptText);
+        Assert.Contains("Web-only", scriptText, StringComparison.Ordinal);
 
         if (OperatingSystem.IsWindows())
         {
-            Assert.True(Regex.IsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?true", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?true"));
         }
         else
         {
-            Assert.True(Regex.IsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*true", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*true"));
         }
     }
 
@@ -92,15 +93,15 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
                 UpdateType.None,
                 deleteSourceAfter: true));
 
-        Assert.Contains("Web-only", scriptText);
+        Assert.Contains("Web-only", scriptText, StringComparison.Ordinal);
 
         if (OperatingSystem.IsWindows())
         {
-            Assert.True(Regex.IsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?true", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?true"));
         }
         else
         {
-            Assert.True(Regex.IsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*true", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*true"));
         }
     }
 
@@ -115,16 +116,16 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
                 UpdateType.Full,
                 deleteSourceAfter: true));
 
-        Assert.Contains("Full", scriptText);
+        Assert.Contains("Full", scriptText, StringComparison.Ordinal);
 
         if (OperatingSystem.IsWindows())
         {
-            Assert.True(Regex.IsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?false", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"\$IsWebOnly\s*=\s*\$?false"));
             Assert.Contains("if (-not $IsWebOnly)", scriptText, StringComparison.Ordinal);
         }
         else
         {
-            Assert.True(Regex.IsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*false", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"IS_WEB_ONLY\s*=\s*false"));
             Assert.Contains("if [[ \"$IS_WEB_ONLY\" == \"false\" ]]; then", scriptText, StringComparison.Ordinal);
         }
     }
@@ -142,11 +143,11 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            Assert.True(Regex.IsMatch(scriptText, @"\$DeleteSource\s*=\s*\$?false", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"\$DeleteSource\s*=\s*\$?false"));
         }
         else
         {
-            Assert.True(Regex.IsMatch(scriptText, @"DELETE_SOURCE\s*=\s*false", RegexOptions.IgnoreCase));
+            Assert.True(RegexIsMatch(scriptText, @"DELETE_SOURCE\s*=\s*false"));
         }
     }
 
@@ -311,5 +312,10 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     private static string ReadScript(string path)
     {
         return File.ReadAllText(path);
+    }
+
+    private static bool RegexIsMatch(string input, string pattern)
+    {
+        return Regex.IsMatch(input, pattern, RegexOptions.IgnoreCase, RegexTimeout);
     }
 }

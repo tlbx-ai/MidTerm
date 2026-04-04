@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using System.Globalization;
+
 namespace Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 
 /// <summary>
@@ -67,10 +69,10 @@ public sealed partial class IoCommands
         return TmuxResult.Ok();
     }
 
-    [GeneratedRegex(@"(?:^|&&\s*)(?:env\s+)?[A-Z_][A-Z0-9_]*=\S+")]
+    [GeneratedRegex(@"(?:^|&&\s*)(?:env\s+)?[A-Z_][A-Z0-9_]*=\S+", RegexOptions.None, 1000)]
     private static partial Regex BashEnvVarPattern();
 
-    [GeneratedRegex(@"^([A-Z_][A-Z0-9_]*)=(\S+)\s*")]
+    [GeneratedRegex(@"^([A-Z_][A-Z0-9_]*)=(\S+)\s*", RegexOptions.None, 1000)]
     private static partial Regex LeadingEnvVarPattern();
 
     internal static string? TranslateBashEnvVars(string commandLine, string? shellType)
@@ -231,13 +233,13 @@ public sealed partial class IoCommands
             var lines = text.Split('\n');
 
             var startLine = 0;
-            if (startStr is not null && int.TryParse(startStr, out var s))
+            if (startStr is not null && int.TryParse(startStr, CultureInfo.InvariantCulture, out var s))
             {
                 startLine = s < 0 ? Math.Max(0, lines.Length + s) : s;
             }
 
             var endLine = lines.Length - 1;
-            if (endStr is not null && int.TryParse(endStr, out var e))
+            if (endStr is not null && int.TryParse(endStr, CultureInfo.InvariantCulture, out var e))
             {
                 endLine = e < 0 ? lines.Length + e : e;
             }

@@ -430,7 +430,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
-            await process.WaitForExitAsync().ConfigureAwait(false);
+            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {
@@ -735,8 +735,10 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             return;
         }
 
-        foreach (var item in content.EnumerateArray())
+        using var toolResultItems = content.EnumerateArray();
+        while (toolResultItems.MoveNext())
         {
+            var item = toolResultItems.Current;
             if (!string.Equals(GetString(item, "type"), "tool_result", StringComparison.Ordinal))
             {
                 continue;
@@ -956,15 +958,13 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             throw new InvalidOperationException("Claude process could not be started.");
         }
 
-        _process = process;
-        _output = process.StandardOutput;
-        _error = process.StandardError;
-        _input = process.StandardInput;
+        AttachOwnedProcess(process);
         _readerTask = Task.Run(() => ReadLoopAsync(process, CancellationToken.None), CancellationToken.None);
         _errorTask = Task.Run(() => ReadErrorLoopAsync(process, CancellationToken.None), CancellationToken.None);
-        await _input.WriteAsync(prompt.AsMemory(), ct).ConfigureAwait(false);
-        await _input.FlushAsync().ConfigureAwait(false);
-        _input.Close();
+        var input = _input ?? throw new InvalidOperationException("Claude process input stream is unavailable.");
+        await input.WriteAsync(prompt.AsMemory(), ct).ConfigureAwait(false);
+        await input.FlushAsync(ct).ConfigureAwait(false);
+        input.Close();
     }
 
     private async Task DisposeProcessAsync(bool resetTurnState = true)
@@ -974,32 +974,25 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch
         {
         }
 
-        try { _input?.Dispose(); } catch { }
-        try { _output?.Dispose(); } catch { }
-        try { _error?.Dispose(); } catch { }
-        try { _process?.Dispose(); } catch { }
+        DisposeOwnedProcessHandles();
 
         if (_readerTask is not null)
         {
-            await Task.WhenAny(_readerTask, Task.Delay(250)).ConfigureAwait(false);
+            await Task.WhenAny(_readerTask, Task.Delay(250, CancellationToken.None)).ConfigureAwait(false);
         }
 
         if (_errorTask is not null)
         {
-            await Task.WhenAny(_errorTask, Task.Delay(250)).ConfigureAwait(false);
+            await Task.WhenAny(_errorTask, Task.Delay(250, CancellationToken.None)).ConfigureAwait(false);
         }
 
-        _process = null;
-        _input = null;
-        _output = null;
-        _error = null;
         _readerTask = null;
         _errorTask = null;
 
@@ -1007,6 +1000,34 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         {
             ResetTurnState();
         }
+    }
+
+    private void AttachOwnedProcess(Process process)
+    {
+        try { _input?.Dispose(); } catch { }
+        try { _output?.Dispose(); } catch { }
+        try { _error?.Dispose(); } catch { }
+        try { _process?.Dispose(); } catch { }
+        _process = null;
+        _input = null;
+        _output = null;
+        _error = null;
+        _process = process;
+        _output = process.StandardOutput;
+        _error = process.StandardError;
+        _input = process.StandardInput;
+    }
+
+    private void DisposeOwnedProcessHandles()
+    {
+        try { _input?.Dispose(); } catch { }
+        try { _output?.Dispose(); } catch { }
+        try { _error?.Dispose(); } catch { }
+        try { _process?.Dispose(); } catch { }
+        _process = null;
+        _input = null;
+        _output = null;
+        _error = null;
     }
 
     private static string BuildPromptInput(
@@ -1263,8 +1284,10 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             }
 
             var index = 0;
-            foreach (var entry in questionArray.EnumerateArray())
+            using var questionItems = questionArray.EnumerateArray();
+            while (questionItems.MoveNext())
             {
+                var entry = questionItems.Current;
                 if (entry.ValueKind != JsonValueKind.Object)
                 {
                     index++;
@@ -1273,14 +1296,18 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
 
                 var header = GetString(entry, "header");
                 var question = GetString(entry, "question");
-                var normalizedHeader = string.IsNullOrWhiteSpace(header) ? $"Question {index + 1}" : header.Trim();
+                var normalizedHeader = string.IsNullOrWhiteSpace(header)
+                    ? string.Create(CultureInfo.InvariantCulture, $"Question {index + 1}")
+                    : header.Trim();
                 var normalizedQuestion = string.IsNullOrWhiteSpace(question) ? normalizedHeader : question.Trim();
                 var id = NormalizeQuestionId(GetString(entry, "id"), normalizedHeader, index);
                 var options = new List<LensPulseQuestionOption>();
                 if (entry.TryGetProperty("options", out var optionArray) && optionArray.ValueKind == JsonValueKind.Array)
                 {
-                    foreach (var option in optionArray.EnumerateArray())
+                    using var optionItems = optionArray.EnumerateArray();
+                    while (optionItems.MoveNext())
                     {
+                        var option = optionItems.Current;
                         if (option.ValueKind != JsonValueKind.Object)
                         {
                             continue;
@@ -1338,7 +1365,9 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }
 
         var normalized = builder.ToString().Trim('-');
-        return string.IsNullOrWhiteSpace(normalized) ? $"question-{index + 1}" : normalized;
+        return string.IsNullOrWhiteSpace(normalized)
+            ? string.Create(CultureInfo.InvariantCulture, $"question-{index + 1}")
+            : normalized;
     }
 
     private static string BuildQuestionSummary(IReadOnlyList<LensPulseQuestion> questions)
@@ -1361,8 +1390,10 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }
 
         var builder = new StringBuilder();
-        foreach (var item in content.EnumerateArray())
+        using var textItems = content.EnumerateArray();
+        while (textItems.MoveNext())
         {
+            var item = textItems.Current;
             if (string.Equals(GetString(item, "type"), "text", StringComparison.OrdinalIgnoreCase))
             {
                 builder.Append(GetString(item, "text"));
@@ -1380,11 +1411,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             var contentText = content.ValueKind switch
             {
                 JsonValueKind.String => content.GetString(),
-                JsonValueKind.Array => string.Join(
-                    Environment.NewLine,
-                    content.EnumerateArray()
-                        .Select(static part => GetString(part, "text") ?? part.ToString())
-                        .Where(static value => !string.IsNullOrWhiteSpace(value))),
+                JsonValueKind.Array => JoinContentArrayText(content),
                 _ => content.ToString()
             };
             if (!string.IsNullOrWhiteSpace(contentText))
@@ -1406,6 +1433,23 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }
 
         return string.Join(Environment.NewLine, parts);
+    }
+
+    private static string JoinContentArrayText(JsonElement content)
+    {
+        var values = new List<string>();
+        using var contentItems = content.EnumerateArray();
+        while (contentItems.MoveNext())
+        {
+            var part = contentItems.Current;
+            var value = GetString(part, "text") ?? part.ToString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                values.Add(value);
+            }
+        }
+
+        return string.Join(Environment.NewLine, values);
     }
 
     private static string CombineToolDetail(string? invocationDetail, string? resultText)

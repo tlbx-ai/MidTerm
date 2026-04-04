@@ -113,7 +113,6 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 return true;
             }
 
-            state.Claude = new ClaudeLensRuntime();
             state.QuickSettings = LensQuickSettings.CreateSummary(
                 null,
                 null,
@@ -165,7 +164,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             }
         }
 
-        Log.Info(() => $"SessionLensRuntimeService: Recovered {recovered} owned Lens runtimes on startup.");
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"SessionLensRuntimeService: Recovered {recovered} owned Lens runtimes on startup."));
     }
 
     public bool IsAttached(string sessionId)
@@ -444,8 +443,6 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _hostRuntime.DisposeAsync().ConfigureAwait(false);
-
         foreach (var state in _states.Values)
         {
             await DisposeStateAsync(state).ConfigureAwait(false);
@@ -465,32 +462,27 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return false;
         }
 
-        var process = new Process
+        if (state.Codex is not null)
         {
-            StartInfo = CreateProcessStartInfo(
+            await DisposeCodexAsync(state).ConfigureAwait(false);
+        }
+
+        try
+        {
+            state.Codex = CodexLensRuntime.StartOwned(
                 binaryPath,
                 "app-server",
                 state.WorkingDirectory!,
-                ResolvePreferredUserProfileDirectory(binaryPath)),
-            EnableRaisingEvents = true
-        };
-
-        if (!process.Start())
+                ResolvePreferredUserProfileDirectory(binaryPath),
+                state.QuickSettings.PermissionMode);
+        }
+        catch (InvalidOperationException)
         {
             SetStatus(state, LensRuntimeStatus.Error, "Codex app-server could not be started.");
             AppendActivity(state, "attention", "runtime.error", "Lens could not start Codex.", "The Codex app-server process failed to start.");
             EmitPulseRuntimeMessage(state, "runtime.error", "Codex app-server could not be started.", "The Codex app-server process failed to start.");
             return false;
         }
-
-            state.Codex = new CodexLensRuntime
-            {
-                Process = process,
-                Output = process.StandardOutput,
-                Error = process.StandardError,
-                Input = process.StandardInput,
-                PermissionMode = state.QuickSettings.PermissionMode
-            };
         state.QuickSettings = LensQuickSettings.CreateSummary(
             null,
             null,
@@ -503,9 +495,10 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         AppendActivity(state, "info", "session.started", "Codex Lens runtime starting.", "Lens is launching a native Codex app-server in this session's cwd while the terminal surface remains separate.");
         EmitPulseSessionState(state, "session.started", "starting", "Starting", "Starting Codex Lens runtime.");
 
-        state.Codex.ReaderTask = Task.Run(() => ReadCodexLoopAsync(state, state.Codex, CancellationToken.None), CancellationToken.None);
-        state.Codex.ErrorTask = Task.Run(() => ReadCodexErrorLoopAsync(state, state.Codex, CancellationToken.None), CancellationToken.None);
-        process.Exited += (_, _) =>
+        var codex = state.Codex!;
+        codex.ReaderTask = Task.Run(() => ReadCodexLoopAsync(state, codex, CancellationToken.None), CancellationToken.None);
+        codex.ErrorTask = Task.Run(() => ReadCodexErrorLoopAsync(state, codex, CancellationToken.None), CancellationToken.None);
+        codex.Process!.Exited += (_, _) =>
         {
             lock (state.SyncRoot)
             {
@@ -514,16 +507,17 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     return;
                 }
 
-                SetStatus(state, process.ExitCode == 0 ? LensRuntimeStatus.Stopped : LensRuntimeStatus.Error,
-                    process.ExitCode == 0
+                var exitCode = codex.Process?.ExitCode ?? -1;
+                SetStatus(state, exitCode == 0 ? LensRuntimeStatus.Stopped : LensRuntimeStatus.Error,
+                    exitCode == 0
                         ? "Codex Lens runtime exited."
-                        : $"Codex Lens runtime exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+                        : $"Codex Lens runtime exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
                 AppendActivity(
                     state,
-                    process.ExitCode == 0 ? "warning" : "attention",
+                    exitCode == 0 ? "warning" : "attention",
                     "session.exited",
                     "Codex Lens runtime exited.",
-                    $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+                    $"Exit code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
             }
         };
 
@@ -707,8 +701,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return false;
         }
 
-        var claude = state.Claude ??= new ClaudeLensRuntime();
-        if (claude.ActiveProcess is { HasExited: false })
+        var existingClaude = state.Claude;
+        if (existingClaude?.ActiveProcess is { HasExited: false })
         {
             return false;
         }
@@ -728,10 +722,10 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         {
             args.Add("--dangerously-skip-permissions");
         }
-        if (!string.IsNullOrWhiteSpace(claude.ResumeSessionId))
+        if (!string.IsNullOrWhiteSpace(existingClaude?.ResumeSessionId))
         {
             args.Add("--resume");
-            args.Add(claude.ResumeSessionId);
+            args.Add(existingClaude.ResumeSessionId);
         }
 
         if (!string.IsNullOrWhiteSpace(state.QuickSettings.Model))
@@ -746,27 +740,24 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             args.Add(state.QuickSettings.Effort);
         }
 
-        var process = new Process
+        try
         {
-            StartInfo = CreateProcessStartInfo(
+            var nextClaude = ClaudeLensRuntime.StartOwned(
                 binaryPath,
                 args,
                 state.WorkingDirectory!,
-                ResolvePreferredUserProfileDirectory(binaryPath)),
-            EnableRaisingEvents = true
-        };
-
-        if (!process.Start())
+                ResolvePreferredUserProfileDirectory(binaryPath),
+                existingClaude?.ResumeSessionId);
+            state.Claude = nextClaude;
+            existingClaude?.Dispose();
+        }
+        catch (InvalidOperationException)
         {
             SetStatus(state, LensRuntimeStatus.Error, "Claude print-mode process could not be started.");
             AppendActivity(state, "attention", "runtime.error", "Lens could not start Claude.", "The Claude process failed to start.");
             return false;
         }
-
-        claude.ActiveProcess = process;
-        claude.Output = process.StandardOutput;
-        claude.Error = process.StandardError;
-        claude.Input = process.StandardInput;
+        var claude = state.Claude!;
         state.TransportKey = "claude-stream-json";
         state.TransportLabel = "Claude stream-json runtime";
         state.AssistantText = string.Empty;
@@ -778,7 +769,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         claude.ErrorTask = Task.Run(() => ReadClaudeErrorLoopAsync(state, claude, CancellationToken.None), CancellationToken.None);
         await claude.Input!.WriteLineAsync(
             LensQuickSettings.ApplyPlanModePrompt(request.Text, state.QuickSettings.PlanMode)).ConfigureAwait(false);
-        await claude.Input.FlushAsync().ConfigureAwait(false);
+        await claude.Input.FlushAsync(ct).ConfigureAwait(false);
         claude.Input.Close();
 
         return true;
@@ -1789,8 +1780,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         }
         finally
         {
-            claude.ActiveProcess?.Dispose();
-            claude.ActiveProcess = null;
+            claude.DisposeExitedProcess();
         }
     }
 
@@ -1984,7 +1974,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         var codex = state.Codex ?? throw new InvalidOperationException("Codex runtime is not attached.");
         await codex.Input!.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
-        await codex.Input.FlushAsync().ConfigureAwait(false);
+        await codex.Input.FlushAsync(ct).ConfigureAwait(false);
     }
 
     private static ProcessStartInfo CreateProcessStartInfo(
@@ -2112,8 +2102,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             payload.TryGetProperty("plan", out var planElement) &&
             planElement.ValueKind == JsonValueKind.Array)
         {
-            foreach (var step in planElement.EnumerateArray())
+            for (var index = 0; index < planElement.GetArrayLength(); index++)
             {
+                var step = planElement[index];
                 var stepText = GetString(step, "step");
                 if (string.IsNullOrWhiteSpace(stepText))
                 {
@@ -2177,8 +2168,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return "Codex is waiting for user input.";
         }
 
-        foreach (var question in questions.EnumerateArray())
+        for (var index = 0; index < questions.GetArrayLength(); index++)
         {
+            var question = questions[index];
             var prompt = GetString(question, "question");
             if (!string.IsNullOrWhiteSpace(prompt))
             {
@@ -2199,8 +2191,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return ids;
         }
 
-        foreach (var question in questions.EnumerateArray())
+        for (var index = 0; index < questions.GetArrayLength(); index++)
         {
+            var question = questions[index];
             var id = GetString(question, "id");
             if (!string.IsNullOrWhiteSpace(id))
             {
@@ -2221,8 +2214,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         }
 
         var builder = new StringBuilder();
-        foreach (var item in content.EnumerateArray())
+        for (var index = 0; index < content.GetArrayLength(); index++)
         {
+            var item = content[index];
             var type = GetString(item, "type");
             if (!string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
             {
@@ -2740,8 +2734,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return questions;
         }
 
-        foreach (var question in questionArray.EnumerateArray())
+        for (var questionIndex = 0; questionIndex < questionArray.GetArrayLength(); questionIndex++)
         {
+            var question = questionArray[questionIndex];
             var item = new LensPulseQuestion
             {
                 Id = GetString(question, "id") ?? string.Empty,
@@ -2752,8 +2747,9 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
             if (question.TryGetProperty("options", out var options) && options.ValueKind == JsonValueKind.Array)
             {
-                foreach (var option in options.EnumerateArray())
+                for (var optionIndex = 0; optionIndex < options.GetArrayLength(); optionIndex++)
                 {
+                    var option = options[optionIndex];
                     item.Options.Add(new LensPulseQuestionOption
                     {
                         Label = GetString(option, "label") ?? string.Empty,
@@ -2810,9 +2806,12 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return;
         }
 
+        var codex = state.Codex;
+        state.Codex = null;
+
         try
         {
-            state.Codex.Cancellation.Cancel();
+            codex.Cancellation.Cancel();
         }
         catch
         {
@@ -2820,7 +2819,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
         try
         {
-            if (state.Codex.Process is { HasExited: false } process)
+            if (codex.Process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
             }
@@ -2829,13 +2828,12 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         {
         }
 
-        if (state.Codex.ReaderTask is not null)
+        if (codex.ReaderTask is not null)
         {
-            await Task.WhenAny(state.Codex.ReaderTask, Task.Delay(500)).ConfigureAwait(false);
+            await Task.WhenAny(codex.ReaderTask, Task.Delay(500, codex.Cancellation.Token)).ConfigureAwait(false);
         }
 
-        state.Codex.Dispose();
-        state.Codex = null;
+        codex.Dispose();
     }
 
     private static void DisposeClaude(LensRuntimeState state)
@@ -2845,19 +2843,82 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return;
         }
 
+        var claude = state.Claude;
+        state.Claude = null;
+
         try
         {
-            if (state.Claude.ActiveProcess is { HasExited: false } process)
-            {
-                process.Kill(entireProcessTree: true);
-            }
+            claude.KillActiveProcess();
         }
         catch
         {
         }
 
-        state.Claude.Dispose();
-        state.Claude = null;
+        claude.Dispose();
+    }
+
+    private static Process CreateStartedLensProcess(
+        string fileName,
+        string arguments,
+        string workingDirectory,
+        string? preferredUserProfileDirectory)
+    {
+        var process = new Process
+        {
+            StartInfo = CreateProcessStartInfo(
+                fileName,
+                arguments,
+                workingDirectory,
+                preferredUserProfileDirectory),
+            EnableRaisingEvents = true
+        };
+
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("Process.Start returned false.");
+            }
+
+            return process;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
+    }
+
+    private static Process CreateStartedLensProcess(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        string? preferredUserProfileDirectory)
+    {
+        var process = new Process
+        {
+            StartInfo = CreateProcessStartInfo(
+                fileName,
+                arguments,
+                workingDirectory,
+                preferredUserProfileDirectory),
+            EnableRaisingEvents = true
+        };
+
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("Process.Start returned false.");
+            }
+
+            return process;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
     }
 
     private sealed class LensRuntimeState
@@ -2889,11 +2950,35 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
     private sealed class CodexLensRuntime : IDisposable
     {
+        private CodexLensRuntime(Process process, string permissionMode)
+        {
+            _transport = OwnedProcessTransport.Create(process);
+            PermissionMode = permissionMode;
+        }
+
+        public static CodexLensRuntime CreateOwned(Process process, string permissionMode)
+        {
+            return new CodexLensRuntime(process, permissionMode);
+        }
+
+        public static CodexLensRuntime StartOwned(
+            string fileName,
+            string arguments,
+            string workingDirectory,
+            string? preferredUserProfileDirectory,
+            string permissionMode)
+        {
+            return new CodexLensRuntime(
+                CreateStartedLensProcess(fileName, arguments, workingDirectory, preferredUserProfileDirectory),
+                permissionMode);
+        }
+
+        private OwnedProcessTransport? _transport;
         public CancellationTokenSource Cancellation { get; } = new();
-        public Process? Process { get; set; }
-        public StreamReader? Output { get; set; }
-        public StreamReader? Error { get; set; }
-        public StreamWriter? Input { get; set; }
+        public Process? Process => _transport?.Process;
+        public StreamReader? Output => _transport?.Output;
+        public StreamReader? Error => _transport?.Error;
+        public StreamWriter? Input => _transport?.Input;
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
         public string? ProviderThreadId { get; set; }
@@ -2908,29 +2993,126 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         public void Dispose()
         {
             Cancellation.Dispose();
-            Output?.Dispose();
-            Error?.Dispose();
-            Input?.Dispose();
-            Process?.Dispose();
+            _transport?.Dispose();
+            _transport = null;
         }
     }
 
     private sealed class ClaudeLensRuntime : IDisposable
     {
-        public Process? ActiveProcess { get; set; }
-        public StreamReader? Output { get; set; }
-        public StreamReader? Error { get; set; }
-        public StreamWriter? Input { get; set; }
+        private OwnedProcessTransport? _transport;
+
+        private ClaudeLensRuntime(Process activeProcess, string? resumeSessionId)
+        {
+            _transport = OwnedProcessTransport.Create(activeProcess);
+            ResumeSessionId = resumeSessionId;
+        }
+
+        public static ClaudeLensRuntime CreateOwned(Process activeProcess, string? resumeSessionId)
+        {
+            return new ClaudeLensRuntime(activeProcess, resumeSessionId);
+        }
+
+        public static ClaudeLensRuntime StartOwned(
+            string fileName,
+            IReadOnlyList<string> arguments,
+            string workingDirectory,
+            string? preferredUserProfileDirectory,
+            string? resumeSessionId)
+        {
+            return new ClaudeLensRuntime(
+                CreateStartedLensProcess(fileName, arguments, workingDirectory, preferredUserProfileDirectory),
+                resumeSessionId);
+        }
+
+        public Process? ActiveProcess => _transport?.Process;
+        public StreamReader? Output => _transport?.Output;
+        public StreamReader? Error => _transport?.Error;
+        public StreamWriter? Input => _transport?.Input;
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
         public string? ResumeSessionId { get; set; }
 
+        public void KillActiveProcess()
+        {
+            if (ActiveProcess is { HasExited: false } process)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+
+        public void DisposeExitedProcess()
+        {
+            _transport?.DisposeProcessOnly();
+        }
+
         public void Dispose()
         {
-            Output?.Dispose();
-            Error?.Dispose();
-            Input?.Dispose();
-            ActiveProcess?.Dispose();
+            _transport?.Dispose();
+            _transport = null;
+        }
+    }
+
+    private sealed class OwnedProcessTransport : IDisposable
+    {
+        private Process? _process;
+        private StreamReader? _output;
+        private StreamReader? _error;
+        private StreamWriter? _input;
+        private bool _processDisposed;
+        private bool _disposed;
+
+        private OwnedProcessTransport()
+        {
+        }
+
+        public static OwnedProcessTransport Create(Process process)
+        {
+            return new OwnedProcessTransport
+            {
+                _process = process,
+                _output = process.StandardOutput,
+                _error = process.StandardError,
+                _input = process.StandardInput
+            };
+        }
+
+        public Process? Process => _processDisposed ? null : _process;
+        public StreamReader? Output => _disposed ? null : _output;
+        public StreamReader? Error => _disposed ? null : _error;
+        public StreamWriter? Input => _disposed ? null : _input;
+
+        public void DisposeProcessOnly()
+        {
+            if (_processDisposed)
+            {
+                return;
+            }
+
+            var process = _process;
+            _process = null;
+            _processDisposed = true;
+            process?.Dispose();
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            var output = _output;
+            var error = _error;
+            var input = _input;
+            _output = null;
+            _error = null;
+            _input = null;
+            output?.Dispose();
+            error?.Dispose();
+            input?.Dispose();
+            DisposeProcessOnly();
         }
     }
 

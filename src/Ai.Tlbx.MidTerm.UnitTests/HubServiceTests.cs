@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using Ai.Tlbx.MidTerm.Models.Auth;
@@ -118,19 +119,19 @@ public sealed class HubServiceTests : IAsyncDisposable
         {
             var builder = WebApplication.CreateBuilder();
             var port = ReservePort();
-            var url = $"http://127.0.0.1:{port}";
+            var url = string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}");
             builder.WebHost.UseUrls(url);
 
             var app = builder.Build();
             var server = new TestHubServer(app, url, requirePassword);
             server.MapEndpoints();
-            await app.StartAsync();
+            await app.StartAsync(app.Lifetime.ApplicationStopping);
             return server;
         }
 
         public async ValueTask DisposeAsync()
         {
-            await _app.StopAsync();
+            await _app.StopAsync(_app.Lifetime.ApplicationStopping);
             await _app.DisposeAsync();
         }
 
@@ -140,7 +141,8 @@ public sealed class HubServiceTests : IAsyncDisposable
             {
                 LoginAttempts++;
                 var request = await context.Request.ReadFromJsonAsync(
-                    AppJsonContext.Default.LoginRequest);
+                    AppJsonContext.Default.LoginRequest,
+                    context.RequestAborted);
                 if (request?.Password != ValidPassword)
                 {
                     return Results.Json(
@@ -271,7 +273,7 @@ public sealed class HubServiceTests : IAsyncDisposable
 
         private static int ReservePort()
         {
-            var listener = new TcpListener(IPAddress.Loopback, 0);
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();

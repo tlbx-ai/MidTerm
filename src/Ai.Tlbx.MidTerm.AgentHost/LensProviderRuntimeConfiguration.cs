@@ -90,7 +90,7 @@ internal static class LensProviderRuntimeConfiguration
                 continue;
             }
 
-            var separator = rawLine.IndexOf('=');
+            var separator = rawLine.IndexOf("=", StringComparison.Ordinal);
             var key = rawLine[..separator];
             var value = rawLine[(separator + 1)..];
             result[key] = value;
@@ -106,7 +106,7 @@ internal static class LensProviderRuntimeConfiguration
             return false;
         }
 
-        var separator = line.IndexOf('=');
+        var separator = line.IndexOf("=", StringComparison.Ordinal);
         if (separator <= 0)
         {
             return false;

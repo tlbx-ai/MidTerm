@@ -29,15 +29,23 @@ public sealed class SingleInstanceGuard : IDisposable
     public static SingleInstanceGuard? TryAcquire(string instanceKey, out string? existingInfo)
     {
         existingInfo = null;
-        var guard = new SingleInstanceGuard(instanceKey);
+        SingleInstanceGuard? guard = new(instanceKey);
 
-        if (guard.TryAcquireInternal(out existingInfo))
+        try
         {
-            return guard;
-        }
+            if (guard.TryAcquireInternal(out existingInfo))
+            {
+                var acquiredGuard = guard;
+                guard = null;
+                return acquiredGuard;
+            }
 
-        guard.Dispose();
-        return null;
+            return null;
+        }
+        finally
+        {
+            guard?.Dispose();
+        }
     }
 
     private bool TryAcquireInternal(out string? existingInfo)
@@ -58,6 +66,7 @@ public sealed class SingleInstanceGuard : IDisposable
 
         try
         {
+            _mutex?.Dispose();
             _mutex = new Mutex(true, GetMutexName(), out var createdNew);
 
             if (createdNew)

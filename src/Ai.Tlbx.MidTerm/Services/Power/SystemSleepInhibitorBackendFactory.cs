@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace Ai.Tlbx.MidTerm.Services.Power;
 
@@ -34,7 +35,7 @@ internal static class SystemSleepInhibitorBackendFactory
         };
         startInfo.ArgumentList.Add("-i");
         startInfo.ArgumentList.Add("-w");
-        startInfo.ArgumentList.Add(Environment.ProcessId.ToString());
+        startInfo.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
         return startInfo;
     }
 
@@ -51,7 +52,7 @@ internal static class SystemSleepInhibitorBackendFactory
         startInfo.ArgumentList.Add("--mode=block");
         startInfo.ArgumentList.Add("sh");
         startInfo.ArgumentList.Add("-c");
-        startInfo.ArgumentList.Add($"while kill -0 {Environment.ProcessId} 2>/dev/null; do sleep 60; done");
+        startInfo.ArgumentList.Add(string.Create(CultureInfo.InvariantCulture, $"while kill -0 {Environment.ProcessId} 2>/dev/null; do sleep 60; done"));
         return startInfo;
     }
 }
