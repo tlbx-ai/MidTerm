@@ -11095,7 +11095,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 9px;
-  justify-content: space-between;
+  justify-content: flex-start;
   min-height: 0;
   padding: 0;
   border-radius: 0;
@@ -11154,7 +11154,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
   color: color-mix(in srgb, var(--text-muted) 80%, transparent);
   font-size: 10px;
   line-height: 1.2;
@@ -11818,11 +11817,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown pre,
 .agent-history-markdown figure {
   margin-top: 0;
-  margin-bottom: 0.8rem;
+  margin-bottom: 2px;
 }
 
 .agent-history-markdown li + li {
-  margin-top: 0.28rem;
+  margin-top: 1px;
 }
 
 .agent-history-markdown blockquote {
@@ -11859,10 +11858,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-reasoning .agent-history-body,
 .agent-history-plan .agent-history-body,
 .agent-history-diff .agent-history-body {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--agent-lens-machine-border);
-  background: var(--agent-lens-machine-surface);
+  padding: 0;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: color-mix(in srgb, var(--text-primary) 88%, transparent);
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-size: 0.82rem;

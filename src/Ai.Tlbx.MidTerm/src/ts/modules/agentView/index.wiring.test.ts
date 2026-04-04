@@ -62,6 +62,20 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('fold up to 12 tail lines');
   });
 
+  it('keeps machine-oriented history rows flat and dense', () => {
+    expect(css).toContain('.agent-history-tool .agent-history-body,');
+    expect(css).toContain('.agent-history-diff .agent-history-body {');
+    expect(css).toContain('border: 0;');
+    expect(css).toContain('border-radius: 0;');
+    expect(css).toContain('box-shadow: none;');
+    expect(css).toContain('.agent-history-markdown p,');
+    expect(css).toContain('margin-bottom: 2px;');
+    expect(css).toContain('.agent-history-markdown li + li {');
+    expect(css).toContain('margin-top: 1px;');
+    expect(lensDesign).toContain('Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows.');
+    expect(lensDesign).toContain('Markdown paragraph and list spacing should be dense and terminal-like.');
+  });
+
   it('styles diff rows as Edited path headers with tight colored hunk blocks', () => {
     expect(css).toContain('.agent-history-diff-line-file {');
     expect(css).toContain('.agent-history-diff-line-add {');
@@ -91,6 +105,8 @@ describe('agent view Lens wiring', () => {
     expect(source).toContain('agent-history-busy-label-letter');
     expect(source).toContain('agent-history-busy-elapsed');
     expect(source).toContain('(Press Esc to cancel)');
+    expect(css).toContain('.agent-history-busy-bubble {');
+    expect(css).toContain('justify-content: flex-start;');
     expect(css).toContain('.agent-history-busy-label-letter {');
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('.agent-history-busy-cancel {');
@@ -98,6 +114,7 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
     expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
     expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
+    expect(lensDesign).toContain('hint immediately after the animated label');
     expect(lensDesign).toContain('append one muted inline duration note');
   });
 });
