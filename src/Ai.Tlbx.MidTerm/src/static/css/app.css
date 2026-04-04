@@ -598,6 +598,13 @@ body.has-app-background::after {
   pointer-events: none;
 }
 
+@media (max-width: 768px) {
+  body.hide-app-background-on-mobile::before,
+  body.hide-app-background-on-mobile::after {
+    content: none;
+  }
+}
+
 .terminal-page {
   display: flex;
   height: 100%;

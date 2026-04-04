@@ -4811,6 +4811,7 @@
           "terminalColorScheme",
           "terminalColorSchemes",
           "backgroundImageEnabled",
+          "hideBackgroundImageOnMobile",
           "backgroundImageFileName",
           "backgroundImageRevision",
           "backgroundKenBurnsEnabled",
@@ -4933,6 +4934,9 @@
             }
           },
           "backgroundImageEnabled": {
+            "type": "boolean"
+          },
+          "hideBackgroundImageOnMobile": {
             "type": "boolean"
           },
           "backgroundImageFileName": {

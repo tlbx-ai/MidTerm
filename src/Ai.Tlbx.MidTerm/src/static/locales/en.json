@@ -313,6 +313,7 @@
   "settings.appearance.backgroundNone": "No image uploaded",
   "settings.appearance.backgroundHint": "Uploads a PNG or JPG and stores it beside the MidTerm logs.",
   "settings.appearance.backgroundEnabled": "Show Background Image",
+  "settings.appearance.backgroundHideOnMobile": "Hide Background On Mobile",
   "settings.appearance.backgroundKenBurns": "Animated Ken Burns",
   "settings.appearance.backgroundKenBurnsZoom": "Ken Burns Zoom",
   "settings.appearance.backgroundKenBurnsSpeed": "Ken Burns Speed",

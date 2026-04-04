@@ -6,6 +6,7 @@
 
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
+import { isMobileBackgroundSuppressed, shouldRenderBackgroundImage } from './backgroundVisibility';
 
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
@@ -137,11 +138,7 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     );
   }
 
-  const hasImage = Boolean(
-    settings.backgroundImageEnabled &&
-    settings.backgroundImageFileName &&
-    settings.backgroundImageRevision > 0,
-  );
+  const hasImage = shouldRenderBackgroundImage(settings);
 
   root.style.setProperty(
     '--app-background-image',
@@ -152,6 +149,10 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
   root.style.setProperty('--app-background-position', 'center center');
   syncBackgroundKenBurnsEffect(root, settings, hasImage);
   document.body.classList.toggle('has-app-background', hasImage);
+  document.body.classList.toggle(
+    'hide-app-background-on-mobile',
+    isMobileBackgroundSuppressed(settings),
+  );
   document.body.classList.toggle('opaque-terminal-surfaces', terminalTransparency === 0);
 }
 

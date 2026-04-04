@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { MidTermSettingsPublic } from '../../api/types';
 import { getEffectiveXtermThemeForSettings } from './themes';
+
+const originalWindow = globalThis.window;
+const originalNavigator = globalThis.navigator;
 
 function createSettings(
   partial: Partial<
@@ -13,6 +16,7 @@ function createSettings(
       | 'terminalTransparency'
       | 'terminalCellBackgroundTransparency'
       | 'backgroundImageEnabled'
+      | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
     >
   >,
@@ -25,12 +29,42 @@ function createSettings(
     terminalTransparency: 0,
     terminalCellBackgroundTransparency: 0,
     backgroundImageEnabled: false,
+    hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
     ...partial,
   } as MidTermSettingsPublic;
 }
 
 describe('themes', () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        matchMedia: () => ({ matches: false }),
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { maxTouchPoints: 0 },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      value: originalWindow,
+      configurable: true,
+      writable: true,
+    });
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: originalNavigator,
+      configurable: true,
+      writable: true,
+    });
+  });
   it('uses terminal transparency for the xterm background alpha', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
@@ -208,6 +242,23 @@ describe('themes', () => {
     );
 
     expect(theme.background).toBe('rgba(12, 12, 12, 0.400)');
+    expect(theme.red).toBe('#FF4055');
+  });
+
+  it('treats the wallpaper as disabled on mobile when mobile wallpaper suppression is enabled', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: () => ({ matches: true }),
+    });
+
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        hideBackgroundImageOnMobile: true,
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+      }),
+    );
+
+    expect(theme.background).toBe('#0C0C0C');
     expect(theme.red).toBe('#FF4055');
   });
 });

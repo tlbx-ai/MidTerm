@@ -53,6 +53,7 @@ const originalDocument = globalThis.document;
 const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
 const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
 const originalWindow = globalThis.window;
+const originalNavigator = globalThis.navigator;
 
 function createSettings(
   partial: Partial<
@@ -62,6 +63,7 @@ function createSettings(
       | 'uiTransparency'
       | 'terminalTransparency'
       | 'backgroundImageEnabled'
+      | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
       | 'backgroundImageRevision'
       | 'backgroundKenBurnsEnabled'
@@ -75,6 +77,7 @@ function createSettings(
     uiTransparency: 0,
     terminalTransparency: 0,
     backgroundImageEnabled: false,
+    hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
     backgroundImageRevision: 0,
     backgroundKenBurnsEnabled: false,
@@ -124,12 +127,19 @@ beforeEach(() => {
     value: {
       innerWidth: 1280,
       innerHeight: 720,
+      matchMedia: () => ({ matches: false }),
       addEventListener: (eventName: string, listener: () => void) => {
         if (eventName === 'resize') {
           resizeListeners.push(listener);
         }
       },
     },
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { maxTouchPoints: 0 },
     configurable: true,
     writable: true,
   });
@@ -171,6 +181,12 @@ afterEach(() => {
 
   Object.defineProperty(globalThis, 'window', {
     value: originalWindow,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: originalNavigator,
     configurable: true,
     writable: true,
   });
@@ -286,6 +302,27 @@ describe('backgroundAppearance', () => {
       'translate3d(0.00px, 0.00px, 0) scale(1.000)',
     );
     expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
+  });
+
+  it('suppresses the background image on mobile when the mobile wallpaper toggle is enabled', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: () => ({ matches: true }),
+    });
+
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        hideBackgroundImageOnMobile: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--app-background-image')).toBe('none');
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
+    expect(bodyClassList.contains('has-app-background')).toBe(false);
+    expect(bodyClassList.contains('hide-app-background-on-mobile')).toBe(true);
   });
 
   it('rebuilds the generated animation when the viewport changes', () => {

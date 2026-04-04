@@ -10,6 +10,7 @@ import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
+import { shouldRenderBackgroundImage } from './backgroundVisibility';
 import { getTerminalThemeByName } from './terminalColorSchemes';
 
 const ANSI_COLOR_KEYS = [
@@ -110,10 +111,7 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
   const theme: TerminalTheme = Object.assign({}, baseTheme);
   const terminalBackgroundAlpha = getEffectiveTerminalBackgroundAlpha(settings);
   const cellBackgroundAlpha = getEffectiveTerminalCellBackgroundAlpha(settings);
-  const hasWallpaper =
-    settings !== null &&
-    settings.backgroundImageEnabled &&
-    settings.backgroundImageFileName !== null;
+  const hasWallpaper = shouldRenderBackgroundImage(settings);
 
   if (hasWallpaper || terminalBackgroundAlpha < 1) {
     theme.background = withAlpha(theme.background, terminalBackgroundAlpha);

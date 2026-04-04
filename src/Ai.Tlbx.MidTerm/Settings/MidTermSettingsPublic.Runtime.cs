@@ -51,6 +51,7 @@ public sealed partial class MidTermSettingsPublic
                 : "auto",
             TerminalColorSchemes = terminalColorSchemes,
             BackgroundImageEnabled = settings.BackgroundImageEnabled,
+            HideBackgroundImageOnMobile = settings.HideBackgroundImageOnMobile,
             BackgroundImageFileName = settings.BackgroundImageFileName,
             BackgroundImageRevision = settings.BackgroundImageRevision,
             BackgroundKenBurnsEnabled = settings.BackgroundKenBurnsEnabled,
@@ -134,6 +135,7 @@ public sealed partial class MidTermSettingsPublic
             ? terminalColorScheme
             : "auto";
         settings.BackgroundImageEnabled = BackgroundImageEnabled;
+        settings.HideBackgroundImageOnMobile = HideBackgroundImageOnMobile;
         settings.BackgroundKenBurnsEnabled = BackgroundKenBurnsEnabled;
         settings.BackgroundKenBurnsZoomPercent = Math.Clamp(
             BackgroundKenBurnsZoomPercent,

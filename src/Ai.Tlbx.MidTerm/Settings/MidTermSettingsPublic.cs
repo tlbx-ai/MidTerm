@@ -35,6 +35,7 @@ public sealed partial class MidTermSettingsPublic
     public string TerminalColorScheme { get; set; } = "auto";
     public List<TerminalColorSchemeDefinition> TerminalColorSchemes { get; set; } = [];
     public bool BackgroundImageEnabled { get; set; } = false;
+    public bool HideBackgroundImageOnMobile { get; set; } = true;
     public string? BackgroundImageFileName { get; set; }
     public long BackgroundImageRevision { get; set; } = 0;
     public bool BackgroundKenBurnsEnabled { get; set; } = false;

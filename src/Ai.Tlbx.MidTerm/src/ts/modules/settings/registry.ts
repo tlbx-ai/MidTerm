@@ -219,6 +219,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'immediate',
   }),
+  controlEntry(
+    'hideBackgroundImageOnMobile',
+    'setting-hide-background-image-on-mobile',
+    'checkbox',
+    true,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   readonlyEntry('backgroundImageFileName', {
     storage: 'settings.json',
     validation: 'endpoint-managed metadata',

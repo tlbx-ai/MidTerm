@@ -4061,6 +4061,7 @@ export interface components {
       terminalColorScheme: string;
       terminalColorSchemes: components['schemas']['TerminalColorSchemeDefinition'][];
       backgroundImageEnabled: boolean;
+      hideBackgroundImageOnMobile: boolean;
       backgroundImageFileName: null | string;
       /** Format: int64 */
       backgroundImageRevision: number;
