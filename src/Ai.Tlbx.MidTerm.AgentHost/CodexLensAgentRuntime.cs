@@ -606,6 +606,67 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 break;
             }
 
+            case "thread/status/changed":
+            case "thread/archived":
+            case "thread/unarchived":
+            case "thread/closed":
+            case "thread/compacted":
+            {
+                var providerThreadId = GetString(payload, "thread", "id") ?? GetString(payload, "threadId") ?? _providerThreadId;
+                if (!string.IsNullOrWhiteSpace(providerThreadId))
+                {
+                    _providerThreadId = providerThreadId;
+                }
+
+                var threadState = ResolveCodexThreadState(method, payload);
+                _emit(CreateEvent("thread.state.changed", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.ThreadState = new LensPulseThreadStatePayload
+                    {
+                        State = threadState.State,
+                        StateLabel = threadState.StateLabel,
+                        ProviderThreadId = providerThreadId
+                    };
+                    if (!string.IsNullOrWhiteSpace(threadState.Detail))
+                    {
+                        lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                        {
+                            Message = threadState.Message,
+                            Detail = threadState.Detail
+                        };
+                    }
+                }));
+                break;
+            }
+
+            case "thread/name/updated":
+            {
+                var threadName = GetString(payload, "threadName") ?? GetString(payload, "thread", "name");
+                _emit(CreateEvent("thread.metadata.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = "Codex thread metadata updated.",
+                        Detail = string.IsNullOrWhiteSpace(threadName) ? "The thread metadata changed." : $"Renamed to {threadName.Trim()}."
+                    };
+                }));
+                break;
+            }
+
+            case "thread/tokenUsage/updated":
+            {
+                var detail = BuildCodexTokenUsageDetail(payload);
+                _emit(CreateEvent("thread.token-usage.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = "Codex context window updated.",
+                        Detail = detail
+                    };
+                }));
+                break;
+            }
+
             case "turn/started":
             {
                 var turnId = ResolveTurnId(payload);
@@ -832,6 +893,117 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 break;
             }
 
+            case "codex/event/task_started":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = GetString(payload, "id") ?? turnId;
+                if (string.IsNullOrWhiteSpace(taskId))
+                {
+                    break;
+                }
+
+                var taskType = GetString(payload, "msg", "collaboration_mode_kind");
+                var itemType = ResolveCodexTaskItemType(taskType);
+                var title = itemType == "plan" ? "Planning" : "Reasoning";
+                var detail = GetString(payload, "msg", "text")
+                             ?? GetString(payload, "msg", "summary")
+                             ?? GetString(payload, "msg", "last_agent_message")
+                             ?? "Codex started a task.";
+                _emit(CreateEvent("item.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+                {
+                    lensEvent.Item = new LensPulseItemPayload
+                    {
+                        ItemType = itemType,
+                        Status = "in_progress",
+                        Title = title,
+                        Detail = detail
+                    };
+                }));
+                break;
+            }
+
+            case "codex/event/agent_reasoning":
+            {
+                var taskId = GetString(payload, "id") ?? ResolveTurnId(payload);
+                var detail = GetString(payload, "msg", "text");
+                if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(detail))
+                {
+                    break;
+                }
+
+                _emit(CreateEvent("item.updated", ResolveTurnId(payload), taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+                {
+                    lensEvent.Item = new LensPulseItemPayload
+                    {
+                        ItemType = "reasoning",
+                        Status = "in_progress",
+                        Title = "Reasoning",
+                        Detail = detail
+                    };
+                }));
+                break;
+            }
+
+            case "codex/event/task_complete":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = GetString(payload, "id") ?? turnId;
+                var taskType = GetString(payload, "msg", "collaboration_mode_kind");
+                var itemType = ResolveCodexTaskItemType(taskType);
+                var summary = GetString(payload, "msg", "last_agent_message")
+                              ?? GetString(payload, "msg", "text")
+                              ?? "Codex completed a task.";
+                if (!string.IsNullOrWhiteSpace(taskId))
+                {
+                    _emit(CreateEvent("item.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+                    {
+                        lensEvent.Item = new LensPulseItemPayload
+                        {
+                            ItemType = itemType,
+                            Status = "completed",
+                            Title = itemType == "plan" ? "Plan completed" : "Reasoning completed",
+                            Detail = summary
+                        };
+                    }));
+                }
+
+                var proposedPlan = ExtractProposedPlanMarkdown(summary);
+                if (!string.IsNullOrWhiteSpace(proposedPlan))
+                {
+                    _emit(CreateEvent("plan.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+                    {
+                        lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                        {
+                            PlanMarkdown = proposedPlan
+                        };
+                    }));
+                }
+
+                break;
+            }
+
+            case "codex/event/reasoning_content_delta":
+            {
+                var delta = GetString(payload, "msg", "delta");
+                if (string.IsNullOrWhiteSpace(delta))
+                {
+                    break;
+                }
+
+                var streamKind = Traverse(payload, "msg", "summary_index") is JsonElement { ValueKind: JsonValueKind.Number }
+                    ? "reasoning_summary_text"
+                    : "reasoning_text";
+                _emit(CreateEvent("content.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.eventmsg", method, payload, lensEvent =>
+                {
+                    lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+                    {
+                        StreamKind = streamKind,
+                        Delta = delta
+                    };
+                }));
+                break;
+            }
+
             case "item/completed":
             {
                 var turnId = ResolveTurnId(payload);
@@ -870,6 +1042,124 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                         Status = "completed",
                         Title = title,
                         Detail = BuildCodexItemDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "model/rerouted":
+            {
+                var fromModel = GetString(payload, "fromModel") ?? "unknown";
+                var toModel = GetString(payload, "toModel") ?? "unknown";
+                var reason = GetString(payload, "reason");
+                _emit(CreateEvent("model.rerouted", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = $"Codex rerouted the model from {fromModel} to {toModel}.",
+                        Detail = reason
+                    };
+                }));
+                break;
+            }
+
+            case "deprecationNotice":
+            {
+                _emit(CreateEvent("deprecation.notice", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = GetString(payload, "summary") ?? "Codex reported a deprecation notice.",
+                        Detail = GetString(payload, "details")
+                    };
+                }));
+                break;
+            }
+
+            case "configWarning":
+            {
+                _emit(CreateEvent("config.warning", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = GetString(payload, "summary") ?? "Codex reported a configuration warning.",
+                        Detail = JoinNonEmpty(
+                            GetString(payload, "details"),
+                            GetString(payload, "path"))
+                    };
+                }));
+                break;
+            }
+
+            case "account/updated":
+            {
+                _emit(CreateEvent("account.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = "Codex account details updated.",
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "account/rateLimits/updated":
+            {
+                _emit(CreateEvent("account.rate-limits.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = "Codex rate limits updated.",
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "mcpServer/oauthLogin/completed":
+            {
+                var success = GetBoolean(payload, "success");
+                var name = GetString(payload, "name");
+                var error = GetString(payload, "error");
+                _emit(CreateEvent("mcp.oauth.completed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = success ? "MCP sign-in completed." : "MCP sign-in failed.",
+                        Detail = JoinNonEmpty(name, error)
+                    };
+                }));
+                break;
+            }
+
+            case "thread/realtime/started":
+            case "thread/realtime/itemAdded":
+            case "thread/realtime/outputAudio/delta":
+            case "thread/realtime/error":
+            case "thread/realtime/closed":
+            {
+                _emit(CreateEvent(MapRealtimeEventType(method), ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = HumanizeRealtimeEvent(method),
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "error":
+            {
+                var message = GetString(payload, "error", "message") ?? "Codex runtime error";
+                var willRetry = GetBoolean(payload, "willRetry");
+                _emit(CreateEvent(willRetry ? "runtime.warning" : "runtime.error", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    {
+                        Message = message,
+                        Detail = willRetry ? "Codex reported that it will retry." : message
                     };
                 }));
                 break;
@@ -1990,6 +2280,132 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return builder.ToString().Trim();
     }
 
+    private static string? ExtractProposedPlanMarkdown(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        const string startTag = "<proposed_plan>";
+        const string endTag = "</proposed_plan>";
+        var startIndex = value.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+        if (startIndex < 0)
+        {
+            return null;
+        }
+
+        startIndex += startTag.Length;
+        var endIndex = value.IndexOf(endTag, startIndex, StringComparison.OrdinalIgnoreCase);
+        if (endIndex < 0)
+        {
+            return null;
+        }
+
+        var extracted = value[startIndex..endIndex].Trim();
+        return extracted.Length == 0 ? null : extracted;
+    }
+
+    private static string ResolveCodexTaskItemType(string? taskType)
+    {
+        return string.Equals(taskType, "plan", StringComparison.OrdinalIgnoreCase)
+            ? "plan"
+            : "reasoning";
+    }
+
+    private static (string State, string StateLabel, string Message, string? Detail) ResolveCodexThreadState(string method, JsonElement payload)
+    {
+        var state = method switch
+        {
+            "thread/archived" => "archived",
+            "thread/unarchived" => "active",
+            "thread/closed" => "closed",
+            "thread/compacted" => "compacted",
+            _ => GetString(payload, "thread", "state") ?? GetString(payload, "state") ?? "active"
+        };
+
+        return state switch
+        {
+            "idle" => ("idle", "Idle", "Codex thread is idle.", null),
+            "archived" => ("archived", "Archived", "Codex thread archived.", null),
+            "closed" => ("closed", "Closed", "Codex thread closed.", null),
+            "compacted" => ("compacted", "Compacted", "Codex compacted the thread context.", null),
+            "error" => ("error", "Error", "Codex thread entered an error state.", BuildCompactJsonDetail(payload)),
+            _ => ("active", "Active", "Codex thread is active.", null)
+        };
+    }
+
+    private static string BuildCodexTokenUsageDetail(JsonElement payload)
+    {
+        var usage = GetObject(payload, "tokenUsage") ?? payload;
+        var total = GetLong(usage, "total", "total_tokens")
+                    ?? GetLong(usage, "total", "totalTokens")
+                    ?? GetLong(usage, "last", "total_tokens")
+                    ?? GetLong(usage, "last", "totalTokens");
+        var input = GetLong(usage, "last", "input_tokens") ?? GetLong(usage, "last", "inputTokens");
+        var output = GetLong(usage, "last", "output_tokens") ?? GetLong(usage, "last", "outputTokens");
+        var max = GetLong(usage, "model_context_window") ?? GetLong(usage, "modelContextWindow");
+
+        var parts = new List<string>();
+        if (total.HasValue)
+        {
+            parts.Add($"Used {total.Value.ToString(CultureInfo.InvariantCulture)} tokens");
+        }
+
+        if (max.HasValue)
+        {
+            parts.Add($"window {max.Value.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        if (input.HasValue || output.HasValue)
+        {
+            parts.Add($"last turn in/out {input.GetValueOrDefault().ToString(CultureInfo.InvariantCulture)}/{output.GetValueOrDefault().ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        return parts.Count == 0 ? BuildCompactJsonDetail(payload) ?? "Token usage changed." : string.Join(", ", parts);
+    }
+
+    private static string? BuildCompactJsonDetail(JsonElement payload)
+    {
+        var raw = payload.ValueKind == JsonValueKind.Undefined ? null : payload.GetRawText();
+        return string.IsNullOrWhiteSpace(raw) ? null : raw;
+    }
+
+    private static string? JoinNonEmpty(params string?[] values)
+    {
+        var filtered = values
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value!.Trim())
+            .ToList();
+        return filtered.Count == 0 ? null : string.Join(" | ", filtered);
+    }
+
+    private static string MapRealtimeEventType(string method)
+    {
+        return method switch
+        {
+            "thread/realtime/started" => "thread.realtime.started",
+            "thread/realtime/itemAdded" => "thread.realtime.item-added",
+            "thread/realtime/outputAudio/delta" => "thread.realtime.audio.delta",
+            "thread/realtime/error" => "thread.realtime.error",
+            "thread/realtime/closed" => "thread.realtime.closed",
+            _ => "runtime.warning"
+        };
+    }
+
+    private static string HumanizeRealtimeEvent(string method)
+    {
+        return method switch
+        {
+            "thread/realtime/started" => "Codex realtime session started.",
+            "thread/realtime/itemAdded" => "Codex realtime item added.",
+            "thread/realtime/outputAudio/delta" => "Codex realtime audio updated.",
+            "thread/realtime/error" => "Codex realtime session reported an error.",
+            "thread/realtime/closed" => "Codex realtime session closed.",
+            _ => "Codex realtime update."
+        };
+    }
+
     private static string NormalizeCodexItemType(string? value)
     {
         var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
@@ -2154,6 +2570,22 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         var current = Traverse(element, path);
         return current is { ValueKind: JsonValueKind.True } || current is { ValueKind: JsonValueKind.False } value && value.GetBoolean();
+    }
+
+    private static long? GetLong(JsonElement element, params string[] path)
+    {
+        var current = Traverse(element, path);
+        if (current is not JsonElement value)
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt64(out var number) => number,
+            JsonValueKind.String when long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
     }
 
     private static JsonElement? GetObject(JsonElement element, params string[] path)

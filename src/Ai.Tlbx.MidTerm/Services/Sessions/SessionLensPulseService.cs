@@ -1291,6 +1291,13 @@ public sealed partial class SessionLensPulseService
                 entry.Body = MergeProgressiveMessage(entry.Body, lensEvent.Item.Detail);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
+            case "reasoning":
+            case "plan":
+                entry.Title = PreferMeaningfulText(entry.Title, lensEvent.Item.Title);
+                entry.Body = MergeTranscriptBody(entry.Body, lensEvent.Item.Detail);
+                entry.Streaming = !IsTerminalStatus(item.Status);
+                item.Detail = entry.Body;
+                break;
             default:
                 var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
                 if (normalizedType == "command_execution")
@@ -1395,18 +1402,13 @@ public sealed partial class SessionLensPulseService
             state.Notices.RemoveRange(0, state.Notices.Count - 64);
         }
 
-        if (lensEvent.Type is not "runtime.error" and not "runtime.warning")
-        {
-            return;
-        }
-
         var entry = EnsureTranscriptEntry(
             state,
             $"runtime:{lensEvent.EventId}",
-            lensEvent.Type == "runtime.error" ? "notice" : "system",
+            RuntimeTranscriptKindFromEventType(lensEvent.Type),
             lensEvent.CreatedAt);
-        entry.Status = lensEvent.Type;
-        entry.Title = lensEvent.Type == "runtime.error" ? "Error" : "Runtime";
+        entry.Status = RuntimeTranscriptStatusFromEventType(lensEvent.Type);
+        entry.Title = RuntimeTranscriptTitleFromEventType(lensEvent.Type);
         entry.Body = string.Join(
             "\n\n",
             new[] { lensEvent.RuntimeMessage.Message, lensEvent.RuntimeMessage.Detail }
@@ -1734,8 +1736,7 @@ public sealed partial class SessionLensPulseService
             historyIds.Add($"request:{ResolveRequestId(lensEvent)}");
         }
 
-        if (lensEvent.RuntimeMessage is not null &&
-            lensEvent.Type is "runtime.error" or "runtime.warning")
+        if (lensEvent.RuntimeMessage is not null)
         {
             historyIds.Add($"runtime:{lensEvent.EventId}");
         }
@@ -1873,7 +1874,68 @@ public sealed partial class SessionLensPulseService
             return "user";
         }
 
+        if (normalized.Contains("reasoning", StringComparison.Ordinal) ||
+            normalized.Contains("task", StringComparison.Ordinal))
+        {
+            return "reasoning";
+        }
+
+        if (normalized.Contains("plan", StringComparison.Ordinal))
+        {
+            return "plan";
+        }
+
         return "tool";
+    }
+
+    private static string RuntimeTranscriptKindFromEventType(string? eventType)
+    {
+        return eventType switch
+        {
+            "runtime.error" => "notice",
+            "runtime.warning" => "system",
+            "config.warning" => "notice",
+            "deprecation.notice" => "notice",
+            _ => "system"
+        };
+    }
+
+    private static string RuntimeTranscriptStatusFromEventType(string? eventType)
+    {
+        return eventType switch
+        {
+            "runtime.error" => "runtime.error",
+            "runtime.warning" => "runtime.warning",
+            "config.warning" => "warning",
+            "deprecation.notice" => "warning",
+            "mcp.oauth.completed" => "completed",
+            _ => "info"
+        };
+    }
+
+    private static string RuntimeTranscriptTitleFromEventType(string? eventType)
+    {
+        return eventType switch
+        {
+            "runtime.error" => "Error",
+            "runtime.warning" => "Runtime",
+            "thread.metadata.updated" => "Thread updated",
+            "thread.token-usage.updated" => "Context window",
+            "model.rerouted" => "Model rerouted",
+            "config.warning" => "Configuration warning",
+            "deprecation.notice" => "Deprecation notice",
+            "account.updated" => "Account updated",
+            "account.rate-limits.updated" => "Rate limits updated",
+            "mcp.oauth.completed" => "MCP sign-in",
+            "thread.realtime.started" => "Realtime started",
+            "thread.realtime.item-added" => "Realtime item",
+            "thread.realtime.audio.delta" => "Realtime audio",
+            "thread.realtime.error" => "Realtime error",
+            "thread.realtime.closed" => "Realtime closed",
+            "auth.status" => "Authentication",
+            "session.exited" => "Session exited",
+            _ => "System"
+        };
     }
 
     private static string? TranscriptKindFromStream(string streamKind)

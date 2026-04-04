@@ -1218,6 +1218,106 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_ProjectsInformationalRuntimeNoticesIntoTranscriptHistory()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "e-runtime-info",
+            SessionId = "s-runtime-info",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = ParseUtc("2026-04-04T10:00:00Z"),
+            Type = "model.rerouted",
+            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            {
+                Message = "Codex rerouted the model from gpt-5.4 to gpt-5.4-mini.",
+                Detail = "Service tier fallback"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-runtime-info");
+
+        Assert.NotNull(snapshot);
+        var notice = Assert.Single(snapshot!.Notices);
+        Assert.Equal("model.rerouted", notice.Type);
+
+        var transcriptEntry = Assert.Single(snapshot.Transcript);
+        Assert.Equal("system", transcriptEntry.Kind);
+        Assert.Equal("Model rerouted", transcriptEntry.Title);
+        Assert.Contains("rerouted the model", transcriptEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("Service tier fallback", transcriptEntry.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetSnapshot_RendersReasoningAndPlanItemsUsingDedicatedTranscriptKinds()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "task-start",
+            SessionId = "s-task",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "task-1",
+            CreatedAt = ParseUtc("2026-04-04T10:10:00Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "reasoning",
+                Status = "in_progress",
+                Title = "Reasoning",
+                Detail = "Inspecting the workspace."
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "task-complete",
+            SessionId = "s-task",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "task-1",
+            CreatedAt = ParseUtc("2026-04-04T10:10:02Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "reasoning",
+                Status = "completed",
+                Title = "Reasoning completed",
+                Detail = "Workspace inspection complete."
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "plan-item",
+            SessionId = "s-task",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "plan-1",
+            CreatedAt = ParseUtc("2026-04-04T10:10:03Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "plan",
+                Status = "completed",
+                Title = "Plan completed",
+                Detail = "1. Inspect\n2. Patch\n3. Verify"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-task");
+
+        Assert.NotNull(snapshot);
+        Assert.Contains(snapshot!.Transcript, entry => entry.Kind == "reasoning" && entry.ItemId == "task-1");
+        Assert.Contains(snapshot.Transcript, entry => entry.Kind == "plan" && entry.ItemId == "plan-1");
+    }
+
+    [Fact]
     public void HasHistory_TracksWhetherCanonicalLensEventsExist()
     {
         var service = new SessionLensPulseService();
@@ -1240,4 +1340,3 @@ public sealed class SessionLensPulseServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
