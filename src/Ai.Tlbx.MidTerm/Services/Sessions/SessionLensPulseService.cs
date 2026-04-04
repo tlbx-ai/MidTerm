@@ -270,6 +270,19 @@ public sealed partial class SessionLensPulseService
         }
     }
 
+    public SessionLensHeatSnapshot GetHeatSnapshot(string sessionId)
+    {
+        if (!TryGetLog(sessionId, out var log))
+        {
+            return SessionLensHeatSnapshot.Cold;
+        }
+
+        lock (log.SyncRoot)
+        {
+            return BuildHeatSnapshot(log.State);
+        }
+    }
+
     public LensPulseSnapshotResponse? GetSnapshotWindow(string sessionId, int? startIndex = null, int? count = null)
     {
         if (!TryGetLog(sessionId, out var log))
@@ -628,6 +641,57 @@ public sealed partial class SessionLensPulseService
                 .OrderByDescending(notice => notice.CreatedAt)
                 .Select(CloneRuntimeNotice)
                 .ToList()
+        };
+    }
+
+    private static SessionLensHeatSnapshot BuildHeatSnapshot(LensConversationState state)
+    {
+        if (!ShouldSurfaceWorkingHeat(state))
+        {
+            return SessionLensHeatSnapshot.Cold;
+        }
+
+        return new SessionLensHeatSnapshot
+        {
+            CurrentHeat = 1,
+            LastActivityAt = state.Session.LastEventAt ?? state.CurrentTurn.StartedAt
+        };
+    }
+
+    private static bool ShouldSurfaceWorkingHeat(LensConversationState state)
+    {
+        if (state.Requests.Values.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (IsWorkingTurnState(state.CurrentTurn.State))
+        {
+            return true;
+        }
+
+        return string.IsNullOrWhiteSpace(state.CurrentTurn.State) &&
+               IsWorkingSessionState(state.Session.State);
+    }
+
+    private static bool IsWorkingTurnState(string? state)
+    {
+        return state?.Trim().ToLowerInvariant() switch
+        {
+            "running" => true,
+            "in_progress" => true,
+            "started" => true,
+            _ => false
+        };
+    }
+
+    private static bool IsWorkingSessionState(string? state)
+    {
+        return state?.Trim().ToLowerInvariant() switch
+        {
+            "starting" => true,
+            "running" => true,
+            _ => false
         };
     }
 

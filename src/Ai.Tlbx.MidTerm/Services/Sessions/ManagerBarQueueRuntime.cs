@@ -16,15 +16,18 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
     private const int SessionTextSubmitDelayMs = 200;
 
     private readonly TtyHostSessionManager _sessionManager;
+    private readonly SessionHeatService _sessionHeat;
     private readonly SessionTelemetryService _sessionTelemetry;
     private readonly SessionLensRuntimeService _lensRuntime;
 
     public ManagerBarQueueRuntime(
         TtyHostSessionManager sessionManager,
+        SessionHeatService sessionHeat,
         SessionTelemetryService sessionTelemetry,
         SessionLensRuntimeService lensRuntime)
     {
         _sessionManager = sessionManager;
+        _sessionHeat = sessionHeat;
         _sessionTelemetry = sessionTelemetry;
         _lensRuntime = lensRuntime;
     }
@@ -43,7 +46,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
 
     public double GetCurrentHeat(string sessionId)
     {
-        return _sessionTelemetry.GetSnapshot(sessionId).CurrentHeat;
+        return _sessionHeat.GetSnapshot(sessionId).CurrentHeat;
     }
 
     public async Task SendPromptAsync(string sessionId, string prompt, CancellationToken cancellationToken)

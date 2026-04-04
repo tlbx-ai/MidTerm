@@ -11,20 +11,20 @@ public sealed class SessionSupervisorService
     public const string BlockedState = "blocked";
     public const string DeadState = "dead";
 
-    private readonly SessionTelemetryService _telemetryService;
+    private readonly SessionHeatService _heatService;
     private readonly AiCliProfileService _profileService;
 
     public SessionSupervisorService(
-        SessionTelemetryService telemetryService,
+        SessionHeatService heatService,
         AiCliProfileService profileService)
     {
-        _telemetryService = telemetryService;
+        _heatService = heatService;
         _profileService = profileService;
     }
 
     public SessionSupervisorInfoDto Describe(SessionInfoDto session)
     {
-        var telemetry = _telemetryService.GetSnapshot(session.Id);
+        var telemetry = _heatService.GetSnapshot(session.Id);
         var profile = _profileService.NormalizeProfile(null, session);
         var now = DateTimeOffset.UtcNow;
 
@@ -88,7 +88,7 @@ public sealed class SessionSupervisorService
     private string ResolveState(
         SessionInfoDto session,
         string profile,
-        SessionTelemetrySnapshot telemetry,
+        SessionHeatSnapshot telemetry,
         DateTimeOffset now)
     {
         if (!session.IsRunning)
@@ -128,7 +128,7 @@ public sealed class SessionSupervisorService
     private static int GetAttentionScore(
         SessionInfoDto session,
         string state,
-        SessionTelemetrySnapshot telemetry)
+        SessionHeatSnapshot telemetry)
     {
         var score = state switch
         {

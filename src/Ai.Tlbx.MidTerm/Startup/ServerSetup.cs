@@ -139,6 +139,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<SessionControlStateService>();
         builder.Services.AddSingleton<SessionLayoutStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
+        builder.Services.AddSingleton<SessionHeatService>();
         builder.Services.AddSingleton<IManagerBarQueueRuntime, ManagerBarQueueRuntime>();
         builder.Services.AddSingleton<ManagerBarQueueService>();
         builder.Services.AddSingleton<AiCliProfileService>();

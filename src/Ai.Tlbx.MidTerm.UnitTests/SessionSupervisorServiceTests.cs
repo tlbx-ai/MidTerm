@@ -1,4 +1,5 @@
 using System.Text;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -31,7 +32,7 @@ public sealed class SessionSupervisorServiceTests
     {
         var telemetry = new SessionTelemetryService();
         telemetry.RecordOutput("busy1", Encoding.UTF8.GetBytes("thinking..."));
-        var service = CreateService(telemetry);
+        var service = CreateService(telemetry: telemetry);
         var session = new SessionInfoDto
         {
             Id = "busy1",
@@ -51,7 +52,7 @@ public sealed class SessionSupervisorServiceTests
     {
         var telemetry = new SessionTelemetryService();
         telemetry.RecordInput("blocked1", 42);
-        var service = CreateService(telemetry);
+        var service = CreateService(telemetry: telemetry);
         var session = new SessionInfoDto
         {
             Id = "blocked1",
@@ -75,7 +76,7 @@ public sealed class SessionSupervisorServiceTests
         telemetry.RecordInput("blocked1", 5);
         telemetry.RecordOutput("busy1", Encoding.UTF8.GetBytes("working"));
 
-        var service = CreateService(telemetry);
+        var service = CreateService(telemetry: telemetry);
         var sessions = new[]
         {
             new SessionInfoDto
@@ -104,10 +105,52 @@ public sealed class SessionSupervisorServiceTests
         Assert.Equal(["blocked1", "busy1"], result.Sessions.Select(item => item.Session.Id).ToArray());
     }
 
-    private static SessionSupervisorService CreateService(SessionTelemetryService? telemetry = null)
+    [Fact]
+    public void Describe_ReturnsBusyTurnForRunningLensTurnWithoutTerminalBytes()
     {
-        return new SessionSupervisorService(
+        var lensPulse = new SessionLensPulseService();
+        lensPulse.Append(new LensPulseEvent
+        {
+            EventId = "lens-turn-1",
+            SessionId = "lens1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = DateTimeOffset.UtcNow.AddSeconds(-30),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload
+            {
+                Model = "gpt-5.4",
+                Effort = "medium"
+            }
+        });
+
+        var service = CreateService(lensPulse: lensPulse);
+        var session = new SessionInfoDto
+        {
+            Id = "lens1",
+            IsRunning = true,
+            ShellType = "pwsh",
+            ForegroundName = "codex"
+        };
+
+        var result = service.Describe(session);
+
+        Assert.Equal(SessionSupervisorService.BusyTurnState, result.State);
+        Assert.Equal(1, result.CurrentHeat);
+        Assert.NotNull(result.LastOutputAt);
+    }
+
+    private static SessionSupervisorService CreateService(
+        SessionTelemetryService? telemetry = null,
+        SessionLensPulseService? lensPulse = null)
+    {
+        var heatService = new SessionHeatService(
             telemetry ?? new SessionTelemetryService(),
+            lensPulse ?? new SessionLensPulseService());
+
+        return new SessionSupervisorService(
+            heatService,
             new AiCliProfileService());
     }
 }
