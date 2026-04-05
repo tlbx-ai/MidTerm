@@ -45,6 +45,16 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
     expect(css).toContain('.adaptive-footer-dock {');
     expect(css).toContain('.smart-input-tools-surface {');
+    expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
+  });
+
+  it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
+    expect(source).toContain('footerStatusHost.classList.add(\'adaptive-footer-status-sheet-open\');');
+    expect(source).toContain('dockedBar.appendChild(toolsSurface);');
+    expect(source).toContain('dockedBar.appendChild(inputRow);');
+    expect(css).toContain('margin: 0 0 8px;');
+    expect(css).toContain('.smart-input-lens-settings-sheet {');
+    expect(css).toContain('overflow: visible;');
   });
 
   it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {

@@ -13841,13 +13841,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-tools-surface {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 10px);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  width: 100%;
   min-height: 0;
+  margin: 0 0 8px;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
   border-radius: 14px;
@@ -13903,6 +13902,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding-top: 8px;
   color: var(--text-secondary);
   font-size: 0.82rem;
+}
+
+.adaptive-footer-status.adaptive-footer-status-sheet-open {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 
 .adaptive-footer-status-label,
@@ -13970,13 +13975,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-lens-settings-sheet {
-  position: absolute;
-  left: calc(8px + env(safe-area-inset-left, 0px));
-  right: calc(8px + env(safe-area-inset-right, 0px));
-  bottom: calc(100% + 10px);
-  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 8px;
   padding: 10px;
-  box-shadow: 0 16px 30px color-mix(in srgb, black 28%, transparent);
+  overflow: visible;
+  box-shadow: none;
 }
 
 .adaptive-footer-dock .manager-bar {
@@ -14142,17 +14147,6 @@ body.keyboard-visible .terminals-area {
 
   .adaptive-footer-dock .manager-bar:not(.hidden) {
     display: flex !important;
-  }
-
-  .smart-input-lens-settings-sheet {
-    left: calc(6px + env(safe-area-inset-left, 0px));
-    right: calc(6px + env(safe-area-inset-right, 0px));
-  }
-
-  .smart-input-tools-surface {
-    left: 0;
-    right: 0;
-    justify-content: flex-start;
   }
 
   .adaptive-footer-context .touch-controller.embedded .touch-bar-main {

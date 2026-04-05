@@ -339,8 +339,8 @@ function createDockedDOM(): void {
   dockedBar.className = 'smart-input-docked';
 
   const { inputRow, toolsStrip, toolsSurface } = createInputElements();
-  dockedBar.appendChild(inputRow);
   dockedBar.appendChild(toolsSurface);
+  dockedBar.appendChild(inputRow);
   footerPrimaryHost.appendChild(dockedBar);
 
   toolButtonsStrip = toolsStrip;
@@ -737,6 +737,7 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   footerStatusHost.replaceChildren();
+  footerStatusHost.classList.remove('adaptive-footer-status-sheet-open');
   footerStatusHost.toggleAttribute('hidden', !layoutState.showStatus);
   syncLensQuickSettingsControls();
 
@@ -795,7 +796,8 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   lensQuickSettingsRow.classList.add('smart-input-lens-settings-sheet');
   lensQuickSettingsRow.hidden = !lensQuickSettingsSheetOpen;
   if (lensQuickSettingsSheetOpen) {
-    footerDock?.appendChild(lensQuickSettingsRow);
+    footerStatusHost.classList.add('adaptive-footer-status-sheet-open');
+    footerStatusHost.appendChild(lensQuickSettingsRow);
   }
 }
 
@@ -875,6 +877,9 @@ function setToolsPanelOpen(open: boolean): void {
   const shouldOpen = open && canOpen;
   toolsPanel.hidden = !shouldOpen;
   toolsToggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  if (!footerResizeObserver) {
+    queueFooterReserveSync();
+  }
 }
 
 function setLensQuickSettingsSheetOpen(open: boolean): void {
@@ -885,6 +890,9 @@ function setLensQuickSettingsSheetOpen(open: boolean): void {
 
   if (lensQuickSettingsRow) {
     lensQuickSettingsRow.hidden = !open;
+  }
+  if (!footerResizeObserver) {
+    queueFooterReserveSync();
   }
 }
 
