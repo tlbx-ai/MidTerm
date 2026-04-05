@@ -4864,6 +4864,7 @@
           "fontWeight",
           "fontWeightBold",
           "customGlyphs",
+          "boxDrawingScale",
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
@@ -4971,6 +4972,10 @@
           },
           "customGlyphs": {
             "type": "boolean"
+          },
+          "boxDrawingScale": {
+            "type": "number",
+            "format": "double"
           },
           "cursorStyle": {
             "$ref": "#/components/schemas/CursorStyleSetting"

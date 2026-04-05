@@ -20,6 +20,7 @@ export const TERMINAL_FONT_WEIGHT_OPTIONS = [
 const FONT_LOAD_SAMPLE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const BUNDLED_TERMINAL_FONT_FAMILIES = [
   DEFAULT_TERMINAL_FONT_FAMILY,
+  'Cascadia Code SemiBold',
   'JetBrains Mono',
   'Terminus',
 ] as const;

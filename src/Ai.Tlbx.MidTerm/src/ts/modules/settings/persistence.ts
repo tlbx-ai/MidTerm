@@ -74,10 +74,28 @@ type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
 const MAX_BACKGROUND_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+const DEFAULT_BOX_DRAWING_SCALE = 1;
+
+type MidTermWindow = Window &
+  typeof globalThis & {
+    __MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__?: number;
+  };
+
+function normalizeBoxDrawingScale(value: number | null | undefined): number {
+  const numericValue =
+    typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_BOX_DRAWING_SCALE;
+  return Math.min(2, Math.max(0.5, Math.round(numericValue * 100) / 100));
+}
+
+function syncBoxDrawingScale(settingValue: number | null | undefined): void {
+  (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__ =
+    normalizeBoxDrawingScale(settingValue);
+}
 
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
   $currentSettings.set(settings);
   applyCssTheme(settings.theme);
+  syncBoxDrawingScale(settings.boxDrawingScale);
   applySettingsToTerminals();
   updateTabTitle();
   void setLocale(settings.language);
@@ -157,6 +175,11 @@ function setRegistryControlValue(
     return;
   }
 
+  if (entry.controlType === 'boolean-select') {
+    setElementValue(entry.controlId, (value ?? entry.fallbackValue) ? 'custom' : 'font');
+    return;
+  }
+
   const fallback = getRegistryFallbackValue(entry);
   setElementValue(entry.controlId, (value ?? fallback) as string | number);
 }
@@ -194,6 +217,8 @@ function readRegistryControlValue(
       return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
         ? rawValue
         : null;
+    case 'boolean-select':
+      return rawValue === 'custom';
     case 'textarea':
     case 'text':
     case 'select':
@@ -217,6 +242,7 @@ function buildSettingsUpdateFromRegistry(
     result.fontWeightBold,
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
   );
+  result.boxDrawingScale = normalizeBoxDrawingScale(result.boxDrawingScale);
 
   return result as MidTermSettingsUpdate;
 }
@@ -454,6 +480,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
   const lineHeight = settings.lineHeight;
   const letterSpacing = normalizeTerminalLetterSpacing(settings.letterSpacing);
+  const boxDrawingScale = normalizeBoxDrawingScale(settings.boxDrawingScale);
   const fontWeight = normalizeTerminalFontWeight(
     settings.fontWeight,
     DEFAULT_TERMINAL_FONT_WEIGHT,
@@ -466,6 +493,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   let hasFontChanges = false;
+  syncBoxDrawingScale(boxDrawingScale);
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
 
@@ -714,6 +742,16 @@ export function bindSettingsAutoSave(): void {
     lineHeightInput,
     (current, lineHeight) => ({ ...current, lineHeight }),
     (value) => Number.parseFloat(value),
+    signal,
+  );
+
+  const boxDrawingScaleInput = document.getElementById(
+    'setting-box-drawing-scale',
+  ) as HTMLInputElement | null;
+  bindTerminalFontPreview(
+    boxDrawingScaleInput,
+    (current, boxDrawingScale) => ({ ...current, boxDrawingScale }),
+    (value) => normalizeBoxDrawingScale(Number.parseFloat(value)),
     signal,
   );
 

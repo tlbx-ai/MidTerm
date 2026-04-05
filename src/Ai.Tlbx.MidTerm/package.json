@@ -7,6 +7,7 @@
     "npm": ">=11 <12"
   },
   "scripts": {
+    "postinstall": "patch-package",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src/ts/ vitest.config.ts --ignore-pattern \"**/*.test.ts\"",
     "lint:fix": "eslint src/ts/ vitest.config.ts --fix --ignore-pattern \"**/*.test.ts\"",
@@ -38,6 +39,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "openapi-typescript": "^7.13.0",
+    "patch-package": "^8.0.1",
     "prettier": "^3.8.1",
     "swagger-ui-dist": "^5.32.0",
     "typescript": "^5.9.3",

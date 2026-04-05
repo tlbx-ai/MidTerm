@@ -101,6 +101,10 @@ describe('settings persistence wiring', () => {
       "const fontSizeInput = document.getElementById('setting-font-size')",
     );
     expect(persistenceSource).toContain(
+      "const boxDrawingScaleInput = document.getElementById(",
+    );
+    expect(persistenceSource).toContain("'setting-box-drawing-scale'");
+    expect(persistenceSource).toContain(
       "const lineHeightInput = document.getElementById('setting-line-height')",
     );
     expect(persistenceSource).toContain('const letterSpacingInput = document.getElementById(');
@@ -109,7 +113,14 @@ describe('settings persistence wiring', () => {
   });
 
   it('limits bundled terminal font controls to distinct supported values', () => {
+    expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?min="0.5"/);
+    expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?max="2"/);
+    expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?step="0.05"/);
     expect(html).toMatch(/id="setting-letter-spacing"[\s\S]*?step="1"/);
+    expect(html).toContain(
+      '<option value="custom" data-i18n="settings.options.boxDrawingCustom">',
+    );
+    expect(html).toContain('<option value="font" data-i18n="settings.options.boxDrawingFont">');
     expect(html).toContain('<option value="normal" data-i18n="settings.options.fontWeightNormal">');
     expect(html).toContain('<option value="bold" data-i18n="settings.options.fontWeightBold">');
     expect(html).not.toContain('<option value="100">100</option>');
@@ -122,6 +133,12 @@ describe('settings persistence wiring', () => {
     );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'fontWeightBold')?.validation).toBe(
       'normal or bold',
+    );
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'customGlyphs')?.validation).toBe(
+      'boolean, rendered as custom or font box drawing',
+    );
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'boxDrawingScale')?.validation).toBe(
+      'float, clamped to 0.5-2.0',
     );
   });
 
@@ -158,7 +175,7 @@ describe('settings persistence wiring', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
     ];
-    expect(inlineSaveButtons).toHaveLength(6);
+    expect(inlineSaveButtons).toHaveLength(7);
   });
 
   it('keeps the background upload preview clean when an image exists', () => {

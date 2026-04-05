@@ -18,6 +18,7 @@ describe('fontConfig', () => {
   it('preloads all bundled terminal fonts', () => {
     expect(getBundledTerminalFontFamilies()).toEqual([
       DEFAULT_TERMINAL_FONT_FAMILY,
+      'Cascadia Code SemiBold',
       'JetBrains Mono',
       'Terminus',
     ]);

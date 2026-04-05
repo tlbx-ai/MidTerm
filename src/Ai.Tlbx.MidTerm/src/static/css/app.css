@@ -254,6 +254,14 @@
 }
 
 @font-face {
+  font-family: 'Cascadia Code SemiBold';
+  src: url('../fonts/CascadiaCode-SemiBold.woff2?v=__MIDTERM_ASSET_VERSION__') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Terminus';
   src: url('../fonts/Terminus.woff2?v=__MIDTERM_ASSET_VERSION__') format('woff2');
   font-weight: 400;

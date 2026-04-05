@@ -83,6 +83,13 @@
     />
     <link
       rel="preload"
+      href="/fonts/CascadiaCode-SemiBold.woff2?v=__MIDTERM_ASSET_VERSION__"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
       href="/fonts/JetBrainsMono-Regular.woff2?v=__MIDTERM_ASSET_VERSION__"
       as="font"
       type="font/woff2"
@@ -1290,9 +1297,49 @@
                       >
                       <select id="setting-font-family">
                         <option value="Cascadia Code">Cascadia Code</option>
+                        <option value="Cascadia Code SemiBold">Cascadia Code SemiBold</option>
                         <option value="JetBrains Mono">JetBrains Mono</option>
                         <option value="Terminus">Terminus</option>
                       </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-custom-glyphs"
+                        data-i18n="settings.appearance.boxDrawingMode"
+                        >Box Drawing</label
+                      >
+                      <select id="setting-custom-glyphs">
+                        <option value="custom" data-i18n="settings.options.boxDrawingCustom">
+                          Custom Glyphs
+                        </option>
+                        <option value="font" data-i18n="settings.options.boxDrawingFont">
+                          Use Font
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-box-drawing-scale"
+                        data-i18n="settings.appearance.boxDrawingScale"
+                        >Box Stroke Scale</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="boxDrawingScale"
+                        data-type="number"
+                      >
+                        <input
+                          type="number"
+                          id="setting-box-drawing-scale"
+                          min="0.5"
+                          max="2"
+                          step="0.05"
+                          value="1"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
                     </div>
                     <div class="setting-row">
                       <label for="setting-line-height" data-i18n="settings.appearance.lineHeight"
@@ -1363,14 +1410,6 @@
                           Bold
                         </option>
                       </select>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-custom-glyphs"
-                        data-i18n="settings.appearance.customGlyphs"
-                        >Use Custom Box-Drawing Glyphs</label
-                      >
-                      <input type="checkbox" id="setting-custom-glyphs" />
                     </div>
                     <div class="setting-row">
                       <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle"

@@ -28,6 +28,7 @@ public sealed partial class MidTermSettingsPublic
     public string FontWeight { get; set; } = "normal";
     public string FontWeightBold { get; set; } = "bold";
     public bool CustomGlyphs { get; set; } = true;
+    public double BoxDrawingScale { get; set; } = 1;
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;

@@ -16,6 +16,7 @@ export type SettingControlType =
   | 'int'
   | 'float'
   | 'select'
+  | 'boolean-select'
   | 'shell-select'
   | 'checkbox';
 
@@ -146,6 +147,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'bundled font name',
     applyMode: 'immediate',
   }),
+  controlEntry('boxDrawingScale', 'setting-box-drawing-scale', 'float', 1, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'float, clamped to 0.5-2.0',
+    applyMode: 'immediate',
+  }),
   controlEntry('lineHeight', 'setting-line-height', 'float', 1, {
     editable: true,
     storage: 'settings.json',
@@ -170,10 +177,10 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'normal or bold',
     applyMode: 'immediate',
   }),
-  controlEntry('customGlyphs', 'setting-custom-glyphs', 'checkbox', true, {
+  controlEntry('customGlyphs', 'setting-custom-glyphs', 'boolean-select', true, {
     editable: true,
     storage: 'settings.json',
-    validation: 'boolean',
+    validation: 'boolean, rendered as custom or font box drawing',
     applyMode: 'immediate',
   }),
   controlEntry('cursorStyle', 'setting-cursor-style', 'select', 'block', {

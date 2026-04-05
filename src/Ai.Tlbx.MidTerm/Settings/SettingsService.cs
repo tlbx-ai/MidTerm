@@ -459,6 +459,7 @@ public sealed class SettingsService
         current.FontSize = old.FontSize;
         current.FontFamily = old.FontFamily;
         current.CustomGlyphs = old.CustomGlyphs;
+        current.BoxDrawingScale = old.BoxDrawingScale;
         current.CursorStyle = old.CursorStyle;
         current.CursorBlink = old.CursorBlink;
         current.CursorInactiveStyle = old.CursorInactiveStyle;
