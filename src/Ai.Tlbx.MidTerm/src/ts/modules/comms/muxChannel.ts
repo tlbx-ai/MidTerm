@@ -82,6 +82,7 @@ import {
 
 const log = createLogger('mux');
 const muxReconnect = new ReconnectController();
+const textEncoder = new TextEncoder();
 
 // Per-session byte activity callback (used by heat indicator)
 type SessionBytesCallback = (sessionId: string, bytes: number) => void;
@@ -1358,7 +1359,26 @@ export function sendInput(sessionId: string, data: string): void {
 
   recordInputTimestamp(sessionId);
 
-  const payload = new TextEncoder().encode(data);
+  let asciiOnly = true;
+  for (let i = 0; i < data.length; i++) {
+    if (data.charCodeAt(i) > 0x7f) {
+      asciiOnly = false;
+      break;
+    }
+  }
+
+  if (asciiOnly) {
+    const frame = new Uint8Array(MUX_HEADER_SIZE + data.length);
+    frame[0] = MUX_TYPE_INPUT;
+    encodeSessionId(frame, 1, sessionId);
+    for (let i = 0; i < data.length; i++) {
+      frame[MUX_HEADER_SIZE + i] = data.charCodeAt(i);
+    }
+    sendFrame(frame);
+    return;
+  }
+
+  const payload = textEncoder.encode(data);
   const frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
   frame[0] = MUX_TYPE_INPUT;
   encodeSessionId(frame, 1, sessionId);
