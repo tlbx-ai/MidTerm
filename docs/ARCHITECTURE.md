@@ -10,7 +10,7 @@ The important architectural point is that MidTerm is not only a terminal rendere
 Browser
 ├─ xterm.js terminals
 ├─ sidebar, layout engine, files/git/commands panels
-├─ smart input, touch/mobile shell, diagnostics
+├─ Command Bay (smart input, middle manager bar, touch/mobile shell), diagnostics
 ├─ web preview iframe or detached preview window
 ├─ /ws/mux       binary terminal I/O
 ├─ /ws/state     JSON session/update state
@@ -83,7 +83,7 @@ The browser shell includes:
 - layout modules for split panes and dock overlays
 - session wrappers that add Files tabs plus web, commands, share, git, and experimental Lens surfaces per session
 - feature panels for files, git, commands, and web preview
-- manager bar, smart input, chat, touch controller, PWA, and diagnostics modules
+- Command Bay modules for smart input, the middle manager bar, touch controller, Lens quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
 
 State is split between:
 
@@ -191,21 +191,25 @@ Each session wrapper adds:
 - git status summaries with sectioned file lists, hierarchical trees, and diff overlays
 - a commands panel for saved scripts that run in hidden backing sessions
 
-### Manager Bar
+### Command Bay
 
-The manager bar is a user-defined quick-action lane inside the shared active-session footer dock. Buttons are stored in settings and send prebuilt text plus Enter to the active session. The same actions are exposed in the mobile action menu.
-
-### Smart Input, Voice, Touch, and Mobile Shell
-
-MidTerm has a second input model in addition to direct terminal focus:
-
-- Smart Input can replace or complement terminal typing
-- Terminal and Lens now share one adaptive footer dock with ordered primary, context, automation, and status rails
-- when Lens is active, that same dock keeps the composer first and exposes Lens runtime controls in the status rail instead of as a detached second toolbar
-- voice capture and chat hooks connect to MidTerm.Voice, with the Smart Input mic affordance currently kept behind dev mode and the voice credential path while that workflow is still experimental
-- the touch controller provides terminal-friendly virtual keys
-- the mobile action menu exposes common terminal operations
-- document Picture-in-Picture can show a miniature live terminal when the app backgrounds on supported mobile browsers
+The Command Bay is the shared active-session footer system beneath Terminal and Lens.
+It is the superset that now contains the old Smart Input composer, the old middle manager bar, the old Lens quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
+It exists because MidTerm no longer treats those pieces as unrelated bars stacked under the pane.
+- the primary rail hosts Smart Input / the composer when input is visible
+- the automation rail hosts the old middle manager bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands
+- the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal
+- the status rail hosts Lens model / effort / plan / permission awareness or terminal input-mode and keys-toggle status
+- Lens always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode
+- Lens keeps model / effort / plan awareness visible at all times even when the editable controls collapse on mobile
+- desktop Terminal assumes a hardware keyboard and therefore does not surface cursor-key buttons in the Command Bay
+- mobile Terminal may expand or collapse terminal special keys without changing Terminal size ownership rules
+- desktop glass styling follows terminal transparency; mobile Command Bay stays solid for contrast and touch reliability
+- multiline Smart Input growth expands upward over the active pane instead of pushing the terminal or Lens viewport upward
+- voice capture still hangs off the Smart Input mic affordance, with the current experimental gating unchanged
+- the mobile action menu still mirrors common quick actions, but the Command Bay is the primary active-session interaction shell
+- mobile Lens uses automation above context controls; other permutations keep the default primary -> context -> automation -> status flow
+- document Picture-in-Picture remains separate from the Command Bay and can still show a miniature live terminal when the app backgrounds on supported mobile browsers
 
 ### Agent Conversation Surface
 
