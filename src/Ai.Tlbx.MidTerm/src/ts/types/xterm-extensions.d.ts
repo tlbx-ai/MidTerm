@@ -6,7 +6,6 @@
  * (like CSSStyleDeclaration.zoom).
  */
 
-import type { Terminal } from '@xterm/xterm';
 import type { TerminalState, MidTermSettingsPublic } from '../types';
 
 // Extend Terminal with internal properties we access

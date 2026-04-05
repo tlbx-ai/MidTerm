@@ -178,6 +178,89 @@ export function setSelectSessionCallback(
   selectSession = cb;
 }
 
+function handleTmuxDockMessage(data: TmuxDockMessage): void {
+  log.verbose(
+    () =>
+      `Tmux dock: ${data.newSessionId} relative to ${data.relativeToSessionId} at ${data.position}`,
+  );
+  if (!sessionTerminals.has(data.newSessionId)) {
+    pendingDocks.push({
+      targetSessionId: data.relativeToSessionId,
+      newSessionId: data.newSessionId,
+      position: data.position,
+    });
+    return;
+  }
+
+  dockSession(data.relativeToSessionId, data.newSessionId, data.position as DockPosition, true);
+}
+
+function shouldFocusTmuxSession(sessionId: string): boolean {
+  const activeId = $activeSessionId.get();
+  const activeParent = activeId ? getParentSessionId(activeId) : null;
+  const focusParent = getParentSessionId(sessionId);
+  const activeInLayout = activeId ? isSessionInLayout(activeId) : false;
+  const focusInLayout = isSessionInLayout(sessionId);
+  const sameLayoutGroup = activeInLayout && focusInLayout;
+
+  return (
+    !activeId ||
+    activeId === sessionId ||
+    activeId === focusParent ||
+    activeParent === sessionId ||
+    (activeParent !== null && activeParent === focusParent) ||
+    sameLayoutGroup
+  );
+}
+
+function handleTmuxFocusMessage(data: TmuxFocusMessage): void {
+  log.verbose(() => `Tmux focus: ${data.sessionId}`);
+  if (shouldFocusTmuxSession(data.sessionId) && isSessionInLayout(data.sessionId)) {
+    selectSession(data.sessionId, { closeSettingsPanel: false });
+  }
+}
+
+function handleStateSocketMessage(data: StateWsMessage): void {
+  if (data.type === 'response') {
+    handleCommandResponse(data);
+    return;
+  }
+
+  if (data.type === 'tmux-dock') {
+    handleTmuxDockMessage(data);
+    return;
+  }
+
+  if (data.type === 'tmux-focus') {
+    handleTmuxFocusMessage(data);
+    return;
+  }
+
+  if (data.type === 'tmux-swap') {
+    log.verbose(() => `Tmux swap: ${data.sessionIdA} <-> ${data.sessionIdB}`);
+    swapLayoutSessions(data.sessionIdA, data.sessionIdB);
+    return;
+  }
+
+  if (data.type === 'main-browser-status') {
+    $isMainBrowser.set(data.isMain);
+    $showMainBrowserButton.set(data.showButton);
+    return;
+  }
+
+  if (data.type === 'browser-ui') {
+    handleBrowserUiCommand(data);
+    return;
+  }
+
+  const sessionList = data.sessions?.sessions ?? [];
+  handleStateUpdate(sessionList, data.layout);
+  if (data.managerBarQueue !== undefined) {
+    $managerBarQueue.set(data.managerBarQueue);
+  }
+  handleUpdateInfo(data.update ?? null);
+}
+
 /**
  * Connect to the state WebSocket for real-time session updates.
  * Automatically reconnects with exponential backoff on disconnect.
@@ -203,91 +286,7 @@ export function connectStateWebSocket(): void {
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data as string) as StateWsMessage;
-
-      // Handle command responses
-      if (data.type === 'response') {
-        handleCommandResponse(data);
-        return;
-      }
-
-      // Handle tmux dock instructions
-      if (data.type === 'tmux-dock') {
-        log.verbose(
-          () =>
-            `Tmux dock: ${data.newSessionId} relative to ${data.relativeToSessionId} at ${data.position}`,
-        );
-        // Queue if the new session hasn't appeared in state yet
-        if (!sessionTerminals.has(data.newSessionId)) {
-          pendingDocks.push({
-            targetSessionId: data.relativeToSessionId,
-            newSessionId: data.newSessionId,
-            position: data.position,
-          });
-          return;
-        }
-        dockSession(
-          data.relativeToSessionId,
-          data.newSessionId,
-          data.position as DockPosition,
-          true,
-        );
-        return;
-      }
-
-      // Handle tmux focus instructions
-      if (data.type === 'tmux-focus') {
-        log.verbose(() => `Tmux focus: ${data.sessionId}`);
-        // Only focus if the target is related to the active session
-        // (same tmux parent chain) or both are in the active layout group.
-        const activeId = $activeSessionId.get();
-        const activeParent = activeId ? getParentSessionId(activeId) : null;
-        const focusParent = getParentSessionId(data.sessionId);
-        const activeInLayout = activeId ? isSessionInLayout(activeId) : false;
-        const focusInLayout = isSessionInLayout(data.sessionId);
-        const sameLayoutGroup = activeInLayout && focusInLayout;
-        const isRelated =
-          !activeId ||
-          activeId === data.sessionId ||
-          activeId === focusParent ||
-          activeParent === data.sessionId ||
-          (activeParent !== null && activeParent === focusParent) ||
-          sameLayoutGroup;
-        if (isRelated) {
-          if (focusInLayout) {
-            // Route through main select path to apply heat suppression and mux hinting.
-            selectSession(data.sessionId, { closeSettingsPanel: false });
-          }
-        }
-        return;
-      }
-
-      // Handle tmux swap instructions
-      if (data.type === 'tmux-swap') {
-        log.verbose(() => `Tmux swap: ${data.sessionIdA} <-> ${data.sessionIdB}`);
-        swapLayoutSessions(data.sessionIdA, data.sessionIdB);
-        return;
-      }
-
-      // Handle main browser status (server-driven)
-      if (data.type === 'main-browser-status') {
-        $isMainBrowser.set(data.isMain);
-        $showMainBrowserButton.set(data.showButton);
-        return;
-      }
-
-      // Handle browser UI commands (detach/dock/viewport from mtcli)
-      if (data.type === 'browser-ui') {
-        handleBrowserUiCommand(data);
-        return;
-      }
-
-      // Handle state updates
-      const sessionList = data.sessions?.sessions ?? [];
-      handleStateUpdate(sessionList, data.layout);
-      if (data.managerBarQueue !== undefined) {
-        $managerBarQueue.set(data.managerBarQueue);
-      }
-      handleUpdateInfo(data.update ?? null);
+      handleStateSocketMessage(data);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       log.error(() => `Error parsing state: ${message}`);
@@ -312,19 +311,7 @@ export function connectStateWebSocket(): void {
   };
 }
 
-/**
- * Handle session list updates from server.
- * Removes terminals for deleted sessions, updates dimensions, and manages selection.
- * Creates terminals proactively for all sessions so they receive data in the background.
- */
-export function handleStateUpdate(
-  newSessions: Session[],
-  layoutState?: LayoutStateMessage | null,
-): void {
-  // Filter out sessions without required id field
-  const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
-
-  // Remove terminals for deleted sessions (skip hidden command overlay sessions)
+function removeClosedSessions(validSessions: readonly (Session & { id: string })[]): void {
   const newIds = new Set(validSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
     if (!newIds.has(id) && !hiddenSessionIds.has(id)) {
@@ -334,55 +321,50 @@ export function handleStateUpdate(
     }
   });
 
-  // Clean up hidden sessions that no longer exist on the server (script finished)
   for (const hiddenId of hiddenSessionIds) {
     if (!newIds.has(hiddenId)) {
       handleHiddenSessionClosed(hiddenId);
       closeOverlay(hiddenId);
     }
   }
+}
 
-  // Update dimensions and resize terminals when server dimensions change
-  // Also create terminals proactively for sessions that don't have one yet
-  // Initialize process state from session data (for reconnect scenarios)
-  validSessions.forEach((session) => {
-    // Initialize process monitor state from session data
-    initializeFromSession(
-      session.id,
-      session.foregroundPid,
-      session.foregroundName,
-      session.foregroundCommandLine,
-      session.currentDirectory,
-      session.foregroundDisplayName,
-      session.foregroundProcessIdentity,
-    );
+function syncSessionTerminalState(session: Session & { id: string }): void {
+  initializeFromSession(
+    session.id,
+    session.foregroundPid,
+    session.foregroundName,
+    session.foregroundCommandLine,
+    session.currentDirectory,
+    session.foregroundDisplayName,
+    session.foregroundProcessIdentity,
+  );
 
-    const state = sessionTerminals.get(session.id);
-    if (state && state.opened) {
-      const dimensionsChanged =
-        state.serverCols !== session.cols || state.serverRows !== session.rows;
-      if (dimensionsChanged) {
-        state.serverCols = session.cols;
-        state.serverRows = session.rows;
-        state.terminal.resize(session.cols, session.rows);
-        applyTerminalScaling(session.id, state);
-      }
-    } else if (state) {
+  const state = sessionTerminals.get(session.id);
+  if (state && state.opened) {
+    const dimensionsChanged =
+      state.serverCols !== session.cols || state.serverRows !== session.rows;
+    if (dimensionsChanged) {
       state.serverCols = session.cols;
       state.serverRows = session.rows;
-    } else if (session.lensOnly) {
-      return;
-    } else {
-      // Create terminal proactively - it will be hidden and ready for data
-      createTerminalForSession(session.id, session);
+      state.terminal.resize(session.cols, session.rows);
+      applyTerminalScaling(session.id, state);
     }
-  });
+    return;
+  }
 
-  // Update store - sidebarUpdater subscription handles rendering
-  setSessions(validSessions);
-  updateEmptyState();
+  if (state) {
+    state.serverCols = session.cols;
+    state.serverRows = session.rows;
+    return;
+  }
 
-  // Apply any queued dock instructions now that sessions exist
+  if (!session.lensOnly) {
+    createTerminalForSession(session.id, session);
+  }
+}
+
+function applyPendingDocks(): void {
   for (let i = pendingDocks.length - 1; i >= 0; i--) {
     const dock = pendingDocks[i];
     if (!dock) continue;
@@ -391,24 +373,34 @@ export function handleStateUpdate(
       dockSession(dock.targetSessionId, dock.newSessionId, dock.position as DockPosition, true);
     }
   }
+}
 
+function hydrateLayoutState(
+  layoutState: LayoutStateMessage | null | undefined,
+  sessionCount: number,
+): void {
   if (layoutState !== undefined) {
     applyServerLayoutState(layoutState ?? null);
     if (!layoutHydrated) {
       layoutHydrated = true;
       markLayoutPersistenceReady();
     }
-  } else if (!layoutHydrated && newSessions.length >= 2) {
+    return;
+  }
+
+  if (!layoutHydrated && sessionCount >= 2) {
     restoreLayoutFromStorage();
     layoutHydrated = true;
     markLayoutPersistenceReady();
   }
+}
 
-  // Auto-select first session if none active (but not if settings are open)
+function syncActiveSessionSelection(): void {
   const isSettingsOpen = $settingsOpen.get();
   const activeId = $activeSessionId.get();
   const sessionList = $sessionList.get();
   const firstSession = sessionList[0];
+
   if (!activeId && firstSession?.id && !isSettingsOpen) {
     const rememberedActiveId = getRememberedActiveSessionId();
     const rememberedSession =
@@ -418,7 +410,6 @@ export function handleStateUpdate(
     selectSession((rememberedSession ?? firstSession).id, { closeSettingsPanel: false });
   }
 
-  // Handle active session being deleted (but not if settings are open)
   if (activeId && !sessionList.find((s) => s.id === activeId)) {
     $activeSessionId.set(null);
     const nextSession = sessionList[0];
@@ -426,7 +417,25 @@ export function handleStateUpdate(
       selectSession(nextSession.id, { closeSettingsPanel: false });
     }
   }
+}
 
+/**
+ * Handle session list updates from server.
+ * Removes terminals for deleted sessions, updates dimensions, and manages selection.
+ * Creates terminals proactively for all sessions so they receive data in the background.
+ */
+export function handleStateUpdate(
+  newSessions: Session[],
+  layoutState?: LayoutStateMessage | null,
+): void {
+  const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
+  removeClosedSessions(validSessions);
+  validSessions.forEach(syncSessionTerminalState);
+  setSessions(validSessions);
+  updateEmptyState();
+  applyPendingDocks();
+  hydrateLayoutState(layoutState, newSessions.length);
+  syncActiveSessionSelection();
   updateMobileTitle();
 }
 

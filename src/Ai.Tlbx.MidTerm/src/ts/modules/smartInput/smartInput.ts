@@ -95,17 +95,34 @@ function getSmartInputVisibilityState(): SmartInputVisibilityState {
 function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
   const visibilityState = getSmartInputVisibilityState();
   const settings = $currentSettings.get();
-  const activeSessionId = visibilityState.activeSessionId;
+  const activeSessionId = visibilityState.activeSessionId ?? null;
   const isMobile = isMobileViewport();
   const lensActive = visibilityState.lensActive;
   const showInput = shouldShowDockedSmartInput(visibilityState);
   const showAutomation = shouldShowManagerBar(settings?.managerBarEnabled, activeSessionId);
-  const touchControlsAvailable =
-    Boolean(activeSessionId) && !lensActive && isMobile && shouldShowTouchController();
-  const showContext = lensActive ? isMobile : touchControlsAvailable && keysExpanded;
-  const showStatus = lensActive || (Boolean(activeSessionId) && (isMobile || showInput));
-  const showFooter =
-    Boolean(activeSessionId) && (showInput || showAutomation || showContext || showStatus);
+  const touchControlsAvailable = resolveTouchControlsAvailable({
+    activeSessionId,
+    isMobile,
+    lensActive,
+  });
+  const showContext = resolveShowContext({
+    isMobile,
+    lensActive,
+    touchControlsAvailable,
+  });
+  const showStatus = resolveShowStatus({
+    activeSessionId,
+    isMobile,
+    lensActive,
+    showInput,
+  });
+  const showFooter = resolveShowFooter({
+    activeSessionId,
+    showAutomation,
+    showContext,
+    showInput,
+    showStatus,
+  });
   const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;
 
   return {
@@ -122,6 +139,49 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
     touchControlsAvailable,
     touchControlsExpanded: touchControlsAvailable && keysExpanded,
   };
+}
+
+function resolveTouchControlsAvailable(args: {
+  activeSessionId: string | null;
+  isMobile: boolean;
+  lensActive: boolean;
+}): boolean {
+  return (
+    Boolean(args.activeSessionId) &&
+    !args.lensActive &&
+    args.isMobile &&
+    shouldShowTouchController()
+  );
+}
+
+function resolveShowContext(args: {
+  isMobile: boolean;
+  lensActive: boolean;
+  touchControlsAvailable: boolean;
+}): boolean {
+  return args.lensActive ? args.isMobile : args.touchControlsAvailable && keysExpanded;
+}
+
+function resolveShowStatus(args: {
+  activeSessionId: string | null;
+  isMobile: boolean;
+  lensActive: boolean;
+  showInput: boolean;
+}): boolean {
+  return args.lensActive || (Boolean(args.activeSessionId) && (args.isMobile || args.showInput));
+}
+
+function resolveShowFooter(args: {
+  activeSessionId: string | null;
+  showAutomation: boolean;
+  showContext: boolean;
+  showInput: boolean;
+  showStatus: boolean;
+}): boolean {
+  return (
+    Boolean(args.activeSessionId) &&
+    (args.showInput || args.showAutomation || args.showContext || args.showStatus)
+  );
 }
 
 /**

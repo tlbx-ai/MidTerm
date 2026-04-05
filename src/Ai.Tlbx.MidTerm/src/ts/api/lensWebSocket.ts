@@ -147,14 +147,65 @@ function resubscribeAll(): void {
   }
 }
 
+function resolvePendingRequest<TKind extends LensWsPending['kind']>(
+  id: string,
+  kind: TKind,
+): Extract<LensWsPending, { kind: TKind }> | null {
+  const request = pending.get(id);
+  if (!request || request.kind !== kind) {
+    return null;
+  }
+
+  pending.delete(id);
+  return request as Extract<LensWsPending, { kind: TKind }>;
+}
+
+function handleSnapshotMessage(message: Extract<LensServerMessage, { type: 'snapshot' }>): void {
+  if (!message.id) {
+    const subscription = subscriptions.get(message.sessionId);
+    if (!subscription) {
+      return;
+    }
+
+    subscription.afterSequence = Math.max(
+      subscription.afterSequence,
+      message.snapshot.latestSequence,
+    );
+    for (const listener of subscription.listeners) {
+      listener.onSnapshot?.(message.snapshot);
+    }
+    return;
+  }
+
+  resolvePendingRequest(message.id, 'snapshot')?.resolve(message.snapshot);
+}
+
+function handleEventsMessage(message: Extract<LensServerMessage, { type: 'events' }>): void {
+  if (!message.id) {
+    return;
+  }
+
+  resolvePendingRequest(message.id, 'events')?.resolve(message.events);
+}
+
+function handleSubscriptionSequenceUpdate(
+  sessionId: string,
+  nextSequence: number,
+  onFound?: (subscription: LensSessionSubscription) => void,
+): void {
+  const subscription = subscriptions.get(sessionId);
+  if (!subscription) {
+    return;
+  }
+
+  subscription.afterSequence = Math.max(subscription.afterSequence, nextSequence);
+  onFound?.(subscription);
+}
+
 function handleServerMessage(message: LensServerMessage): void {
   switch (message.type) {
     case 'ack': {
-      const request = pending.get(message.id);
-      if (request?.kind === 'ack') {
-        pending.delete(message.id);
-        request.resolve();
-      }
+      resolvePendingRequest(message.id, 'ack')?.resolve();
       return;
     }
     case 'error': {
@@ -163,86 +214,41 @@ function handleServerMessage(message: LensServerMessage): void {
         if (request) {
           pending.delete(message.id);
           request.reject(createLensWsError(message.message));
-          return;
         }
       }
 
       return;
     }
     case 'snapshot': {
-      if (!message.id) {
-        const subscription = subscriptions.get(message.sessionId);
-        if (!subscription) {
-          return;
-        }
-
-        subscription.afterSequence = Math.max(
-          subscription.afterSequence,
-          message.snapshot.latestSequence,
-        );
-        for (const listener of subscription.listeners) {
-          listener.onSnapshot?.(message.snapshot);
-        }
-        return;
-      }
-
-      const request = pending.get(message.id);
-      if (request?.kind === 'snapshot') {
-        pending.delete(message.id);
-        request.resolve(message.snapshot);
-      }
+      handleSnapshotMessage(message);
       return;
     }
     case 'events': {
-      if (!message.id) {
-        return;
-      }
-
-      const request = pending.get(message.id);
-      if (request?.kind === 'events') {
-        pending.delete(message.id);
-        request.resolve(message.events);
-      }
+      handleEventsMessage(message);
       return;
     }
     case 'turnStarted': {
-      const request = pending.get(message.id);
-      if (request?.kind === 'turnStarted') {
-        pending.delete(message.id);
-        request.resolve(message.response);
-      }
+      resolvePendingRequest(message.id, 'turnStarted')?.resolve(message.response);
       return;
     }
     case 'commandAccepted': {
-      const request = pending.get(message.id);
-      if (request?.kind === 'commandAccepted') {
-        pending.delete(message.id);
-        request.resolve(message.response);
-      }
+      resolvePendingRequest(message.id, 'commandAccepted')?.resolve(message.response);
       return;
     }
     case 'event': {
-      const subscription = subscriptions.get(message.sessionId);
-      if (!subscription) {
-        return;
-      }
-
-      subscription.afterSequence = Math.max(subscription.afterSequence, message.event.sequence);
+      handleSubscriptionSequenceUpdate(message.sessionId, message.event.sequence);
       return;
     }
     case 'delta': {
-      const subscription = subscriptions.get(message.sessionId);
-      if (!subscription) {
-        return;
-      }
-
-      subscription.afterSequence = Math.max(
-        subscription.afterSequence,
+      handleSubscriptionSequenceUpdate(
+        message.sessionId,
         message.delta.latestSequence,
+        (subscription) => {
+          for (const listener of subscription.listeners) {
+            listener.onDelta(message.delta);
+          }
+        },
       );
-      for (const listener of subscription.listeners) {
-        listener.onDelta(message.delta);
-      }
       return;
     }
   }

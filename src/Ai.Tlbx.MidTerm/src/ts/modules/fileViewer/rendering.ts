@@ -610,54 +610,63 @@ function consumeLineComment(text: string, start: number): number {
   return index;
 }
 
+function tryConsumeHighlightBoundary(
+  text: string,
+  cursor: number,
+): { kind: HighlightSegment['kind']; end: number } | null {
+  const current = text[cursor];
+  const next = text[cursor + 1] ?? '';
+
+  if (current === '"' || current === "'" || current === '`') {
+    return {
+      kind: 'string',
+      end: consumeQuotedString(text, cursor),
+    };
+  }
+
+  if (current === '/' && next === '/') {
+    return {
+      kind: 'comment',
+      end: consumeLineComment(text, cursor),
+    };
+  }
+
+  if (current === '#' && next !== '[' && next !== '(') {
+    return {
+      kind: 'comment',
+      end: consumeLineComment(text, cursor),
+    };
+  }
+
+  if (current === '-' && next === '-') {
+    return {
+      kind: 'comment',
+      end: consumeLineComment(text, cursor),
+    };
+  }
+
+  return null;
+}
+
+function isHighlightBoundary(text: string, index: number): boolean {
+  return tryConsumeHighlightBoundary(text, index) !== null;
+}
+
 function tokenizeHighlightSegments(text: string): HighlightSegment[] {
   const segments: HighlightSegment[] = [];
   let cursor = 0;
 
   while (cursor < text.length) {
-    const current = text[cursor];
-    const next = text[cursor + 1] ?? '';
-
-    if (current === '"' || current === "'" || current === '`') {
-      const end = consumeQuotedString(text, cursor);
-      pushHighlightSegment(segments, 'string', text.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    if (current === '/' && next === '/') {
-      const end = consumeLineComment(text, cursor);
-      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    if (current === '#' && next !== '[' && next !== '(') {
-      const end = consumeLineComment(text, cursor);
-      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    if (current === '-' && next === '-') {
-      const end = consumeLineComment(text, cursor);
-      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
-      cursor = end;
+    const boundary = tryConsumeHighlightBoundary(text, cursor);
+    if (boundary) {
+      pushHighlightSegment(segments, boundary.kind, text.slice(cursor, boundary.end));
+      cursor = boundary.end;
       continue;
     }
 
     let end = cursor + 1;
     while (end < text.length) {
-      const segmentCurrent = text[end];
-      const segmentNext = text[end + 1] ?? '';
-      if (
-        segmentCurrent === '"' ||
-        segmentCurrent === "'" ||
-        segmentCurrent === '`' ||
-        (segmentCurrent === '/' && segmentNext === '/') ||
-        (segmentCurrent === '#' && segmentNext !== '[' && segmentNext !== '(') ||
-        (segmentCurrent === '-' && segmentNext === '-')
-      ) {
+      if (isHighlightBoundary(text, end)) {
         break;
       }
       end += 1;

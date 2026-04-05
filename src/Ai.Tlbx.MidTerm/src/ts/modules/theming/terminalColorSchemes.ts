@@ -202,6 +202,18 @@ export function terminalColorSchemeToTheme(
   };
 }
 
+function resolveThemeColor(value: string | undefined, fallback: string): string {
+  return value ?? fallback;
+}
+
+function resolveBrightThemeColor(
+  brightValue: string | undefined,
+  baseValue: string | undefined,
+  fallback: string,
+): string {
+  return brightValue ?? baseValue ?? fallback;
+}
+
 export function themeToTerminalColorSchemeDefinition(
   name: string,
   theme: TerminalTheme,
@@ -216,29 +228,54 @@ export function themeToTerminalColorSchemeDefinition(
     scrollbarSliderBackground: theme.scrollbarSliderBackground,
     scrollbarSliderHoverBackground: theme.scrollbarSliderHoverBackground,
     scrollbarSliderActiveBackground: theme.scrollbarSliderActiveBackground,
-    black: theme.black ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.black,
-    red: theme.red ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.red,
-    green: theme.green ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.green,
-    yellow: theme.yellow ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.yellow,
-    blue: theme.blue ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.blue,
-    magenta: theme.magenta ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.magenta,
-    cyan: theme.cyan ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.cyan,
-    white: theme.white ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.white,
-    brightBlack:
-      theme.brightBlack ?? theme.black ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightBlack,
-    brightRed: theme.brightRed ?? theme.red ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightRed,
-    brightGreen:
-      theme.brightGreen ?? theme.green ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightGreen,
-    brightYellow:
-      theme.brightYellow ?? theme.yellow ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightYellow,
-    brightBlue:
-      theme.brightBlue ?? theme.blue ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightBlue,
-    brightMagenta:
-      theme.brightMagenta ?? theme.magenta ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightMagenta,
-    brightCyan:
-      theme.brightCyan ?? theme.cyan ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightCyan,
-    brightWhite:
-      theme.brightWhite ?? theme.white ?? DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightWhite,
+    black: resolveThemeColor(theme.black, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.black),
+    red: resolveThemeColor(theme.red, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.red),
+    green: resolveThemeColor(theme.green, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.green),
+    yellow: resolveThemeColor(theme.yellow, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.yellow),
+    blue: resolveThemeColor(theme.blue, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.blue),
+    magenta: resolveThemeColor(theme.magenta, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.magenta),
+    cyan: resolveThemeColor(theme.cyan, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.cyan),
+    white: resolveThemeColor(theme.white, DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.white),
+    brightBlack: resolveBrightThemeColor(
+      theme.brightBlack,
+      theme.black,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightBlack,
+    ),
+    brightRed: resolveBrightThemeColor(
+      theme.brightRed,
+      theme.red,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightRed,
+    ),
+    brightGreen: resolveBrightThemeColor(
+      theme.brightGreen,
+      theme.green,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightGreen,
+    ),
+    brightYellow: resolveBrightThemeColor(
+      theme.brightYellow,
+      theme.yellow,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightYellow,
+    ),
+    brightBlue: resolveBrightThemeColor(
+      theme.brightBlue,
+      theme.blue,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightBlue,
+    ),
+    brightMagenta: resolveBrightThemeColor(
+      theme.brightMagenta,
+      theme.magenta,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightMagenta,
+    ),
+    brightCyan: resolveBrightThemeColor(
+      theme.brightCyan,
+      theme.cyan,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightCyan,
+    ),
+    brightWhite: resolveBrightThemeColor(
+      theme.brightWhite,
+      theme.white,
+      DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS.brightWhite,
+    ),
   };
 }
 

@@ -1015,6 +1015,167 @@ export function applyOutputFrameToTerminal(
   writeToTerminal(sessionId, state, sequenceEnd, cols, rows, data, outputQueueGeneration);
 }
 
+function handleMuxInitFrame(type: number, data: Uint8Array): boolean {
+  if (type !== 0xff) {
+    return false;
+  }
+
+  if (data.length >= MUX_HEADER_SIZE + 2) {
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const serverVersion = dv.getUint16(MUX_HEADER_SIZE, true);
+    setServerProtocolVersion(serverVersion);
+    log.info(
+      () => `Server protocol version: ${serverVersion}, client version: ${MUX_PROTOCOL_VERSION}`,
+    );
+
+    if (serverVersion < MUX_MIN_COMPATIBLE_VERSION) {
+      log.error(
+        () =>
+          `Server protocol version ${serverVersion} is below minimum ${MUX_MIN_COMPATIBLE_VERSION}`,
+      );
+    } else if (serverVersion > MUX_PROTOCOL_VERSION) {
+      log.warn(
+        () => `Server uses newer protocol (v${serverVersion}), client is v${MUX_PROTOCOL_VERSION}`,
+      );
+    }
+  }
+
+  return true;
+}
+
+function handleMuxSyncCompleteFrame(type: number): boolean {
+  if (type !== MUX_TYPE_SYNC_COMPLETE) {
+    return false;
+  }
+
+  if (syncCompleteTimeout !== null) {
+    clearTimeout(syncCompleteTimeout);
+    syncCompleteTimeout = null;
+  }
+  thawReconnectFreeze();
+  _suppressHeatCallback?.(0);
+  setBellNotificationsSuppressed(false);
+  return true;
+}
+
+function handleMuxResyncFrame(type: number): boolean {
+  if (type !== MUX_TYPE_RESYNC) {
+    return false;
+  }
+
+  log.info(() => 'Resync: clearing terminals for buffer refresh');
+  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
+  beginReplayHeatSuppressionForAllSessions();
+  forEachLocalTerminal((state) => {
+    if (state.opened) {
+      state.terminal.clear();
+      state.terminal.write('\x1b[0m');
+    }
+  });
+  pendingOutputFrames.clear();
+  sessionsNeedingResync.clear();
+  clearQueuedOutput();
+  return true;
+}
+
+function handleMuxOutputFrame(type: number, sessionId: string, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_OUTPUT && type !== MUX_TYPE_COMPRESSED_OUTPUT) {
+    return false;
+  }
+
+  armOutputRttMeasurement(sessionId);
+  const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
+  const termDataBytes = Math.max(0, payload.length - hdrBytes);
+  if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
+    _sessionBytesCallback?.(sessionId, termDataBytes);
+  }
+  if (payload.length >= 4) {
+    queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
+  }
+  return true;
+}
+
+function handleMuxForegroundChangeFrame(
+  type: number,
+  sessionId: string,
+  payload: Uint8Array,
+): boolean {
+  if (type !== MUX_TYPE_FOREGROUND_CHANGE) {
+    return false;
+  }
+
+  try {
+    const jsonStr = new TextDecoder().decode(payload);
+    const changePayload = JSON.parse(jsonStr) as ForegroundChangePayload;
+    handleForegroundChange(sessionId, changePayload);
+  } catch (e) {
+    log.error(() => `Failed to parse foreground change: ${String(e)}`);
+  }
+
+  return true;
+}
+
+function handleMuxPongFrame(type: number, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_PONG) {
+    return false;
+  }
+
+  if (payload.length >= 9 && pongCallback) {
+    const pdv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const pongMode = pdv.getUint8(0);
+    const timestampBytes = payload.slice(1, 9);
+    const timestamp = new DataView(timestampBytes.buffer).getFloat64(0, true);
+    const rtt = performance.now() - timestamp;
+    if (pongMode === 0 && payload.length >= 13) {
+      lastFlushDelayMs = pdv.getUint16(9, true);
+      lastServerIoRttMs = pdv.getUint16(11, true);
+    }
+    pongCallback(pongMode, rtt);
+  }
+
+  return true;
+}
+
+function resolveMuxDataLossReason(reasonCode: number): string {
+  switch (reasonCode) {
+    case 1:
+      return 'mthost_ipc_overflow';
+    case 2:
+      return 'mux_overflow';
+    case 3:
+      return 'browser_pending_overflow';
+    case 4:
+      return 'ipc_timeout_reconnect';
+    case 5:
+      return 'buffer_refresh_tail_replay';
+    case 6:
+      return 'reconnect_tail_replay';
+    case 7:
+      return 'quick_resume_tail_replay';
+    default:
+      return 'manual';
+  }
+}
+
+function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_DATA_LOSS) {
+    return false;
+  }
+
+  const dataView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const droppedBytes = payload.length >= 5 ? dataView.getUint32(1, true) : 0;
+  log.warn(
+    () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
+  );
+  const reasonCode = payload.length >= 1 ? dataView.getUint8(0) : 0;
+  const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+  snapshot.dataLossCount += 1;
+  snapshot.lastDataLossReason = resolveMuxDataLossReason(reasonCode);
+  sessionsNeedingResync.add(sessionId);
+  requestBufferRefresh(sessionId);
+  return true;
+}
+
 // =============================================================================
 // WebSocket Connection
 // =============================================================================
@@ -1111,135 +1272,27 @@ export function connectMuxWebSocket(): void {
     if (data.length < MUX_HEADER_SIZE) return;
 
     const type = data[0];
+    if (type === undefined) return;
 
-    // Handle init frame (0xFF) - contains protocol version
-    if (type === 0xff) {
-      // Init frame format: [0xFF][clientId:8][protocolVersion:2][fullClientId:32]
-      if (data.length >= MUX_HEADER_SIZE + 2) {
-        const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-        const serverVersion = dv.getUint16(MUX_HEADER_SIZE, true);
-        setServerProtocolVersion(serverVersion);
-        log.info(
-          () =>
-            `Server protocol version: ${serverVersion}, client version: ${MUX_PROTOCOL_VERSION}`,
-        );
-
-        if (serverVersion < MUX_MIN_COMPATIBLE_VERSION) {
-          log.error(
-            () =>
-              `Server protocol version ${serverVersion} is below minimum ${MUX_MIN_COMPATIBLE_VERSION}`,
-          );
-        } else if (serverVersion > MUX_PROTOCOL_VERSION) {
-          log.warn(
-            () =>
-              `Server uses newer protocol (v${serverVersion}), client is v${MUX_PROTOCOL_VERSION}`,
-          );
-        }
-      }
+    if (handleMuxInitFrame(type, data)) {
       return;
     }
 
-    if (type === MUX_TYPE_SYNC_COMPLETE) {
-      if (syncCompleteTimeout !== null) {
-        clearTimeout(syncCompleteTimeout);
-        syncCompleteTimeout = null;
-      }
-      thawReconnectFreeze();
-      _suppressHeatCallback?.(0);
-      setBellNotificationsSuppressed(false);
+    if (handleMuxSyncCompleteFrame(type)) {
       return;
     }
 
     const sessionId = decodeSessionId(data, 1);
     const payload = data.subarray(MUX_HEADER_SIZE); // zero-copy view
 
-    if (type === MUX_TYPE_RESYNC) {
-      // Server is resyncing due to dropped frames - clear all terminals
-      log.info(() => 'Resync: clearing terminals for buffer refresh');
-      _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
-      beginReplayHeatSuppressionForAllSessions();
-      forEachLocalTerminal((state) => {
-        if (state.opened) {
-          state.terminal.clear();
-          state.terminal.write('\x1b[0m');
-        }
-      });
-      pendingOutputFrames.clear();
-      sessionsNeedingResync.clear();
-      clearQueuedOutput();
+    if (handleMuxResyncFrame(type)) {
       return;
     }
 
-    if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
-      armOutputRttMeasurement(sessionId);
-      // Pass only terminal data bytes (exclude cols/rows header overhead)
-      const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
-      const termDataBytes = Math.max(0, payload.length - hdrBytes);
-      if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
-        _sessionBytesCallback?.(sessionId, termDataBytes);
-      }
-      // Queue output by session so async decompression and xterm callbacks
-      // cannot reorder a single terminal's output stream.
-      // .slice() here is needed — WS may recycle the ArrayBuffer
-      if (payload.length >= 4) {
-        queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
-      }
-    } else if (type === MUX_TYPE_FOREGROUND_CHANGE) {
-      try {
-        const jsonStr = new TextDecoder().decode(payload);
-        const changePayload = JSON.parse(jsonStr) as ForegroundChangePayload;
-        handleForegroundChange(sessionId, changePayload);
-      } catch (e) {
-        log.error(() => `Failed to parse foreground change: ${String(e)}`);
-      }
-    } else if (type === MUX_TYPE_PONG) {
-      if (payload.length >= 9 && pongCallback) {
-        const pdv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-        const pongMode = pdv.getUint8(0);
-        const timestampBytes = payload.slice(1, 9); // must copy — Float64Array needs 8-byte alignment
-        const timestamp = new DataView(timestampBytes.buffer).getFloat64(0, true);
-        const rtt = performance.now() - timestamp;
-        // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
-        if (pongMode === 0 && payload.length >= 13) {
-          lastFlushDelayMs = pdv.getUint16(9, true);
-          lastServerIoRttMs = pdv.getUint16(11, true);
-        }
-        pongCallback(pongMode, rtt);
-      }
-    } else if (type === MUX_TYPE_DATA_LOSS) {
-      const droppedBytes =
-        payload.length >= 5
-          ? new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(1, true)
-          : 0;
-      log.warn(
-        () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
-      );
-      const reasonCode =
-        payload.length >= 1
-          ? new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint8(0)
-          : 0;
-      const reason =
-        reasonCode === 1
-          ? 'mthost_ipc_overflow'
-          : reasonCode === 2
-            ? 'mux_overflow'
-            : reasonCode === 3
-              ? 'browser_pending_overflow'
-              : reasonCode === 4
-                ? 'ipc_timeout_reconnect'
-                : reasonCode === 5
-                  ? 'buffer_refresh_tail_replay'
-                  : reasonCode === 6
-                    ? 'reconnect_tail_replay'
-                    : reasonCode === 7
-                      ? 'quick_resume_tail_replay'
-                      : 'manual';
-      const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
-      snapshot.dataLossCount += 1;
-      snapshot.lastDataLossReason = reason;
-      sessionsNeedingResync.add(sessionId);
-      requestBufferRefresh(sessionId);
-    }
+    if (handleMuxOutputFrame(type, sessionId, payload)) return;
+    if (handleMuxForegroundChangeFrame(type, sessionId, payload)) return;
+    if (handleMuxPongFrame(type, payload)) return;
+    void handleMuxDataLossFrame(type, sessionId, payload);
   };
 
   ws.onclose = (event) => {

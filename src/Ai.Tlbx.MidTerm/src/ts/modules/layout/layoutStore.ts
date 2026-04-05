@@ -669,7 +669,7 @@ function scheduleLayoutSync(delayMs = 0): void {
   }, delayMs);
 }
 
-let syncTimer: number | undefined;
+let syncTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
 
 export function initLayoutPersistence(): void {
   let lastLayoutKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());

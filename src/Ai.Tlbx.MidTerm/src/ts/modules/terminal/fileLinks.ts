@@ -574,17 +574,19 @@ function throttledResolveRelativePath(
 
   // Schedule delayed resolve - only show link if path exists
   const abort = new AbortController();
-  const timeout = window.setTimeout(async () => {
-    if (abort.signal.aborted) return;
+  const timeout = window.setTimeout(() => {
+    void (async () => {
+      if (abort.signal.aborted) return;
 
-    const result = await resolveRelativePath(sessionId, normalizedPath, false, abort.signal);
+      const result = await resolveRelativePath(sessionId, normalizedPath, false, abort.signal);
 
-    callback(result?.exists ? normalizedMatchText : undefined);
+      callback(result?.exists ? normalizedMatchText : undefined);
 
-    const pending = pendingResolves.get(sessionId);
-    if (pending?.abort === abort) {
-      pendingResolves.delete(sessionId);
-    }
+      const pending = pendingResolves.get(sessionId);
+      if (pending?.abort === abort) {
+        pendingResolves.delete(sessionId);
+      }
+    })();
   }, RESOLVE_HOVER_DELAY_MS);
 
   pendingResolves.set(sessionId, { abort, timeout, callback });

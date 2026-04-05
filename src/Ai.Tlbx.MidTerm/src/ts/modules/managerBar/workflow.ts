@@ -85,24 +85,8 @@ export function normalizeManagerBarButton(
   button: Partial<ManagerButton> | null | undefined,
 ): NormalizedManagerButton {
   const defaults = createDefaultManagerButton();
-  const prompts = (button?.prompts ?? [])
-    .map((prompt) => normalizePrompt(prompt))
-    .filter((prompt) => prompt.length > 0);
-  const legacyText = normalizePrompt(button?.text);
-  const actionType = VALID_ACTION_TYPES.has(button?.actionType as ManagerActionType)
-    ? (button?.actionType as ManagerActionType)
-    : 'single';
-
-  if (prompts.length === 0 && legacyText.length > 0) {
-    prompts.push(legacyText);
-  }
-  if (prompts.length === 0 && typeof button?.label === 'string' && button.label.trim().length > 0) {
-    prompts.push(button.label.trim());
-  }
-  if (prompts.length === 0) {
-    prompts.push('');
-  }
-
+  const actionType = normalizeActionType(button?.actionType);
+  const prompts = buildNormalizedPrompts(button, actionType);
   const normalizedPrompts = actionType === 'single' ? [prompts[0] ?? ''] : prompts;
   const label = (button?.label ?? '').trim() || buildFallbackLabel(normalizedPrompts[0] ?? '');
 
@@ -114,6 +98,36 @@ export function normalizeManagerBarButton(
     prompts: normalizedPrompts,
     trigger: normalizeTrigger(button?.trigger, defaults.trigger),
   };
+}
+
+function normalizeActionType(actionType: string | undefined): ManagerActionType {
+  return VALID_ACTION_TYPES.has(actionType as ManagerActionType)
+    ? (actionType as ManagerActionType)
+    : 'single';
+}
+
+function buildNormalizedPrompts(
+  button: Partial<ManagerButton> | null | undefined,
+  actionType: ManagerActionType,
+): string[] {
+  const prompts = (button?.prompts ?? [])
+    .map((prompt) => normalizePrompt(prompt))
+    .filter((prompt) => prompt.length > 0);
+  const legacyText = normalizePrompt(button?.text);
+  const labelPrompt =
+    typeof button?.label === 'string' && button.label.trim().length > 0 ? button.label.trim() : '';
+
+  if (prompts.length === 0 && legacyText.length > 0) {
+    prompts.push(legacyText);
+  }
+  if (prompts.length === 0 && labelPrompt.length > 0) {
+    prompts.push(labelPrompt);
+  }
+  if (prompts.length === 0) {
+    prompts.push('');
+  }
+
+  return actionType === 'single' ? [prompts[0] ?? ''] : prompts;
 }
 
 export function isImmediateManagerAction(button: NormalizedManagerButton): boolean {

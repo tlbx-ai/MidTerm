@@ -142,33 +142,37 @@ function bindOverlayToggle(): void {
   }
 }
 
-function updateTerminalTransportDiagnostics(
-  sessionId: string,
+function setBaseTerminalTransportDiagnostics(
   transport: TerminalTransportDiagnostics | null,
+  browser: ReturnType<typeof getBrowserTransportSnapshot>,
 ): void {
-  const browser = getBrowserTransportSnapshot(sessionId);
-
   setDiagValue('diag-source-seq', transport?.sourceSeq ?? '-');
   setDiagValue('diag-mux-received-seq', transport?.muxReceivedSeq ?? '-');
   setDiagValue('diag-browser-received-seq', formatSequence(browser?.receivedSeq ?? null));
   setDiagValue('diag-browser-rendered-seq', formatSequence(browser?.renderedSeq ?? null));
   setDiagValue('diag-mthost-ipc-queued-seq', transport?.mthostIpcQueuedSeq ?? '-');
   setDiagValue('diag-mthost-ipc-flushed-seq', transport?.mthostIpcFlushedSeq ?? '-');
+}
 
-  if (transport) {
-    const backlog = `${transport.ipcBacklogFrames}f, ${transport.ipcBacklogBytes}b, age ${transport.oldestBacklogAgeMs}ms`;
-    const replayReason = transport.lastReplayReason ?? 'none';
-    const replay = `${transport.lastReplayBytes}b (${replayReason})`;
-    const lossReason = browser?.lastDataLossReason ?? transport.lastDataLossReason ?? 'none';
-    const lossCount = Math.max(browser?.dataLossCount ?? 0, transport.dataLossCount);
+function setLiveTransportDiagnostics(
+  transport: TerminalTransportDiagnostics,
+  browser: ReturnType<typeof getBrowserTransportSnapshot>,
+): void {
+  const backlog = `${transport.ipcBacklogFrames}f, ${transport.ipcBacklogBytes}b, age ${transport.oldestBacklogAgeMs}ms`;
+  const replayReason = transport.lastReplayReason ?? 'none';
+  const replay = `${transport.lastReplayBytes}b (${replayReason})`;
+  const lossReason = browser?.lastDataLossReason ?? transport.lastDataLossReason ?? 'none';
+  const lossCount = Math.max(browser?.dataLossCount ?? 0, transport.dataLossCount);
 
-    setDiagValue('diag-ipc-backlog', backlog);
-    setDiagValue('diag-last-replay', replay);
-    setDiagValue('diag-reconnect-count', `${transport.reconnectCount}`);
-    setDiagValue('diag-data-loss', `${lossCount} (${lossReason})`);
-    return;
-  }
+  setDiagValue('diag-ipc-backlog', backlog);
+  setDiagValue('diag-last-replay', replay);
+  setDiagValue('diag-reconnect-count', `${transport.reconnectCount}`);
+  setDiagValue('diag-data-loss', `${lossCount} (${lossReason})`);
+}
 
+function setBrowserOnlyTransportDiagnostics(
+  browser: ReturnType<typeof getBrowserTransportSnapshot>,
+): void {
   setDiagValue('diag-ipc-backlog', '-');
   setDiagValue(
     'diag-last-replay',
@@ -179,6 +183,22 @@ function updateTerminalTransportDiagnostics(
     'diag-data-loss',
     browser ? `${browser.dataLossCount} (${browser.lastDataLossReason ?? 'none'})` : '-',
   );
+}
+
+function updateTerminalTransportDiagnostics(
+  sessionId: string,
+  transport: TerminalTransportDiagnostics | null,
+): void {
+  const browser = getBrowserTransportSnapshot(sessionId);
+
+  setBaseTerminalTransportDiagnostics(transport, browser);
+
+  if (transport) {
+    setLiveTransportDiagnostics(transport, browser);
+    return;
+  }
+
+  setBrowserOnlyTransportDiagnostics(browser);
 }
 
 function clearTerminalTransportDiagnostics(): void {

@@ -11,7 +11,7 @@ import { createLogger } from '../logging';
 import { t } from '../i18n';
 import { sessionTerminals, hiddenSessionIds } from '../../state';
 import { sendInput, sendResize } from '../comms/muxChannel';
-import { getTerminalOptions } from '../terminal/manager';
+import { getTerminalOptions } from '../terminal/terminalOptions';
 import { escapeHtml } from '../../utils';
 import { $isMainBrowser } from '../../stores';
 

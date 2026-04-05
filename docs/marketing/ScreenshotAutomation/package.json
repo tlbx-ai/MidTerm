@@ -3,13 +3,25 @@
   "version": "1.0.0",
   "description": "Playwright automation for MidTerm marketing videos",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src playwright.config.ts",
+    "lint:fix": "eslint src playwright.config.ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"playwright.config.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"playwright.config.ts\"",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
-    "test:debug": "playwright test --debug"
+    "test:debug": "playwright test --debug",
+    "verify": "npm run typecheck && npm run lint"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.40.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.0"
   }
 }

@@ -8,9 +8,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint src/ts/",
-    "lint:fix": "eslint src/ts/ --fix",
-    "format": "prettier --write \"src/ts/**/*.ts\"",
+    "lint": "eslint src/ts/ vitest.config.ts --ignore-pattern \"**/*.test.ts\"",
+    "lint:fix": "eslint src/ts/ vitest.config.ts --fix --ignore-pattern \"**/*.test.ts\"",
+    "format": "prettier --write \"src/ts/**/*.ts\" \"vitest.config.ts\"",
+    "format:check": "prettier --check \"src/ts/**/*.ts\" \"vitest.config.ts\"",
     "build": "npm run typecheck && npx esbuild src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=wwwroot/js/terminal.min.js --target=es2020",
     "build:dev": "npm run typecheck && npx esbuild src/ts/main.ts --bundle --minify --sourcemap=linked --outfile=wwwroot/js/terminal.min.js --target=es2020",
     "watch": "npx esbuild src/ts/main.ts --bundle --sourcemap=linked --outfile=wwwroot/js/terminal.min.js --target=es2020 --watch",
@@ -18,10 +19,12 @@
     "generate:types": "npx openapi-typescript openapi/openapi.json -o src/ts/api.generated.ts && npx prettier --write src/ts/api.generated.ts",
     "generate:openapi": "dotnet build ../Ai.Tlbx.MidTerm.OpenApi/Ai.Tlbx.MidTerm.OpenApi.csproj && npm run generate:types",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run lint && npm run test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^24.10.1",
     "@typescript-eslint/eslint-plugin": "^8.57.0",
     "@typescript-eslint/parser": "^8.57.0",
     "@xterm/addon-fit": "^0.11.0",

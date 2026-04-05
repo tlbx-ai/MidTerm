@@ -15,57 +15,51 @@ interface CursorVisibilityMatch {
   endExclusive: number;
 }
 
+function isCursorVisibilityFinalByte(value: number | undefined): value is 0x68 | 0x6c {
+  return value === 0x68 || value === 0x6c;
+}
+
+function matchCursorVisibilitySequence(
+  data: Uint8Array,
+  index: number,
+  prefix: readonly number[],
+): CursorVisibilityMatch | null {
+  const finalIndex = index + prefix.length;
+  if (finalIndex >= data.length) {
+    return null;
+  }
+
+  for (let offset = 0; offset < prefix.length; offset += 1) {
+    if (data[index + offset] !== prefix[offset]) {
+      return null;
+    }
+  }
+
+  const final = data[finalIndex];
+  if (!isCursorVisibilityFinalByte(final)) {
+    return null;
+  }
+
+  return {
+    visible: final === 0x68,
+    endExclusive: finalIndex + 1,
+  };
+}
+
 function tryMatchCursorVisibilityControl(
   data: Uint8Array,
   index: number,
 ): CursorVisibilityMatch | null {
-  if (
-    index + 5 < data.length &&
-    data[index] === 0x1b &&
-    data[index + 1] === 0x5b &&
-    data[index + 2] === 0x3f &&
-    data[index + 3] === 0x32 &&
-    data[index + 4] === 0x35
-  ) {
-    const final = data[index + 5];
-    if (final === 0x68 || final === 0x6c) {
-      return {
-        visible: final === 0x68,
-        endExclusive: index + 6,
-      };
-    }
-  }
+  const prefixes = [
+    [0x1b, 0x5b, 0x3f, 0x32, 0x35],
+    [0x9b, 0x3f, 0x32, 0x35],
+    [0xc2, 0x9b, 0x3f, 0x32, 0x35],
+  ] as const;
 
-  if (
-    index + 4 < data.length &&
-    data[index] === 0x9b &&
-    data[index + 1] === 0x3f &&
-    data[index + 2] === 0x32 &&
-    data[index + 3] === 0x35
-  ) {
-    const final = data[index + 4];
-    if (final === 0x68 || final === 0x6c) {
-      return {
-        visible: final === 0x68,
-        endExclusive: index + 5,
-      };
-    }
-  }
-
-  if (
-    index + 5 < data.length &&
-    data[index] === 0xc2 &&
-    data[index + 1] === 0x9b &&
-    data[index + 2] === 0x3f &&
-    data[index + 3] === 0x32 &&
-    data[index + 4] === 0x35
-  ) {
-    const final = data[index + 5];
-    if (final === 0x68 || final === 0x6c) {
-      return {
-        visible: final === 0x68,
-        endExclusive: index + 6,
-      };
+  for (const prefix of prefixes) {
+    const match = matchCursorVisibilitySequence(data, index, prefix);
+    if (match) {
+      return match;
     }
   }
 

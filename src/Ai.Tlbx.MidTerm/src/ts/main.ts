@@ -17,7 +17,6 @@ import {
   handleStateUpdate,
   setSelectSessionCallback,
   sendInput,
-  sendActiveSessionHint,
   requestBufferRefresh,
   updateTerminalVisibility,
   setSuppressHeatCallback,
@@ -25,24 +24,16 @@ import {
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
-  applyTerminalScalingSync,
-  createTerminalForSession,
-  destroyTerminalForSession,
   preloadTerminalFont,
   initCalibrationTerminal,
   setShowBellCallback,
   setupResizeObserver,
   setupVisualViewport,
   bindSearchEvents,
-  scrollToBottom,
   focusActiveTerminal,
-  refreshTerminalPresentation,
   setupGlobalFocusReclaim,
-  fitSessionToScreen,
   handleClipboardPaste,
-  pasteToTerminal,
   initMobilePiP,
-  isTerminalViewingScrollback,
   resolveLaunchDimensions,
 } from './modules/terminal';
 import {
@@ -71,7 +62,7 @@ import { initI18n, t } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
-import { toggleSettings, closeSettings } from './modules/settings';
+import { toggleSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap, getBootstrapData } from './modules/bootstrap';
 import {
@@ -89,22 +80,10 @@ import {
   initUpdateUi,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
-import {
-  initHistoryDropdown,
-  toggleHistoryDropdown,
-  createHistoryEntry,
-  fetchHistory,
-  refreshHistory,
-  type LaunchEntry,
-} from './modules/history';
-import {
-  isLensHistoryEntry,
-  normalizeHistoryLensProfile,
-  resolveSessionHistoryMode,
-} from './modules/history/launchMode';
+import { initHistoryDropdown, toggleHistoryDropdown, type LaunchEntry } from './modules/history';
+import { isLensHistoryEntry, normalizeHistoryLensProfile } from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
-import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
-import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
+import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
   dismissTouchController,
@@ -115,7 +94,6 @@ import { initManagerBar } from './modules/managerBar';
 import {
   initLayoutRenderer,
   initDockOverlay,
-  handleSessionClosed,
   dockSession,
   getLayoutSessionIds,
   isSessionInLayout,
@@ -126,41 +104,30 @@ import {
 } from './modules/layout';
 import {
   initSessionTabs,
-  ensureSessionWrapper,
-  destroySessionWrapper,
   getActiveTab,
   getTabLabelForSession,
   isTabAvailable,
-  reparentTerminalContainer,
   setSessionLensAvailability,
   switchTab,
 } from './modules/sessionTabs';
 import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from './modules/sessionSurface';
 import {
   initAgentView,
-  destroyAgentView,
   getLensDebugScenarioNames,
   showLensDebugScenario,
 } from './modules/agentView';
 import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
-import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
-import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
-import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
+import { initFileBrowser } from './modules/fileBrowser';
+import { initGitPanel, connectGitWebSocket } from './modules/git';
+import { initCommandsPanel } from './modules/commands';
 import { initWebPreview } from './modules/web';
 import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
-  attachHubChannel,
   bindHubSettings,
   createRemoteSession,
-  deleteRemoteSession,
-  detachHubChannel,
-  getFirstHubSessionId,
-  getHubSession,
-  getHubSessionRecord,
   initHubRuntime,
   isHubSessionId,
   refreshHubState,
-  renameRemoteSession,
   renderHubSettings,
   subscribeHubState,
   toHubCompositeId,
@@ -173,8 +140,8 @@ import {
   applySharedSessionMode,
   showSharedSessionError,
 } from './modules/share';
-import { initDockState, removeSessionDockState } from './modules/dockState';
-import { initSmartInput, removeSmartInputSessionState } from './modules/smartInput';
+import { initDockState } from './modules/dockState';
+import { initSmartInput } from './modules/smartInput';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -190,7 +157,6 @@ import {
   $muxWsConnected,
   $activeSessionId,
   $settingsOpen,
-  $isMainBrowser,
   $sessionList,
   $currentSettings,
   $layout,
@@ -198,21 +164,16 @@ import {
   removeSession,
   getSession,
   setProcessState,
-  setPendingRename,
-  clearPendingRename,
 } from './stores';
 import type { Session } from './types';
 import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
+import { createSessionActionHandlers } from './sessionActions';
+import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
 import {
-  ApiProblemError,
   createSession as apiCreateSession,
   bootstrapWorker,
-  deleteSession as apiDeleteSession,
-  renameSession as apiRenameSession,
-  patchHistoryEntry,
   setSessionBookmark,
-  setSessionControl as apiSetSessionControl,
 } from './api/client';
 import type { ShellType } from './api/types';
 
@@ -704,56 +665,33 @@ function resolveLauncherShell(): ShellType | null {
   return 'Bash';
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function getSessionLaunchFailure(error: unknown): { message: string; details?: string } {
-  if (error instanceof ApiProblemError) {
-    const details: string[] = [];
-    if (error.errorStage) {
-      details.push(`Stage: ${error.errorStage}`);
-    }
-    if (error.exceptionType) {
-      details.push(`Exception: ${error.exceptionType}`);
-    }
-    if (error.nativeErrorCode !== null) {
-      details.push(`Native error code: ${error.nativeErrorCode}`);
-    }
-    if (error.errorDetails) {
-      details.push(error.errorDetails);
-    }
-
-    return {
-      message: error.detail || error.title || 'Session launch failed.',
-      ...(details.length > 0 ? { details: details.join('\n\n') } : {}),
-    };
-  }
-
-  return {
-    message: getErrorMessage(error),
-  };
-}
-
-function showSessionLaunchFailure(error: unknown): void {
-  const failure = getSessionLaunchFailure(error);
-  const options = {
-    title: t('sessionLauncher.createFailed'),
-    ...(failure.details ? { details: failure.details } : {}),
-  };
-  void showAlert(failure.message, options);
-}
-
 function isLensOnlySession(session: Session | null | undefined): boolean {
   return session?.lensOnly === true;
 }
+
+const {
+  deleteSession,
+  enableMidtermFeatures,
+  pinSessionToHistory,
+  promptRenameSession,
+  renameSession,
+  selectSession,
+  startInlineRename,
+  toggleAgentControl,
+} = createSessionActionHandlers({
+  animateBookmarkSaveSuccess,
+  buildLensHistoryDedupeKey,
+  closeMobileActionsMenu,
+  getBookmarkSurfaceType,
+  isLensOnlySession,
+});
 
 async function createSession(): Promise<void> {
   let selection: SessionLauncherSelection | null;
   try {
     selection = await openSessionLauncher();
   } catch (error) {
-    void showAlert(getErrorMessage(error), {
+    void showAlert(getSessionLaunchErrorMessage(error), {
       title: t('sessionLauncher.loadFailed'),
     });
     return;
@@ -796,7 +734,9 @@ async function createSession(): Promise<void> {
       .catch((e: unknown) => {
         clearPendingSession(tempId);
         log.error(() => `Failed to create remote session: ${String(e)}`);
-        void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+        void showAlert(getSessionLaunchErrorMessage(e), {
+          title: t('sessionLauncher.createFailed'),
+        });
       });
     return;
   }
@@ -851,542 +791,6 @@ async function createSession(): Promise<void> {
       log.error(() => `Failed to create worker session: ${String(e)}`);
       showSessionLaunchFailure(e);
     });
-}
-
-function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {
-  closeMobileActionsMenu();
-
-  // Only close settings if explicitly requested (e.g., user clicked a session)
-  // Auto-selection from state updates should NOT close settings
-  if (options?.closeSettingsPanel !== false) {
-    closeSettings();
-  }
-
-  if (isHubSessionId(sessionId)) {
-    const sessionInfo = getHubSession(sessionId);
-    if (!sessionInfo) {
-      return;
-    }
-
-    detachHubChannel();
-    sessionTerminals.forEach((state, id) => {
-      if (!isSessionInLayout(id)) {
-        state.container.classList.add('hidden');
-      }
-    });
-
-    $activeSessionId.set(sessionId);
-    suppressAllHeat(1500);
-
-    const state = createTerminalForSession(sessionId, sessionInfo);
-    const tabState = ensureSessionWrapper(sessionId);
-    reparentTerminalContainer(sessionId, state.container);
-    if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
-      dom.terminalsArea.appendChild(tabState.wrapper);
-    }
-
-    dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
-      (w as HTMLElement).classList.toggle(
-        'hidden',
-        w.getAttribute('data-session-id') !== sessionId,
-      );
-    });
-
-    state.container.classList.remove('hidden');
-    if (isLayoutActive()) {
-      getLayoutRoot()?.classList.add('hidden');
-    }
-
-    attachHubChannel(sessionId);
-
-    requestAnimationFrame(() => {
-      refreshTerminalPresentation(sessionId, state);
-      state.terminal.focus();
-      if (!isTerminalViewingScrollback(state)) {
-        scrollToBottom(sessionId);
-      }
-    });
-
-    dom.emptyState?.classList.add('hidden');
-    return;
-  }
-
-  detachHubChannel();
-
-  // If session is in layout, focus it there instead of switching to standalone
-  if (isSessionInLayout(sessionId)) {
-    suppressAllHeat(1500);
-    focusLayoutSession(sessionId);
-    sendActiveSessionHint(sessionId);
-    const sessionInfo = getSession(sessionId);
-    if (!isLensOnlySession(sessionInfo)) {
-      createTerminalForSession(sessionId, sessionInfo);
-    }
-    // Re-show layout (may have been hidden for standalone viewing)
-    getLayoutRoot()?.classList.remove('hidden');
-    sessionTerminals.forEach((s, id) => {
-      if (!isSessionInLayout(id)) s.container.classList.add('hidden');
-    });
-    return;
-  }
-
-  // Standalone mode - hide all terminals except selected
-  sessionTerminals.forEach((state, id) => {
-    // Don't hide terminals that are in the layout
-    if (!isSessionInLayout(id)) {
-      state.container.classList.add('hidden');
-    }
-  });
-
-  $activeSessionId.set(sessionId);
-  suppressAllHeat(1500);
-  sendActiveSessionHint(sessionId);
-
-  const sessionInfo = getSession(sessionId);
-  const lensOnly = isLensOnlySession(sessionInfo);
-  const state = lensOnly ? null : createTerminalForSession(sessionId, sessionInfo);
-  const isNewlyCreated = newlyCreatedSessions.has(sessionId);
-  const activeTab = getActiveTab(sessionId);
-
-  // Ensure session wrapper with tabs (standalone mode only)
-  const tabState = ensureSessionWrapper(sessionId);
-  if (state) {
-    reparentTerminalContainer(sessionId, state.container);
-  }
-  if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
-    dom.terminalsArea.appendChild(tabState.wrapper);
-  }
-  // Hide all other wrappers
-  dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
-    (w as HTMLElement).classList.toggle('hidden', w.getAttribute('data-session-id') !== sessionId);
-  });
-
-  if (state) {
-    state.container.classList.remove('hidden');
-  }
-  if (isLayoutActive()) {
-    getLayoutRoot()?.classList.add('hidden');
-  }
-
-  if (lensOnly && activeTab === 'terminal') {
-    switchTab(sessionId, 'agent');
-  }
-
-  requestAnimationFrame(() => {
-    if (state) {
-      refreshTerminalPresentation(sessionId, state);
-      if (activeTab === 'terminal') {
-        // Only the leading browser is allowed to change the server-side viewport.
-        // Followers may restyle/scalе locally, but must not send a resize.
-        if ($isMainBrowser.get()) {
-          fitSessionToScreen(sessionId);
-        } else {
-          applyTerminalScalingSync(state);
-        }
-      }
-      if (activeTab !== 'agent') {
-        state.terminal.focus();
-      }
-      if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
-        scrollToBottom(sessionId);
-      }
-    }
-
-    if (isNewlyCreated) {
-      newlyCreatedSessions.delete(sessionId);
-    }
-  });
-
-  // Subscription handles renderSessionList and updateMobileTitle via $activeSessionId change
-  dom.emptyState?.classList.add('hidden');
-}
-
-function deleteSession(sessionId: string): void {
-  if (isHubSessionId(sessionId)) {
-    const record = getHubSessionRecord(sessionId);
-    destroySessionWrapper(sessionId);
-    destroyTerminalForSession(sessionId);
-    if ($activeSessionId.get() === sessionId) {
-      $activeSessionId.set(null);
-    }
-    detachHubChannel(sessionId);
-    if (record) {
-      deleteRemoteSession(record.machineId, record.remoteSessionId)
-        .then(() => refreshHubState())
-        .catch((e: unknown) => {
-          log.error(() => `Failed to delete remote session ${sessionId}: ${String(e)}`);
-        });
-    }
-
-    const nextLocal = $sessionList.get()[0]?.id ?? getFirstHubSessionId();
-    if (nextLocal) {
-      selectSession(nextLocal, { closeSettingsPanel: false });
-    }
-    return;
-  }
-
-  // Remove from layout if present
-  handleSessionClosed(sessionId);
-
-  // Remove session tab wrapper, feature panels, and dock state
-  removeSessionDockState(sessionId);
-  removeSmartInputSessionState(sessionId);
-  destroyAgentView(sessionId);
-  destroyFileBrowser(sessionId);
-  destroyGitSession(sessionId);
-  destroyCommandsSession(sessionId);
-  destroySessionWrapper(sessionId);
-
-  // Optimistic UI: remove session immediately for better UX
-  destroyTerminalForSession(sessionId);
-
-  // Remove from sessions store
-  removeSession(sessionId);
-
-  // If this was the active session, select another (but don't close settings panel)
-  if ($activeSessionId.get() === sessionId) {
-    $activeSessionId.set(null);
-    const sessions = $sessionList.get();
-    const firstSession = sessions[0];
-    if (firstSession?.id) {
-      selectSession(firstSession.id, { closeSettingsPanel: false });
-    }
-  }
-
-  // Subscription handles renderSessionList, updateEmptyState, updateMobileTitle via store change
-
-  // Send delete request to server
-  apiDeleteSession(sessionId).catch((e: unknown) => {
-    log.error(() => `Failed to delete session ${sessionId}: ${String(e)}`);
-  });
-}
-
-async function enableMidtermFeatures(sessionId: string): Promise<void> {
-  if (isHubSessionId(sessionId)) {
-    return;
-  }
-
-  try {
-    const fg = getForegroundInfo(sessionId);
-    await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
-  } catch (e: unknown) {
-    log.error(() => `Failed to enable MidTerm features for ${sessionId}: ${String(e)}`);
-  }
-}
-
-function renameSession(sessionId: string, newName: string | null): void {
-  if (isHubSessionId(sessionId)) {
-    const record = getHubSessionRecord(sessionId);
-    if (!record) return;
-
-    const trimmedName = (newName || '').trim();
-    renameRemoteSession(record.machineId, record.remoteSessionId, { name: trimmedName })
-      .then(() => refreshHubState())
-      .catch((e: unknown) => {
-        log.error(() => `Failed to rename remote session ${sessionId}: ${String(e)}`);
-      });
-    return;
-  }
-
-  const session = getSession(sessionId);
-  if (!session) return;
-
-  const trimmedName = (newName || '').trim();
-  const nameToSend = trimmedName === '' || trimmedName === session.shellType ? '' : trimmedName;
-
-  // Store previous values for rollback
-  const previousName = session.name;
-  const wasManuallyNamed = session.manuallyNamed;
-
-  // Mark as pending to protect from server overwrites until confirmed
-  setPendingRename(sessionId, nameToSend);
-
-  // Optimistic UI update via store
-  setSession({ ...session, name: nameToSend, manuallyNamed: true });
-  // Subscription handles renderSessionList and updateMobileTitle via store change
-
-  apiRenameSession(sessionId, nameToSend)
-    .then(() => {
-      void patchPinnedHistoryLabelIfMatchingTuple(sessionId, nameToSend);
-    })
-    .catch((e: unknown) => {
-      // Clear pending and rollback on error
-      clearPendingRename(sessionId);
-      const currentSession = getSession(sessionId);
-      if (currentSession) {
-        setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
-      }
-      // Subscription handles renderSessionList and updateMobileTitle via store change
-      log.error(() => `Failed to rename session ${sessionId}: ${String(e)}`);
-    });
-}
-
-function getSessionFamilyIds(sessionId: string): string[] {
-  const sessions = $sessionList.get();
-  const session = sessions.find((item) => item.id === sessionId);
-  if (!session) {
-    return [];
-  }
-
-  const rootSessionId = session.parentSessionId ?? session.id;
-  return sessions
-    .filter((item) => item.id === rootSessionId || item.parentSessionId === rootSessionId)
-    .map((item) => item.id)
-    .filter((id): id is string => !!id);
-}
-
-function toggleAgentControl(sessionId: string): void {
-  if (isHubSessionId(sessionId)) {
-    return;
-  }
-
-  const session = getSession(sessionId);
-  if (!session) return;
-
-  const nextAgentControlled = !session.agentControlled;
-  const sessionFamilyIds = getSessionFamilyIds(sessionId);
-  const previousSnapshots = sessionFamilyIds
-    .map((id) => getSession(id))
-    .filter((item): item is Session => !!item)
-    .map((item) => ({ ...item }));
-
-  for (const snapshot of previousSnapshots) {
-    setSession({
-      ...snapshot,
-      agentControlled: nextAgentControlled,
-    });
-  }
-
-  apiSetSessionControl(sessionId, nextAgentControlled).catch((e: unknown) => {
-    for (const snapshot of previousSnapshots) {
-      setSession(snapshot);
-    }
-
-    log.error(() => `Failed to toggle agent control for ${sessionId}: ${String(e)}`);
-  });
-}
-
-async function patchPinnedHistoryLabelIfMatchingTuple(
-  sessionId: string,
-  nameToSend: string,
-): Promise<void> {
-  const currentSession = getSession(sessionId);
-  const bookmarkId = currentSession?.bookmarkId;
-  if (!bookmarkId) return;
-
-  if (currentSession.lensOnly) {
-    patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
-    return;
-  }
-
-  const fgInfo = getForegroundInfo(sessionId);
-  const currentTuple = buildProcessCwdTuple(
-    fgInfo.name,
-    fgInfo.commandLine,
-    fgInfo.cwd,
-    fgInfo.processIdentity,
-  );
-  if (!currentTuple) return;
-
-  let entries: LaunchEntry[];
-  try {
-    entries = await fetchHistory();
-  } catch {
-    return;
-  }
-
-  const linkedEntry = entries.find((e) => e.id === bookmarkId);
-  if (!linkedEntry) return;
-
-  const linkedTuple = buildProcessCwdTuple(
-    linkedEntry.executable,
-    linkedEntry.commandLine ?? null,
-    linkedEntry.workingDirectory,
-  );
-
-  if (!linkedTuple || linkedTuple !== currentTuple) {
-    log.verbose(() => `Skip bookmark label patch for ${sessionId}: tuple moved`);
-    return;
-  }
-
-  patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
-}
-
-function startInlineRename(sessionId: string): void {
-  const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
-  if (!item) return;
-
-  const renameAnchor =
-    item.querySelector('.session-title') ||
-    item.querySelector('.process-title') ||
-    item.querySelector('.session-title-row');
-  if (!renameAnchor) return;
-
-  const session = getSession(sessionId);
-  const currentName = session ? session.name || session.shellType : '';
-
-  // Position overlay input on top of the title content.
-  const rect = renameAnchor.getBoundingClientRect();
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'session-rename-input';
-  input.value = currentName;
-  input.style.position = 'fixed';
-  input.style.left = `${rect.left}px`;
-  input.style.top = `${rect.top}px`;
-  input.style.width = `${rect.width + 20}px`;
-  input.style.height = `${rect.height}px`;
-  input.style.zIndex = '10000';
-
-  document.body.appendChild(input);
-
-  let committed = false;
-  function finishRename(): void {
-    if (committed) return;
-    committed = true;
-    const newName = input.value;
-    input.remove();
-    renameSession(sessionId, newName);
-  }
-
-  function cancelRename(): void {
-    if (committed) return;
-    committed = true;
-    input.remove();
-  }
-
-  input.addEventListener('blur', finishRename);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      input.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelRename();
-    }
-  });
-
-  input.focus();
-  input.select();
-}
-
-function promptRenameSession(sessionId: string): void {
-  const session = getSession(sessionId);
-  if (!session) return;
-
-  const currentName = session.name || session.shellType;
-  const newName = prompt('Rename terminal:', currentName);
-
-  if (newName !== null) {
-    renameSession(sessionId, newName);
-  }
-}
-
-async function pinSessionToHistory(sessionId: string): Promise<void> {
-  const session = getSession(sessionId);
-  if (!session) {
-    log.warn(() => `pinSessionToHistory: session ${sessionId} not found`);
-    return;
-  }
-
-  const historyMode = resolveSessionHistoryMode(session);
-  const fgInfo = getForegroundInfo(sessionId);
-  const trimmedName = (session.name || '').trim();
-  const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
-  const previousBookmarkId = session.bookmarkId ?? null;
-  const surfaceType = getBookmarkSurfaceType(session, historyMode.profile);
-  let executable: string;
-  let commandLine: string | null;
-  let workingDirectory: string;
-  let dedupeKey: string | null;
-  let foregroundProcessName: string | null = null;
-  let foregroundProcessCommandLine: string | null = null;
-  let foregroundProcessDisplayName: string | null = null;
-  let foregroundProcessIdentity: string | null = null;
-
-  if (historyMode.launchMode === 'lens' && historyMode.profile) {
-    workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
-    if (!workingDirectory) {
-      log.info(
-        () => `pinSessionToHistory: missing working directory for lens session ${sessionId}`,
-      );
-      return;
-    }
-
-    executable = historyMode.profile;
-    commandLine = null;
-    dedupeKey = buildLensHistoryDedupeKey(historyMode.profile, workingDirectory);
-  } else {
-    const tupleKey = buildProcessCwdTuple(
-      fgInfo.name,
-      fgInfo.commandLine,
-      fgInfo.cwd,
-      fgInfo.processIdentity,
-    );
-    if (!fgInfo.name || !tupleKey) {
-      log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
-      return;
-    }
-
-    executable = fgInfo.name;
-    commandLine = fgInfo.commandLine;
-    workingDirectory = fgInfo.cwd ?? '';
-    dedupeKey = tupleKey;
-    foregroundProcessName = fgInfo.name;
-    foregroundProcessCommandLine = fgInfo.commandLine;
-    foregroundProcessDisplayName = fgInfo.displayName;
-    foregroundProcessIdentity = fgInfo.processIdentity;
-  }
-
-  try {
-    const id = await createHistoryEntry({
-      shellType: session.shellType,
-      executable,
-      commandLine,
-      workingDirectory,
-      isStarred: true,
-      label,
-      dedupeKey,
-      launchMode: historyMode.launchMode,
-      profile: historyMode.profile,
-      surfaceType,
-      foregroundProcessName,
-      foregroundProcessCommandLine,
-      foregroundProcessDisplayName,
-      foregroundProcessIdentity,
-    });
-
-    if (!id) {
-      throw new Error('The bookmark service did not return an id.');
-    }
-
-    const current = getSession(sessionId) ?? session;
-    const bookmarkChanged = current.bookmarkId !== id;
-
-    if (bookmarkChanged) {
-      const { response } = await setSessionBookmark(sessionId, id);
-      if (!response.ok) {
-        throw new Error(`Bookmark link failed with status ${response.status}.`);
-      }
-      setSession({ ...current, bookmarkId: id });
-    }
-
-    refreshHistory();
-    animateBookmarkSaveSuccess(sessionId);
-    if (previousBookmarkId && previousBookmarkId !== id) {
-      log.info(() => `Pinned to history (new tuple): ${fgInfo.name} (id=${id})`);
-    } else if (previousBookmarkId === id) {
-      log.info(() => `Pinned to history (updated existing tuple): ${fgInfo.name} (id=${id})`);
-    } else {
-      log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
-    }
-  } catch (error) {
-    log.error(() => `Failed to pin session ${sessionId} to history: ${String(error)}`);
-    await showAlert(error instanceof Error ? error.message : String(error), {
-      title: 'Bookmark save failed',
-    });
-  }
 }
 
 async function spawnFromHistory(entry: LaunchEntry): Promise<void> {

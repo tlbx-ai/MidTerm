@@ -205,6 +205,60 @@ function updateScrollback(sessionId: string): void {
   applyColor(metricEls.scrollback, pct < 50 ? 'good' : pct < 80 ? 'warn' : 'bad');
 }
 
+function resolveCellMetrics(
+  state: typeof sessionTerminals extends Map<string, infer TValue> ? TValue : never,
+  screenEl: HTMLElement | null,
+  cols: number,
+  rows: number,
+): string | null {
+  const xtermCore = ((state.terminal as unknown as Record<string, unknown>)._core ?? undefined) as
+    | { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } }
+    | undefined;
+  const xtermDims = xtermCore?._renderService?.dimensions?.css?.cell;
+  if (xtermDims) {
+    let cellText = `${xtermDims.width.toFixed(2)}x${xtermDims.height.toFixed(2)}`;
+    if (screenEl && cols > 0 && rows > 0) {
+      const domW = screenEl.offsetWidth / cols;
+      if (Math.abs(domW - xtermDims.width) > 0.1) {
+        cellText += ` (DOM: ${domW.toFixed(2)})`;
+      }
+    }
+    return cellText;
+  }
+
+  if (screenEl && cols > 0 && rows > 0) {
+    const cellW = screenEl.offsetWidth / cols;
+    const cellH = screenEl.offsetHeight / rows;
+    return `${cellW.toFixed(2)}x${cellH.toFixed(2)}`;
+  }
+
+  return null;
+}
+
+function updateScaleMetric(
+  container: HTMLElement,
+  xtermEl: HTMLElement | null,
+  containerW: number,
+  containerH: number,
+): void {
+  if (!metricEls || !xtermEl) {
+    return;
+  }
+
+  const availW = containerW - TERMINAL_PADDING;
+  const availH = containerH - TERMINAL_PADDING;
+  const scaleX = availW / xtermEl.offsetWidth;
+  const scaleY = availH / xtermEl.offsetHeight;
+  const scale = Math.min(scaleX, scaleY, 1);
+  const isScaled = container.classList.contains('scaled');
+  const transform = xtermEl.style.transform;
+  metricEls.scale.textContent = `${scale.toFixed(4)} ${isScaled ? '(SCALED)' : '(1:1)'}`;
+  if (transform) {
+    metricEls.scale.title = transform;
+  }
+  applyColor(metricEls.scale, scale >= 1 ? 'good' : scale > 0.95 ? 'warn' : 'bad');
+}
+
 function updateScalingMetrics(sessionId: string): void {
   if (!metricEls) return;
   const state = sessionTerminals.get(sessionId);
@@ -228,25 +282,9 @@ function updateScalingMetrics(sessionId: string): void {
   metricEls.termColsRows.textContent = `${cols}×${rows} (srv ${srvCols}×${srvRows})`;
   applyColor(metricEls.termColsRows, cols === srvCols && rows === srvRows ? 'good' : 'warn');
 
-  // Cell dimensions — show xterm.js internal dims (accurate) vs DOM-derived
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const xtermCore = (state.terminal as Record<string, any>)._core as
-    | { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } }
-    | undefined;
-  const xtermDims = xtermCore?._renderService?.dimensions?.css?.cell;
-  if (xtermDims) {
-    let cellText = `${xtermDims.width.toFixed(2)}×${xtermDims.height.toFixed(2)}`;
-    if (screenEl && cols > 0 && rows > 0) {
-      const domW = screenEl.offsetWidth / cols;
-      if (Math.abs(domW - xtermDims.width) > 0.1) {
-        cellText += ` (DOM: ${domW.toFixed(2)})`;
-      }
-    }
-    metricEls.cellPx.textContent = cellText;
-  } else if (screenEl && cols > 0 && rows > 0) {
-    const cellW = screenEl.offsetWidth / cols;
-    const cellH = screenEl.offsetHeight / rows;
-    metricEls.cellPx.textContent = `${cellW.toFixed(2)}×${cellH.toFixed(2)}`;
+  const cellMetrics = resolveCellMetrics(state, screenEl, cols, rows);
+  if (cellMetrics) {
+    metricEls.cellPx.textContent = cellMetrics;
   }
 
   // Xterm actual rendered size
@@ -254,21 +292,7 @@ function updateScalingMetrics(sessionId: string): void {
     metricEls.xtermPx.textContent = `${xtermEl.offsetWidth}×${xtermEl.offsetHeight}`;
   }
 
-  // Scale factor
-  if (xtermEl) {
-    const availW = containerW - TERMINAL_PADDING;
-    const availH = containerH - TERMINAL_PADDING;
-    const scaleX = availW / xtermEl.offsetWidth;
-    const scaleY = availH / xtermEl.offsetHeight;
-    const scale = Math.min(scaleX, scaleY, 1);
-    const isScaled = container.classList.contains('scaled');
-    const transform = xtermEl.style.transform;
-    metricEls.scale.textContent = `${scale.toFixed(4)} ${isScaled ? '(SCALED)' : '(1:1)'}`;
-    if (transform) {
-      metricEls.scale.title = transform;
-    }
-    applyColor(metricEls.scale, scale >= 1 ? 'good' : scale > 0.95 ? 'warn' : 'bad');
-  }
+  updateScaleMetric(container, xtermEl, containerW, containerH);
 }
 
 function updateCursorState(sessionId: string): void {

@@ -6,7 +6,7 @@
  */
 
 import type { Session, TerminalState } from '../../types';
-import { getEffectiveXtermTheme, syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
+import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
   sessionTerminals,
   pendingOutputFrames,
@@ -17,22 +17,10 @@ import {
   MAX_WEBGL_CONTEXTS,
   terminalsWithWebgl,
 } from '../../state';
-import {
-  $activeSessionId,
-  $currentSettings,
-  $isMainBrowser,
-  $sessions,
-  $windowsBuildNumber,
-} from '../../stores';
-import { getClipboardStyle, parseOutputFrame } from '../../utils';
+import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
+import { parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
-import {
-  setupFileDrop,
-  handleClipboardPaste,
-  handleNativeImagePaste,
-  sanitizePasteContent,
-  sanitizeCopyContent,
-} from './fileDrop';
+import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
 import {
   isBracketedPasteEnabled,
   reconcileSynchronizedOutputCursor,
@@ -42,25 +30,14 @@ import {
 } from '../comms';
 import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
-import { Terminal, type ITerminalOptions } from '@xterm/xterm';
+import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 
-import {
-  initSearchForTerminal,
-  showSearch,
-  isSearchVisible,
-  hideSearch,
-  cleanupSearchForTerminal,
-} from './search';
+import { initSearchForTerminal, isSearchVisible, cleanupSearchForTerminal } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
-import {
-  resolveCopyShortcutAction,
-  isPasteShortcut,
-  isNativeImagePasteShortcut,
-} from './clipboardShortcuts';
 import {
   getTerminalEnterOverride,
   isTerminalEnterRemapEnabled,
@@ -72,7 +49,7 @@ import {
   updateEnterModifierLatch,
   type EnterModifierLatchState,
 } from './enterModifierLatch';
-import { evaluateTerminalKeyAudit, isModifierKeyOnlyEvent, isThirdLevelShift } from './keyAudit';
+import { bindTerminalInteractionHandlers } from './interactionBindings';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -86,9 +63,8 @@ import {
   ensureTerminalFontLoaded,
   getBundledTerminalFontFamilies,
   getConfiguredTerminalFontFamily,
-  normalizeTerminalFontWeight,
-  normalizeTerminalLetterSpacing,
 } from './fontConfig';
+import { getTerminalOptions } from './terminalOptions';
 import { getForegroundInfo } from '../process';
 import { isSmartInputMode, showSmartInput } from '../smartInput';
 import {
@@ -111,8 +87,6 @@ export function setShowBellCallback(cb: (sessionId: string) => void): void {
 
 // Debounce timers for auto-rename from shell title
 const pendingTitleUpdates = new Map<string, number>();
-type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
-
 // Calibration measurement from hidden terminal (accurate cell dimensions)
 let calibrationMeasurement: {
   cellWidth: number;
@@ -741,68 +715,6 @@ function updateSessionNameAuto(sessionId: string, name: string): void {
 }
 
 /**
- * Get terminal options based on current settings
- */
-export function getTerminalOptions(): ITerminalOptions {
-  const currentSettings = $currentSettings.get();
-  const windowsBuildNumber = $windowsBuildNumber.get();
-  const baseFontSize = currentSettings?.fontSize ?? 14;
-  const fontSize = getEffectiveTerminalFontSize(baseFontSize);
-  const fontFamily = getConfiguredTerminalFontFamily();
-  const lineHeight = currentSettings?.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT;
-  const letterSpacing = normalizeTerminalLetterSpacing(
-    currentSettings?.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING,
-  );
-  const fontWeight = normalizeTerminalFontWeight(
-    currentSettings?.fontWeight,
-    DEFAULT_TERMINAL_FONT_WEIGHT,
-  ) as TerminalFontWeight;
-  const fontWeightBold = normalizeTerminalFontWeight(
-    currentSettings?.fontWeightBold,
-    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
-  ) as TerminalFontWeight;
-  const customGlyphs = currentSettings?.customGlyphs ?? true;
-  const scrollback = currentSettings?.scrollbackLines ?? 2000;
-
-  const options: ITerminalOptions = {
-    cursorBlink: currentSettings?.cursorBlink ?? false,
-    cursorStyle: currentSettings?.cursorStyle ?? 'block',
-    cursorInactiveStyle: currentSettings?.cursorInactiveStyle ?? 'none',
-    fontFamily: buildTerminalFontStack(fontFamily),
-    fontSize: fontSize,
-    letterSpacing: letterSpacing,
-    lineHeight: lineHeight,
-    fontWeight: fontWeight,
-    fontWeightBold: fontWeightBold,
-    scrollback: scrollback,
-    smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
-    allowProposedApi: true,
-    allowTransparency: true,
-    customGlyphs: customGlyphs,
-    rescaleOverlappingGlyphs: true,
-    theme: getEffectiveXtermTheme(),
-  };
-
-  // Configure ConPTY for Windows - use server-provided build or detect from userAgent
-  const isWindows = /Windows|Win32|Win64/i.test(navigator.userAgent);
-  if (windowsBuildNumber !== null) {
-    options.windowsPty = {
-      backend: 'conpty',
-      buildNumber: windowsBuildNumber,
-    };
-  } else if (isWindows) {
-    // Default to Windows 10 2004 (19041) which has stable ConPTY support
-    // This ensures proper VT sequence interpretation before health check completes
-    options.windowsPty = {
-      backend: 'conpty',
-      buildNumber: 19041,
-    };
-  }
-
-  return options;
-}
-
-/**
  * Create a terminal instance for a session.
  * Returns existing state if terminal already exists.
  */
@@ -1160,415 +1072,33 @@ export function setupTerminalEvents(
     }),
   );
 
-  const enterOverrideHandler = (event: KeyboardEvent) => {
-    tryHandleTerminalEnterOverride(sessionId, event, container, 'container-enter');
-  };
-  const enterModifierKeydownHandler = (event: KeyboardEvent) => {
-    updateSessionEnterModifierLatch(sessionId, event, container, 'container-latch');
-  };
-  const enterModifierKeyupHandler = (event: KeyboardEvent) => {
-    updateSessionEnterModifierLatch(sessionId, event, container, 'container-latch');
-  };
-  let keyDownHandled = false;
-  let keyDownSeen = false;
-  let keyPressHandled = false;
-  let unprocessedDeadKey = false;
   const isMac = isMacPlatform();
   const isWindows = isWindowsPlatform();
   const macOptionIsMeta = terminal.options.macOptionIsMeta === true;
   const isKeyAuditActive = (): boolean => isTerminalKeyAuditEnabled();
-  const resetKeyAuditState = (): void => {
-    keyDownHandled = false;
-    keyDownSeen = false;
-    keyPressHandled = false;
-    unprocessedDeadKey = false;
-  };
-  const terminalKeyAuditKeydownHandler = (event: KeyboardEvent) => {
-    if (
-      !isKeyAuditActive() ||
-      !shouldCaptureTerminalKey(container, event.target) ||
-      event.isComposing
-    ) {
-      return;
-    }
-
-    keyDownHandled = false;
-    keyDownSeen = true;
-
-    if (event.key === 'F12') {
-      return;
-    }
-
-    const foreground = getForegroundInfo(sessionId);
-    const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
-
-    switch (resolveCopyShortcutAction(event, style, terminal.hasSelection())) {
-      case 'copy':
-        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
-        terminal.clearSelection();
-        keyDownHandled = true;
-        cancelTerminalInputEvent(event);
-        return;
-      case 'sendKey':
-        if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey) {
-          sendInput(sessionId, '\x03');
-          keyDownHandled = true;
-          cancelTerminalInputEvent(event);
-          return;
-        }
-        break;
-      default:
-        break;
-    }
-
-    if (isNativeImagePasteShortcut(event)) {
-      void handleNativeImagePaste(sessionId, {
-        foregroundName: foreground.name,
-        foregroundCommandLine: foreground.commandLine,
-      }).then((result) => {
-        if (result === 'none') {
-          sendInput(sessionId, '\x1bv');
-        }
-      });
-      keyDownHandled = true;
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    if (isPasteShortcut(event)) {
-      if (canUseAsyncClipboard()) {
-        void handleClipboardPaste(sessionId, {
-          foregroundName: foreground.name,
-          foregroundCommandLine: foreground.commandLine,
-        });
-        keyDownHandled = true;
-        cancelTerminalInputEvent(event);
-      }
-      return;
-    }
-
-    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
-      showSearch();
-      keyDownHandled = true;
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    if (event.key === 'Escape' && isSearchVisible()) {
-      hideSearch();
-      keyDownHandled = true;
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    if (tryHandleTerminalEnterOverride(sessionId, event, container, 'audit-enter')) {
-      keyDownHandled = true;
-      return;
-    }
-
-    if (event.key === 'Dead' || event.key === 'AltGraph') {
-      unprocessedDeadKey = true;
-    }
-
-    const legacyNumbers = getLegacyKeyboardNumbers(event);
-    const result = evaluateTerminalKeyAudit(
-      {
-        key: event.key,
-        code: event.code,
-        keyCode: legacyNumbers.keyCode,
-        which: legacyNumbers.which,
-        charCode: legacyNumbers.charCode,
-        ctrlKey: event.ctrlKey,
-        shiftKey: event.shiftKey,
-        altKey: event.altKey,
-        metaKey: event.metaKey,
-      },
-      terminal.modes.applicationCursorKeysMode,
-      isMac,
-      macOptionIsMeta,
-    );
-
-    if (result.type === 'pageUp' || result.type === 'pageDown') {
-      const scrollCount = terminal.rows - 1;
-      terminal.scrollLines(result.type === 'pageUp' ? -scrollCount : scrollCount);
-      keyDownHandled = true;
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    if (result.type === 'selectAll') {
-      terminal.selectAll();
-      keyDownHandled = true;
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    if (isThirdLevelShift(event, isMac, isWindows, macOptionIsMeta)) {
-      return;
-    }
-
-    if (!result.key) {
-      if (isModifierKeyOnlyEvent({ key: event.key })) {
-        cancelTerminalInputEvent(event);
-      }
-      return;
-    }
-
-    if (event.key && !event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
-      const charCode = event.key.charCodeAt(0);
-      if (charCode >= 65 && charCode <= 90) {
-        return;
-      }
-    }
-
-    if (unprocessedDeadKey) {
-      unprocessedDeadKey = false;
-      return;
-    }
-
-    sendInput(sessionId, result.key);
-    keyDownHandled = true;
-    cancelTerminalInputEvent(event);
-  };
-  const terminalKeyAuditKeypressHandler = (event: KeyboardEvent) => {
-    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
-      return;
-    }
-
-    keyPressHandled = false;
-
-    if (keyDownHandled) {
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    const legacyNumbers = getLegacyKeyboardNumbers(event);
-    const keyCode =
-      legacyNumbers.charCode !== 0
-        ? legacyNumbers.charCode
-        : legacyNumbers.which !== 0
-          ? legacyNumbers.which
-          : legacyNumbers.keyCode;
-
-    if (
-      keyCode === 0 ||
-      ((event.altKey || event.ctrlKey || event.metaKey) &&
-        !isThirdLevelShift(
-          {
-            altKey: event.altKey,
-            ctrlKey: event.ctrlKey,
-            metaKey: event.metaKey,
-            keyCode: legacyNumbers.keyCode,
-            type: 'keypress',
-            getModifierState: event.getModifierState.bind(event),
-          },
-          isMac,
-          isWindows,
-          macOptionIsMeta,
-        ))
-    ) {
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    sendInput(sessionId, String.fromCharCode(keyCode));
-    keyPressHandled = true;
-    unprocessedDeadKey = false;
-    cancelTerminalInputEvent(event);
-  };
-  const terminalKeyAuditInputHandler = (event: Event) => {
-    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
-      return;
-    }
-
-    const inputEvent = event as InputEvent;
-    if (
-      inputEvent.data &&
-      inputEvent.inputType === 'insertText' &&
-      (!inputEvent.isComposing || !keyDownSeen)
-    ) {
-      if (keyPressHandled) {
-        cancelTerminalInputEvent(event);
-        return;
-      }
-
-      unprocessedDeadKey = false;
-      sendInput(sessionId, inputEvent.data);
-      cancelTerminalInputEvent(event);
-      return;
-    }
-
-    if (event.target instanceof HTMLTextAreaElement) {
-      event.target.value = '';
-    }
-  };
-  const terminalKeyAuditKeyupHandler = (event: KeyboardEvent) => {
-    if (!isKeyAuditActive() || !shouldCaptureTerminalKey(container, event.target)) {
-      return;
-    }
-
-    keyDownSeen = false;
-    keyPressHandled = false;
-
-    if (isModifierKeyOnlyEvent({ key: event.key })) {
-      cancelTerminalInputEvent(event);
-    }
-  };
-  container.addEventListener('keydown', enterModifierKeydownHandler, true);
-  container.addEventListener('keyup', enterModifierKeyupHandler, true);
-  container.addEventListener('keydown', terminalKeyAuditKeydownHandler, true);
-  container.addEventListener('keypress', terminalKeyAuditKeypressHandler, true);
-  container.addEventListener('input', terminalKeyAuditInputHandler, true);
-  container.addEventListener('keyup', terminalKeyAuditKeyupHandler, true);
-  disposables.push({
-    dispose: () => {
-      container.removeEventListener('keydown', enterModifierKeydownHandler, true);
-    },
+  const {
+    contextMenuHandler,
+    disposables: interactionDisposables,
+    enterOverrideHandler,
+    pasteHandler,
+  } = bindTerminalInteractionHandlers({
+    canUseAsyncClipboard,
+    cancelTerminalInputEvent,
+    container,
+    getLegacyKeyboardNumbers,
+    isKeyAuditActive,
+    isMac,
+    isTouchSelecting,
+    isWindows,
+    macOptionIsMeta,
+    pasteToTerminal,
+    sessionId,
+    shouldCaptureTerminalKey,
+    terminal,
+    tryHandleTerminalEnterOverride,
+    updateSessionEnterModifierLatch,
   });
-  disposables.push({
-    dispose: () => {
-      container.removeEventListener('keyup', enterModifierKeyupHandler, true);
-    },
-  });
-  disposables.push({
-    dispose: () => {
-      container.removeEventListener('keydown', terminalKeyAuditKeydownHandler, true);
-    },
-  });
-  disposables.push({
-    dispose: () => {
-      container.removeEventListener('keypress', terminalKeyAuditKeypressHandler, true);
-    },
-  });
-  disposables.push({
-    dispose: () => {
-      container.removeEventListener('input', terminalKeyAuditInputHandler, true);
-    },
-  });
-  disposables.push({
-    dispose: () => {
-      container.removeEventListener('keyup', terminalKeyAuditKeyupHandler, true);
-    },
-  });
-  container.addEventListener('keydown', enterOverrideHandler, true);
-
-  // Keyboard shortcuts for copy/paste
-  terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-    if (isKeyAuditActive()) {
-      if (e.type !== 'keydown') return false;
-      return e.key === 'F12';
-    }
-
-    resetKeyAuditState();
-
-    if (e.type !== 'keydown') return true;
-
-    // F12: let browser handle it (open DevTools)
-    if (e.key === 'F12') return false;
-
-    if (tryHandleTerminalEnterOverride(sessionId, e, undefined, 'xterm-enter')) {
-      return false;
-    }
-
-    const foreground = getForegroundInfo(sessionId);
-    const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
-
-    // Copy shortcut remains style-specific to preserve existing terminal behavior.
-    switch (resolveCopyShortcutAction(e, style, terminal.hasSelection())) {
-      case 'copy':
-        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
-        terminal.clearSelection();
-        return false;
-      case 'sendKey':
-        if (e.key.toLowerCase() === 'c' && e.ctrlKey && !e.altKey && !e.metaKey) {
-          sendInput(sessionId, '\x03');
-          return false;
-        }
-        return true;
-      default:
-        break;
-    }
-
-    // Alt+V: clipboard image paste.
-    // Clipboard injection is currently disabled, so this uses upload-plus-path paste.
-    if (isNativeImagePasteShortcut(e)) {
-      void handleNativeImagePaste(sessionId, {
-        foregroundName: foreground.name,
-        foregroundCommandLine: foreground.commandLine,
-      }).then((result) => {
-        if (result === 'none') {
-          sendInput(sessionId, '\x1bv');
-        }
-      });
-      return false;
-    }
-
-    // Unified paste aliases: Ctrl+V, Cmd+V, Ctrl+Shift+V.
-    if (isPasteShortcut(e)) {
-      if (canUseAsyncClipboard()) {
-        const foreground = getForegroundInfo(sessionId);
-        void handleClipboardPaste(sessionId, {
-          foregroundName: foreground.name,
-          foregroundCommandLine: foreground.commandLine,
-        });
-        return false;
-      }
-      // Clipboard API unavailable (HTTP/untrusted/unsupported):
-      // pass through so native browser paste and terminal key handling still work.
-      return true;
-    }
-
-    // Ctrl+F / Cmd+F: Open search
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-      showSearch();
-      return false;
-    }
-
-    // Escape: Close search if open
-    if (e.key === 'Escape' && isSearchVisible()) {
-      hideSearch();
-      return false;
-    }
-
-    return true;
-  });
-
-  // Handle paste events - use native clipboardData on non-secure contexts (HTTP)
-  // On secure contexts (HTTPS/localhost), handleClipboardPaste uses async Clipboard API
-  // Use capture phase to intercept before xterm.js
-  const pasteHandler = (e: ClipboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-
-    // On non-secure contexts, the async Clipboard API doesn't work
-    // Use native clipboardData from the paste event instead
-    if (!window.isSecureContext && e.clipboardData) {
-      const text = e.clipboardData.getData('text/plain');
-      if (text) {
-        void pasteToTerminal(sessionId, sanitizePasteContent(text));
-      }
-    }
-    // On secure contexts, paste is handled by keyboard shortcut via handleClipboardPaste
-  };
-  container.addEventListener('paste', pasteHandler, true);
-
-  // Right-click paste (images uploaded, text pasted)
-  // During touch selection, let native context menu show (Copy) instead of pasting
-  const contextMenuHandler = (e: MouseEvent) => {
-    if (isTouchSelecting(sessionId)) return;
-    const settings = $currentSettings.get();
-    if (!settings || settings.rightClickPaste) {
-      e.preventDefault();
-      const foreground = getForegroundInfo(sessionId);
-      void handleClipboardPaste(sessionId, {
-        foregroundName: foreground.name,
-        foregroundCommandLine: foreground.commandLine,
-      });
-    }
-  };
-
-  container.addEventListener('contextmenu', contextMenuHandler);
+  disposables.push(...interactionDisposables);
 
   // Auto-hide mouse cursor after 2 seconds of inactivity
   const CURSOR_HIDE_DELAY = 2000;

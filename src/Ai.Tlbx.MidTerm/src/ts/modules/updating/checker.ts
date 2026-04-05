@@ -43,79 +43,64 @@ export function initUpdateUi(): void {
   });
 }
 
-/**
- * Render the update panel based on current update info
- */
-export function renderUpdatePanel(): void {
-  const panel = document.getElementById('update-panel');
-  if (!panel) return;
-
+function renderRefreshStatePanel(panel: HTMLElement): void {
   const refreshState = $frontendRefreshState.get();
-  if (refreshState) {
-    panel.classList.remove('hidden');
-
-    const dismissBtn = panel.querySelector<HTMLButtonElement>('#update-dismiss-btn');
-    const headerEl = panel.querySelector('.update-header');
-    const currentEl = panel.querySelector('.update-current');
-    const latestEl = panel.querySelector('.update-latest');
-    const noteEl = panel.querySelector('.update-note');
-    const btn = panel.querySelector<HTMLButtonElement>('.update-btn');
-    const changelogEl = panel.querySelector<HTMLElement>('#update-changelog-link');
-
-    if (dismissBtn) {
-      dismissBtn.hidden = refreshState.status === 'required';
-    }
-    if (headerEl) {
-      headerEl.textContent =
-        refreshState.status === 'required' ? t('update.refreshRequired') : t('update.refreshReady');
-    }
-    if (currentEl) currentEl.textContent = refreshState.clientVersion;
-    if (latestEl) latestEl.textContent = refreshState.serverVersion;
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = t('update.refreshUi');
-    }
-    if (noteEl) {
-      noteEl.textContent =
-        refreshState.status === 'required'
-          ? t('update.refreshRequiredNote')
-          : t('update.refreshWhenConvenient');
-      noteEl.classList.add('update-note-safe');
-      noteEl.classList.remove('update-note-warning');
-    }
-    if (changelogEl) {
-      changelogEl.hidden = true;
-    }
-
-    renderUpdateFooterHint();
-    return;
-  }
-
-  const info = $updateInfo.get();
-  if (!info || !info.available) {
-    panel.classList.add('hidden');
-    renderUpdateFooterHint();
-    return;
-  }
-
-  const settings = $currentSettings.get();
-  // Master toggle in settings — if explicitly disabled, never show
-  if (settings?.showUpdateNotification === false) {
-    panel.classList.add('hidden');
-    renderUpdateFooterHint();
-    return;
-  }
-
-  // Version-specific dismiss — only suppresses the specific version the user dismissed
-  const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
-  if (dismissedVersion === info.latestVersion) {
-    panel.classList.add('hidden');
-    renderUpdateFooterHint();
+  if (!refreshState) {
     return;
   }
 
   panel.classList.remove('hidden');
-  renderUpdateFooterHint();
+
+  const dismissBtn = panel.querySelector<HTMLButtonElement>('#update-dismiss-btn');
+  const headerEl = panel.querySelector('.update-header');
+  const currentEl = panel.querySelector('.update-current');
+  const latestEl = panel.querySelector('.update-latest');
+  const noteEl = panel.querySelector('.update-note');
+  const btn = panel.querySelector<HTMLButtonElement>('.update-btn');
+  const changelogEl = panel.querySelector<HTMLElement>('#update-changelog-link');
+
+  if (dismissBtn) {
+    dismissBtn.hidden = refreshState.status === 'required';
+  }
+  if (headerEl) {
+    headerEl.textContent =
+      refreshState.status === 'required' ? t('update.refreshRequired') : t('update.refreshReady');
+  }
+  if (currentEl) currentEl.textContent = refreshState.clientVersion;
+  if (latestEl) latestEl.textContent = refreshState.serverVersion;
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = t('update.refreshUi');
+  }
+  if (noteEl) {
+    noteEl.textContent =
+      refreshState.status === 'required'
+        ? t('update.refreshRequiredNote')
+        : t('update.refreshWhenConvenient');
+    noteEl.classList.add('update-note-safe');
+    noteEl.classList.remove('update-note-warning');
+  }
+  if (changelogEl) {
+    changelogEl.hidden = true;
+  }
+}
+
+function shouldHideUpdatePanel(info: UpdateInfo | null): boolean {
+  if (!info || !info.available) {
+    return true;
+  }
+
+  const settings = $currentSettings.get();
+  if (settings?.showUpdateNotification === false) {
+    return true;
+  }
+
+  const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
+  return dismissedVersion === info.latestVersion;
+}
+
+function renderAvailableUpdatePanel(panel: HTMLElement, info: UpdateInfo): void {
+  panel.classList.remove('hidden');
 
   const currentEl = panel.querySelector('.update-current');
   const latestEl = panel.querySelector('.update-latest');
@@ -146,14 +131,44 @@ export function renderUpdatePanel(): void {
       noteEl.classList.add('update-note-safe');
       noteEl.classList.remove('update-note-warning');
     }
-  } else {
-    if (headerEl) headerEl.textContent = t('sidebar.updateAvailable');
-    if (noteEl) {
-      noteEl.textContent = t('sidebar.saveWorkTerminalsClose');
-      noteEl.classList.add('update-note-warning');
-      noteEl.classList.remove('update-note-safe');
-    }
+    return;
   }
+
+  if (headerEl) headerEl.textContent = t('sidebar.updateAvailable');
+  if (noteEl) {
+    noteEl.textContent = t('sidebar.saveWorkTerminalsClose');
+    noteEl.classList.add('update-note-warning');
+    noteEl.classList.remove('update-note-safe');
+  }
+}
+
+/**
+ * Render the update panel based on current update info
+ */
+export function renderUpdatePanel(): void {
+  const panel = document.getElementById('update-panel');
+  if (!panel) return;
+
+  if ($frontendRefreshState.get()) {
+    renderRefreshStatePanel(panel);
+    renderUpdateFooterHint();
+    return;
+  }
+
+  const info = $updateInfo.get();
+  if (shouldHideUpdatePanel(info)) {
+    panel.classList.add('hidden');
+    renderUpdateFooterHint();
+    return;
+  }
+  if (!info) {
+    panel.classList.add('hidden');
+    renderUpdateFooterHint();
+    return;
+  }
+
+  renderAvailableUpdatePanel(panel, info);
+  renderUpdateFooterHint();
 }
 
 function renderUpdateFooterHint(): void {

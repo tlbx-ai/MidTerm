@@ -107,6 +107,12 @@ interface TransferOverlayController {
   close: () => void;
 }
 
+interface FileDropProcessingState {
+  uploadedPaths: string[];
+  lensAttachments: LensAttachmentReference[];
+  textSnippets: string[];
+}
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -452,100 +458,130 @@ export async function handleFileDrop(files: FileList): Promise<void> {
             : t(lensActive ? 'fileDrop.transferringTextLens' : 'fileDrop.transferringText'),
         )
       : null;
-  const uploadedPaths: string[] = [];
-  const lensAttachments: LensAttachmentReference[] = [];
-  const textSnippets: string[] = [];
+  const state: FileDropProcessingState = {
+    uploadedPaths: [],
+    lensAttachments: [],
+    textSnippets: [],
+  };
 
   try {
     for (const file of fileList) {
-      // Image files: upload and collect path
-      if (isImageFile(file.name)) {
-        const path = await uploadFile(activeId, file);
-        if (path) {
-          uploadedPaths.push(path);
-          if (lensActive) {
-            lensAttachments.push({
-              kind: 'image',
-              path,
-              mimeType: file.type || null,
-              displayName: file.name,
-            });
-          }
-        }
-        continue;
-      }
-
-      // Binary/document files: upload and paste path (PDFs, archives, etc.)
-      if (isRejectedFile(file.name)) {
-        const path = await uploadFile(activeId, file);
-        if (path) {
-          uploadedPaths.push(path);
-          if (lensActive) {
-            lensAttachments.push({
-              kind: 'file',
-              path,
-              mimeType: file.type || null,
-              displayName: file.name,
-            });
-          }
-        }
-        continue;
-      }
-
-      // Text files: check size limit
-      if (file.size > TEXT_FILE_SIZE_LIMIT) {
-        showDropToast(`${t('fileDrop.fileTooLarge')}: ${file.name}`);
-        continue;
-      }
-
-      // Read and paste text content
-      try {
-        const content = await readFileAsText(file);
-        const sanitized = sanitizePasteContent(content);
-        if (lensActive) {
-          textSnippets.push(`File "${file.name}":\n${sanitized}`);
-          continue;
-        }
-
-        if (overlay) {
-          overlay.setLabel(t('fileDrop.transferringText'));
-        }
-        await pasteToTerminal(activeId, sanitized, false);
-      } catch (_err) {
-        log.error(() => `Failed to read file: ${file.name}`);
-        showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
-      }
+      await processDroppedFile(file, activeId, lensActive, overlay, state);
     }
 
     if (lensActive) {
-      const promptParts: string[] = [];
-      if (textSnippets.length > 0) {
-        promptParts.push(textSnippets.join('\n\n'));
-      }
-
-      const promptText = promptParts.join('\n\n').trim();
-      if (promptText.length > 0 || lensAttachments.length > 0) {
-        if (overlay) {
-          overlay.setLabel(t('fileDrop.transferringToLens'));
-        }
-        await submitLensTurn(
-          activeId,
-          createLensTurnRequest(promptText, lensAttachments, activeId),
-        );
-      }
+      await flushLensDropState(activeId, overlay, state);
       return;
     }
 
-    if (uploadedPaths.length > 0) {
-      if (overlay) {
-        overlay.setLabel(t('fileDrop.transferringToTerminal'));
-      }
-      const joined = sanitizePasteContent(uploadedPaths.join(' '));
-      await pasteToTerminal(activeId, joined, true);
-    }
+    await flushTerminalDropUploads(activeId, overlay, state.uploadedPaths);
   } finally {
     overlay?.close();
   }
+}
+
+async function processDroppedFile(
+  file: File,
+  sessionId: string,
+  lensActive: boolean,
+  overlay: TransferOverlayController | null,
+  state: FileDropProcessingState,
+): Promise<void> {
+  if (isImageFile(file.name)) {
+    await uploadDroppedFile(file, sessionId, lensActive, 'image', state);
+    return;
+  }
+
+  if (isRejectedFile(file.name)) {
+    await uploadDroppedFile(file, sessionId, lensActive, 'file', state);
+    return;
+  }
+
+  await processDroppedTextFile(file, sessionId, lensActive, overlay, state);
+}
+
+async function uploadDroppedFile(
+  file: File,
+  sessionId: string,
+  lensActive: boolean,
+  kind: LensAttachmentReference['kind'],
+  state: FileDropProcessingState,
+): Promise<void> {
+  const path = await uploadFile(sessionId, file);
+  if (!path) {
+    return;
+  }
+
+  state.uploadedPaths.push(path);
+  if (!lensActive) {
+    return;
+  }
+
+  state.lensAttachments.push({
+    kind,
+    path,
+    mimeType: file.type || null,
+    displayName: file.name,
+  });
+}
+
+async function processDroppedTextFile(
+  file: File,
+  sessionId: string,
+  lensActive: boolean,
+  overlay: TransferOverlayController | null,
+  state: FileDropProcessingState,
+): Promise<void> {
+  if (file.size > TEXT_FILE_SIZE_LIMIT) {
+    showDropToast(`${t('fileDrop.fileTooLarge')}: ${file.name}`);
+    return;
+  }
+
+  try {
+    const content = await readFileAsText(file);
+    const sanitized = sanitizePasteContent(content);
+    if (lensActive) {
+      state.textSnippets.push(`File "${file.name}":\n${sanitized}`);
+      return;
+    }
+
+    overlay?.setLabel(t('fileDrop.transferringText'));
+    await pasteToTerminal(sessionId, sanitized, false);
+  } catch {
+    log.error(() => `Failed to read file: ${file.name}`);
+    showDropToast(`${t('fileDrop.failedToRead')}: ${file.name}`);
+  }
+}
+
+async function flushLensDropState(
+  sessionId: string,
+  overlay: TransferOverlayController | null,
+  state: FileDropProcessingState,
+): Promise<void> {
+  const promptText = state.textSnippets.join('\n\n').trim();
+  if (promptText.length === 0 && state.lensAttachments.length === 0) {
+    return;
+  }
+
+  overlay?.setLabel(t('fileDrop.transferringToLens'));
+  await submitLensTurn(
+    sessionId,
+    createLensTurnRequest(promptText, state.lensAttachments, sessionId),
+  );
+}
+
+async function flushTerminalDropUploads(
+  sessionId: string,
+  overlay: TransferOverlayController | null,
+  uploadedPaths: string[],
+): Promise<void> {
+  if (uploadedPaths.length === 0) {
+    return;
+  }
+
+  overlay?.setLabel(t('fileDrop.transferringToTerminal'));
+  const joined = sanitizePasteContent(uploadedPaths.join(' '));
+  await pasteToTerminal(sessionId, joined, true);
 }
 
 /**

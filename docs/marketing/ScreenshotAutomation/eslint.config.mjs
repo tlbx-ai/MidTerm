@@ -6,7 +6,7 @@ const tsconfigRootDir = import.meta.dirname;
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/wwwroot/**', '**/*.min.js', '**/*.d.ts', '**/*.test.ts'],
+    ignores: ['**/node_modules/**', '**/dist/**'],
     linterOptions: {
       reportUnusedDisableDirectives: 'error',
     },
@@ -15,10 +15,10 @@ export default tseslint.config(
   ...tseslint.configs.strictTypeChecked,
   prettier,
   {
-    files: ['src/ts/**/*.ts', 'vitest.config.ts'],
+    files: ['src/**/*.ts', 'playwright.config.ts'],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.json', './tsconfig.tools.json'],
+        project: './tsconfig.json',
         tsconfigRootDir,
       },
     },
@@ -58,27 +58,8 @@ export default tseslint.config(
           minimumDescriptionLength: 5,
         },
       ],
-      'no-console': 'error',
-    },
-  },
-  {
-    files: ['src/ts/api/**/*.ts'],
-    rules: {
-      '@typescript-eslint/explicit-module-boundary-types': 'error',
-    },
-  },
-  {
-    files: ['src/ts/**/*.ts'],
-    ignores: ['src/ts/api.generated.ts'],
-    rules: {
-      'complexity': ['warn', 20],
-      'max-lines': ['warn', { max: 1200, skipBlankLines: true, skipComments: true }],
-    },
-  },
-  {
-    files: ['**/modules/logging/**'],
-    rules: {
-      'no-console': 'off',
+      'complexity': ['warn', 15],
+      'max-lines': ['warn', { max: 800, skipBlankLines: true, skipComments: true }],
     },
   },
 );

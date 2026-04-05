@@ -237,6 +237,54 @@ function logResizeDiagnostics(
   }
 }
 
+function terminalMatchesMeasurementConfig(
+  state: TerminalState,
+  expectedFontStack: string,
+  fontSize: number,
+  lineHeight: number,
+  letterSpacing: number,
+  fontWeight: string,
+  fontWeightBold: string,
+  fontFamily: string,
+): boolean {
+  if (!state.opened || state.terminal.options.fontSize !== fontSize) {
+    return false;
+  }
+  if ((state.terminal.options.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT) !== lineHeight) {
+    return false;
+  }
+  if ((state.terminal.options.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING) !== letterSpacing) {
+    return false;
+  }
+  if (String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight) {
+    return false;
+  }
+  if (
+    String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
+    fontWeightBold
+  ) {
+    return false;
+  }
+
+  const terminalFontFamily = state.terminal.options.fontFamily ?? '';
+  return terminalFontFamily === expectedFontStack || terminalFontFamily.includes(fontFamily);
+}
+
+function measureTerminalDomCellDimensions(
+  state: TerminalState,
+): { cellWidth: number; cellHeight: number } | null {
+  const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
+  const cols = state.terminal.cols;
+  const rows = state.terminal.rows;
+  if (!screen || cols <= 0 || rows <= 0) {
+    return null;
+  }
+
+  const cellWidth = screen.offsetWidth / cols;
+  const cellHeight = screen.offsetHeight / rows;
+  return cellWidth >= 1 && cellHeight >= 1 ? { cellWidth, cellHeight } : null;
+}
+
 /**
  * Measure actual cell dimensions from an existing terminal.
  * Returns null if no terminal is available or measurements are invalid.
@@ -252,48 +300,25 @@ function measureFromExistingTerminal(
   const expectedFontStack = buildTerminalFontStack(fontFamily);
 
   for (const state of sessionTerminals.values()) {
-    if (!state.opened) continue;
-
-    // Only trust measurements from terminals using the same font size we plan to apply.
-    if (state.terminal.options.fontSize !== fontSize) continue;
-    if ((state.terminal.options.lineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT) !== lineHeight)
-      continue;
     if (
-      (state.terminal.options.letterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING) !== letterSpacing
+      !terminalMatchesMeasurementConfig(
+        state,
+        expectedFontStack,
+        fontSize,
+        lineHeight,
+        letterSpacing,
+        fontWeight,
+        fontWeightBold,
+        fontFamily,
+      )
     ) {
       continue;
     }
-    if (String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight) {
-      continue;
-    }
-    if (
-      String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
-      fontWeightBold
-    ) {
-      continue;
-    }
-    const terminalFontFamily = state.terminal.options.fontFamily ?? '';
-    if (terminalFontFamily !== expectedFontStack && !terminalFontFamily.includes(fontFamily)) {
-      continue;
-    }
 
-    // Prefer xterm.js internal dimensions (accurate, not affected by CSS layout)
     const xtermDims = getXtermCellDimensions(state.terminal);
     if (xtermDims) return xtermDims;
-
-    // Fallback to DOM measurement
-    const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
-    const cols = state.terminal.cols;
-    const rows = state.terminal.rows;
-
-    if (screen && cols > 0 && rows > 0) {
-      const cellWidth = screen.offsetWidth / cols;
-      const cellHeight = screen.offsetHeight / rows;
-
-      if (cellWidth >= 1 && cellHeight >= 1) {
-        return { cellWidth, cellHeight };
-      }
-    }
+    const domDims = measureTerminalDomCellDimensions(state);
+    if (domDims) return domDims;
   }
   return null;
 }
@@ -331,6 +356,63 @@ function measureFromFont(
   return { cellWidth, cellHeight };
 }
 
+async function resolveMeasurementSource(
+  fontSize: number,
+  fontFamily: string,
+  lineHeight: number,
+  letterSpacing: number,
+  fontWeight: string,
+  fontWeightBold: string,
+): Promise<{ source: MeasurementSource; cellWidth: number; cellHeight: number }> {
+  const existingMeasurement = measureFromExistingTerminal(
+    fontSize,
+    fontFamily,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+    fontWeightBold,
+  );
+  if (existingMeasurement) {
+    return { source: 'existing-terminal', ...existingMeasurement };
+  }
+
+  const calibrationPromise = getCalibrationPromise();
+  if (calibrationPromise) {
+    await calibrationPromise;
+  }
+
+  const calibration = getCalibrationMeasurement();
+  if (
+    calibration &&
+    calibration.fontSize === fontSize &&
+    calibration.lineHeight === lineHeight &&
+    calibration.letterSpacing === letterSpacing &&
+    calibration.fontWeight === fontWeight &&
+    calibration.fontWeightBold === fontWeightBold &&
+    (calibration.fontFamily === buildTerminalFontStack(fontFamily) ||
+      calibration.fontFamily.includes(fontFamily))
+  ) {
+    return {
+      source: 'calibration',
+      cellWidth: calibration.cellWidth,
+      cellHeight: calibration.cellHeight,
+    };
+  }
+
+  if (fontsReadyPromise) {
+    await fontsReadyPromise;
+  }
+  await ensureTerminalFontLoaded(fontFamily, fontSize);
+  const fontMeasurement = measureFromFont(
+    fontSize,
+    fontFamily,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+  );
+  return { source: 'font-probe', ...fontMeasurement };
+}
+
 /**
  * Calculate optimal terminal dimensions (cols/rows) for the given container.
  * Uses actual font measurements - either from existing terminal or by measuring the font directly.
@@ -363,11 +445,7 @@ export async function calculateOptimalDimensions(
     }
   }
 
-  // Get cell dimensions - priority order:
-  // 1. Existing open terminal (most accurate, already rendered)
-  // 2. Calibration measurement (accurate, from hidden terminal at startup)
-  // 3. Font probe (fallback, less accurate)
-  const existingMeasurement = measureFromExistingTerminal(
+  const measurement = await resolveMeasurementSource(
     fontSize,
     fontFamily,
     lineHeight,
@@ -375,54 +453,8 @@ export async function calculateOptimalDimensions(
     fontWeight,
     fontWeightBold,
   );
-
-  let measurementSource: MeasurementSource;
-  let cellWidth: number;
-  let cellHeight: number;
-
-  if (existingMeasurement) {
-    measurementSource = 'existing-terminal';
-    cellWidth = existingMeasurement.cellWidth;
-    cellHeight = existingMeasurement.cellHeight;
-  } else {
-    // Wait for calibration to complete if it's running
-    const calibrationPromise = getCalibrationPromise();
-    if (calibrationPromise) {
-      await calibrationPromise;
-    }
-
-    const calibration = getCalibrationMeasurement();
-    if (
-      calibration &&
-      calibration.fontSize === fontSize &&
-      calibration.lineHeight === lineHeight &&
-      calibration.letterSpacing === letterSpacing &&
-      calibration.fontWeight === fontWeight &&
-      calibration.fontWeightBold === fontWeightBold &&
-      (calibration.fontFamily === buildTerminalFontStack(fontFamily) ||
-        calibration.fontFamily.includes(fontFamily))
-    ) {
-      measurementSource = 'calibration';
-      cellWidth = calibration.cellWidth;
-      cellHeight = calibration.cellHeight;
-    } else {
-      // Fallback to font probe (inaccurate but better than nothing)
-      measurementSource = 'font-probe';
-      if (fontsReadyPromise) {
-        await fontsReadyPromise;
-      }
-      await ensureTerminalFontLoaded(fontFamily, fontSize);
-      const fontMeasurement = measureFromFont(
-        fontSize,
-        fontFamily,
-        lineHeight,
-        letterSpacing,
-        fontWeight,
-      );
-      cellWidth = fontMeasurement.cellWidth;
-      cellHeight = fontMeasurement.cellHeight;
-    }
-  }
+  const measurementSource = measurement.source;
+  const { cellWidth, cellHeight } = measurement;
 
   // Account for padding, scrollbar width, session tab bar, and dock panels
   const tabBarH = getTabBarHeight();
@@ -532,6 +564,35 @@ function scheduleFitRetry(sessionId: string, retriesRemaining: number): void {
       fitSessionToScreenInternal(sessionId, retriesRemaining - 1);
     }
   });
+}
+
+function removeScalingOverlay(container: HTMLElement): void {
+  const overlay = container.querySelector<HTMLElement>('.scaled-overlay');
+  if (overlay) overlay.remove();
+}
+
+function buildScaledOverlayLabel(
+  container: HTMLElement,
+  state: TerminalState,
+  scale: number,
+): string {
+  const pct = Math.round(scale * 100);
+  const screen = container.querySelector<HTMLElement>('.xterm-screen');
+  let diagHtml = '';
+  if (isDevMode() && screen) {
+    const cols = state.terminal.cols;
+    const rows = state.terminal.rows;
+    const cellW = (screen.offsetWidth / cols).toFixed(2);
+    const cellH = (screen.offsetHeight / rows).toFixed(2);
+    const termPx = `${screen.offsetWidth}×${screen.offsetHeight}`;
+    const containerPx = `${container.clientWidth}×${container.clientHeight}`;
+    const scaleTxt = scale.toPrecision(5);
+    diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
+  }
+  const overlayLabel = $isMainBrowser.get()
+    ? `${t('terminal.scaledTo')} ${pct}%`
+    : `${t('terminal.scaledContent')} (${pct}%) - ${t('terminal.makeReferenceScaleBrowser')}`;
+  return `${overlayLabel}${diagHtml}`;
 }
 
 /**
@@ -757,89 +818,71 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     el.style.bottom = connVisible ? '36px' : '8px';
   };
 
-  if (scale < 1) {
+  const resetScaleState = (): void => {
+    xterm.style.transform = '';
+    xterm.style.transformOrigin = '';
+    container.classList.remove('scaled');
+  };
+
+  const showOverlay = (label: string): void => {
+    const el = ensureOverlay();
+    positionOverlay(el);
+    setOverlayCopy(el, label);
+  };
+
+  const handleScaledDown = (): void => {
     if (isMainBrowser) {
-      // The leading browser owns the authoritative terminal size. Never leave
-      // it visually scaled; recover by resizing instead.
-      xterm.style.transform = '';
-      xterm.style.transformOrigin = '';
-      container.classList.remove('scaled');
-      if (overlay) {
-        overlay.remove();
-      }
+      resetScaleState();
+      removeScalingOverlay(container);
       if (hasOptimalSizeMismatch) {
         scheduleMainBrowserResize();
       }
       return;
     }
 
-    // Too big — scale down (flexbox centers automatically)
     xterm.style.transform = `scale(${scale})`;
     xterm.style.transformOrigin = 'center center';
     container.classList.add('scaled');
+    showOverlay(buildScaledOverlayLabel(container, state, scale));
+  };
 
-    const el = ensureOverlay();
-    positionOverlay(el);
+  const handleUndersizedFit = (): void => {
+    resetScaleState();
 
-    const pct = Math.round(scale * 100);
-    const screen = container.querySelector<HTMLElement>('.xterm-screen');
-    let diagHtml = '';
-    if (isDevMode() && screen) {
-      const cols = state.terminal.cols;
-      const rows = state.terminal.rows;
-      const cellW = (screen.offsetWidth / cols).toFixed(2);
-      const cellH = (screen.offsetHeight / rows).toFixed(2);
-      const termPx = `${screen.offsetWidth}×${screen.offsetHeight}`;
-      const containerPx = `${container.clientWidth}×${container.clientHeight}`;
-      const scaleTxt = scale.toPrecision(5);
-      diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
+    if (viewportMismatch?.isTooSmall) {
+      if (isMainBrowser) {
+        removeScalingOverlay(container);
+        scheduleMainBrowserResize();
+        return;
+      }
+      const overlayLabel = $isMainBrowser.get()
+        ? t('terminal.sizedForSmallerScreen')
+        : `${t('terminal.sizedForSmallerScreen')} - ${t('terminal.makeReferenceScaleBrowser')}`;
+      showOverlay(overlayLabel);
+      return;
     }
-    const overlayLabel = $isMainBrowser.get()
-      ? `${t('terminal.scaledTo')} ${pct}%`
-      : `${t('terminal.scaledContent')} (${pct}%) - ${t('terminal.makeReferenceScaleBrowser')}`;
-    setOverlayCopy(el, `${overlayLabel}${diagHtml}`);
+
+    if (!isMainBrowser) {
+      showOverlay(t('terminal.makeReferenceScaleBrowser'));
+    } else if (overlay) {
+      overlay.remove();
+      overlay = null;
+    }
+  };
+
+  if (scale < 1) {
+    handleScaledDown();
   } else if (
     viewportMismatch?.isTooSmall ||
     termWidth < availWidth - 2 ||
     termHeight < availHeight - 2
   ) {
-    // Fits but undersized — no transform, flexbox centers it
-    xterm.style.transform = '';
-    xterm.style.transformOrigin = '';
-    container.classList.remove('scaled');
-
-    if (viewportMismatch?.isTooSmall) {
-      if (isMainBrowser) {
-        if (overlay) {
-          overlay.remove();
-        }
-        scheduleMainBrowserResize();
-        return;
-      }
-      const el = ensureOverlay();
-      positionOverlay(el);
-      const overlayLabel = $isMainBrowser.get()
-        ? t('terminal.sizedForSmallerScreen')
-        : `${t('terminal.sizedForSmallerScreen')} - ${t('terminal.makeReferenceScaleBrowser')}`;
-      setOverlayCopy(el, overlayLabel);
-    } else if (!isMainBrowser) {
-      const el = ensureOverlay();
-      positionOverlay(el);
-      setOverlayCopy(el, t('terminal.makeReferenceScaleBrowser'));
-    } else if (overlay) {
-      overlay.remove();
-      overlay = null;
-    }
+    handleUndersizedFit();
   } else {
-    // Perfect fit — no transform needed
-    xterm.style.transform = '';
-    xterm.style.transformOrigin = '';
-    container.classList.remove('scaled');
+    resetScaleState();
 
     if (!isMainBrowser) {
-      const el = ensureOverlay();
-      positionOverlay(el);
-      setOverlayCopy(el, t('terminal.makeReferenceScaleBrowser'));
+      showOverlay(t('terminal.makeReferenceScaleBrowser'));
     } else if (overlay) {
       overlay.remove();
     }
