@@ -147,6 +147,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'bundled font name',
     applyMode: 'immediate',
   }),
+  controlEntry('boxDrawingStyle', 'setting-box-drawing-style', 'select', 'classic', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'classic or rounded',
+    applyMode: 'immediate',
+  }),
   controlEntry('boxDrawingScale', 'setting-box-drawing-scale', 'float', 1, {
     editable: true,
     storage: 'settings.json',

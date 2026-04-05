@@ -4064,6 +4064,7 @@ export interface components {
       fontWeight: string;
       fontWeightBold: string;
       customGlyphs: boolean;
+      boxDrawingStyle: string;
       /** Format: double */
       boxDrawingScale: number;
       cursorStyle: components['schemas']['CursorStyleSetting'];

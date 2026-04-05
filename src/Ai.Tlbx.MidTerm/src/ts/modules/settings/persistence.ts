@@ -79,7 +79,10 @@ const DEFAULT_BOX_DRAWING_SCALE = 1;
 type MidTermWindow = Window &
   typeof globalThis & {
     __MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__?: number;
+    __MIDTERM_XTERM_BOX_DRAWING_STYLE__?: string;
   };
+
+const DEFAULT_BOX_DRAWING_STYLE = 'classic';
 
 function normalizeBoxDrawingScale(value: number | null | undefined): number {
   const numericValue =
@@ -87,14 +90,24 @@ function normalizeBoxDrawingScale(value: number | null | undefined): number {
   return Math.min(2, Math.max(0.5, Math.round(numericValue * 100) / 100));
 }
 
+function normalizeBoxDrawingStyle(value: string | null | undefined): string {
+  return value === 'rounded' ? 'rounded' : DEFAULT_BOX_DRAWING_STYLE;
+}
+
 function syncBoxDrawingScale(settingValue: number | null | undefined): void {
   (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__ =
     normalizeBoxDrawingScale(settingValue);
 }
 
+function syncBoxDrawingStyle(settingValue: string | null | undefined): void {
+  (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STYLE__ =
+    normalizeBoxDrawingStyle(settingValue);
+}
+
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
   $currentSettings.set(settings);
   applyCssTheme(settings.theme);
+  syncBoxDrawingStyle(settings.boxDrawingStyle);
   syncBoxDrawingScale(settings.boxDrawingScale);
   applySettingsToTerminals();
   updateTabTitle();
@@ -242,6 +255,7 @@ function buildSettingsUpdateFromRegistry(
     result.fontWeightBold,
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
   );
+  result.boxDrawingStyle = normalizeBoxDrawingStyle(result.boxDrawingStyle);
   result.boxDrawingScale = normalizeBoxDrawingScale(result.boxDrawingScale);
 
   return result as MidTermSettingsUpdate;
@@ -480,6 +494,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
   const lineHeight = settings.lineHeight;
   const letterSpacing = normalizeTerminalLetterSpacing(settings.letterSpacing);
+  const boxDrawingStyle = normalizeBoxDrawingStyle(settings.boxDrawingStyle);
   const boxDrawingScale = normalizeBoxDrawingScale(settings.boxDrawingScale);
   const fontWeight = normalizeTerminalFontWeight(
     settings.fontWeight,
@@ -493,6 +508,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   let hasFontChanges = false;
+  syncBoxDrawingStyle(boxDrawingStyle);
   syncBoxDrawingScale(boxDrawingScale);
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);

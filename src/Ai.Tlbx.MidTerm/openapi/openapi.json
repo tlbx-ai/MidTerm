@@ -4864,6 +4864,7 @@
           "fontWeight",
           "fontWeightBold",
           "customGlyphs",
+          "boxDrawingStyle",
           "boxDrawingScale",
           "cursorStyle",
           "cursorBlink",
@@ -4972,6 +4973,9 @@
           },
           "customGlyphs": {
             "type": "boolean"
+          },
+          "boxDrawingStyle": {
+            "type": "string"
           },
           "boxDrawingScale": {
             "type": "number",

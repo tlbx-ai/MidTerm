@@ -42,6 +42,7 @@ public sealed partial class MidTermSettingsPublic
             FontWeight = NormalizeFontWeight(settings.FontWeight, NormalFontWeight),
             FontWeightBold = NormalizeFontWeight(settings.FontWeightBold, BoldFontWeight),
             CustomGlyphs = settings.CustomGlyphs,
+            BoxDrawingStyle = NormalizeBoxDrawingStyle(settings.BoxDrawingStyle),
             BoxDrawingScale = NormalizeBoxDrawingScale(settings.BoxDrawingScale),
             CursorStyle = settings.CursorStyle,
             CursorBlink = settings.CursorBlink,
@@ -125,6 +126,7 @@ public sealed partial class MidTermSettingsPublic
         settings.FontWeight = NormalizeFontWeight(FontWeight, NormalFontWeight);
         settings.FontWeightBold = NormalizeFontWeight(FontWeightBold, BoldFontWeight);
         settings.CustomGlyphs = CustomGlyphs;
+        settings.BoxDrawingStyle = NormalizeBoxDrawingStyle(BoxDrawingStyle);
         settings.BoxDrawingScale = NormalizeBoxDrawingScale(BoxDrawingScale);
         settings.CursorStyle = CursorStyle;
         settings.CursorBlink = CursorBlink;
@@ -261,6 +263,20 @@ public sealed partial class MidTermSettingsPublic
     private static double NormalizeLetterSpacing(double value)
     {
         return Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), -2.0, 10.0);
+    }
+
+    private static string NormalizeBoxDrawingStyle(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "classic";
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "rounded" => "rounded",
+            _ => "classic"
+        };
     }
 
     private static double NormalizeBoxDrawingScale(double value)

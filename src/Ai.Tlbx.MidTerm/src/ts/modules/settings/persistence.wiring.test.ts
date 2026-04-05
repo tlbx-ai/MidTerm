@@ -113,6 +113,12 @@ describe('settings persistence wiring', () => {
   });
 
   it('limits bundled terminal font controls to distinct supported values', () => {
+    expect(html).toContain(
+      '<option value="classic" data-i18n="settings.options.boxDrawingStyleClassic">',
+    );
+    expect(html).toContain(
+      '<option value="rounded" data-i18n="settings.options.boxDrawingStyleRounded">',
+    );
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?min="0.5"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?max="2"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?step="0.05"/);
@@ -136,6 +142,9 @@ describe('settings persistence wiring', () => {
     );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'customGlyphs')?.validation).toBe(
       'boolean, rendered as custom or font box drawing',
+    );
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'boxDrawingStyle')?.validation).toBe(
+      'classic or rounded',
     );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'boxDrawingScale')?.validation).toBe(
       'float, clamped to 0.5-2.0',
