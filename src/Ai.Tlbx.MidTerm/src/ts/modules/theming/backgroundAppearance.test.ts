@@ -269,6 +269,28 @@ describe('backgroundAppearance', () => {
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
   });
 
+  it('does not restart Ken Burns when the same settings are reapplied', () => {
+    const settings = createSettings({
+      backgroundImageEnabled: true,
+      backgroundImageFileName: 'paper.jpg',
+      backgroundImageRevision: 12,
+      backgroundKenBurnsEnabled: true,
+      backgroundKenBurnsZoomPercent: 180,
+      backgroundKenBurnsSpeedPxPerSecond: 24,
+    });
+
+    applyBackgroundAppearance(settings);
+
+    const firstAnimation = rootStyle.getPropertyValue('--app-background-animation');
+    const firstKeyframes = appendedStyleElements[0]?.textContent;
+
+    applyBackgroundAppearance(settings);
+
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe(firstAnimation);
+    expect(appendedStyleElements).toHaveLength(1);
+    expect(appendedStyleElements[0]?.textContent).toBe(firstKeyframes);
+  });
+
   it('allows the UI transparency slider to reach a fully transparent UI shell', () => {
     applyBackgroundAppearance(
       createSettings({

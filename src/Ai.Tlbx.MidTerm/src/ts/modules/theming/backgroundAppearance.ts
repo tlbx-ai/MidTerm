@@ -79,6 +79,9 @@ interface BackgroundKenBurnsState {
   animationVersion: number;
   resizeListenerWindow: Window | null;
   resizeFrameId: number | null;
+  activeAnimationKey: string | null;
+  activeAnimationRoot: HTMLElement | null;
+  activeAnimationDocument: Document | null;
 }
 
 const backgroundKenBurnsState: BackgroundKenBurnsState = {
@@ -91,6 +94,9 @@ const backgroundKenBurnsState: BackgroundKenBurnsState = {
   animationVersion: 0,
   resizeListenerWindow: null,
   resizeFrameId: null,
+  activeAnimationKey: null,
+  activeAnimationRoot: null,
+  activeAnimationDocument: null,
 };
 
 export function getBackgroundImageUrl(revision: number): string {
@@ -306,19 +312,33 @@ function refreshBackgroundKenBurnsAnimation(): void {
     return;
   }
 
-  const animationName = `midterm-app-background-ken-burns-${++backgroundKenBurnsState.animationVersion}`;
   const durationSeconds = clamp(
     (2 * Math.PI * orbitRadius) / backgroundKenBurnsState.speedPxPerSecond,
     0.1,
     86400,
   );
+  const animationKey = `${scale.toFixed(3)}|${orbitRadius.toFixed(2)}|${durationSeconds.toFixed(3)}`;
+
+  if (
+    backgroundKenBurnsState.activeAnimationKey === animationKey &&
+    backgroundKenBurnsState.activeAnimationRoot === root &&
+    backgroundKenBurnsState.activeAnimationDocument === document &&
+    root.style.getPropertyValue('--app-background-animation') !== 'none' &&
+    root.style.getPropertyValue('--app-background-animation') !== '' &&
+    backgroundKenBurnsState.styleElement?.textContent
+  ) {
+    return;
+  }
+
+  const animationName = `midterm-app-background-ken-burns-${++backgroundKenBurnsState.animationVersion}`;
   const keyframes = buildBackgroundKenBurnsKeyframes(animationName, orbitRadius, scale);
+  const animationValue = `${animationName} ${durationSeconds.toFixed(3)}s linear infinite`;
 
   ensureBackgroundKenBurnsStyleElement().textContent = keyframes;
-  root.style.setProperty(
-    '--app-background-animation',
-    `${animationName} ${durationSeconds.toFixed(3)}s linear infinite`,
-  );
+  root.style.setProperty('--app-background-animation', animationValue);
+  backgroundKenBurnsState.activeAnimationKey = animationKey;
+  backgroundKenBurnsState.activeAnimationRoot = root;
+  backgroundKenBurnsState.activeAnimationDocument = document;
 }
 
 function computeBackgroundKenBurnsOrbitRadius(scale: number): number {
@@ -360,6 +380,9 @@ function clearBackgroundKenBurnsAnimation(): void {
 
   backgroundKenBurnsState.resizeFrameId = null;
   document.documentElement.style.setProperty('--app-background-animation', 'none');
+  backgroundKenBurnsState.activeAnimationKey = null;
+  backgroundKenBurnsState.activeAnimationRoot = null;
+  backgroundKenBurnsState.activeAnimationDocument = null;
 
   if (backgroundKenBurnsState.styleElement) {
     backgroundKenBurnsState.styleElement.textContent = '';
