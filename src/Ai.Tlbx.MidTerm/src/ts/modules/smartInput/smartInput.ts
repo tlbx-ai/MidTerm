@@ -46,6 +46,7 @@ let sendBtn: HTMLButtonElement | null = null;
 let toolsToggleBtn: HTMLButtonElement | null = null;
 let toolsPanel: HTMLDivElement | null = null;
 let toolButtonsStrip: HTMLDivElement | null = null;
+let toolsPanelOpen = false;
 let lensQuickSettingsRow: HTMLDivElement | null = null;
 let lensModelInput: HTMLInputElement | null = null;
 let lensEffortSelect: HTMLSelectElement | null = null;
@@ -404,8 +405,8 @@ function createDockedDOM(): void {
   dockedBar.className = 'smart-input-docked';
 
   const { inputRow, toolsStrip, toolsSurface } = createInputElements();
-  dockedBar.appendChild(toolsSurface);
   dockedBar.appendChild(inputRow);
+  dockedBar.appendChild(toolsSurface);
   footerPrimaryHost.appendChild(dockedBar);
 
   toolButtonsStrip = toolsStrip;
@@ -556,8 +557,13 @@ function createInputElements(): {
 
   const toolsStrip = createToolButtonsStrip();
 
-  nextToolsToggleBtn.addEventListener('click', () => {
-    setToolsPanelOpen(!(toolsPanel?.hidden === false));
+  nextToolsToggleBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+  });
+
+  nextToolsToggleBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    setToolsPanelOpen(!toolsPanelOpen);
   });
 
   textarea.addEventListener('input', () => {
@@ -746,6 +752,8 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   toolsToggleBtn?.toggleAttribute('hidden', toolsInlineInContext);
   if (toolsInlineInContext) {
     setToolsPanelOpen(false);
+  } else {
+    setToolsPanelOpen(toolsPanelOpen);
   }
 }
 
@@ -839,14 +847,9 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   const sessionId = layoutState.activeSessionId as string;
-  const provider = getLensQuickSettingsProvider(sessionId);
   const draft = getLensQuickSettingsDraft(sessionId);
 
   if (!layoutState.isMobile) {
-    const heading = document.createElement('div');
-    heading.className = 'adaptive-footer-status-label';
-    heading.textContent = formatLensProviderLabel(provider);
-    footerStatusHost.appendChild(heading);
     lensQuickSettingsRow.classList.remove('smart-input-lens-settings-sheet');
     lensQuickSettingsRow.hidden = false;
     footerStatusHost.appendChild(lensQuickSettingsRow);
@@ -856,7 +859,7 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   const summaryBtn = document.createElement('button');
   summaryBtn.type = 'button';
   summaryBtn.className = 'adaptive-footer-status-summary adaptive-footer-status-summary-lens';
-  summaryBtn.textContent = formatLensQuickSettingsSummary(provider, draft);
+  summaryBtn.textContent = formatLensQuickSettingsSummary(draft);
   summaryBtn.dataset.planMode = draft.planMode;
   summaryBtn.setAttribute('aria-expanded', lensQuickSettingsSheetOpen ? 'true' : 'false');
   summaryBtn.addEventListener('click', () => {
@@ -917,22 +920,10 @@ function describeTerminalStatus(inputMode: string | null | undefined): string {
   return t('smartInput.modeKeyboard');
 }
 
-function formatLensProviderLabel(provider: string | null): string {
-  if (provider === 'claude') {
-    return 'Claude';
-  }
-  if (provider === 'codex') {
-    return 'Codex';
-  }
-  return 'Lens';
-}
-
 function formatLensQuickSettingsSummary(
-  provider: string | null,
   draft: ReturnType<typeof getLensQuickSettingsDraft>,
 ): string {
   const parts = [
-    formatLensProviderLabel(provider),
     draft.model?.trim() || 'Default',
     draft.effort?.trim() || 'Default',
     draft.planMode === 'on' ? 'PLAN ON' : 'Plan Off',
@@ -947,6 +938,10 @@ function setToolsPanelOpen(open: boolean): void {
 
   const canOpen = Boolean(toolButtonsStrip) && !toolsToggleBtn.hidden;
   const shouldOpen = open && canOpen;
+  toolsPanelOpen = shouldOpen;
+  if (toolButtonsStrip && toolButtonsStrip.parentElement !== toolsPanel) {
+    toolsPanel.appendChild(toolButtonsStrip);
+  }
   toolsPanel.hidden = !shouldOpen;
   toolsToggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   if (!footerResizeObserver) {
@@ -1227,7 +1222,7 @@ function syncLensQuickSettingsControls(): void {
   }
 
   if (lensSettingsSummaryBtn) {
-    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary(provider, draft);
+    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary(draft);
     lensSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
 }

@@ -58,9 +58,11 @@ describe('smart input tab wiring', () => {
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
     expect(source).toContain('footerStatusHost.classList.add(\'adaptive-footer-status-sheet-open\');');
-    expect(source).toContain('dockedBar.appendChild(toolsSurface);');
     expect(source).toContain('dockedBar.appendChild(inputRow);');
-    expect(css).toContain('margin: 0 0 8px;');
+    expect(source).toContain('dockedBar.appendChild(toolsSurface);');
+    expect(source).toContain('let toolsPanelOpen = false;');
+    expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
+    expect(css).toContain('margin: 6px 0 0;');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
     expect(css).toContain('overflow: visible;');
   });

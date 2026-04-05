@@ -38,6 +38,9 @@ let queueEl: HTMLElement | null = null;
 let buttonsEl: HTMLElement | null = null;
 let addBtn: HTMLElement | null = null;
 let mobileDropdown: HTMLElement | null = null;
+let menuPopoverEl: HTMLElement | null = null;
+let openMenuButtonId: string | null = null;
+let openMenuAnchorEl: HTMLButtonElement | null = null;
 
 let modalEl: HTMLElement | null = null;
 let modalBackdrop: HTMLElement | null = null;
@@ -87,41 +90,8 @@ export function initManagerBar(): void {
   addBtn = document.getElementById('manager-bar-add');
   mobileDropdown = document.getElementById('mobile-actions-dropdown');
 
-  modalEl = document.getElementById('manager-action-modal');
-  modalBackdrop = modalEl?.querySelector('.modal-backdrop') ?? null;
-  modalCloseBtn = document.getElementById('btn-close-manager-action');
-  modalCancelBtn = document.getElementById('btn-cancel-manager-action');
-  modalSaveBtn = document.getElementById('btn-save-manager-action');
-  modalTitleEl = document.getElementById('manager-action-modal-title');
-  modalErrorEl = document.getElementById('manager-action-error');
-  labelInput = document.getElementById('manager-action-label') as HTMLInputElement | null;
-  typeSelect = document.getElementById('manager-action-type') as HTMLSelectElement | null;
-  triggerSelect = document.getElementById('manager-action-trigger') as HTMLSelectElement | null;
-  promptsTitleEl = document.getElementById('manager-action-prompts-title');
-  promptsCopyEl = document.getElementById('manager-action-prompts-copy');
-  typeDescriptionEl = document.getElementById('manager-action-type-description');
-  triggerDescriptionEl = document.getElementById('manager-action-trigger-description');
-  promptsContainer = document.getElementById('manager-action-prompts');
-  addPromptBtn = document.getElementById('manager-action-add-prompt') as HTMLButtonElement | null;
-  repeatCountInput = document.getElementById(
-    'manager-action-repeat-count',
-  ) as HTMLInputElement | null;
-  repeatEveryValueInput = document.getElementById(
-    'manager-action-repeat-every-value',
-  ) as HTMLInputElement | null;
-  repeatEveryUnitSelect = document.getElementById(
-    'manager-action-repeat-every-unit',
-  ) as HTMLSelectElement | null;
-  scheduleContainer = document.getElementById('manager-action-schedule-list');
-  addScheduleBtn = document.getElementById(
-    'manager-action-add-schedule',
-  ) as HTMLButtonElement | null;
-  cooldownHintEl = document.getElementById('manager-action-cooldown-hint');
-  chainHintEl = document.getElementById('manager-action-chain-hint');
-  triggerDetailsEl = document.getElementById('manager-action-trigger-details');
-  repeatCountGroupEl = document.getElementById('manager-action-repeat-count-group');
-  repeatIntervalGroupEl = document.getElementById('manager-action-repeat-interval-group');
-  scheduleGroupEl = document.getElementById('manager-action-schedule-group');
+  ensureManagerActionModalElements();
+  ensureMenuPopover();
 
   if (!barEl || !buttonsEl || !addBtn || !queueEl) return;
 
@@ -163,39 +133,13 @@ export function initManagerBar(): void {
 
     const menuBtn = target.closest<HTMLButtonElement>('.manager-btn-menu');
     if (menuBtn) {
+      event.preventDefault();
       event.stopPropagation();
       const button = menuBtn.closest<HTMLElement>('.manager-btn');
-      if (button) {
-        const shouldOpen = !button.classList.contains('menu-open');
-        closeOpenManagerMenus();
-        button.classList.toggle('menu-open', shouldOpen);
-        menuBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      const buttonId = button?.dataset.id ?? null;
+      if (buttonId) {
+        toggleManagerActionMenu(menuBtn, buttonId);
       }
-      return;
-    }
-
-    const editBtn = target.closest('.manager-btn-edit');
-    if (editBtn) {
-      const button = editBtn.closest<HTMLElement>('.manager-btn');
-      if (button?.dataset.id) {
-        closeOpenManagerMenus();
-        const action = renderedButtons.find((entry) => entry.id === button.dataset.id);
-        if (action) openActionModal(action);
-      }
-      return;
-    }
-
-    const deleteBtn = target.closest('.manager-btn-delete');
-    if (deleteBtn) {
-      const button = deleteBtn.closest<HTMLElement>('.manager-btn');
-      if (button?.dataset.id) {
-        closeOpenManagerMenus();
-        deleteButton(button.dataset.id);
-      }
-      return;
-    }
-
-    if (target.closest('.manager-btn-actions')) {
       return;
     }
 
@@ -208,10 +152,25 @@ export function initManagerBar(): void {
 
   document.addEventListener('click', handleDocumentClickForManagerMenu);
 
+  addBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+  });
+
   addBtn.addEventListener('click', () => {
     closeOpenManagerMenus();
     openActionModal();
   });
+
+  window.addEventListener('resize', () => {
+    positionManagerActionMenu();
+  });
+  document.addEventListener(
+    'scroll',
+    () => {
+      positionManagerActionMenu();
+    },
+    true,
+  );
 
   if (mobileDropdown) {
     mobileDropdown.addEventListener('click', (event) => {
@@ -223,6 +182,103 @@ export function initManagerBar(): void {
   }
 
   bindModalEvents();
+}
+
+function ensureManagerActionModalElements(): boolean {
+  const pickElement = <T extends HTMLElement>(current: T | null, id: string): T | null =>
+    current ?? (document.getElementById(id) as T | null);
+
+  modalEl = pickElement(modalEl, 'manager-action-modal');
+  modalBackdrop ??= modalEl?.querySelector('.modal-backdrop') ?? null;
+  modalCloseBtn = pickElement(modalCloseBtn, 'btn-close-manager-action');
+  modalCancelBtn = pickElement(modalCancelBtn, 'btn-cancel-manager-action');
+  modalSaveBtn = pickElement(modalSaveBtn, 'btn-save-manager-action');
+  modalTitleEl = pickElement(modalTitleEl, 'manager-action-modal-title');
+  modalErrorEl = pickElement(modalErrorEl, 'manager-action-error');
+  labelInput = pickElement<HTMLInputElement>(labelInput, 'manager-action-label');
+  typeSelect = pickElement<HTMLSelectElement>(typeSelect, 'manager-action-type');
+  triggerSelect = pickElement<HTMLSelectElement>(triggerSelect, 'manager-action-trigger');
+  promptsTitleEl = pickElement(promptsTitleEl, 'manager-action-prompts-title');
+  promptsCopyEl = pickElement(promptsCopyEl, 'manager-action-prompts-copy');
+  typeDescriptionEl = pickElement(typeDescriptionEl, 'manager-action-type-description');
+  triggerDescriptionEl = pickElement(triggerDescriptionEl, 'manager-action-trigger-description');
+  promptsContainer = pickElement(promptsContainer, 'manager-action-prompts');
+  addPromptBtn = pickElement<HTMLButtonElement>(addPromptBtn, 'manager-action-add-prompt');
+  repeatCountInput = pickElement<HTMLInputElement>(repeatCountInput, 'manager-action-repeat-count');
+  repeatEveryValueInput = pickElement<HTMLInputElement>(
+    repeatEveryValueInput,
+    'manager-action-repeat-every-value',
+  );
+  repeatEveryUnitSelect = pickElement<HTMLSelectElement>(
+    repeatEveryUnitSelect,
+    'manager-action-repeat-every-unit',
+  );
+  scheduleContainer = pickElement(scheduleContainer, 'manager-action-schedule-list');
+  addScheduleBtn = pickElement<HTMLButtonElement>(addScheduleBtn, 'manager-action-add-schedule');
+  cooldownHintEl = pickElement(cooldownHintEl, 'manager-action-cooldown-hint');
+  chainHintEl = pickElement(chainHintEl, 'manager-action-chain-hint');
+  triggerDetailsEl = pickElement(triggerDetailsEl, 'manager-action-trigger-details');
+  repeatCountGroupEl = pickElement(repeatCountGroupEl, 'manager-action-repeat-count-group');
+  repeatIntervalGroupEl = pickElement(
+    repeatIntervalGroupEl,
+    'manager-action-repeat-interval-group',
+  );
+  scheduleGroupEl = pickElement(scheduleGroupEl, 'manager-action-schedule-group');
+
+  return Boolean(
+    modalEl &&
+    modalTitleEl &&
+    labelInput &&
+    typeSelect &&
+    triggerSelect &&
+    repeatCountInput &&
+    repeatEveryValueInput &&
+    repeatEveryUnitSelect,
+  );
+}
+
+function ensureMenuPopover(): void {
+  if (menuPopoverEl) {
+    return;
+  }
+
+  const popover = document.createElement('div');
+  popover.className = 'manager-bar-action-popover hidden';
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'manager-bar-action-popover-btn manager-bar-action-popover-edit';
+  editBtn.innerHTML = `<span class="icon">\ue91f</span><span class="manager-bar-action-popover-label">${escapeHtml(t('managerBar.edit'))}</span>`;
+  editBtn.addEventListener('click', () => {
+    const actionId = openMenuButtonId;
+    closeOpenManagerMenus();
+    if (!actionId) {
+      return;
+    }
+
+    const action = renderedButtons.find((entry) => entry.id === actionId);
+    if (action) {
+      openActionModal(action);
+    }
+  });
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'manager-bar-action-popover-btn manager-bar-action-popover-delete';
+  deleteBtn.innerHTML = `<span class="icon">\ue909</span><span class="manager-bar-action-popover-label">${escapeHtml(t('managerBar.remove'))}</span>`;
+  deleteBtn.addEventListener('click', () => {
+    const actionId = openMenuButtonId;
+    closeOpenManagerMenus();
+    if (actionId) {
+      deleteButton(actionId);
+    }
+  });
+
+  popover.appendChild(editBtn);
+  popover.appendChild(deleteBtn);
+  document.body.appendChild(popover);
+
+  menuPopoverEl = popover;
 }
 
 function bindModalEvents(): void {
@@ -294,6 +350,7 @@ function bindModalEvents(): void {
 function renderButtons(buttons: NormalizedManagerButton[]): void {
   if (!buttonsEl) return;
 
+  closeOpenManagerMenus();
   buttonsEl.innerHTML = '';
   for (const button of buttons) {
     const wrapper = document.createElement('span');
@@ -301,18 +358,14 @@ function renderButtons(buttons: NormalizedManagerButton[]): void {
     wrapper.dataset.id = button.id;
     wrapper.innerHTML =
       `<span class="manager-btn-label">${escapeHtml(button.label)}</span>` +
-      `<button class="manager-btn-menu" title="${escapeHtml(t('session.actions'))}" aria-label="${escapeHtml(t('session.actions'))}" aria-haspopup="menu" aria-expanded="false" type="button">${icon('menu')}</button>` +
-      `<span class="manager-btn-actions">` +
-      `<button class="manager-btn-edit" title="${escapeHtml(t('managerBar.edit'))}" aria-label="${escapeHtml(t('managerBar.edit'))}" role="menuitem" type="button"><span class="icon">\ue91f</span><span class="manager-btn-action-label">${escapeHtml(t('managerBar.edit'))}</span></button>` +
-      `<button class="manager-btn-delete" title="${escapeHtml(t('managerBar.remove'))}" aria-label="${escapeHtml(t('managerBar.remove'))}" role="menuitem" type="button"><span class="icon">\ue909</span><span class="manager-btn-action-label">${escapeHtml(t('managerBar.remove'))}</span></button>` +
-      `</span>`;
+      `<button class="manager-btn-menu" title="${escapeHtml(t('session.actions'))}" aria-label="${escapeHtml(t('session.actions'))}" aria-haspopup="menu" aria-expanded="false" type="button">${icon('menu')}</button>`;
     buttonsEl.appendChild(wrapper);
   }
 }
 
 function handleDocumentClickForManagerMenu(event: MouseEvent): void {
   const target = event.target as HTMLElement | null;
-  if (target?.closest('.manager-btn')) {
+  if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {
     return;
   }
 
@@ -333,7 +386,66 @@ function closeOpenManagerMenus(): boolean {
       button.setAttribute('aria-expanded', 'false');
     });
 
+  if (menuPopoverEl && !menuPopoverEl.classList.contains('hidden')) {
+    menuPopoverEl.classList.add('hidden');
+    menuPopoverEl.style.removeProperty('left');
+    menuPopoverEl.style.removeProperty('top');
+    closedAny = true;
+  }
+
+  openMenuButtonId = null;
+  openMenuAnchorEl = null;
+
   return closedAny;
+}
+
+function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): void {
+  const isSameMenu = openMenuButtonId === actionId && !menuPopoverEl?.classList.contains('hidden');
+  closeOpenManagerMenus();
+  if (isSameMenu) {
+    return;
+  }
+
+  const button = anchor.closest<HTMLElement>('.manager-btn');
+  if (!button) {
+    return;
+  }
+
+  ensureMenuPopover();
+  button.classList.add('menu-open');
+  anchor.setAttribute('aria-expanded', 'true');
+  openMenuButtonId = actionId;
+  openMenuAnchorEl = anchor;
+  menuPopoverEl?.classList.remove('hidden');
+  positionManagerActionMenu();
+}
+
+function positionManagerActionMenu(): void {
+  if (!menuPopoverEl || !openMenuAnchorEl || menuPopoverEl.classList.contains('hidden')) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = openMenuAnchorEl.getBoundingClientRect();
+  const popoverRect = menuPopoverEl.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
+
+  let left = triggerRect.right - popoverRect.width;
+  left = Math.max(
+    viewportPadding,
+    Math.min(left, window.innerWidth - viewportPadding - popoverRect.width),
+  );
+
+  let top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
+  top = Math.max(
+    viewportPadding,
+    Math.min(top, window.innerHeight - viewportPadding - popoverRect.height),
+  );
+
+  menuPopoverEl.style.left = `${String(Math.round(left))}px`;
+  menuPopoverEl.style.top = `${String(Math.round(top))}px`;
 }
 
 function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
@@ -457,6 +569,10 @@ function describeQueueCondition(entry: ManagerBarQueueEntry): string {
 }
 
 function openActionModal(existing?: NormalizedManagerButton): void {
+  if (!ensureManagerActionModalElements()) {
+    return;
+  }
+
   if (
     !modalEl ||
     !modalTitleEl ||

@@ -239,14 +239,13 @@ describe('settings persistence wiring', () => {
   });
 
   it('keeps manager bar hover actions layout-stable', () => {
-    expect(cssSource).toContain('padding: 3px 10px;');
+    expect(cssSource).toContain('padding: 3px 28px 3px 10px;');
     expect(cssSource).toContain('.manager-btn:hover .manager-btn-menu');
-    expect(cssSource).toContain('.manager-btn.menu-open .manager-btn-actions');
-    expect(cssSource).toContain('top: calc(100% + 6px);');
-    expect(cssSource).toContain('min-width: 120px;');
-    expect(cssSource).toContain('visibility: hidden;');
-    expect(cssSource).toContain('opacity: 0;');
-    expect(cssSource).toContain('pointer-events: none;');
+    expect(cssSource).toContain('.manager-bar-action-popover {');
+    expect(cssSource).toContain('position: fixed;');
+    expect(cssSource).toContain('min-width: 148px;');
+    expect(cssSource).toContain('.manager-bar-action-popover.hidden {');
+    expect(cssSource).toContain('display: none !important;');
   });
 
   it('allows all transparency sliders to reach 100 percent', () => {

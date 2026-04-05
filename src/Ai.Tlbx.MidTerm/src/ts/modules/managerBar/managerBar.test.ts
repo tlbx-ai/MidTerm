@@ -30,8 +30,9 @@ describe('manager bar visibility', () => {
 
   it('uses a compact menu trigger before showing edit and remove actions', () => {
     expect(managerBarSource).toContain("class=\"manager-btn-menu\"");
-    expect(managerBarSource).toContain("button.classList.toggle('menu-open', shouldOpen);");
-    expect(managerBarSource).toContain("if (target.closest('.manager-btn-actions')) {");
+    expect(managerBarSource).toContain('function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): void {');
+    expect(managerBarSource).toContain("popover.className = 'manager-bar-action-popover hidden';");
+    expect(managerBarSource).toContain("if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {");
   });
 
   it('guards burst enqueue clicks before sending duplicate queue requests', () => {

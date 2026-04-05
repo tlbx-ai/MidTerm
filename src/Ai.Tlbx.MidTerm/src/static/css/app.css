@@ -9857,7 +9857,7 @@ body.shared-session-mode .session-tab-bar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 10px;
+  padding: 3px 28px 3px 10px;
   border-radius: 4px;
   background: var(--bg-elevated-opaque, var(--bg-elevated));
   color: var(--text-secondary);
@@ -9926,31 +9926,6 @@ body.shared-session-mode .session-tab-bar {
   min-width: 80px;
 }
 
-.manager-btn-actions {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  min-width: 120px;
-  padding: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-dropdown-opaque, var(--bg-elevated-opaque));
-  box-shadow: 0 10px 24px var(--shadow-color-lg);
-  z-index: 4;
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease,
-    visibility 0s linear 0.15s;
-  transform: translateY(-4px);
-}
-
 .manager-btn:hover .manager-btn-menu,
 .manager-btn:focus-within .manager-btn-menu,
 .manager-btn.menu-open .manager-btn-menu {
@@ -9967,16 +9942,25 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-primary);
 }
 
-.manager-btn.menu-open .manager-btn-actions {
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0s;
-  transform: translateY(0);
+.manager-bar-action-popover {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 148px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-dropdown-opaque, var(--bg-elevated-opaque));
+  box-shadow: 0 10px 24px var(--shadow-color-lg);
 }
 
-.manager-btn-edit,
-.manager-btn-delete {
+.manager-bar-action-popover.hidden {
+  display: none !important;
+}
+
+.manager-bar-action-popover-btn {
   font-size: var(--fs-base);
   min-height: 34px;
   padding: 0 10px;
@@ -9985,7 +9969,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
   color: var(--text-muted);
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
@@ -9993,16 +9977,17 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
-.manager-btn-edit:hover {
+.manager-bar-action-popover-edit:hover {
   background: color-mix(in srgb, var(--accent-blue) 20%, var(--bg-hover));
   color: var(--accent-blue);
 }
-.manager-btn-delete:hover {
+
+.manager-bar-action-popover-delete:hover {
   background: color-mix(in srgb, var(--accent-red) 20%, var(--bg-hover));
   color: var(--accent-red);
 }
 
-.manager-btn-action-label {
+.manager-bar-action-popover-label {
   font-size: var(--fs-sm);
 }
 
@@ -13736,6 +13721,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   pointer-events: auto;
 }
 
+.adaptive-footer-dock[data-device='desktop'] {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .adaptive-footer-dock[hidden] {
   display: none !important;
 }
@@ -13781,7 +13771,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-primary > .smart-input-docked.visible {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .smart-input-docked {
@@ -13793,14 +13783,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: end;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
 }
 
 .smart-input-textarea {
-  min-height: 46px;
-  padding: 11px 13px;
-  border-radius: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
   background: color-mix(
     in srgb,
@@ -13812,10 +13802,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-tools-toggle,
 .smart-input-send-btn,
 .adaptive-footer-status-toggle {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 42px;
+  min-height: 42px;
   border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-  border-radius: 12px;
+  border-radius: 10px;
   background: color-mix(
     in srgb,
     var(--terminal-ui-background, var(--terminal-bg)) 90%,
@@ -13849,10 +13839,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   justify-content: flex-start;
   width: 100%;
   min-height: 0;
-  margin: 0 0 8px;
-  padding: 10px;
+  margin: 6px 0 0;
+  padding: 8px;
   border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-  border-radius: 14px;
+  border-radius: 12px;
   background: color-mix(
     in srgb,
     var(--terminal-ui-background, var(--terminal-bg)) 94%,
@@ -13891,18 +13881,21 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  min-height: 44px;
-  padding-top: 8px;
+  gap: 6px;
+  min-height: 0;
+  padding-top: 6px;
 }
 
 .adaptive-footer-status {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 36px;
-  padding-top: 8px;
+  justify-content: center;
+  align-self: center;
+  width: fit-content;
+  max-width: 100%;
+  gap: 8px;
+  min-height: 0;
+  padding-top: 6px;
   color: var(--text-secondary);
   font-size: 0.82rem;
 }
@@ -13959,14 +13952,41 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   align-items: stretch;
   gap: 0;
   min-width: 0;
+  width: fit-content;
   max-width: 100%;
-  padding: 0 4px;
-  border-radius: 12px;
+  margin: 0 auto;
+  padding: 0 2px;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--border-color) 56%, transparent);
   background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+}
+
+.smart-input-lens-field {
+  padding: 4px 10px;
+  gap: 6px;
+}
+
+.smart-input-lens-field + .smart-input-lens-field::before {
+  top: 7px;
+  bottom: 7px;
+}
+
+.smart-input-lens-label {
+  font-size: 10px;
+}
+
+.smart-input-lens-control {
+  min-height: 24px;
+  padding: 3px 20px 3px 0;
+  font-size: 13px;
+}
+
+.smart-input-lens-model {
+  min-width: 120px;
+  max-width: 176px;
 }
 
 .smart-input-lens-settings::-webkit-scrollbar {
@@ -13981,7 +14001,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   flex-wrap: wrap;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 6px;
   padding: 10px;
   overflow: visible;
   box-shadow: none;
@@ -13989,8 +14009,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .adaptive-footer-dock .manager-bar {
   align-items: center;
-  gap: 8px;
-  padding: 8px 0 0;
+  justify-content: center;
+  align-self: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 0 0;
   background: none;
   border: 0;
   margin: 0;
@@ -14001,8 +14025,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock .manager-bar-buttons {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-wrap: nowrap;
+  justify-content: center;
+  max-width: min(100%, calc(100vw - 120px));
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
@@ -14014,18 +14040,40 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock .manager-btn {
-  min-height: 36px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 28px 0 12px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 88%, transparent);
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, black 4%);
   color: var(--text-secondary);
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
 }
 
 .adaptive-footer-dock .manager-bar-add {
   flex: 0 0 auto;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 34px;
+  min-height: 34px;
   border-radius: 10px;
+  padding: 0;
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, black 4%);
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  color: var(--text-secondary);
+}
+
+.adaptive-footer-dock .manager-btn-menu {
+  right: 6px;
+  width: 18px;
+  height: 18px;
+}
+
+.adaptive-footer-dock .manager-btn:hover {
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, var(--bg-hover));
+  border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
+}
+
+.adaptive-footer-dock .manager-bar-add:hover {
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, var(--bg-hover));
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
 }
 
 .adaptive-footer-context .touch-controller.embedded {
@@ -14186,11 +14234,17 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
   }
 
   .adaptive-footer-status {
+    width: 100%;
+    align-self: stretch;
+    justify-content: space-between;
     min-height: 44px;
     padding-top: 6px;
   }
 
   .adaptive-footer-dock .manager-bar {
+    align-self: stretch;
+    width: 100%;
+    justify-content: flex-start;
     padding-top: 6px;
   }
 
