@@ -1,15 +1,10 @@
 /**
  * Smart Input UI
  *
- * Creates and manages a docked text input bar for terminal sessions.
- * Three modes:
- * - "keyboard": no smart input bar (default)
- * - "smartinput": docked bar below the terminal that replaces terminal keyboard focus
- * - "both": docked bar below the terminal while direct terminal keyboard input still works
- *
- * Right Ctrl push-to-talk: hold to record, release to transcribe.
- * Auto-send toggle: when active, transcribed text is sent immediately.
- * Touch keys: the touch controller bar is embedded as a collapsible second row.
+ * Owns the unified active-session footer dock for Terminal and Lens.
+ * The dock can expose an input row, a mode-specific context row,
+ * manager automation, and a status rail without splitting those concerns
+ * into unrelated sibling bars.
  */
 
 import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../stores';
@@ -22,10 +17,15 @@ import {
   getLensQuickSettingsProvider,
   setLensQuickSettingsDraft,
 } from '../lens/quickSettings';
+import { shouldShowManagerBar } from '../managerBar/visibility';
 import { onTabActivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop } from '../terminal';
-import { hideTouchController } from '../touchController';
+import { shouldShowTouchController } from '../touchController/detection';
+import {
+  calculateAdaptiveFooterReservedHeight,
+  getAdaptiveFooterRailSequence,
+} from './layout';
 import { startTranscription, stopTranscription } from './transcription';
 import {
   shouldShowDockedSmartInput,
@@ -33,22 +33,53 @@ import {
   type SmartInputVisibilityState,
 } from './visibility';
 
+let footerDock: HTMLDivElement | null = null;
+let footerPrimaryHost: HTMLDivElement | null = null;
+let footerContextHost: HTMLDivElement | null = null;
+let footerStatusHost: HTMLDivElement | null = null;
 let dockedBar: HTMLDivElement | null = null;
+let touchControllerEl: HTMLElement | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
 let activeMicBtn: HTMLButtonElement | null = null;
-let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
-let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
-let isRecording = false;
-let touchControllerOriginalParent: HTMLElement | null = null;
-let touchControllerOriginalNext: Node | null = null;
-let lastSessionId: string | null = null;
+let sendBtn: HTMLButtonElement | null = null;
+let toolsToggleBtn: HTMLButtonElement | null = null;
+let toolsPanel: HTMLDivElement | null = null;
+let toolButtonsStrip: HTMLDivElement | null = null;
 let lensQuickSettingsRow: HTMLDivElement | null = null;
 let lensModelInput: HTMLInputElement | null = null;
 let lensEffortSelect: HTMLSelectElement | null = null;
 let lensPlanSelect: HTMLSelectElement | null = null;
 let lensPermissionSelect: HTMLSelectElement | null = null;
+let lensSettingsSummaryBtn: HTMLButtonElement | null = null;
+let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
+let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
+let isRecording = false;
+let lastSessionId: string | null = null;
+let lensQuickSettingsSheetOpen = false;
+let sendAutoSendLongPressTimer: number | null = null;
+let suppressNextSendClick = false;
+let footerResizeQueued = false;
+let footerResizeObserver: ResizeObserver | null = null;
+
 const MAX_TEXTAREA_LINES = 5;
+const AUTO_SEND_LONG_PRESS_MS = 520;
+const MOBILE_BREAKPOINT_PX = 768;
 const sessionDrafts = new Map<string, string>();
+
+interface AdaptiveFooterLayoutState {
+  activeSessionId: string | null | undefined;
+  lensActive: boolean;
+  showInput: boolean;
+  showAutomation: boolean;
+  showContext: boolean;
+  showStatus: boolean;
+  showFooter: boolean;
+  isMobile: boolean;
+  glassEnabled: boolean;
+  inputMode: string | null | undefined;
+  touchControlsAvailable: boolean;
+  touchControlsExpanded: boolean;
+}
 
 function getSmartInputVisibilityState(): SmartInputVisibilityState {
   const activeSessionId = $activeSessionId.get();
@@ -56,6 +87,38 @@ function getSmartInputVisibilityState(): SmartInputVisibilityState {
     activeSessionId,
     inputMode: $currentSettings.get()?.inputMode,
     lensActive: isLensActiveSession(activeSessionId),
+  };
+}
+
+function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
+  const visibilityState = getSmartInputVisibilityState();
+  const settings = $currentSettings.get();
+  const activeSessionId = visibilityState.activeSessionId;
+  const isMobile = isMobileViewport();
+  const lensActive = visibilityState.lensActive;
+  const showInput = shouldShowDockedSmartInput(visibilityState);
+  const showAutomation = shouldShowManagerBar(settings?.managerBarEnabled, activeSessionId);
+  const touchControlsAvailable =
+    Boolean(activeSessionId) && !lensActive && isMobile && shouldShowTouchController();
+  const showContext = lensActive ? isMobile : touchControlsAvailable && keysExpanded;
+  const showStatus = lensActive || (Boolean(activeSessionId) && (isMobile || showInput));
+  const showFooter =
+    Boolean(activeSessionId) && (showInput || showAutomation || showContext || showStatus);
+  const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;
+
+  return {
+    activeSessionId,
+    lensActive,
+    showInput,
+    showAutomation,
+    showContext,
+    showStatus,
+    showFooter,
+    isMobile,
+    glassEnabled: !isMobile && transparency > 0,
+    inputMode: settings?.inputMode,
+    touchControlsAvailable,
+    touchControlsExpanded: touchControlsAvailable && keysExpanded,
   };
 }
 
@@ -80,15 +143,13 @@ export function isBothMode(): boolean {
   return $currentSettings.get()?.inputMode === 'both';
 }
 
-function hasSmartInput(): boolean {
-  return shouldShowDockedSmartInput(getSmartInputVisibilityState());
-}
-
 /**
- * Keeps the docked composer aligned with session changes, Lens activation, and
- * dev-only voice affordances so Smart Input can serve both terminal and Lens flows.
+ * Keeps the footer dock aligned with session changes, Lens activation, mobile
+ * touch controls, and dev-only voice affordances.
  */
 export function initSmartInput(): void {
+  ensureFooterHosts();
+
   $activeSessionId.subscribe((sessionId) => {
     persistDraftForSession(lastSessionId);
     lastSessionId = sessionId;
@@ -113,6 +174,13 @@ export function initSmartInput(): void {
   if (typeof window !== 'undefined') {
     window.addEventListener(LENS_QUICK_SETTINGS_CHANGED_EVENT, () => {
       syncLensQuickSettingsControls();
+      syncSmartInputVisibility();
+    });
+    window.addEventListener('resize', () => {
+      syncSmartInputVisibility();
+    });
+    window.addEventListener('orientationchange', () => {
+      syncSmartInputVisibility();
     });
   }
 
@@ -135,12 +203,18 @@ export function initSmartInput(): void {
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.code !== 'ControlRight') return;
-    if (!hasSmartInput()) return;
-    if (!canUseSmartInputVoice()) return;
-    if (isRecording) return;
-    e.preventDefault();
-    beginRecording();
+    if (e.code === 'ControlRight') {
+      if (!getAdaptiveFooterLayoutState().showInput) return;
+      if (!canUseSmartInputVoice()) return;
+      if (isRecording) return;
+      e.preventDefault();
+      beginRecording();
+      return;
+    }
+
+    if (e.key === 'Escape' && closeFooterTransientUi()) {
+      e.preventDefault();
+    }
   });
 
   document.addEventListener('keyup', (e) => {
@@ -149,100 +223,152 @@ export function initSmartInput(): void {
     e.preventDefault();
     endRecording();
   });
+
+  document.addEventListener('click', (event) => {
+    const target = event.target as Node | null;
+    if (!target) {
+      return;
+    }
+
+    if (toolsPanel && toolsToggleBtn) {
+      const clickedInsideTools =
+        toolsPanel.contains(target) || toolsToggleBtn.contains(target);
+      if (!clickedInsideTools) {
+        setToolsPanelOpen(false);
+      }
+    }
+
+    if (lensQuickSettingsRow && lensSettingsSummaryBtn) {
+      const clickedInsideLensSettings =
+        lensQuickSettingsRow.contains(target) || lensSettingsSummaryBtn.contains(target);
+      if (!clickedInsideLensSettings) {
+        setLensQuickSettingsSheetOpen(false);
+      }
+    }
+  });
 }
 
-/**
- * Exposes the docked composer for flows that explicitly want text captured in
- * Smart Input rather than by sending keystrokes straight to the terminal.
- */
 export function showSmartInput(): void {
-  showDockedBar(true);
+  syncSmartInputVisibility(true);
 }
 
-/**
- * Hides the docked composer and releases embedded controls so the terminal can
- * return to being the only visible input surface when that is the active mode.
- */
 export function hideSmartInput(): void {
-  if (dockedBar?.classList.contains('visible')) {
-    releaseTouchController();
-  }
-  dockedBar?.classList.remove('visible');
+  syncSmartInputVisibility();
 }
 
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
-  if (!shouldShowDockedSmartInput(getSmartInputVisibilityState())) {
-    hideSmartInput();
-    hideDockedBar();
-    releaseTouchController();
+  ensureFooterHosts();
+
+  const layoutState = getAdaptiveFooterLayoutState();
+  if (!layoutState.showFooter) {
+    hideAdaptiveFooter();
+    queueFooterReserveSync();
     return;
   }
 
-  showDockedBar(focusTextarea);
-}
-
-function showDockedBar(focusTextarea: boolean = false): void {
-  if (!shouldShowDockedSmartInput(getSmartInputVisibilityState())) {
-    hideDockedBar();
-    return;
+  if (!dockedBar) {
+    createDockedDOM();
   }
 
-  if (!dockedBar) createDockedDOM();
-  relocateDockedBar();
-  dockedBar?.classList.add('visible');
-  activeTextarea = dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
-  activeMicBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
-  if (activeTextarea) {
-    applyDraftToTextarea(activeTextarea, $activeSessionId.get());
-    resizeTextarea(activeTextarea);
-  }
-  syncLensQuickSettingsControls();
+  applyFooterPresentation(layoutState);
+  syncInputRow(layoutState);
+  syncContextRow(layoutState);
+
+  const managerBar = document.getElementById('manager-bar');
+  managerBar?.classList.toggle('hidden', !layoutState.showAutomation);
+  syncFooterRailOrder(layoutState);
+  syncStatusRow(layoutState);
+  footerDock?.toggleAttribute('hidden', false);
+
   syncVoiceInputAvailability();
-  embedTouchController(dockedBar);
-  if (focusTextarea) {
+  updateAutoSendVisibility();
+  queueFooterReserveSync();
+
+  if (focusTextarea && layoutState.showInput) {
     activeTextarea?.focus({ preventScroll: true });
   }
 }
 
-function hideDockedBar(): void {
-  if (dockedBar?.classList.contains('visible')) {
-    releaseTouchController();
-  }
-  dockedBar?.classList.remove('visible');
-}
-
-function embedTouchController(container: HTMLElement | null): void {
-  if (!container) return;
-  const tc = document.getElementById('touch-controller');
-  if (!tc) return;
-
-  if (!touchControllerOriginalParent) {
-    touchControllerOriginalParent = tc.parentElement;
-    touchControllerOriginalNext = tc.nextSibling;
+function hideAdaptiveFooter(): void {
+  if (!footerDock) {
+    return;
   }
 
-  container.appendChild(tc);
-  tc.classList.add('embedded');
-  hideTouchController();
-  container.classList.toggle('keys-expanded', keysExpanded);
+  setToolsPanelOpen(false);
+  setLensQuickSettingsSheetOpen(false);
+  footerDock.hidden = true;
+  footerPrimaryHost?.setAttribute('hidden', '');
+  footerContextHost?.setAttribute('hidden', '');
+  footerStatusHost?.setAttribute('hidden', '');
 }
 
-function releaseTouchController(): void {
-  const tc = document.getElementById('touch-controller');
-  if (!tc || !touchControllerOriginalParent) return;
-  if (!tc.classList.contains('embedded')) return;
+function ensureFooterHosts(): void {
+  footerDock ??= document.getElementById('adaptive-footer-dock') as HTMLDivElement | null;
+  footerPrimaryHost ??= document.getElementById(
+    'adaptive-footer-primary',
+  ) as HTMLDivElement | null;
+  footerContextHost ??= document.getElementById(
+    'adaptive-footer-context',
+  ) as HTMLDivElement | null;
+  footerStatusHost ??= document.getElementById(
+    'adaptive-footer-status',
+  ) as HTMLDivElement | null;
+  ensureFooterResizeObserver();
+}
 
-  tc.classList.remove('embedded');
-  if (touchControllerOriginalNext) {
-    touchControllerOriginalParent.insertBefore(tc, touchControllerOriginalNext);
-  } else {
-    touchControllerOriginalParent.appendChild(tc);
+function ensureFooterResizeObserver(): void {
+  if (footerResizeObserver || typeof ResizeObserver === 'undefined' || !footerDock) {
+    return;
+  }
+
+  footerResizeObserver = new ResizeObserver(() => {
+    queueFooterReserveSync();
+  });
+  footerResizeObserver.observe(footerDock);
+}
+
+function applyFooterPresentation(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerDock) {
+    return;
+  }
+
+  footerDock.dataset.surface = layoutState.lensActive ? 'lens' : 'terminal';
+  footerDock.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
+  footerDock.dataset.material = layoutState.glassEnabled ? 'glass' : 'solid';
+  footerDock.dataset.inputMode = layoutState.inputMode ?? 'keyboard';
+  footerDock.classList.toggle('keys-expanded', layoutState.touchControlsExpanded);
+}
+
+function createDockedDOM(): void {
+  ensureFooterHosts();
+  if (!footerPrimaryHost || !footerContextHost || !footerStatusHost) {
+    return;
+  }
+
+  dockedBar = document.createElement('div');
+  dockedBar.className = 'smart-input-docked';
+
+  const { inputRow, toolsStrip, toolsSurface } = createInputElements();
+  dockedBar.appendChild(inputRow);
+  dockedBar.appendChild(toolsSurface);
+  footerPrimaryHost.appendChild(dockedBar);
+
+  toolButtonsStrip = toolsStrip;
+  if (toolsPanel) {
+    toolsPanel.appendChild(toolButtonsStrip);
+  }
+
+  touchControllerEl ??= document.getElementById('touch-controller');
+  if (touchControllerEl && touchControllerEl.parentElement !== footerContextHost) {
+    footerContextHost.appendChild(touchControllerEl);
+    touchControllerEl.classList.add('embedded');
   }
 }
 
 function createInputElements(): {
-  lensSettingsRow: HTMLDivElement;
   inputRow: HTMLDivElement;
+  toolsStrip: HTMLDivElement;
+  toolsSurface: HTMLDivElement;
 } {
   const nextLensQuickSettingsRow = document.createElement('div');
   nextLensQuickSettingsRow.className = 'smart-input-lens-settings';
@@ -310,6 +436,7 @@ function createInputElements(): {
     setLensQuickSettingsDraft(sessionId, {
       planMode: lensPlanSelect?.value ?? 'off',
     });
+    syncSmartInputVisibility();
   });
 
   lensPermissionSelect = document.createElement('select');
@@ -344,109 +471,48 @@ function createInputElements(): {
   const inputRow = document.createElement('div');
   inputRow.className = 'smart-input-row';
 
-  const micBtn = document.createElement('button');
-  micBtn.className = 'smart-input-mic-btn';
-  micBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
-  micBtn.title = 'Push to talk (Right Ctrl)';
-  micBtn.hidden = !canUseSmartInputVoice();
-
-  const autoSendBtn = document.createElement('button');
-  autoSendBtn.className = 'smart-input-autosend-btn';
-  autoSendBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>';
-  autoSendBtn.title = t('smartInput.autoSend');
-  autoSendBtn.hidden = !canUseSmartInputVoice();
-  if (autoSendEnabled) autoSendBtn.classList.add('active');
-
-  autoSendBtn.addEventListener('click', () => {
-    autoSendEnabled = !autoSendEnabled;
-    autoSendBtn.classList.toggle('active', autoSendEnabled);
-    localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
-    updateAutoSendVisibility();
-  });
-
-  const photoBtn = document.createElement('button');
-  photoBtn.className = 'smart-input-photo-btn';
-  photoBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
-  photoBtn.title = t('smartInput.photo');
-
-  const photoInput = document.createElement('input');
-  photoInput.type = 'file';
-  photoInput.accept = 'image/*';
-  photoInput.capture = 'environment';
-  photoInput.style.display = 'none';
-
-  photoBtn.addEventListener('click', () => {
-    if (isTouchDevice()) {
-      photoInput.click();
-    } else {
-      void captureFromWebcam();
-    }
-  });
-  photoInput.addEventListener('change', () => {
-    if (photoInput.files?.length) {
-      void handleFileDrop(photoInput.files);
-    }
-    photoInput.value = '';
-  });
-
-  const attachBtn = document.createElement('button');
-  attachBtn.className = 'smart-input-attach-btn';
-  attachBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
-  attachBtn.title = t('smartInput.attach');
-
-  const attachInput = document.createElement('input');
-  attachInput.type = 'file';
-  attachInput.multiple = true;
-  attachInput.style.display = 'none';
-
-  attachBtn.addEventListener('click', () => {
-    attachInput.click();
-  });
-  attachInput.addEventListener('change', () => {
-    if (attachInput.files?.length) {
-      void handleFileDrop(attachInput.files);
-    }
-    attachInput.value = '';
-  });
-
   const textarea = document.createElement('textarea');
   textarea.className = 'smart-input-textarea';
   textarea.rows = 1;
-  textarea.placeholder = 'Type here...';
+  textarea.placeholder = t('smartInput.placeholder');
   resizeTextarea(textarea);
 
-  const sendBtn = document.createElement('button');
-  sendBtn.className = 'smart-input-send-btn';
-  sendBtn.innerHTML =
+  const nextSendBtn = document.createElement('button');
+  nextSendBtn.type = 'button';
+  nextSendBtn.className = 'smart-input-send-btn';
+  nextSendBtn.innerHTML =
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
-  sendBtn.title = 'Send';
+  nextSendBtn.title = t('smartInput.sendGestureHint');
+  nextSendBtn.setAttribute('aria-label', t('smartInput.send'));
+  sendBtn = nextSendBtn;
 
-  const toggleKeysBtn = document.createElement('button');
-  toggleKeysBtn.className = 'smart-input-toggle-keys';
-  if (keysExpanded) toggleKeysBtn.classList.add('expanded');
-  toggleKeysBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>';
-  toggleKeysBtn.title = 'Toggle keys';
+  const nextToolsToggleBtn = document.createElement('button');
+  nextToolsToggleBtn.type = 'button';
+  nextToolsToggleBtn.className = 'smart-input-tools-toggle';
+  nextToolsToggleBtn.textContent = '+';
+  nextToolsToggleBtn.title = t('smartInput.tools');
+  nextToolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
+  toolsToggleBtn = nextToolsToggleBtn;
 
-  toggleKeysBtn.addEventListener('click', () => {
-    keysExpanded = !keysExpanded;
-    toggleKeysBtn.classList.toggle('expanded', keysExpanded);
-    localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
-    const container = toggleKeysBtn.closest('.smart-input-docked');
-    container?.classList.toggle('keys-expanded', keysExpanded);
+  const toolsSurface = document.createElement('div');
+  toolsSurface.className = 'smart-input-tools-surface';
+  toolsSurface.hidden = true;
+  toolsPanel = toolsSurface;
+
+  const toolsStrip = createToolButtonsStrip();
+
+  nextToolsToggleBtn.addEventListener('click', () => {
+    setToolsPanelOpen(!(toolsPanel?.hidden === false));
   });
 
-  // Auto-grow textarea
   textarea.addEventListener('input', () => {
     persistDraftForSession($activeSessionId.get(), textarea.value);
     resizeTextarea(textarea);
+    if (!footerResizeObserver) {
+      queueFooterReserveSync();
+    }
   });
 
-  // Enter to send, Shift+Enter for newline
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const sessionId = $activeSessionId.get();
@@ -463,13 +529,65 @@ function createInputElements(): {
     }
   });
 
-  sendBtn.addEventListener('click', () => {
+  nextSendBtn.addEventListener('dblclick', (event) => {
+    if (isMobileViewport()) {
+      return;
+    }
+
+    event.preventDefault();
+    toggleAutoSendEnabled();
+  });
+
+  nextSendBtn.addEventListener('pointerdown', () => {
+    if (!isMobileViewport()) {
+      return;
+    }
+
+    clearSendAutoSendLongPressTimer();
+    sendAutoSendLongPressTimer = window.setTimeout(() => {
+      toggleAutoSendEnabled();
+      suppressNextSendClick = true;
+      sendAutoSendLongPressTimer = null;
+    }, AUTO_SEND_LONG_PRESS_MS);
+  });
+
+  for (const eventName of ['pointerup', 'pointercancel', 'pointerleave']) {
+    nextSendBtn.addEventListener(eventName, () => {
+      clearSendAutoSendLongPressTimer();
+    });
+  }
+
+  nextSendBtn.addEventListener('click', () => {
+    if (suppressNextSendClick) {
+      suppressNextSendClick = false;
+      return;
+    }
+
     sendText(textarea);
   });
 
-  // Push-to-talk mic button (touch/mouse)
-  micBtn.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
+  inputRow.appendChild(textarea);
+  inputRow.appendChild(nextToolsToggleBtn);
+  inputRow.appendChild(nextSendBtn);
+
+  return { inputRow, toolsStrip, toolsSurface };
+}
+
+function createToolButtonsStrip(): HTMLDivElement {
+  const strip = document.createElement('div');
+  strip.className = 'smart-input-tools-strip';
+
+  const micBtn = document.createElement('button');
+  micBtn.type = 'button';
+  micBtn.className = 'smart-input-mic-btn';
+  micBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
+  micBtn.title = t('smartInput.mic');
+  micBtn.hidden = !canUseSmartInputVoice();
+  activeMicBtn = micBtn;
+
+  micBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
     beginRecording();
   });
 
@@ -483,41 +601,335 @@ function createInputElements(): {
     }
   });
 
-  inputRow.appendChild(micBtn);
-  inputRow.appendChild(autoSendBtn);
-  inputRow.appendChild(photoBtn);
-  inputRow.appendChild(photoInput);
-  inputRow.appendChild(attachBtn);
-  inputRow.appendChild(attachInput);
-  inputRow.appendChild(textarea);
-  inputRow.appendChild(sendBtn);
-  inputRow.appendChild(toggleKeysBtn);
+  const photoBtn = document.createElement('button');
+  photoBtn.type = 'button';
+  photoBtn.className = 'smart-input-photo-btn';
+  photoBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
+  photoBtn.title = t('smartInput.photo');
 
-  return { lensSettingsRow: nextLensQuickSettingsRow, inputRow };
+  const photoInput = document.createElement('input');
+  photoInput.type = 'file';
+  photoInput.accept = 'image/*';
+  photoInput.capture = 'environment';
+  photoInput.hidden = true;
+
+  photoBtn.addEventListener('click', () => {
+    if (isTouchPrimaryDevice()) {
+      photoInput.click();
+      return;
+    }
+
+    void captureFromWebcam();
+  });
+  photoInput.addEventListener('change', () => {
+    if (photoInput.files?.length) {
+      void handleFileDrop(photoInput.files);
+    }
+    photoInput.value = '';
+  });
+
+  const attachBtn = document.createElement('button');
+  attachBtn.type = 'button';
+  attachBtn.className = 'smart-input-attach-btn';
+  attachBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
+  attachBtn.title = t('smartInput.attach');
+
+  const attachInput = document.createElement('input');
+  attachInput.type = 'file';
+  attachInput.multiple = true;
+  attachInput.hidden = true;
+
+  attachBtn.addEventListener('click', () => {
+    attachInput.click();
+  });
+  attachInput.addEventListener('change', () => {
+    if (attachInput.files?.length) {
+      void handleFileDrop(attachInput.files);
+    }
+    attachInput.value = '';
+  });
+
+  strip.appendChild(micBtn);
+  strip.appendChild(photoBtn);
+  strip.appendChild(photoInput);
+  strip.appendChild(attachBtn);
+  strip.appendChild(attachInput);
+  return strip;
 }
 
-function createDockedDOM(): void {
-  dockedBar = document.createElement('div');
-  dockedBar.className = 'smart-input-docked';
-
-  const { lensSettingsRow, inputRow } = createInputElements();
-  dockedBar.appendChild(inputRow);
-  dockedBar.appendChild(lensSettingsRow);
-  relocateDockedBar();
-  updateAutoSendVisibility();
-  syncVoiceInputAvailability();
-  syncLensQuickSettingsControls();
-}
-
-function relocateDockedBar(): void {
-  if (!dockedBar) return;
-  const managerBar = document.getElementById('manager-bar');
-  if (managerBar?.parentElement) {
-    managerBar.parentElement.insertBefore(dockedBar, managerBar.nextSibling);
+function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerPrimaryHost || !dockedBar) {
     return;
   }
 
-  document.querySelector('.main-content')?.appendChild(dockedBar);
+  footerPrimaryHost.toggleAttribute('hidden', !layoutState.showInput);
+  dockedBar.classList.toggle('visible', layoutState.showInput);
+
+  if (!layoutState.showInput) {
+    setToolsPanelOpen(false);
+    return;
+  }
+
+  dockedBar.dataset.surface = layoutState.lensActive ? 'lens' : 'terminal';
+  dockedBar.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
+
+  activeTextarea = dockedBar.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
+  if (activeTextarea) {
+    applyDraftToTextarea(activeTextarea, layoutState.activeSessionId ?? null);
+  }
+
+  const toolsInlineInContext = layoutState.lensActive && layoutState.isMobile;
+  toolsToggleBtn?.toggleAttribute('hidden', toolsInlineInContext);
+  if (toolsInlineInContext) {
+    setToolsPanelOpen(false);
+  }
+}
+
+function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerContextHost) {
+    return;
+  }
+
+  footerContextHost.replaceChildren();
+
+  if (layoutState.lensActive && layoutState.isMobile) {
+    if (toolButtonsStrip) {
+      footerContextHost.appendChild(toolButtonsStrip);
+    }
+    footerContextHost.hidden = false;
+    return;
+  }
+
+  if (toolButtonsStrip && toolsPanel && toolButtonsStrip.parentElement !== toolsPanel) {
+    toolsPanel.appendChild(toolButtonsStrip);
+  }
+
+  if (layoutState.showContext && layoutState.touchControlsAvailable) {
+    if (touchControllerEl) {
+      touchControllerEl.classList.add('embedded', 'visible');
+      footerContextHost.appendChild(touchControllerEl);
+      footerContextHost.hidden = false;
+      return;
+    }
+  }
+
+  touchControllerEl?.classList.remove('visible');
+  footerContextHost.hidden = true;
+}
+
+function syncFooterRailOrder(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerDock || !footerPrimaryHost || !footerContextHost || !footerStatusHost) {
+    return;
+  }
+
+  const managerBar = document.getElementById('manager-bar');
+  if (!managerBar) {
+    return;
+  }
+
+  const rails = {
+    primary: footerPrimaryHost,
+    automation: managerBar,
+    context: footerContextHost,
+    status: footerStatusHost,
+  } satisfies Record<ReturnType<typeof getAdaptiveFooterRailSequence>[number], HTMLElement>;
+
+  for (const key of getAdaptiveFooterRailSequence(layoutState)) {
+    footerDock.appendChild(rails[key]);
+  }
+}
+
+function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerStatusHost) {
+    return;
+  }
+
+  footerStatusHost.replaceChildren();
+  footerStatusHost.toggleAttribute('hidden', !layoutState.showStatus);
+  syncLensQuickSettingsControls();
+
+  if (!layoutState.showStatus || !layoutState.activeSessionId) {
+    setLensQuickSettingsSheetOpen(false);
+    return;
+  }
+
+  if (layoutState.lensActive) {
+    renderLensStatusRow(layoutState);
+    return;
+  }
+
+  renderTerminalStatusRow(layoutState);
+}
+
+function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
+  if (
+    !footerStatusHost ||
+    !lensQuickSettingsRow ||
+    !lensModelInput ||
+    !lensEffortSelect ||
+    !lensPlanSelect ||
+    !lensPermissionSelect
+  ) {
+    return;
+  }
+
+  const sessionId = layoutState.activeSessionId as string;
+  const provider = getLensQuickSettingsProvider(sessionId);
+  const draft = getLensQuickSettingsDraft(sessionId);
+
+  if (!layoutState.isMobile) {
+    const heading = document.createElement('div');
+    heading.className = 'adaptive-footer-status-label';
+    heading.textContent = formatLensProviderLabel(provider);
+    footerStatusHost.appendChild(heading);
+    lensQuickSettingsRow.classList.remove('smart-input-lens-settings-sheet');
+    lensQuickSettingsRow.hidden = false;
+    footerStatusHost.appendChild(lensQuickSettingsRow);
+    return;
+  }
+
+  const summaryBtn = document.createElement('button');
+  summaryBtn.type = 'button';
+  summaryBtn.className = 'adaptive-footer-status-summary adaptive-footer-status-summary-lens';
+  summaryBtn.textContent = formatLensQuickSettingsSummary(provider, draft);
+  summaryBtn.dataset.planMode = draft.planMode;
+  summaryBtn.setAttribute('aria-expanded', lensQuickSettingsSheetOpen ? 'true' : 'false');
+  summaryBtn.addEventListener('click', () => {
+    setLensQuickSettingsSheetOpen(!lensQuickSettingsSheetOpen);
+  });
+  lensSettingsSummaryBtn = summaryBtn;
+  footerStatusHost.appendChild(summaryBtn);
+
+  lensQuickSettingsRow.classList.add('smart-input-lens-settings-sheet');
+  lensQuickSettingsRow.hidden = !lensQuickSettingsSheetOpen;
+  if (lensQuickSettingsSheetOpen) {
+    footerDock?.appendChild(lensQuickSettingsRow);
+  }
+}
+
+function renderTerminalStatusRow(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerStatusHost) {
+    return;
+  }
+
+  const summary = document.createElement('div');
+  summary.className = 'adaptive-footer-status-summary';
+  summary.textContent = describeTerminalStatus(layoutState.inputMode);
+  footerStatusHost.appendChild(summary);
+
+  if (canUseSmartInputVoice() && autoSendEnabled) {
+    const autoSendPill = document.createElement('div');
+    autoSendPill.className = 'adaptive-footer-status-pill';
+    autoSendPill.textContent = t('smartInput.autoSend');
+    footerStatusHost.appendChild(autoSendPill);
+  }
+
+  if (layoutState.isMobile && layoutState.touchControlsAvailable) {
+    const keysToggle = document.createElement('button');
+    keysToggle.type = 'button';
+    keysToggle.className = 'adaptive-footer-status-toggle';
+    keysToggle.textContent = keysExpanded ? t('smartInput.keysHide') : t('smartInput.keysShow');
+    keysToggle.setAttribute('aria-pressed', keysExpanded ? 'true' : 'false');
+    keysToggle.addEventListener('click', () => {
+      keysExpanded = !keysExpanded;
+      localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
+      syncSmartInputVisibility();
+    });
+    footerStatusHost.appendChild(keysToggle);
+  }
+}
+
+function describeTerminalStatus(inputMode: string | null | undefined): string {
+  if (inputMode === 'smartinput') {
+    return t('smartInput.modeSmart');
+  }
+
+  if (inputMode === 'both') {
+    return t('smartInput.modeBoth');
+  }
+
+  return t('smartInput.modeKeyboard');
+}
+
+function formatLensProviderLabel(provider: string | null): string {
+  if (provider === 'claude') {
+    return 'Claude';
+  }
+  if (provider === 'codex') {
+    return 'Codex';
+  }
+  return 'Lens';
+}
+
+function formatLensQuickSettingsSummary(
+  provider: string | null,
+  draft: ReturnType<typeof getLensQuickSettingsDraft>,
+): string {
+  const parts = [
+    formatLensProviderLabel(provider),
+    draft.model?.trim() || 'Default',
+    draft.effort?.trim() || 'Default',
+    draft.planMode === 'on' ? 'PLAN ON' : 'Plan Off',
+  ];
+  return parts.join(' · ');
+}
+
+function setToolsPanelOpen(open: boolean): void {
+  if (!toolsPanel || !toolsToggleBtn) {
+    return;
+  }
+
+  const canOpen = Boolean(toolButtonsStrip) && !toolsToggleBtn.hidden;
+  const shouldOpen = open && canOpen;
+  toolsPanel.hidden = !shouldOpen;
+  toolsToggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+}
+
+function setLensQuickSettingsSheetOpen(open: boolean): void {
+  lensQuickSettingsSheetOpen = open;
+  if (lensSettingsSummaryBtn) {
+    lensSettingsSummaryBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  if (lensQuickSettingsRow) {
+    lensQuickSettingsRow.hidden = !open;
+  }
+}
+
+function closeFooterTransientUi(): boolean {
+  let closedAny = false;
+
+  if (toolsPanel && !toolsPanel.hidden) {
+    setToolsPanelOpen(false);
+    closedAny = true;
+  }
+
+  if (lensQuickSettingsSheetOpen) {
+    setLensQuickSettingsSheetOpen(false);
+    closedAny = true;
+  }
+
+  return closedAny;
+}
+
+function clearSendAutoSendLongPressTimer(): void {
+  if (sendAutoSendLongPressTimer !== null) {
+    window.clearTimeout(sendAutoSendLongPressTimer);
+    sendAutoSendLongPressTimer = null;
+  }
+}
+
+function toggleAutoSendEnabled(): void {
+  if (!canUseSmartInputVoice()) {
+    return;
+  }
+
+  autoSendEnabled = !autoSendEnabled;
+  localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
+  updateAutoSendVisibility();
+  syncSmartInputVisibility();
 }
 
 function sendText(ta: HTMLTextAreaElement): void {
@@ -534,6 +946,9 @@ function sendText(ta: HTMLTextAreaElement): void {
   syncDraftForActiveSession();
   ta.scrollTop = 0;
   resizeTextarea(ta);
+  if (!footerResizeObserver) {
+    queueFooterReserveSync();
+  }
   ta.focus();
 }
 
@@ -565,20 +980,10 @@ function applyDraftToTextarea(
 
 function syncDraftForActiveSession(): void {
   const sessionId = $activeSessionId.get();
-  applyDraftToTextarea(
-    dockedBar?.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null,
-    sessionId,
-  );
-  if (activeTextarea) {
-    applyDraftToTextarea(activeTextarea, sessionId);
-  }
+  applyDraftToTextarea(activeTextarea, sessionId);
   syncLensQuickSettingsControls();
 }
 
-/**
- * Clears per-session drafts once a session is gone so text does not leak into a
- * future session that reuses the same UI slot.
- */
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
   if ($activeSessionId.get() === sessionId) {
@@ -655,21 +1060,11 @@ function canUseSmartInputVoice(): boolean {
 }
 
 function syncVoiceInputAvailability(): void {
-  const micBtn = dockedBar?.querySelector('.smart-input-mic-btn') as HTMLButtonElement | null;
-  const autoSendBtn = dockedBar?.querySelector(
-    '.smart-input-autosend-btn',
-  ) as HTMLButtonElement | null;
-  if (!micBtn && !autoSendBtn) {
-    return;
+  const enabled = canUseSmartInputVoice();
+  if (activeMicBtn) {
+    activeMicBtn.hidden = !enabled;
   }
 
-  const enabled = canUseSmartInputVoice();
-  if (micBtn) {
-    micBtn.hidden = !enabled;
-  }
-  if (autoSendBtn) {
-    autoSendBtn.hidden = !enabled;
-  }
   if (!enabled && isRecording) {
     endRecording();
   }
@@ -678,9 +1073,12 @@ function syncVoiceInputAvailability(): void {
 }
 
 function updateAutoSendVisibility(): void {
-  for (const container of [dockedBar]) {
-    if (!container) continue;
-    container.classList.toggle('autosend-active', autoSendEnabled && canUseSmartInputVoice());
+  const active = autoSendEnabled && canUseSmartInputVoice();
+  dockedBar?.classList.toggle('autosend-active', active);
+  sendBtn?.classList.toggle('autosend-latched', active);
+  if (sendBtn) {
+    sendBtn.setAttribute('data-autosend', active ? 'true' : 'false');
+    sendBtn.title = active ? t('smartInput.autoSendOnHint') : t('smartInput.sendGestureHint');
   }
 }
 
@@ -718,6 +1116,7 @@ function syncLensQuickSettingsControls(): void {
     }
     lensQuickSettingsRow.hidden = true;
     delete lensQuickSettingsRow.dataset.provider;
+    setLensQuickSettingsSheetOpen(false);
     return;
   }
 
@@ -727,7 +1126,6 @@ function syncLensQuickSettingsControls(): void {
   if (dockedBar) {
     dockedBar.dataset.lensSession = 'true';
   }
-  lensQuickSettingsRow.hidden = false;
   lensQuickSettingsRow.dataset.provider = provider ?? '';
 
   const modelPlaceholder =
@@ -757,13 +1155,70 @@ function syncLensQuickSettingsControls(): void {
   if (lensPermissionSelect.value !== draft.permissionMode) {
     lensPermissionSelect.value = draft.permissionMode;
   }
+
+  if (lensSettingsSummaryBtn) {
+    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary(provider, draft);
+    lensSettingsSummaryBtn.dataset.planMode = draft.planMode;
+  }
+}
+
+function queueFooterReserveSync(): void {
+  if (footerResizeQueued) {
+    return;
+  }
+
+  footerResizeQueued = true;
+  requestAnimationFrame(() => {
+    footerResizeQueued = false;
+    updateFooterReservedHeight();
+  });
+}
+
+function updateFooterReservedHeight(): void {
+  const root = document.documentElement;
+  if (!footerDock || footerDock.hidden) {
+    root.style.setProperty('--adaptive-footer-reserved-height', '0px');
+    return;
+  }
+
+  const textareaHeight = activeTextarea?.offsetHeight ?? null;
+  const collapsedTextareaHeight = activeTextarea ? getCollapsedTextareaHeight(activeTextarea) : null;
+  const reserveHeight = calculateAdaptiveFooterReservedHeight({
+    dockHeight: footerDock.offsetHeight,
+    textareaHeight,
+    collapsedTextareaHeight,
+  });
+
+  root.style.setProperty('--adaptive-footer-reserved-height', `${String(reserveHeight)}px`);
+}
+
+function getCollapsedTextareaHeight(textarea: HTMLTextAreaElement): number {
+  const computedStyle = getComputedStyle(textarea);
+  const configuredMinHeight = Number.parseFloat(computedStyle.minHeight);
+  if (Number.isFinite(configuredMinHeight) && configuredMinHeight > 0) {
+    return configuredMinHeight;
+  }
+
+  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
+  const fallbackFontSize = Number.parseFloat(computedStyle.fontSize) || 16;
+  const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : fallbackFontSize * 1.2;
+  const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
+  const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
+  const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
+
+  return effectiveLineHeight + paddingTop + paddingBottom + borderTop + borderBottom;
 }
 
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {
   await submitSessionText(sessionId, text);
 }
 
-function isTouchDevice(): boolean {
+function isMobileViewport(): boolean {
+  return window.matchMedia(`(max-width: ${String(MOBILE_BREAKPOINT_PX)}px)`).matches;
+}
+
+function isTouchPrimaryDevice(): boolean {
   return !matchMedia('(hover: hover) and (pointer: fine)').matches;
 }
 

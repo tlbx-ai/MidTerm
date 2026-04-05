@@ -220,11 +220,15 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ## Composer And Ready State
 
 - The composer is the primary action control for Lens sessions.
-- Lens should expose a compact quick-settings strip directly beneath the primary smart input row for the settings users change in-flow most often.
-- The quick-settings strip should stay intentionally small and session-oriented.
-- The quick-settings strip is Lens-only. Normal terminal smart input should continue showing only the standard terminal controls and text prompt row.
-- On desktop, the quick-settings strip should read as a low-clutter translucent control rail rather than a full-width form.
-- On mobile, that rail should become a permanently visible panel beneath the input row instead of compressing the desktop inline treatment beyond readability.
+- Lens and Terminal should now share one adaptive footer dock language instead of stacking unrelated bars beneath the active pane.
+- When input is visible, the primary smart input row must always be the first row directly beneath the active pane.
+- Lens quick settings should live in the dock status rail rather than as a separate detached manager strip.
+- That Lens status rail should stay intentionally small and session-oriented.
+- Normal terminal smart input should reuse the same dock shell while keeping Lens-only runtime controls out of ordinary terminal sessions.
+- On desktop, Lens quick settings should read as a low-clutter translucent control rail rather than a full-width form.
+- On mobile, Lens should keep model/effort/plan awareness always visible in the dock status rail and may reveal the full editable quick-settings surface as a compact sheet from that status row.
+- Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
+- Multiline composer growth should expand upward over the pane as overlay chrome; it must not push the underlying Terminal or Lens viewport upward once the collapsed dock reserve is established.
 - The common quick-settings surface should cover:
   - model
   - effort
@@ -309,8 +313,9 @@ Status in this branch/work item:
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Lens diff rows now use console-style `Edited {path}` file headers and tighter green/red hunk blocks with line numbers
-- implemented: Lens exposes a compact quick-settings strip beneath the main smart input row for model, effort, plan mode, and permission mode
-- implemented: desktop Lens quick settings render as a compact translucent control rail, while mobile renders the same controls as an always-open panel beneath the input row
+- implemented: Lens and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
+- implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
+- implemented: desktop Lens quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals the editable controls as a compact sheet
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls

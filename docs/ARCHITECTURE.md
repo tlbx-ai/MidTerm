@@ -193,14 +193,15 @@ Each session wrapper adds:
 
 ### Manager Bar
 
-The manager bar is a user-defined quick-action bar below the terminal area. Buttons are stored in settings and send prebuilt text plus Enter to the active session. The same actions are exposed in the mobile action menu.
+The manager bar is a user-defined quick-action lane inside the shared active-session footer dock. Buttons are stored in settings and send prebuilt text plus Enter to the active session. The same actions are exposed in the mobile action menu.
 
 ### Smart Input, Voice, Touch, and Mobile Shell
 
 MidTerm has a second input model in addition to direct terminal focus:
 
 - Smart Input can replace or complement terminal typing
-- when Lens is active, the same Smart Input infrastructure relocates into the conversation composer lane instead of staying as separate terminal chrome
+- Terminal and Lens now share one adaptive footer dock with ordered primary, context, automation, and status rails
+- when Lens is active, that same dock keeps the composer first and exposes Lens runtime controls in the status rail instead of as a detached second toolbar
 - voice capture and chat hooks connect to MidTerm.Voice, with the Smart Input mic affordance currently kept behind dev mode and the voice credential path while that workflow is still experimental
 - the touch controller provides terminal-friendly virtual keys
 - the mobile action menu exposes common terminal operations

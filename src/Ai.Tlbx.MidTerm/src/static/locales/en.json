@@ -870,6 +870,17 @@
   "dialog.ok": "OK",
   "dialog.cancel": "Cancel",
   "smartInput.autoSend": "Auto-send",
+  "smartInput.autoSendOnHint": "Auto-send is enabled for transcribed input",
   "smartInput.photo": "Take photo",
-  "smartInput.attach": "Attach file"
+  "smartInput.attach": "Attach file",
+  "smartInput.mic": "Push to talk",
+  "smartInput.placeholder": "Type here...",
+  "smartInput.send": "Send",
+  "smartInput.sendGestureHint": "Send. Double-click or long-press to toggle auto-send",
+  "smartInput.tools": "Tools",
+  "smartInput.modeKeyboard": "Keyboard",
+  "smartInput.modeSmart": "Smart Input",
+  "smartInput.modeBoth": "Both",
+  "smartInput.keysShow": "Show keys",
+  "smartInput.keysHide": "Hide keys"
 }

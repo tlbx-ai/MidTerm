@@ -94,6 +94,10 @@ export function destroyTouchController(): void {
  */
 export function showTouchController(): void {
   if (!controllerElement) return;
+  if (controllerElement.classList.contains('embedded')) {
+    controllerElement.classList.add(CSS_CLASSES.visible);
+    return;
+  }
   controllerElement.classList.add(CSS_CLASSES.visible);
   document.body.classList.add(CSS_CLASSES.touchMode);
   requestAnimationFrame(rescaleAllTerminals);
@@ -104,6 +108,11 @@ export function showTouchController(): void {
  */
 export function hideTouchController(): void {
   if (!controllerElement) return;
+  if (controllerElement.classList.contains('embedded')) {
+    controllerElement.classList.remove(CSS_CLASSES.visible);
+    clearModifiers();
+    return;
+  }
   controllerElement.classList.remove(CSS_CLASSES.visible);
   document.body.classList.remove(CSS_CLASSES.touchMode);
   clearModifiers();
@@ -115,6 +124,9 @@ export function hideTouchController(): void {
  */
 export function updateVisibility(): void {
   if (userDismissed) return;
+  if (controllerElement?.classList.contains('embedded')) {
+    return;
+  }
   const mode = $currentSettings.get()?.inputMode;
   if (mode === 'smartinput' || mode === 'both') {
     return;

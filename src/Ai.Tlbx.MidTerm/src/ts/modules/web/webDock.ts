@@ -69,9 +69,15 @@ export function updateAllDockMargins(): void {
   document
     .querySelectorAll<HTMLElement>('.session-tab-panels')
     .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
-  document
-    .querySelectorAll<HTMLElement>('.manager-bar, .smart-input-docked')
-    .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
+  const footerDock = document.getElementById('adaptive-footer-dock');
+  if (footerDock) {
+    footerDock.style.right = total > 0 ? `${total}px` : '';
+  }
+
+  const managerQueue = document.getElementById('manager-bar-queue');
+  if (managerQueue) {
+    managerQueue.style.marginRight = total > 0 ? `${total}px` : '';
+  }
 }
 
 /** Toggle the web preview dock panel open or closed based on current state. */

@@ -303,9 +303,11 @@ This is the canonical feature sweep for the current codebase. The coverage order
 
 - `F263` Smart Input can fully replace direct terminal keyboard focus, and Lens reuses that same docked infrastructure as its in-conversation composer lane.
 - `F264` Smart Input can coexist with direct terminal keyboard focus in both mode, but Lens keeps a single composer path so conversation turns do not split across two inputs.
+- `F264a` Terminal and Lens now share one adaptive active-session footer dock instead of separate smart-input and manager bars.
 - `F265` Smart Input keeps a per-session draft buffer.
 - `F266` Switching active sessions preserves and restores Smart Input drafts.
 - `F267` Smart Input auto-grows its textarea up to five lines.
+- `F267a` The footer dock reserves only its collapsed height, so multiline input growth expands upward over the pane instead of shrinking the active viewport.
 - `F268` Smart Input sends on Enter.
 - `F269` Smart Input inserts newlines on `Shift+Enter`.
 - `F270` Smart Input includes an explicit Send button.
@@ -320,6 +322,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F279` Smart Input can embed the touch controller as a second row.
 - `F280` The embedded touch-controller row can be expanded or collapsed.
 - `F281` Touch-controller expansion state persists in `localStorage`.
+- `F281a` Mobile Lens surfaces keep media actions explicit in the dock while mobile Terminal keeps terminal control buttons in the dock context row instead of on desktop.
 - `F282` Smart Input state is removed when a session closes.
 - `F283` Voice support checks MidTerm.Voice availability before enabling controls.
 - `F284` Voice support can populate provider and voice dropdowns from server health data.

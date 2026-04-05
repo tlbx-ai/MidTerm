@@ -2377,17 +2377,36 @@ Enable terminal key log to capture Enter and modifier events.</pre
 
         <div id="manager-bar-queue" class="manager-bar-queue hidden" aria-live="polite"></div>
 
-        <!-- Middle Manager Bar -->
-        <div id="manager-bar" class="manager-bar">
-          <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
-          <button
-            class="manager-bar-add"
-            id="manager-bar-add"
-            data-i18n-title="managerBar.addButton"
-            title="Add button"
-          >
-            +
-          </button>
+        <div id="adaptive-footer-dock" class="adaptive-footer-dock" hidden>
+          <div
+            id="adaptive-footer-primary"
+            class="adaptive-footer-rail adaptive-footer-primary"
+            hidden
+          ></div>
+          <div
+            id="adaptive-footer-context"
+            class="adaptive-footer-rail adaptive-footer-context"
+            hidden
+          ></div>
+
+          <!-- Middle Manager Bar -->
+          <div id="manager-bar" class="manager-bar adaptive-footer-rail hidden">
+            <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
+            <button
+              class="manager-bar-add"
+              id="manager-bar-add"
+              data-i18n-title="managerBar.addButton"
+              title="Add button"
+            >
+              +
+            </button>
+          </div>
+
+          <div
+            id="adaptive-footer-status"
+            class="adaptive-footer-rail adaptive-footer-status"
+            hidden
+          ></div>
         </div>
 
         <!-- File Viewer Dock Panel -->

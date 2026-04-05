@@ -8163,38 +8163,6 @@ body.shared-session-mode .session-tab-bar {
   color: var(--bg-primary);
 }
 
-.smart-input-autosend-btn {
-  flex-shrink: 0;
-  width: var(--smart-input-control-height);
-  height: var(--smart-input-control-height);
-  border: none;
-  border-radius: 50%;
-  background: var(--btn-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.smart-input-autosend-btn:active {
-  background: var(--accent-blue);
-  color: var(--bg-primary);
-}
-
-.smart-input-autosend-btn.active {
-  background: var(--accent-blue);
-  color: var(--bg-primary);
-}
-
-.autosend-active .smart-input-textarea,
-.autosend-active .smart-input-send-btn {
-  display: none;
-}
-
 /* Docked Smart Input - primary smart input surface below the terminal */
 .smart-input-docked {
   display: none;
@@ -8207,10 +8175,6 @@ body.shared-session-mode .session-tab-bar {
   background: var(--terminal-ui-background, var(--terminal-bg));
   border-top: 1px solid var(--border-color);
   margin-right: 0;
-}
-
-.manager-bar:not(.hidden) + .smart-input-docked {
-  border-top: none;
 }
 
 .smart-input-docked.visible {
@@ -8324,63 +8288,6 @@ body.shared-session-mode .session-tab-bar {
     calc(100% - 9px) calc(50% - 1px);
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
-}
-
-/* Input row — flex row holding mic, autosend, textarea, send, toggle */
-.smart-input-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  width: 100%;
-}
-
-/* Toggle keys chevron button */
-.smart-input-toggle-keys {
-  flex-shrink: 0;
-  width: var(--smart-input-control-height);
-  height: var(--smart-input-control-height);
-  border: none;
-  border-radius: 50%;
-  background: var(--btn-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-  transition: transform 0.2s;
-}
-
-.smart-input-toggle-keys:active {
-  background: var(--accent-blue);
-  color: var(--bg-primary);
-}
-
-.smart-input-toggle-keys.expanded {
-  transform: rotate(180deg);
-}
-
-/* Embedded touch controller inside smart input bar */
-.touch-controller.embedded {
-  display: flex !important;
-  max-height: none;
-  border-top: 1px solid var(--border-color);
-  margin-top: 6px;
-  padding: 4px 0;
-  padding-bottom: 0;
-  background: transparent;
-}
-
-.touch-controller.embedded .touch-dismiss {
-  display: none;
-}
-
-/* Collapsed: hide embedded touch controller */
-.smart-input-overlay:not(.keys-expanded) .touch-controller.embedded,
-.smart-input-docked:not(.keys-expanded) .touch-controller.embedded {
-  display: none !important;
 }
 
 /* Camera Capture Overlay */
@@ -8712,27 +8619,6 @@ body.shared-session-mode .session-tab-bar {
     max-height: min(52vh, 320px);
   }
 
-  body.keyboard-visible .smart-input-docked {
-    max-height: min(38vh, 220px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 4px 6px;
-    padding-left: calc(6px + env(safe-area-inset-left, 0px));
-    padding-right: calc(6px + env(safe-area-inset-right, 0px));
-    padding-bottom: 4px;
-  }
-
-  body.keyboard-visible .smart-input-row {
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-
-  body.keyboard-visible .touch-controller.embedded {
-    margin-top: 4px;
-    padding-top: 4px;
-  }
-
   body.keyboard-visible .touch-controller {
     display: flex !important;
     padding: 4px 6px;
@@ -8757,29 +8643,6 @@ body.shared-session-mode .session-tab-bar {
     font-size: var(--fs-sm);
   }
 
-  body.keyboard-visible .touch-controller.embedded .touch-key {
-    min-width: 32px;
-    min-height: 32px;
-    padding: 4px 5px;
-    font-size: var(--fs-xs);
-  }
-
-  body.keyboard-visible .touch-controller.embedded .touch-bar-main {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-
-  body.keyboard-visible .touch-controller.embedded .touch-group {
-    flex-wrap: wrap;
-  }
-
-  body.keyboard-visible .manager-bar {
-    display: none !important;
-  }
-
-  body.keyboard-visible .terminals-area {
-    padding-bottom: 0;
-  }
 }
 
 /* Accessibility: Focus states for keyboard navigation */
@@ -13828,4 +13691,471 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     .fg-process
   ) {
   color: var(--sidebar-session-secondary-text) !important;
+}
+
+/* =============================================================================
+   Adaptive Footer Dock
+   ============================================================================= */
+
+:root {
+  --adaptive-footer-reserved-height: 0px;
+}
+
+.main-content {
+  --adaptive-footer-right-offset: 0px;
+}
+
+.terminals-area {
+  padding-bottom: var(--adaptive-footer-reserved-height);
+}
+
+.terminal-container {
+  bottom: var(--adaptive-footer-reserved-height);
+}
+
+#manager-bar-queue {
+  margin-bottom: var(--adaptive-footer-reserved-height);
+}
+
+.adaptive-footer-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px;
+  padding-left: calc(8px + env(safe-area-inset-left, 0px));
+  padding-right: calc(8px + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  pointer-events: auto;
+}
+
+.adaptive-footer-dock[hidden] {
+  display: none !important;
+}
+
+.adaptive-footer-dock[data-material='solid'] {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 0%, transparent),
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, transparent) 22%,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 100%, transparent)
+    );
+}
+
+.adaptive-footer-dock[data-material='glass'] {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 12%, transparent),
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 74%, transparent) 28%,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent)
+    );
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+}
+
+.adaptive-footer-rail {
+  min-width: 0;
+}
+
+.adaptive-footer-rail[hidden] {
+  display: none !important;
+}
+
+.adaptive-footer-primary > .smart-input-docked {
+  display: none;
+  padding: 0;
+  background: none;
+  border: 0;
+  margin: 0;
+}
+
+.adaptive-footer-primary > .smart-input-docked.visible {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.smart-input-docked {
+  position: relative;
+  box-sizing: border-box;
+}
+
+.smart-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+  width: 100%;
+}
+
+.smart-input-textarea {
+  min-height: 46px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--text-input-background, var(--bg-input)) 92%,
+    var(--terminal-ui-background, var(--terminal-bg))
+  );
+}
+
+.smart-input-tools-toggle,
+.smart-input-send-btn,
+.adaptive-footer-status-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(
+    in srgb,
+    var(--terminal-ui-background, var(--terminal-bg)) 90%,
+    transparent
+  );
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  cursor: pointer;
+}
+
+.smart-input-send-btn {
+  background: color-mix(in srgb, var(--accent-blue) 86%, var(--terminal-ui-background, var(--terminal-bg)));
+  color: var(--bg-primary);
+}
+
+.smart-input-send-btn.autosend-latched {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 38%, transparent);
+}
+
+.smart-input-tools-toggle {
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+.smart-input-tools-surface {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(
+    in srgb,
+    var(--terminal-ui-background, var(--terminal-bg)) 94%,
+    transparent
+  );
+  box-shadow: 0 14px 28px color-mix(in srgb, black 26%, transparent);
+}
+
+.smart-input-tools-surface[hidden] {
+  display: none !important;
+}
+
+.smart-input-tools-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.smart-input-mic-btn,
+.smart-input-photo-btn,
+.smart-input-attach-btn {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--terminal-ui-background, var(--terminal-bg)) 92%,
+    transparent
+  );
+}
+
+.adaptive-footer-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
+  padding-top: 8px;
+}
+
+.adaptive-footer-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  padding-top: 8px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.adaptive-footer-status-label,
+.adaptive-footer-status-summary {
+  min-width: 0;
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+  white-space: nowrap;
+}
+
+.adaptive-footer-status-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adaptive-footer-status-summary-lens {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(
+    in srgb,
+    var(--terminal-ui-background, var(--terminal-bg)) 92%,
+    transparent
+  );
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.adaptive-footer-status-summary-lens[data-plan-mode='on'] {
+  color: color-mix(in srgb, var(--accent-gold) 92%, white 8%);
+  border-color: color-mix(in srgb, var(--accent-gold) 54%, var(--border-color));
+}
+
+.adaptive-footer-status-pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 62%, transparent);
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 88%, transparent);
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+  white-space: nowrap;
+}
+
+.smart-input-lens-settings {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 4px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 56%, transparent);
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.smart-input-lens-settings::-webkit-scrollbar {
+  display: none;
+}
+
+.smart-input-lens-settings[hidden] {
+  display: none !important;
+}
+
+.smart-input-lens-settings-sheet {
+  position: absolute;
+  left: calc(8px + env(safe-area-inset-left, 0px));
+  right: calc(8px + env(safe-area-inset-right, 0px));
+  bottom: calc(100% + 10px);
+  z-index: 1;
+  padding: 10px;
+  box-shadow: 0 16px 30px color-mix(in srgb, black 28%, transparent);
+}
+
+.adaptive-footer-dock .manager-bar {
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 0;
+  background: none;
+  border: 0;
+  margin: 0;
+}
+
+.adaptive-footer-dock .manager-bar:not(.hidden) {
+  display: flex;
+}
+
+.adaptive-footer-dock .manager-bar-buttons {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.adaptive-footer-dock .manager-bar-buttons::-webkit-scrollbar {
+  display: none;
+}
+
+.adaptive-footer-dock .manager-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 88%, transparent);
+  color: var(--text-secondary);
+}
+
+.adaptive-footer-dock .manager-bar-add {
+  flex: 0 0 auto;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 10px;
+}
+
+.adaptive-footer-context .touch-controller.embedded {
+  display: flex !important;
+  width: 100%;
+  max-height: none;
+  padding: 0;
+  background: none;
+  border: 0;
+  margin: 0;
+}
+
+.adaptive-footer-context .touch-controller.embedded .touch-bar-main {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.adaptive-footer-context .touch-controller.embedded .touch-group {
+  display: contents;
+}
+
+.adaptive-footer-context .touch-controller.embedded .touch-key,
+.adaptive-footer-context .touch-controller.embedded .touch-dismiss {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  width: auto;
+  margin-left: 0;
+}
+
+body.keyboard-visible .adaptive-footer-dock {
+  max-height: min(58vh, 360px);
+}
+
+body.keyboard-visible .adaptive-footer-primary > .smart-input-docked {
+  max-height: min(38vh, 220px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body.keyboard-visible .adaptive-footer-context .touch-controller.embedded .touch-key,
+body.keyboard-visible .adaptive-footer-context .touch-controller.embedded .touch-dismiss {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: var(--fs-base);
+}
+
+body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
+  display: flex !important;
+}
+
+body.keyboard-visible .terminals-area {
+  padding-bottom: var(--adaptive-footer-reserved-height);
+}
+
+@media (max-width: 768px) {
+  .adaptive-footer-dock {
+    padding: 6px;
+    padding-left: calc(6px + env(safe-area-inset-left, 0px));
+    padding-right: calc(6px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 0%, transparent),
+        color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 100%, transparent) 18%
+      );
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .smart-input-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: stretch;
+  }
+
+  .smart-input-textarea {
+    min-height: 48px;
+  }
+
+  .smart-input-tools-toggle,
+  .smart-input-send-btn,
+  .adaptive-footer-status-toggle,
+  .smart-input-mic-btn,
+  .smart-input-photo-btn,
+  .smart-input-attach-btn {
+    min-width: 48px;
+    min-height: 48px;
+    width: 48px;
+    height: 48px;
+  }
+
+  .adaptive-footer-context {
+    padding-top: 6px;
+  }
+
+  .adaptive-footer-context .smart-input-tools-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .adaptive-footer-context .smart-input-tools-strip .smart-input-mic-btn,
+  .adaptive-footer-context .smart-input-tools-strip .smart-input-photo-btn,
+  .adaptive-footer-context .smart-input-tools-strip .smart-input-attach-btn {
+    width: 100%;
+  }
+
+  .adaptive-footer-status {
+    min-height: 44px;
+    padding-top: 6px;
+  }
+
+  .adaptive-footer-dock .manager-bar {
+    padding-top: 6px;
+  }
+
+  .adaptive-footer-dock .manager-bar:not(.hidden) {
+    display: flex !important;
+  }
+
+  .smart-input-lens-settings-sheet {
+    left: calc(6px + env(safe-area-inset-left, 0px));
+    right: calc(6px + env(safe-area-inset-right, 0px));
+  }
+
+  .smart-input-tools-surface {
+    left: 0;
+    right: 0;
+    justify-content: flex-start;
+  }
+
+  .adaptive-footer-context .touch-controller.embedded .touch-bar-main {
+    gap: 6px;
+  }
 }
