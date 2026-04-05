@@ -22,10 +22,7 @@ import { onTabActivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
-import {
-  calculateAdaptiveFooterReservedHeight,
-  getAdaptiveFooterRailSequence,
-} from './layout';
+import { calculateAdaptiveFooterReservedHeight, getAdaptiveFooterRailSequence } from './layout';
 import { startTranscription, stopTranscription } from './transcription';
 import {
   shouldShowDockedSmartInput,
@@ -231,8 +228,7 @@ export function initSmartInput(): void {
     }
 
     if (toolsPanel && toolsToggleBtn) {
-      const clickedInsideTools =
-        toolsPanel.contains(target) || toolsToggleBtn.contains(target);
+      const clickedInsideTools = toolsPanel.contains(target) || toolsToggleBtn.contains(target);
       if (!clickedInsideTools) {
         setToolsPanelOpen(false);
       }
@@ -304,15 +300,9 @@ function hideAdaptiveFooter(): void {
 
 function ensureFooterHosts(): void {
   footerDock ??= document.getElementById('adaptive-footer-dock') as HTMLDivElement | null;
-  footerPrimaryHost ??= document.getElementById(
-    'adaptive-footer-primary',
-  ) as HTMLDivElement | null;
-  footerContextHost ??= document.getElementById(
-    'adaptive-footer-context',
-  ) as HTMLDivElement | null;
-  footerStatusHost ??= document.getElementById(
-    'adaptive-footer-status',
-  ) as HTMLDivElement | null;
+  footerPrimaryHost ??= document.getElementById('adaptive-footer-primary') as HTMLDivElement | null;
+  footerContextHost ??= document.getElementById('adaptive-footer-context') as HTMLDivElement | null;
+  footerStatusHost ??= document.getElementById('adaptive-footer-status') as HTMLDivElement | null;
   ensureFooterResizeObserver();
 }
 
@@ -675,7 +665,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   dockedBar.dataset.surface = layoutState.lensActive ? 'lens' : 'terminal';
   dockedBar.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
 
-  activeTextarea = dockedBar.querySelector('.smart-input-textarea') as HTMLTextAreaElement | null;
+  activeTextarea = dockedBar.querySelector('.smart-input-textarea');
   if (activeTextarea) {
     applyDraftToTextarea(activeTextarea, layoutState.activeSessionId ?? null);
   }
@@ -1182,7 +1172,9 @@ function updateFooterReservedHeight(): void {
   }
 
   const textareaHeight = activeTextarea?.offsetHeight ?? null;
-  const collapsedTextareaHeight = activeTextarea ? getCollapsedTextareaHeight(activeTextarea) : null;
+  const collapsedTextareaHeight = activeTextarea
+    ? getCollapsedTextareaHeight(activeTextarea)
+    : null;
   const reserveHeight = calculateAdaptiveFooterReservedHeight({
     dockHeight: footerDock.offsetHeight,
     textareaHeight,
