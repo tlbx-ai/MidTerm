@@ -7,6 +7,7 @@ import type {
 } from '../../api/client';
 import type { LensAttachmentReference, LensPulseRuntimeNotice } from '../../api/types';
 import {
+  formatAbsoluteTime,
   historyLabel,
   normalizeSnapshotHistoryKind,
   prettify,
@@ -752,7 +753,7 @@ export function buildActivationHistoryEntries(state: SessionLensViewState): Lens
 export function formatHistoryMeta(kind: HistoryKind, statusLabel: string, value: string): string {
   void kind;
   void statusLabel;
-  return new Date(value).toLocaleString();
+  return formatAbsoluteTime(value);
 }
 
 export function shouldHideStatusInMeta(kind: HistoryKind, statusLabel: string): boolean {
