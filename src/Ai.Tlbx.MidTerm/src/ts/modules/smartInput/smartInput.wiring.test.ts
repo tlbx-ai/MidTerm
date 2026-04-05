@@ -28,6 +28,7 @@ describe('smart input tab wiring', () => {
 
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {
     expect(html).toContain('id="adaptive-footer-dock"');
+    expect(html).toContain('id="adaptive-footer-reserve"');
     expect(html).toContain('id="adaptive-footer-primary"');
     expect(html).toContain('id="adaptive-footer-context"');
     expect(html).toContain('id="adaptive-footer-status"');
@@ -48,6 +49,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("nextSendBtn.addEventListener('dblclick'");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
     expect(css).toContain('.adaptive-footer-dock {');
+    expect(css).toContain('.adaptive-footer-reserve {');
+    expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain('font-size: 16px;');

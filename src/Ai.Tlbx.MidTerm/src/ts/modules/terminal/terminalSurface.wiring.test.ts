@@ -30,8 +30,8 @@ describe('terminal surface wiring', () => {
   });
 
   it('keeps terminal content above the Command Bay and refreshes when footer reserve changes', () => {
-    expect(appCss).toContain('.layout-leaf .terminal-container {');
-    expect(appCss).toContain('bottom: var(--adaptive-footer-reserved-height);');
+    expect(appCss).toContain('.adaptive-footer-reserve {');
+    expect(appCss).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(scalingSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
     expect(scalingSource).toContain('scheduleFooterReserveResize();');
   });

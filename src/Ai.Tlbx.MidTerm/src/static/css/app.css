@@ -13705,20 +13705,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --adaptive-footer-right-offset: 0px;
 }
 
-.terminals-area {
-  padding-bottom: var(--adaptive-footer-reserved-height);
-}
-
-.terminal-container {
-  bottom: var(--adaptive-footer-reserved-height);
-}
-
-.layout-leaf .terminal-container {
-  bottom: var(--adaptive-footer-reserved-height);
-}
-
-#manager-bar-queue {
-  margin-bottom: var(--adaptive-footer-reserved-height);
+.adaptive-footer-reserve {
+  flex: 0 0 auto;
+  height: var(--adaptive-footer-reserved-height);
+  min-height: 0;
+  pointer-events: none;
 }
 
 .adaptive-footer-dock {
@@ -14131,10 +14122,6 @@ body.keyboard-visible .adaptive-footer-context .touch-controller.embedded .touch
 
 body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
   display: flex !important;
-}
-
-body.keyboard-visible .terminals-area {
-  padding-bottom: var(--adaptive-footer-reserved-height);
 }
 
 @media (max-width: 768px) {
