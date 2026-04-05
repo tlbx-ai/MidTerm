@@ -26,7 +26,7 @@ vi.mock('../sessionTabs', () => ({
 }));
 
 describe('lens input', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     sendLensTurn.mockReset();
     interruptLensTurn.mockReset();
     getActiveTab.mockReset();
@@ -35,6 +35,8 @@ describe('lens input', () => {
       id: 's1',
       lensOnly: true,
     };
+    const { clearLensTurnSessionState } = await import('./input');
+    clearLensTurnSessionState('s1');
   });
 
   it('requires a Lens-owned session before reporting Lens as active', async () => {
@@ -244,5 +246,103 @@ describe('lens input', () => {
     expect(interruptLensTurn).toHaveBeenLastCalledWith('s1', { turnId: 'turn-queued-1' });
     expect(dispatchEvent.mock.calls.map((call) => call[0]?.type)).toContain(LENS_TURN_FAILED_EVENT);
     vi.unstubAllGlobals();
+  });
+
+  it('remembers Escape during direct turn submission and interrupts once the turn is accepted', async () => {
+    let resolveSubmission: ((value: unknown) => void) | null = null;
+    sendLensTurn.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmission = resolve;
+        }),
+    );
+    interruptLensTurn.mockResolvedValue({
+      sessionId: 's1',
+      status: 'accepted',
+      turnId: 'turn-direct-1',
+    });
+
+    const { submitLensTurn, handleLensEscape } = await import('./input');
+
+    const submission = submitLensTurn('s1', {
+      text: 'Stop quickly.',
+      model: null,
+      effort: null,
+      planMode: 'off',
+      permissionMode: 'manual',
+      attachments: [],
+    });
+
+    await Promise.resolve();
+    await expect(handleLensEscape('s1')).resolves.toBe(true);
+
+    resolveSubmission?.({
+      sessionId: 's1',
+      status: 'accepted',
+      provider: 'codex',
+      turnId: 'turn-direct-1',
+      threadId: 'thread-1',
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+    });
+
+    await submission;
+    expect(interruptLensTurn).toHaveBeenCalledWith('s1', { turnId: 'turn-direct-1' });
+  });
+
+  it('interrupts a queued turn even when Escape lands during the queued turn submission gap', async () => {
+    interruptLensTurn.mockResolvedValue({
+      sessionId: 's1',
+      status: 'accepted',
+      turnId: 'turn-1',
+    });
+
+    let resolveQueuedSubmission: ((value: unknown) => void) | null = null;
+    sendLensTurn.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveQueuedSubmission = resolve;
+        }),
+    );
+
+    const { submitQueuedLensTurn, syncLensTurnExecutionState, handleLensEscape } = await import(
+      './input'
+    );
+
+    syncLensTurnExecutionState('s1', { turnId: 'turn-1', state: 'running' });
+    const queued = submitQueuedLensTurn('s1', {
+      text: 'Queued stop.',
+      model: null,
+      effort: null,
+      planMode: 'off',
+      permissionMode: 'manual',
+      attachments: [],
+    });
+
+    await handleLensEscape('s1');
+    syncLensTurnExecutionState('s1', { turnId: 'turn-1', state: 'interrupted' });
+    await Promise.resolve();
+    await handleLensEscape('s1');
+
+    resolveQueuedSubmission?.({
+      sessionId: 's1',
+      status: 'accepted',
+      provider: 'codex',
+      turnId: 'turn-queued-2',
+      threadId: 'thread-1',
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+    });
+
+    await queued;
+    expect(interruptLensTurn).toHaveBeenLastCalledWith('s1', { turnId: 'turn-queued-2' });
   });
 });

@@ -238,7 +238,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
-- In Lens sessions, `Esc` from the composer or touch-controller escape button should interrupt the active turn instead of sending a literal terminal escape key.
+- In Lens sessions, plain `Esc` anywhere inside the active Lens surface should interrupt the active turn instead of sending a literal terminal escape key.
+- The busy-indicator hint `(Press Esc to cancel)` implies a surface-wide shortcut, not a composer-only shortcut.
 - If the user queued follow-up Lens turns while a turn was still running, the first `Esc` should let that queued work drain next, and a second `Esc` should cancel the remaining queued drain.
 
 ## Performance Rules
@@ -313,7 +314,7 @@ Status in this branch/work item:
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
-- implemented: Lens `Esc` from the composer and touch-controller now interrupts active Lens turns rather than sending a literal escape key, and queued follow-up turns can be drained or canceled with repeated `Esc`
+- implemented: Lens plain `Esc` now interrupts active Lens turns from the composer, touch-controller, and the focused Lens surface itself, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap
 - implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface
 - implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened

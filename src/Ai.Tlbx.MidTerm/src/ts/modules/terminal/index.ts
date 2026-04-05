@@ -11,4 +11,4 @@ export * from './fileDrop';
 export * from './fontSize';
 export * from './launchSizing';
 export { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
-export { initMobilePiP, recordMobilePiPBytes } from './mobilePiP';
+export { initMobilePiP } from './mobilePiP';

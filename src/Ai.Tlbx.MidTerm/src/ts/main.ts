@@ -20,7 +20,6 @@ import {
   sendActiveSessionHint,
   requestBufferRefresh,
   updateTerminalVisibility,
-  setSessionBytesCallback,
   setSuppressHeatCallback,
   reportBrowserActivity,
 } from './modules/comms';
@@ -43,7 +42,6 @@ import {
   handleClipboardPaste,
   pasteToTerminal,
   initMobilePiP,
-  recordMobilePiPBytes,
   isTerminalViewingScrollback,
   resolveLaunchDimensions,
 } from './modules/terminal';
@@ -330,9 +328,6 @@ async function init(): Promise<void> {
   initUpdateRuntime();
   initAppShellStatePersistence();
   initTrafficIndicator();
-  setSessionBytesCallback((sessionId, bytes) => {
-    recordMobilePiPBytes(sessionId, bytes);
-  });
   setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();

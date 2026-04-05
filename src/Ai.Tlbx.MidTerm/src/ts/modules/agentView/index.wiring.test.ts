@@ -123,6 +123,12 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('append one muted inline duration note');
   });
 
+  it('routes plain Escape from the Lens surface through Lens interruption', () => {
+    expect(source).toContain('panel.addEventListener(\'keydown\', (event) => {');
+    expect(source).toContain("if (event.key !== 'Escape' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {");
+    expect(source).toContain('void handleLensEscape(sessionId);');
+  });
+
   it('normalizes command-output transcript rows into persistent command presentations', () => {
     expect(source).toContain('applyDirectCommandPresentation(mapped);');
     expect(source).toContain('function parseCommandOutputBody(');

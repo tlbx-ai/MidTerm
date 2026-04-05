@@ -10,6 +10,7 @@ import {
 } from '../sessionTabs';
 import {
   clearLensTurnSessionState,
+  handleLensEscape,
   LENS_TURN_ACCEPTED_EVENT,
   LENS_TURN_FAILED_EVENT,
   LENS_TURN_SUBMITTED_EVENT,
@@ -1086,7 +1087,7 @@ function buildDebugScenarioHistory(args: {
   return historyEntries;
 }
 
-function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): void {
+function ensureAgentViewSkeleton(sessionId: string, panel: HTMLDivElement): void {
   syncAgentViewPresentation(panel);
   if (panel.dataset.agentViewReady === 'true') {
     return;
@@ -1107,6 +1108,21 @@ function ensureAgentViewSkeleton(_sessionId: string, panel: HTMLDivElement): voi
       </div>
     </section>
   `;
+
+  panel.addEventListener('keydown', (event) => {
+    if (
+      event.key !== 'Escape' ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    void handleLensEscape(sessionId);
+  });
 }
 
 function syncAgentViewPresentation(

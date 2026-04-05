@@ -49,6 +49,7 @@ interface LensTurnQueueState {
   currentTurnRunning: boolean;
   queuedTurns: QueuedLensTurn[];
   submittingTurn: boolean;
+  pendingInterruptAfterSubmit: boolean;
   interruptInFlight: boolean;
   queueDrainActive: boolean;
   interruptingForQueuedTurns: boolean;
@@ -92,7 +93,21 @@ export async function submitLensTurn(
 ): Promise<LensTurnStartResponse> {
   const normalizedRequest = normalizeLensTurnRequest(request);
   const optimisticId = dispatchSubmittedLensTurn(sessionId, normalizedRequest);
-  return sendLensTurnWithLifecycle(sessionId, optimisticId, normalizedRequest);
+  const state = getOrCreateLensTurnQueueState(sessionId);
+  state.submittingTurn = true;
+
+  try {
+    const response = await sendLensTurnWithLifecycle(sessionId, optimisticId, normalizedRequest);
+    state.currentTurnId = response.turnId ?? state.currentTurnId;
+    state.currentTurnRunning = true;
+    await maybeInterruptLensTurnAfterSubmit(sessionId, state);
+    return response;
+  } catch (error) {
+    state.pendingInterruptAfterSubmit = false;
+    throw error;
+  } finally {
+    state.submittingTurn = false;
+  }
 }
 
 export function submitQueuedLensTurn(sessionId: string, request: LensTurnRequest): Promise<void> {
@@ -126,8 +141,9 @@ export async function handleLensEscape(sessionId: string): Promise<boolean> {
     state.queueDrainActive ||
     state.interruptingForQueuedTurns ||
     Boolean(state.activeQueuedTurnId);
+  const hasSubmittingTurn = state.submittingTurn && !state.currentTurnRunning;
 
-  if (!state.currentTurnRunning && !hasQueuedWork) {
+  if (!state.currentTurnRunning && !hasQueuedWork && !hasSubmittingTurn) {
     return false;
   }
 
@@ -140,6 +156,11 @@ export async function handleLensEscape(sessionId: string): Promise<boolean> {
       return requestLensTurnInterrupt(sessionId, state);
     }
 
+    if (hasSubmittingTurn) {
+      state.pendingInterruptAfterSubmit = true;
+      return true;
+    }
+
     resetQueuedDrainState(state);
     return true;
   }
@@ -150,6 +171,11 @@ export async function handleLensEscape(sessionId: string): Promise<boolean> {
 
   if (state.currentTurnRunning) {
     return requestLensTurnInterrupt(sessionId, state);
+  }
+
+  if (hasSubmittingTurn) {
+    state.pendingInterruptAfterSubmit = true;
+    return true;
   }
 
   maybeDrainQueuedLensTurns(sessionId, state);
@@ -279,6 +305,7 @@ function getOrCreateLensTurnQueueState(sessionId: string): LensTurnQueueState {
     currentTurnRunning: false,
     queuedTurns: [],
     submittingTurn: false,
+    pendingInterruptAfterSubmit: false,
     interruptInFlight: false,
     queueDrainActive: false,
     interruptingForQueuedTurns: false,
@@ -300,6 +327,10 @@ async function startQueuedLensTurn(
   fromQueue: boolean,
 ): Promise<void> {
   state.submittingTurn = true;
+  if (fromQueue) {
+    state.queueDrainActive = true;
+    state.activeQueuedTurnId = queuedTurn.optimisticId;
+  }
 
   try {
     const response = await sendLensTurnWithLifecycle(
@@ -310,11 +341,12 @@ async function startQueuedLensTurn(
     state.currentTurnId = response.turnId ?? state.currentTurnId;
     state.currentTurnRunning = true;
     if (fromQueue) {
-      state.queueDrainActive = true;
       state.activeQueuedTurnId = response.turnId ?? queuedTurn.optimisticId;
     }
+    await maybeInterruptLensTurnAfterSubmit(sessionId, state);
     queuedTurn.resolve();
   } catch (error) {
+    state.pendingInterruptAfterSubmit = false;
     const normalized = error instanceof Error ? error : new Error(String(error));
     queuedTurn.reject(normalized);
     if (fromQueue && !state.haltQueuedTurns) {
@@ -393,6 +425,18 @@ async function requestLensTurnInterrupt(
     state.interruptInFlight = false;
     return false;
   }
+}
+
+async function maybeInterruptLensTurnAfterSubmit(
+  sessionId: string,
+  state: LensTurnQueueState,
+): Promise<void> {
+  if (!state.pendingInterruptAfterSubmit) {
+    return;
+  }
+
+  state.pendingInterruptAfterSubmit = false;
+  await requestLensTurnInterrupt(sessionId, state);
 }
 
 function isRunningLensTurnState(state: string | null | undefined): boolean {
