@@ -1324,7 +1324,7 @@ public sealed partial class SessionLensPulseService
             : PreferMeaningfulText(item.Title, lensEvent.Item.Title);
         item.Detail = transcriptKind switch
         {
-            "assistant" => MergeProgressiveMessage(item.Detail, lensEvent.Item.Detail),
+            "assistant" => MergeAssistantItemDetail(item.Detail, lensEvent.Item.Detail, lensEvent.Item.Status),
             "user" => PreferMeaningfulText(item.Detail, lensEvent.Item.Detail),
             _ => MergeTranscriptBody(item.Detail, lensEvent.Item.Detail)
         };
@@ -1333,7 +1333,7 @@ public sealed partial class SessionLensPulseService
 
         var entry = EnsureTranscriptEntry(
             state,
-            ResolveTranscriptEntryIdForItem(lensEvent, transcriptKind, canonicalItemId),
+            ResolveTranscriptEntryIdForItem(state, lensEvent, transcriptKind, canonicalItemId),
             transcriptKind,
             lensEvent.CreatedAt);
         entry.TurnId = lensEvent.TurnId ?? entry.TurnId;
@@ -1352,7 +1352,7 @@ public sealed partial class SessionLensPulseService
                 break;
             case "assistant":
                 entry.Title = null;
-                entry.Body = MergeProgressiveMessage(entry.Body, lensEvent.Item.Detail);
+                entry.Body = MergeAssistantItemDetail(entry.Body, lensEvent.Item.Detail, item.Status);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
             case "reasoning":
@@ -1789,7 +1789,7 @@ public sealed partial class SessionLensPulseService
             var normalizedType = NormalizeItemType(lensEvent.Item.ItemType);
             var transcriptKind = TranscriptKindFromItem(normalizedType);
             var canonicalItemId = ResolveCanonicalItemId(state.Items, lensEvent, transcriptKind);
-            historyIds.Add(ResolveTranscriptEntryIdForItem(lensEvent, transcriptKind, canonicalItemId));
+            historyIds.Add(ResolveTranscriptEntryIdForItem(state, lensEvent, transcriptKind, canonicalItemId));
         }
 
         if (lensEvent.RequestOpened is not null ||
@@ -1891,18 +1891,36 @@ public sealed partial class SessionLensPulseService
     }
 
     private static string ResolveTranscriptEntryIdForItem(
+        LensConversationState state,
         LensPulseEvent lensEvent,
         string transcriptKind,
         string canonicalItemId)
     {
         return transcriptKind switch
         {
-            "assistant" => $"assistant:{canonicalItemId}",
+            "assistant" => ResolveAssistantTranscriptEntryIdForItem(state, lensEvent, canonicalItemId),
             "user" when !string.IsNullOrWhiteSpace(lensEvent.TurnId) => $"user:{lensEvent.TurnId}",
             "user" => $"user:{canonicalItemId}",
             "tool" => $"tool:{canonicalItemId}",
             _ => $"{transcriptKind}:{canonicalItemId}"
         };
+    }
+
+    private static string ResolveAssistantTranscriptEntryIdForItem(
+        LensConversationState state,
+        LensPulseEvent lensEvent,
+        string canonicalItemId)
+    {
+        if (!string.IsNullOrWhiteSpace(lensEvent.TurnId))
+        {
+            var streamedEntryId = $"assistant-stream:{lensEvent.TurnId}";
+            if (state.TranscriptEntries.ContainsKey(streamedEntryId))
+            {
+                return streamedEntryId;
+            }
+        }
+
+        return $"assistant:{canonicalItemId}";
     }
 
     private static string ResolveTranscriptEntryIdForStream(
@@ -2182,6 +2200,20 @@ public sealed partial class SessionLensPulseService
         }
 
         return AppendTranscriptChunk(trimmedExisting, normalizedIncoming);
+    }
+
+    private static string MergeAssistantItemDetail(
+        string? existing,
+        string? incoming,
+        string? status)
+    {
+        var normalizedIncoming = NormalizeTranscriptText(incoming).Trim();
+        if (IsTerminalStatus(status) && !string.IsNullOrWhiteSpace(normalizedIncoming))
+        {
+            return normalizedIncoming;
+        }
+
+        return MergeProgressiveMessage(existing, incoming);
     }
 
     private static string AppendAssistantDelta(string? existing, string? delta)

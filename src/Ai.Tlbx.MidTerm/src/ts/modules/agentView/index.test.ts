@@ -2208,7 +2208,7 @@ describe('agentView dev errors', () => {
     });
   });
 
-  it('keeps backend history order when a turn has both streamed and final assistant rows', async () => {
+  it('shows one settled assistant row when the final assistant item lands after streaming', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
@@ -2268,16 +2268,16 @@ describe('agentView dev errors', () => {
           order: 2,
           kind: 'assistant',
           turnId: 'turn-2',
-          itemId: null,
+          itemId: 'assistant-item-2',
           requestId: null,
-          status: 'streaming',
-          itemType: 'assistant_text',
+          status: 'completed',
+          itemType: 'assistant_message',
           title: null,
-          body: 'Ich lese kurz den Inhalt des aktuellen Arbeitsverzeichnisses.',
+          body: '| Name | Groesse |\n| --- | --- |\n| file.txt | 42 |',
           attachments: [],
-          streaming: true,
+          streaming: false,
           createdAt: '2026-03-27T16:40:25Z',
-          updatedAt: '2026-03-27T16:40:25Z',
+          updatedAt: '2026-03-27T16:40:59Z',
         },
         {
           entryId: 'tool:tool-1',
@@ -2295,22 +2295,6 @@ describe('agentView dev errors', () => {
           createdAt: '2026-03-27T16:40:32Z',
           updatedAt: '2026-03-27T16:40:32Z',
         },
-        {
-          entryId: 'assistant:assistant-item-2',
-          order: 4,
-          kind: 'assistant',
-          turnId: 'turn-2',
-          itemId: 'assistant-item-2',
-          requestId: null,
-          status: 'completed',
-          itemType: 'assistant_message',
-          title: null,
-          body: '| Name | Groesse |\n| --- | --- |\n| file.txt | 42 |',
-          attachments: [],
-          streaming: false,
-          createdAt: '2026-03-27T16:40:58Z',
-          updatedAt: '2026-03-27T16:40:59Z',
-        },
       ],
       items: [],
       requests: [],
@@ -2323,10 +2307,9 @@ describe('agentView dev errors', () => {
       'user:turn-2',
       'assistant-stream:turn-2',
       'tool:tool-1',
-      'assistant:assistant-item-2',
     ]);
-    expect(history[1]?.live).toBe(true);
-    expect(history[3]?.live).toBe(false);
+    expect(history[1]?.body).toContain('| file.txt | 42 |');
+    expect(history[1]?.live).toBe(false);
   });
 
   it.skip('hides normal state-management events and merges tool updates', async () => {
@@ -3438,6 +3421,35 @@ describe('agentView dev errors', () => {
     expect(history[0]?.commandOutputTail).toEqual(
       Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
     );
+  });
+
+  it('renders direct command-output transcript rows as persistent Ran rows with folded tail output', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      transcript: [
+        {
+          entryId: 'tool:cmd-1',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Run command',
+          body: 'git status --short --branch\n\n## dev...origin/dev',
+          itemId: null,
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-05T00:20:00Z',
+          updatedAt: '2026-04-05T00:20:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandText).toBe('git status --short --branch');
+    expect(history[0]?.commandOutputTail).toEqual(['## dev...origin/dev']);
   });
 
   it.skip('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {

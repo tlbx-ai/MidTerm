@@ -11158,7 +11158,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-busy-label {
   display: inline-flex;
   align-items: center;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   gap: 0.01em;
   color: color-mix(in srgb, var(--text-muted) 76%, transparent);
   font-size: 9px;
@@ -11170,6 +11170,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-busy-status {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 12px;
   color: color-mix(in srgb, var(--text-muted) 80%, transparent);
   font-size: 10px;
@@ -11189,8 +11190,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-busy-label-letter {
   color: color-mix(in srgb, var(--text-muted) 68%, transparent);
   text-shadow: 0 0 0 transparent;
-  animation: agent-history-busy-sweep 1.7s ease-in-out infinite;
+  animation: agent-history-busy-sweep 1.45s linear infinite alternate;
   animation-delay: calc(var(--agent-busy-letter-index, 0) * 90ms);
+  animation-fill-mode: both;
 }
 
 @keyframes agent-history-busy-spin {
@@ -11204,27 +11206,31 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 @keyframes agent-history-busy-sweep {
-  0%,
-  100% {
+  0% {
     color: color-mix(in srgb, var(--text-muted) 66%, transparent);
     text-shadow: 0 0 0 transparent;
   }
 
-  35% {
+  40% {
     color: color-mix(in srgb, var(--text-secondary) 82%, white 12%);
     text-shadow: 0 0 4px color-mix(in srgb, var(--agent-lens-live) 24%, transparent);
   }
 
-  50% {
+  55% {
     color: rgb(255 255 255 / 0.98);
     text-shadow:
       0 0 6px color-mix(in srgb, white 42%, transparent),
       0 0 10px color-mix(in srgb, var(--agent-lens-live) 28%, transparent);
   }
 
-  65% {
+  70% {
     color: color-mix(in srgb, var(--text-secondary) 84%, white 8%);
     text-shadow: 0 0 5px color-mix(in srgb, var(--agent-lens-live) 18%, transparent);
+  }
+
+  100% {
+    color: color-mix(in srgb, var(--text-muted) 66%, transparent);
+    text-shadow: 0 0 0 transparent;
   }
 }
 

@@ -607,7 +607,7 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.NotNull(snapshot);
         var transcript = snapshot!.Transcript;
-        Assert.Equal(5, transcript.Count);
+        Assert.Equal(4, transcript.Count);
         Assert.Collection(
             transcript,
             entry =>
@@ -633,14 +633,9 @@ public sealed class SessionLensPulseServiceTests
                 Assert.Equal("assistant", entry.Kind);
                 Assert.Equal("turn-2", entry.TurnId);
                 Assert.Equal("assistant-stream:turn-2", entry.EntryId);
-                Assert.Equal("second answer", entry.Body);
-            },
-            entry =>
-            {
-                Assert.Equal("assistant", entry.Kind);
-                Assert.Equal("turn-2", entry.TurnId);
-                Assert.Equal("assistant:assistant-item-2", entry.EntryId);
                 Assert.Equal("second answer final", entry.Body);
+                Assert.False(entry.Streaming);
+                Assert.Equal("completed", entry.Status);
             });
     }
 
@@ -715,28 +710,21 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.NotNull(snapshot);
         var assistantEntries = snapshot!.Transcript.Where(entry => entry.Kind == "assistant").ToList();
-        Assert.Equal(2, assistantEntries.Count);
+        Assert.Single(assistantEntries);
         Assert.Collection(
             snapshot.Transcript.Where(entry => entry.Kind is "assistant" or "tool"),
             entry =>
             {
                 Assert.Equal("assistant", entry.Kind);
                 Assert.Equal("assistant-stream:turn-1", entry.EntryId);
-                Assert.Equal("I will inspect the directory first.", entry.Body);
-                Assert.True(entry.Streaming);
+                Assert.Equal("Here is the final table.", entry.Body);
+                Assert.False(entry.Streaming);
+                Assert.Equal("completed", entry.Status);
             },
             entry =>
             {
                 Assert.Equal("tool", entry.Kind);
                 Assert.Equal("tool:tool-1", entry.EntryId);
-            },
-            entry =>
-            {
-                Assert.Equal("assistant", entry.Kind);
-                Assert.Equal("assistant:assistant-item-1", entry.EntryId);
-                Assert.Equal("Here is the final table.", entry.Body);
-                Assert.False(entry.Streaming);
-                Assert.Equal("completed", entry.Status);
             });
     }
 

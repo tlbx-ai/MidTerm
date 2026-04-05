@@ -80,6 +80,8 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-diff-line-file {');
     expect(css).toContain('.agent-history-diff-line-add {');
     expect(css).toContain('.agent-history-diff-line-delete {');
+    expect(css).toContain('.agent-history-diff-line-add > .agent-history-diff-line-number:first-child,');
+    expect(css).toContain('grid-column: 1 / span 2;');
     expect(source).toContain("Edited ${displayPath}");
     expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
     expect(lensDesign).toContain('Command-execution rows and diff rows should not repeat timestamp meta.');
@@ -107,8 +109,11 @@ describe('agent view Lens wiring', () => {
     expect(source).toContain('(Press Esc to cancel)');
     expect(css).toContain('.agent-history-busy-bubble {');
     expect(css).toContain('justify-content: flex-start;');
+    expect(css).toContain('.agent-history-busy-label {');
+    expect(css).toContain('flex: 0 0 auto;');
     expect(css).toContain('.agent-history-busy-label-letter {');
     expect(css).toContain('.agent-history-busy-status {');
+    expect(css).toContain('animation: agent-history-busy-sweep 1.45s linear infinite alternate;');
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration .agent-history-body {');
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
@@ -116,5 +121,11 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
     expect(lensDesign).toContain('hint immediately after the animated label');
     expect(lensDesign).toContain('append one muted inline duration note');
+  });
+
+  it('normalizes command-output transcript rows into persistent command presentations', () => {
+    expect(source).toContain('applyDirectCommandPresentation(mapped);');
+    expect(source).toContain('function parseCommandOutputBody(');
+    expect(source).toContain("normalizedType !== 'commandoutput'");
   });
 });

@@ -2638,6 +2638,8 @@ function mapSnapshotEntryToHistoryEntry(entry: LensPulseHistoryEntry): LensHisto
     mapped.requestId = entry.requestId;
   }
 
+  applyDirectCommandPresentation(mapped);
+
   return mapped;
 }
 
@@ -2667,27 +2669,95 @@ function mergeCommandHistoryEntries(
   mergedEntries: LensHistoryEntry[],
   entry: LensHistoryEntry,
 ): LensHistoryEntry[] {
-  const previousEntry = mergedEntries[mergedEntries.length - 1];
-  if (
-    !previousEntry ||
-    !isCommandOutputHistoryEntry(entry) ||
-    !isCommandExecutionHistoryEntry(previousEntry)
-  ) {
+  if (!isCommandOutputHistoryEntry(entry)) {
     mergedEntries.push(entry);
     return mergedEntries;
   }
 
-  const commandOutputTail = extractCommandOutputTail(entry.body);
-  if (commandOutputTail.length === 0) {
+  const targetIndex = findCommandHistoryMergeTargetIndex(mergedEntries, entry);
+  if (targetIndex < 0) {
+    mergedEntries.push(entry);
     return mergedEntries;
   }
 
-  mergedEntries[mergedEntries.length - 1] = {
-    ...previousEntry,
-    commandText: previousEntry.commandText ?? previousEntry.body,
-    commandOutputTail,
+  const targetEntry = mergedEntries[targetIndex];
+  if (!targetEntry) {
+    mergedEntries.push(entry);
+    return mergedEntries;
+  }
+
+  const commandPresentation = resolveCommandPresentation(entry);
+  if (!commandPresentation) {
+    return mergedEntries;
+  }
+
+  mergedEntries[targetIndex] = {
+    ...targetEntry,
+    commandText: targetEntry.commandText ?? commandPresentation.commandText,
+    commandOutputTail: commandPresentation.commandOutputTail,
   };
   return mergedEntries;
+}
+
+function findCommandHistoryMergeTargetIndex(
+  mergedEntries: LensHistoryEntry[],
+  entry: LensHistoryEntry,
+): number {
+  for (let index = mergedEntries.length - 1; index >= 0; index -= 1) {
+    const candidate = mergedEntries[index];
+    if (!candidate) {
+      continue;
+    }
+
+    if (!isCommandExecutionHistoryEntry(candidate)) {
+      continue;
+    }
+
+    const sameSourceItem =
+      candidate.sourceItemId && entry.sourceItemId && candidate.sourceItemId === entry.sourceItemId;
+    if (sameSourceItem || candidate.id === entry.id) {
+      return index;
+    }
+  }
+
+  const previousEntry = mergedEntries[mergedEntries.length - 1];
+  return previousEntry && isCommandExecutionHistoryEntry(previousEntry)
+    ? mergedEntries.length - 1
+    : -1;
+}
+
+function applyDirectCommandPresentation(entry: LensHistoryEntry): void {
+  const commandPresentation = resolveCommandPresentation(entry);
+  if (!commandPresentation) {
+    return;
+  }
+
+  entry.commandText = commandPresentation.commandText;
+  entry.commandOutputTail = commandPresentation.commandOutputTail;
+}
+
+function resolveCommandPresentation(
+  entry: Pick<LensHistoryEntry, 'body' | 'commandOutputTail' | 'commandText' | 'sourceItemType'>,
+): { commandText: string; commandOutputTail: string[] } | null {
+  const normalizedType = normalizeHistoryItemType(entry.sourceItemType);
+  if (normalizedType === 'commandexecution') {
+    const commandText = (entry.commandText ?? entry.body).trim();
+    return commandText ? { commandText, commandOutputTail: entry.commandOutputTail ?? [] } : null;
+  }
+
+  if (normalizedType !== 'commandoutput') {
+    return null;
+  }
+
+  const parsed = parseCommandOutputBody(entry.body);
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    commandText: parsed.commandText,
+    commandOutputTail: parsed.commandOutputTail,
+  };
 }
 
 export function isSuppressedLensRuntimeNoticeEntry(
@@ -4911,6 +4981,32 @@ function extractCommandOutputTail(body: string): string[] {
         line.length > 0 || array.slice(index + 1).some((next) => next.length > 0),
     );
   return lines.slice(Math.max(0, lines.length - 12));
+}
+
+function parseCommandOutputBody(
+  body: string,
+): { commandText: string; commandOutputTail: string[] } | null {
+  const lines = normalizeHistoryBodyLines(body).map((line) => line.replace(/\s+$/g, ''));
+  const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstContentIndex < 0) {
+    return null;
+  }
+
+  const commandText = lines[firstContentIndex]?.trim() ?? '';
+  if (!commandText) {
+    return null;
+  }
+
+  let outputStartIndex = firstContentIndex + 1;
+  while (outputStartIndex < lines.length && lines[outputStartIndex]?.trim().length === 0) {
+    outputStartIndex += 1;
+  }
+
+  const outputBody = lines.slice(outputStartIndex).join('\n');
+  return {
+    commandText,
+    commandOutputTail: extractCommandOutputTail(outputBody),
+  };
 }
 
 export function tokenizeCommandText(commandText: string): CommandToken[] {

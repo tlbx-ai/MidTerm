@@ -167,10 +167,12 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Assistant content is the primary reading surface and should have the clearest typography.
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
+- When the final assistant item lands for a turn that already has streamed assistant text, Lens should reconcile that into one settled assistant row rather than showing both the streamed row and a second final duplicate.
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
 - When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. Only fall back to a generic `Working` label when no meaningful live provider label is available.
 - While a turn is active, that busy bubble should also show a muted wall-clock duration counter plus a quiet `(Press Esc to cancel)` hint immediately after the animated label, not detached against the far edge of the pane.
+- The busy-label animation should sweep smoothly left-to-right and back again without a visible jump reset, and it should remain a pure CSS animation rather than relying on JavaScript timing.
 - When the turn settles back to the user, Lens should append one muted inline duration note such as `(Turn took 1m 4s)` into the history instead of leaving the elapsed time only in transient chrome.
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
@@ -190,6 +192,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Command-execution rows should render in a console-like `Ran …` form with lightweight syntax coloring: command name, flags/parameters, quoted strings, and shell operators should be visually distinct without turning the row into a card.
 - When command output is available immediately after a command-execution row, Lens should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
+- When the backend already materializes a command-output transcript row that contains both the command header and compact output window, Lens should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
 - Command-execution rows and diff rows should not repeat timestamp meta. Those artifact rows should read like quiet console output, not timestamped chat turns.
 - Command-execution rows should remain fully flat. Do not wrap them in bordered cards, bubble shells, or inset containers that break text selection or console-like continuity.
 - Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows. Tool, reasoning, plan, diff, and command artifacts should stay flat unless a future design contract explicitly reintroduces structure.
