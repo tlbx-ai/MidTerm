@@ -40,12 +40,17 @@ describe('smart input tab wiring', () => {
 
   it('reserves only collapsed footer height and uses send gestures for auto-send toggling', () => {
     expect(source).toContain('calculateAdaptiveFooterReservedHeight');
+    expect(layoutSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
     expect(source).toContain('ResizeObserver');
+    expect(source).toContain('setAdaptiveFooterReservedHeight(root, reserveHeight);');
+    expect(source).toContain('window.dispatchEvent(');
+    expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
     expect(source).toContain("nextSendBtn.addEventListener('dblclick'");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
     expect(css).toContain('.adaptive-footer-dock {');
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
+    expect(css).toContain('font-size: 16px;');
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {

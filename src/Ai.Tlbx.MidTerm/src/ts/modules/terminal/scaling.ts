@@ -26,6 +26,7 @@ import {
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import { ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT } from '../smartInput/layout';
 import {
   buildTerminalFontStack,
   DEFAULT_TERMINAL_FONT_WEIGHT,
@@ -905,6 +906,7 @@ function autoResizeAllTerminalsInternal(): void {
 let autoResizeTimer: number | undefined;
 let mainBrowserContainerResizeObserver: ResizeObserver | null = null;
 let observedMainBrowserContainer: HTMLElement | null = null;
+let footerReserveResizeQueued = false;
 
 /**
  * Auto-resize all terminals (debounced 300ms, for window resize events).
@@ -969,6 +971,23 @@ function scheduleMainBrowserResize(): void {
     _mainResizeScheduled = false;
     if (!$isMainBrowser.get()) return;
     autoResizeAllTerminalsImmediate();
+  });
+}
+
+function scheduleFooterReserveResize(): void {
+  if (footerReserveResizeQueued) {
+    return;
+  }
+
+  footerReserveResizeQueued = true;
+  requestAnimationFrame(() => {
+    footerReserveResizeQueued = false;
+    if ($isMainBrowser.get()) {
+      autoResizeAllTerminalsImmediate();
+      return;
+    }
+
+    rescaleAllTerminalsImmediate();
   });
 }
 
@@ -1221,6 +1240,10 @@ export function setupResizeObserver(): void {
     }
   });
 
+  window.addEventListener(ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT, () => {
+    scheduleFooterReserveResize();
+  });
+
   const handleForegroundRecovery = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       return;
@@ -1286,12 +1309,15 @@ export function setupVisualViewport(): void {
 
     if (appEl) {
       appEl.style.height = `${vh}px`;
+      appEl.style.maxHeight = `${vh}px`;
     }
 
     // Lock root/body to visual viewport height to prevent dragging hidden
     // off-screen space (common when soft keyboard is open in mobile PWAs).
     document.documentElement.style.height = `${vh}px`;
     document.documentElement.style.maxHeight = `${vh}px`;
+    document.documentElement.style.setProperty('--midterm-visual-viewport-height', `${vh}px`);
+    document.documentElement.style.setProperty('--midterm-visual-viewport-offset-top', `${vv.offsetTop}px`);
     document.body.style.height = `${vh}px`;
     document.body.style.maxHeight = `${vh}px`;
 
@@ -1300,6 +1326,10 @@ export function setupVisualViewport(): void {
     }
 
     const heightDrop = baselineHeight - vh;
+    document.documentElement.style.setProperty(
+      '--midterm-soft-keyboard-height',
+      `${Math.max(0, heightDrop)}px`,
+    );
     const kbVisible =
       vh < baselineHeight * KEYBOARD_RATIO_THRESHOLD && heightDrop >= KEYBOARD_PIXEL_THRESHOLD;
     if (kbVisible !== document.body.classList.contains('keyboard-visible')) {

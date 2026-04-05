@@ -207,6 +207,7 @@ It exists because MidTerm no longer treats those pieces as unrelated bars stacke
 - desktop glass styling follows terminal transparency; mobile Command Bay stays solid for contrast and touch reliability
 - the Command Bay itself must reserve space beneath Terminal or Lens instead of floating over session content
 - only the prompt textbox's extra multiline growth may overflow upward over the pane; command-bay rails and visible command-bay panels must not hide session content underneath
+- on Android and iOS, the Command Bay must stay attached to the visual viewport above the on-screen keyboard; when space gets tight it should compress and scroll internally instead of slipping under the OSK
 - voice capture still hangs off the Smart Input mic affordance, with the current experimental gating unchanged
 - the mobile action menu still mirrors common quick actions, but the Command Bay is the primary active-session interaction shell
 - mobile Lens uses automation above context controls; other permutations keep the default primary -> context -> automation -> status flow

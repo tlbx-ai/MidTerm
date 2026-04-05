@@ -22,7 +22,11 @@ import { onTabActivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
-import { calculateAdaptiveFooterReservedHeight, getAdaptiveFooterRailSequence } from './layout';
+import {
+  ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
+  calculateAdaptiveFooterReservedHeight,
+  getAdaptiveFooterRailSequence,
+} from './layout';
 import { startTranscription, stopTranscription } from './transcription';
 import {
   shouldShowDockedSmartInput,
@@ -57,6 +61,7 @@ let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
 let footerResizeQueued = false;
 let footerResizeObserver: ResizeObserver | null = null;
+let lastReservedFooterHeightPx = Number.NaN;
 
 const MAX_TEXTAREA_LINES = 5;
 const AUTO_SEND_LONG_PRESS_MS = 520;
@@ -501,6 +506,13 @@ function createInputElements(): {
     if (!footerResizeObserver) {
       queueFooterReserveSync();
     }
+  });
+
+  textarea.addEventListener('focus', () => {
+    queueFooterReserveSync();
+    requestAnimationFrame(() => {
+      footerDock?.scrollTo({ top: 0, behavior: 'auto' });
+    });
   });
 
   textarea.addEventListener('keydown', (e) => {
@@ -1175,7 +1187,7 @@ function queueFooterReserveSync(): void {
 function updateFooterReservedHeight(): void {
   const root = document.documentElement;
   if (!footerDock || footerDock.hidden) {
-    root.style.setProperty('--adaptive-footer-reserved-height', '0px');
+    setAdaptiveFooterReservedHeight(root, 0);
     return;
   }
 
@@ -1189,7 +1201,23 @@ function updateFooterReservedHeight(): void {
     collapsedTextareaHeight,
   });
 
-  root.style.setProperty('--adaptive-footer-reserved-height', `${String(reserveHeight)}px`);
+  setAdaptiveFooterReservedHeight(root, reserveHeight);
+}
+
+function setAdaptiveFooterReservedHeight(root: HTMLElement, reserveHeight: number): void {
+  const normalizedReserveHeight = Math.max(0, Math.round(reserveHeight));
+  root.style.setProperty('--adaptive-footer-reserved-height', `${String(normalizedReserveHeight)}px`);
+
+  if (lastReservedFooterHeightPx === normalizedReserveHeight) {
+    return;
+  }
+
+  lastReservedFooterHeightPx = normalizedReserveHeight;
+  window.dispatchEvent(
+    new CustomEvent(ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT, {
+      detail: { reservedHeightPx: normalizedReserveHeight },
+    }),
+  );
 }
 
 function getCollapsedTextareaHeight(textarea: HTMLTextAreaElement): number {

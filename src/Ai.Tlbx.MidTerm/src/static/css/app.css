@@ -8070,7 +8070,7 @@ body.shared-session-mode .session-tab-bar {
   min-height: var(--smart-input-control-height);
   padding: 8px 12px;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.4;
   max-height: calc(1.4em * 5 + 16px);
   overflow-y: hidden;
@@ -13713,6 +13713,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   bottom: var(--adaptive-footer-reserved-height);
 }
 
+.layout-leaf .terminal-container {
+  bottom: var(--adaptive-footer-reserved-height);
+}
+
 #manager-bar-queue {
   margin-bottom: var(--adaptive-footer-reserved-height);
 }
@@ -14058,11 +14062,61 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 body.keyboard-visible .adaptive-footer-dock {
-  max-height: min(58vh, 360px);
+  max-height: 100%;
 }
 
-body.keyboard-visible .adaptive-footer-primary > .smart-input-docked {
-  max-height: min(38vh, 220px);
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  scroll-padding-top: 6px;
+  scroll-padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-primary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-top: 2px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 98%, transparent),
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, transparent) 78%,
+      transparent
+    );
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-primary > .smart-input-docked {
+  flex-direction: column-reverse;
+  gap: 6px;
+  overflow: visible;
+  max-height: none;
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {
+  margin: 8px 0 0;
+  max-height: min(24vh, 168px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding-bottom: 2px;
+  background:
+    linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 98%, transparent),
+      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, transparent) 78%,
+      transparent
+    );
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-lens-settings-sheet {
+  max-height: min(28vh, 196px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }

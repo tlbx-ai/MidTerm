@@ -117,6 +117,14 @@ function createHarness() {
   };
 }
 
+function createStyleObject(): CSSStyleDeclaration {
+  const style = {} as CSSStyleDeclaration & Record<string, string>;
+  style.setProperty = ((name: string, value: string) => {
+    (style as Record<string, string>)[name] = value;
+  }) as CSSStyleDeclaration['setProperty'];
+  return style;
+}
+
 describe('setupVisualViewport', () => {
   const host = globalThis as typeof globalThis & {
     window?: typeof globalThis;
@@ -148,14 +156,30 @@ describe('setupVisualViewport', () => {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
 
+    const bodyClasses = new Set<string>();
     globalThis.document = {
       querySelector: () => null,
-      documentElement: { style: {} },
+      documentElement: { style: createStyleObject() },
       body: {
-        style: {},
+        style: createStyleObject(),
         classList: {
-          contains: () => false,
-          toggle: vi.fn(),
+          contains: (name: string) => bodyClasses.has(name),
+          toggle: vi.fn((name: string, force?: boolean) => {
+            if (force === undefined) {
+              if (bodyClasses.has(name)) {
+                bodyClasses.delete(name);
+              } else {
+                bodyClasses.add(name);
+              }
+              return;
+            }
+
+            if (force) {
+              bodyClasses.add(name);
+            } else {
+              bodyClasses.delete(name);
+            }
+          }),
         },
       },
       getElementById: () => null,
@@ -219,5 +243,59 @@ describe('setupVisualViewport', () => {
     setupVisualViewport();
 
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+  });
+
+  it('pins the app shell to the visual viewport and marks the keyboard-visible state', () => {
+    const bodyClasses = new Set<string>();
+    const appEl = { style: createStyleObject() };
+    const documentElement = { style: createStyleObject() };
+    const body = {
+      style: createStyleObject(),
+      classList: {
+        contains: (name: string) => bodyClasses.has(name),
+        toggle: vi.fn((name: string, force?: boolean) => {
+          if (force) {
+            bodyClasses.add(name);
+          } else {
+            bodyClasses.delete(name);
+          }
+        }),
+      },
+    };
+
+    globalThis.document = {
+      querySelector: (selector: string) =>
+        selector === '.terminal-page' ? (appEl as unknown as Element) : null,
+      documentElement: documentElement as unknown as Document['documentElement'],
+      body: body as unknown as Document['body'],
+      getElementById: () => null,
+    } as unknown as Document;
+
+    Object.defineProperty(host, 'innerHeight', {
+      configurable: true,
+      value: 700,
+    });
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: {
+        height: 500,
+        offsetTop: 12,
+        addEventListener: vi.fn(),
+      },
+    });
+
+    setupVisualViewport();
+
+    expect(appEl.style.height).toBe('500px');
+    expect(appEl.style.maxHeight).toBe('500px');
+    expect(documentElement.style.height).toBe('500px');
+    expect(documentElement.style.maxHeight).toBe('500px');
+    expect(documentElement.style['--midterm-visual-viewport-height']).toBe('500px');
+    expect(documentElement.style['--midterm-visual-viewport-offset-top']).toBe('12px');
+    expect(documentElement.style['--midterm-soft-keyboard-height']).toBe('200px');
+    expect(body.style.height).toBe('500px');
+    expect(body.style.maxHeight).toBe('500px');
+    expect(bodyClasses.has('keyboard-visible')).toBe(true);
+    expect(host.scrollTo).toHaveBeenCalledWith(0, 0);
   });
 });

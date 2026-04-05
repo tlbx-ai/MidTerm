@@ -230,6 +230,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Lens content.
 - Only the prompt textbox's extra multiline growth may expand upward over the pane as overlay chrome; the rest of the Command Bay must remain pane-reserving once the collapsed dock reserve is established.
+- On Android and iOS, the Command Bay must remain visible above the on-screen keyboard; if vertical space tightens, the dock should compress or scroll internally while keeping the prompt row and status awareness reachable.
 - The common quick-settings surface should cover:
   - model
   - effort

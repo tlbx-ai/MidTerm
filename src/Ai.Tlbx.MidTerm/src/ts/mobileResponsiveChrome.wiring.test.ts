@@ -45,5 +45,8 @@ describe('mobile responsive chrome wiring', () => {
     expect(css).toContain('min-height: 48px;');
     expect(css).toContain('grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));');
     expect(css).toContain('.adaptive-footer-context .smart-input-tools-strip {');
+    expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {");
+    expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {");
+    expect(css).toContain('position: sticky;');
   });
 });

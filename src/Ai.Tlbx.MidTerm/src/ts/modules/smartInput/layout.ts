@@ -11,6 +11,9 @@ export interface AdaptiveFooterReserveHeightArgs {
   collapsedTextareaHeight?: number | null;
 }
 
+export const ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT =
+  'midterm:adaptive-footer-reserved-height-changed';
+
 export function getAdaptiveFooterRailSequence(
   state: AdaptiveFooterRailSequenceState,
 ): AdaptiveFooterRailKey[] {

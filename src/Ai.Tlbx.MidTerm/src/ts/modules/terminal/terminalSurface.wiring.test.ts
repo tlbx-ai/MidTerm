@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
 const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
+const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
 
 describe('terminal surface wiring', () => {
   it('removes terminal panel inset padding from sizing and chrome', () => {
@@ -26,6 +27,13 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain(
       'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
+  });
+
+  it('keeps terminal content above the Command Bay and refreshes when footer reserve changes', () => {
+    expect(appCss).toContain('.layout-leaf .terminal-container {');
+    expect(appCss).toContain('bottom: var(--adaptive-footer-reserved-height);');
+    expect(scalingSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
+    expect(scalingSource).toContain('scheduleFooterReserveResize();');
   });
 
   it('wires custom box-drawing glyph rendering to persisted terminal settings', () => {
