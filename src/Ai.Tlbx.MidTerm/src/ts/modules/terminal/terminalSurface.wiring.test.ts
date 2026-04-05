@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
-const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
+const terminalOptionsSource = readFileSync(path.join(__dirname, 'terminalOptions.ts'), 'utf8');
 
 describe('terminal surface wiring', () => {
   it('removes terminal panel inset padding from sizing and chrome', () => {
@@ -37,7 +37,7 @@ describe('terminal surface wiring', () => {
   });
 
   it('wires custom box-drawing glyph rendering to persisted terminal settings', () => {
-    expect(managerSource).toContain('const customGlyphs = currentSettings?.customGlyphs ?? true;');
-    expect(managerSource).toContain('customGlyphs: customGlyphs,');
+    expect(terminalOptionsSource).toContain("| 'customGlyphs'");
+    expect(terminalOptionsSource).toContain('customGlyphs: currentSettings?.customGlyphs ?? true,');
   });
 });
