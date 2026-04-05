@@ -7,7 +7,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const lensDesign = readFileSync(path.join(__dirname, '../../../../../../docs/LensDesign.md'), 'utf8');
-const source = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
+const indexSource = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
+const historyContentSource = readFileSync(path.join(__dirname, 'historyContent.ts'), 'utf8');
+const historyDomSource = readFileSync(path.join(__dirname, 'historyDom.ts'), 'utf8');
+const historyProcessingSource = readFileSync(path.join(__dirname, 'historyProcessing.ts'), 'utf8');
+const viewShellSource = readFileSync(path.join(__dirname, 'viewShell.ts'), 'utf8');
 
 describe('agent view Lens wiring', () => {
   it('keeps Codex Lens user and assistant metadata above the message body', () => {
@@ -37,14 +41,14 @@ describe('agent view Lens wiring', () => {
   });
 
   it('keeps the history shell flat instead of reintroducing wrapper cards', () => {
-    expect(source).not.toContain('agent-history-card');
+    expect(indexSource).not.toContain('agent-history-card');
     expect(lensDesign).toContain(
       'Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened',
     );
   });
 
   it('replaces changed history rows instead of mutating past DOM nodes in place', () => {
-    expect(source).not.toContain('updateHistoryEntryNode(');
+    expect(indexSource).not.toContain('updateHistoryEntryNode(');
     expect(lensDesign).toContain(
       "Future updates must not mutate an already-rendered older row into a different row identity.",
     );
@@ -82,14 +86,15 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-diff-line-delete {');
     expect(css).toContain('.agent-history-diff-line-add > .agent-history-diff-line-number:first-child,');
     expect(css).toContain('grid-column: 1 / span 2;');
-    expect(source).toContain("Edited ${displayPath}");
+    expect(historyContentSource).toContain("Edited ${displayPath}");
     expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
     expect(lensDesign).toContain('Command-execution rows and diff rows should not repeat timestamp meta.');
   });
 
   it('keeps runtime token stats in a compact hovering overlay instead of history rows', () => {
-    expect(source).toContain('data-agent-field="runtime-stats"');
-    expect(source).toContain('buildLensRuntimeStats(snapshot)');
+    expect(viewShellSource).toContain('data-agent-field="runtime-stats"');
+    expect(indexSource).toContain('buildLensRuntimeStats(snapshot)');
+    expect(historyDomSource).toContain('formatTokenWindowCompact(stats)');
     expect(css).toContain('.agent-runtime-stats {');
     expect(css).toContain('.agent-runtime-stats-detail {');
     expect(lensDesign).toContain('Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows.');
@@ -97,16 +102,16 @@ describe('agent view Lens wiring', () => {
   });
 
   it('documents the selection-preservation rule for passive Lens rerenders', () => {
-    expect(source).toContain('hasActiveLensSelectionInPanel');
+    expect(indexSource).toContain('hasActiveLensSelectionInPanel');
     expect(lensDesign).toContain('Passive rerenders must not clear an active text selection inside Lens.');
   });
 
   it('renders the busy indicator as Working with per-letter sweep animation', () => {
-    expect(source).toContain("lensText('lens.status.working', 'Working')");
-    expect(source).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');
-    expect(source).toContain('agent-history-busy-label-letter');
-    expect(source).toContain('agent-history-busy-elapsed');
-    expect(source).toContain('(Press Esc to cancel)');
+    expect(historyProcessingSource).toContain("lensText('lens.status.working', 'Working')");
+    expect(historyProcessingSource).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');
+    expect(historyDomSource).toContain('agent-history-busy-label-letter');
+    expect(historyDomSource).toContain('agent-history-busy-elapsed');
+    expect(historyDomSource).toContain('(Press Esc to cancel)');
     expect(css).toContain('.agent-history-busy-bubble {');
     expect(css).toContain('justify-content: flex-start;');
     expect(css).toContain('.agent-history-busy-label {');
@@ -124,14 +129,18 @@ describe('agent view Lens wiring', () => {
   });
 
   it('routes plain Escape from the Lens surface through Lens interruption', () => {
-    expect(source).toContain('panel.addEventListener(\'keydown\', (event) => {');
-    expect(source).toContain("if (event.key !== 'Escape' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {");
-    expect(source).toContain('void handleLensEscape(sessionId);');
+    expect(viewShellSource).toContain("panel.addEventListener('keydown', (event) => {");
+    expect(viewShellSource).toContain("event.key !== 'Escape' ||");
+    expect(viewShellSource).toContain('event.shiftKey ||');
+    expect(viewShellSource).toContain('event.ctrlKey ||');
+    expect(viewShellSource).toContain('event.altKey ||');
+    expect(viewShellSource).toContain('event.metaKey');
+    expect(indexSource).toContain('void handleLensEscape(targetSessionId);');
   });
 
   it('normalizes command-output transcript rows into persistent command presentations', () => {
-    expect(source).toContain('applyDirectCommandPresentation(mapped);');
-    expect(source).toContain('function parseCommandOutputBody(');
-    expect(source).toContain("normalizedType !== 'commandoutput'");
+    expect(historyProcessingSource).toContain('applyDirectCommandPresentation(mapped);');
+    expect(historyContentSource).toContain('export function parseCommandOutputBody(');
+    expect(historyProcessingSource).toContain("normalizedType !== 'commandoutput'");
   });
 });

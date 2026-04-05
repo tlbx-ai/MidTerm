@@ -10,6 +10,7 @@ import {
   type LensTurnStartResponse,
   type LensUserInputAnswerRequest,
 } from './types';
+import { LensHttpError } from './errors';
 import { ReconnectController, createWsUrl } from '../utils';
 
 type LensWsRequestAction =
@@ -85,9 +86,7 @@ let ws: WebSocket | null = null;
 let connectPromise: Promise<void> | null = null;
 
 function createLensWsError(detail: string): Error {
-  const error = new Error(`HTTP 400: ${detail}`);
-  error.name = 'LensHttpError';
-  return error;
+  return new LensHttpError(400, detail);
 }
 
 function createRequestId(): string {

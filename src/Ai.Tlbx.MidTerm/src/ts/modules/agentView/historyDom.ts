@@ -63,8 +63,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     if (!stats) {
       host.hidden = true;
       host.replaceChildren();
-      host.removeAttribute('aria-label');
-      host.removeAttribute('title');
+      if (typeof host.removeAttribute === 'function') {
+        host.removeAttribute('aria-label');
+        host.removeAttribute('title');
+      }
+      host.title = '';
       return;
     }
 
@@ -282,7 +285,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     for (const [index, character] of Array.from(entry.body || 'Working').entries()) {
       const letter = document.createElement('span');
       letter.className = 'agent-history-busy-label-letter';
-      letter.style.setProperty('--agent-busy-letter-index', String(index));
+      if (typeof letter.style.setProperty === 'function') {
+        letter.style.setProperty('--agent-busy-letter-index', String(index));
+      } else {
+        const style = letter.style as CSSStyleDeclaration & Record<string, string>;
+        style['--agent-busy-letter-index'] = String(index);
+      }
       letter.textContent = character;
       label.appendChild(letter);
     }

@@ -17,6 +17,10 @@ const persistenceSource = readFileSync(
   path.join(projectRoot, 'src/ts/modules/settings/persistence.ts'),
   'utf8',
 );
+const terminalColorSchemeEditorSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/settings/terminalColorSchemeEditor.ts'),
+  'utf8',
+);
 const cssSource = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
 const xtermCssSource = readFileSync(path.join(projectRoot, 'src/static/css/xterm.css'), 'utf8');
 
@@ -262,9 +266,12 @@ describe('settings persistence wiring', () => {
 
   it('rebuilds the terminal color scheme select with custom entries at runtime', () => {
     expect(persistenceSource).toContain('syncTerminalColorSchemeOptions(settings);');
-    expect(persistenceSource).toContain('appendTranslatedOption(');
-    expect(persistenceSource).toContain("group.label = 'Custom Schemes'");
-    expect(persistenceSource).toContain('terminalColorSchemes.length');
-    expect(persistenceSource).toContain("document.getElementById('terminal-color-scheme-save')");
+    expect(persistenceSource).toContain('syncTerminalColorSchemeOptions,');
+    expect(terminalColorSchemeEditorSource).toContain('appendTranslatedOption(');
+    expect(terminalColorSchemeEditorSource).toContain("group.label = 'Custom Schemes'");
+    expect(terminalColorSchemeEditorSource).toContain('terminalColorSchemes.length');
+    expect(terminalColorSchemeEditorSource).toContain(
+      "document.getElementById('terminal-color-scheme-save')",
+    );
   });
 });

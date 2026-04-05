@@ -6,31 +6,27 @@ describe('api client lens helpers', () => {
     vi.resetModules();
   });
 
-  it('surfaces the actual Lens attach HTTP detail instead of a body-read error', async () => {
-    vi.stubGlobal('location', {
-      protocol: 'https:',
-      host: '127.0.0.1:2100',
-      pathname: '/',
-      search: '',
-      hash: '',
+  it('surfaces Lens attach transport failures as LensHttpError instances', async () => {
+    vi.doMock('./lensWebSocket', async () => {
+      const { LensHttpError } = await import('./errors');
+      return {
+        attachLensSession: vi.fn(async () => {
+          throw new LensHttpError(
+            400,
+            'MidTerm could not determine the Codex resume id for this session.',
+          );
+        }),
+        detachLensSession: vi.fn(),
+        getLensEventsWs: vi.fn(),
+        getLensSnapshotWs: vi.fn(),
+        interruptLensTurnWs: vi.fn(),
+        openLensEventSocket: vi.fn(),
+        approveLensRequestWs: vi.fn(),
+        declineLensRequestWs: vi.fn(),
+        resolveLensUserInputWs: vi.fn(),
+        submitLensTurnWs: vi.fn(),
+      };
     });
-    let reads = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: false,
-        status: 400,
-        statusText: 'Bad Request',
-        async text() {
-          reads += 1;
-          if (reads > 1) {
-            throw new TypeError('body stream already read');
-          }
-
-          return 'MidTerm could not determine the Codex resume id for this session.';
-        },
-      })),
-    );
 
     const { attachSessionLens, LensHttpError } = await import('./client');
 
@@ -45,40 +41,31 @@ describe('api client lens helpers', () => {
     expect((thrown as Error).message).toBe(
       'HTTP 400: MidTerm could not determine the Codex resume id for this session.',
     );
-    expect(reads).toBe(1);
   });
 
-  it('builds the Lens events URL with afterSequence and parses the payload', async () => {
-    vi.stubGlobal('location', {
-      protocol: 'https:',
-      host: '127.0.0.1:2100',
-      pathname: '/',
-      search: '',
-      hash: '',
-    });
-    vi.stubGlobal('window', {
-      location: { origin: 'https://127.0.0.1:2100' },
-    });
-
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
-      ok: true,
-      async text() {
-        return JSON.stringify({
-          sessionId: 'session-1',
-          latestSequence: 7,
-          events: [],
-        });
-      },
+  it('passes afterSequence through to the Lens events transport and returns the payload', async () => {
+    const getLensEventsWs = vi.fn(async (_sessionId: string, _afterSequence: number) => ({
+      sessionId: 'session-1',
+      latestSequence: 7,
+      events: [],
     }));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.doMock('./lensWebSocket', () => ({
+      attachLensSession: vi.fn(),
+      detachLensSession: vi.fn(),
+      getLensEventsWs,
+      getLensSnapshotWs: vi.fn(),
+      interruptLensTurnWs: vi.fn(),
+      openLensEventSocket: vi.fn(),
+      approveLensRequestWs: vi.fn(),
+      declineLensRequestWs: vi.fn(),
+      resolveLensUserInputWs: vi.fn(),
+      submitLensTurnWs: vi.fn(),
+    }));
 
     const { getLensEvents } = await import('./client');
     const result = await getLensEvents('session-1', 7);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://127.0.0.1:2100/api/sessions/session-1/lens/events?afterSequence=7',
-      undefined,
-    );
+    expect(getLensEventsWs).toHaveBeenCalledWith('session-1', 7);
     expect(result.latestSequence).toBe(7);
   });
 

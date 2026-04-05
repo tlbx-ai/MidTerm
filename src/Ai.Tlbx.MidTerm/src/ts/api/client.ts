@@ -12,6 +12,7 @@ import createClient from 'openapi-fetch';
 import type { FetchResponse, MaybeOptionalInit } from 'openapi-fetch';
 import type { MediaType, PathsWithMethod } from 'openapi-typescript-helpers';
 import type { paths } from '../api.generated';
+import { LensHttpError } from './errors';
 import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
@@ -89,18 +90,7 @@ type ClientPatchResult<
 
 // Re-export all types from api/types.ts for backward compatibility
 export * from './types';
-
-export class LensHttpError extends Error {
-  readonly status: number;
-  readonly detail: string;
-
-  constructor(status: number, detail: string) {
-    super(detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`);
-    this.name = 'LensHttpError';
-    this.status = status;
-    this.detail = detail;
-  }
-}
+export { LensHttpError } from './errors';
 
 export class ApiProblemError extends Error {
   readonly status: number;

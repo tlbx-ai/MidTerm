@@ -48,20 +48,6 @@ type HistoryRenderDeps = {
 };
 
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
-  function suppressActiveComposerRequestEntries(
-    entries: readonly LensHistoryEntry[],
-    requests: readonly LensPulseRequestSummary[],
-  ): LensHistoryEntry[] {
-    const activeRequest = findActiveComposerRequest(requests);
-    if (!activeRequest || activeRequest.state !== 'open') {
-      return [...entries];
-    }
-
-    return entries.filter(
-      (entry) => entry.kind !== 'request' || entry.requestId !== activeRequest.requestId,
-    );
-  }
-
   function renderActivationView(
     sessionId: string,
     panel: HTMLDivElement,
@@ -389,23 +375,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     );
   }
 
-  function findActiveComposerRequest(
-    requests: readonly LensPulseRequestSummary[],
-  ): LensPulseRequestSummary | null {
-    const openRequests = requests.filter((request) => request.state === 'open');
-    if (openRequests.length === 0) {
-      return null;
-    }
-
-    return (
-      openRequests
-        .slice()
-        .sort(
-          (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-        )[0] ?? null
-    );
-  }
-
   function syncRequestInteractionState(
     state: SessionLensViewState,
     requests: readonly LensPulseRequestSummary[],
@@ -470,6 +439,37 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     suppressActiveComposerRequestEntries,
     syncRequestInteractionState,
   };
+}
+
+export function suppressActiveComposerRequestEntries(
+  entries: readonly LensHistoryEntry[],
+  requests: readonly LensPulseRequestSummary[],
+): LensHistoryEntry[] {
+  const activeRequest = findActiveComposerRequest(requests);
+  if (!activeRequest || activeRequest.state !== 'open') {
+    return [...entries];
+  }
+
+  return entries.filter(
+    (entry) => entry.kind !== 'request' || entry.requestId !== activeRequest.requestId,
+  );
+}
+
+function findActiveComposerRequest(
+  requests: readonly LensPulseRequestSummary[],
+): LensPulseRequestSummary | null {
+  const openRequests = requests.filter((request) => request.state === 'open');
+  if (openRequests.length === 0) {
+    return null;
+  }
+
+  return (
+    openRequests
+      .slice()
+      .sort(
+        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+      )[0] ?? null
+  );
 }
 
 function computeHistoryVirtualWindow(

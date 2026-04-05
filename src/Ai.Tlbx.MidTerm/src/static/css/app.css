@@ -41,7 +41,7 @@
 .hub-add-machine-button:hover {
   background: var(--accent-blue);
   border-color: var(--accent-blue);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .hub-machine-list {
@@ -1047,7 +1047,7 @@ body.has-app-background::after {
 
 .session-subtitle {
   font-size: var(--fs-sm);
-  color: #fff;
+  color: var(--text-on-accent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11080,7 +11080,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 
   55% {
-    color: rgb(255 255 255 / 0.98);
+    color: color-mix(in srgb, var(--text-on-accent) 98%, transparent);
     text-shadow:
       0 0 6px color-mix(in srgb, white 42%, transparent),
       0 0 10px color-mix(in srgb, var(--agent-lens-live) 28%, transparent);
@@ -13466,7 +13466,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .command-form-save {
   padding: 6px 16px;
   background: var(--accent-blue);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--fs-base);
@@ -13597,7 +13597,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .commands-output-cancel {
   padding: 2px 10px;
   background: var(--accent-red);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 3px;
   font-size: var(--fs-sm);

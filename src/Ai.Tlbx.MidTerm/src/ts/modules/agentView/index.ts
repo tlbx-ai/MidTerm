@@ -1246,6 +1246,28 @@ function resolveCurrentSelection(): Pick<
   return window.getSelection();
 }
 
+export { classifyLensActivationIssue, resolveHistoryBadgeLabel } from './activationHelpers';
+export {
+  buildRenderedDiffLines,
+  estimateHistoryEntryHeight,
+  resolveHistoryBodyPresentation,
+  tokenizeCommandText,
+} from './historyContent';
+export {
+  applyOptimisticLensTurns,
+  buildActivationHistoryEntries,
+  buildLensHistoryEntries,
+  buildLensRuntimeStats,
+  formatHistoryMeta,
+  formatLensTurnDuration,
+  shouldHideStatusInMeta,
+  withActivationIssueNotice,
+  withLiveAssistantState,
+  withTrailingBusyIndicator,
+} from './historyProcessing';
+export { suppressActiveComposerRequestEntries } from './historyRender';
+export { applyCanonicalLensDelta } from './snapshotState';
+
 async function waitForInitialLensSnapshot(
   sessionId: string,
   state: SessionLensViewState,

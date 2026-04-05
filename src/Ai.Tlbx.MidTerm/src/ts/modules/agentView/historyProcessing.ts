@@ -36,6 +36,32 @@ function normalizeComparableHistoryText(value: string | null | undefined): strin
   return (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+const BUSY_INDICATOR_ITEM_STATUSES = [
+  'active',
+  'in progress',
+  'inprogress',
+  'in_progress',
+  'open',
+  'running',
+  'starting',
+] as const;
+
+const GENERIC_BUSY_INDICATOR_LABELS = new Set([
+  '',
+  'assistant',
+  'assistant message',
+  'command',
+  'command execution',
+  'command output',
+  'plan',
+  'reasoning',
+  'request',
+  'tool',
+  'tool completed',
+  'tool started',
+  'user',
+]);
+
 export function cloneHistoryAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
 ): LensAttachmentReference[] {
@@ -482,12 +508,82 @@ export function withTrailingBusyIndicator(
     tone: 'info',
     label: historyLabel('assistant'),
     title: '',
-    body: lensText('lens.status.working', 'Working'),
+    body: resolveBusyIndicatorLabelFromSnapshotItems(snapshot),
     meta: '',
     busyIndicator: true,
     busyElapsedText: formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot)),
   });
   return nextEntries;
+}
+
+function resolveBusyIndicatorLabelFromSnapshotItems(snapshot: LensPulseSnapshotResponse): string {
+  const currentTurnId = snapshot.currentTurn.turnId ?? null;
+  const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) {
+      continue;
+    }
+
+    if (!isBusyIndicatorItemCandidate(item, currentTurnId)) {
+      continue;
+    }
+
+    const label = resolveBusyIndicatorLabelFromItem(item);
+    if (label) {
+      return label;
+    }
+  }
+
+  return lensText('lens.status.working', 'Working');
+}
+
+function isBusyIndicatorItemCandidate(item: unknown, currentTurnId: string | null): boolean {
+  if (typeof item !== 'object' || item === null) {
+    return false;
+  }
+
+  const candidate = item as {
+    turnId?: unknown;
+    status?: unknown;
+  };
+  const itemTurnId = typeof candidate.turnId === 'string' ? candidate.turnId : null;
+  if (currentTurnId && itemTurnId && itemTurnId !== currentTurnId) {
+    return false;
+  }
+
+  const status = normalizeComparableHistoryText(
+    typeof candidate.status === 'string' ? candidate.status : '',
+  );
+  return BUSY_INDICATOR_ITEM_STATUSES.some((busyStatus) => status.includes(busyStatus));
+}
+
+function resolveBusyIndicatorLabelFromItem(item: unknown): string {
+  if (typeof item !== 'object' || item === null) {
+    return '';
+  }
+
+  const candidate = item as {
+    detail?: unknown;
+    title?: unknown;
+    itemType?: unknown;
+  };
+  const detail = typeof candidate.detail === 'string' ? candidate.detail.trim() : '';
+  if (detail) {
+    return detail;
+  }
+
+  const title = typeof candidate.title === 'string' ? candidate.title.trim() : '';
+  const normalizedTitle = normalizeComparableHistoryText(title);
+  const normalizedItemType = normalizeComparableHistoryText(
+    typeof candidate.itemType === 'string' ? prettify(candidate.itemType) : '',
+  );
+  return title &&
+    !GENERIC_BUSY_INDICATOR_LABELS.has(normalizedTitle) &&
+    normalizedTitle !== normalizedItemType
+    ? title
+    : '';
 }
 
 function resolveBusyIndicatorElapsedMs(snapshot: LensPulseSnapshotResponse): number | null {
