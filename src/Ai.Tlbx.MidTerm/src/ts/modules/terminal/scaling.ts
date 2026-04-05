@@ -1317,7 +1317,10 @@ export function setupVisualViewport(): void {
     document.documentElement.style.height = `${vh}px`;
     document.documentElement.style.maxHeight = `${vh}px`;
     document.documentElement.style.setProperty('--midterm-visual-viewport-height', `${vh}px`);
-    document.documentElement.style.setProperty('--midterm-visual-viewport-offset-top', `${vv.offsetTop}px`);
+    document.documentElement.style.setProperty(
+      '--midterm-visual-viewport-offset-top',
+      `${vv.offsetTop}px`,
+    );
     document.body.style.height = `${vh}px`;
     document.body.style.maxHeight = `${vh}px`;
 

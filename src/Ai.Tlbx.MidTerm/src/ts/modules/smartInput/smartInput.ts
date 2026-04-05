@@ -1206,7 +1206,10 @@ function updateFooterReservedHeight(): void {
 
 function setAdaptiveFooterReservedHeight(root: HTMLElement, reserveHeight: number): void {
   const normalizedReserveHeight = Math.max(0, Math.round(reserveHeight));
-  root.style.setProperty('--adaptive-footer-reserved-height', `${String(normalizedReserveHeight)}px`);
+  root.style.setProperty(
+    '--adaptive-footer-reserved-height',
+    `${String(normalizedReserveHeight)}px`,
+  );
 
   if (lastReservedFooterHeightPx === normalizedReserveHeight) {
     return;
