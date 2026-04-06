@@ -50,6 +50,7 @@ import {
   type EnterModifierLatchState,
 } from './enterModifierLatch';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
+import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
@@ -657,31 +658,12 @@ function hasNonTerminalFocus(): boolean {
   );
 }
 
-const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
-
-function hasActiveDocumentSelection(): boolean {
-  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
-    return false;
-  }
-
-  const selection = window.getSelection();
-  return Boolean(selection && !selection.isCollapsed && selection.rangeCount > 0);
-}
-
 function shouldSkipGlobalFocusReclaim(target: HTMLElement): boolean {
-  if (
-    FOCUS_STEALING_TAGS.has(target.tagName) ||
-    target.isContentEditable ||
-    target.closest('[contenteditable="true"]')
-  ) {
+  if (!shouldReclaimTerminalFocusOnMouseUp(target)) {
     return true;
   }
 
   if (target.closest(FOCUS_RECLAIM_EXEMPT_SELECTOR)) {
-    return true;
-  }
-
-  if (hasActiveDocumentSelection()) {
     return true;
   }
 
@@ -692,7 +674,6 @@ function shouldSkipGlobalFocusReclaim(target: HTMLElement): boolean {
 
   return getActiveTab(activeSessionId) !== 'terminal';
 }
-
 /**
  * Reclaim terminal focus after clicks on non-interactive UI (sidebar, buttons, etc.).
  * Skips refocus when the click lands on an element that needs its own keyboard input.

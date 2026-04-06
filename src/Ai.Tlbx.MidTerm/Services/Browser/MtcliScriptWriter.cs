@@ -27,23 +27,30 @@ public static class MtcliScriptWriter
         # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
-        # It only works on this machine's MidTerm instance. Not a security risk.
+        # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         _MK="mm-session={{token}}"
+        _MCURL() {
+          if command -v curl.exe >/dev/null 2>&1; then
+            curl.exe "$@"
+          else
+            curl "$@"
+          fi
+        }
         _MC() {
           if [ -n "${MT_API_KEY:-}" ]; then
-            curl --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
+            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
           else
-            curl --fail-with-body -sSk -b "$_MK" "$@"
+            _MCURL --fail-with-body -sSk -b "$_MK" "$@"
           fi
         }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
         _MBR() {
           if [ -n "${MT_API_KEY:-}" ]; then
-            curl --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
+            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@"
           else
-            curl --fail-with-body -sSk -b "$_MK" "$@"
+            _MCURL --fail-with-body -sSk -b "$_MK" "$@"
           fi
         }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
@@ -56,6 +63,16 @@ public static class MtcliScriptWriter
             1|true|TRUE|True|yes|YES|on|ON) printf 'true' ;;
             *) printf 'false' ;;
           esac
+        }
+        _MURLENC() {
+          local value="${1:-}" i c
+          for ((i=0; i<${#value}; i++)); do
+            c="${value:i:1}"
+            case "$c" in
+              [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+              *) printf '%%%02X' "'$c" ;;
+            esac
+          done
         }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
         _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
@@ -77,14 +94,14 @@ public static class MtcliScriptWriter
         }
         _MQ() {
           if [ -n "$(_MSID)" ]; then
-            printf '?sessionId=%s&previewName=%s' "$(_MSID)" "$(_MPREVIEW)"
+            printf '?sessionId=%s&previewName=%s' "$(_MURLENC "$(_MSID)")" "$(_MURLENC "$(_MPREVIEW)")"
           fi
         }
         _MSTATUS_URL() {
           if [ -n "$(_MSID)" ]; then
-            printf '%s/api/browser/status-text?sessionId=%s&previewName=%s' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
+            printf '%s/api/browser/status-text?sessionId=%s&previewName=%s' "$_MT" "$(_MURLENC "$(_MSID)")" "$(_MURLENC "$(_MPREVIEW)")"
           elif [ -n "${MT_PREVIEW_NAME:-}" ]; then
-            printf '%s/api/browser/status-text?previewName=%s' "$_MT" "$(_MPREVIEW)"
+            printf '%s/api/browser/status-text?previewName=%s' "$_MT" "$(_MURLENC "$(_MPREVIEW)")"
           else
             printf '%s/api/browser/status-text' "$_MT"
           fi
@@ -166,13 +183,19 @@ public static class MtcliScriptWriter
         mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
-          local url="$1" open_out
+          local url="$1" open_out status
           open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
             return $code
           }
           [ -n "$open_out" ] && printf '%s\n' "$open_out"
+          status=$(_MWAITCONTROLLABLE 25) || {
+            local code=$?
+            [ -n "$status" ] && printf '%s\n' "$status" >&2
+            echo "mt_open failed: preview did not become controllable." >&2
+            return $code
+          }
         }
         # mt_close_preview  — close web preview panel
         mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
@@ -181,7 +204,7 @@ public static class MtcliScriptWriter
         mt_forcereload() { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"force\"}" "$_MT/api/webpreview/reload"; }
         mt_target()     { _MC "$_MT/api/webpreview/target$(_MQ)"; }
         mt_cookies()    { _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
-        mt_previews()   { _MC "$_MT/api/webpreview/previews?sessionId=$(_MSID)"; }
+        mt_previews()   { _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
         mt_clearcookies() { _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
         # mt_clearstate  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
@@ -198,7 +221,7 @@ public static class MtcliScriptWriter
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"
         }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
-        mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MSID)&previewName=$(_MPREVIEW)&limit=$n"; }
+        mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MURLENC "$(_MSID)")&previewName=$(_MURLENC "$(_MPREVIEW)")&limit=$n"; }
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
         mt_apply_update() {
           local source="${1:-}" url="$_MT/api/update/apply"
@@ -209,7 +232,7 @@ public static class MtcliScriptWriter
           sleep 3
           local i version
           for ((i=0; i<90; i++)); do
-            version=$(curl -sfk "$_MT/api/version" 2>/dev/null) && break
+            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) && break
             sleep 1
           done
           if [ -n "$version" ]; then
@@ -445,7 +468,7 @@ public static class MtcliScriptWriter
         # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
-        # It only works on this machine's MidTerm instance. Not a security risk.
+        # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         $script:_MK = "mm-session={{token}}"
@@ -646,6 +669,14 @@ public static class MtcliScriptWriter
             $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
+            }
+            $status = _MWaitForControllableStatus
+            if (-not $status.Ready) {
+                if ($status.Output) {
+                    throw $status.Output
+                }
+
+                throw "mt_open failed: preview did not become controllable."
             }
         }
         # Mt-ClosePreview  — close web preview panel

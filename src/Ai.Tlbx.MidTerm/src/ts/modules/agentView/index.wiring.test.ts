@@ -11,6 +11,10 @@ const indexSource = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 const historyContentSource = readFileSync(path.join(__dirname, 'historyContent.ts'), 'utf8');
 const historyDomSource = readFileSync(path.join(__dirname, 'historyDom.ts'), 'utf8');
 const historyProcessingSource = readFileSync(path.join(__dirname, 'historyProcessing.ts'), 'utf8');
+const focusReclaimSource = readFileSync(
+  path.join(__dirname, '../terminal/focusReclaim.ts'),
+  'utf8',
+);
 const viewShellSource = readFileSync(path.join(__dirname, 'viewShell.ts'), 'utf8');
 
 describe('agent view Lens wiring', () => {
@@ -103,6 +107,7 @@ describe('agent view Lens wiring', () => {
 
   it('documents the selection-preservation rule for passive Lens rerenders', () => {
     expect(indexSource).toContain('hasActiveLensSelectionInPanel');
+    expect(focusReclaimSource).toContain("element.closest?.('.agent-view-panel') != null");
     expect(lensDesign).toContain('Passive rerenders must not clear an active text selection inside Lens.');
   });
 

@@ -27,7 +27,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("Current version:", powershell, StringComparison.Ordinal);
         Assert.Contains("_MBR", shell, StringComparison.Ordinal);
         Assert.Contains("_MJR", shell, StringComparison.Ordinal);
-        Assert.Contains("curl --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
+        Assert.Contains("_MCURL --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
+        Assert.Contains("command -v curl.exe >/dev/null 2>&1", shell, StringComparison.Ordinal);
         Assert.Contains("function script:_MBR", powershell, StringComparison.Ordinal);
         Assert.Contains("function script:_MJR", powershell, StringComparison.Ordinal);
     }
@@ -44,14 +45,16 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         Assert.Contains("set MT_API_KEY", shell, StringComparison.Ordinal);
         Assert.Contains("Authorization: Bearer $MT_API_KEY", shell, StringComparison.Ordinal);
-        Assert.Contains("curl --fail-with-body -sSk -H", shell, StringComparison.Ordinal);
-        Assert.Contains("curl --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
+        Assert.Contains("_MCURL --fail-with-body -sSk -H", shell, StringComparison.Ordinal);
+        Assert.Contains("_MCURL --fail-with-body -sSk -b", shell, StringComparison.Ordinal);
+        Assert.Contains("Treat it like a local session secret", shell, StringComparison.Ordinal);
 
         Assert.Contains("set MT_API_KEY", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_API_KEY", powershell, StringComparison.Ordinal);
         Assert.Contains("Authorization: Bearer $($env:MT_API_KEY)", powershell, StringComparison.Ordinal);
         Assert.Contains("& curl.exe --fail-with-body -sSk -H", powershell, StringComparison.Ordinal);
         Assert.Contains("& curl.exe --fail-with-body -sSk -b", powershell, StringComparison.Ordinal);
+        Assert.Contains("Treat it like a local session secret", powershell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -73,9 +76,11 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("_MSTATUS_URL()", shell, StringComparison.Ordinal);
         Assert.Contains("_MSTATUS()", shell, StringComparison.Ordinal);
         Assert.Contains("_MWAITCONTROLLABLE()", shell, StringComparison.Ordinal);
+        Assert.Contains("_MURLENC()", shell, StringComparison.Ordinal);
         Assert.Contains("/api/browser/status-text", shell, StringComparison.Ordinal);
         Assert.Contains("mt_open() {", shell, StringComparison.Ordinal);
-        Assert.Contains("local url=\"$1\" open_out", shell, StringComparison.Ordinal);
+        Assert.Contains("local url=\"$1\" open_out status", shell, StringComparison.Ordinal);
+        Assert.Contains("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", shell, StringComparison.Ordinal);
         Assert.Contains("sessionId", shell, StringComparison.Ordinal);
         Assert.Contains("$(_MSID)", shell, StringComparison.Ordinal);
@@ -92,6 +97,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("/api/browser/status-text", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Open {", powershell, StringComparison.Ordinal);
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
+        Assert.Contains("$status = _MWaitForControllableStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("Get-Command $candidate -ErrorAction SilentlyContinue", powershell, StringComparison.Ordinal);
         Assert.Contains("Unknown MidTerm CLI command: $cmd", powershell, StringComparison.Ordinal);
@@ -173,7 +179,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
     }
 
     [Fact]
-    public void WriteScripts_DoesNotRetryBrowserCommandsAnonymously()
+    public void WriteScripts_OpenWaitsForControllableStatusWithoutAnonymousRetry()
     {
         Directory.CreateDirectory(_tempDir);
 
@@ -184,7 +190,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         Assert.Contains("mt_status()     { _MSTATUS", shell, StringComparison.Ordinal);
         Assert.Contains("open_out=$(_MJR -d", shell, StringComparison.Ordinal);
-        Assert.DoesNotContain("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
+        Assert.Contains("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("_MNOSESSION()", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("original=(", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("output=$(_MB \"${original[@]}\")", shell, StringComparison.Ordinal);
@@ -192,7 +198,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         Assert.Contains("function Mt-Status     { try { _MStatus }", powershell, StringComparison.Ordinal);
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
-        Assert.DoesNotContain("$status = _MWaitForControllableStatus", powershell, StringComparison.Ordinal);
+        Assert.Contains("$status = _MWaitForControllableStatus", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("function script:_MShouldRetryAnonymous", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("$originalArgs = @($args)", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("$output = _MB @originalArgs", powershell, StringComparison.Ordinal);
