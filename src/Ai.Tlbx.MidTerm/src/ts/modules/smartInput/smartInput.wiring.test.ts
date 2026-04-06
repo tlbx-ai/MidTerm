@@ -79,8 +79,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
-    expect(css).toContain('--command-bay-control-height: 36px;');
+    expect(css).toContain('--command-bay-control-height: 34px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
+    expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
     expect(viewSource).toContain("toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';");
     expect(css).toContain('font-size: 16px;');
@@ -109,7 +110,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('event.stopPropagation();');
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
     expect(viewSource).toContain('inputRow.appendChild(toolsPanel);');
-    expect(css).toContain('bottom: calc(100% + 8px);');
+    expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
     expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('.smart-input-editor {');

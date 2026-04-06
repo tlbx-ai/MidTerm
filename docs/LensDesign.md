@@ -257,6 +257,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 
 - The composer is the primary action control for Lens sessions.
 - The composer textbox should remain visibly larger than surrounding automation chips, status pills, and quick-setting controls; the dock must read as one system, but the prompt should still dominate.
+- The single-line composer row should align on a shared visual centerline with its adjacent send and utility buttons, and the dock should use equal vertical spacing between the pane edge and each visible dock row.
 - Lens and Terminal should now share one adaptive footer dock language instead of stacking unrelated bars beneath the active pane.
 - When input is visible, the primary smart input row must always be the first row directly beneath the active pane.
 - Lens quick settings should live in the dock status rail rather than as a separate detached manager strip.
@@ -264,6 +265,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Normal terminal smart input should reuse the same dock shell while keeping Lens-only runtime controls out of ordinary terminal sessions.
 - On desktop, Lens quick settings should read as a low-clutter translucent control rail rather than a full-width form.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
+- MidTerm's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
 - On mobile, Lens should keep model/effort/plan awareness always visible in the dock status rail and may reveal the full editable quick-settings surface as a compact sheet from that status row.
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.

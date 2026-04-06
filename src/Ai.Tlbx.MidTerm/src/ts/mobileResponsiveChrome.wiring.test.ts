@@ -41,9 +41,9 @@ describe('mobile responsive chrome wiring', () => {
     expect(html).toContain('id="adaptive-footer-dock"');
     expect(css).toContain('.adaptive-footer-dock .manager-bar:not(.hidden) {');
     expect(css).toContain('.adaptive-footer-context .touch-controller.embedded {');
-    expect(css).toContain('--command-bay-control-height-mobile: 44px;');
+    expect(css).toContain('--command-bay-control-height-mobile: 40px;');
     expect(css).toContain('--command-bay-control-height: var(--command-bay-control-height-mobile);');
-    expect(css).toContain('min-height: 52px;');
+    expect(css).toContain('min-height: 46px;');
     expect(css).toContain('grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));');
     expect(css).toContain('.adaptive-footer-context .smart-input-tools-strip {');
     expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {");
