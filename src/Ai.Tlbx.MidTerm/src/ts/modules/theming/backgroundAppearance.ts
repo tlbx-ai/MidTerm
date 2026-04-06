@@ -231,7 +231,10 @@ function syncBackgroundKenBurnsEffect(
   const panXPercent = overflow * BACKGROUND_KEN_BURNS_PAN_X_FACTOR * 100;
   const panYPercent = overflow * BACKGROUND_KEN_BURNS_PAN_Y_FACTOR * 100;
 
-  root.style.setProperty('--app-background-transform', `translate3d(0px, 0px, 0) scale(${scale.toFixed(3)})`);
+  root.style.setProperty(
+    '--app-background-transform',
+    `translate3d(0px, 0px, 0) scale(${scale.toFixed(3)})`,
+  );
   root.style.setProperty('--app-background-ken-burns-scale', scale.toFixed(3));
   root.style.setProperty('--app-background-ken-burns-pan-x', `${panXPercent.toFixed(3)}%`);
   root.style.setProperty('--app-background-ken-burns-pan-y', `${panYPercent.toFixed(3)}%`);
