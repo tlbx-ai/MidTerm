@@ -152,6 +152,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ### Ordering
 
 - Turns and items must render in canonical order from the backend identity model.
+- If a user row for an older turn materializes late, the backend must still promote that user row to the start of its turn instead of leaving it below newer rows that happened to be created first.
 - A streaming assistant response should update its existing row in place.
 - Tool updates should attach to the owning turn and item instead of spawning visually disjoint duplicates.
 

@@ -640,6 +640,131 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_PromotesLateUserRowsToTheStartOfTheirTurn()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-start",
+            SessionId = "s-order",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-06T10:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-assistant",
+            SessionId = "s-order",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-06T10:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "first answer"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-start",
+            SessionId = "s-order",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = ParseUtc("2026-04-06T10:01:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-user",
+            SessionId = "s-order",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            ItemId = "local-user:turn-2",
+            CreatedAt = ParseUtc("2026-04-06T10:01:01Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Detail = "second question"
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-2-assistant",
+            SessionId = "s-order",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-2",
+            CreatedAt = ParseUtc("2026-04-06T10:01:02Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = "second answer"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-1-user-late",
+            SessionId = "s-order",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "provider-user-1",
+            CreatedAt = ParseUtc("2026-04-06T10:01:03Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "user_message",
+                Status = "completed",
+                Detail = "first question"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-order");
+
+        Assert.NotNull(snapshot);
+        Assert.Collection(
+            snapshot!.Transcript,
+            entry =>
+            {
+                Assert.Equal("user", entry.Kind);
+                Assert.Equal("turn-1", entry.TurnId);
+                Assert.Equal("first question", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("turn-1", entry.TurnId);
+                Assert.Equal("first answer", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("user", entry.Kind);
+                Assert.Equal("turn-2", entry.TurnId);
+                Assert.Equal("second question", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("assistant", entry.Kind);
+                Assert.Equal("turn-2", entry.TurnId);
+                Assert.Equal("second answer", entry.Body);
+            });
+    }
+
+    [Fact]
     public void GetSnapshot_PreservesAssistantChronologyWhenFinalItemArrivesAfterToolWork()
     {
         var service = new SessionLensPulseService();

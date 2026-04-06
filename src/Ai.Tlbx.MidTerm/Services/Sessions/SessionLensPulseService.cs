@@ -1349,6 +1349,7 @@ public sealed partial class SessionLensPulseService
                 entry.Title = null;
                 entry.Body = PreferMeaningfulText(entry.Body, lensEvent.Item.Detail) ?? string.Empty;
                 entry.Streaming = false;
+                PromoteUserTranscriptEntryToTurnLead(state, entry);
                 break;
             case "assistant":
                 entry.Title = null;
@@ -2497,6 +2498,49 @@ public sealed partial class SessionLensPulseService
         }
 
         return entry;
+    }
+
+    private static void PromoteUserTranscriptEntryToTurnLead(
+        LensConversationState state,
+        LensPulseTranscriptEntry entry)
+    {
+        if (!string.Equals(entry.Kind, "user", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(entry.TurnId))
+        {
+            return;
+        }
+
+        var turnLeadOrder = long.MaxValue;
+        foreach (var candidate in state.TranscriptEntries.Values)
+        {
+            if (ReferenceEquals(candidate, entry) ||
+                !string.Equals(candidate.TurnId, entry.TurnId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            turnLeadOrder = Math.Min(turnLeadOrder, candidate.Order);
+        }
+
+        if (turnLeadOrder == long.MaxValue || entry.Order <= turnLeadOrder)
+        {
+            return;
+        }
+
+        foreach (var candidate in state.TranscriptEntries.Values)
+        {
+            if (ReferenceEquals(candidate, entry))
+            {
+                continue;
+            }
+
+            if (candidate.Order >= turnLeadOrder && candidate.Order < entry.Order)
+            {
+                candidate.Order += 1;
+            }
+        }
+
+        entry.Order = turnLeadOrder;
     }
 
     private static void CompleteStreamingTranscriptEntries(LensConversationState state, string? turnId)
