@@ -181,6 +181,7 @@ public class Program
 
         var browserPreviewOriginService = app.Services.GetRequiredService<BrowserPreviewOriginService>();
         var browserPreviewRegistry = app.Services.GetRequiredService<BrowserPreviewRegistry>();
+        var browserPreviewOwnerService = app.Services.GetRequiredService<BrowserPreviewOwnerService>();
         ServerSetup.ConfigureMiddleware(
             app,
             settingsService,
@@ -371,6 +372,7 @@ public class Program
             app,
             browserCommandService,
             browserPreviewRegistry,
+            browserPreviewOwnerService,
             browserPreviewOriginService,
             sessionManager,
             webPreviewService,

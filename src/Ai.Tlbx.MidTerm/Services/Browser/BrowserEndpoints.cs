@@ -13,12 +13,13 @@ public static class BrowserEndpoints
         WebApplication app,
         BrowserCommandService commandService,
         BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOwnerService previewOwnerService,
         BrowserPreviewOriginService previewOriginService,
         TtyHostSessionManager sessionManager,
         WebPreviewService webPreviewService,
         BrowserUiBridge? uiBridge = null)
     {
-        MapPreviewClientEndpoint(app, previewRegistry, previewOriginService, webPreviewService);
+        MapPreviewClientEndpoint(app, previewRegistry, previewOwnerService, previewOriginService, webPreviewService);
         MapStatusEndpoint(app, commandService, webPreviewService, uiBridge);
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService, uiBridge);
         MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
@@ -67,6 +68,7 @@ public static class BrowserEndpoints
     private static void MapPreviewClientEndpoint(
         WebApplication app,
         BrowserPreviewRegistry previewRegistry,
+        BrowserPreviewOwnerService previewOwnerService,
         BrowserPreviewOriginService previewOriginService,
         WebPreviewService webPreviewService)
     {
@@ -82,6 +84,10 @@ public static class BrowserEndpoints
                 preview.SessionId,
                 preview.PreviewName,
                 preview.RouteKey,
+                ctx.Request.Cookies["mt-client-id"]);
+            previewOwnerService.ClaimIfMissing(
+                preview.SessionId,
+                preview.PreviewName,
                 ctx.Request.Cookies["mt-client-id"]);
             var response = new BrowserPreviewClientResponse
             {

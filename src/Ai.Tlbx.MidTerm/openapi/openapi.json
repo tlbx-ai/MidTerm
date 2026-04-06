@@ -3594,6 +3594,8 @@
           "totalConnectedClientCount",
           "connectedUiClientCount",
           "targetUrl",
+          "ownerBrowserId",
+          "ownerConnected",
           "defaultClient",
           "clients"
         ],
@@ -3646,6 +3648,15 @@
               "null",
               "string"
             ]
+          },
+          "ownerBrowserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerConnected": {
+            "type": "boolean"
           },
           "defaultClient": {
             "oneOf": [

@@ -167,6 +167,56 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
+    public async Task ExecuteCommandAsync_WithScopedOwner_RoutesToOwnedBrowser()
+    {
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "browser-owner");
+        var service = new BrowserCommandService(previewOwnerService: ownerService);
+        BrowserWsMessage? captured = null;
+
+        Assert.True(service.TryRegisterClient(
+            "owner-client",
+            "session-a",
+            "default",
+            "preview-owner",
+            msg =>
+            {
+                captured = msg;
+                service.ReceiveResult(new BrowserWsResult
+                {
+                    Id = msg.Id,
+                    Success = true,
+                    Result = "owner-ok",
+                    PreviewId = "preview-owner"
+                });
+            },
+            browserId: "browser-owner",
+            isVisible: false));
+        Assert.True(service.TryRegisterClient(
+            "follower-client",
+            "session-a",
+            "default",
+            "preview-follower",
+            _ => throw new Xunit.Sdk.XunitException("wrong browser"),
+            browserId: "browser-follower",
+            isVisible: true,
+            hasFocus: true,
+            isTopLevel: true));
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "url",
+            SessionId = "session-a",
+            PreviewName = "default"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("owner-ok", result.Result);
+        Assert.NotNull(captured);
+        Assert.Equal("preview-owner", captured!.PreviewId);
+    }
+
+    [Fact]
     public async Task UnregisterClient_CancelsOnlyPendingCommandsForThatPreview()
     {
         var service = new BrowserCommandService();
@@ -352,6 +402,49 @@ public class BrowserCommandServiceTests
         Assert.Equal("ambiguous", status.State);
         Assert.Null(status.DefaultClient);
         Assert.Contains("Multiple browser previews are connected", status.StatusMessage ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetStatus_WithOfflineOwnerAndMultipleFollowers_ReportsWaitingOwnerState()
+    {
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "browser-owner");
+        var service = new BrowserCommandService(previewOwnerService: ownerService);
+
+        Assert.True(service.TryRegisterClient(
+            "c1",
+            "session-a",
+            "default",
+            "preview-follower-a",
+            _ => { },
+            browserId: "browser-follower-a",
+            isVisible: true,
+            hasFocus: true,
+            isTopLevel: true));
+        Assert.True(service.TryRegisterClient(
+            "c2",
+            "session-a",
+            "default",
+            "preview-follower-b",
+            _ => { },
+            browserId: "browser-follower-b",
+            isVisible: true,
+            hasFocus: true,
+            isTopLevel: true));
+
+        var status = service.GetStatus(
+            "https://localhost:5001/",
+            sessionId: "session-a",
+            previewName: "default",
+            connectedUiClientCount: 1);
+
+        Assert.True(status.Connected);
+        Assert.False(status.Controllable);
+        Assert.Equal("waiting", status.State);
+        Assert.Equal("browser-owner", status.OwnerBrowserId);
+        Assert.False(status.OwnerConnected);
+        Assert.Null(status.DefaultClient);
+        Assert.Contains("owned by browser 'browser-owner'", status.StatusMessage ?? "", StringComparison.Ordinal);
     }
 
     [Fact]

@@ -658,7 +658,20 @@ function hasNonTerminalFocus(): boolean {
   );
 }
 
+function hasActiveDocumentSelection(): boolean {
+  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
+    return false;
+  }
+
+  const selection = window.getSelection();
+  return !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
+}
+
 function shouldSkipGlobalFocusReclaim(target: HTMLElement): boolean {
+  if (hasActiveDocumentSelection()) {
+    return true;
+  }
+
   if (!shouldReclaimTerminalFocusOnMouseUp(target)) {
     return true;
   }

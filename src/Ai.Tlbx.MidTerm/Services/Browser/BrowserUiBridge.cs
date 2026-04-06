@@ -5,10 +5,14 @@ public sealed class BrowserUiBridge
     private readonly Lock _lock = new();
     private readonly Dictionary<string, ListenerRegistration> _listeners = new(StringComparer.Ordinal);
     private readonly MainBrowserService _mainBrowserService;
+    private readonly BrowserPreviewOwnerService? _previewOwnerService;
 
-    public BrowserUiBridge(MainBrowserService mainBrowserService)
+    public BrowserUiBridge(
+        MainBrowserService mainBrowserService,
+        BrowserPreviewOwnerService? previewOwnerService = null)
     {
         _mainBrowserService = mainBrowserService;
+        _previewOwnerService = previewOwnerService;
     }
 
     public int ConnectedBrowserCount
@@ -56,7 +60,7 @@ public sealed class BrowserUiBridge
     public bool RequestDetach(string? sessionId, string? previewName, out string error)
     {
         error = "";
-        if (!TryGetTargetListener(out var target, out error))
+        if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
         {
             return false;
         }
@@ -68,7 +72,7 @@ public sealed class BrowserUiBridge
     public bool RequestDock(string? sessionId, string? previewName, out string error)
     {
         error = "";
-        if (!TryGetTargetListener(out var target, out error))
+        if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
         {
             return false;
         }
@@ -80,7 +84,7 @@ public sealed class BrowserUiBridge
     public bool RequestViewport(string? sessionId, string? previewName, int width, int height, out string error)
     {
         error = "";
-        if (!TryGetTargetListener(out var target, out error))
+        if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
         {
             return false;
         }
@@ -97,7 +101,7 @@ public sealed class BrowserUiBridge
         out string error)
     {
         error = "";
-        if (!TryGetTargetListener(out var target, out error))
+        if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
         {
             return false;
         }
@@ -106,8 +110,13 @@ public sealed class BrowserUiBridge
         return true;
     }
 
-    private bool TryGetTargetListener(out ListenerRegistration target, out string error)
+    private bool TryGetTargetListener(
+        string? sessionId,
+        string? previewName,
+        out ListenerRegistration target,
+        out string error)
     {
+        ListenerRegistration[] listeners;
         lock (_lock)
         {
             if (_listeners.Count == 0)
@@ -117,25 +126,51 @@ public sealed class BrowserUiBridge
                 return false;
             }
 
-            var candidates = _listeners.Values.AsEnumerable();
-            var mainBrowserId = _mainBrowserService.GetMainBrowserId();
-            if (!string.IsNullOrWhiteSpace(mainBrowserId))
+            listeners = _listeners.Values.ToArray();
+        }
+
+        var resolvedOwnerBrowserId = _previewOwnerService?.ResolveOwnerBrowserId(
+            sessionId,
+            previewName,
+            listeners.Select(listener => listener.BrowserId));
+
+        if (!string.IsNullOrWhiteSpace(resolvedOwnerBrowserId))
+        {
+            var ownerListener = listeners
+                .Where(listener => string.Equals(listener.BrowserId, resolvedOwnerBrowserId, StringComparison.Ordinal))
+                .OrderByDescending(listener => listener.ConnectedAtUtc)
+                .FirstOrDefault();
+            if (ownerListener is not null)
             {
-                var mainCandidates = candidates
-                    .Where(listener => string.Equals(listener.BrowserId, mainBrowserId, StringComparison.Ordinal))
-                    .ToArray();
-                if (mainCandidates.Length > 0)
-                {
-                    candidates = mainCandidates;
-                }
+                target = ownerListener;
+                error = "";
+                return true;
             }
 
-            target = candidates
-                .OrderByDescending(listener => listener.ConnectedAtUtc)
-                .First();
-            error = "";
-            return true;
+            error = $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{resolvedOwnerBrowserId}', but that MidTerm browser is not currently attached to /ws/state.";
+            target = null!;
+            return false;
         }
+
+        var candidates = listeners.AsEnumerable();
+        var mainBrowserId = _mainBrowserService.GetMainBrowserId();
+        if (!string.IsNullOrWhiteSpace(mainBrowserId))
+        {
+            var mainCandidates = candidates
+                .Where(listener => string.Equals(listener.BrowserId, mainBrowserId, StringComparison.Ordinal))
+                .ToArray();
+            if (mainCandidates.Length > 0)
+            {
+                candidates = mainCandidates;
+            }
+        }
+
+        target = candidates
+            .OrderByDescending(listener => listener.ConnectedAtUtc)
+            .First();
+        _previewOwnerService?.Claim(sessionId, previewName, target.BrowserId);
+        error = "";
+        return true;
     }
 
     private sealed class ListenerRegistration

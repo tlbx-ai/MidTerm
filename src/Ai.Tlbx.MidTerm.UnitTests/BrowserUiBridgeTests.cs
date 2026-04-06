@@ -40,4 +40,44 @@ public sealed class BrowserUiBridgeTests
         Assert.Equal("", error);
         Assert.Equal("https://example.com", openedUrl);
     }
+
+    [Fact]
+    public void RequestOpen_WithPreviewOwner_UsesOwnedBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "browser-owner");
+        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
+        string? openedUrl = null;
+
+        bridge.RegisterListener("l1", "browser-follower", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => throw new Xunit.Sdk.XunitException("wrong listener"));
+        bridge.RegisterListener("l2", "browser-owner", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, url, _) => openedUrl = url);
+
+        var ok = bridge.RequestOpen("session-a", "default", "https://example.com", true, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("https://example.com", openedUrl);
+    }
+
+    [Fact]
+    public void RequestOpen_WithoutPreviewOwner_ClaimsSelectedBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
+        var connectionToken = new object();
+
+        mainBrowser.Register("browser-a", connectionToken);
+        mainBrowser.Claim("browser-a");
+
+        bridge.RegisterListener("l1", "browser-a", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+        bridge.RegisterListener("l2", "browser-b", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+
+        var ok = bridge.RequestOpen("session-a", "default", "https://example.com", true, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("browser-a", ownerService.GetOwnerBrowserId("session-a", "default"));
+    }
 }

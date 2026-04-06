@@ -178,6 +178,7 @@ public static class ServerSetup
             return BrowserPreviewOriginService.Create(port, bindAddress);
         });
         builder.Services.AddSingleton<BrowserPreviewRegistry>();
+        builder.Services.AddSingleton<BrowserPreviewOwnerService>();
         builder.Services.AddSingleton<BrowserCommandService>();
         builder.Services.AddSingleton<BrowserUiBridge>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>

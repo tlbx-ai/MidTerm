@@ -62,6 +62,8 @@ export interface BrowserStatusResponse {
   totalConnectedClientCount: number;
   connectedUiClientCount: number;
   targetUrl?: string | null;
+  ownerBrowserId?: string | null;
+  ownerConnected: boolean;
   defaultClient?: BrowserClientInfo | null;
   clients: BrowserClientInfo[];
 }

@@ -3754,6 +3754,8 @@ export interface components {
       /** Format: int32 */
       connectedUiClientCount: number;
       targetUrl: null | string;
+      ownerBrowserId: null | string;
+      ownerConnected: boolean;
       defaultClient: null | components['schemas']['BrowserClientInfo'];
       clients: components['schemas']['BrowserClientInfo'][];
     };

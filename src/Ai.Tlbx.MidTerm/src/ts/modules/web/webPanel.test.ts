@@ -74,6 +74,8 @@ function createBrowserStatus(
     totalConnectedClientCount: 1,
     connectedUiClientCount: 1,
     targetUrl: 'https://localhost:3000',
+    ownerBrowserId: 'b1',
+    ownerConnected: true,
     defaultClient: {
       sessionId: 's1',
       previewName: 'default',

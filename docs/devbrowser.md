@@ -108,6 +108,14 @@ The injected browser bridge now connects immediately from the server-injected he
 
 Browser UI instructions (`open`, `dock`, `detach`, `viewport`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
 
+Preview control ownership is now backend-owned per `(sessionId, previewName)` instead of being inferred only from focus/visibility heuristics:
+
+- the first browser that creates or bootstraps a named preview becomes that preview's control owner
+- browser commands and browser-UI instructions for that named preview route to the owned browser first
+- if the owner disappears and exactly one other browser remains attached for that preview, MidTerm reassigns ownership to that sole remaining browser deterministically
+- if the owner disappears and multiple different browsers remain attached, the preview stays non-controllable instead of silently picking one by focus or recency
+- presentation state such as docked vs detached mode, viewport size, and scroll position remains browser-local and is not replicated globally
+
 When the proxied page leaks root-relative asset URLs outside `/webpreview/{routeKey}` and those URLs collide with MidTerm's own static prefixes (`/js/*`, `/css/*`, `/fonts/*`, `/img/*`, `/locales/*`, `/favicon/*`), MidTerm now treats them as preview traffic when the request referer is a preview route. The only built-in exception today is `/js/html2canvas.min.js`, which remains a local MidTerm asset used by the injected screenshot helper.
 
 ## Embedded MidTerm Guardrails

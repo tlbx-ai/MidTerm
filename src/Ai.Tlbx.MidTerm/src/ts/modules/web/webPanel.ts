@@ -871,11 +871,10 @@ async function handleScreenshot(download = false): Promise<void> {
     return;
   }
 
-  const previewId = getActiveDockedClient()?.previewId;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
 
-  const dataUrl = await captureBrowserScreenshotRaw(sessionId, previewId, previewName);
+  const dataUrl = await captureBrowserScreenshotRaw(sessionId, undefined, previewName);
   if (!dataUrl) {
     log.warn(() => 'Browser screenshot capture failed');
     return;
@@ -956,12 +955,7 @@ async function handleClearState(): Promise<void> {
   upsertSessionPreview(cleared);
   setCurrentPreviewUrl(cleared.url);
 
-  const browserResult = await runBrowserCommand(
-    'clearstate',
-    sessionId,
-    previewName,
-    getActiveDockedClient()?.previewId,
-  );
+  const browserResult = await runBrowserCommand('clearstate', sessionId, previewName);
 
   if (!browserResult?.success) {
     const error =
@@ -1048,11 +1042,7 @@ async function refreshBrowserPreviewStatus(): Promise<void> {
     return;
   }
 
-  const status = await getBrowserPreviewStatus(
-    sessionId,
-    previewName,
-    getActiveDockedClient()?.previewId,
-  );
+  const status = await getBrowserPreviewStatus(sessionId, previewName);
 
   if (!status) {
     setStatusIndicatorMessage(
