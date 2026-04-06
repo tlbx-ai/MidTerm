@@ -4,11 +4,20 @@
  * Tracks and optionally suppresses DECTCEM cursor visibility control sequences.
  */
 
+import type { TerminalState } from '../../types';
+
 export interface CursorVisibilityControlResult {
   data: Uint8Array;
   remoteCursorVisible: boolean | null;
   hadCursorVisibilityControl: boolean;
 }
+
+const CURSOR_BURST_WINDOW_MS = 180;
+const CURSOR_BURST_MIN_BYTES = 12;
+const CURSOR_IDLE_SHOW_MS = 650;
+const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
+const SHOW_CURSOR_SEQ = '\x1b[?25h';
+const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
 interface CursorVisibilityMatch {
   visible: boolean;
@@ -112,4 +121,124 @@ export function processCursorVisibilityControls(
     remoteCursorVisible: remoteCursorVisible,
     hadCursorVisibilityControl: true,
   };
+}
+
+function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
+  for (let i = 0; i < data.length; i++) {
+    const byte = data[i];
+    if (
+      byte === 0x1b ||
+      byte === 0x90 ||
+      byte === 0x9b ||
+      byte === 0x9d ||
+      byte === 0x9e ||
+      byte === 0x9f
+    ) {
+      return true;
+    }
+
+    if (byte === 0xc2 && i + 1 < data.length) {
+      const next = data[i + 1];
+      if (next === 0x90 || next === 0x9b || next === 0x9d || next === 0x9e || next === 0x9f) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function hideBurstCursor(state: TerminalState): void {
+  if (!state.burstCursorHidden) {
+    if (!state.syncOutputCursorHidden) {
+      state.terminal.write(HIDE_CURSOR_SEQ);
+    }
+    state.burstCursorHidden = true;
+  }
+
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+    state.burstCursorRestoreTimer = null;
+  }
+}
+
+export function showBurstCursor(state: TerminalState): void {
+  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
+    return;
+  }
+
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+    state.burstCursorRestoreTimer = null;
+  }
+
+  if (state.burstCursorHidden) {
+    state.burstCursorHidden = false;
+    state.terminal.write(SHOW_CURSOR_SEQ);
+  }
+}
+
+export function scheduleBurstCursorShow(state: TerminalState): void {
+  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
+    return;
+  }
+
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+  }
+
+  state.burstCursorRestoreTimer = window.setTimeout(() => {
+    showBurstCursor(state);
+  }, CURSOR_IDLE_SHOW_MS);
+}
+
+export function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): boolean {
+  if (data.length <= 0) {
+    return false;
+  }
+
+  const now = performance.now();
+  const lastLocalInputAtMs = state.lastLocalInputAtMs ?? null;
+  if (lastLocalInputAtMs !== null && now - lastLocalInputAtMs <= CURSOR_LOCAL_INPUT_GRACE_MS) {
+    return false;
+  }
+
+  if (containsImmediateHideTerminalControl(data) || state.burstCursorHidden) {
+    return true;
+  }
+
+  const last = state.lastBurstOutputAtMs ?? 0;
+  state.lastBurstOutputAtMs = now;
+
+  return (
+    data.length >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS)
+  );
+}
+
+export function hideSynchronizedOutputCursor(state: TerminalState): void {
+  if (state.syncOutputCursorHidden) {
+    return;
+  }
+
+  state.syncOutputCursorHidden = true;
+  state.terminal.write(HIDE_CURSOR_SEQ);
+}
+
+export function showSynchronizedOutputCursor(state: TerminalState): void {
+  if (!state.syncOutputCursorHidden) {
+    return;
+  }
+
+  state.syncOutputCursorHidden = false;
+  if (!state.burstCursorHidden && state.remoteCursorVisible !== false) {
+    state.terminal.write(SHOW_CURSOR_SEQ);
+  }
+}
+
+export function reconcileSynchronizedOutputCursorState(state: TerminalState): void {
+  if (state.terminal.modes.synchronizedOutputMode) {
+    hideSynchronizedOutputCursor(state);
+  } else {
+    showSynchronizedOutputCursor(state);
+  }
 }

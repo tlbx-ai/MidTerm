@@ -14,8 +14,6 @@ import {
 import type {
   AssistantMarkdownCacheEntry,
   HistoryRenderedNode,
-  HistoryScrollMetrics,
-  HistoryVirtualWindow,
   LensHistoryEntry,
   SessionLensViewState,
 } from './types';
@@ -38,6 +36,12 @@ import {
   applyLensSnapshotWindowState,
   collapseSnapshotToLatestWindow,
 } from './snapshotState';
+import {
+  hasActiveLensSelectionInPanel,
+  HISTORY_VIRTUALIZE_AFTER,
+  resolveHistoryAutoScrollPinned,
+  stabilizeHistoryEntryOrder,
+} from './historyViewport';
 import { createAgentHistoryDom } from './historyDom';
 import { createAgentHistoryRender } from './historyRender';
 import {
@@ -84,9 +88,6 @@ import { $activeSessionId } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
-const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
-const HISTORY_OVERSCAN_PX = 800;
-const HISTORY_VIRTUALIZE_AFTER = 50;
 const LENS_HISTORY_WINDOW_SIZE = 80;
 const LENS_HISTORY_PAGE_SIZE = 40;
 const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
@@ -1130,141 +1131,6 @@ function handleLensTurnFailed(event: Event): void {
   renderCurrentAgentView(detail.sessionId);
 }
 
-function stabilizeHistoryEntryOrder(entries: readonly LensHistoryEntry[]): LensHistoryEntry[] {
-  return [...entries].sort(
-    (left, right) => left.order - right.order || left.id.localeCompare(right.id),
-  );
-}
-
-/**
- * Protects the user's reading position during streaming turns so Lens only
- * auto-pins when they are effectively already following the live edge.
- */
-export function isScrollContainerNearBottom(position: {
-  scrollTop: number;
-  clientHeight: number;
-  scrollHeight: number;
-}): boolean {
-  const { scrollTop, clientHeight, scrollHeight } = position;
-  if (![scrollTop, clientHeight, scrollHeight].every(Number.isFinite)) {
-    return true;
-  }
-
-  return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
-}
-
-export function resolveHistoryAutoScrollPinned(args: {
-  wasPinned: boolean;
-  previous: HistoryScrollMetrics | null;
-  current: HistoryScrollMetrics;
-  userInitiated: boolean;
-}): boolean {
-  const nearBottom = isScrollContainerNearBottom(args.current);
-
-  if (args.userInitiated) {
-    return nearBottom;
-  }
-
-  if (args.wasPinned) {
-    return true;
-  }
-
-  return nearBottom;
-}
-
-/**
- * Virtualizes long histories across viewport sizes so Lens keeps a bounded
- * DOM even during extended agent runs.
- */
-export function computeHistoryVirtualWindow(
-  entries: ReadonlyArray<LensHistoryEntry>,
-  scrollTop: number,
-  clientHeight: number,
-  clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
-): HistoryVirtualWindow {
-  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
-    return {
-      start: 0,
-      end: entries.length,
-      topSpacerPx: 0,
-      bottomSpacerPx: 0,
-    };
-  }
-
-  const targetTop = Math.max(0, scrollTop - HISTORY_OVERSCAN_PX);
-  const targetBottom = scrollTop + clientHeight + HISTORY_OVERSCAN_PX;
-  let cumulative = 0;
-  let start = 0;
-  let topSpacerPx = 0;
-
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry) {
-      continue;
-    }
-
-    const height = estimateHistoryEntryHeight(entry, clientWidth);
-    if (cumulative + height >= targetTop) {
-      start = index;
-      topSpacerPx = cumulative;
-      break;
-    }
-    cumulative += height;
-  }
-
-  cumulative = topSpacerPx;
-  let end = start;
-  while (end < entries.length && cumulative < targetBottom) {
-    const entry = entries[end];
-    if (!entry) {
-      break;
-    }
-
-    cumulative += estimateHistoryEntryHeight(entry, clientWidth);
-    end += 1;
-  }
-
-  const totalHeight = entries.reduce(
-    (sum, entry) => sum + estimateHistoryEntryHeight(entry, clientWidth),
-    0,
-  );
-
-  return {
-    start,
-    end: Math.max(end, start + 1),
-    topSpacerPx,
-    bottomSpacerPx: Math.max(0, totalHeight - cumulative),
-  };
-}
-
-export function hasActiveLensSelectionInPanel(
-  panel: ParentNode | null | undefined,
-  selection:
-    | Pick<Selection, 'rangeCount' | 'isCollapsed' | 'getRangeAt'>
-    | null
-    | undefined = resolveCurrentSelection(),
-): boolean {
-  if (!panel || !selection || selection.isCollapsed || selection.rangeCount <= 0) {
-    return false;
-  }
-
-  const range = selection.getRangeAt(0);
-  const startNode = range.startContainer;
-  const endNode = range.endContainer;
-  return panel.contains(startNode) || panel.contains(endNode);
-}
-
-function resolveCurrentSelection(): Pick<
-  Selection,
-  'rangeCount' | 'isCollapsed' | 'getRangeAt'
-> | null {
-  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
-    return null;
-  }
-
-  return window.getSelection();
-}
-
 export { classifyLensActivationIssue, resolveHistoryBadgeLabel } from './activationHelpers';
 export {
   buildRenderedDiffLines,
@@ -1284,6 +1150,12 @@ export {
   withLiveAssistantState,
   withTrailingBusyIndicator,
 } from './historyProcessing';
+export {
+  computeHistoryVirtualWindow,
+  hasActiveLensSelectionInPanel,
+  isScrollContainerNearBottom,
+  resolveHistoryAutoScrollPinned,
+} from './historyViewport';
 export { suppressActiveComposerRequestEntries } from './historyRender';
 export { applyCanonicalLensDelta } from './snapshotState';
 

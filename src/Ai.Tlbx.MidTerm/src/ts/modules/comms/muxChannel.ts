@@ -37,7 +37,14 @@ import {
 import type { ForegroundChangePayload } from '../../types';
 import { handleForegroundChange } from '../process';
 import { scanOutputForPaths } from '../terminal/fileLinks';
-import { processCursorVisibilityControls } from './cursorVisibility';
+import {
+  hideBurstCursor,
+  processCursorVisibilityControls,
+  reconcileSynchronizedOutputCursorState,
+  scheduleBurstCursorShow,
+  shouldHideCursorForOutput,
+  showBurstCursor,
+} from './cursorVisibility';
 import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
   consumeCompletedOutputRtt,
@@ -480,14 +487,6 @@ const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
-const CURSOR_BURST_WINDOW_MS = 180;
-const CURSOR_BURST_MIN_BYTES = 12;
-const CURSOR_IDLE_SHOW_MS = 650;
-// Keep the cursor visible briefly after local input so TUI redraws triggered by typing
-// do not look like "remote output" bursts.
-const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
-const SHOW_CURSOR_SEQ = '\x1b[?25h';
-const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 let outputQueueGeneration = 0;
@@ -773,118 +772,6 @@ export function isBracketedPasteEnabled(sessionId: string): boolean {
   return bracketedPasteState.get(sessionId) ?? false;
 }
 
-function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
-  for (let i = 0; i < data.length; i++) {
-    const byte = data[i];
-    if (
-      byte === 0x1b ||
-      byte === 0x90 ||
-      byte === 0x9b ||
-      byte === 0x9d ||
-      byte === 0x9e ||
-      byte === 0x9f
-    ) {
-      return true;
-    }
-
-    if (byte === 0xc2 && i + 1 < data.length) {
-      const next = data[i + 1];
-      if (next === 0x90 || next === 0x9b || next === 0x9d || next === 0x9e || next === 0x9f) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function hideBurstCursor(state: TerminalState): void {
-  if (!state.burstCursorHidden) {
-    if (!state.syncOutputCursorHidden) {
-      state.terminal.write(HIDE_CURSOR_SEQ);
-    }
-    state.burstCursorHidden = true;
-  }
-
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
-}
-
-function showBurstCursor(state: TerminalState): void {
-  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
-    return;
-  }
-
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
-
-  if (state.burstCursorHidden) {
-    state.burstCursorHidden = false;
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
-}
-
-function scheduleBurstCursorShow(state: TerminalState): void {
-  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
-    return;
-  }
-
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-  }
-
-  state.burstCursorRestoreTimer = window.setTimeout(() => {
-    showBurstCursor(state);
-  }, CURSOR_IDLE_SHOW_MS);
-}
-
-function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): boolean {
-  if (data.length <= 0) {
-    return false;
-  }
-
-  const now = performance.now();
-  const lastLocalInputAtMs = state.lastLocalInputAtMs ?? null;
-  if (lastLocalInputAtMs !== null && now - lastLocalInputAtMs <= CURSOR_LOCAL_INPUT_GRACE_MS) {
-    return false;
-  }
-
-  if (containsImmediateHideTerminalControl(data) || state.burstCursorHidden) {
-    return true;
-  }
-
-  const last = state.lastBurstOutputAtMs ?? 0;
-  state.lastBurstOutputAtMs = now;
-
-  return (
-    data.length >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS)
-  );
-}
-
-function hideSynchronizedOutputCursor(state: TerminalState): void {
-  if (state.syncOutputCursorHidden) {
-    return;
-  }
-
-  state.syncOutputCursorHidden = true;
-  state.terminal.write(HIDE_CURSOR_SEQ);
-}
-
-function showSynchronizedOutputCursor(state: TerminalState): void {
-  if (!state.syncOutputCursorHidden) {
-    return;
-  }
-
-  state.syncOutputCursorHidden = false;
-  if (!state.burstCursorHidden && state.remoteCursorVisible !== false) {
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
-}
-
 export function reconcileSynchronizedOutputCursor(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state?.opened) {
@@ -894,11 +781,7 @@ export function reconcileSynchronizedOutputCursor(sessionId: string): void {
   // Codex and similar TUIs wrap redraws in DEC synchronized output. xterm buffers row
   // paints for that mode, but the visible cursor can still appear to jump around unless we
   // suppress it until the synchronized update completes.
-  if (state.terminal.modes.synchronizedOutputMode) {
-    hideSynchronizedOutputCursor(state);
-  } else {
-    showSynchronizedOutputCursor(state);
-  }
+  reconcileSynchronizedOutputCursorState(state);
 }
 
 /**

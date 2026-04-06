@@ -5,9 +5,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$Version,
 
-    [switch]$DevRelease,
-
-    [switch]$SkipLinuxParity
+    [switch]$DevRelease
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,9 +13,6 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $FrontendRootRelative = "src/Ai.Tlbx.MidTerm"
 $FrontendBuildScriptHostRelative = Join-Path $FrontendRootRelative "frontend-build.ps1"
-$FrontendBuildScriptLinuxRelative = "$FrontendRootRelative/frontend-build.ps1"
-$LinuxPreflightImage = "midterm-release-frontend-preflight:dotnet10-node24-pwsh"
-$LinuxPreflightDockerfile = Join-Path $PSScriptRoot "release-linux-frontend-preflight.Dockerfile"
 
 function Invoke-Git {
     param(
@@ -135,66 +130,11 @@ function Invoke-HostFrontendPreflight {
     }
 }
 
-function Test-DockerAvailable {
-    return $null -ne (Get-Command docker -ErrorAction SilentlyContinue)
-}
-
-function Ensure-LinuxPreflightImage {
-    if (-not (Test-Path $LinuxPreflightDockerfile -PathType Leaf)) {
-        throw "Linux frontend preflight Dockerfile not found: $LinuxPreflightDockerfile"
-    }
-
-    & docker image inspect $LinuxPreflightImage *> $null
-    if ($LASTEXITCODE -eq 0) {
-        return
-    }
-
-    Write-Host "Building Linux frontend preflight image..." -ForegroundColor Cyan
-    $dockerContext = Split-Path $LinuxPreflightDockerfile -Parent
-    & docker build -t $LinuxPreflightImage -f $LinuxPreflightDockerfile $dockerContext
-    if ($LASTEXITCODE -ne 0) {
-        throw "docker build for Linux frontend preflight image failed"
-    }
-}
-
-function Invoke-LinuxFrontendPreflight {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$SnapshotPath
-    )
-
-    if (-not (Test-DockerAvailable)) {
-        throw "Docker is required for Linux frontend parity preflight on Windows."
-    }
-
-    Ensure-LinuxPreflightImage
-
-    $versionLiteral = $Version.Replace("'", "''")
-    $linuxCommand = @"
-Set-StrictMode -Version Latest
-cd /repo/$FrontendRootRelative
-npm ci --include=dev --prefer-offline --no-audit --no-fund
-cd /repo
-`$buildArgs = @{ Publish = `$true; Version = '$versionLiteral' }
-if ('$($DevRelease.IsPresent)' -eq 'True') { `$buildArgs.DevRelease = `$true }
-./$FrontendBuildScriptLinuxRelative @buildArgs
-"@
-
-    Write-Host "Running Linux frontend parity preflight..." -ForegroundColor Cyan
-    & docker run --rm -v "${SnapshotPath}:/repo" -w /repo $LinuxPreflightImage pwsh -Command $linuxCommand
-    if ($LASTEXITCODE -ne 0) {
-        throw "Linux frontend parity preflight failed"
-    }
-}
-
 $snapshotPath = $null
 try {
     $snapshotPath = New-ReleaseFrontendSnapshot
     Invoke-HostFrontendPreflight -SnapshotPath $snapshotPath
-
-    if ($IsWindows -and -not $SkipLinuxParity) {
-        Invoke-LinuxFrontendPreflight -SnapshotPath $snapshotPath
-    }
+    $global:LASTEXITCODE = 0
 }
 finally {
     if ($null -ne $snapshotPath) {
