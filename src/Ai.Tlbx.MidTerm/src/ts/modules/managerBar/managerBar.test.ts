@@ -74,6 +74,18 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain('return target.parentElement;');
   });
 
+  it('uses subpixel-aware overflow measurement before showing the overflow trigger', () => {
+    expect(managerBarSource).toContain('const OVERFLOW_LAYOUT_EPSILON_PX = 0.75;');
+    expect(managerBarSource).toContain('const measuredRailWidth = Math.max(');
+    expect(managerBarSource).toContain(
+      'const availableRailWidth = measuredRailWidth > 0 ? measuredRailWidth : railWidth;',
+    );
+    expect(managerBarSource).toContain('const addWidth = getMeasuredWidth(addBtn);');
+    expect(managerBarSource).toContain(
+      'if (totalWidth <= fullAvailableWidth + OVERFLOW_LAYOUT_EPSILON_PX) {',
+    );
+  });
+
   it('guards burst enqueue clicks before sending duplicate queue requests', () => {
     expect(managerBarSource).toContain('const QUEUE_ENQUEUE_DEDUP_WINDOW_MS = 1500;');
     expect(managerBarSource).toContain('const pendingEnqueueGuards = new Map<string, number>();');

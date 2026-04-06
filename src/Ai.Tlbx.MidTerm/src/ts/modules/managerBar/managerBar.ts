@@ -32,6 +32,7 @@ import { shouldShowManagerBar } from './visibility';
 
 const log = createLogger('managerBar');
 const QUEUE_ENQUEUE_DEDUP_WINDOW_MS = 1500;
+const OVERFLOW_LAYOUT_EPSILON_PX = 0.75;
 
 let barEl: HTMLElement | null = null;
 let queueEl: HTMLElement | null = null;
@@ -647,18 +648,21 @@ function syncOverflowedButtons(): void {
   const gap = 6;
   const overflowWidth = 32;
   const railWidth = Math.max(0, Math.floor(barEl.parentElement?.clientWidth ?? barEl.clientWidth));
-  const addWidth = Math.ceil(addBtn.getBoundingClientRect().width);
-  const fullAvailableWidth = Math.max(0, railWidth - addWidth - gap);
-
-  const buttonWidths = buttonElements.map((element) =>
-    Math.ceil(element.getBoundingClientRect().width),
+  const measuredRailWidth = Math.max(
+    0,
+    barEl.parentElement?.getBoundingClientRect().width ?? barEl.getBoundingClientRect().width,
   );
+  const availableRailWidth = measuredRailWidth > 0 ? measuredRailWidth : railWidth;
+  const addWidth = getMeasuredWidth(addBtn);
+  const fullAvailableWidth = Math.max(0, availableRailWidth - addWidth - gap);
+
+  const buttonWidths = buttonElements.map((element) => getMeasuredWidth(element));
   const totalWidth = buttonWidths.reduce(
     (sum, width, index) => sum + width + (index > 0 ? gap : 0),
     0,
   );
 
-  if (totalWidth <= fullAvailableWidth) {
+  if (totalWidth <= fullAvailableWidth + OVERFLOW_LAYOUT_EPSILON_PX) {
     buttonsEl.style.maxWidth = `${String(fullAvailableWidth)}px`;
     overflowBtn.setAttribute('hidden', '');
     overflowActionIds = [];
@@ -673,7 +677,10 @@ function syncOverflowedButtons(): void {
   buttonElements.forEach((element, index) => {
     const width = (buttonWidths[index] ?? 0) + (index > 0 ? gap : 0);
     const id = element.dataset.id ?? '';
-    if (consumedWidth + width <= visibleBudget || consumedWidth === 0) {
+    if (
+      consumedWidth + width <= visibleBudget + OVERFLOW_LAYOUT_EPSILON_PX ||
+      consumedWidth <= OVERFLOW_LAYOUT_EPSILON_PX
+    ) {
       consumedWidth += width;
       element.classList.remove('manager-btn-overflow-hidden');
       return;
@@ -698,6 +705,10 @@ function syncOverflowedButtons(): void {
     renderOverflowMenuItems();
     positionManagerOverflowMenu();
   }
+}
+
+function getMeasuredWidth(element: HTMLElement): number {
+  return Math.max(element.getBoundingClientRect().width, element.offsetWidth, 0);
 }
 
 function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
