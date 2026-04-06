@@ -27,8 +27,10 @@ describe('smart input tab wiring', () => {
 
   it('keeps Lens quick settings hidden when the hidden attribute is set', () => {
     expect(css).toContain('.smart-input-lens-settings[hidden] {');
+    expect(css).toContain('.smart-input-lens-actions[hidden] {');
     expect(css).toContain('display: none !important;');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
+    expect(viewSource).toContain("lensQuickSettingsActions.className = 'smart-input-lens-actions';");
     expect(viewSource).toContain("manager-bar-action-popover smart-input-lens-dropdown-menu hidden");
   });
 
@@ -60,6 +62,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
+    expect(css).toContain('--command-bay-symbol-shadow: drop-shadow(');
+    expect(css).toContain('.smart-input-tools-toggle::before,');
     expect(css).toContain('font-size: 16px;');
     expect(metricsSource).toContain('const MAX_TEXTAREA_LINES = 5;');
   });
@@ -108,8 +112,10 @@ describe('smart input tab wiring', () => {
   it('adds a bookmark-scoped provider resume action to the Lens Command Bay status rail', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');
-    expect(source).toContain("button.className = 'adaptive-footer-status-toggle adaptive-footer-status-resume';");
+    expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
+    expect(source).toContain("button.className = 'smart-input-lens-action smart-input-lens-resume';");
     expect(source).toContain('session?.bookmarkId');
-    expect(css).toContain('.adaptive-footer-status-resume {');
+    expect(css).toContain('.smart-input-lens-actions {');
+    expect(css).toContain('.smart-input-lens-action {');
   });
 });

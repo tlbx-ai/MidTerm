@@ -900,6 +900,8 @@
   "smartInput.placeholder": "Type here...",
   "smartInput.send": "Send",
   "smartInput.sendGestureHint": "Send. Double-click or long-press to toggle auto-send",
+  "smartInput.resume": "Resume",
+  "smartInput.resumeConversation": "Resume conversation",
   "smartInput.tools": "Tools",
   "smartInput.modeKeyboard": "Keyboard",
   "smartInput.modeSmart": "Smart Input",

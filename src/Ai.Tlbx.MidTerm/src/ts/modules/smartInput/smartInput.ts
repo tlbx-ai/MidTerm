@@ -90,6 +90,7 @@ let sharedPhotoInput: HTMLInputElement | null = null;
 let sharedAttachInput: HTMLInputElement | null = null;
 let toolsPanelOpen = false;
 let lensQuickSettingsRow: HTMLDivElement | null = null;
+let lensQuickSettingsActions: HTMLDivElement | null = null;
 let lensModelInput: HTMLInputElement | null = null;
 let lensEffortSelect: HTMLSelectElement | null = null;
 let lensPlanSelect: HTMLSelectElement | null = null;
@@ -624,6 +625,7 @@ function createDockedDOM(): void {
   footerPrimaryHost.appendChild(dockedBar);
 
   lensQuickSettingsRow = dom.lensQuickSettingsRow;
+  lensQuickSettingsActions = dom.lensQuickSettingsActions;
   lensModelInput = dom.lensModelInput;
   lensEffortSelect = dom.lensEffortSelect;
   lensPlanSelect = dom.lensPlanSelect;
@@ -815,6 +817,7 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   if (
     !footerStatusHost ||
     !lensQuickSettingsRow ||
+    !lensQuickSettingsActions ||
     !lensModelInput ||
     !lensEffortSelect ||
     !lensPlanSelect ||
@@ -825,15 +828,12 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
 
   const sessionId = layoutState.activeSessionId as string;
   const draft = getLensQuickSettingsDraft(sessionId);
-  const resumeButton = createLensResumeButton(sessionId);
+  syncLensQuickSettingsActions(sessionId);
 
   if (!layoutState.isMobile) {
     lensQuickSettingsRow.classList.remove('smart-input-lens-settings-sheet');
     lensQuickSettingsRow.hidden = false;
     footerStatusHost.appendChild(lensQuickSettingsRow);
-    if (resumeButton) {
-      footerStatusHost.appendChild(resumeButton);
-    }
     return;
   }
 
@@ -848,15 +848,25 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   });
   lensSettingsSummaryBtn = summaryBtn;
   footerStatusHost.appendChild(summaryBtn);
-  if (resumeButton) {
-    footerStatusHost.appendChild(resumeButton);
-  }
 
   lensQuickSettingsRow.classList.add('smart-input-lens-settings-sheet');
   lensQuickSettingsRow.hidden = !lensQuickSettingsSheetOpen;
   if (lensQuickSettingsSheetOpen) {
     footerStatusHost.classList.add('adaptive-footer-status-sheet-open');
     footerStatusHost.appendChild(lensQuickSettingsRow);
+  }
+}
+
+function syncLensQuickSettingsActions(sessionId: string): void {
+  if (!lensQuickSettingsActions) {
+    return;
+  }
+
+  lensQuickSettingsActions.replaceChildren();
+  const resumeButton = createLensResumeButton(sessionId);
+  lensQuickSettingsActions.hidden = !resumeButton;
+  if (resumeButton) {
+    lensQuickSettingsActions.appendChild(resumeButton);
   }
 }
 
@@ -876,9 +886,12 @@ function createLensResumeButton(sessionId: string): HTMLButtonElement | null {
 
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'adaptive-footer-status-toggle adaptive-footer-status-resume';
-  button.textContent = 'Resume';
-  button.title = `Resume ${provider === 'claude' ? 'Claude' : 'Codex'} conversation`;
+  button.className = 'smart-input-lens-action smart-input-lens-resume';
+  button.textContent = t('smartInput.resume');
+  button.title = `${t('smartInput.resumeConversation')} ${
+    provider === 'claude' ? t('sessionLauncher.claudeTitle') : t('sessionLauncher.codexTitle')
+  }`;
+  button.setAttribute('aria-label', button.title);
   button.addEventListener('click', () => {
     void lensResumeConversationHandler?.({
       sessionId,
@@ -1310,6 +1323,7 @@ function getMicButtons(): HTMLButtonElement[] {
 function syncLensQuickSettingsControls(): void {
   if (
     !lensQuickSettingsRow ||
+    !lensQuickSettingsActions ||
     !lensModelInput ||
     !lensEffortSelect ||
     !lensPlanSelect ||
@@ -1324,6 +1338,8 @@ function syncLensQuickSettingsControls(): void {
       dockedBar.dataset.lensSession = 'false';
     }
     lensQuickSettingsRow.hidden = true;
+    lensQuickSettingsActions.replaceChildren();
+    lensQuickSettingsActions.hidden = true;
     delete lensQuickSettingsRow.dataset.provider;
     setLensQuickSettingsSheetOpen(false);
     return;

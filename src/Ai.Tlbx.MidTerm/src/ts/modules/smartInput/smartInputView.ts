@@ -9,6 +9,7 @@ export interface SmartInputDomRefs {
   inlineToolHost: HTMLDivElement;
   inputRow: HTMLDivElement;
   lensAttachmentHost: HTMLDivElement;
+  lensQuickSettingsActions: HTMLDivElement;
   lensEffortSelect: HTMLSelectElement;
   lensModelInput: HTMLInputElement;
   lensPermissionSelect: HTMLSelectElement;
@@ -129,6 +130,11 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     ),
   );
 
+  const lensQuickSettingsActions = document.createElement('div');
+  lensQuickSettingsActions.className = 'smart-input-lens-actions';
+  lensQuickSettingsActions.hidden = true;
+  lensQuickSettingsRow.appendChild(lensQuickSettingsActions);
+
   const inputRow = document.createElement('div');
   inputRow.className = 'smart-input-row';
 
@@ -157,7 +163,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   sendBtn.type = 'button';
   sendBtn.className = 'smart-input-send-btn';
   sendBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
+    '<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
   sendBtn.title = t('smartInput.sendGestureHint');
   sendBtn.setAttribute('aria-label', t('smartInput.send'));
   sendBtn.addEventListener('dblclick', args.onSendDoubleClick);
@@ -171,7 +177,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   toolsToggleBtn.type = 'button';
   toolsToggleBtn.className = 'smart-input-tools-toggle';
   toolsToggleBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.35" stroke-linecap="round"/></svg>';
   toolsToggleBtn.title = t('smartInput.tools');
   toolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
   toolsToggleBtn.addEventListener('click', args.onToolsToggleClick);
@@ -221,6 +227,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     inlineToolHost,
     inputRow,
     lensAttachmentHost,
+    lensQuickSettingsActions,
     lensEffortSelect,
     lensModelInput,
     lensPermissionSelect,

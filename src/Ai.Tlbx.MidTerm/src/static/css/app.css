@@ -14554,8 +14554,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none !important;
 }
 
-.smart-input-tools-toggle,
-.smart-input-send-btn,
 .adaptive-footer-status-toggle {
   min-width: 42px;
   min-height: 42px;
@@ -14574,24 +14572,170 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   cursor: pointer;
 }
 
-.smart-input-send-btn {
-  background: color-mix(in srgb, var(--accent-blue) 86%, var(--terminal-ui-background, var(--terminal-bg)));
-  color: var(--bg-primary);
+.smart-input-tools-toggle,
+.smart-input-send-btn,
+.smart-input-mic-btn,
+.smart-input-photo-btn,
+.smart-input-attach-btn {
+  --command-bay-symbol-shadow: drop-shadow(
+      0 0 8px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent)
+    )
+    drop-shadow(
+      0 0 16px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent)
+    )
+    drop-shadow(
+      0 0 28px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent)
+    );
+  min-width: 42px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: color-mix(in srgb, white 96%, var(--text-primary) 4%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  overflow: visible;
+  box-shadow: none;
+  transition:
+    transform 0.16s ease,
+    color 0.16s ease;
 }
 
-.smart-input-send-btn.autosend-latched {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 38%, transparent);
+.smart-input-tools-toggle::before,
+.smart-input-send-btn::before,
+.smart-input-mic-btn::before,
+.smart-input-photo-btn::before,
+.smart-input-attach-btn::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, white 14%, transparent);
+  opacity: 0;
+  transform: scale(0.72);
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease,
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+  pointer-events: none;
+}
+
+.smart-input-tools-toggle > svg,
+.smart-input-send-btn > svg,
+.smart-input-mic-btn > svg,
+.smart-input-photo-btn > svg,
+.smart-input-attach-btn > svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  filter: var(--command-bay-symbol-shadow);
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.smart-input-tools-toggle:hover::before,
+.smart-input-tools-toggle:focus-visible::before,
+.smart-input-send-btn:hover::before,
+.smart-input-send-btn:focus-visible::before,
+.smart-input-mic-btn:hover::before,
+.smart-input-mic-btn:focus-visible::before,
+.smart-input-photo-btn:hover::before,
+.smart-input-photo-btn:focus-visible::before,
+.smart-input-attach-btn:hover::before,
+.smart-input-attach-btn:focus-visible::before {
+  opacity: 0.88;
+  transform: scale(1);
+}
+
+.smart-input-tools-toggle:hover > svg,
+.smart-input-tools-toggle:focus-visible > svg,
+.smart-input-send-btn:hover > svg,
+.smart-input-send-btn:focus-visible > svg,
+.smart-input-mic-btn:hover > svg,
+.smart-input-mic-btn:focus-visible > svg,
+.smart-input-photo-btn:hover > svg,
+.smart-input-photo-btn:focus-visible > svg,
+.smart-input-attach-btn:hover > svg,
+.smart-input-attach-btn:focus-visible > svg {
+  transform: scale(1.12);
+}
+
+.smart-input-tools-toggle:active,
+.smart-input-send-btn:active,
+.smart-input-mic-btn:active,
+.smart-input-photo-btn:active,
+.smart-input-attach-btn:active {
+  background: transparent;
+  color: color-mix(in srgb, white 98%, var(--text-primary) 2%);
+}
+
+.smart-input-tools-toggle:active::before,
+.smart-input-send-btn:active::before,
+.smart-input-mic-btn:active::before,
+.smart-input-photo-btn:active::before,
+.smart-input-attach-btn:active::before {
+  opacity: 1;
+  transform: scale(1.1);
+  background: color-mix(in srgb, var(--accent-blue) 20%, transparent);
+}
+
+.smart-input-tools-toggle:active > svg,
+.smart-input-send-btn:active > svg,
+.smart-input-mic-btn:active > svg,
+.smart-input-photo-btn:active > svg,
+.smart-input-attach-btn:active > svg {
+  transform: scale(1.22);
+}
+
+.smart-input-tools-toggle:focus-visible,
+.smart-input-send-btn:focus-visible,
+.smart-input-mic-btn:focus-visible,
+.smart-input-photo-btn:focus-visible,
+.smart-input-attach-btn:focus-visible {
+  outline: none;
+}
+
+.smart-input-send-btn.autosend-latched::before {
+  opacity: 0.76;
+  transform: scale(1.02);
+  background: color-mix(in srgb, var(--accent-blue) 24%, transparent);
+}
+
+.smart-input-mic-btn.recording {
+  background: transparent;
+  color: color-mix(in srgb, white 98%, var(--text-primary) 2%);
+  animation: none;
+}
+
+.smart-input-mic-btn.recording::before {
+  opacity: 1;
+  transform: scale(1.12);
+  background: color-mix(in srgb, var(--accent-red) 32%, transparent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-red) 40%, transparent);
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+.smart-input-mic-btn.recording > svg {
+  transform: scale(1.12);
 }
 
 .smart-input-tools-toggle {
   font-size: 1.2rem;
-  font-weight: 500;
-  padding: 0;
+  font-weight: 600;
   line-height: 1;
 }
 
 .smart-input-tools-toggle svg {
-  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .smart-input-tools-surface {
@@ -14633,13 +14777,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 44px;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-  background: color-mix(
-    in srgb,
-    var(--terminal-ui-background, var(--terminal-bg)) 92%,
-    transparent
-  );
+  border-radius: 14px;
 }
 
 .adaptive-footer-context {
@@ -14706,11 +14844,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border-color: color-mix(in srgb, var(--accent-gold) 54%, var(--border-color));
 }
 
-.adaptive-footer-status-resume {
-  padding: 0 14px;
-  white-space: nowrap;
-}
-
 .adaptive-footer-status-pill {
   padding: 3px 10px;
   border-radius: 999px;
@@ -14754,8 +14887,62 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   bottom: 7px;
 }
 
+.smart-input-lens-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 4px 12px;
+  position: relative;
+  white-space: nowrap;
+}
+
+.smart-input-lens-actions::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: color-mix(in srgb, var(--border-color) 86%, transparent);
+}
+
+.smart-input-lens-actions[hidden] {
+  display: none !important;
+}
+
 .smart-input-lens-label {
   font-size: 10px;
+}
+
+.smart-input-lens-action {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-height: 24px;
+  color: color-mix(in srgb, var(--text-primary) 90%, transparent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.smart-input-lens-action:hover,
+.smart-input-lens-action:focus-visible {
+  color: white;
+}
+
+.smart-input-lens-action:active {
+  transform: scale(1.03);
+}
+
+.smart-input-lens-action:focus-visible {
+  outline: none;
 }
 
 .smart-input-lens-control {
