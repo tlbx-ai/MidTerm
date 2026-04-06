@@ -9,6 +9,8 @@
   "scripts": {
     "postinstall": "patch-package",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "locales:report": "node scripts/check-locale-parity.cjs",
+    "locales:check": "node scripts/check-locale-parity.cjs --strict",
     "lint": "eslint src/ts/ vitest.config.ts --ignore-pattern \"**/*.test.ts\"",
     "lint:fix": "eslint src/ts/ vitest.config.ts --fix --ignore-pattern \"**/*.test.ts\"",
     "format": "prettier --write \"src/ts/**/*.ts\" \"vitest.config.ts\"",
