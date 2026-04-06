@@ -352,18 +352,21 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     requests: readonly LensPulseRequestSummary[],
     state: SessionLensViewState,
   ): void {
+    const shell = panel.querySelector<HTMLElement>('[data-agent-field="composer-shell"]');
     const host = panel.querySelector<HTMLElement>('[data-agent-field="composer-interruption"]');
-    if (!host) {
+    if (!shell || !host) {
       return;
     }
 
     const activeRequest = findActiveComposerRequest(requests);
     if (!activeRequest) {
+      shell.hidden = true;
       host.hidden = true;
       host.replaceChildren();
       return;
     }
 
+    shell.hidden = false;
     host.hidden = false;
     host.replaceChildren(
       deps.createRequestActionBlock(
