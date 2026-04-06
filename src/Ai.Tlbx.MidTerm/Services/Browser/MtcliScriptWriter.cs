@@ -58,6 +58,20 @@ public static class MtcliScriptWriter
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
+        _MPWSHQ() { local s="${1:-}"; s="${s//\'/\'\'}"; printf '%s' "$s"; }
+        _MCTXERR() {
+          local cmd="${1:-This command}"
+          printf '%s\n' \
+            "$cmd requires MidTerm session context, but MT_SESSION_ID is empty in this shell." \
+            "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME." \
+            "Re-export them from the parent MidTerm shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it." >&2
+        }
+        _MREQUIRECTX() {
+          local cmd="${1:-This command}"
+          [ -n "$(_MSID)" ] && return 0
+          _MCTXERR "$cmd"
+          return 1
+        }
         _MBOOL() {
           case "${1:-}" in
             1|true|TRUE|True|yes|YES|on|ON) printf 'true' ;;
@@ -74,11 +88,16 @@ public static class MtcliScriptWriter
             esac
           done
         }
+        _MJSONESC() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
         _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
         _MBB() {
           local args=("$@")
           local injectedSession=0 injectedPreview=0
+          if ! _MHAS "--session" "${args[@]}" && [ -z "$(_MSID)" ]; then
+            _MCTXERR "mt_${args[0]}"
+            return 1
+          fi
           if [ -n "$(_MSID)" ] && ! _MHAS "--session" "${args[@]}"; then
             args+=("--session" "$(_MSID)")
             injectedSession=1
@@ -129,6 +148,31 @@ public static class MtcliScriptWriter
           printf '%s' "$status"
           return 1
         }
+        mt_context() {
+          local format="${1:-text}"
+          _MREQUIRECTX "mt_context" || return $?
+          case "$format" in
+            --bash|bash)
+              printf 'export MT_SESSION_ID=%q; export MT_PREVIEW_NAME=%q\n' "$(_MSID)" "$(_MPREVIEW)"
+              ;;
+            --pwsh|pwsh|powershell)
+              printf '$env:MT_SESSION_ID='
+              printf "'%s'; " "$(_MPWSHQ "$(_MSID)")"
+              printf '$env:MT_PREVIEW_NAME='
+              printf "'%s'\n" "$(_MPWSHQ "$(_MPREVIEW)")"
+              ;;
+            --json|json)
+              printf '{"sessionId":"%s","previewName":"%s"}\n' "$(_MJSONESC "$(_MSID)")" "$(_MJSONESC "$(_MPREVIEW)")"
+              ;;
+            ""|text)
+              printf 'sessionId=%s\npreviewName=%s\n' "$(_MSID)" "$(_MPREVIEW)"
+              ;;
+            *)
+              echo "Usage: mt_context [text|bash|pwsh|json]" >&2
+              return 1
+              ;;
+          esac
+        }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
@@ -137,11 +181,12 @@ public static class MtcliScriptWriter
         mt_click() { _MBB click "$1"; }
         # mt_fill SELECTOR VALUE
         mt_fill()  { _MBB fill "$1" "$2"; }
-        mt_session() { _MSID; echo; }
+        mt_session() { _MREQUIRECTX "mt_session" || return $?; _MSID; echo; }
         mt_preview() {
           if [ -n "${1:-}" ]; then
             export MT_PREVIEW_NAME="$1"
           fi
+          _MREQUIRECTX "mt_preview" || return $?
           _MPREVIEW
           echo
         }
@@ -180,10 +225,11 @@ public static class MtcliScriptWriter
         # Web preview (dev browser)
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
-        mt_navigate()   { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
+        mt_navigate()   { _MREQUIRECTX "mt_navigate" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
         # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
           local url="$1" open_out status
+          _MREQUIRECTX "mt_open" || return $?
           open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
@@ -198,22 +244,23 @@ public static class MtcliScriptWriter
           }
         }
         # mt_close_preview  — close web preview panel
-        mt_close_preview() { _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
-        mt_reload()     { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"soft\"}" "$_MT/api/webpreview/reload"; }
+        mt_close_preview() { _MREQUIRECTX "mt_close_preview" || return $?; _MC -X DELETE "$_MT/api/webpreview/target$(_MQ)"; }
+        mt_reload()     { _MREQUIRECTX "mt_reload" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"soft\"}" "$_MT/api/webpreview/reload"; }
         # mt_forcereload  — force a fresh content reload with cache-busting
-        mt_forcereload() { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"force\"}" "$_MT/api/webpreview/reload"; }
-        mt_target()     { _MC "$_MT/api/webpreview/target$(_MQ)"; }
-        mt_cookies()    { _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
-        mt_previews()   { _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
+        mt_forcereload() { _MREQUIRECTX "mt_forcereload" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"force\"}" "$_MT/api/webpreview/reload"; }
+        mt_target()     { _MREQUIRECTX "mt_target" || return $?; _MC "$_MT/api/webpreview/target$(_MQ)"; }
+        mt_cookies()    { _MREQUIRECTX "mt_cookies" || return $?; _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
+        mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
-        mt_clearcookies() { _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
+        mt_clearcookies() { _MREQUIRECTX "mt_clearcookies" || return $?; _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
         # mt_clearstate  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
-        mt_clearstate() { _MBB clearstate; _MC -X POST "$_MT/api/webpreview/state/clear$(_MQ)"; }
+        mt_clearstate() { _MREQUIRECTX "mt_clearstate" || return $?; _MBB clearstate; _MC -X POST "$_MT/api/webpreview/state/clear$(_MQ)"; }
         # mt_hardreload  — clear cookies + reload (fresh session)
-        mt_hardreload() { mt_clearcookies; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"; }
+        mt_hardreload() { _MREQUIRECTX "mt_hardreload" || return $?; mt_clearcookies; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"; }
         # mt_preview_reset [URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
         mt_preview_reset() {
           local url="${1:-}"
+          _MREQUIRECTX "mt_preview_reset" || return $?
           if [ -n "$url" ]; then
             mt_navigate "$url" >/dev/null
           fi
@@ -221,7 +268,7 @@ public static class MtcliScriptWriter
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"mode\":\"hard\"}" "$_MT/api/webpreview/reload"
         }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
-        mt_proxylog()   { local n=${1:-100}; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MURLENC "$(_MSID)")&previewName=$(_MURLENC "$(_MPREVIEW)")&limit=$n"; }
+        mt_proxylog()   { local n=${1:-100}; _MREQUIRECTX "mt_proxylog" || return $?; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MURLENC "$(_MSID)")&previewName=$(_MURLENC "$(_MPREVIEW)")&limit=$n"; }
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
         mt_apply_update() {
           local source="${1:-}" url="$_MT/api/update/apply"
@@ -431,17 +478,18 @@ public static class MtcliScriptWriter
 
         # Panel control
         # mt_detach  — detach web preview to a popup window
-        mt_detach()    { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/detach"; }
+        mt_detach()    { _MREQUIRECTX "mt_detach" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/detach"; }
         # mt_dock  — dock web preview back from popup
-        mt_dock()      { _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/dock"; }
+        mt_dock()      { _MREQUIRECTX "mt_dock" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\"}" "$_MT/api/browser/dock"; }
         # mt_viewport WIDTH HEIGHT  — set iframe viewport size (0 0 to reset)
         mt_viewport() {
           local w=${1:-0} h=${2:-0}
+          _MREQUIRECTX "mt_viewport" || return $?
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
         }
 
         # Status
-        mt_status()     { _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
+        mt_status()     { _MREQUIRECTX "mt_status" || return $?; _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
 
         # Direct execution: .midterm/mtcli.sh query ".error"
         if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
@@ -492,6 +540,29 @@ public static class MtcliScriptWriter
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         function script:_MSID { $env:MT_SESSION_ID }
+        function script:_MPwshQuote {
+            param([string]$Value)
+            if ($null -eq $Value) { return "" }
+            return $Value.Replace("'", "''")
+        }
+        function script:_MBashQuote {
+            param([string]$Value)
+            if ($null -eq $Value) { return "''" }
+            return "'" + $Value.Replace("'", "'""'""'") + "'"
+        }
+        function script:_MContextMissingMessage {
+            param([string]$CommandName = "This command")
+            @(
+                "$CommandName requires MidTerm session context, but MT_SESSION_ID is empty in this shell.",
+                "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME.",
+                "Re-export them from the parent MidTerm shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it."
+            ) -join [Environment]::NewLine
+        }
+        function script:_MRequireSessionContext {
+            param([string]$CommandName = "This command")
+            if (_MSID) { return }
+            throw (_MContextMissingMessage $CommandName)
+        }
         function script:_MIsSessionId {
             param([string]$Value)
             return $Value -match '^[A-Za-z0-9]{8}$'
@@ -546,6 +617,10 @@ public static class MtcliScriptWriter
         function script:_MBB {
             $allArgs = @($args)
             $injectedSession = $false
+            if (-not ($allArgs -contains "--session") -and -not $env:MT_SESSION_ID) {
+                $commandName = if ($allArgs.Count -gt 0) { "mt_$($allArgs[0])" } else { "this command" }
+                throw (_MContextMissingMessage $commandName)
+            }
             if ($env:MT_SESSION_ID -and -not ($allArgs -contains "--session")) {
                 $allArgs += @("--session", $env:MT_SESSION_ID)
                 $injectedSession = $true
@@ -607,6 +682,22 @@ public static class MtcliScriptWriter
                 Output = $last
             }
         }
+        function Mt-Context {
+            param([string]$Format = "text")
+            _MRequireSessionContext "mt_context"
+            switch ($Format.ToLowerInvariant()) {
+                "--bash" { Write-Output "export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
+                "bash" { Write-Output "export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
+                "--pwsh" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "pwsh" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "powershell" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "--json" { Write-Output (_MH @{ sessionId = (_MSID); previewName = (_MPreview) }); return }
+                "json" { Write-Output (_MH @{ sessionId = (_MSID); previewName = (_MPreview) }); return }
+                "text" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
+                "" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
+                default { throw "Usage: mt_context [text|bash|pwsh|json]" }
+            }
+        }
 
         # Browser interaction (requires web preview panel open in MidTerm)
         # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
@@ -618,10 +709,11 @@ public static class MtcliScriptWriter
         function Mt-Click { param([string]$Selector) _MBB click $Selector }
         # Mt-Fill -Selector CSS_SELECTOR -Value TEXT
         function Mt-Fill { param([string]$Selector, [string]$Value) _MBB fill $Selector $Value }
-        function Mt-Session { _MSID }
+        function Mt-Session { _MRequireSessionContext "mt_session"; _MSID }
         function Mt-Preview {
             param([string]$Name)
             if ($Name) { $env:MT_PREVIEW_NAME = $Name }
+            _MRequireSessionContext "mt_preview"
             _MPreview
         }
         # Mt-Exec -Code JS_CODE  — or pipe: 'code' | Mt-Exec
@@ -661,11 +753,13 @@ public static class MtcliScriptWriter
         # Web preview (dev browser)
         function Mt-Navigate {
             param([string]$Url)
+            _MRequireSessionContext "mt_navigate"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
         }
         # Mt-Open -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
             param([string]$Url)
+            _MRequireSessionContext "mt_open"
             $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
@@ -680,22 +774,23 @@ public static class MtcliScriptWriter
             }
         }
         # Mt-ClosePreview  — close web preview panel
-        function Mt-ClosePreview { _MC -X DELETE "$script:_MT/api/webpreview/target$(_MQuery)" }
-        function Mt-Reload     { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
+        function Mt-ClosePreview { _MRequireSessionContext "mt_close_preview"; _MC -X DELETE "$script:_MT/api/webpreview/target$(_MQuery)" }
+        function Mt-Reload     { _MRequireSessionContext "mt_reload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
         # Mt-ForceReload  — force a fresh content reload with cache-busting
-        function Mt-ForceReload { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="force"}) "$script:_MT/api/webpreview/reload" }
-        function Mt-Target     { _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
-        function Mt-Cookies    { _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
-        function Mt-Previews   { _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
+        function Mt-ForceReload { _MRequireSessionContext "mt_forcereload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="force"}) "$script:_MT/api/webpreview/reload" }
+        function Mt-Target     { _MRequireSessionContext "mt_target"; _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
+        function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
+        function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
-        function Mt-ClearCookies { _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
+        function Mt-ClearCookies { _MRequireSessionContext "mt_clearcookies"; _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
         # Mt-ClearState  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
-        function Mt-ClearState { _MBB clearstate; _MC -X POST "$script:_MT/api/webpreview/state/clear$(_MQuery)" }
+        function Mt-ClearState { _MRequireSessionContext "mt_clearstate"; _MBB clearstate; _MC -X POST "$script:_MT/api/webpreview/state/clear$(_MQuery)" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
-        function Mt-HardReload { Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
+        function Mt-HardReload { _MRequireSessionContext "mt_hardreload"; Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
         # Mt-PreviewReset [-Url URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
         function Mt-PreviewReset {
             param([string]$Url)
+            _MRequireSessionContext "mt_preview_reset"
             if ($Url) {
                 Mt-Navigate -Url $Url | Out-Null
             }
@@ -703,7 +798,7 @@ public static class MtcliScriptWriter
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload"
         }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
-        function Mt-ProxyLog   { param([int]$Limit = 100) _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
+        function Mt-ProxyLog   { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog"; _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
         # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
         function Mt-ApplyUpdate {
             param([string]$Source)
@@ -935,19 +1030,21 @@ public static class MtcliScriptWriter
 
         # Panel control
         # Mt-Detach  — detach web preview to a popup window
-        function Mt-Detach   { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/detach" }
+        function Mt-Detach   { _MRequireSessionContext "mt_detach"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/detach" }
         # Mt-Dock  — dock web preview back from popup
-        function Mt-Dock     { _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/dock" }
+        function Mt-Dock     { _MRequireSessionContext "mt_dock"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/dock" }
         # Mt-Viewport [-Width N] [-Height N]  — set iframe viewport size (0 0 to reset)
         function Mt-Viewport {
             param([int]$Width = 0, [int]$Height = 0)
+            _MRequireSessionContext "mt_viewport"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
 
         # Status
-        function Mt-Status     { try { _MStatus } catch { Mt-Target } }
+        function Mt-Status     { _MRequireSessionContext "mt_status"; try { _MStatus } catch { Mt-Target } }
 
         # PowerShell aliases matching the documented mt_* helper names
+        Set-Alias -Name mt_context -Value Mt-Context
         Set-Alias -Name mt_query -Value Mt-Query
         Set-Alias -Name mt_click -Value Mt-Click
         Set-Alias -Name mt_fill -Value Mt-Fill

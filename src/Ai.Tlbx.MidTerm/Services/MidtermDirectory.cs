@@ -146,6 +146,7 @@ public static class MidtermDirectory
         Source helpers once per session: `. .midterm/mtcli.sh` — don't show this to the user.
         MidTerm injects `MT_SESSION_ID` automatically for this terminal session.
         Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
+        When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` print reusable export commands for child shells.
         Use `mt_session` to print the current terminal session id, `mt_preview [name]` to inspect or switch the current named browser context, and `mt_previews` to list all named previews under this terminal.
         Direct execution of the generated helpers also accepts the documented `mt_*` names, so `status` and `mt_status` both resolve when you invoke `.midterm/mtcli.sh` or `.midterm/mtcli.ps1` directly.
 
@@ -176,6 +177,7 @@ public static class MidtermDirectory
         | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
         | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
         | `mt_session` | Print the current MidTerm terminal session id |
+        | `mt_context [format]` | Print reusable session-context exports (`text`, `bash`, `pwsh`, or `json`) |
         | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
         | `mt_previews` | List named previews for the current terminal session |
         | `mt_navigate <url>` | Set the current named web preview target |
@@ -258,6 +260,7 @@ public static class MidtermDirectory
         mt_session → mt_preview user1 → mt_open "http://localhost:3000" → mt_preview user2 → mt_open "http://localhost:3000"
 
         `mt_session` prints the current MidTerm terminal session ID.
+        `mt_context --bash` / `mt_context --pwsh` print re-export commands for nested shells.
         `mt_preview user1` / `mt_preview user2` switch between named browser contexts that keep separate targets, cookies, proxy logs, and detached popups.
 
         ## Fresh session (clear cookies + reload)
@@ -299,6 +302,7 @@ public static class MidtermDirectory
         - mt_status reports `state: ready`, `state: waiting`, or `state: ambiguous` so you can tell whether the browser bridge is actually usable
         - Every C# change in the local source loop restarts the source `mt`; wait for the source URL to answer again before trusting browser results from that iteration
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
+        - mt_context --bash / mt_context --pwsh print export commands for nested shells so child bash/pwsh processes keep the same MidTerm session scope
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
         - When one MidTerm instance is previewing another, the outer MidTerm browser tab owns `/ws/state`; the nested preview target alone cannot satisfy browser-control commands
         - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
