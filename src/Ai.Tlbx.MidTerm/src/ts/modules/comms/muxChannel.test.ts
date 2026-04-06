@@ -1,4 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as constants from '../../constants';
+import * as state from '../../state';
+import * as stores from '../../stores';
+import {
+  connectMuxWebSocket,
+  encodeSessionId,
+  resetMuxChannelRuntimeForTests,
+  updateTerminalVisibility,
+} from './muxChannel';
 
 vi.mock('../logging', () => ({
   createLogger: () => ({
@@ -69,11 +78,11 @@ class MockWebSocket {
 }
 
 interface Harness {
-  encodeSessionId: typeof import('./muxChannel')['encodeSessionId'];
-  updateTerminalVisibility: typeof import('./muxChannel')['updateTerminalVisibility'];
+  encodeSessionId: typeof encodeSessionId;
+  updateTerminalVisibility: typeof updateTerminalVisibility;
   sessionTerminals: typeof import('../../state')['sessionTerminals'];
-  stores: typeof import('../../stores');
-  constants: typeof import('../../constants');
+  stores: typeof stores;
+  constants: typeof constants;
   ws: MockWebSocket;
 }
 
@@ -168,7 +177,6 @@ function attachFakeTerminal(
 }
 
 async function loadHarness(nowValues: number[]): Promise<Harness> {
-  vi.resetModules();
   MockWebSocket.instances = [];
   vi.spyOn(performance, 'now').mockImplementation(() => {
     const value = nowValues[0] ?? 0;
@@ -179,11 +187,7 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
   });
   vi.stubGlobal('WebSocket', MockWebSocket);
 
-  const mux = await import('./muxChannel');
-  const state = await import('../../state');
-  const stores = await import('../../stores');
-  const constants = await import('../../constants');
-
+  resetMuxChannelRuntimeForTests();
   state.sessionTerminals.clear();
   state.pendingOutputFrames.clear();
   state.sessionsNeedingResync.clear();
@@ -194,7 +198,7 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
   stores.$muxWsConnected.set(false);
   stores.$stateWsConnected.set(false);
 
-  mux.connectMuxWebSocket();
+  connectMuxWebSocket();
 
   const ws = MockWebSocket.instances[0];
   if (!ws) {
@@ -202,8 +206,8 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
   }
 
   return {
-    encodeSessionId: mux.encodeSessionId,
-    updateTerminalVisibility: mux.updateTerminalVisibility,
+    encodeSessionId,
+    updateTerminalVisibility,
     sessionTerminals: state.sessionTerminals,
     stores,
     constants,

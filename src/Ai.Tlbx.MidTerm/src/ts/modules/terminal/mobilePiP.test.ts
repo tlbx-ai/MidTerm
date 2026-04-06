@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Listener = () => void;
 
@@ -172,6 +172,8 @@ vi.mock('../logging', () => ({
   }),
 }));
 
+let initMobilePiP: typeof import('./mobilePiP').initMobilePiP;
+
 describe('mobilePiP heat tracking', () => {
   let documentListeners: Record<string, Listener[]>;
   let intervalCallbacks: Array<() => void>;
@@ -209,9 +211,12 @@ describe('mobilePiP heat tracking', () => {
     return root;
   }
 
+  beforeAll(async () => {
+    ({ initMobilePiP } = await import('./mobilePiP'));
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.resetModules();
 
     documentListeners = {};
     intervalCallbacks = [];
@@ -321,8 +326,7 @@ describe('mobilePiP heat tracking', () => {
   });
 
   it('uses server heat transitions for PiP status and cooldown flashing', async () => {
-    const module = await import('./mobilePiP');
-    module.initMobilePiP();
+    initMobilePiP();
 
     (document as { visibilityState: string }).visibilityState = 'hidden';
     (document as { hidden: boolean }).hidden = true;

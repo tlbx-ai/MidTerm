@@ -27,6 +27,26 @@ import {
 import { getHubSession, getHubSidebarSections, isHubSessionId } from '../hub/runtime';
 import { getPrimarySurfaceLabel, isAgentSurfaceSession } from '../sessionSurface';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
+import { createSessionFilterController } from './sessionFilterController';
+import {
+  filterSessionsByQuery,
+  getSessionControlMode,
+  getSupervisorBadgeLabel,
+  getSupervisorState,
+  groupSessionsByController,
+  needsAttention,
+  shouldShowAgentControlAction,
+  syncSessionItemActiveStates,
+} from './sessionListLogic';
+import type { SessionControlMode, SessionGroup } from './sessionListLogic';
+
+export {
+  filterSessionsByQuery,
+  groupSessionsByController,
+  shouldShowAgentControlAction,
+  syncSessionItemActiveStates,
+} from './sessionListLogic';
+export type { SessionControlMode, SessionGroup } from './sessionListLogic';
 
 // =============================================================================
 // Helpers
@@ -89,56 +109,12 @@ export interface SessionListCallbacks {
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
-let sessionFilterListenersBound = false;
-let sessionFilterValue = '';
-let previousSessionFilterEnabled: boolean | null = null;
 const SESSION_GROUP_STORAGE_KEYS = {
   human: 'midterm.sidebar.humanSessionsCollapsed',
   agent: 'midterm.sidebar.agentSessionsCollapsed',
 } as const;
 const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
 const HUB_MACHINE_STORAGE_PREFIX = 'midterm.sidebar.hubMachineCollapsed.';
-
-export type SessionControlMode = 'human' | 'agent';
-
-export interface SessionGroup {
-  key: SessionControlMode;
-  label: string;
-  sessions: Session[];
-  collapsed: boolean;
-  showHeader: boolean;
-  attentionCount: number;
-}
-
-export function shouldShowAgentControlAction(controlMode: SessionControlMode): boolean {
-  return controlMode === 'agent';
-}
-
-function normalizeSessionFilterValue(value: string | null | undefined): string {
-  return (value ?? '').trim();
-}
-
-function getSessionFilterTerms(query: string): string[] {
-  const normalizedQuery = normalizeSessionFilterValue(query).toLowerCase();
-  return normalizedQuery === '' ? [] : normalizedQuery.split(/\s+/);
-}
-
-function buildSessionFilterHaystack(session: Session): string {
-  const foregroundInfo = getForegroundInfo(session.id);
-  return [
-    session.name,
-    session.terminalTitle,
-    session.shellType,
-    session.currentDirectory,
-    foregroundInfo.name,
-    foregroundInfo.displayName,
-    foregroundInfo.cwd,
-    foregroundInfo.commandLine,
-  ]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .join('\n')
-    .toLowerCase();
-}
 
 function isHubMachineCollapsed(machineId: string): boolean {
   return localStorage.getItem(`${HUB_MACHINE_STORAGE_PREFIX}${machineId}`) === 'true';
@@ -151,18 +127,18 @@ function toggleHubMachineCollapsed(section: HTMLElement, machineId: string): voi
 
 function loadStoredSessionFilter(): string {
   try {
-    return normalizeSessionFilterValue(localStorage.getItem(SESSION_FILTER_STORAGE_KEY));
+    return (localStorage.getItem(SESSION_FILTER_STORAGE_KEY) ?? '').trim();
   } catch {
     return '';
   }
 }
 
-function persistSessionFilter(): void {
+function persistSessionFilter(value: string): void {
   try {
-    if (sessionFilterValue === '') {
+    if (value === '') {
       localStorage.removeItem(SESSION_FILTER_STORAGE_KEY);
     } else {
-      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, sessionFilterValue);
+      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, value);
     }
   } catch {
     // Ignore localStorage failures and keep the filter in memory.
@@ -172,116 +148,28 @@ function persistSessionFilter(): void {
 export function isSidebarSessionFilterEnabled(): boolean {
   return $currentSettings.get()?.showSidebarSessionFilter === true;
 }
-
-function syncSessionFilterControls(): void {
-  const filterEnabled = isSidebarSessionFilterEnabled();
-  dom.sessionFilterBar?.toggleAttribute('hidden', !filterEnabled);
-
-  const filterInput = dom.sessionFilterInput;
-  const visibleValue = filterEnabled ? sessionFilterValue : '';
-  if (filterInput && filterInput.value !== visibleValue) {
-    filterInput.value = visibleValue;
-  }
-
-  dom.sessionFilterClear?.toggleAttribute('hidden', !filterEnabled || sessionFilterValue === '');
-}
-
-function setSessionFilter(nextValue: string): void {
-  const normalizedValue = normalizeSessionFilterValue(nextValue);
-  if (normalizedValue === sessionFilterValue) {
-    syncSessionFilterControls();
-    return;
-  }
-
-  sessionFilterValue = normalizedValue;
-  persistSessionFilter();
-  syncSessionFilterControls();
-  renderSessionList();
-}
-
-function clearSessionFilter(focusInput: boolean = false): void {
-  setSessionFilter('');
-  if (focusInput) {
-    dom.sessionFilterInput?.focus();
-  }
-}
-
-function bindSessionFilterEvents(): void {
-  if (sessionFilterListenersBound) {
-    return;
-  }
-
-  const filterInput = dom.sessionFilterInput;
-  const clearButton = dom.sessionFilterClear;
-
-  if (filterInput) {
-    filterInput.setAttribute('aria-label', t('sidebar.filterTerminals'));
-    filterInput.addEventListener('input', () => {
-      setSessionFilter(filterInput.value);
-    });
-
-    filterInput.addEventListener('keydown', (event) => {
-      event.stopPropagation();
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        if (sessionFilterValue !== '') {
-          clearSessionFilter(true);
-        } else {
-          filterInput.blur();
-        }
-      }
-    });
-  }
-
-  if (clearButton) {
-    clearButton.setAttribute('aria-label', t('sidebar.clearTerminalFilter'));
-    clearButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      clearSessionFilter(true);
-    });
-  }
-
-  sessionFilterListenersBound = true;
-}
-
-export function filterSessionsByQuery(sessions: Session[], query: string): Session[] {
-  const terms = getSessionFilterTerms(query);
-  if (terms.length === 0) {
-    return sessions;
-  }
-
-  return sessions.filter((session) => {
-    const haystack = buildSessionFilterHaystack(session);
-    return terms.every((term) => haystack.includes(term));
-  });
-}
+const sessionFilterController = createSessionFilterController({
+  getElements: () => ({
+    filterBar: dom.sessionFilterBar,
+    filterInput: dom.sessionFilterInput,
+    filterClear: dom.sessionFilterClear,
+  }),
+  isEnabled: isSidebarSessionFilterEnabled,
+  areSettingsLoaded: () => $currentSettings.get() !== null,
+  loadStoredFilter: loadStoredSessionFilter,
+  persistFilter: persistSessionFilter,
+  render: () => {
+    renderSessionList();
+  },
+  translate: t,
+});
 
 export function isSessionFilterActive(): boolean {
-  return isSidebarSessionFilterEnabled() && sessionFilterValue !== '';
+  return sessionFilterController.isActive();
 }
 
 export function applySessionFilterSettingChange(): void {
-  const settingsLoaded = $currentSettings.get() !== null;
-  const filterEnabled = isSidebarSessionFilterEnabled();
-
-  if (!settingsLoaded) {
-    syncSessionFilterControls();
-    renderSessionList();
-    return;
-  }
-
-  const shouldClearStoredFilter = !filterEnabled && previousSessionFilterEnabled !== false;
-  previousSessionFilterEnabled = filterEnabled;
-
-  if (shouldClearStoredFilter && sessionFilterValue !== '') {
-    clearSessionFilter();
-    return;
-  }
-
-  syncSessionFilterControls();
-  renderSessionList();
+  sessionFilterController.applySettingChange();
 }
 
 // =============================================================================
@@ -293,9 +181,7 @@ export function applySessionFilterSettingChange(): void {
  */
 export function initializeSessionList(): void {
   addProcessStateListener(handleProcessStateChange);
-  sessionFilterValue = loadStoredSessionFilter();
-  syncSessionFilterControls();
-  bindSessionFilterEvents();
+  sessionFilterController.initialize();
 
   if (!mobileMenuListenersBound) {
     document.addEventListener('keydown', handleMobileMenuKeydown);
@@ -645,37 +531,6 @@ export function getSessionDisplayName(session: Session): string {
   return info.primary;
 }
 
-function isAgentControlled(session: Session | null | undefined): boolean {
-  return session?.agentControlled === true;
-}
-
-function getSessionControlMode(session: Session): SessionControlMode {
-  return isAgentControlled(session) ? 'agent' : 'human';
-}
-
-function getSupervisorState(session: Session): string {
-  return session.supervisor?.state ?? 'unknown';
-}
-
-function getAttentionScore(session: Session): number {
-  return session.supervisor?.attentionScore ?? 0;
-}
-
-function needsAttention(session: Session): boolean {
-  return session.supervisor?.needsAttention === true;
-}
-
-function getSupervisorBadgeLabel(session: Session): string | null {
-  const state = getSupervisorState(session);
-  return state === 'unknown'
-    ? null
-    : state
-        .replace(/^busy-turn$/, 'busy')
-        .replace(/^idle-prompt$/, 'idle')
-        .replace(/-/g, ' ')
-        .toUpperCase();
-}
-
 function isSessionGroupCollapsed(group: SessionControlMode): boolean {
   return localStorage.getItem(SESSION_GROUP_STORAGE_KEYS[group]) === 'true';
 }
@@ -683,45 +538,6 @@ function isSessionGroupCollapsed(group: SessionControlMode): boolean {
 function toggleSessionGroup(section: HTMLElement, group: SessionControlMode): void {
   const collapsed = section.classList.toggle('collapsed');
   localStorage.setItem(SESSION_GROUP_STORAGE_KEYS[group], String(collapsed));
-}
-
-export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
-  const humanSessions = sessions.filter((session) => getSessionControlMode(session) === 'human');
-  const agentSessions = sessions
-    .filter((session) => getSessionControlMode(session) === 'agent')
-    .sort((a, b) => {
-      const attentionDelta = Number(needsAttention(b)) - Number(needsAttention(a));
-      if (attentionDelta !== 0) return attentionDelta;
-      const scoreDelta = getAttentionScore(b) - getAttentionScore(a);
-      if (scoreDelta !== 0) return scoreDelta;
-      return a.order - b.order;
-    });
-  const groups: SessionGroup[] = [];
-  const showHeaders = agentSessions.length > 0;
-
-  if (humanSessions.length > 0) {
-    groups.push({
-      key: 'human',
-      label: t('sidebar.humanControlled'),
-      sessions: humanSessions,
-      collapsed: isSessionGroupCollapsed('human'),
-      showHeader: showHeaders,
-      attentionCount: 0,
-    });
-  }
-
-  if (agentSessions.length > 0) {
-    groups.push({
-      key: 'agent',
-      label: t('sidebar.agentControlled'),
-      sessions: agentSessions,
-      collapsed: isSessionGroupCollapsed('agent'),
-      showHeader: showHeaders,
-      attentionCount: agentSessions.filter((session) => needsAttention(session)).length,
-    });
-  }
-
-  return groups;
 }
 
 // =============================================================================
@@ -780,31 +596,6 @@ function createSessionFilterEmptyState(): HTMLDivElement {
   emptyState.className = 'session-filter-empty';
   emptyState.textContent = t('sidebar.noMatchingTerminals');
   return emptyState;
-}
-
-export function syncSessionItemActiveStates(
-  root: ParentNode,
-  activeId: string | null,
-): HTMLElement | null {
-  root.querySelectorAll<HTMLElement>('.session-item.active').forEach((item) => {
-    item.classList.remove('active');
-    item.setAttribute('aria-current', 'false');
-  });
-
-  if (!activeId) {
-    return null;
-  }
-
-  const activeItem = root.querySelector<HTMLElement>(
-    `.session-item[data-session-id="${activeId}"]`,
-  );
-  if (!activeItem) {
-    return null;
-  }
-
-  activeItem.classList.add('active');
-  activeItem.setAttribute('aria-current', 'true');
-  return activeItem;
 }
 
 function buildSessionItemClassName(
@@ -1355,9 +1146,14 @@ export function renderSessionList(): void {
   const displaySessions = getSidebarDisplaySessions();
   const filteredSessions = filterSessionsByQuery(
     displaySessions,
-    isSidebarSessionFilterEnabled() ? sessionFilterValue : '',
+    sessionFilterController.isEnabled() ? sessionFilterController.getFilterValue() : '',
+    getForegroundInfo,
   );
-  const groups = groupSessionsByController(filteredSessions);
+  const groups = groupSessionsByController(filteredSessions, {
+    humanLabel: t('sidebar.humanControlled'),
+    agentLabel: t('sidebar.agentControlled'),
+    isCollapsed: isSessionGroupCollapsed,
+  });
   const hubSections = getHubSidebarSections();
   pruneHeatSessions([
     ...displaySessions.map((session) => session.id),

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const onTabActivated = vi.fn();
 const onTabDeactivated = vi.fn();
@@ -21,6 +21,8 @@ const resolveLensUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
 const activeSessionSubscribers: Array<(sessionId: string | null) => void> = [];
+let resetAgentViewRuntimeForTests: typeof import('./index').resetAgentViewRuntimeForTests;
+const agentViewModulePromise = import('./index');
 
 function createMockDomNode(overrides: Record<string, unknown> = {}): any {
   const node: any = {
@@ -156,6 +158,10 @@ vi.mock('../logging', () => ({
 }));
 
 describe('agentView dev errors', () => {
+  beforeAll(async () => {
+    ({ resetAgentViewRuntimeForTests } = await agentViewModulePromise);
+  });
+
   beforeEach(() => {
     vi.stubGlobal('document', {
       createElement: () => createMockDomNode(),
@@ -206,7 +212,7 @@ describe('agentView dev errors', () => {
     showDevErrorDialog.mockReset();
     activeSessionId = null;
     activeSessionSubscribers.length = 0;
-    vi.resetModules();
+    resetAgentViewRuntimeForTests();
   });
 
   afterEach(() => {

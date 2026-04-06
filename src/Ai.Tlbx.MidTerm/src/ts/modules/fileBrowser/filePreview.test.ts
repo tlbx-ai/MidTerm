@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderPreview } from './filePreview';
 
 class FakeElement {
   public readonly tagName: string;
@@ -91,42 +92,97 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 
 const originalDocument = globalThis.document;
 const originalFetch = globalThis.fetch;
-const isTextFileMock = vi.fn(() => true);
-const createLineNumberedEditorMock = vi.fn((text: string, extraClassNames: string[] = []) => {
-  const root = new FakeElement('div');
-  root.className = ['file-viewer-editor-shell', ...extraClassNames].join(' ');
+const renderingMocks = vi.hoisted(() => {
+  const createElement = (tagName: string) => {
+    const listeners = new Map<string, Array<(event?: any) => void>>();
+    const element: any = {
+      tagName: tagName.toUpperCase(),
+      className: '',
+      textContent: '',
+      disabled: false,
+      type: '',
+      value: '',
+      spellcheck: true,
+      style: {},
+      children: [] as any[],
+      classList: {
+        add: (...tokens: string[]) => {
+          const values = new Set(String(element.className ?? '').split(/\s+/).filter(Boolean));
+          for (const token of tokens) {
+            values.add(token);
+          }
+          element.className = Array.from(values).join(' ');
+        },
+      },
+      appendChild(child: any) {
+        element.children.push(child);
+        return child;
+      },
+      addEventListener(type: string, handler: (event?: any) => void) {
+        const handlers = listeners.get(type) ?? [];
+        handlers.push(handler);
+        listeners.set(type, handlers);
+      },
+      dispatchEvent(event: { type: string }) {
+        const handlers = listeners.get(event.type) ?? [];
+        for (const handler of handlers) {
+          handler(event);
+        }
+        return true;
+      },
+      click() {
+        element.dispatchEvent({ type: 'click' });
+      },
+    };
+    return element;
+  };
 
-  const textarea = new FakeElement('textarea');
-  textarea.className = 'file-viewer-textarea';
-  textarea.value = text;
-  root.appendChild(textarea);
+  const isTextFileMock = vi.fn(() => true);
+  const createLineNumberedEditorMock = vi.fn((text: string, extraClassNames: string[] = []) => {
+    const root = createElement('div');
+    root.className = ['file-viewer-editor-shell', ...extraClassNames].join(' ');
+
+    const textarea = createElement('textarea');
+    textarea.className = 'file-viewer-textarea';
+    textarea.value = text;
+    root.appendChild(textarea);
+
+    return {
+      root,
+      textarea,
+      setText: (nextText: string) => {
+        textarea.value = nextText;
+      },
+    };
+  });
+
+  const createLineNumberedViewerMock = vi.fn((text: string) => {
+    const root = createElement('div');
+    root.className = 'file-viewer-readonly-shell';
+
+    const pre = createElement('pre');
+    pre.className = 'file-viewer-text';
+    pre.textContent = text;
+    root.appendChild(pre);
+
+    return {
+      root,
+      pre,
+      setText: (nextText: string) => {
+        pre.textContent = nextText;
+      },
+    };
+  });
+
+  const formatBinaryDumpMock = vi.fn((bytes: Uint8Array) => `binary:${bytes.length}`);
 
   return {
-    root: root as unknown as HTMLDivElement,
-    textarea: textarea as unknown as HTMLTextAreaElement,
-    setText: (nextText: string) => {
-      textarea.value = nextText;
-    },
+    isTextFileMock,
+    createLineNumberedEditorMock,
+    createLineNumberedViewerMock,
+    formatBinaryDumpMock,
   };
 });
-const createLineNumberedViewerMock = vi.fn((text: string) => {
-  const root = new FakeElement('div');
-  root.className = 'file-viewer-readonly-shell';
-
-  const pre = new FakeElement('pre');
-  pre.className = 'file-viewer-text';
-  pre.textContent = text;
-  root.appendChild(pre);
-
-  return {
-    root: root as unknown as HTMLDivElement,
-    pre: pre as unknown as HTMLPreElement,
-    setText: (nextText: string) => {
-      pre.textContent = nextText;
-    },
-  };
-});
-const formatBinaryDumpMock = vi.fn((bytes: Uint8Array) => `binary:${bytes.length}`);
 
 vi.mock('../logging', () => ({
   createLogger: () => ({
@@ -147,15 +203,15 @@ vi.mock('../fileViewer/rendering', () => ({
   formatViewerHeaderSubtitle: (path: string, metadata?: string | null) =>
     metadata ? `${path} | ${metadata}` : path,
   highlightCode: (text: string) => `highlight:${text}`,
-  isTextFile: isTextFileMock,
+  isTextFile: renderingMocks.isTextFileMock,
   isImageFile: () => false,
   isVideoFile: () => false,
   isAudioFile: () => false,
   buildViewUrl: (path: string, sessionId: string) =>
     `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`,
-  createLineNumberedEditor: createLineNumberedEditorMock,
-  createLineNumberedViewer: createLineNumberedViewerMock,
-  formatBinaryDump: formatBinaryDumpMock,
+  createLineNumberedEditor: renderingMocks.createLineNumberedEditorMock,
+  createLineNumberedViewer: renderingMocks.createLineNumberedViewerMock,
+  formatBinaryDump: renderingMocks.formatBinaryDumpMock,
 }));
 
 async function flushPromises(): Promise<void> {
@@ -181,10 +237,10 @@ describe('filePreview', () => {
 
   beforeEach(() => {
     globalThis.fetch = vi.fn();
-    isTextFileMock.mockReturnValue(true);
-    createLineNumberedEditorMock.mockClear();
-    createLineNumberedViewerMock.mockClear();
-    formatBinaryDumpMock.mockClear();
+    renderingMocks.isTextFileMock.mockReturnValue(true);
+    renderingMocks.createLineNumberedEditorMock.mockClear();
+    renderingMocks.createLineNumberedViewerMock.mockClear();
+    renderingMocks.formatBinaryDumpMock.mockClear();
   });
 
   it('opens markdown files in editor mode with a save button', async () => {
@@ -200,7 +256,6 @@ describe('filePreview', () => {
       isDirectory: false,
     };
 
-    const { renderPreview } = await import('./filePreview');
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
     await flushPromises();
 
@@ -232,7 +287,6 @@ describe('filePreview', () => {
       isDirectory: false,
     };
 
-    const { renderPreview } = await import('./filePreview');
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
     await flushPromises();
 
@@ -265,7 +319,7 @@ describe('filePreview', () => {
   });
 
   it('renders binary files through the shared line-numbered viewer', async () => {
-    isTextFileMock.mockReturnValue(false);
+    renderingMocks.isTextFileMock.mockReturnValue(false);
     vi.mocked(globalThis.fetch).mockResolvedValueOnce({
       ok: true,
       arrayBuffer: async () => new Uint8Array([0x41, 0x42]).buffer,
@@ -280,12 +334,11 @@ describe('filePreview', () => {
       size: 2,
     };
 
-    const { renderPreview } = await import('./filePreview');
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
     await flushPromises();
 
-    expect(formatBinaryDumpMock).toHaveBeenCalledWith(new Uint8Array([0x41, 0x42]));
-    expect(createLineNumberedViewerMock).toHaveBeenCalledWith('binary:2', ['file-viewer-binary-shell']);
+    expect(renderingMocks.formatBinaryDumpMock).toHaveBeenCalledWith(new Uint8Array([0x41, 0x42]));
+    expect(renderingMocks.createLineNumberedViewerMock).toHaveBeenCalledWith('binary:2', ['file-viewer-binary-shell']);
     expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('archive.bin');
     expect(container.querySelector('.preview-toolbar-subtitle')?.textContent).toBe(
       'Q:\\repos\\MidTerm\\archive.bin | application/octet-stream | 2',

@@ -1575,3 +1575,31 @@ export function writeOutputFrame(
     outputQueueGeneration,
   );
 }
+
+export function resetMuxChannelRuntimeForTests(): void {
+  if (syncCompleteTimeout !== null) {
+    clearTimeout(syncCompleteTimeout);
+    syncCompleteTimeout = null;
+  }
+
+  _sessionBytesCallback = null;
+  _suppressHeatCallback = null;
+  pongCallback = null;
+  lastOutputRtt = null;
+  lastFlushDelayMs = null;
+  lastServerIoRttMs = null;
+  lastHintedSessionId = null;
+  currentVisibleSessionIds = [];
+  currentStreamableSessionIds = new Set<string>();
+
+  replaySuppressedSessions.clear();
+  browserTransportSnapshots.clear();
+  bracketedPasteState.clear();
+  outputRttListeners.clear();
+  pendingInputQueue.length = 0;
+
+  clearQueuedOutput();
+  pendingOutputFrames.clear();
+  sessionsNeedingResync.clear();
+  closeWebSocket(muxWs, setMuxWs);
+}

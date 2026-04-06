@@ -27,6 +27,7 @@ import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
 import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
 import { ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT } from '../smartInput/layout';
+import { isTerminalViewingScrollback } from './scrollback';
 import {
   buildTerminalFontStack,
   DEFAULT_TERMINAL_FONT_WEIGHT,
@@ -47,11 +48,7 @@ const SCALE_TOLERANCE = 0.97;
 const MAX_TRANSIENT_FIT_RETRIES = 2;
 
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
-
-export function isTerminalViewingScrollback(state: Pick<TerminalState, 'terminal'>): boolean {
-  const buffer = state.terminal.buffer.active;
-  return buffer.viewportY < buffer.baseY;
-}
+export { isTerminalViewingScrollback } from './scrollback';
 
 export function refreshTerminalPresentation(
   _sessionId: string,

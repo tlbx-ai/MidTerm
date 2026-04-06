@@ -77,7 +77,7 @@ function Get-MissingFrontendDeps {
             $missing += $dep.Name
         }
     }
-    return $missing
+    return @($missing)
 }
 
 function Get-AssetFingerprint {
@@ -129,7 +129,7 @@ function Invoke-NpmScript {
     }
 }
 
-$missingDeps = Get-MissingFrontendDeps -Deps $requiredNodeDeps
+$missingDeps = @(Get-MissingFrontendDeps -Deps $requiredNodeDeps)
 if ($missingDeps.Count -gt 0) {
     Write-Host ("Missing frontend npm dependencies: {0}" -f ($missingDeps -join ", ")) -ForegroundColor Yellow
     Write-Host ("Attempting automatic install: npm ci --include=dev (project dir: {0})" -f $PSScriptRoot) -ForegroundColor Cyan
@@ -147,7 +147,7 @@ if ($missingDeps.Count -gt 0) {
         exit $LASTEXITCODE
     }
 
-    $missingAfterInstall = Get-MissingFrontendDeps -Deps $requiredNodeDeps
+    $missingAfterInstall = @(Get-MissingFrontendDeps -Deps $requiredNodeDeps)
     if ($missingAfterInstall.Count -gt 0) {
         Write-Error ("Frontend dependencies still missing after npm ci: {0}" -f ($missingAfterInstall -join ", "))
         exit 1
@@ -298,12 +298,12 @@ foreach ($file in $compressibleBinaries) {
 # Copy non-compressible binaries
 foreach ($spec in $nonCompressibleBinaries) {
     $pattern = Join-Path $StaticSource $spec.Pattern
-    $exclude = if ($spec.Exclude) { $spec.Exclude } else { @() }
+    $exclude = if ($spec.ContainsKey('Exclude')) { @($spec['Exclude']) } else { @() }
 
     Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $exclude } | ForEach-Object {
-        $dstDir = if ($spec.Dst) { Join-Path $WwwRoot $spec.Dst } else { $WwwRoot }
+        $dstDir = if ($spec['Dst']) { Join-Path $WwwRoot $spec['Dst'] } else { $WwwRoot }
         Copy-Item $_.FullName -Destination $dstDir -Force
-        $relPath = if ($spec.Dst) { "$($spec.Dst)/$($_.Name)" } else { $_.Name }
+        $relPath = if ($spec['Dst']) { "$($spec['Dst'])/$($_.Name)" } else { $_.Name }
         Write-Host "  $relPath" -ForegroundColor DarkGray
     }
 }

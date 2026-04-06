@@ -266,6 +266,52 @@ if ($isPtyBreaking) {
     Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
 }
 
+# Clean frontend parity preflight (fresh npm install + frontend build in a clean snapshot,
+# plus Linux parity on Windows) before we commit or tag anything.
+Write-Host ""
+Write-Host "Running clean frontend parity preflight..." -ForegroundColor Cyan
+$frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
+try {
+    & $frontendPreflightScript -Version $newVersion
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frontend parity preflight failed"
+    }
+    Write-Host "Frontend parity preflight succeeded." -ForegroundColor Green
+}
+catch {
+    Write-Host ""
+    Write-Host "ERROR: Frontend parity preflight failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
+    exit 1
+}
+
+# Build verification (catches C# compile issues before committing)
+Write-Host ""
+Write-Host "Running build verification..." -ForegroundColor Cyan
+$buildResult = dotnet build "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj" -c Release 2>&1
+$buildExitCode = $LASTEXITCODE
+$buildLines = @($buildResult | ForEach-Object { "$_" })
+$hasReinvokeSentinel = $buildLines | Where-Object { $_ -match '_REINVOKE_SUCCESS_' }
+$realErrorLines = $buildLines | Where-Object { $_ -match ':\s*error\b' -and $_ -notmatch '_REINVOKE_SUCCESS_' }
+$reinvokeOnlyFailure = $buildExitCode -ne 0 -and $hasReinvokeSentinel -and $realErrorLines.Count -eq 0
+if ($buildExitCode -ne 0 -and -not $reinvokeOnlyFailure) {
+    Write-Host ""
+    Write-Host "ERROR: Build failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Build output:" -ForegroundColor Yellow
+    $buildLines | ForEach-Object { Write-Host "  $_" }
+    Write-Host ""
+    Write-Host "Fix the build errors and try again." -ForegroundColor Yellow
+    git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
+    exit 1
+}
+if ($reinvokeOnlyFailure) {
+    Write-Host "Build succeeded via frontend reinvoke." -ForegroundColor Green
+} else {
+    Write-Host "Build succeeded." -ForegroundColor Green
+}
+
 # Git operations
 Write-Host ""
 Write-Host "Committing and tagging..." -ForegroundColor Cyan

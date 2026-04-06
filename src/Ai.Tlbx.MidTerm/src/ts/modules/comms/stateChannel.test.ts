@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   closeWebSocket: vi.fn(),
@@ -164,8 +164,17 @@ class MockWebSocket {
   }
 }
 
+let stores: typeof import('../../stores');
+let state: typeof import('../../state');
+let connectStateWebSocket: typeof import('./stateChannel').connectStateWebSocket;
+let handleStateUpdate: typeof import('./stateChannel').handleStateUpdate;
+let resetStateChannelRuntimeForTests: typeof import('./stateChannel').resetStateChannelRuntimeForTests;
+let setSelectSessionCallback: typeof import('./stateChannel').setSelectSessionCallback;
+const stateChannelModulePromise = import('./stateChannel');
+const stateModulePromise = import('../../state');
+const storesModulePromise = import('../../stores');
+
 async function loadHarness() {
-  vi.resetModules();
   MockWebSocket.instances = [];
   vi.stubGlobal('WebSocket', MockWebSocket);
   const localStorageData = new Map<string, string>();
@@ -194,23 +203,22 @@ async function loadHarness() {
       previewName?.trim() ? previewName.trim() : 'default',
   );
   mocks.syncActiveWebPreview.mockResolvedValue(undefined);
+  mocks.checkVersionAndReload.mockResolvedValue(undefined);
 
-  const stores = await import('../../stores');
+  resetStateChannelRuntimeForTests();
   stores.$activeSessionId.set('user1234');
   stores.$settingsOpen.set(false);
   stores.$webPreviewUrl.set(null);
   stores.$stateWsConnected.set(false);
   stores.$sessions.set({});
 
-  const state = await import('../../state');
   state.setStateWs(null);
   state.sessionTerminals.clear();
   state.hiddenSessionIds.clear();
   state.newlyCreatedSessions.clear();
 
-  const stateChannel = await import('./stateChannel');
-  stateChannel.setSelectSessionCallback(mocks.selectSession);
-  stateChannel.connectStateWebSocket();
+  setSelectSessionCallback(mocks.selectSession);
+  connectStateWebSocket();
 
   const ws = MockWebSocket.instances[0];
   if (!ws) {
@@ -221,6 +229,17 @@ async function loadHarness() {
 }
 
 describe('stateChannel browser-ui handling', () => {
+  beforeAll(async () => {
+    stores = await storesModulePromise;
+    state = await stateModulePromise;
+    ({
+      connectStateWebSocket,
+      handleStateUpdate,
+      resetStateChannelRuntimeForTests,
+      setSelectSessionCallback,
+    } = await stateChannelModulePromise);
+  });
+
   beforeEach(() => {
     vi.useRealTimers();
   });
@@ -330,8 +349,7 @@ describe('stateChannel browser-ui handling', () => {
   it('skips proactive terminal creation for lens-only sessions', async () => {
     await loadHarness();
 
-    const stateChannel = await import('./stateChannel');
-    stateChannel.handleStateUpdate([
+    handleStateUpdate([
       {
         id: 'lens-1',
         cols: 120,
@@ -352,8 +370,7 @@ describe('stateChannel browser-ui handling', () => {
     localStorageData.set('midterm.activeSessionId', 'session-b');
     stores.$activeSessionId.set(null);
 
-    const stateChannel = await import('./stateChannel');
-    stateChannel.handleStateUpdate([
+    handleStateUpdate([
       {
         id: 'session-a',
         cols: 120,
@@ -384,8 +401,7 @@ describe('stateChannel browser-ui handling', () => {
   it('applies server layout snapshots from state updates', async () => {
     await loadHarness();
 
-    const stateChannel = await import('./stateChannel');
-    stateChannel.handleStateUpdate(
+    handleStateUpdate(
       [
         {
           id: 'session-a',

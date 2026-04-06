@@ -760,3 +760,16 @@ export function releaseMainBrowser(): void {
     log.warn(() => `Failed to release main browser: ${String(e)}`);
   });
 }
+
+export function resetStateChannelRuntimeForTests(): void {
+  pendingCommands.forEach((cmd) => {
+    clearTimeout(cmd.timeout);
+  });
+  pendingCommands.clear();
+  pendingDocks.length = 0;
+  layoutHydrated = false;
+  stateWsHasConnected = false;
+  selectSession = () => {};
+  lastReportedBrowserActivity = undefined;
+  closeWebSocket(stateWs, setStateWs);
+}

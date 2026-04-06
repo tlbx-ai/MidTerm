@@ -197,6 +197,25 @@ export function destroyAgentView(sessionId: string): void {
   removeLensQuickSettingsSessionState(sessionId);
 }
 
+export function resetAgentViewRuntimeForTests(): void {
+  for (const [sessionId, state] of viewStates) {
+    if (state.historyRenderScheduled !== null) {
+      window.cancelAnimationFrame(state.historyRenderScheduled);
+    }
+    if (state.busyIndicatorTickHandle !== null) {
+      window.clearTimeout(state.busyIndicatorTickHandle);
+    }
+    state.disconnectStream?.();
+    clearLensTurnSessionState(sessionId);
+    removeLensQuickSettingsSessionState(sessionId);
+  }
+
+  viewStates.clear();
+  lensTurnLifecycleBound = false;
+  lensActiveSessionBound = false;
+  lensSelectionGuardBound = false;
+}
+
 /**
  * Exposes deterministic history fixtures so Lens UI work can be iterated
  * and regression-tested without depending on a live agent runtime.
