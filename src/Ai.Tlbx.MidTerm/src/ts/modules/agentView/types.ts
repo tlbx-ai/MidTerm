@@ -77,6 +77,23 @@ export interface LensActivationTraceEntry {
 export interface AssistantMarkdownCacheEntry {
   body: string;
   html: string;
+  imageCandidates: AssistantImageCandidate[];
+  imagePreviews: AssistantImagePreview[];
+  imagePreviewResolutionStarted: boolean;
+}
+
+export interface AssistantImageCandidate {
+  displayText: string;
+  normalizedPath: string;
+  pathKind: 'absolute' | 'relative';
+  line?: number | null;
+  column?: number | null;
+}
+
+export interface AssistantImagePreview {
+  resolvedPath: string;
+  displayPath: string;
+  mimeType?: string | null;
 }
 
 export type HistoryKind =

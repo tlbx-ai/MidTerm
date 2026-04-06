@@ -3,6 +3,12 @@ import { getSession } from '../../stores';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { renderMarkdownFragment } from '../../utils/markdown';
 import {
+  buildAssistantEnrichedHtml,
+  createAssistantImagePreviewBlock,
+  ensureAssistantImagePreviews,
+  wireAssistantInteractiveContent,
+} from './assistantEnrichment';
+import {
   approveLensRequest,
   declineLensRequest,
   resolveLensUserInput,
@@ -21,6 +27,7 @@ import {
   tokenizeCommandText,
 } from './historyContent';
 import type {
+  AssistantMarkdownCacheEntry,
   ArtifactClusterInfo,
   HistoryBodyPresentation,
   LensHistoryAction,
@@ -217,9 +224,29 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         body.className = 'agent-history-body agent-history-markdown';
         const content = document.createElement('div');
         content.className = 'agent-history-markdown-content';
-        content.innerHTML = getCachedAssistantMarkdownHtml(sessionId, entry);
+        const cache = getCachedAssistantMarkdown(sessionId, entry);
+        content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);
+        wireAssistantInteractiveContent(content, sessionId);
         body.appendChild(content);
+        const state = deps.getState(sessionId);
+        if (state) {
+          void ensureAssistantImagePreviews(
+            sessionId,
+            entry,
+            cache,
+            state,
+            deps.renderCurrentAgentView,
+          );
+        }
+        const previewBlock = createAssistantImagePreviewBlock(
+          document,
+          sessionId,
+          cache.imagePreviews,
+        );
+        if (previewBlock) {
+          body.appendChild(previewBlock);
+        }
         return body;
       }
       case 'diff':
@@ -443,20 +470,37 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     container.innerHTML = first.innerHTML;
   }
 
-  function getCachedAssistantMarkdownHtml(sessionId: string, entry: LensHistoryEntry): string {
+  function getCachedAssistantMarkdown(
+    sessionId: string,
+    entry: LensHistoryEntry,
+  ): AssistantMarkdownCacheEntry {
     const state = deps.getState(sessionId);
     if (!state) {
-      return renderMarkdownFragment(entry.body);
+      const fallback = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body));
+      return {
+        body: entry.body,
+        html: fallback.html,
+        imageCandidates: fallback.imageCandidates,
+        imagePreviews: [],
+        imagePreviewResolutionStarted: false,
+      };
     }
 
     const existing = state.assistantMarkdownCache.get(entry.id);
     if (existing && existing.body === entry.body) {
-      return existing.html;
+      return existing;
     }
 
-    const html = renderMarkdownFragment(entry.body);
-    state.assistantMarkdownCache.set(entry.id, { body: entry.body, html });
-    return html;
+    const enriched = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body));
+    const next: AssistantMarkdownCacheEntry = {
+      body: entry.body,
+      html: enriched.html,
+      imageCandidates: enriched.imageCandidates,
+      imagePreviews: [],
+      imagePreviewResolutionStarted: false,
+    };
+    state.assistantMarkdownCache.set(entry.id, next);
+    return next;
   }
 
   function pruneAssistantMarkdownCache(

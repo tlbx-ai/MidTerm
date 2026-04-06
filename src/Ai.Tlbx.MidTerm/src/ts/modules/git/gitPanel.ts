@@ -107,6 +107,24 @@ export async function renderGitPanelInto(container: HTMLElement, sessionId: stri
   renderPanel(state);
 }
 
+export async function showCommitInGitPanel(sessionId: string, hash: string): Promise<void> {
+  let state = panelStates.get(sessionId);
+  if (!state) {
+    const container = document.getElementById('git-dock')?.querySelector('.git-dock-body');
+    if (!(container instanceof HTMLElement)) {
+      return;
+    }
+
+    await renderGitPanelInto(container, sessionId);
+    state = panelStates.get(sessionId);
+    if (!state) {
+      return;
+    }
+  }
+
+  await openCommitSelection(state, hash);
+}
+
 export function destroyGitPanel(sessionId: string): void {
   panelStates.delete(sessionId);
 }

@@ -13,7 +13,7 @@ import {
 } from '../../stores';
 import { handleDockLayoutChange } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { refreshGitPanel, renderGitPanelInto } from './gitPanel';
+import { refreshGitPanel, renderGitPanelInto, showCommitInGitPanel } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
 import { closeCommandsDock } from '../commands/dock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
@@ -100,6 +100,11 @@ export function openGitDock(sessionId: string): void {
   });
 
   log.info(() => 'Git dock opened');
+}
+
+export async function openGitCommitDock(sessionId: string, hash: string): Promise<void> {
+  openGitDock(sessionId);
+  await showCommitInGitPanel(sessionId, hash);
 }
 
 export function closeGitDock(): void {

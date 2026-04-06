@@ -202,6 +202,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       entry.commandText ?? '',
       (entry.commandOutputTail ?? []).join('\n'),
       buildHistoryAttachmentToken(entry),
+      buildAssistantPreviewToken(entry, state),
       (entry.actions ?? [])
         .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
         .join('|'),
@@ -218,6 +219,18 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         ),
       )
       .join('|');
+  }
+
+  function buildAssistantPreviewToken(
+    entry: LensHistoryEntry,
+    state: SessionLensViewState | undefined,
+  ): string {
+    if (entry.kind !== 'assistant' || !state) {
+      return '';
+    }
+
+    const previews = state.assistantMarkdownCache.get(entry.id)?.imagePreviews ?? [];
+    return previews.map((preview) => preview.resolvedPath).join('|');
   }
 
   function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {

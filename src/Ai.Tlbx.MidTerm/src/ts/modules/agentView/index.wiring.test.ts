@@ -84,6 +84,17 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('Markdown paragraph and list spacing should be dense and terminal-like.');
   });
 
+  it('documents finalized assistant enrichment without leaking into streaming or artifact rows', () => {
+    expect(css).toContain('.agent-history-markdown .agent-history-inline-file {');
+    expect(css).toContain('.agent-history-inline-previews {');
+    expect(lensDesign).toContain(
+      'Finalized assistant messages may receive a post-settlement enrichment pass',
+    );
+    expect(lensDesign).toContain(
+      'Assistant-only semantic tinting should remain subtle.',
+    );
+  });
+
   it('styles diff rows as Edited path headers with tight colored hunk blocks', () => {
     expect(css).toContain('.agent-history-diff-line-file {');
     expect(css).toContain('.agent-history-diff-line-add {');

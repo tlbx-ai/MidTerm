@@ -11586,6 +11586,33 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   text-underline-offset: 2px;
 }
 
+.agent-history-markdown .agent-history-inline-link {
+  text-decoration-thickness: 1px;
+}
+
+.agent-history-markdown .agent-history-inline-file,
+.agent-history-markdown .agent-history-inline-git-hash {
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+}
+
+.agent-history-markdown .agent-history-inline-file {
+  color: color-mix(in srgb, var(--accent-cyan) 76%, var(--text-primary) 24%);
+  text-decoration-color: color-mix(in srgb, var(--accent-cyan) 38%, transparent);
+}
+
+.agent-history-markdown .agent-history-inline-git-hash {
+  color: color-mix(in srgb, var(--accent-gold) 72%, var(--text-secondary) 28%);
+  text-decoration-color: color-mix(in srgb, var(--accent-gold) 32%, transparent);
+}
+
+.agent-history-markdown .agent-history-inline-number {
+  color: color-mix(in srgb, var(--accent-gold) 54%, var(--text-secondary) 46%);
+}
+
+.agent-history-markdown .agent-history-inline-table-rule {
+  color: color-mix(in srgb, var(--text-muted) 64%, transparent);
+}
+
 .agent-history-markdown strong {
   color: var(--text-primary);
   font-weight: 700;
@@ -12136,6 +12163,57 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
+}
+
+.agent-history-inline-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.agent-history-inline-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(220px, 100%);
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--text-primary) 3%, transparent),
+      color-mix(in srgb, var(--text-primary) 1%, transparent)
+    ),
+    color-mix(in srgb, var(--bg-dialog-chrome) 74%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 10px 22px color-mix(in srgb, black 18%, transparent);
+}
+
+.agent-history-inline-preview:hover {
+  border-color: color-mix(in srgb, var(--accent-gold) 50%, transparent);
+}
+
+.agent-history-inline-preview-image {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.agent-history-inline-preview-caption {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-history-attachment {
