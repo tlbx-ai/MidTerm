@@ -48,6 +48,17 @@ type HistoryRenderDeps = {
 };
 
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
+  function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: number): boolean {
+    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const nextScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+    if (Math.abs(nextScrollTop - viewport.scrollTop) <= 1) {
+      return false;
+    }
+
+    viewport.scrollTop = nextScrollTop;
+    return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
+  }
+
   function renderActivationView(
     sessionId: string,
     panel: HTMLDivElement,
@@ -85,37 +96,33 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
 
+    let scrollAdjusted = false;
     if (state && state.pendingHistoryPrependOffsetPx > 0 && !state.historyAutoScrollPinned) {
       const restoreOffset = state.pendingHistoryPrependOffsetPx;
       state.pendingHistoryPrependOffsetPx = 0;
-      window.requestAnimationFrame(() => {
-        viewport.scrollTop += restoreOffset;
-      });
+      scrollAdjusted = syncViewportScrollPosition(viewport, viewport.scrollTop + restoreOffset);
+      if (scrollAdjusted) {
+        state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
+      }
     }
 
     if (state?.historyAutoScrollPinned) {
-      window.requestAnimationFrame(() => {
-        const currentViewport = state.historyViewport;
-        if (!currentViewport) {
-          return;
-        }
+      const didAutoScroll = syncViewportScrollPosition(
+        viewport,
+        viewport.scrollHeight - viewport.clientHeight,
+      );
+      if (didAutoScroll && entries.length > HISTORY_VIRTUALIZE_AFTER) {
+        deps.scheduleHistoryRender(sessionId);
+      }
 
-        const previousScrollTop = currentViewport.scrollTop;
-        currentViewport.scrollTop = currentViewport.scrollHeight;
-        if (
-          entries.length > HISTORY_VIRTUALIZE_AFTER &&
-          Math.abs(currentViewport.scrollTop - previousScrollTop) > 1
-        ) {
-          deps.scheduleHistoryRender(sessionId);
-        }
-
-        const current = deps.getState(sessionId);
-        if (current) {
-          current.historyAutoScrollPinned = true;
-          current.historyLastScrollMetrics = readHistoryScrollMetrics(currentViewport);
-          renderScrollToBottomControl(panel, current);
-        }
-      });
+      const current = deps.getState(sessionId);
+      if (current) {
+        current.historyAutoScrollPinned = true;
+        current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
+        renderScrollToBottomControl(panel, current);
+      }
+    } else if (state && scrollAdjusted) {
+      renderScrollToBottomControl(panel, state);
     }
   }
 

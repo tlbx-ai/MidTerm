@@ -109,6 +109,8 @@ export interface SessionListCallbacks {
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
+let queuedProcessInfoFrameId: number | null = null;
+const queuedProcessInfoSessionIds = new Set<string>();
 const SESSION_GROUP_STORAGE_KEYS = {
   human: 'midterm.sidebar.humanSessionsCollapsed',
   agent: 'midterm.sidebar.agentSessionsCollapsed',
@@ -198,11 +200,31 @@ export function setSessionListCallbacks(cbs: SessionListCallbacks): void {
   callbacks = cbs;
 }
 
+function flushQueuedProcessInfoUpdates(): void {
+  queuedProcessInfoFrameId = null;
+  const sessionIds = Array.from(queuedProcessInfoSessionIds);
+  queuedProcessInfoSessionIds.clear();
+  for (const sessionId of sessionIds) {
+    updateSessionProcessInfo(sessionId);
+  }
+}
+
+function queueProcessInfoUpdate(sessionId: string): void {
+  queuedProcessInfoSessionIds.add(sessionId);
+  if (queuedProcessInfoFrameId !== null) {
+    return;
+  }
+
+  queuedProcessInfoFrameId = window.requestAnimationFrame(() => {
+    flushQueuedProcessInfoUpdates();
+  });
+}
+
 /**
  * Handle process state change and update the UI
  */
 function handleProcessStateChange(sessionId: string, _state: ProcessState): void {
-  updateSessionProcessInfo(sessionId);
+  queueProcessInfoUpdate(sessionId);
 }
 
 /**
@@ -248,6 +270,13 @@ function setActionButtonContent(
   button.setAttribute('aria-label', label);
 }
 
+function getProcessTitleFallback(sessionId: string): string {
+  const session = getSession(sessionId);
+  return session && isAgentSurfaceSession(session)
+    ? getPrimarySurfaceLabel(session)
+    : session?.shellType || t('session.terminal');
+}
+
 /**
  * Create the foreground process indicator element
  * Layout: ...directory> process...
@@ -286,11 +315,7 @@ function createForegroundIndicator(
   return container;
 }
 
-/**
- * Render cwd + process as the title row content for unnamed sessions
- */
-function renderProcessTitle(
-  titleRow: HTMLElement,
+function createForegroundTitleNode(
   fgInfo: {
     cwd?: string | null;
     name?: string | null;
@@ -298,7 +323,7 @@ function renderProcessTitle(
     displayName?: string | null;
   },
   sessionId: string,
-): void {
+): HTMLElement {
   if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
     const fgIndicator = createForegroundIndicator(
       fgInfo.cwd,
@@ -307,8 +332,10 @@ function renderProcessTitle(
       fgInfo.displayName,
     );
     fgIndicator.classList.add('process-title');
-    titleRow.appendChild(fgIndicator);
-  } else if (fgInfo.cwd) {
+    return fgIndicator;
+  }
+
+  if (fgInfo.cwd) {
     const cwdSpan = document.createElement('span');
     cwdSpan.className = 'session-foreground process-title';
     const cwdInner = document.createElement('span');
@@ -316,18 +343,89 @@ function renderProcessTitle(
     cwdInner.textContent = fgInfo.cwd;
     cwdSpan.appendChild(cwdInner);
     cwdSpan.title = fgInfo.cwd;
-    titleRow.appendChild(cwdSpan);
+    return cwdSpan;
+  }
+
+  const title = document.createElement('span');
+  title.className = 'session-title truncate';
+  title.textContent = getProcessTitleFallback(sessionId);
+  return title;
+}
+
+function createForegroundProcessInfoNode(
+  fgInfo: {
+    cwd?: string | null;
+    name?: string | null;
+    commandLine?: string | null;
+    displayName?: string | null;
+  },
+  sessionId: string,
+): HTMLElement | null {
+  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
+    return createForegroundIndicator(
+      fgInfo.cwd,
+      fgInfo.commandLine,
+      fgInfo.name,
+      fgInfo.displayName,
+    );
+  }
+
+  if (!fgInfo.cwd) {
+    return null;
+  }
+
+  const cwdSpan = document.createElement('span');
+  cwdSpan.className = 'session-foreground';
+  const cwdInner = document.createElement('span');
+  cwdInner.className = 'fg-cwd';
+  cwdInner.textContent = fgInfo.cwd;
+  cwdSpan.appendChild(cwdInner);
+  cwdSpan.title = fgInfo.cwd;
+  return cwdSpan;
+}
+
+function buildForegroundSignature(
+  sessionId: string,
+  mode: 'title' | 'row',
+  fgInfo: {
+    cwd?: string | null;
+    name?: string | null;
+    commandLine?: string | null;
+    displayName?: string | null;
+  },
+): string {
+  return [
+    mode,
+    fgInfo.cwd ?? '',
+    fgInfo.name ?? '',
+    fgInfo.commandLine ?? '',
+    fgInfo.displayName ?? '',
+    mode === 'title' ? getProcessTitleFallback(sessionId) : '',
+  ].join('\u001f');
+}
+
+function syncForegroundHost(
+  host: HTMLElement,
+  sessionId: string,
+  mode: 'title' | 'row',
+  fgInfo = getForegroundInfo(sessionId),
+): void {
+  const signature = buildForegroundSignature(sessionId, mode, fgInfo);
+  if (host.dataset.foregroundSignature === signature) {
+    return;
+  }
+
+  host.dataset.foregroundSignature = signature;
+  if (mode === 'title') {
+    host.replaceChildren(createForegroundTitleNode(fgInfo, sessionId));
+    return;
+  }
+
+  const content = createForegroundProcessInfoNode(fgInfo, sessionId);
+  if (content) {
+    host.replaceChildren(content);
   } else {
-    // Fallback: show shell type while process info is not yet available
-    const session = getSession(sessionId);
-    const fallback =
-      session && isAgentSurfaceSession(session)
-        ? getPrimarySurfaceLabel(session)
-        : session?.shellType || t('session.terminal');
-    const title = document.createElement('span');
-    title.className = 'session-title truncate';
-    title.textContent = fallback;
-    titleRow.appendChild(title);
+    host.replaceChildren();
   }
 }
 
@@ -353,48 +451,18 @@ function updateSessionProcessInfo(sessionId: string): void {
   );
   if (!sessionItem) return;
 
-  const fgInfo = getForegroundInfo(sessionId);
-
   // Unnamed sessions: update the title row directly
   if (sessionItem.dataset.processAsTitle === '1') {
-    const titleRow = sessionItem.querySelector<HTMLElement>('.session-title-row');
-    if (!titleRow) return;
-    // Preserve badges, clear everything else
-    const layoutBadge = titleRow.querySelector('.layout-badge');
-    const roleBadge = titleRow.querySelector('.session-role-badge');
-    const stateBadge = titleRow.querySelector('.session-state-badge');
-    titleRow.innerHTML = '';
-    renderProcessTitle(titleRow, fgInfo, sessionId);
-    if (roleBadge) titleRow.appendChild(roleBadge);
-    if (stateBadge) titleRow.appendChild(stateBadge);
-    if (layoutBadge) titleRow.appendChild(layoutBadge);
+    const titleHost = sessionItem.querySelector<HTMLElement>('[data-foreground-host="title"]');
+    if (!titleHost) return;
+    syncForegroundHost(titleHost, sessionId, 'title');
     return;
   }
 
   // Named sessions: update the process info row
-  const processInfoEl = sessionItem.querySelector('.session-process-info');
+  const processInfoEl = sessionItem.querySelector<HTMLElement>('.session-process-info');
   if (!processInfoEl) return;
-
-  processInfoEl.innerHTML = '';
-
-  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-    const fgIndicator = createForegroundIndicator(
-      fgInfo.cwd,
-      fgInfo.commandLine,
-      fgInfo.name,
-      fgInfo.displayName,
-    );
-    processInfoEl.appendChild(fgIndicator);
-  } else if (fgInfo.cwd) {
-    const cwdSpan = document.createElement('span');
-    cwdSpan.className = 'session-foreground';
-    const cwdInner = document.createElement('span');
-    cwdInner.className = 'fg-cwd';
-    cwdInner.textContent = fgInfo.cwd;
-    cwdSpan.appendChild(cwdInner);
-    cwdSpan.title = fgInfo.cwd;
-    processInfoEl.appendChild(cwdSpan);
-  }
+  syncForegroundHost(processInfoEl, sessionId, 'row');
 }
 
 // =============================================================================
@@ -660,8 +728,10 @@ function appendSessionTitleContent(
 ): void {
   if (displayInfo.useProcessAsTitle) {
     item.dataset.processAsTitle = '1';
-    const fgInfo = getForegroundInfo(sessionId);
-    renderProcessTitle(titleRow, fgInfo, sessionId);
+    const titleHost = document.createElement('span');
+    titleHost.dataset.foregroundHost = 'title';
+    syncForegroundHost(titleHost, sessionId, 'title');
+    titleRow.appendChild(titleHost);
     appendSessionTitleBadges(titleRow, controlMode, supervisorBadgeLabel, agentBadge, stateBadge);
     titleRow.appendChild(layoutBadge);
     return;
@@ -708,31 +778,7 @@ function populateSessionProcessInfo(
   if (displayInfo.useProcessAsTitle) {
     return;
   }
-
-  const fgInfo = getForegroundInfo(sessionId);
-  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-    const fgIndicator = createForegroundIndicator(
-      fgInfo.cwd,
-      fgInfo.commandLine,
-      fgInfo.name,
-      fgInfo.displayName,
-    );
-    processInfo.appendChild(fgIndicator);
-    return;
-  }
-
-  if (!fgInfo.cwd) {
-    return;
-  }
-
-  const cwdSpan = document.createElement('span');
-  cwdSpan.className = 'session-foreground';
-  const cwdInner = document.createElement('span');
-  cwdInner.className = 'fg-cwd';
-  cwdInner.textContent = fgInfo.cwd;
-  cwdSpan.appendChild(cwdInner);
-  cwdSpan.title = fgInfo.cwd;
-  processInfo.appendChild(cwdSpan);
+  syncForegroundHost(processInfo, sessionId, 'row');
 }
 
 function appendSessionActionButton(
@@ -952,6 +998,7 @@ function createSessionItem(
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
   processInfo.dataset.sessionId = sessionId;
+  processInfo.dataset.foregroundHost = 'row';
 
   populateSessionProcessInfo(processInfo, displayInfo, sessionId);
 
