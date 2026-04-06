@@ -25,7 +25,11 @@ import {
 } from '../../stores';
 import { throttle } from '../../utils';
 import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
-import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import {
+  isTerminalVisible,
+  remeasureTerminalCells,
+  refreshTerminalRenderer,
+} from './presentationRefresh';
 import { ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT } from '../smartInput/layout';
 import { isTerminalViewingScrollback } from './scrollback';
 import {
@@ -491,12 +495,47 @@ export async function calculateOptimalDimensions(
 
 function refreshRendererForMeasurement(
   state: Pick<TerminalState, 'terminal' | 'container' | 'opened'>,
-): void {
+): boolean {
   if (!state.opened || !isTerminalVisible(state)) {
-    return;
+    return false;
   }
 
-  refreshTerminalRenderer(state);
+  remeasureTerminalCells(state);
+  return true;
+}
+
+function calculateViewportFitWithMeasurementRecovery(
+  state: Pick<TerminalState, 'terminal' | 'container' | 'opened'>,
+  container: HTMLElement,
+  isLayoutPane: boolean,
+): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
+  const initialFit = calculateViewportFit(state, container, isLayoutPane);
+  if (initialFit) {
+    return initialFit;
+  }
+
+  if (!refreshRendererForMeasurement(state)) {
+    return null;
+  }
+
+  return calculateViewportFit(state, container, isLayoutPane);
+}
+
+function calculateOptimalDimensionsForViewportWithMeasurementRecovery(
+  state: Pick<TerminalState, 'terminal' | 'container' | 'opened'>,
+  container: HTMLElement,
+  isLayoutPane: boolean,
+): { cols: number; rows: number } | null {
+  const initialOptimal = calculateOptimalDimensionsForViewport(state, container, isLayoutPane);
+  if (initialOptimal) {
+    return initialOptimal;
+  }
+
+  if (!refreshRendererForMeasurement(state)) {
+    return null;
+  }
+
+  return calculateOptimalDimensionsForViewport(state, container, isLayoutPane);
 }
 
 function clearTerminalScaling(state: Pick<TerminalState, 'container'>): void {
@@ -642,9 +681,7 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     return;
   }
 
-  refreshRendererForMeasurement(state);
-
-  const fit = calculateViewportFit(state, dom.terminalsArea, false);
+  const fit = calculateViewportFitWithMeasurementRecovery(state, dom.terminalsArea, false);
   if (!fit) {
     if (wasHidden) {
       state.container.classList.add('hidden');
@@ -710,9 +747,7 @@ function fitTerminalToContainerInternal(
     return;
   }
 
-  refreshRendererForMeasurement(state);
-
-  const fit = calculateViewportFit(state, container, true);
+  const fit = calculateViewportFitWithMeasurementRecovery(state, container, true);
   if (!fit) {
     scheduleFitRetry(sessionId, retriesRemaining);
     return;
@@ -891,7 +926,16 @@ export function applyTerminalScalingSync(state: TerminalState): void {
  * Scales down terminals that are larger than the available space.
  */
 export function applyTerminalScaling(_sessionId: string, state: TerminalState): void {
+  if (pendingTerminalScaleStates.has(state)) {
+    return;
+  }
+
+  pendingTerminalScaleStates.add(state);
   requestAnimationFrame(() => {
+    pendingTerminalScaleStates.delete(state);
+    if (!state.opened) {
+      return;
+    }
     applyTerminalScalingSync(state);
   });
 }
@@ -947,6 +991,7 @@ let autoResizeTimer: number | undefined;
 let mainBrowserContainerResizeObserver: ResizeObserver | null = null;
 let observedMainBrowserContainer: HTMLElement | null = null;
 let footerReserveResizeQueued = false;
+const pendingTerminalScaleStates = new WeakSet<TerminalState>();
 
 /**
  * Auto-resize all terminals (debounced 300ms, for window resize events).
@@ -1032,9 +1077,6 @@ function scheduleFooterReserveResize(): void {
 }
 
 let foregroundResizeRecoveryScheduled = false;
-let mainBrowserGeometryWatchdogTimer: number | null = null;
-let mainBrowserGeometryWatchdogFrame: number | null = null;
-let lastMainBrowserGeometrySignature: string | null = null;
 
 /**
  * Recover main-browser sizing after the page returns to the foreground.
@@ -1052,129 +1094,6 @@ export function scheduleForegroundResizeRecovery(): void {
       periodicResizeCheck();
     });
   });
-}
-
-function invalidateMainBrowserGeometryWatchdog(): void {
-  lastMainBrowserGeometrySignature = null;
-}
-
-function roundGeometry(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return '0';
-  }
-
-  return String(Math.round(value));
-}
-
-function buildMainBrowserGeometrySignature(): string | null {
-  if (!$isMainBrowser.get()) {
-    return null;
-  }
-
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-    return null;
-  }
-
-  const parts: string[] = [];
-  const visualViewport = window.visualViewport;
-  const terminalsAreaRect = dom.terminalsArea?.getBoundingClientRect() ?? null;
-  const activeId = $activeSessionId.get();
-
-  parts.push(`win:${roundGeometry(window.innerWidth)}x${roundGeometry(window.innerHeight)}`);
-  parts.push(`dpr:${roundGeometry(window.devicePixelRatio * 1000)}`);
-  parts.push(
-    `vv:${roundGeometry(visualViewport?.width)}x${roundGeometry(visualViewport?.height)}@${roundGeometry(visualViewport?.offsetLeft)}:${roundGeometry(visualViewport?.offsetTop)}`,
-  );
-  parts.push(
-    `area:${roundGeometry(terminalsAreaRect?.width)}x${roundGeometry(terminalsAreaRect?.height)}`,
-  );
-  parts.push(`active:${activeId ?? ''}`);
-
-  sessionTerminals.forEach((state, sessionId) => {
-    if (!state.opened) {
-      return;
-    }
-
-    const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
-    if (!layoutPane) {
-      if (sessionId !== activeId || state.container.classList.contains('hidden')) {
-        return;
-      }
-    }
-
-    const measurementRoot = layoutPane ?? state.container;
-    const rect = measurementRoot.getBoundingClientRect();
-    parts.push(
-      [
-        sessionId,
-        layoutPane ? 'layout' : 'standalone',
-        roundGeometry(rect.width),
-        roundGeometry(rect.height),
-        roundGeometry(state.container.clientWidth),
-        roundGeometry(state.container.clientHeight),
-      ].join(':'),
-    );
-  });
-
-  return parts.join('|');
-}
-
-function queueMainBrowserGeometryWatchdog(): void {
-  if (mainBrowserGeometryWatchdogTimer !== null || mainBrowserGeometryWatchdogFrame !== null) {
-    return;
-  }
-
-  mainBrowserGeometryWatchdogTimer = window.setTimeout(() => {
-    mainBrowserGeometryWatchdogTimer = null;
-    mainBrowserGeometryWatchdogFrame = window.requestAnimationFrame(() => {
-      mainBrowserGeometryWatchdogFrame = null;
-      runMainBrowserGeometryWatchdog();
-    });
-  }, 0);
-}
-
-function runMainBrowserGeometryWatchdog(): void {
-  if (!$isMainBrowser.get()) {
-    stopMainBrowserGeometryWatchdog();
-    return;
-  }
-
-  const signature = buildMainBrowserGeometrySignature();
-  if (signature === null) {
-    invalidateMainBrowserGeometryWatchdog();
-    queueMainBrowserGeometryWatchdog();
-    return;
-  }
-
-  if (signature !== lastMainBrowserGeometrySignature) {
-    lastMainBrowserGeometrySignature = signature;
-    scheduleForegroundResizeRecovery();
-  }
-
-  queueMainBrowserGeometryWatchdog();
-}
-
-function ensureMainBrowserGeometryWatchdog(): void {
-  if (mainBrowserGeometryWatchdogTimer !== null || mainBrowserGeometryWatchdogFrame !== null) {
-    return;
-  }
-
-  invalidateMainBrowserGeometryWatchdog();
-  queueMainBrowserGeometryWatchdog();
-}
-
-function stopMainBrowserGeometryWatchdog(): void {
-  if (mainBrowserGeometryWatchdogTimer !== null) {
-    window.clearTimeout(mainBrowserGeometryWatchdogTimer);
-    mainBrowserGeometryWatchdogTimer = null;
-  }
-
-  if (mainBrowserGeometryWatchdogFrame !== null) {
-    window.cancelAnimationFrame(mainBrowserGeometryWatchdogFrame);
-    mainBrowserGeometryWatchdogFrame = null;
-  }
-
-  invalidateMainBrowserGeometryWatchdog();
 }
 
 /**
@@ -1237,9 +1156,11 @@ function periodicResizeCheck(): void {
     const termRows = state.terminal.rows;
     if (termCols <= 0 || termRows <= 0) return;
 
-    refreshRendererForMeasurement(state);
-
-    const optimal = calculateOptimalDimensionsForViewport(state, container, !!layoutPane);
+    const optimal = calculateOptimalDimensionsForViewportWithMeasurementRecovery(
+      state,
+      container,
+      !!layoutPane,
+    );
     if (!optimal) return;
     const optimalCols = optimal.cols;
     const optimalRows = optimal.rows;
@@ -1288,20 +1209,16 @@ export function setupResizeObserver(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       return;
     }
-    invalidateMainBrowserGeometryWatchdog();
     scheduleForegroundResizeRecovery();
   };
 
   document.addEventListener('visibilitychange', () => {
-    invalidateMainBrowserGeometryWatchdog();
     if (document.visibilityState === 'visible') {
       handleForegroundRecovery();
     }
   });
   window.addEventListener('focus', handleForegroundRecovery);
   window.addEventListener('pageshow', handleForegroundRecovery);
-  window.addEventListener('pagehide', invalidateMainBrowserGeometryWatchdog);
-  window.addEventListener('blur', invalidateMainBrowserGeometryWatchdog);
 
   let periodicResizeInterval: number | undefined;
 
@@ -1309,7 +1226,6 @@ export function setupResizeObserver(): void {
     if (isMain && periodicResizeInterval === undefined) {
       requestAnimationFrame(() => {
         ensureMainBrowserContainerResizeObserver();
-        ensureMainBrowserGeometryWatchdog();
         autoResizeAllTerminalsImmediate();
       });
       periodicResizeInterval = window.setInterval(periodicResizeCheck, 1000);
@@ -1317,7 +1233,6 @@ export function setupResizeObserver(): void {
       clearInterval(periodicResizeInterval);
       periodicResizeInterval = undefined;
       disconnectMainBrowserContainerResizeObserver();
-      stopMainBrowserGeometryWatchdog();
       requestAnimationFrame(rescaleAllTerminalsImmediate);
     }
   });

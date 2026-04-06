@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
-import { fitSessionToScreen, scheduleForegroundResizeRecovery } from './scaling';
+import { applyTerminalScaling, fitSessionToScreen, scheduleForegroundResizeRecovery } from './scaling';
 import { sendResize } from '../comms';
 
 const mocks = vi.hoisted(() => ({
-  refreshTerminalRenderer: vi.fn((state: any) => {
+  remeasureTerminalCells: vi.fn((state: any) => {
     const dims = state.terminal?._core?._renderService?.dimensions?.css?.cell;
     if (dims) {
       dims.width = 10;
@@ -40,7 +40,8 @@ vi.mock('./manager', () => ({
 
 vi.mock('./presentationRefresh', () => ({
   isTerminalVisible: () => true,
-  refreshTerminalRenderer: mocks.refreshTerminalRenderer,
+  remeasureTerminalCells: mocks.remeasureTerminalCells,
+  refreshTerminalRenderer: vi.fn(),
 }));
 
 type FakeElement = {
@@ -84,7 +85,7 @@ function createFitHarness() {
       _renderService: {
         dimensions: {
           css: {
-            cell: { width: 9.5, height: 20 },
+            cell: { width: 10, height: 20 },
           },
         },
       },
@@ -151,7 +152,7 @@ describe('fitSessionToScreen', () => {
 
   beforeEach(() => {
     sessionTerminals.clear();
-    mocks.refreshTerminalRenderer.mockClear();
+    mocks.remeasureTerminalCells.mockClear();
     vi.mocked(sendResize).mockReset();
     $isMainBrowser.set(true);
     $currentSettings.set({
@@ -191,13 +192,13 @@ describe('fitSessionToScreen', () => {
     vi.clearAllMocks();
   });
 
-  it('refreshes xterm renderer metrics before fitting the main-browser viewport', () => {
+  it('fits the main-browser viewport without forcing a renderer refresh when cell metrics exist', () => {
     const harness = createFitHarness();
     sessionTerminals.set('s1', harness.state as never);
 
     fitSessionToScreen('s1');
 
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
+    expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
@@ -228,7 +229,6 @@ describe('fitSessionToScreen', () => {
 
     scheduleForegroundResizeRecovery();
 
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
     expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).not.toHaveBeenCalled();
   });
@@ -239,8 +239,51 @@ describe('fitSessionToScreen', () => {
 
     scheduleForegroundResizeRecovery();
 
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+  });
+
+  it('coalesces repeated scaling requests for the same terminal into one animation frame', () => {
+    const terminal = {
+      cols: 80,
+      rows: 24,
+      buffer: { active: { viewportY: 0, baseY: 0 } },
+    };
+    const xterm = {
+      style: {} as Record<string, string>,
+      offsetWidth: 800,
+      offsetHeight: 480,
+    };
+    const container = {
+      clientWidth: 800,
+      clientHeight: 480,
+      classList: createClassList(),
+      appendChild: vi.fn(),
+      closest: () => null,
+      querySelector<T>(selector: string): T | null {
+        if (selector === '.xterm') return xterm as T;
+        return null;
+      },
+    } as unknown as HTMLDivElement;
+    const state = {
+      terminal,
+      fitAddon: {} as never,
+      container,
+      serverCols: 80,
+      serverRows: 24,
+      opened: true,
+      pendingVisualRefresh: false,
+    };
+
+    const callbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    }) as typeof requestAnimationFrame;
+
+    applyTerminalScaling('s1', state as never);
+    applyTerminalScaling('s1', state as never);
+
+    expect(callbacks).toHaveLength(1);
   });
 });

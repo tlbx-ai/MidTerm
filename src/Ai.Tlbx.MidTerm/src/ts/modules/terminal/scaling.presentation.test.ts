@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TerminalState } from '../../types';
-import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import {
+  isTerminalVisible,
+  remeasureTerminalCells,
+  refreshTerminalRenderer,
+} from './presentationRefresh';
 
 describe('presentationRefresh', () => {
   const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
@@ -82,6 +86,45 @@ describe('presentationRefresh', () => {
     expect(handleResize).toHaveBeenCalledWith(80, 24);
     expect(clearTextureAtlas).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  it('can remeasure terminal cells without clearing the WebGL glyph atlas', () => {
+    const container = {
+      isConnected: true,
+      offsetWidth: 640,
+      classList: {
+        contains: () => false,
+      },
+      getClientRects: () => [{ width: 640, height: 480 }],
+    };
+
+    const measure = vi.fn();
+    const clearTextureAtlas = vi.fn();
+    const refresh = vi.fn();
+
+    const state = {
+      terminal: {
+        cols: 80,
+        rows: 24,
+        clearTextureAtlas,
+        refresh,
+        _core: {
+          _charSizeService: { measure },
+        },
+      },
+      fitAddon: {} as never,
+      container,
+      serverCols: 80,
+      serverRows: 24,
+      opened: true,
+      pendingVisualRefresh: false,
+    } as unknown as TerminalState;
+
+    remeasureTerminalCells(state);
+
+    expect(measure).toHaveBeenCalledOnce();
+    expect(clearTextureAtlas).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('still refreshes safely when private xterm services are missing', () => {

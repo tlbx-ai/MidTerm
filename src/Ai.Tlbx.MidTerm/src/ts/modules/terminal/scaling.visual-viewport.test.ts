@@ -6,7 +6,7 @@ import { setupVisualViewport } from './scaling';
 import { sendResize } from '../comms';
 
 const mocks = vi.hoisted(() => ({
-  refreshTerminalRenderer: vi.fn((state: any) => {
+  remeasureTerminalCells: vi.fn((state: any) => {
     const dims = state.terminal?._core?._renderService?.dimensions?.css?.cell;
     if (dims) {
       dims.width = 10;
@@ -40,7 +40,8 @@ vi.mock('./manager', () => ({
 
 vi.mock('./presentationRefresh', () => ({
   isTerminalVisible: () => true,
-  refreshTerminalRenderer: mocks.refreshTerminalRenderer,
+  remeasureTerminalCells: mocks.remeasureTerminalCells,
+  refreshTerminalRenderer: vi.fn(),
 }));
 
 function createHarness() {
@@ -56,7 +57,7 @@ function createHarness() {
       _renderService: {
         dimensions: {
           css: {
-            cell: { width: 9.5, height: 20 },
+            cell: { width: 10, height: 20 },
           },
         },
       },
@@ -143,7 +144,7 @@ describe('setupVisualViewport', () => {
   beforeEach(() => {
     sessionTerminals.clear();
     vi.mocked(sendResize).mockReset();
-    mocks.refreshTerminalRenderer.mockClear();
+    mocks.remeasureTerminalCells.mockClear();
     $isMainBrowser.set(true);
     $currentSettings.set({
       fontSize: 14,
@@ -242,6 +243,7 @@ describe('setupVisualViewport', () => {
   it('makes the leading browser resize terminals on visual viewport changes', () => {
     setupVisualViewport();
 
+    expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 
