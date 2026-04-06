@@ -278,6 +278,35 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetEvents_DropsRawPayloadBodiesDuringRetention()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "raw-1",
+            SessionId = "s-raw",
+            Provider = "codex",
+            ThreadId = "thread-raw",
+            CreatedAt = ParseUtc("2026-04-07T08:00:00Z"),
+            Type = "session.started",
+            Raw = new LensPulseEventRaw
+            {
+                Source = "codex",
+                Method = "session.started",
+                PayloadJson = new string('x', 12_000)
+            }
+        });
+
+        var retained = Assert.Single(service.GetEvents("s-raw").Events);
+
+        Assert.NotNull(retained.Raw);
+        Assert.Equal("codex", retained.Raw!.Source);
+        Assert.Equal("session.started", retained.Raw.Method);
+        Assert.True(string.IsNullOrEmpty(retained.Raw.PayloadJson));
+    }
+
+    [Fact]
     public void GetSnapshot_TracksQuickSettingsUpdates()
     {
         var service = new SessionLensPulseService();
@@ -1298,6 +1327,70 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_AdoptsProvisionalCommandOutputEntryWhenCompletionArrivesAfterOutput()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "turn-start",
+            SessionId = "s-command-adopt",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-06T10:00:00Z"),
+            Type = "turn.started",
+            TurnStarted = new LensPulseTurnStartedPayload()
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-out",
+            SessionId = "s-command-adopt",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            CreatedAt = ParseUtc("2026-04-06T10:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "command_output",
+                Delta = "## dev...origin/dev"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-complete",
+            SessionId = "s-command-adopt",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-1",
+            CreatedAt = ParseUtc("2026-04-06T10:00:02Z"),
+            Type = "item.completed",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command_execution",
+                Status = "completed",
+                Title = "Tool completed",
+                Detail = "git status --short --branch"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-command-adopt");
+        Assert.NotNull(snapshot);
+
+        var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
+        Assert.Equal("tool:cmd-1", toolEntry.EntryId);
+        Assert.Equal("cmd-1", toolEntry.ItemId);
+        Assert.Equal("command_output", toolEntry.ItemType);
+        Assert.Contains("git status --short --branch", toolEntry.Body, StringComparison.Ordinal);
+        Assert.Contains("## dev...origin/dev", toolEntry.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("tool:command_output", snapshot.Transcript.Select(entry => entry.EntryId));
+    }
+
+    [Fact]
     public void Append_WritesGuidNamedScreenLogWithRenderHintsInDevMode()
     {
         var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
@@ -1385,6 +1478,79 @@ public sealed class SessionLensPulseServiceTests
             if (Directory.Exists(screenLogDirectory))
             {
                 Directory.Delete(screenLogDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void GetSnapshot_ReloadsCanonicalStateFromPersistedStoreWithoutReplayingEventBacklog()
+    {
+        var storeDirectory = Path.Combine(Path.GetTempPath(), "midterm-lens-history-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storeDirectory);
+
+        try
+        {
+            var service = new SessionLensPulseService(storeDirectory: storeDirectory);
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "persist-session",
+                SessionId = "s-persist",
+                Provider = "codex",
+                ThreadId = "thread-persist",
+                CreatedAt = ParseUtc("2026-04-07T08:10:00Z"),
+                Type = "session.started",
+                SessionState = new LensPulseSessionStatePayload
+                {
+                    State = "starting",
+                    StateLabel = "Starting",
+                    Reason = "Booting"
+                }
+            });
+            service.Append(new LensPulseEvent
+            {
+                EventId = "persist-user",
+                SessionId = "s-persist",
+                Provider = "codex",
+                ThreadId = "thread-persist",
+                TurnId = "turn-persist",
+                ItemId = "user:turn-persist",
+                CreatedAt = ParseUtc("2026-04-07T08:10:01Z"),
+                Type = "item.completed",
+                Item = new LensPulseItemPayload
+                {
+                    ItemType = "user_message",
+                    Status = "completed",
+                    Title = "User message",
+                    Detail = "Persist this canonical Lens history."
+                }
+            });
+
+            var storePath = Path.Combine(storeDirectory, $"{Uri.EscapeDataString("s-persist")}.json");
+            Assert.True(
+                WaitForCondition(() => File.Exists(storePath) && new FileInfo(storePath).Length > 0),
+                "Expected canonical Lens state store to be written.");
+
+            var reloaded = new SessionLensPulseService(storeDirectory: storeDirectory);
+            var snapshot = reloaded.GetSnapshot("s-persist");
+            var events = reloaded.GetEvents("s-persist");
+
+            Assert.NotNull(snapshot);
+            Assert.Equal(2, snapshot!.LatestSequence);
+            Assert.Contains(
+                snapshot.Transcript,
+                entry => entry.Kind == "user" &&
+                         entry.Body.Contains("Persist this canonical Lens history.", StringComparison.Ordinal));
+            Assert.Equal(2, events.LatestSequence);
+            Assert.Empty(events.Events);
+            Assert.Single(Directory.GetFiles(storeDirectory, "*.json"));
+            Assert.Empty(Directory.GetFiles(storeDirectory, "*.ndjson"));
+        }
+        finally
+        {
+            if (Directory.Exists(storeDirectory))
+            {
+                Directory.Delete(storeDirectory, recursive: true);
             }
         }
     }
@@ -1662,6 +1828,21 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.True(service.HasHistory("s1"));
         Assert.False(service.HasHistory("s2"));
+    }
+
+    private static bool WaitForCondition(Func<bool> predicate, int attempts = 80, int delayMilliseconds = 25)
+    {
+        for (var i = 0; i < attempts; i += 1)
+        {
+            if (predicate())
+            {
+                return true;
+            }
+
+            Thread.Sleep(delayMilliseconds);
+        }
+
+        return predicate();
     }
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);

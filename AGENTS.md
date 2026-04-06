@@ -67,7 +67,8 @@ Rules:
 ## Lens Design Documentation
 
 - The visual and interaction design contract for Lens lives in [docs/LensDesign.md](docs/LensDesign.md).
-- Read that document before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, or hierarchy changes.
+- Read that document into working context before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, hierarchy, virtualization, or history-window changes.
+- Do not make Lens feature changes from memory or from nearby code alone; load [docs/LensDesign.md](docs/LensDesign.md) first in the same turn so design-contract drift is visible while implementing.
 - Treat `docs/LensDesign.md` as a maintained design contract, not a one-off note.
 - Any future Lens UI change that affects fundamentals must update `docs/LensDesign.md` in the same work so the current design understanding remains traceable for future sessions.
 

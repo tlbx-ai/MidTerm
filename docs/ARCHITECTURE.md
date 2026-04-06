@@ -276,6 +276,68 @@ Lens sync is now owned by a dedicated `/ws/lens` channel rather than REST snapsh
 - reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
 - the frontend stays provider-neutral and does not reconstruct Lens state from PTY output or provider-specific raw transports
 
+### Lens History Ownership And Byte Budget
+
+Provider-backed Lens runtimes can emit huge amounts of low-value transport noise: repetitive progress chatter, superseded intermediate states, raw command stdout, and full file bodies that are far larger than any useful on-screen view.
+
+Lens must therefore enforce a strict ownership and byte-budget model:
+
+- `mtagenthost` and MidTerm own the in-flight provider reduction path plus the canonical derived Lens history
+- the browser does not own full Lens history and must not accumulate the full provider event stream in memory
+- the browser consumes a bounded view window over canonical history, not an unbounded raw-event feed
+- multiple browsers may view the same Lens session concurrently, but each browser owns only its own local viewport/window state
+- browser scrolling is a read-window operation against MidTerm-owned canonical history, not a request for provider raw-event replay
+
+This leads to the following transport rules:
+
+- raw provider payloads are transient reducer inputs, not retained Lens history
+- giant file bodies, giant command stdout blobs, and repetitive transport chatter must be summarized, windowed, or suppressed before they become canonical history rows
+- the canonical Lens history should preserve what a human needs to understand the work, not every raw provider emission
+- `/ws/lens` should transport only:
+  - the currently materialized history slice
+  - stable total-count/window metadata
+  - live deltas that affect rows already in or near the active slice
+  - explicit older/newer window fetch results when requested
+- scrolling one browser must not force all other browsers to download the same older slices
+- hidden/background browsers should collapse back to a latest anchored slice and stop retaining wide browser-side history windows
+
+The architectural target is:
+
+- one canonical history store in MidTerm
+- MidTerm durability uses canonical reduced Lens state, not appended provider-shaped event logs
+- one bounded visible history window per browser/session view
+- deterministic fetches for arbitrary older/newer portions of that history
+- minimal duplicated byte transfer across reconnects and across multiple browsers
+
+### Lens History Reduction Policy
+
+MidTerm needs an explicit reduction layer between raw provider events and canonical Lens history.
+
+Canonical history should keep:
+
+- user prompts and durable assistant output
+- stable tool identity and meaningful tool lifecycle state
+- compact command invocations plus bounded output summaries
+- compact file-read/file-change summaries and working diffs
+- approvals, plan-mode questions, user-input requests, and their resolutions
+- durable runtime notices that materially affect operator understanding
+
+Canonical history should usually reduce or suppress:
+
+- repetitive in-progress status chatter that conveys no new operator value
+- duplicate final content that only restates already-streamed material
+- full raw command/file payloads when a bounded summary or excerpt is sufficient
+- transport-level noise that exists only because of provider protocol granularity
+- superseded intermediate states once the canonical row has settled
+- any content that is neither shown later nor required to determine what is shown later
+
+Where giant payloads exist, MidTerm should prefer:
+
+- command invocation + bounded tail/head window + omitted-line markers
+- file-read path + excerpt policy + compact preview, not full file body
+- summarized tool output for timeline rendering instead of hidden retained raw payloads
+- canonical identity-preserving row updates instead of spawning many noisy sibling rows
+
 ### Lens Screen Logs
 
 For UI iteration and bug discussion, Lens also emits a dev-only per-session screen log derived from the same canonical backend history model that drives `/ws/lens`.

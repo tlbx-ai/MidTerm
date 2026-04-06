@@ -151,6 +151,7 @@ export function initAgentView(): void {
     const state = getOrCreateViewState(sessionId, panel);
     state.panel = panel;
     bindHistoryViewport(sessionId, state);
+    prepareLensForForeground(state);
     void activateAgentView(sessionId);
   });
 
@@ -437,7 +438,7 @@ async function resumeLensFromHistory(
   try {
     await attachSessionLens(sessionId);
     ensureLensActivationIsCurrent(state, activationRunId);
-    await refreshLensSnapshot(sessionId);
+    await refreshLensSnapshot(sessionId, { latestWindow: state.historyAutoScrollPinned });
     ensureLensActivationIsCurrent(state, activationRunId);
     openLiveLensStream(sessionId, state.snapshot?.latestSequence ?? 0);
   } catch (error) {
@@ -553,6 +554,17 @@ function syncAgentViewPresentation(
 ): void {
   panel.dataset.lensProvider = normalizeLensProvider(provider);
   panel.dataset.lensLayout = resolveLensLayoutMode(provider);
+}
+
+function prepareLensForForeground(state: SessionLensViewState): void {
+  state.historyAutoScrollPinned = true;
+  state.historyLastScrollMetrics = null;
+  state.historyLastUserScrollIntentAt = 0;
+  state.pendingHistoryPrependOffsetPx = 0;
+
+  if (state.historyViewport) {
+    state.historyViewport.scrollTop = 0;
+  }
 }
 
 function bindHistoryViewport(sessionId: string, state: SessionLensViewState): void {
@@ -754,7 +766,10 @@ async function compactHiddenLensSessionHistory(
   collapseSnapshotToLatestWindow(state, LENS_HISTORY_WINDOW_SIZE);
 }
 
-async function refreshLensSnapshot(sessionId: string): Promise<void> {
+async function refreshLensSnapshot(
+  sessionId: string,
+  options: { latestWindow?: boolean } = {},
+): Promise<void> {
   const state = viewStates.get(sessionId);
   if (!state || state.refreshInFlight) {
     return;
@@ -762,11 +777,13 @@ async function refreshLensSnapshot(sessionId: string): Promise<void> {
 
   state.refreshInFlight = true;
   try {
-    const nextSnapshot = await getLensSnapshot(
-      sessionId,
-      state.historyWindowStart,
-      state.historyWindowCount,
-    );
+    const nextSnapshot = options.latestWindow
+      ? await getLensSnapshot(
+          sessionId,
+          undefined,
+          Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+        )
+      : await getLensSnapshot(sessionId, state.historyWindowStart, state.historyWindowCount);
     applyLensSnapshotWindowState(state, nextSnapshot);
     state.snapshot = nextSnapshot;
     if (state.activationState !== 'ready') {

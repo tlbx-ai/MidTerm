@@ -139,6 +139,14 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('Passive rerenders must not clear an active text selection inside Lens.');
   });
 
+  it('documents the current Lens usability floor and canonical-only retention stance', () => {
+    expect(lensDesign).toContain('the visible result after those changes must not regress below the current Lens floor');
+    expect(lensDesign).toContain('persistent `Ran …` command rows with folded output tails');
+    expect(lensDesign).toContain('deterministic older-history paging through a bounded virtualized window');
+    expect(lensDesign).toContain('Raw provider inputs are transient reducer inputs, not retained Lens history.');
+    expect(lensDesign).toContain('it should be dropped instead of preserved in a hidden Lens data layer.');
+  });
+
   it('renders the busy indicator as Working with per-letter sweep animation', () => {
     expect(historyProcessingSource).toContain("lensText('lens.status.working', 'Working')");
     expect(historyProcessingSource).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');

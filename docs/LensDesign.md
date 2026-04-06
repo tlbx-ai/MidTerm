@@ -29,6 +29,22 @@ This document governs:
 
 Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Lens UX contract after provider events have been normalized into MidTerm-owned concepts.
 
+## Non-Regression Floor
+
+Lens is already a usable operator surface. Architectural cleanup may replace any part of the plumbing underneath it, but the visible result after those changes must not regress below the current Lens floor.
+
+That floor currently includes:
+
+- stable chronological history rows
+- readable assistant output with low-latency streaming
+- persistent `Ran …` command rows with folded output tails
+- usable diff rendering and file/work artifact visibility
+- deterministic live-edge follow by default
+- deterministic older-history paging through a bounded virtualized window
+- compact browser-side history retention instead of unbounded browser memory growth
+
+Future refactors may improve or replace the implementation of any of the above, but they must not ship a Lens UI that is less usable than the current surface.
+
 ## Terminology
 
 - `history` means the canonical provider-backed ordered sequence of Lens items.
@@ -86,6 +102,9 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Lens history transport should be window-aware: MidTerm may deliver only the currently materialized history slice plus total-count/window metadata, and the UI should request older or newer slices on demand instead of assuming the full history is resident in the browser.
 - Browser-resident Lens history should stay bounded to a working window instead of accumulating the full session scrollback in memory.
 - When a Lens surface becomes hidden or inactive, its rendered history DOM should be dropped and its retained browser-side history window should collapse back toward a small latest-history slice while the runtime keeps ingesting canonical state.
+- The browser should treat Lens history as a viewport over MidTerm-owned canonical history, not as a durable full-history cache.
+- Different browsers viewing the same Lens session may hold different local windows and scroll positions without changing the canonical history owned by MidTerm.
+- Older-history fetches should retrieve only the requested canonical slice plus window metadata, not replay the full raw provider event stream.
 
 ### 7. Responsive behavior
 
@@ -109,6 +128,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Lens should auto-follow the live edge by default.
 - If the user scrolls away from the bottom, automatic scrolling must stop immediately.
 - Automatic scrolling may resume only after the user reaches the bottom again or explicitly presses a "back to bottom" control.
+- When a Lens surface is reopened, reactivated, or restored after being hidden, it should re-enter at the live edge in follow mode by default unless the user is in the middle of an explicit older-history navigation flow.
 - When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
@@ -148,6 +168,16 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Avoid layout thrash and avoid motion that causes the eye to lose reading position.
 
 ## History Model
+
+### Raw Event Reduction
+
+- Provider runtimes may emit vastly more data than Lens should render directly.
+- Raw provider traffic is not the Lens UX contract. Canonical history is.
+- The Lens timeline should preserve meaning, identity, and operator comprehension, not raw wire completeness.
+- Giant command outputs, giant file bodies, repetitive progress chatter, and transport-level event spam should be summarized, windowed, or suppressed before they reach the normal timeline.
+- Lens should make it obvious when content is intentionally windowed or summarized by using stable omitted-line markers, bounded previews, or disclosure affordances.
+- Raw provider inputs are transient reducer inputs, not retained Lens history.
+- If content is not meant to be shown later, or needed to determine what is shown later, it should be dropped instead of preserved in a hidden Lens data layer.
 
 ### Ordering
 
@@ -194,6 +224,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - When command output is available immediately after a command-execution row, Lens should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - When the backend already materializes a command-output transcript row that contains both the command header and compact output window, Lens should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
+- Repetitive tool lifecycle chatter should collapse into the owning tool row instead of materializing as many visually separate history rows.
 - Command-execution rows and diff rows should not repeat timestamp meta. Those artifact rows should read like quiet console output, not timestamped chat turns.
 - Command-execution rows should remain fully flat. Do not wrap them in bordered cards, bubble shells, or inset containers that break text selection or console-like continuity.
 - Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows. Tool, reasoning, plan, diff, and command artifacts should stay flat unless a future design contract explicitly reintroduces structure.
@@ -268,12 +299,17 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
 - Rich tool/log items should support collapsed rendering by default, but working diffs should stay expanded with a bounded visible body.
+- High-volume provider chatter should be reduced before transport so the browser receives canonical history deltas, not raw-event floods.
+- The browser should request older/newer history as explicit window fetches and should not receive arbitrary unseen history by default.
+- Multiple browsers attached to one Lens session should share the same MidTerm-owned canonical history while independently fetching only the windows each browser currently needs.
+- Re-entry and reconnect should prefer a latest anchored window plus live follow mode by default; older-history windows should be fetched only after explicit user navigation.
 
 ## Dev Diagnostics
 
 - In dev mode, MidTerm should write one GUID-named Lens screen log per session under the normal MidTerm log root.
 - The Lens screen log should be derived from canonical Lens history deltas, not raw provider transport payloads or frontend DOM scraping.
 - Screen-log records should include the rendered-history facts needed to discuss the UI: stable history identity, kind, label, title, meta, body, render mode, and whether the body collapses by default.
+- Lens dev diagnostics must not introduce a second retained raw-event history layer. The screen log is a derived canonical view aid only.
 
 ## Design Review Checklist
 
@@ -303,6 +339,7 @@ Status in this branch/work item:
 - implemented: when a visible history row changes materially, Lens now replaces that row node by stable key instead of mutating an older DOM node into a new future shape
 - implemented: scroll-follow suppression while the user is away from the live edge, plus an explicit return-to-bottom control
 - implemented: non-user layout growth and sizing changes no longer clear live-edge follow state by themselves; only explicit user scrolling moves Lens out of follow mode
+- implemented: when a hidden Lens surface is shown again, it restores a fresh latest-history window and re-enters live-edge follow mode by default instead of preserving a stale hidden-session mid-history scroll offset
 - implemented: terminal-font monospace rendering for machine-oriented Lens content
 - implemented: provider-stream-driven assistant rendering so partial assistant text can appear before the final provider message lands
 - implemented: responsive Lens styling for mobile-sized layouts
@@ -310,6 +347,9 @@ Status in this branch/work item:
 - implemented: i18n-backed MidTerm Lens labels, buttons, helper copy, ready-state text, and interruption text
 - implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
 - implemented: hidden/background Lens sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
+- implemented: Lens history is treated as a bounded browser-side view window over MidTerm-owned canonical history rather than as an unbounded full-history browser cache
+- implemented: Lens retains canonical user-facing history rather than a hidden durable raw-event archive
+- implemented: MidTerm-side Lens persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Lens surface no longer routes through terminal focus reclaim, so drag text selection in Lens remains intact after the mouse button is released
 - implemented: long non-diff machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
 - implemented: Lens diff rows stay expanded by default, suppress non-essential unified-diff preamble noise where possible, and cap visible diff rendering at 200 lines plus an ellipsis marker
@@ -319,7 +359,9 @@ Status in this branch/work item:
 - implemented: Lens uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 - implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
-- implemented: immediate command output is folded into the command row as a muted up-to-8-line tail instead of always rendering as a separate noisy row
+- implemented: immediate command output is folded into the command row as a muted up-to-12-line tail instead of always rendering as a separate noisy row
+- implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
+- implemented: raw provider/tool chatter is reduced into canonical history rows so the normal Lens timeline does not mirror full wire-level noise
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles

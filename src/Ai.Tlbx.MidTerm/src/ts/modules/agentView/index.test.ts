@@ -1233,6 +1233,91 @@ describe('agentView dev errors', () => {
     expect(historyHost.replaceChildren).toHaveBeenCalled();
   });
 
+  it('re-entering a Lens tab resets follow mode and refreshes the latest history window', async () => {
+    const disconnectStream = vi.fn();
+    openLensEventStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 40,
+          totalHistoryCount: 400,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+          transcript: Array.from({ length: 80 }, (_value, index) => ({
+            entryId: `assistant:${index + 161}`,
+            turnId: 'turn-1',
+            itemId: `assistant-${index + 161}`,
+            requestId: null,
+            order: index + 161,
+            kind: 'assistant',
+            status: 'completed',
+            title: 'Assistant',
+            body: `Historical row ${index + 161}`,
+            updatedAt: '2026-03-28T11:00:00Z',
+            streaming: false,
+            attachments: [],
+            createdAt: '2026-03-28T11:00:00Z',
+          })),
+        }),
+      )
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 45,
+          totalHistoryCount: 405,
+          historyWindowStart: 325,
+          historyWindowEnd: 405,
+          hasOlderHistory: true,
+          hasNewerHistory: false,
+          transcript: Array.from({ length: 80 }, (_value, index) => ({
+            entryId: `assistant:${index + 326}`,
+            turnId: 'turn-1',
+            itemId: `assistant-${index + 326}`,
+            requestId: null,
+            order: index + 326,
+            kind: 'assistant',
+            status: 'completed',
+            title: 'Assistant',
+            body: `Latest row ${index + 326}`,
+            updatedAt: '2026-03-28T11:00:05Z',
+            streaming: false,
+            attachments: [],
+            createdAt: '2026-03-28T11:00:05Z',
+          })),
+        }),
+      );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.scrollTop = 1337;
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensSnapshot).toHaveBeenNthCalledWith(1, 's1');
+      expect(getLensSnapshot).toHaveBeenNthCalledWith(2, 's1', undefined, 80);
+    });
+
+    expect(historyHost.scrollTop).toBe(0);
+  });
+
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
     openLensEventStream.mockReturnValue(disconnectStream);

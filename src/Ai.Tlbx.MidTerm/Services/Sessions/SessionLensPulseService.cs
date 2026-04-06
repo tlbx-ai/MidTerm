@@ -15,6 +15,8 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public sealed partial class SessionLensPulseService
 {
     private const int DefaultHistoryWindowSize = 80;
+    private const int MaxTransientEventBacklog = 256;
+    private const int PersistDebounceMilliseconds = 200;
     private const string ScreenLogFormatVersion = "midterm-lens-screen-log-v1";
     private const int CollapsibleHistoryBodyMinLines = 8;
     private const int CollapsibleHistoryBodyMinChars = 320;
@@ -78,11 +80,12 @@ public sealed partial class SessionLensPulseService
         lock (log.SyncRoot)
         {
             retainedEvent.Sequence = ++log.NextSequence;
-            log.Events.Add(retainedEvent);
+            log.EventBacklog.Add(retainedEvent);
+            TrimEventBacklog(log.EventBacklog);
             ApplyEvent(log.State, retainedEvent);
             var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, retainedEvent);
-            PersistEvent(log.SessionId, retainedEvent);
             PersistScreenLogDelta(log, delta);
+            log.PersistenceDirty = true;
 
             var staleSubscribers = new List<LensPulseSubscriber>();
             foreach (var subscriber in log.Subscribers)
@@ -118,6 +121,8 @@ public sealed partial class SessionLensPulseService
                 }
             }
         }
+
+        SchedulePersistence(log.SessionId);
     }
 
     public LensPulseSubscription Subscribe(string sessionId, long afterSequence, CancellationToken cancellationToken = default)
@@ -135,7 +140,7 @@ public sealed partial class SessionLensPulseService
 
         lock (log.SyncRoot)
         {
-            backlog = log.Events
+            backlog = log.EventBacklog
                 .Where(lensEvent => lensEvent.Sequence > afterSequence)
                 .Select(CloneEvent)
                 .ToList();
@@ -189,7 +194,7 @@ public sealed partial class SessionLensPulseService
             {
                 SessionId = sessionId,
                 LatestSequence = log.NextSequence,
-                Events = log.Events
+                Events = log.EventBacklog
                     .Where(e => e.Sequence > afterSequence)
                     .Select(CloneEvent)
                     .ToList()
@@ -249,7 +254,7 @@ public sealed partial class SessionLensPulseService
 
         lock (log.SyncRoot)
         {
-            return log.Events.Count > 0;
+            return log.NextSequence > 0;
         }
     }
 
@@ -262,7 +267,7 @@ public sealed partial class SessionLensPulseService
 
         lock (log.SyncRoot)
         {
-            if (log.Events.Count == 0)
+            if (log.NextSequence == 0)
             {
                 return null;
             }
@@ -292,7 +297,7 @@ public sealed partial class SessionLensPulseService
 
         lock (log.SyncRoot)
         {
-            if (log.Events.Count == 0)
+            if (log.NextSequence == 0)
             {
                 return null;
             }
@@ -364,7 +369,49 @@ public sealed partial class SessionLensPulseService
     private bool TryLoadLog(string sessionId, out SessionLensPulseLog log)
     {
         log = new SessionLensPulseLog(sessionId);
-        var path = GetStorePath(sessionId);
+        if (TryLoadPersistedState(sessionId, log))
+        {
+            return true;
+        }
+
+        if (!TryLoadLegacyEventLog(sessionId, log))
+        {
+            return false;
+        }
+
+        PersistState(sessionId, BuildPersistedState(log));
+        TryDeleteLegacyStore(sessionId);
+        return log.NextSequence > 0;
+    }
+
+    private bool TryLoadPersistedState(string sessionId, SessionLensPulseLog log)
+    {
+        var path = GetStateStorePath(sessionId);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        var payload = File.ReadAllText(path, Encoding.UTF8);
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        var persisted = JsonSerializer.Deserialize<LensPersistedSessionState>(payload);
+        if (persisted is null || persisted.NextSequence <= 0)
+        {
+            return false;
+        }
+
+        log.NextSequence = persisted.NextSequence;
+        RestoreConversationState(log.State, persisted.State);
+        return true;
+    }
+
+    private bool TryLoadLegacyEventLog(string sessionId, SessionLensPulseLog log)
+    {
+        var path = GetLegacyEventStorePath(sessionId);
         if (!File.Exists(path))
         {
             return false;
@@ -384,24 +431,96 @@ public sealed partial class SessionLensPulseService
             }
 
             var retainedEvent = LensEventCompaction.CloneForRetention(lensEvent);
-            log.Events.Add(retainedEvent);
+            log.EventBacklog.Add(retainedEvent);
+            TrimEventBacklog(log.EventBacklog);
             log.NextSequence = Math.Max(log.NextSequence, retainedEvent.Sequence);
             ApplyEvent(log.State, retainedEvent);
         }
 
-        return log.Events.Count > 0;
+        return log.NextSequence > 0;
     }
 
-    private void PersistEvent(string sessionId, LensPulseEvent lensEvent)
+    private void SchedulePersistence(string sessionId)
     {
-        var path = GetStorePath(sessionId);
-        var payload = JsonSerializer.Serialize(lensEvent, LensHostJsonContext.Default.LensPulseEvent);
-        File.AppendAllText(path, payload + Environment.NewLine, Encoding.UTF8);
+        if (!_logs.TryGetValue(sessionId, out var log))
+        {
+            return;
+        }
+
+        var shouldSchedule = false;
+        lock (log.SyncRoot)
+        {
+            if (!log.PersistenceScheduled)
+            {
+                log.PersistenceScheduled = true;
+                shouldSchedule = true;
+            }
+        }
+
+        if (!shouldSchedule)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(PersistDebounceMilliseconds).ConfigureAwait(false);
+
+                if (!_logs.TryGetValue(sessionId, out var current))
+                {
+                    return;
+                }
+
+                LensPersistedSessionState? persisted = null;
+                lock (current.SyncRoot)
+                {
+                    if (!current.PersistenceDirty)
+                    {
+                        current.PersistenceScheduled = false;
+                        return;
+                    }
+
+                    current.PersistenceDirty = false;
+                    persisted = BuildPersistedState(current);
+                }
+
+                try
+                {
+                    PersistState(sessionId, persisted);
+                }
+                catch (Exception ex)
+                {
+                    Log.Verbose(() => $"[LensPulse] Failed to persist canonical Lens state for {sessionId}: {ex.Message}");
+                }
+            }
+        });
+    }
+
+    private void PersistState(string sessionId, LensPersistedSessionState persisted)
+    {
+        var path = GetStateStorePath(sessionId);
+        var tempPath = path + ".tmp";
+        var payload = JsonSerializer.Serialize(persisted);
+        File.WriteAllText(tempPath, payload, Encoding.UTF8);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     private void TryDeleteStore(string sessionId)
     {
-        var path = GetStorePath(sessionId);
+        var statePath = GetStateStorePath(sessionId);
+        if (File.Exists(statePath))
+        {
+            File.Delete(statePath);
+        }
+
+        TryDeleteLegacyStore(sessionId);
+    }
+
+    private void TryDeleteLegacyStore(string sessionId)
+    {
+        var path = GetLegacyEventStorePath(sessionId);
         if (File.Exists(path))
         {
             File.Delete(path);
@@ -421,7 +540,13 @@ public sealed partial class SessionLensPulseService
         return Path.Combine(logRoot, "lens");
     }
 
-    private string GetStorePath(string sessionId)
+    private string GetStateStorePath(string sessionId)
+    {
+        var safeName = Uri.EscapeDataString(sessionId);
+        return Path.Combine(_storeDirectory, $"{safeName}.json");
+    }
+
+    private string GetLegacyEventStorePath(string sessionId)
     {
         var safeName = Uri.EscapeDataString(sessionId);
         return Path.Combine(_storeDirectory, $"{safeName}.ndjson");
@@ -656,6 +781,108 @@ public sealed partial class SessionLensPulseService
             CurrentHeat = 1,
             LastActivityAt = state.Session.LastEventAt ?? state.CurrentTurn.StartedAt
         };
+    }
+
+    private static void TrimEventBacklog(List<LensPulseEvent> eventBacklog)
+    {
+        if (eventBacklog.Count <= MaxTransientEventBacklog)
+        {
+            return;
+        }
+
+        eventBacklog.RemoveRange(0, eventBacklog.Count - MaxTransientEventBacklog);
+    }
+
+    private static LensPersistedSessionState BuildPersistedState(SessionLensPulseLog log)
+    {
+        return new LensPersistedSessionState
+        {
+            NextSequence = log.NextSequence,
+            State = BuildPersistedConversationState(log.State)
+        };
+    }
+
+    private static LensPersistedConversationState BuildPersistedConversationState(LensConversationState source)
+    {
+        return new LensPersistedConversationState
+        {
+            Provider = source.Provider,
+            Session = CloneSessionSummary(source.Session),
+            Thread = CloneThreadSummary(source.Thread),
+            CurrentTurn = CloneTurnSummary(source.CurrentTurn),
+            QuickSettings = CloneQuickSettingsSummary(source.QuickSettings),
+            Streams = CloneStreamsSummary(source.Streams),
+            TranscriptEntries = source.TranscriptEntries.Values
+                .OrderBy(entry => entry.Order)
+                .Select(CloneTranscriptEntry)
+                .ToList(),
+            Items = source.Items.Values
+                .OrderBy(item => item.ItemId, StringComparer.Ordinal)
+                .Select(CloneItemSummary)
+                .ToList(),
+            Requests = source.Requests.Values
+                .OrderBy(request => request.RequestId, StringComparer.Ordinal)
+                .Select(CloneRequestSummary)
+                .ToList(),
+            ToolRenderStates = source.ToolRenderStates
+                .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(static pair => new LensPersistedToolRenderState
+                {
+                    EntryId = pair.Key,
+                    CommandText = pair.Value.CommandText,
+                    RawOutput = pair.Value.RawOutput,
+                    RetainHeadOutput = pair.Value.RetainHeadOutput
+                })
+                .ToList(),
+            Notices = source.Notices.Select(CloneRuntimeNotice).ToList(),
+            NextTranscriptOrder = source.NextTranscriptOrder
+        };
+    }
+
+    private static void RestoreConversationState(LensConversationState target, LensPersistedConversationState source)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(source);
+        target.Provider = source.Provider;
+        target.NextTranscriptOrder = source.NextTranscriptOrder;
+
+        CopySessionSummary(target.Session, source.Session);
+        CopyThreadSummary(target.Thread, source.Thread);
+        CopyTurnSummary(target.CurrentTurn, source.CurrentTurn);
+        CopyQuickSettingsSummary(target.QuickSettings, source.QuickSettings);
+        CopyStreamsSummary(target.Streams, source.Streams);
+
+        target.TranscriptEntries.Clear();
+        foreach (var entry in source.TranscriptEntries)
+        {
+            target.TranscriptEntries[entry.EntryId] = CloneTranscriptEntry(entry);
+        }
+
+        target.Items.Clear();
+        foreach (var item in source.Items)
+        {
+            target.Items[item.ItemId] = CloneItemSummary(item);
+        }
+
+        target.Requests.Clear();
+        foreach (var request in source.Requests)
+        {
+            target.Requests[request.RequestId] = CloneRequestSummary(request);
+        }
+
+        target.ToolRenderStates.Clear();
+        foreach (var toolState in source.ToolRenderStates)
+        {
+            target.ToolRenderStates[toolState.EntryId] = new LensToolRenderState
+            {
+                CommandText = toolState.CommandText ?? string.Empty,
+                RawOutput = toolState.RawOutput ?? string.Empty,
+                RetainHeadOutput = toolState.RetainHeadOutput
+            };
+        }
+
+        target.Notices.Clear();
+        target.Notices.AddRange(source.Notices.Select(CloneRuntimeNotice));
     }
 
     private static bool ShouldSurfaceWorkingHeat(LensConversationState state)
@@ -1020,6 +1247,9 @@ public sealed partial class SessionLensPulseService
         }
         else if (transcriptKind == "tool")
         {
+            entry.ItemId ??= ResolveToolItemIdFromTranscriptEntryId(
+                entry.EntryId,
+                lensEvent.ContentDelta.StreamKind);
             var toolState = GetOrCreateToolRenderState(state, entry.EntryId);
             toolState.RawOutput = AppendRetainedToolOutput(
                 toolState.RawOutput,
@@ -1659,6 +1889,15 @@ public sealed partial class SessionLensPulseService
         };
     }
 
+    private static void CopySessionSummary(LensPulseSessionSummary target, LensPulseSessionSummary source)
+    {
+        target.State = source.State;
+        target.StateLabel = source.StateLabel;
+        target.Reason = source.Reason;
+        target.LastError = source.LastError;
+        target.LastEventAt = source.LastEventAt;
+    }
+
     private static LensPulseThreadSummary CloneThreadSummary(LensPulseThreadSummary source)
     {
         return new LensPulseThreadSummary
@@ -1667,6 +1906,13 @@ public sealed partial class SessionLensPulseService
             State = source.State,
             StateLabel = source.StateLabel
         };
+    }
+
+    private static void CopyThreadSummary(LensPulseThreadSummary target, LensPulseThreadSummary source)
+    {
+        target.ThreadId = source.ThreadId;
+        target.State = source.State;
+        target.StateLabel = source.StateLabel;
     }
 
     private static LensPulseTurnSummary CloneTurnSummary(LensPulseTurnSummary source)
@@ -1683,6 +1929,17 @@ public sealed partial class SessionLensPulseService
         };
     }
 
+    private static void CopyTurnSummary(LensPulseTurnSummary target, LensPulseTurnSummary source)
+    {
+        target.TurnId = source.TurnId;
+        target.State = source.State;
+        target.StateLabel = source.StateLabel;
+        target.Model = source.Model;
+        target.Effort = source.Effort;
+        target.StartedAt = source.StartedAt;
+        target.CompletedAt = source.CompletedAt;
+    }
+
     private static LensQuickSettingsSummary CloneQuickSettingsSummary(LensQuickSettingsSummary source)
     {
         return new LensQuickSettingsSummary
@@ -1692,6 +1949,14 @@ public sealed partial class SessionLensPulseService
             PlanMode = LensQuickSettings.NormalizePlanMode(source.PlanMode),
             PermissionMode = LensQuickSettings.NormalizePermissionMode(source.PermissionMode)
         };
+    }
+
+    private static void CopyQuickSettingsSummary(LensQuickSettingsSummary target, LensQuickSettingsSummary source)
+    {
+        target.Model = LensQuickSettings.NormalizeOptionalValue(source.Model);
+        target.Effort = LensQuickSettings.NormalizeOptionalValue(source.Effort);
+        target.PlanMode = LensQuickSettings.NormalizePlanMode(source.PlanMode);
+        target.PermissionMode = LensQuickSettings.NormalizePermissionMode(source.PermissionMode);
     }
 
     private static LensPulseStreamsSummary CloneStreamsSummary(LensPulseStreamsSummary source)
@@ -1706,6 +1971,17 @@ public sealed partial class SessionLensPulseService
             FileChangeOutput = source.FileChangeOutput,
             UnifiedDiff = source.UnifiedDiff
         };
+    }
+
+    private static void CopyStreamsSummary(LensPulseStreamsSummary target, LensPulseStreamsSummary source)
+    {
+        target.AssistantText = source.AssistantText;
+        target.ReasoningText = source.ReasoningText;
+        target.ReasoningSummaryText = source.ReasoningSummaryText;
+        target.PlanText = source.PlanText;
+        target.CommandOutput = source.CommandOutput;
+        target.FileChangeOutput = source.FileChangeOutput;
+        target.UnifiedDiff = source.UnifiedDiff;
     }
 
     private static LensPulseTranscriptEntry CloneTranscriptEntry(LensPulseTranscriptEntry source)
@@ -1915,7 +2191,7 @@ public sealed partial class SessionLensPulseService
             "assistant" => ResolveAssistantTranscriptEntryIdForItem(state, lensEvent, canonicalItemId),
             "user" when !string.IsNullOrWhiteSpace(lensEvent.TurnId) => $"user:{lensEvent.TurnId}",
             "user" => $"user:{canonicalItemId}",
-            "tool" => $"tool:{canonicalItemId}",
+            "tool" => ResolveToolTranscriptEntryIdForItem(state, lensEvent, canonicalItemId),
             _ => $"{transcriptKind}:{canonicalItemId}"
         };
     }
@@ -1935,6 +2211,87 @@ public sealed partial class SessionLensPulseService
         }
 
         return $"assistant:{canonicalItemId}";
+    }
+
+    private static string ResolveToolTranscriptEntryIdForItem(
+        LensConversationState state,
+        LensPulseEvent lensEvent,
+        string canonicalItemId)
+    {
+        var canonicalEntryId = $"tool:{canonicalItemId}";
+        if (state.TranscriptEntries.ContainsKey(canonicalEntryId))
+        {
+            return canonicalEntryId;
+        }
+
+        if (TryAdoptProvisionalToolTranscriptEntry(state, lensEvent, canonicalItemId, canonicalEntryId))
+        {
+            return canonicalEntryId;
+        }
+
+        return canonicalEntryId;
+    }
+
+    private static bool TryAdoptProvisionalToolTranscriptEntry(
+        LensConversationState state,
+        LensPulseEvent lensEvent,
+        string canonicalItemId,
+        string canonicalEntryId)
+    {
+        if (string.IsNullOrWhiteSpace(lensEvent.TurnId) || lensEvent.Item is null)
+        {
+            return false;
+        }
+
+        var normalizedItemType = NormalizeItemType(lensEvent.Item.ItemType);
+        if (string.IsNullOrWhiteSpace(normalizedItemType))
+        {
+            return false;
+        }
+
+        var provisionalEntry = state.TranscriptEntries.Values
+            .Where(entry =>
+                string.Equals(entry.Kind, "tool", StringComparison.Ordinal) &&
+                string.Equals(entry.TurnId, lensEvent.TurnId, StringComparison.Ordinal) &&
+                string.IsNullOrWhiteSpace(entry.ItemId) &&
+                entry.Streaming &&
+                AreCompatibleToolTranscriptTypes(entry.ItemType, normalizedItemType))
+            .OrderByDescending(entry => entry.UpdatedAt)
+            .FirstOrDefault();
+        if (provisionalEntry is null)
+        {
+            return false;
+        }
+
+        state.TranscriptEntries.Remove(provisionalEntry.EntryId);
+        if (state.ToolRenderStates.Remove(provisionalEntry.EntryId, out var toolState))
+        {
+            state.ToolRenderStates[canonicalEntryId] = toolState;
+        }
+
+        provisionalEntry.EntryId = canonicalEntryId;
+        provisionalEntry.ItemId = canonicalItemId;
+        state.TranscriptEntries[canonicalEntryId] = provisionalEntry;
+        return true;
+    }
+
+    private static bool AreCompatibleToolTranscriptTypes(string? existingItemType, string? incomingItemType)
+    {
+        var normalizedExisting = NormalizeItemType(existingItemType);
+        var normalizedIncoming = NormalizeItemType(incomingItemType);
+        if (string.Equals(normalizedExisting, normalizedIncoming, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return (normalizedExisting, normalizedIncoming) switch
+        {
+            ("command_output", "command_execution") => true,
+            ("command_execution", "command_output") => true,
+            ("file_change_output", "file_change") => true,
+            ("file_change", "file_change_output") => true,
+            _ => false
+        };
     }
 
     private static string ResolveTranscriptEntryIdForStream(
@@ -1970,6 +2327,24 @@ public sealed partial class SessionLensPulseService
         return !string.IsNullOrWhiteSpace(ownerItemId)
             ? $"tool:{ownerItemId}"
             : $"tool:{streamKind}:{turnId ?? lensEvent.EventId}";
+    }
+
+    private static string? ResolveToolItemIdFromTranscriptEntryId(string entryId, string? streamKind)
+    {
+        if (!entryId.StartsWith("tool:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var suffix = entryId["tool:".Length..];
+        var normalizedStreamKind = NormalizeItemType(streamKind);
+        if (!string.IsNullOrWhiteSpace(normalizedStreamKind) &&
+            suffix.StartsWith($"{normalizedStreamKind}:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(suffix) ? null : suffix;
     }
 
     private static string TranscriptKindFromItem(string itemType)
@@ -2994,10 +3369,12 @@ public sealed partial class SessionLensPulseService
         public string SessionId { get; }
         public Lock SyncRoot { get; } = new();
         public long NextSequence { get; set; }
-        public List<LensPulseEvent> Events { get; } = [];
+        public List<LensPulseEvent> EventBacklog { get; } = [];
         public List<LensPulseSubscriber> Subscribers { get; } = [];
         public List<LensPulseDeltaSubscriber> DeltaSubscribers { get; } = [];
         public LensConversationState State { get; } = new();
+        public bool PersistenceDirty { get; set; }
+        public bool PersistenceScheduled { get; set; }
         public string? ScreenLogId { get; set; }
         public string? ScreenLogPath { get; set; }
         public string? LastScreenLogSignature { get; set; }
@@ -3034,6 +3411,36 @@ public sealed partial class SessionLensPulseService
         public string CommandText { get; set; } = string.Empty;
         public string RawOutput { get; set; } = string.Empty;
         public bool RetainHeadOutput { get; set; }
+    }
+
+    private sealed class LensPersistedSessionState
+    {
+        public long NextSequence { get; init; }
+        public LensPersistedConversationState State { get; init; } = new();
+    }
+
+    private sealed class LensPersistedConversationState
+    {
+        public string Provider { get; init; } = string.Empty;
+        public LensPulseSessionSummary Session { get; init; } = new();
+        public LensPulseThreadSummary Thread { get; init; } = new();
+        public LensPulseTurnSummary CurrentTurn { get; init; } = new();
+        public LensQuickSettingsSummary QuickSettings { get; init; } = new();
+        public LensPulseStreamsSummary Streams { get; init; } = new();
+        public List<LensPulseTranscriptEntry> TranscriptEntries { get; init; } = [];
+        public List<LensPulseItemSummary> Items { get; init; } = [];
+        public List<LensPulseRequestSummary> Requests { get; init; } = [];
+        public List<LensPersistedToolRenderState> ToolRenderStates { get; init; } = [];
+        public List<LensPulseRuntimeNotice> Notices { get; init; } = [];
+        public long NextTranscriptOrder { get; init; }
+    }
+
+    private sealed class LensPersistedToolRenderState
+    {
+        public string EntryId { get; init; } = string.Empty;
+        public string? CommandText { get; init; }
+        public string? RawOutput { get; init; }
+        public bool RetainHeadOutput { get; init; }
     }
 
     private sealed class LensScreenLogHeaderRecord

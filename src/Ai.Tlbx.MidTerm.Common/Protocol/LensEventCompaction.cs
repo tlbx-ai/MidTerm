@@ -4,7 +4,6 @@ namespace Ai.Tlbx.MidTerm.Common.Protocol;
 
 public static class LensEventCompaction
 {
-    private const int MaxRawPayloadChars = 2048;
     private const int MaxAssistantDeltaChars = 16384;
     private const int MaxReasoningDeltaChars = 1024;
     private const int MaxPlanDeltaChars = 4096;
@@ -32,12 +31,7 @@ public static class LensEventCompaction
             RequestId = source.RequestId,
             CreatedAt = source.CreatedAt,
             Type = source.Type,
-            Raw = source.Raw is null ? null : new LensPulseEventRaw
-            {
-                Source = source.Raw.Source,
-                Method = source.Raw.Method,
-                PayloadJson = CompactTextMiddle(source.Raw.PayloadJson, MaxRawPayloadChars)
-            },
+            Raw = CloneRawMetadata(source.Raw),
             SessionState = source.SessionState is null ? null : new LensPulseSessionStatePayload
             {
                 State = source.SessionState.State,
@@ -135,6 +129,27 @@ public static class LensEventCompaction
                 => CompactTextMiddle(value, MaxToolDeltaChars),
             _ => value ?? string.Empty
         };
+    }
+
+    private static LensPulseEventRaw? CloneRawMetadata(LensPulseEventRaw? source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var raw = new LensPulseEventRaw
+        {
+            Source = source.Source,
+            Method = source.Method,
+            // PayloadJson is intentionally not retained. Lens keeps canonical reduced history,
+            // not hidden raw provider bodies.
+            PayloadJson = null
+        };
+
+        return string.IsNullOrWhiteSpace(raw.Source) && string.IsNullOrWhiteSpace(raw.Method)
+            ? null
+            : raw;
     }
 
     private static string? CompactItemDetail(string itemType, string? detail)
