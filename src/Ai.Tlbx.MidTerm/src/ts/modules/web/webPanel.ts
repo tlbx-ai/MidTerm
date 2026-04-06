@@ -33,6 +33,7 @@ import {
   sanitizePreviewDisplayUrl,
   stripInternalPreviewQueryParams,
 } from './previewProxyUrl';
+import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
   getActiveDockedClient,
   getActivePreview,
@@ -159,7 +160,10 @@ export function renderPreviewTabs(): void {
     if (!preview.url) {
       button.classList.add('empty');
     }
-    button.textContent = preview.previewName;
+    const label = buildPreviewTabLabel(preview.url);
+    button.textContent = label;
+    button.title = preview.url?.trim() || label;
+    button.setAttribute('aria-label', `Preview tab ${label}`);
     button.dataset.previewName = preview.previewName;
     button.addEventListener('click', () => {
       previewTabSelectHandler?.(preview.previewName);
