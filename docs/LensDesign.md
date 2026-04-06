@@ -225,12 +225,15 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 ## Composer And Ready State
 
 - The composer is the primary action control for Lens sessions.
+- The composer textbox should remain visibly larger than surrounding automation chips, status pills, and quick-setting controls; the dock must read as one system, but the prompt should still dominate.
 - Lens and Terminal should now share one adaptive footer dock language instead of stacking unrelated bars beneath the active pane.
 - When input is visible, the primary smart input row must always be the first row directly beneath the active pane.
 - Lens quick settings should live in the dock status rail rather than as a separate detached manager strip.
 - That Lens status rail should stay intentionally small and session-oriented.
 - Normal terminal smart input should reuse the same dock shell while keeping Lens-only runtime controls out of ordinary terminal sessions.
 - On desktop, Lens quick settings should read as a low-clutter translucent control rail rather than a full-width form.
+- Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
+- Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
 - On mobile, Lens should keep model/effort/plan awareness always visible in the dock status rail and may reveal the full editable quick-settings surface as a compact sheet from that status row.
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Lens content.
