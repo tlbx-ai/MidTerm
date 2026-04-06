@@ -87,11 +87,17 @@ describe('agent view Lens wiring', () => {
   it('documents finalized assistant enrichment without leaking into streaming or artifact rows', () => {
     expect(css).toContain('.agent-history-markdown .agent-history-inline-file {');
     expect(css).toContain('.agent-history-inline-previews {');
+    expect(css).toContain('.agent-history-inline-preview-frame {');
+    expect(css).toContain('.agent-history-attachment-image-frame {');
+    expect(css).toContain('object-fit: contain;');
     expect(lensDesign).toContain(
       'Finalized assistant messages may receive a post-settlement enrichment pass',
     );
     expect(lensDesign).toContain(
       'Assistant-only semantic tinting should remain subtle.',
+    );
+    expect(lensDesign).toContain(
+      'Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.',
     );
   });
 

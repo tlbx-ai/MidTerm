@@ -759,12 +759,15 @@ export function createAssistantImagePreviewBlock(
       void openAssistantFile(preview.resolvedPath, info);
     });
 
+    const frame = documentRef.createElement('span');
+    frame.className = 'agent-history-inline-preview-frame';
     const image = documentRef.createElement('img');
     image.className = 'agent-history-inline-preview-image';
     image.src = buildFilePreviewUrl(sessionId, preview.resolvedPath);
     image.loading = 'lazy';
     image.alt = preview.displayPath;
-    button.appendChild(image);
+    frame.appendChild(image);
+    button.appendChild(frame);
 
     const caption = documentRef.createElement('span');
     caption.className = 'agent-history-inline-preview-caption';

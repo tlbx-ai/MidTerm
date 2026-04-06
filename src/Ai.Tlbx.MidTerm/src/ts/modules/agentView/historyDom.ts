@@ -591,12 +591,15 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
       if (isImageAttachment(attachment)) {
         link.className = 'agent-history-attachment agent-history-attachment-image';
+        const frame = document.createElement('span');
+        frame.className = 'agent-history-attachment-image-frame';
         const image = document.createElement('img');
         image.className = 'agent-history-attachment-image-el';
         image.src = link.href;
         image.loading = 'lazy';
         image.alt = resolveAttachmentLabel(attachment);
-        link.appendChild(image);
+        frame.appendChild(image);
+        link.appendChild(frame);
         const caption = document.createElement('span');
         caption.className = 'agent-history-attachment-caption';
         caption.textContent = resolveAttachmentLabel(attachment);
