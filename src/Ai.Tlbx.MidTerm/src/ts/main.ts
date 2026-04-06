@@ -141,7 +141,8 @@ import {
   showSharedSessionError,
 } from './modules/share';
 import { initDockState } from './modules/dockState';
-import { initSmartInput } from './modules/smartInput';
+import { initSmartInput, setLensResumeConversationHandler } from './modules/smartInput';
+import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -208,6 +209,35 @@ function animateBookmarkSaveSuccess(sessionId: string): void {
       pinButton.classList.remove('save-success');
     }, PIN_SUCCESS_ANIMATION_MS);
   }
+}
+
+function attachBookmarkToSession(
+  sessionId: string,
+  bookmarkId: string | null,
+  label: string | null,
+): void {
+  if (!bookmarkId && !label) {
+    return;
+  }
+
+  const applyBookmark = (): void => {
+    const session = getSession(sessionId);
+    if (!session) {
+      setTimeout(applyBookmark, 100);
+      return;
+    }
+
+    if (bookmarkId) {
+      setSession({ ...session, bookmarkId });
+      setSessionBookmark(sessionId, bookmarkId).catch(() => {});
+    }
+
+    if (label) {
+      renameSession(sessionId, label);
+    }
+  };
+
+  applyBookmark();
 }
 
 // Debug export for console access (typed in types/xterm-extensions.d.ts)
@@ -633,6 +663,7 @@ function createPendingSession(cols: number, rows: number): string {
     agentControlled: false,
     lensOnly: false,
     profileHint: null,
+    lensResumeThreadId: null,
     hasLensHistory: false,
     agentAttachPoint: null,
   };
@@ -684,6 +715,9 @@ const {
   closeMobileActionsMenu,
   getBookmarkSurfaceType,
   isLensOnlySession,
+});
+setLensResumeConversationHandler((args) => {
+  void resumeLensConversationFromCommandBay(args);
 });
 
 async function createSession(): Promise<void> {
@@ -766,6 +800,7 @@ async function createSession(): Promise<void> {
     agentControlled: false,
     injectGuidance: true,
     profile: selection.provider,
+    resumeThreadId: selection.resumeThreadId ?? null,
     lensOnly: true,
     launchDelayMs: 0,
     slashCommands: [],
@@ -798,24 +833,6 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
 
   closeSidebar();
 
-  const attachBookmarkToSession = (sessionId: string): void => {
-    const applyBookmark = (): void => {
-      const session = getSession(sessionId);
-      if (!session) {
-        setTimeout(applyBookmark, 100);
-        return;
-      }
-      setSession({ ...session, bookmarkId: entry.id });
-      if (entry.id) {
-        setSessionBookmark(sessionId, entry.id).catch(() => {});
-      }
-      if (entry.label) {
-        renameSession(sessionId, entry.label);
-      }
-    };
-    applyBookmark();
-  };
-
   if (isLensHistoryEntry(entry)) {
     const profile = normalizeHistoryLensProfile(entry.profile);
     if (profile) {
@@ -845,7 +862,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
           requestAnimationFrame(() => {
             switchTab(session.id, 'agent');
           });
-          attachBookmarkToSession(session.id);
+          attachBookmarkToSession(session.id, entry.id, entry.label ?? null);
         })
         .catch((e: unknown) => {
           log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
@@ -866,7 +883,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-      attachBookmarkToSession(data.id);
+      attachBookmarkToSession(data.id, entry.id, entry.label ?? null);
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
@@ -877,6 +894,65 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
     })
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
+      showSessionLaunchFailure(e);
+    });
+}
+
+async function resumeLensConversationFromCommandBay(args: {
+  sessionId: string;
+  provider: ResumeProvider;
+  workingDirectory: string;
+}): Promise<void> {
+  const sourceSession = getSession(args.sessionId);
+  if (!sourceSession) {
+    return;
+  }
+
+  const candidate = await openProviderResumePicker({
+    provider: args.provider,
+    workingDirectory: args.workingDirectory,
+    initialScope: 'current',
+  });
+  if (!candidate) {
+    return;
+  }
+
+  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
+  const tempId = createPendingSession(cols, rows);
+
+  bootstrapWorker({
+    cols,
+    rows,
+    shell: resolveLauncherShell(),
+    workingDirectory: args.workingDirectory,
+    agentControlled: false,
+    injectGuidance: true,
+    profile: args.provider,
+    resumeThreadId: candidate.sessionId,
+    lensOnly: true,
+    launchDelayMs: 0,
+    slashCommands: [],
+    slashCommandDelayMs: 350,
+  })
+    .then(({ data }) => {
+      clearPendingSession(tempId);
+      const session = data?.session;
+      if (!session) {
+        return;
+      }
+
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      setSessionLensAvailability(session.id, true);
+      selectSession(session.id);
+      requestAnimationFrame(() => {
+        switchTab(session.id, 'agent');
+      });
+      attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
+    })
+    .catch((e: unknown) => {
+      clearPendingSession(tempId);
+      log.error(() => `Failed to resume provider conversation from Command Bay: ${String(e)}`);
       showSessionLaunchFailure(e);
     });
 }

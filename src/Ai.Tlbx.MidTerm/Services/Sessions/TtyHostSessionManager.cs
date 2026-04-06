@@ -832,6 +832,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetProfileHint(sessionId, profile);
     }
 
+    public bool SetLensResumeThreadId(string sessionId, string? resumeThreadId)
+    {
+        return _registry.SetLensResumeThreadId(sessionId, resumeThreadId);
+    }
+
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         return _registry.ClearBookmarksByHistoryId(bookmarkId);

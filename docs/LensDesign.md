@@ -241,6 +241,8 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - The TypeScript Lens UI should render the common quick-settings surface from the canonical model without branching deeply on provider quirks.
 - Quick-settings changes should be sticky for the active Lens session and may also reuse provider-level draft defaults where that improves flow.
 - Quick-settings must communicate whether they affect the next turn, the active session runtime, or require a thread/runtime reopen behind the scenes.
+- Lens sessions that were launched from a bookmark may expose a small provider-native `Resume` action in the Command Bay status rail.
+- That `Resume` action must open MidTerm's provider resume picker and create a new Lens session bound to the selected provider conversation; it must not silently swap the current Lens session to a different provider thread in place.
 - Lens composer attachments should stage inside the composer itself as removable chips instead of triggering an immediate turn on selection.
 - Lens should allow attachment-only turns and should treat repeated paste or repeated `+` actions as additive until the user explicitly removes a chip or sends the turn.
 - Clipboard paste inside the active Lens composer should capture browser-exposed files/images into those chips while leaving plain-text paste behavior intact.

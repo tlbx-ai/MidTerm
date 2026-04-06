@@ -20,6 +20,7 @@ import type {
   SessionInfoDto,
   WorkerBootstrapRequest,
   WorkerBootstrapResponse,
+  ProviderResumeCatalogEntryDto,
   SessionPromptRequest,
   SessionStateResponse,
   LensTurnRequest,
@@ -321,6 +322,33 @@ export async function bootstrapWorker(
     request,
     (text) => JSON.parse(text) as WorkerBootstrapResponse,
   );
+}
+
+export async function getProviderResumeCandidates(
+  provider: string,
+  options?: {
+    workingDirectory?: string | null;
+    scope?: 'current' | 'all';
+  },
+): Promise<ProviderResumeCatalogEntryDto[]> {
+  const params = new URLSearchParams();
+  const workingDirectory = options?.workingDirectory?.trim();
+  if (workingDirectory) {
+    params.set('workingDirectory', workingDirectory);
+  }
+  if (options?.scope) {
+    params.set('scope', options.scope);
+  }
+
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  const response = await fetch(
+    `/api/providers/${encodeURIComponent(provider)}/resume-candidates${suffix}`,
+  );
+  if (!response.ok) {
+    await throwApiProblem(response, 'Failed to load provider resume candidates.');
+  }
+
+  return (await response.json()) as ProviderResumeCatalogEntryDto[];
 }
 
 export async function deleteSession(id: string): ClientDeleteResult<'/api/sessions/{id}'> {

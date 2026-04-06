@@ -29,4 +29,13 @@ describe('session launcher visibility wiring', () => {
     expect(source).toContain('pathDraft: startPath,');
     expect(source).toContain('void loadDirectory(state.startPath, { recordHistory: false });');
   });
+
+  it('splits Codex and Claude launch cards into new and resume actions', () => {
+    expect(source).toContain('data-launch-mode="new"');
+    expect(source).toContain('data-launch-mode="resume"');
+    expect(source).toContain('New Conversation');
+    expect(source).toContain('Resume Conversation');
+    expect(source).toContain('openProviderResumePicker');
+    expect(css).toContain('.session-launcher-provider-actions {');
+  });
 });

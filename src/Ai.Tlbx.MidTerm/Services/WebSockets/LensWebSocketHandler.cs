@@ -503,7 +503,7 @@ public sealed class LensWebSocketHandler
     private async Task<SessionInfoDto> EnsureLensAttachedAsync(string sessionId, CancellationToken ct)
     {
         var session = GetSessionDto(sessionId);
-        string? resumeThreadId = null;
+        var resumeThreadId = session.LensResumeThreadId;
         if (!session.LensOnly &&
             _aiCliProfileService.NormalizeProfile(null, session) == AiCliProfileService.CodexProfile)
         {

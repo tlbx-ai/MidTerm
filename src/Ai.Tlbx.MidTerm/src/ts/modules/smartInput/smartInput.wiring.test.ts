@@ -97,4 +97,12 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("event.key === 'Escape'");
     expect(source).toContain('void handleLensEscape(sessionId);');
   });
+
+  it('adds a bookmark-scoped provider resume action to the Lens Command Bay status rail', () => {
+    expect(source).toContain('setLensResumeConversationHandler');
+    expect(source).toContain('createLensResumeButton');
+    expect(source).toContain("button.className = 'adaptive-footer-status-toggle adaptive-footer-status-resume';");
+    expect(source).toContain('session?.bookmarkId');
+    expect(css).toContain('.adaptive-footer-status-resume {');
+  });
 });

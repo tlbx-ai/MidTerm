@@ -4262,6 +4262,7 @@ export interface components {
       agentControlled: boolean;
       lensOnly: boolean;
       profileHint: null | string;
+      lensResumeThreadId: null | string;
       hasLensHistory: boolean;
       supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
@@ -4614,6 +4615,7 @@ export interface components {
       name?: null | string;
       shell?: null | string;
       workingDirectory?: null | string;
+      resumeThreadId?: null | string;
       /** Format: int32 */
       cols: number;
       /** Format: int32 */

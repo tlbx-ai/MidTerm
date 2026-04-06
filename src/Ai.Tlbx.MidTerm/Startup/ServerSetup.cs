@@ -152,6 +152,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<SessionSupervisorService>();
         builder.Services.AddSingleton<SessionLensRuntimeService>();
         builder.Services.AddSingleton<SessionCodexHandoffService>();
+        builder.Services.AddSingleton<ProviderResumeCatalogService>();
         builder.Services.AddSingleton<SessionAgentVibeService>();
         builder.Services.AddSingleton<WorkerSessionRegistryService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>

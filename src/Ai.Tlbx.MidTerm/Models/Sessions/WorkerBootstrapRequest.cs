@@ -5,6 +5,7 @@ public sealed class WorkerBootstrapRequest
     public string? Name { get; set; }
     public string? Shell { get; set; }
     public string? WorkingDirectory { get; set; }
+    public string? ResumeThreadId { get; set; }
     public int Cols { get; set; } = 120;
     public int Rows { get; set; } = 30;
     public bool AgentControlled { get; set; } = true;

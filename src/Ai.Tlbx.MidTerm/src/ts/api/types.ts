@@ -34,13 +34,23 @@ export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 export type SessionInfoDto = Schemas['SessionInfoDto'] & {
   lensOnly?: boolean;
   profileHint?: string | null;
+  lensResumeThreadId?: string | null;
 };
 export type SessionListDto = Schemas['SessionListDto'];
 export type CreateSessionRequest = Schemas['CreateSessionRequest'];
 export type WorkerBootstrapRequest = Schemas['WorkerBootstrapRequest'] & {
   lensOnly?: boolean;
+  resumeThreadId?: string | null;
 };
 export type WorkerBootstrapResponse = Schemas['WorkerBootstrapResponse'];
+export interface ProviderResumeCatalogEntryDto {
+  provider: string;
+  sessionId: string;
+  workingDirectory: string;
+  title: string;
+  previewText?: string | null;
+  updatedAtUtc: string;
+}
 export type RenameSessionRequest = Schemas['RenameSessionRequest'];
 export type ResizeRequest = Schemas['ResizeRequest'];
 export type ResizeResponse = Schemas['ResizeResponse'];

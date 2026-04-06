@@ -6,7 +6,7 @@
  * into unrelated sibling bars.
  */
 
-import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../stores';
+import { $currentSettings, $activeSessionId, $voiceServerPassword, getSession } from '../../stores';
 import { t } from '../i18n';
 import { submitSessionText } from '../input/submit';
 import {
@@ -69,6 +69,7 @@ import {
   isTouchPrimaryDevice,
   resizeSmartInputTextarea,
 } from './smartInputMetrics';
+import type { ResumeProvider } from '../providerResume';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -107,6 +108,13 @@ const AUTO_SEND_LONG_PRESS_MS = 520;
 const sessionDrafts = new Map<string, string>();
 const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
+let lensResumeConversationHandler:
+  | ((args: {
+      sessionId: string;
+      provider: ResumeProvider;
+      workingDirectory: string;
+    }) => void | Promise<void>)
+  | null = null;
 
 interface AdaptiveFooterLayoutState {
   activeSessionId: string | null | undefined;
@@ -121,6 +129,19 @@ interface AdaptiveFooterLayoutState {
   inputMode: string | null | undefined;
   touchControlsAvailable: boolean;
   touchControlsExpanded: boolean;
+}
+
+export function setLensResumeConversationHandler(
+  handler:
+    | ((args: {
+        sessionId: string;
+        provider: ResumeProvider;
+        workingDirectory: string;
+      }) => void | Promise<void>)
+    | null,
+): void {
+  lensResumeConversationHandler = handler;
+  syncSmartInputVisibility();
 }
 
 function getSmartInputVisibilityState(): SmartInputVisibilityState {
@@ -800,11 +821,15 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
 
   const sessionId = layoutState.activeSessionId as string;
   const draft = getLensQuickSettingsDraft(sessionId);
+  const resumeButton = createLensResumeButton(sessionId);
 
   if (!layoutState.isMobile) {
     lensQuickSettingsRow.classList.remove('smart-input-lens-settings-sheet');
     lensQuickSettingsRow.hidden = false;
     footerStatusHost.appendChild(lensQuickSettingsRow);
+    if (resumeButton) {
+      footerStatusHost.appendChild(resumeButton);
+    }
     return;
   }
 
@@ -819,6 +844,9 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   });
   lensSettingsSummaryBtn = summaryBtn;
   footerStatusHost.appendChild(summaryBtn);
+  if (resumeButton) {
+    footerStatusHost.appendChild(resumeButton);
+  }
 
   lensQuickSettingsRow.classList.add('smart-input-lens-settings-sheet');
   lensQuickSettingsRow.hidden = !lensQuickSettingsSheetOpen;
@@ -828,6 +856,46 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 }
 
+function createLensResumeButton(sessionId: string): HTMLButtonElement | null {
+  const session = getSession(sessionId);
+  const provider = normalizeResumeProvider(session?.profileHint);
+  const workingDirectory = session?.currentDirectory?.trim();
+  if (
+    !session?.bookmarkId ||
+    !provider ||
+    !workingDirectory ||
+    !session.lensOnly ||
+    !lensResumeConversationHandler
+  ) {
+    return null;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'adaptive-footer-status-toggle adaptive-footer-status-resume';
+  button.textContent = 'Resume';
+  button.title = `Resume ${provider === 'claude' ? 'Claude' : 'Codex'} conversation`;
+  button.addEventListener('click', () => {
+    void lensResumeConversationHandler?.({
+      sessionId,
+      provider,
+      workingDirectory,
+    });
+  });
+  return button;
+}
+
+function normalizeResumeProvider(profile: string | null | undefined): ResumeProvider | null {
+  if (profile === 'claude') {
+    return 'claude';
+  }
+
+  if (profile === 'codex') {
+    return 'codex';
+  }
+
+  return null;
+}
 function setToolsPanelOpen(open: boolean): void {
   if (!toolsPanel || !toolsToggleBtn) {
     return;

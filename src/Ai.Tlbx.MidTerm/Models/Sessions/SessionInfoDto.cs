@@ -31,6 +31,7 @@ public sealed class SessionInfoDto
     public bool AgentControlled { get; set; }
     public bool LensOnly { get; set; }
     public string? ProfileHint { get; set; }
+    public string? LensResumeThreadId { get; set; }
     public bool HasLensHistory { get; set; }
     public SessionSupervisorInfoDto? Supervisor { get; set; }
 }

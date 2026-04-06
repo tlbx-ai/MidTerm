@@ -63,6 +63,7 @@ public static partial class SessionApiEndpoints
         SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
         SessionCodexHandoffService codexHandoff,
+        ProviderResumeCatalogService providerResumeCatalog,
         SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry)
@@ -175,6 +176,11 @@ public static partial class SessionApiEndpoints
                 sessionManager.SetProfileHint(sessionId, requestedProfile);
             }
 
+            if (!string.IsNullOrWhiteSpace(request.ResumeThreadId))
+            {
+                sessionManager.SetLensResumeThreadId(sessionId, request.ResumeThreadId);
+            }
+
             if (request.LensOnly)
             {
                 sessionManager.SetLensOnly(sessionId, true);
@@ -260,6 +266,27 @@ public static partial class SessionApiEndpoints
                 GuidanceInjected = guidanceInjected,
                 MidtermDir = midtermDir
             }, AppJsonContext.Default.WorkerBootstrapResponse);
+        });
+
+        app.MapGet("/api/providers/{provider}/resume-candidates", (
+            string provider,
+            string? workingDirectory,
+            string? scope,
+            CancellationToken ct) =>
+        {
+            var normalizedProvider = aiCliProfileService.NormalizeProfile(provider);
+            if (normalizedProvider is not AiCliProfileService.CodexProfile and not AiCliProfileService.ClaudeProfile)
+            {
+                return Results.BadRequest("Only Codex and Claude resume catalogs are supported.");
+            }
+
+            var includeAllDirectories = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
+            var candidates = providerResumeCatalog.GetCandidates(
+                normalizedProvider,
+                workingDirectory,
+                includeAllDirectories,
+                ct);
+            return Results.Json(candidates, AppJsonContext.Default.ListProviderResumeCatalogEntryDto);
         });
 
         app.MapPost("/api/sessions/reorder", (SessionReorderRequest request) =>

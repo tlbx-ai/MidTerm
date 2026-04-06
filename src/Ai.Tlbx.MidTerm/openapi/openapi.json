@@ -5560,6 +5560,7 @@
           "agentControlled",
           "lensOnly",
           "profileHint",
+          "lensResumeThreadId",
           "hasLensHistory",
           "supervisor"
         ],
@@ -5682,6 +5683,12 @@
             "type": "boolean"
           },
           "profileHint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lensResumeThreadId": {
             "type": [
               "null",
               "string"
@@ -7135,6 +7142,12 @@
             ]
           },
           "workingDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "resumeThreadId": {
             "type": [
               "null",
               "string"

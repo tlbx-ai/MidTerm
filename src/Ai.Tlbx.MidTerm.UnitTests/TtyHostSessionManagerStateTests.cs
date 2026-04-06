@@ -235,6 +235,30 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetLensResumeThreadId_PersistsAcrossManagerRestart()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                Assert.True(manager.SetLensResumeThreadId("s1", "thread-resume-123"));
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.Equal("thread-resume-123", dto.LensResumeThreadId);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SetSessionNameAsync_AutoMode_StoresTerminalTitleOnly()
     {
         await using var manager = CreateManager();

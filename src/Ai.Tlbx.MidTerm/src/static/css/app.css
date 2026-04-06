@@ -6008,6 +6008,16 @@ body.has-app-background::after {
   line-height: 1.4;
 }
 
+.session-launcher-provider-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.session-launcher-provider-action {
+  min-height: 38px;
+}
+
 .session-launcher-provider-hint {
   color: var(--text-secondary);
   font-size: var(--fs-sm);
@@ -6180,6 +6190,131 @@ body.has-app-background::after {
 
 .session-launcher-footer {
   align-items: center;
+}
+
+.provider-resume-picker-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+}
+
+.provider-resume-picker-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.provider-resume-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.provider-resume-picker-kicker {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.provider-resume-picker-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.provider-resume-picker-scope {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-resume-picker-scope-btn {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-dialog-muted) 90%, var(--bg-dialog));
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.provider-resume-picker-scope-btn.active {
+  border-color: color-mix(in srgb, var(--accent-blue) 54%, var(--border-color));
+  color: var(--text-primary);
+}
+
+.provider-resume-picker-status {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.provider-resume-picker-status.error {
+  color: var(--status-error);
+}
+
+.provider-resume-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.provider-resume-picker-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-dialog-muted) 92%, var(--bg-dialog));
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.provider-resume-picker-row:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-blue) 40%, var(--border-color));
+}
+
+.provider-resume-picker-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.provider-resume-picker-row-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.provider-resume-picker-row-time,
+.provider-resume-picker-row-path {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.provider-resume-picker-row-preview {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.provider-resume-picker-empty {
+  padding: 24px 12px;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 @media (max-width: 760px) {
@@ -14425,6 +14560,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-status-summary-lens[data-plan-mode='on'] {
   color: color-mix(in srgb, var(--accent-gold) 92%, white 8%);
   border-color: color-mix(in srgb, var(--accent-gold) 54%, var(--border-color));
+}
+
+.adaptive-footer-status-resume {
+  padding: 0 14px;
+  white-space: nowrap;
 }
 
 .adaptive-footer-status-pill {

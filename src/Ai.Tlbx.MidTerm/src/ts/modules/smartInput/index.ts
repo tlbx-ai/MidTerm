@@ -13,5 +13,6 @@ export {
   isSmartInputMode,
   isBothMode,
   removeSmartInputSessionState,
+  setLensResumeConversationHandler,
 } from './smartInput';
 export { startTranscription, stopTranscription } from './transcription';

@@ -3,8 +3,10 @@ import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '../hub/runtime';
 import type { HubMachineState } from '../hub/types';
+import { openProviderResumePicker, type ResumeProvider } from '../providerResume';
 
 export type LauncherProvider = 'terminal' | 'codex' | 'claude';
+export type LauncherLaunchMode = 'new' | 'resume';
 
 const LOCAL_TARGET_ID = 'local';
 
@@ -25,7 +27,9 @@ export type SessionLauncherTarget = LocalSessionLauncherTarget | HubSessionLaunc
 
 export interface SessionLauncherSelection {
   provider: LauncherProvider;
+  launchMode: LauncherLaunchMode;
   workingDirectory: string | null;
+  resumeThreadId?: string | null;
   target: SessionLauncherTarget;
 }
 
@@ -355,21 +359,54 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           const badge = definition.beta
             ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
             : '';
+          const disabled =
+            !supported || (target.kind === 'local' && (state.loading || !state.currentPath));
+          const actions =
+            definition.provider === 'terminal'
+              ? `
+                <button
+                  type="button"
+                  class="btn-secondary session-launcher-provider-action"
+                  data-provider="${definition.provider}"
+                  data-launch-mode="new"
+                  ${disabled ? 'disabled' : ''}
+                >
+                  ${escapeHtml(definition.launchLabel)}
+                </button>
+              `
+              : `
+                <div class="session-launcher-provider-actions">
+                  <button
+                    type="button"
+                    class="btn-secondary session-launcher-provider-action"
+                    data-provider="${definition.provider}"
+                    data-launch-mode="new"
+                    ${disabled ? 'disabled' : ''}
+                  >
+                    New Conversation
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-secondary session-launcher-provider-action"
+                    data-provider="${definition.provider}"
+                    data-launch-mode="resume"
+                    ${disabled ? 'disabled' : ''}
+                  >
+                    Resume Conversation
+                  </button>
+                </div>
+              `;
           return `
-            <button
-              type="button"
+            <div
               class="session-launcher-provider"
-              data-provider="${definition.provider}"
-              title="${escapeHtml(definition.launchLabel)}"
-              aria-label="${escapeHtml(definition.launchLabel)}"
-              ${!supported || (target.kind === 'local' && (state.loading || !state.currentPath)) ? 'disabled' : ''}
             >
               <span class="session-launcher-provider-heading">
                 <span class="session-launcher-provider-title">${escapeHtml(definition.title)}</span>
                 ${badge}
               </span>
               <span class="session-launcher-provider-description">${escapeHtml(definition.description)}</span>
-            </button>
+              ${actions}
+            </div>
           `;
         })
         .join('');
@@ -560,7 +597,11 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     void loadDirectory(state.startPath, { recordHistory: false });
     void refreshHubState().catch(() => {});
 
-    function launch(provider: LauncherProvider): void {
+    function launch(
+      provider: LauncherProvider,
+      launchMode: LauncherLaunchMode,
+      resumeThreadId?: string | null,
+    ): void {
       const target = getSelectedTarget();
       if (!isProviderSupportedOnTarget(provider, target)) {
         return;
@@ -572,21 +613,52 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
       close({
         provider,
+        launchMode,
         workingDirectory:
           target.kind === 'local'
             ? state.currentPath
             : state.remotePathDrafts[target.id]?.trim() || null,
+        resumeThreadId: resumeThreadId?.trim() || null,
         target,
       });
     }
 
     safeProvidersEl.addEventListener('click', (event) => {
-      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-provider]');
-      if (!target) {
+      const actionEl = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        '[data-provider][data-launch-mode]',
+      );
+      if (!actionEl) {
         return;
       }
 
-      launch(target.dataset.provider as LauncherProvider);
+      const provider = actionEl.dataset.provider as LauncherProvider;
+      const launchMode = actionEl.dataset.launchMode as LauncherLaunchMode;
+      if (launchMode !== 'resume' || provider === 'terminal') {
+        launch(provider, launchMode);
+        return;
+      }
+
+      const target = getSelectedTarget();
+      const workingDirectory =
+        target.kind === 'local'
+          ? state.currentPath
+          : state.remotePathDrafts[target.id]?.trim() || null;
+      if (!workingDirectory) {
+        return;
+      }
+
+      void (async () => {
+        const resumeEntry = await openProviderResumePicker({
+          provider: provider as ResumeProvider,
+          workingDirectory,
+          initialScope: 'current',
+        });
+        if (!resumeEntry) {
+          return;
+        }
+
+        launch(provider, 'resume', resumeEntry.sessionId);
+      })();
     });
 
     safeTargetsEl.addEventListener('click', (event) => {

@@ -65,6 +65,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<SessionAttentionItem>))]
 [JsonSerializable(typeof(WorkerBootstrapRequest))]
 [JsonSerializable(typeof(WorkerBootstrapResponse))]
+[JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
+[JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
 [JsonSerializable(typeof(LensTurnRequest))]
 [JsonSerializable(typeof(LensAttachmentReference))]
 [JsonSerializable(typeof(List<LensAttachmentReference>))]

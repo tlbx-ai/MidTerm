@@ -46,6 +46,8 @@ internal sealed class SessionRegistry
 
     public ConcurrentDictionary<string, string> ProfileHints { get; } = new(StringComparer.Ordinal);
 
+    public ConcurrentDictionary<string, string> LensResumeThreadIds { get; } = new(StringComparer.Ordinal);
+
     public int ClientCount => Clients.Count;
 
     public int SessionCount => SessionCache.Count;
@@ -159,7 +161,8 @@ internal sealed class SessionRegistry
                     BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
                     AgentControlled = IsAgentControlled(s.Id),
                     LensOnly = IsLensOnly(s.Id),
-                    ProfileHint = GetProfileHint(s.Id)
+                    ProfileHint = GetProfileHint(s.Id),
+                    LensResumeThreadId = GetLensResumeThreadId(s.Id)
                 })
                 .OrderBy(s => s.Order)
                 .ToList()
@@ -178,6 +181,7 @@ internal sealed class SessionRegistry
         AgentControlledSessions.TryRemove(sessionId, out _);
         LensOnlySessions.TryRemove(sessionId, out _);
         ProfileHints.TryRemove(sessionId, out _);
+        LensResumeThreadIds.TryRemove(sessionId, out _);
         _sessionControlStateService?.RemoveSession(sessionId);
         _sessionLayoutStateService?.RemoveSession(sessionId);
 
@@ -277,6 +281,27 @@ internal sealed class SessionRegistry
         return true;
     }
 
+    public bool SetLensResumeThreadId(string sessionId, string? resumeThreadId)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(resumeThreadId))
+        {
+            LensResumeThreadIds.TryRemove(sessionId, out _);
+        }
+        else
+        {
+            LensResumeThreadIds[sessionId] = resumeThreadId.Trim();
+        }
+
+        _sessionControlStateService?.SetLensResumeThreadId(sessionId, resumeThreadId);
+        NotifyStateChange();
+        return true;
+    }
+
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         if (string.IsNullOrWhiteSpace(bookmarkId))
@@ -365,6 +390,7 @@ internal sealed class SessionRegistry
         TmuxParentSessions.Clear();
         BookmarkLinks.Clear();
         AgentControlledSessions.Clear();
+        LensResumeThreadIds.Clear();
         _stateListeners.Clear();
         _tempDirectories.Clear();
     }
@@ -380,6 +406,13 @@ internal sealed class SessionRegistry
         return ProfileHints.TryGetValue(sessionId, out var profileHint)
             ? profileHint
             : _sessionControlStateService?.GetProfileHint(sessionId);
+    }
+
+    private string? GetLensResumeThreadId(string sessionId)
+    {
+        return LensResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId)
+            ? resumeThreadId
+            : _sessionControlStateService?.GetLensResumeThreadId(sessionId);
     }
 
     private IReadOnlyList<string> GetTmuxFamilySessionIds(string sessionId)
