@@ -856,7 +856,7 @@ public static class TtyHostSpawner
         var pathVar = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrWhiteSpace(pathVar))
         {
-            pathVar = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+            pathVar = AiCliCommandLocator.BuildFallbackPath();
         }
 
         return $$"""

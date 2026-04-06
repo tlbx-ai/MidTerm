@@ -164,4 +164,51 @@ public sealed class AiCliCommandLocatorTests
             }
         }
     }
+
+    [Fact]
+    public void GetUserCommandDirectories_IncludesUnixHomeBinDirectories()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "midterm-cli-unix-home-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var directories = AiCliCommandLocator.GetUserCommandDirectories(root);
+
+            Assert.Contains(Path.Combine(root, ".local", "bin"), directories);
+            Assert.Contains(Path.Combine(root, "bin"), directories);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildFallbackPath_IncludesCommonUnixInstallLocations()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var path = AiCliCommandLocator.BuildFallbackPath("/Users/tester");
+        var entries = path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        Assert.Contains("/Users/tester/.local/bin", entries);
+        Assert.Contains("/Users/tester/bin", entries);
+        Assert.Contains("/opt/homebrew/bin", entries);
+        Assert.Contains("/usr/local/bin", entries);
+        Assert.Contains("/usr/bin", entries);
+    }
 }
