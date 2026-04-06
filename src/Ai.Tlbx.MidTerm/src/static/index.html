@@ -647,7 +647,22 @@
                   <span class="tab-label" data-i18n="settings.commandBay">Command Bay</span>
                 </button>
                 <button class="settings-tab" data-tab="terminal" role="tab" aria-selected="false">
-                  <span class="icon">&#xe9d4;</span>
+                  <span class="icon icon-svg" aria-hidden="true">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="1em"
+                      height="1em"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect>
+                      <path d="M7 9l3 3-3 3"></path>
+                      <path d="M13 15h4"></path>
+                    </svg>
+                  </span>
                   <span class="tab-label" data-i18n="settings.terminal">Terminal</span>
                 </button>
                 <button class="settings-tab" data-tab="agent" role="tab" aria-selected="false">
@@ -1142,7 +1157,7 @@
                   <h2 data-i18n="settings.appearance.title">Appearance</h2>
 
                   <div class="settings-section">
-                    <h3 data-i18n="settings.appearance.terminalAppearance">Terminal Appearance</h3>
+                    <h3 data-i18n="settings.appearance.title">Appearance</h3>
                     <div class="setting-row">
                       <label for="setting-language" data-i18n="settings.appearance.language"
                         >Language</label
@@ -1182,6 +1197,259 @@
                         </option>
                       </select>
                     </div>
+                    <div class="setting-row">
+                      <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle"
+                        >Browser Tab Title</label
+                      >
+                      <select id="setting-tab-title">
+                        <option value="hostname" data-i18n="settings.options.tabHostname">
+                          Hostname
+                        </option>
+                        <option value="static" data-i18n="settings.options.tabStatic">
+                          Just MidTerm
+                        </option>
+                        <option value="sessionName" data-i18n="settings.options.tabSessionName">
+                          Session Name
+                        </option>
+                        <option value="terminalTitle" data-i18n="settings.options.tabTerminalTitle">
+                          Terminal Title
+                        </option>
+                        <option
+                          value="foregroundProcess"
+                          data-i18n="settings.options.tabForegroundProcess"
+                        >
+                          Foreground Process
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.appearance.backgroundTitle">
+                      Background &amp; Transparency
+                    </h3>
+                    <div class="setting-row setting-row-align-start">
+                      <label
+                        for="setting-background-upload"
+                        data-i18n="settings.appearance.backgroundImage"
+                        >Background Image</label
+                      >
+                      <div class="background-image-controls">
+                        <div class="background-image-actions">
+                          <label
+                            class="settings-action-btn settings-file-upload-btn"
+                            id="btn-background-upload"
+                          >
+                            <span data-i18n="settings.appearance.backgroundUpload">
+                              Upload Image
+                            </span>
+                            <input
+                              type="file"
+                              id="setting-background-upload"
+                              class="settings-file-upload-input"
+                              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                              aria-label="Upload background image"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            class="settings-action-btn"
+                            id="btn-background-remove"
+                            data-i18n="settings.appearance.backgroundRemove"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div class="background-image-preview-frame">
+                          <img
+                            id="background-image-preview"
+                            class="background-image-preview hidden"
+                            alt=""
+                          />
+                          <div
+                            id="background-image-empty"
+                            class="background-image-empty"
+                            data-i18n="settings.appearance.backgroundNone"
+                          >
+                            No image uploaded
+                          </div>
+                        </div>
+                        <div id="background-image-name" class="background-image-name"></div>
+                        <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
+                          Uploads a PNG or JPG and stores it beside the MidTerm logs.
+                        </div>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-image-enabled"
+                        data-i18n="settings.appearance.backgroundEnabled"
+                        >Show Background Image</label
+                      >
+                      <input type="checkbox" id="setting-background-image-enabled" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-hide-background-image-on-mobile"
+                        data-i18n="settings.appearance.backgroundHideOnMobile"
+                        >Hide Background On Mobile</label
+                      >
+                      <input type="checkbox" id="setting-hide-background-image-on-mobile" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-enabled"
+                        data-i18n="settings.appearance.backgroundKenBurns"
+                        >Animated Ken Burns</label
+                      >
+                      <input type="checkbox" id="setting-background-ken-burns-enabled" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-zoom-percent"
+                        data-i18n="settings.appearance.backgroundKenBurnsZoom"
+                        >Ken Burns Zoom</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-background-ken-burns-zoom-percent"
+                          min="150"
+                          max="300"
+                          step="5"
+                          value="150"
+                        />
+                        <span id="setting-background-ken-burns-zoom-percent-value" class="slider-value">
+                          150%
+                        </span>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-speed"
+                        data-i18n="settings.appearance.backgroundKenBurnsSpeed"
+                        >Ken Burns Speed</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-background-ken-burns-speed"
+                          min="0"
+                          max="120"
+                          step="1"
+                          value="12"
+                        />
+                        <span id="setting-background-ken-burns-speed-value" class="slider-value">
+                          12 px/s
+                        </span>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-ui-transparency"
+                        data-i18n="settings.appearance.uiTransparency"
+                        >UI Transparency</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-ui-transparency"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value="0"
+                        />
+                        <span id="setting-ui-transparency-value" class="slider-value">0%</span>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- Command Bay Panel -->
+                <section class="settings-panel hidden" data-panel="command-bay">
+                  <h2 data-i18n="settings.commandBay.title">Command Bay</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.commandBay.commandBay">Command Bay</h3>
+                    <div class="setting-row">
+                      <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
+                        >Input Mode</label
+                      >
+                      <select id="setting-input-mode">
+                        <option value="keyboard" data-i18n="settings.options.inputKeyboard">
+                          Keyboard
+                        </option>
+                        <option value="smartinput" data-i18n="settings.options.inputSmartInput">
+                          Smart Input
+                        </option>
+                        <option value="both" data-i18n="settings.options.inputBoth">Both</option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">
+                      Smart Input uses a floating text box instead of direct keyboard input. Ideal
+                      for mobile — prevents the on-screen keyboard from appearing.
+                    </p>
+                    <div class="setting-row">
+                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
+                        >Automation Bar</label
+                      >
+                      <input type="checkbox" id="setting-manager-bar" />
+                    </div>
+                  </div>
+                </section>
+
+                <!-- Terminal Panel -->
+                <section class="settings-panel hidden" data-panel="terminal">
+                  <h2 data-i18n="settings.terminal.title">Terminal</h2>
+
+                  <!-- Session Defaults -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.terminal.terminalSessions">Terminal Sessions</h3>
+                    <div class="setting-row">
+                      <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
+                        >Default Shell</label
+                      >
+                      <select id="setting-default-shell">
+                        <option value="Pwsh">PowerShell 7</option>
+                        <option value="PowerShell">Windows PowerShell</option>
+                        <option value="Cmd">Command Prompt</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-working-dir"
+                        data-i18n="settings.behavior.defaultWorkingDir"
+                        >New Session Start Location</label
+                      >
+                      <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
+                        <input
+                          type="text"
+                          id="setting-working-dir"
+                          data-i18n-placeholder="settings.behavior.defaultWorkingDirHint"
+                          placeholder="Leave empty for the run-as home directory"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-terminal-env" data-i18n="settings.terminal.env"
+                        >Terminal Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-terminal-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.terminal.envHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.appearance.terminalAppearance">Terminal Appearance</h3>
                     <div class="setting-row">
                       <label
                         for="setting-terminal-color-scheme"
@@ -1454,31 +1722,6 @@
                       </select>
                     </div>
                     <div class="setting-row">
-                      <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle"
-                        >Browser Tab Title</label
-                      >
-                      <select id="setting-tab-title">
-                        <option value="hostname" data-i18n="settings.options.tabHostname">
-                          Hostname
-                        </option>
-                        <option value="static" data-i18n="settings.options.tabStatic">
-                          Just MidTerm
-                        </option>
-                        <option value="sessionName" data-i18n="settings.options.tabSessionName">
-                          Session Name
-                        </option>
-                        <option value="terminalTitle" data-i18n="settings.options.tabTerminalTitle">
-                          Terminal Title
-                        </option>
-                        <option
-                          value="foregroundProcess"
-                          data-i18n="settings.options.tabForegroundProcess"
-                        >
-                          Foreground Process
-                        </option>
-                      </select>
-                    </div>
-                    <div class="setting-row">
                       <label
                         for="setting-scrollbar-style"
                         data-i18n="settings.appearance.terminalScrollbar"
@@ -1536,146 +1779,6 @@
                         </option>
                       </select>
                     </div>
-                  </div>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.appearance.backgroundTitle">
-                      Background &amp; Transparency
-                    </h3>
-                    <div class="setting-row setting-row-align-start">
-                      <label
-                        for="setting-background-upload"
-                        data-i18n="settings.appearance.backgroundImage"
-                        >Background Image</label
-                      >
-                      <div class="background-image-controls">
-                        <div class="background-image-actions">
-                          <label
-                            class="settings-action-btn settings-file-upload-btn"
-                            id="btn-background-upload"
-                          >
-                            <span data-i18n="settings.appearance.backgroundUpload">
-                              Upload Image
-                            </span>
-                            <input
-                              type="file"
-                              id="setting-background-upload"
-                              class="settings-file-upload-input"
-                              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
-                              aria-label="Upload background image"
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            class="settings-action-btn"
-                            id="btn-background-remove"
-                            data-i18n="settings.appearance.backgroundRemove"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        <div class="background-image-preview-frame">
-                          <img
-                            id="background-image-preview"
-                            class="background-image-preview hidden"
-                            alt=""
-                          />
-                          <div
-                            id="background-image-empty"
-                            class="background-image-empty"
-                            data-i18n="settings.appearance.backgroundNone"
-                          >
-                            No image uploaded
-                          </div>
-                        </div>
-                        <div id="background-image-name" class="background-image-name"></div>
-                        <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
-                          Uploads a PNG or JPG and stores it beside the MidTerm logs.
-                        </div>
-                      </div>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-background-image-enabled"
-                        data-i18n="settings.appearance.backgroundEnabled"
-                        >Show Background Image</label
-                      >
-                      <input type="checkbox" id="setting-background-image-enabled" />
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-hide-background-image-on-mobile"
-                        data-i18n="settings.appearance.backgroundHideOnMobile"
-                        >Hide Background On Mobile</label
-                      >
-                      <input type="checkbox" id="setting-hide-background-image-on-mobile" />
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-background-ken-burns-enabled"
-                        data-i18n="settings.appearance.backgroundKenBurns"
-                        >Animated Ken Burns</label
-                      >
-                      <input type="checkbox" id="setting-background-ken-burns-enabled" />
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-background-ken-burns-zoom-percent"
-                        data-i18n="settings.appearance.backgroundKenBurnsZoom"
-                        >Ken Burns Zoom</label
-                      >
-                      <div class="transparency-slider-row">
-                        <input
-                          type="range"
-                          id="setting-background-ken-burns-zoom-percent"
-                          min="150"
-                          max="300"
-                          step="5"
-                          value="150"
-                        />
-                        <span id="setting-background-ken-burns-zoom-percent-value" class="slider-value">
-                          150%
-                        </span>
-                      </div>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-background-ken-burns-speed"
-                        data-i18n="settings.appearance.backgroundKenBurnsSpeed"
-                        >Ken Burns Speed</label
-                      >
-                      <div class="transparency-slider-row">
-                        <input
-                          type="range"
-                          id="setting-background-ken-burns-speed"
-                          min="0"
-                          max="120"
-                          step="1"
-                          value="12"
-                        />
-                        <span id="setting-background-ken-burns-speed-value" class="slider-value">
-                          12 px/s
-                        </span>
-                      </div>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-ui-transparency"
-                        data-i18n="settings.appearance.uiTransparency"
-                        >UI Transparency</label
-                      >
-                      <div class="transparency-slider-row">
-                        <input
-                          type="range"
-                          id="setting-ui-transparency"
-                          min="0"
-                          max="100"
-                          step="5"
-                          value="0"
-                        />
-                        <span id="setting-ui-transparency-value" class="slider-value">0%</span>
-                      </div>
-                    </div>
                     <div class="setting-row">
                       <label
                         for="setting-terminal-transparency"
@@ -1717,90 +1820,6 @@
                           >0%</span
                         >
                       </div>
-                    </div>
-                  </div>
-                </section>
-
-                <!-- Command Bay Panel -->
-                <section class="settings-panel hidden" data-panel="command-bay">
-                  <h2 data-i18n="settings.commandBay.title">Command Bay</h2>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.commandBay.commandBay">Command Bay</h3>
-                    <div class="setting-row">
-                      <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
-                        >Input Mode</label
-                      >
-                      <select id="setting-input-mode">
-                        <option value="keyboard" data-i18n="settings.options.inputKeyboard">
-                          Keyboard
-                        </option>
-                        <option value="smartinput" data-i18n="settings.options.inputSmartInput">
-                          Smart Input
-                        </option>
-                        <option value="both" data-i18n="settings.options.inputBoth">Both</option>
-                      </select>
-                    </div>
-                    <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">
-                      Smart Input uses a floating text box instead of direct keyboard input. Ideal
-                      for mobile — prevents the on-screen keyboard from appearing.
-                    </p>
-                    <div class="setting-row">
-                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
-                        >Automation Bar</label
-                      >
-                      <input type="checkbox" id="setting-manager-bar" />
-                    </div>
-                  </div>
-                </section>
-
-                <!-- Terminal Panel -->
-                <section class="settings-panel hidden" data-panel="terminal">
-                  <h2 data-i18n="settings.terminal.title">Terminal</h2>
-
-                  <!-- Session Defaults -->
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.terminal.terminalSessions">Terminal Sessions</h3>
-                    <div class="setting-row">
-                      <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
-                        >Default Shell</label
-                      >
-                      <select id="setting-default-shell">
-                        <option value="Pwsh">PowerShell 7</option>
-                        <option value="PowerShell">Windows PowerShell</option>
-                        <option value="Cmd">Command Prompt</option>
-                      </select>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-working-dir"
-                        data-i18n="settings.behavior.defaultWorkingDir"
-                        >New Session Start Location</label
-                      >
-                      <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
-                        <input
-                          type="text"
-                          id="setting-working-dir"
-                          data-i18n-placeholder="settings.behavior.defaultWorkingDirHint"
-                          placeholder="Leave empty for the run-as home directory"
-                        />
-                        <button type="button" class="inline-save-btn" title="Save">
-                          <span class="icon">&#xe90f;</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-terminal-env" data-i18n="settings.terminal.env"
-                        >Terminal Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-terminal-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.terminal.envHint"
-                        placeholder="KEY=value"
-                      ></textarea>
                     </div>
                   </div>
 
