@@ -19,12 +19,9 @@ export interface FileTreeResponse {
   isGitRepo: boolean;
 }
 
-export async function fetchTree(
-  path: string,
-  _sessionId: string,
-): Promise<FileTreeResponse | null> {
+export async function fetchTree(path: string, sessionId: string): Promise<FileTreeResponse | null> {
   try {
-    const params = new URLSearchParams({ path, depth: '1' });
+    const params = new URLSearchParams({ path, depth: '1', sessionId });
     const res = await fetch(`/api/files/tree?${params}`);
     if (!res.ok) return null;
     return (await res.json()) as FileTreeResponse;

@@ -188,7 +188,7 @@ The layout subsystem stores split trees in backend state and reattaches sessions
 Each session wrapper adds:
 
 - a Files tab with a cwd-rooted tree, previews, syntax-highlighted text viewing, and inline save
-- git status summaries with sectioned file lists, hierarchical trees, and diff overlays
+- git status summaries with sectioned file lists, hierarchical trees, dock-native diff/commit inspection, and terminal command handoff for write actions
 - a commands panel for saved scripts that run in hidden backing sessions
 
 ### Command Bay

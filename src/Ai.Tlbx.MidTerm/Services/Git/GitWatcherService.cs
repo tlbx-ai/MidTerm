@@ -353,10 +353,13 @@ public sealed class GitWatcherService : IDisposable
         if (s.RecentCommits.Length > 0)
             sb.Append('|').Append(s.RecentCommits[0].ShortHash);
         foreach (var f in s.Staged)
-            sb.Append('|').Append(f.Path).Append(':').Append(f.Additions).Append(',').Append(f.Deletions);
+            sb.Append('|').Append(f.Status).Append(':').Append(f.Path).Append(':').Append(f.OriginalPath).Append(':').Append(f.Additions).Append(',').Append(f.Deletions);
         sb.Append('\x1F');
         foreach (var f in s.Modified)
-            sb.Append('|').Append(f.Path).Append(':').Append(f.Additions).Append(',').Append(f.Deletions);
+            sb.Append('|').Append(f.Status).Append(':').Append(f.Path).Append(':').Append(f.Additions).Append(',').Append(f.Deletions);
+        sb.Append('\x1F');
+        foreach (var f in s.Conflicted)
+            sb.Append('|').Append(f.Path);
         sb.Append('\x1F');
         foreach (var f in s.Untracked)
             sb.Append('|').Append(f.Path);

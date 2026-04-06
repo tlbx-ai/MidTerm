@@ -4,7 +4,12 @@
  * REST wrappers for git read operations.
  */
 
-import type { GitStatusResponse, GitLogEntry } from './types';
+import type {
+  GitCommitDetailsResponse,
+  GitDiffViewResponse,
+  GitLogEntry,
+  GitStatusResponse,
+} from './types';
 
 export async function fetchGitStatus(sessionId: string): Promise<GitStatusResponse | null> {
   try {
@@ -40,5 +45,34 @@ export async function fetchGitLog(sessionId: string, count = 20): Promise<GitLog
     return (await res.json()) as GitLogEntry[];
   } catch {
     return [];
+  }
+}
+
+export async function fetchDiffView(
+  sessionId: string,
+  path: string,
+  scope: 'worktree' | 'staged',
+): Promise<GitDiffViewResponse | null> {
+  try {
+    const params = new URLSearchParams({ sessionId, path, scope });
+    const res = await fetch(`/api/git/diff-view?${params}`);
+    if (!res.ok) return null;
+    return (await res.json()) as GitDiffViewResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchCommitDetails(
+  sessionId: string,
+  hash: string,
+): Promise<GitCommitDetailsResponse | null> {
+  try {
+    const params = new URLSearchParams({ sessionId, hash });
+    const res = await fetch(`/api/git/commit?${params}`);
+    if (!res.ok) return null;
+    return (await res.json()) as GitCommitDetailsResponse;
+  } catch {
+    return null;
   }
 }

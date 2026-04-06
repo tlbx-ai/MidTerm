@@ -156,6 +156,29 @@ public static class GitEndpoints
             return Results.Text(diff, "text/plain");
         });
 
+        app.MapGet("/api/git/diff-view", async (string? sessionId, string? path, string? scope) =>
+        {
+            if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(path))
+            {
+                return Results.BadRequest("sessionId and path required");
+            }
+
+            var normalizedScope = string.Equals(scope, "staged", StringComparison.OrdinalIgnoreCase)
+                ? "staged"
+                : "worktree";
+
+            var (repoRoot, error) = ResolveRepo(sessionId, gitWatcher, sessionManager);
+            if (error is not null) return error;
+
+            var (patch, isTruncated) = await GitCommandRunner.GetDiffPatchAsync(
+                repoRoot!,
+                path,
+                normalizedScope == "staged");
+
+            var response = GitPatchParser.ParseDiff(normalizedScope, patch, isTruncated);
+            return Results.Json(response, GitJsonContext.Default.GitDiffViewResponse);
+        });
+
         app.MapGet("/api/git/log", async (string? sessionId, int? count) =>
         {
             if (string.IsNullOrEmpty(sessionId))
@@ -168,6 +191,27 @@ public static class GitEndpoints
 
             var entries = await GitCommandRunner.GetLogAsync(repoRoot!, count ?? 20);
             return Results.Json(entries, GitJsonContext.Default.GitLogEntryArray);
+        });
+
+        app.MapGet("/api/git/commit", async (string? sessionId, string? hash) =>
+        {
+            if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(hash))
+            {
+                return Results.BadRequest("sessionId and hash required");
+            }
+
+            var (repoRoot, error) = ResolveRepo(sessionId, gitWatcher, sessionManager);
+            if (error is not null) return error;
+
+            var metadata = await GitCommandRunner.GetCommitMetadataAsync(repoRoot!, hash);
+            if (metadata is null)
+            {
+                return Results.NotFound("Commit not found");
+            }
+
+            var (patch, isTruncated) = await GitCommandRunner.GetCommitPatchAsync(repoRoot!, hash);
+            var response = GitPatchParser.ParseCommitDetails(metadata, patch, isTruncated);
+            return Results.Json(response, GitJsonContext.Default.GitCommitDetailsResponse);
         });
     }
 

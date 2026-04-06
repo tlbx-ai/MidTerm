@@ -277,7 +277,9 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F242` Git panels group files into untracked files.
 - `F243` Git panels build hierarchical path trees for each file section.
 - `F244` Git panels show recent commits.
-- `F245` Git panels can open diff overlays for tracked files.
+- `F245` Git panels can open dock-native diff inspectors for tracked files.
+- `F245a` Git panels can inspect recent commits with structured patch details.
+- `F245b` Git panels can suggest terminal git commands for explicit write handoff.
 - `F246` Commands panels list per-session scripts.
 - `F247` Commands panels show empty-state guidance when no scripts exist.
 - `F248` Commands panels can create new scripts inline.

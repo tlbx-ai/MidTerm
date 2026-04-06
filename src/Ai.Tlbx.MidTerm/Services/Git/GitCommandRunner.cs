@@ -10,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 internal static class GitCommandRunner
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private const int MaxPatchOutputChars = 160_000;
     private static string? _runAsUser;
     private static bool _isServiceMode;
 
@@ -176,6 +177,17 @@ internal static class GitCommandRunner
         return string.IsNullOrEmpty(trimmed) ? 0 : trimmed.Split('\n').Length;
     }
 
+    internal static async Task<string[]> GetTrackedAndUntrackedPathsAsync(string repoRoot)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "ls-files", "-co", "--exclude-standard");
+        if (exitCode != 0)
+        {
+            return [];
+        }
+
+        return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
     internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
@@ -223,6 +235,70 @@ internal static class GitCommandRunner
             : new[] { "diff", "--", path };
         var (_, stdout, _) = await RunGitAsync(repoRoot, args);
         return stdout;
+    }
+
+    internal static async Task<(string Patch, bool IsTruncated)> GetDiffPatchAsync(
+        string repoRoot,
+        string path,
+        bool staged)
+    {
+        var args = staged
+            ? new[] { "diff", "--cached", "--find-renames", "--unified=3", "--no-color", "--", path }
+            : new[] { "diff", "--find-renames", "--unified=3", "--no-color", "--", path };
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, args);
+        if (exitCode != 0)
+        {
+            return (string.Empty, false);
+        }
+
+        return TrimOutput(stdout, MaxPatchOutputChars);
+    }
+
+    internal static async Task<GitCommitMetadata?> GetCommitMetadataAsync(string repoRoot, string hash)
+    {
+        const string format = "%H%x00%h%x00%s%x00%b%x00%an%x00%aI%x00%cI%x00%P";
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "show", "--no-patch", $"--format={format}", hash);
+        if (exitCode != 0)
+        {
+            return null;
+        }
+
+        var parts = stdout.TrimEnd('\r', '\n', '\0').Split('\0');
+        if (parts.Length < 8)
+        {
+            return null;
+        }
+
+        return new GitCommitMetadata
+        {
+            Hash = parts[0],
+            ShortHash = parts[1],
+            Subject = parts[2],
+            Body = parts[3].TrimEnd(),
+            Author = parts[4],
+            AuthoredDate = parts[5],
+            CommittedDate = parts[6],
+            ParentHashes = parts[7]
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        };
+    }
+
+    internal static async Task<(string Patch, bool IsTruncated)> GetCommitPatchAsync(string repoRoot, string hash)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(
+            repoRoot,
+            "show",
+            "--find-renames",
+            "--unified=3",
+            "--no-color",
+            "--format=",
+            hash);
+        if (exitCode != 0)
+        {
+            return (string.Empty, false);
+        }
+
+        return TrimOutput(stdout, MaxPatchOutputChars);
     }
 
     private static void ParseChangedEntry(string line, List<GitFileEntry> staged, List<GitFileEntry> modified)
@@ -372,5 +448,15 @@ internal static class GitCommandRunner
 
         RecordCommand(workingDir, args, process.ExitCode, stdout, stderr);
         return (process.ExitCode, stdout, stderr);
+    }
+
+    private static (string Text, bool IsTruncated) TrimOutput(string text, int maxChars)
+    {
+        if (text.Length <= maxChars)
+        {
+            return (text, false);
+        }
+
+        return (text[..maxChars], true);
     }
 }

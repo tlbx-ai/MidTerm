@@ -15,7 +15,6 @@ import { handleDockLayoutChange } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import { refreshGitPanel, renderGitPanelInto } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
-import { closeDiffOverlay } from './gitDiff';
 import { closeCommandsDock } from '../commands/dock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
@@ -107,7 +106,6 @@ export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
   currentDockSessionId = null;
-  closeDiffOverlay();
 
   $gitPanelDocked.set(false);
   setActionButtonActive('git', false);

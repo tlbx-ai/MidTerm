@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -10,7 +11,8 @@ public static class FileEndpoints
         WebApplication app,
         TtyHostSessionManager sessionManager,
         SessionPathAllowlistService allowlistService,
-        SettingsService settingsService)
+        SettingsService settingsService,
+        GitWatcherService gitWatcher)
     {
         var fileService = new FileService(sessionManager, allowlistService);
 
@@ -305,41 +307,38 @@ public static class FileEndpoints
             }
 
             var isGitRepo = false;
+            string? repoRoot = null;
             HashSet<string>? gitFiles = null;
+            Dictionary<string, string>? gitStatusMap = null;
 
             try
             {
-                var psi = new System.Diagnostics.ProcessStartInfo
+                repoRoot = await GitCommandRunner.GetRepoRootAsync(fullPath);
+                if (!string.IsNullOrEmpty(repoRoot))
                 {
-                    FileName = "git",
-                    Arguments = "ls-files -co --exclude-standard",
-                    WorkingDirectory = fullPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
+                    isGitRepo = true;
+                    gitFiles = new HashSet<string>(
+                        await GitCommandRunner.GetTrackedAndUntrackedPathsAsync(repoRoot),
+                        StringComparer.OrdinalIgnoreCase);
 
-                using var process = System.Diagnostics.Process.Start(psi);
-                if (process is not null)
-                {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    var output = await process.StandardOutput.ReadToEndAsync(cts.Token);
-                    await process.WaitForExitAsync(cts.Token);
-
-                    if (process.ExitCode == 0)
+                    if (!string.IsNullOrEmpty(sessionId))
                     {
-                        isGitRepo = true;
-                        gitFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        var registeredRepo = gitWatcher.GetRepoRoot(sessionId);
+                        if (!string.Equals(registeredRepo, repoRoot, StringComparison.OrdinalIgnoreCase))
                         {
-                            gitFiles.Add(line.Trim());
-                            var dir = Path.GetDirectoryName(line.Trim());
-                            while (!string.IsNullOrEmpty(dir))
-                            {
-                                gitFiles.Add(dir);
-                                dir = Path.GetDirectoryName(dir);
-                            }
+                            await gitWatcher.RegisterSessionAsync(sessionId, fullPath);
+                        }
+
+                        var cachedStatus = gitWatcher.GetCachedStatus(sessionId);
+                        if (cachedStatus is null)
+                        {
+                            await gitWatcher.RefreshStatusAsync(repoRoot);
+                            cachedStatus = gitWatcher.GetCachedStatus(sessionId);
+                        }
+
+                        if (cachedStatus is not null)
+                        {
+                            gitStatusMap = GitFileStatusMapBuilder.Build(cachedStatus);
                         }
                     }
                 }
@@ -358,7 +357,7 @@ public static class FileEndpoints
 
                     if (isGitRepo && gitFiles is not null)
                     {
-                        var relativePath = Path.GetRelativePath(fullPath, dir).Replace('\\', '/');
+                        var relativePath = Path.GetRelativePath(repoRoot!, dir).Replace('\\', '/');
                         if (!gitFiles.Contains(relativePath) && dirName != ".git")
                         {
                             var prefix = relativePath + "/";
@@ -378,7 +377,11 @@ public static class FileEndpoints
                     {
                         Name = dirName,
                         FullPath = dir,
-                        IsDirectory = true
+                        IsDirectory = true,
+                        GitStatus = gitStatusMap is not null
+                            && gitStatusMap.TryGetValue(Path.GetRelativePath(repoRoot!, dir).Replace('\\', '/'), out var badge)
+                            ? badge
+                            : null
                     });
                 }
 
@@ -388,7 +391,7 @@ public static class FileEndpoints
 
                     if (isGitRepo && gitFiles is not null)
                     {
-                        var relativePath = Path.GetRelativePath(fullPath, file).Replace('\\', '/');
+                        var relativePath = Path.GetRelativePath(repoRoot!, file).Replace('\\', '/');
                         if (!gitFiles.Contains(relativePath)) continue;
                     }
 
@@ -401,7 +404,11 @@ public static class FileEndpoints
                             FullPath = file,
                             IsDirectory = false,
                             Size = fileInfo.Length,
-                            MimeType = FileService.GetMimeType(fileName)
+                            MimeType = FileService.GetMimeType(fileName),
+                            GitStatus = gitStatusMap is not null
+                                && gitStatusMap.TryGetValue(Path.GetRelativePath(repoRoot!, file).Replace('\\', '/'), out var badge)
+                                ? badge
+                                : null
                         });
                     }
                     catch { }

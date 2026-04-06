@@ -362,7 +362,7 @@ public class Program
         }
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
-        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService);
+        FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService, gitWatcher);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
         HubEndpoints.MapHubEndpoints(app, app.Services.GetRequiredService<HubService>());
