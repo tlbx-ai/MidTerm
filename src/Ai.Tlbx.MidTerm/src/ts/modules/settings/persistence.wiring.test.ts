@@ -113,6 +113,18 @@ describe('settings persistence wiring', () => {
   });
 
   it('limits bundled terminal font controls to distinct supported values', () => {
+    expect(html).toContain('id="setting-agent-message-font-family"');
+    expect(html).toContain(
+      '<option value="default" data-i18n="settings.options.agentMessageFontDefault">',
+    );
+    expect(html).toContain(
+      '<option value="sans" data-i18n="settings.options.agentMessageFontSans">',
+    );
+    expect(html).toContain(
+      '<option value="serif" data-i18n="settings.options.agentMessageFontSerif">',
+    );
+    expect(html).toContain('<option value="Helvetica Neue">Helvetica Neue</option>');
+    expect(html).toContain('<option value="Trebuchet MS">Trebuchet MS</option>');
     expect(html).toContain(
       '<option value="classic" data-i18n="settings.options.boxDrawingStyleClassic">',
     );
@@ -122,7 +134,7 @@ describe('settings persistence wiring', () => {
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?min="0.5"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?max="2"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?step="0.05"/);
-    expect(html).toMatch(/id="setting-letter-spacing"[\s\S]*?step="1"/);
+    expect(html).toMatch(/id="setting-letter-spacing"[\s\S]*?step="0.05"/);
     expect(html).toContain(
       '<option value="custom" data-i18n="settings.options.boxDrawingCustom">',
     );
@@ -132,14 +144,17 @@ describe('settings persistence wiring', () => {
     expect(html).not.toContain('<option value="100">100</option>');
     expect(html).not.toContain('<option value="900">900</option>');
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'letterSpacing')?.validation).toBe(
-      'integer, clamped to -2-10',
+      'float, clamped to -2-10',
     );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'fontWeight')?.validation).toBe(
-      'normal or bold',
+      'normal, bold, or numeric weight',
     );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'fontWeightBold')?.validation).toBe(
-      'normal or bold',
+      'normal, bold, or numeric weight',
     );
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'agentMessageFontFamily')?.validation,
+    ).toBe('known agent message font family');
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'customGlyphs')?.validation).toBe(
       'boolean, rendered as custom or font box drawing',
     );
@@ -168,6 +183,7 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain("document.getElementById('setting-terminal-env')");
     expect(persistenceSource).toContain("document.getElementById('setting-codex-env')");
     expect(persistenceSource).toContain("document.getElementById('setting-claude-env')");
+    expect(persistenceSource).toContain("'--agent-ui-font-family'");
     expect(persistenceSource).toContain("textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));");
   });
 
@@ -177,6 +193,11 @@ describe('settings persistence wiring', () => {
       'export function unbindSettingsAutoSave(resetHydrationState = true): void {',
     );
     expect(persistenceSource).toContain('if (resetHydrationState) {');
+  });
+
+  it('preserves non-default select values when hydrating the settings form', () => {
+    expect(persistenceSource).toContain("option.dataset.preservedValue = 'true';");
+    expect(persistenceSource).toContain("option.textContent = nextValue;");
   });
 
   it('keeps the saved run-as user selectable even if discovery misses it', () => {

@@ -8,6 +8,23 @@ public sealed partial class MidTermSettingsPublic
 {
     private const string NormalFontWeight = "normal";
     private const string BoldFontWeight = "bold";
+    private const string DefaultAgentMessageFontFamily = "default";
+    private static readonly string[] AllowedAgentMessageFontFamilies =
+    [
+        DefaultAgentMessageFontFamily,
+        "sans",
+        "serif",
+        "Segoe UI",
+        "Helvetica Neue",
+        "Arial",
+        "Verdana",
+        "Tahoma",
+        "Trebuchet MS",
+        "Cascadia Code",
+        "Cascadia Code SemiBold",
+        "JetBrains Mono",
+        "Terminus"
+    ];
     private static readonly HashSet<string> BuiltInTerminalColorSchemeNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "auto",
@@ -36,6 +53,7 @@ public sealed partial class MidTermSettingsPublic
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
             ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
             ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
+            AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             LineHeight = settings.LineHeight,
@@ -121,6 +139,9 @@ public sealed partial class MidTermSettingsPublic
         settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
         settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
         settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
+        settings.AgentMessageFontFamily = NormalizeAgentMessageFontFamily(
+            AgentMessageFontFamily,
+            DefaultAgentMessageFontFamily);
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);
@@ -264,7 +285,8 @@ public sealed partial class MidTermSettingsPublic
 
     private static double NormalizeLetterSpacing(double value)
     {
-        return Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), -2.0, 10.0);
+        var finiteValue = double.IsFinite(value) ? value : 0;
+        return Math.Clamp(finiteValue, -2.0, 10.0);
     }
 
     private static string NormalizeBoxDrawingStyle(string? value)
@@ -306,7 +328,31 @@ public sealed partial class MidTermSettingsPublic
 
         if (int.TryParse(trimmed, CultureInfo.InvariantCulture, out var numericWeight))
         {
-            return numericWeight >= 600 ? BoldFontWeight : NormalFontWeight;
+            if (numericWeight is >= 1 and <= 1000)
+            {
+                return numericWeight.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        return fallback;
+    }
+
+    private static string NormalizeAgentMessageFontFamily(
+        string? value,
+        string fallback = DefaultAgentMessageFontFamily)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        foreach (var candidate in AllowedAgentMessageFontFamilies)
+        {
+            if (string.Equals(candidate, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return candidate;
+            }
         }
 
         return fallback;

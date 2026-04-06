@@ -10753,13 +10753,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-lens-user-text: color-mix(in srgb, var(--accent-blue) 20%, var(--text-primary) 80%);
   --agent-lens-user-label: color-mix(in srgb, var(--accent-blue) 54%, var(--text-muted) 46%);
   --agent-lens-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
-  --agent-history-user-font-family: 'Segoe UI Variable Text', var(--font-ui);
-  --agent-history-assistant-font-family: 'Segoe UI', var(--font-ui);
+  --agent-history-message-font-family:
+    var(--agent-ui-font-family, 'Segoe UI Variable Text', 'Segoe UI', var(--font-ui));
+  --agent-history-user-font-family: var(--agent-history-message-font-family);
+  --agent-history-assistant-font-family: var(--agent-history-message-font-family);
   --agent-lens-ready: color-mix(in srgb, var(--accent-green) 74%, white 10%);
   --agent-lens-live: color-mix(in srgb, var(--accent-blue) 82%, white 10%);
   --agent-lens-warning: color-mix(in srgb, var(--accent-gold) 84%, white 8%);
   --agent-lens-attention: color-mix(in srgb, var(--accent-red) 82%, white 6%);
-  --agent-history-mono-font-family: var(--font-mono);
+  --agent-history-mono-font-family: var(--terminal-font-family, var(--font-mono));
   background: var(--terminal-canvas-background, var(--terminal-bg));
 }
 

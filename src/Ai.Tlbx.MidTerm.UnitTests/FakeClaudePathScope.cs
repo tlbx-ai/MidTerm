@@ -2,13 +2,21 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 internal sealed class FakeClaudePathScope : IDisposable
 {
-    private readonly string? _originalPath;
+    private const string FakeClaudeStateDirVariable = "MIDTERM_FAKE_CLAUDE_STATE_DIR";
 
-    private FakeClaudePathScope(string root, string fakeClaudeBin, string? originalPath)
+    private readonly string? _originalPath;
+    private readonly string? _originalStateDir;
+
+    private FakeClaudePathScope(
+        string root,
+        string fakeClaudeBin,
+        string? originalPath,
+        string? originalStateDir)
     {
         Root = root;
         FakeClaudeBin = fakeClaudeBin;
         _originalPath = originalPath;
+        _originalStateDir = originalStateDir;
     }
 
     public string Root { get; }
@@ -32,13 +40,18 @@ internal sealed class FakeClaudePathScope : IDisposable
         }
 
         var originalPath = Environment.GetEnvironmentVariable("PATH");
+        var originalStateDir = Environment.GetEnvironmentVariable(FakeClaudeStateDirVariable);
+        var stateDir = Path.Combine(root, "state");
+        Directory.CreateDirectory(stateDir);
         Environment.SetEnvironmentVariable("PATH", fakeClaudeBin + Path.PathSeparator + originalPath);
-        return new FakeClaudePathScope(root, fakeClaudeBin, originalPath);
+        Environment.SetEnvironmentVariable(FakeClaudeStateDirVariable, stateDir);
+        return new FakeClaudePathScope(root, fakeClaudeBin, originalPath, originalStateDir);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("PATH", _originalPath);
+        Environment.SetEnvironmentVariable(FakeClaudeStateDirVariable, _originalStateDir);
         try
         {
             Directory.Delete(Root, recursive: true);

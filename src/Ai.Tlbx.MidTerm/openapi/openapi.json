@@ -4869,6 +4869,7 @@
           "codexEnvironmentVariables",
           "claudeDangerouslySkipPermissionsDefault",
           "claudeEnvironmentVariables",
+          "agentMessageFontFamily",
           "fontSize",
           "fontFamily",
           "lineHeight",
@@ -4963,6 +4964,9 @@
             "type": "boolean"
           },
           "claudeEnvironmentVariables": {
+            "type": "string"
+          },
+          "agentMessageFontFamily": {
             "type": "string"
           },
           "fontSize": {

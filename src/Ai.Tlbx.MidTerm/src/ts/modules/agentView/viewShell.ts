@@ -1,5 +1,4 @@
 import { t } from '../i18n';
-import { buildTerminalFontStack, getConfiguredTerminalFontFamily } from '../terminal/fontConfig';
 import { normalizeLensProvider, resolveLensLayoutMode } from './activationHelpers';
 import type { LensDebugScenarioName } from './debugScenario';
 
@@ -71,26 +70,6 @@ function syncAgentViewPresentation(
   panel: HTMLDivElement,
   provider: string | null | undefined = null,
 ): void {
-  const style = (panel as unknown as { style?: CSSStyleDeclaration | null }).style;
-  if (!style || typeof style.setProperty !== 'function') {
-    panel.dataset.lensProvider = normalizeLensProvider(provider);
-    panel.dataset.lensLayout = resolveLensLayoutMode(provider);
-    return;
-  }
-
-  const fontFamily = buildAgentViewFontFamily();
-  if (fontFamily) {
-    style.setProperty('--agent-font-family', fontFamily);
-  } else {
-    style.removeProperty('--agent-font-family');
-  }
-
   panel.dataset.lensProvider = normalizeLensProvider(provider);
   panel.dataset.lensLayout = resolveLensLayoutMode(provider);
-}
-
-function buildAgentViewFontFamily(): string | null {
-  const terminalFontFamily = getConfiguredTerminalFontFamily();
-  const fontStack = buildTerminalFontStack(terminalFontFamily);
-  return fontStack.trim() ? fontStack : null;
 }

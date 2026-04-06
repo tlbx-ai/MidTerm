@@ -31,6 +31,17 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('font-size: 9px;');
   });
 
+  it('lets agent message typography follow the configurable agent UI font while machine rows stay on terminal monospace', () => {
+    expect(css).toContain('--agent-history-message-font-family:');
+    expect(css).toContain('var(--agent-ui-font-family,');
+    expect(css).toContain(
+      '--agent-history-mono-font-family: var(--terminal-font-family, var(--font-mono));',
+    );
+    expect(css).toContain('.agent-history-user .agent-history-body {');
+    expect(css).toContain('.agent-history-assistant .agent-history-body {');
+    expect(viewShellSource).not.toContain('--agent-font-family');
+  });
+
   it('documents the above-body metadata rule in the Lens design contract', () => {
     expect(lensDesign).toContain(
       'In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.',

@@ -50,6 +50,7 @@ import { setLocale, t } from '../i18n';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
 import { setDevMode } from '../sidebar/voiceSection';
+import { buildAgentMessageFontStack } from '../agentView/fontConfig';
 import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 import {
   bindTerminalColorSchemeEditor,
@@ -128,7 +129,31 @@ export function setElementValue(id: string, value: string | number): void {
     | HTMLSelectElement
     | HTMLTextAreaElement
     | null;
-  if (el) el.value = String(value);
+  if (!el) {
+    return;
+  }
+
+  const nextValue = String(value);
+  if (el instanceof HTMLSelectElement) {
+    Array.from(el.options)
+      .filter((option) => option.dataset.preservedValue === 'true' && option.value !== nextValue)
+      .forEach((option) => {
+        option.remove();
+      });
+
+    if (
+      nextValue.length > 0 &&
+      !Array.from(el.options).some((option) => option.value === nextValue)
+    ) {
+      const option = document.createElement('option');
+      option.value = nextValue;
+      option.textContent = nextValue;
+      option.dataset.preservedValue = 'true';
+      el.appendChild(option);
+    }
+  }
+
+  el.value = nextValue;
 }
 
 /**
@@ -509,6 +534,10 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   document.documentElement.style.setProperty('--terminal-font-size', `${fontSize}px`);
   document.documentElement.style.setProperty('--terminal-font-family', fontFamily);
+  document.documentElement.style.setProperty(
+    '--agent-ui-font-family',
+    buildAgentMessageFontStack(settings.agentMessageFontFamily),
+  );
   let hasFontChanges = false;
   syncBoxDrawingStyle(boxDrawingStyle);
   syncBoxDrawingScale(boxDrawingScale);

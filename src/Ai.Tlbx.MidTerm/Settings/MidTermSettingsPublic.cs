@@ -20,6 +20,7 @@ public sealed partial class MidTermSettingsPublic
     public string CodexEnvironmentVariables { get; set; } = "";
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
     public string ClaudeEnvironmentVariables { get; set; } = "";
+    public string AgentMessageFontFamily { get; set; } = "default";
 
     // Terminal Appearance
     public int FontSize { get; set; } = 14;

@@ -49,7 +49,6 @@ import {
   LENS_DEBUG_SCENARIO_NAMES,
   normalizeLensDebugScenarioName,
 } from './viewShell';
-import { buildTerminalFontStack, getConfiguredTerminalFontFamily } from '../terminal/fontConfig';
 import {
   ensureSessionWrapper,
   getActiveTab,
@@ -552,17 +551,6 @@ function syncAgentViewPresentation(
   panel: HTMLDivElement,
   provider: string | null | undefined = null,
 ): void {
-  const style = (panel as unknown as { style?: CSSStyleDeclaration | null }).style;
-  if (!style || typeof style.setProperty !== 'function') {
-    panel.dataset.lensProvider = normalizeLensProvider(provider);
-    panel.dataset.lensLayout = resolveLensLayoutMode(provider);
-    return;
-  }
-
-  style.setProperty(
-    '--agent-history-mono-font-family',
-    buildTerminalFontStack(getConfiguredTerminalFontFamily()),
-  );
   panel.dataset.lensProvider = normalizeLensProvider(provider);
   panel.dataset.lensLayout = resolveLensLayoutMode(provider);
 }

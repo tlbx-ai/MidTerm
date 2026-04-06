@@ -79,7 +79,7 @@ internal sealed class SystemSleepInhibitorService : IDisposable
             }
             finally
             {
-                _ownedBackend?.Dispose();
+                (_ownedBackend ?? _injectedBackend)?.Dispose();
             }
         }
     }

@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 
+const string FakeClaudeStateDirVariable = "MIDTERM_FAKE_CLAUDE_STATE_DIR";
+
 var prompt = (await Console.In.ReadToEndAsync().ConfigureAwait(false)).Trim();
 var resumeSessionId = ReadOption(args, "--resume");
 var sessionId = string.IsNullOrWhiteSpace(resumeSessionId)
@@ -333,7 +335,14 @@ static Task DeleteStateAsync(string sessionId)
 
 static string GetStatePath(string sessionId)
 {
-    return Path.Combine(Path.GetTempPath(), "midterm-fake-claude", sessionId + ".json");
+    var stateRoot = Environment.GetEnvironmentVariable(FakeClaudeStateDirVariable);
+    if (string.IsNullOrWhiteSpace(stateRoot))
+    {
+        stateRoot = Path.Combine(Path.GetTempPath(), "midterm-fake-claude");
+    }
+
+    Directory.CreateDirectory(stateRoot);
+    return Path.Combine(stateRoot, sessionId + ".json");
 }
 
 sealed class FakeClaudeState

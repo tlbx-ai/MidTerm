@@ -4057,6 +4057,7 @@ export interface components {
       codexEnvironmentVariables: string;
       claudeDangerouslySkipPermissionsDefault: boolean;
       claudeEnvironmentVariables: string;
+      agentMessageFontFamily: string;
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;

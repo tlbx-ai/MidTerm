@@ -141,6 +141,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'newline-delimited KEY=VALUE env vars',
     applyMode: 'new-session',
   }),
+  controlEntry('agentMessageFontFamily', 'setting-agent-message-font-family', 'select', 'default', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'known agent message font family',
+    applyMode: 'immediate',
+  }),
   controlEntry('fontSize', 'setting-font-size', 'int', 14, {
     editable: true,
     storage: 'settings.json',
@@ -174,19 +180,19 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
   controlEntry('letterSpacing', 'setting-letter-spacing', 'float', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, clamped to -2-10',
+    validation: 'float, clamped to -2-10',
     applyMode: 'immediate',
   }),
   controlEntry('fontWeight', 'setting-font-weight', 'select', 'normal', {
     editable: true,
     storage: 'settings.json',
-    validation: 'normal or bold',
+    validation: 'normal, bold, or numeric weight',
     applyMode: 'immediate',
   }),
   controlEntry('fontWeightBold', 'setting-font-weight-bold', 'select', 'bold', {
     editable: true,
     storage: 'settings.json',
-    validation: 'normal or bold',
+    validation: 'normal, bold, or numeric weight',
     applyMode: 'immediate',
   }),
   controlEntry('customGlyphs', 'setting-custom-glyphs', 'boolean-select', true, {

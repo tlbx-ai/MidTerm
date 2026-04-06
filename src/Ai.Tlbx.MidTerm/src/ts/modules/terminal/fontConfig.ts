@@ -61,18 +61,19 @@ export async function ensureTerminalFontLoaded(
 export function normalizeTerminalLetterSpacing(value: number | null | undefined): number {
   const finiteValue =
     typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_TERMINAL_LETTER_SPACING;
-  return Math.min(10, Math.max(-2, Math.round(finiteValue)));
+  return Math.min(10, Math.max(-2, Math.round(finiteValue * 100) / 100));
 }
 
 export function normalizeTerminalFontWeight(
   value: string | null | undefined,
   fallback: (typeof TERMINAL_FONT_WEIGHT_OPTIONS)[number] = DEFAULT_TERMINAL_FONT_WEIGHT,
-): (typeof TERMINAL_FONT_WEIGHT_OPTIONS)[number] {
+): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     return fallback;
   }
 
-  const normalized = value.trim().toLowerCase();
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
   if (normalized === DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) {
     return DEFAULT_TERMINAL_FONT_WEIGHT_BOLD;
   }
@@ -81,9 +82,9 @@ export function normalizeTerminalFontWeight(
     return DEFAULT_TERMINAL_FONT_WEIGHT;
   }
 
-  const numericWeight = Number.parseInt(normalized, 10);
-  if (Number.isFinite(numericWeight)) {
-    return numericWeight >= 600 ? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD : DEFAULT_TERMINAL_FONT_WEIGHT;
+  const numericWeight = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(numericWeight) && numericWeight >= 1 && numericWeight <= 1000) {
+    return String(numericWeight);
   }
 
   return fallback;

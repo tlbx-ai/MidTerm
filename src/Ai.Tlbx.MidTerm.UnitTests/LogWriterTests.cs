@@ -12,18 +12,20 @@ public sealed class LogWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDirectory);
 
-        using var logger = new Logger("mt", _tempDirectory, new LogRotationPolicy
         {
-            MaxFileSizeBytes = 80,
-            MaxFileCount = 10,
-            MaxDirectorySizeBytes = 1024 * 1024
-        });
+            using var logger = new Logger("mt", _tempDirectory, new LogRotationPolicy
+            {
+                MaxFileSizeBytes = 80,
+                MaxFileCount = 10,
+                MaxDirectorySizeBytes = 1024 * 1024
+            });
 
-        logger.MinLevel = LogSeverity.Info;
-        logger.Info(() => new string('A', 60));
-        Thread.Sleep(250);
-        logger.Info(() => new string('B', 60));
-        Thread.Sleep(250);
+            logger.MinLevel = LogSeverity.Info;
+            logger.Info(() => new string('A', 60));
+            Thread.Sleep(250);
+            logger.Info(() => new string('B', 60));
+            Thread.Sleep(250);
+        }
 
         var logFiles = Directory.GetFiles(_tempDirectory, "mt-*.log")
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)

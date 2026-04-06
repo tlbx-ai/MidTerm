@@ -174,6 +174,30 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void ApplyTo_NormalizesAgentMessageFontFamilyToSupportedValues()
+    {
+        var settings = new MidTermSettings
+        {
+            AgentMessageFontFamily = "default"
+        };
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            AgentMessageFontFamily = "segoe ui"
+        };
+
+        publicSettings.ApplyTo(settings);
+        Assert.Equal("Segoe UI", settings.AgentMessageFontFamily);
+
+        publicSettings = MidTermSettingsPublic.FromSettings(settings);
+        Assert.Equal("Segoe UI", publicSettings.AgentMessageFontFamily);
+
+        publicSettings.AgentMessageFontFamily = "unsupported";
+        publicSettings.ApplyTo(settings);
+        Assert.Equal("default", settings.AgentMessageFontFamily);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripCustomTerminalColorSchemes()
     {
         var settings = new MidTermSettings

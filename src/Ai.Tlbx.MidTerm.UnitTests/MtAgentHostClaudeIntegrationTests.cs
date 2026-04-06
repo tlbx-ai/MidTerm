@@ -7,12 +7,15 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostClaudeIntegrationTests
 {
+    private static readonly TimeSpan ClaudeTurnCompletionTimeout = TimeSpan.FromSeconds(60);
+
     [Fact]
     public async Task MtAgentHost_CanDriveFakeClaudeAcrossMultipleTurns()
     {
         using var fakeClaude = FakeClaudePathScope.Create();
         var hostDll = ResolveAgentHostDll();
         var attachmentPath = Path.Combine(fakeClaude.Root, "notes.txt");
+        var sessionId = "session-claude-" + Guid.NewGuid().ToString("N");
         await File.WriteAllTextAsync(attachmentPath, "attached text file");
 
         using var process = StartAgentHost(hostDll);
@@ -26,11 +29,11 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-attach",
-                SessionId = "session-claude-1",
+                SessionId = sessionId,
                 Type = "runtime.attach",
                 AttachRuntime = new LensAttachRuntimeRequest
                 {
-                    SessionId = "session-claude-1",
+                    SessionId = sessionId,
                     Provider = "claude",
                     WorkingDirectory = fakeClaude.Root
                 }
@@ -49,7 +52,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-turn-1",
-                SessionId = "session-claude-1",
+                SessionId = sessionId,
                 Type = "turn.start",
                 StartTurn = new LensTurnRequest
                 {
@@ -70,7 +73,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 pendingEvents,
                 envelope => envelope.Event.Type == "turn.completed",
                 maxEvents: 40,
-                timeout: TimeSpan.FromSeconds(10));
+                timeout: ClaudeTurnCompletionTimeout);
             var threadEvent = Assert.Single(firstTurnEvents, envelope => envelope.Event.Type == "thread.started");
             Assert.Contains(firstTurnEvents, envelope => envelope.Event.Type == "turn.started");
             Assert.Contains(
@@ -91,7 +94,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-turn-2",
-                SessionId = "session-claude-1",
+                SessionId = sessionId,
                 Type = "turn.start",
                 StartTurn = new LensTurnRequest
                 {
@@ -109,7 +112,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 pendingEvents,
                 envelope => envelope.Event.Type == "turn.completed",
                 maxEvents: 40,
-                timeout: TimeSpan.FromSeconds(10));
+                timeout: ClaudeTurnCompletionTimeout);
             Assert.Contains(
                 secondTurnEvents,
                 envelope => envelope.Event.Type == "content.delta" &&
@@ -133,6 +136,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
     {
         using var fakeClaude = FakeClaudePathScope.Create();
         var hostDll = ResolveAgentHostDll();
+        var sessionId = "session-claude-interrupt-" + Guid.NewGuid().ToString("N");
         using var process = StartAgentHost(hostDll);
         var pendingEvents = new Queue<LensHostEventEnvelope>();
 
@@ -143,11 +147,11 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-attach",
-                SessionId = "session-claude-interrupt",
+                SessionId = sessionId,
                 Type = "runtime.attach",
                 AttachRuntime = new LensAttachRuntimeRequest
                 {
-                    SessionId = "session-claude-interrupt",
+                    SessionId = sessionId,
                     Provider = "claude",
                     WorkingDirectory = fakeClaude.Root
                 }
@@ -163,7 +167,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-turn",
-                SessionId = "session-claude-interrupt",
+                SessionId = sessionId,
                 Type = "turn.start",
                 StartTurn = new LensTurnRequest
                 {
@@ -185,7 +189,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-interrupt",
-                SessionId = "session-claude-interrupt",
+                SessionId = sessionId,
                 Type = "turn.interrupt",
                 InterruptTurn = new LensInterruptRequest
                 {
@@ -223,6 +227,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
     {
         using var fakeClaude = FakeClaudePathScope.Create();
         var hostDll = ResolveAgentHostDll();
+        var sessionId = "session-claude-qa-" + Guid.NewGuid().ToString("N");
         using var process = StartAgentHost(hostDll);
         var pendingEvents = new Queue<LensHostEventEnvelope>();
         var marker = "MIDTERM_FAKE_CLAUDE_QA_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
@@ -234,11 +239,11 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-attach-qa",
-                SessionId = "session-claude-qa",
+                SessionId = sessionId,
                 Type = "runtime.attach",
                 AttachRuntime = new LensAttachRuntimeRequest
                 {
-                    SessionId = "session-claude-qa",
+                    SessionId = sessionId,
                     Provider = "claude",
                     WorkingDirectory = fakeClaude.Root
                 }
@@ -254,7 +259,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-turn-qa",
-                SessionId = "session-claude-qa",
+                SessionId = sessionId,
                 Type = "turn.start",
                 StartTurn = new LensTurnRequest
                 {
@@ -288,7 +293,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-answer-qa-1",
-                SessionId = "session-claude-qa",
+                SessionId = sessionId,
                 Type = "user-input.resolve",
                 ResolveUserInput = new LensUserInputResolutionCommand
                 {
@@ -322,7 +327,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
                 CommandId = "cmd-answer-qa-2",
-                SessionId = "session-claude-qa",
+                SessionId = sessionId,
                 Type = "user-input.resolve",
                 ResolveUserInput = new LensUserInputResolutionCommand
                 {

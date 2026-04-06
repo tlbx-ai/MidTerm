@@ -28,6 +28,7 @@ public sealed class MidTermSettings
     public string CodexEnvironmentVariables { get; set; } = "";
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
     public string ClaudeEnvironmentVariables { get; set; } = "";
+    public string AgentMessageFontFamily { get; set; } = "default";
 
     private static ShellType GetPlatformDefaultShell()
     {

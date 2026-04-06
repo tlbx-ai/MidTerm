@@ -33,16 +33,18 @@ describe('fontConfig', () => {
     expect(stack).toContain("'Segoe UI Symbol'");
   });
 
-  it('normalizes font weights to the supported bundled variants', () => {
-    expect(normalizeTerminalFontWeight('100')).toBe('normal');
-    expect(normalizeTerminalFontWeight('500')).toBe('normal');
-    expect(normalizeTerminalFontWeight('700')).toBe('bold');
-    expect(normalizeTerminalFontWeight('900')).toBe('bold');
+  it('preserves numeric font weights while keeping named fallbacks canonical', () => {
+    expect(normalizeTerminalFontWeight('100')).toBe('100');
+    expect(normalizeTerminalFontWeight('500')).toBe('500');
+    expect(normalizeTerminalFontWeight('700')).toBe('700');
+    expect(normalizeTerminalFontWeight('900')).toBe('900');
+    expect(normalizeTerminalFontWeight(' bold ')).toBe('bold');
+    expect(normalizeTerminalFontWeight('invalid')).toBe('normal');
   });
 
-  it('rounds letter spacing to whole pixels within xterm bounds', () => {
-    expect(normalizeTerminalLetterSpacing(0.49)).toBe(0);
-    expect(normalizeTerminalLetterSpacing(0.5)).toBe(1);
+  it('preserves fractional letter spacing within xterm bounds', () => {
+    expect(normalizeTerminalLetterSpacing(0.49)).toBe(0.49);
+    expect(normalizeTerminalLetterSpacing(0.5)).toBe(0.5);
     expect(normalizeTerminalLetterSpacing(-2.4)).toBe(-2);
     expect(normalizeTerminalLetterSpacing(10.2)).toBe(10);
   });
