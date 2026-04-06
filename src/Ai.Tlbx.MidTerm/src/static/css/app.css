@@ -9857,7 +9857,8 @@ body.shared-session-mode .session-tab-bar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 28px 3px 10px;
+  min-height: 28px;
+  padding: 0 12px;
   border-radius: 4px;
   background: var(--bg-elevated-opaque, var(--bg-elevated));
   color: var(--text-secondary);
@@ -9876,6 +9877,9 @@ body.shared-session-mode .session-tab-bar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 100%;
+  line-height: 1;
+  transform: translateY(-0.5px);
 }
 
 .manager-btn-menu {
@@ -9992,7 +9996,11 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .manager-bar-add {
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
   border-radius: 4px;
   background: var(--bg-elevated-opaque, var(--bg-elevated));
   border: 1px dashed var(--border-color);
@@ -13795,15 +13803,23 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 1px solid var(--border-subtle);
   background: color-mix(
     in srgb,
-    var(--text-input-background, var(--bg-input)) 92%,
-    var(--terminal-ui-background, var(--terminal-bg))
+    var(--text-input-background, var(--bg-input)) 74%,
+    var(--terminal-ui-background, var(--terminal-bg)) 26%
   );
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+  color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
 }
 
 .smart-input-textarea:focus {
   border-color: var(--border-subtle);
   outline: none;
   box-shadow: none;
+}
+
+.smart-input-textarea::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 86%, transparent);
 }
 
 .smart-input-inline-tools {
@@ -13849,6 +13865,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-tools-toggle {
   font-size: 1.2rem;
   font-weight: 500;
+  padding: 0;
+  line-height: 1;
+}
+
+.smart-input-tools-toggle svg {
+  display: block;
 }
 
 .smart-input-tools-surface {
@@ -13869,6 +13891,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     black 8%
   );
   box-shadow: 0 10px 22px color-mix(in srgb, black 22%, transparent);
+  position: relative;
+  z-index: 2;
 }
 
 .smart-input-tools-surface[hidden] {
@@ -13941,16 +13965,19 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-status-summary-lens {
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
   border-radius: 12px;
   background: color-mix(
     in srgb,
-    var(--terminal-ui-background, var(--terminal-bg)) 92%,
-    transparent
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
+    transparent 18%
   );
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
   color: var(--text-primary);
   font: inherit;
   cursor: pointer;
+  box-shadow: 0 10px 22px color-mix(in srgb, black 18%, transparent);
 }
 
 .adaptive-footer-status-summary-lens[data-plan-mode='on'] {
@@ -13977,8 +14004,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   margin: 0 auto;
   padding: 0 2px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 56%, transparent);
-  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
+    transparent 18%
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+  box-shadow: 0 10px 22px color-mix(in srgb, black 18%, transparent);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -14064,15 +14098,18 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   align-items: center;
   justify-content: center;
   min-height: 28px;
-  padding: 0 30px 0 14px;
+  padding: 0 14px;
   border-radius: 10px;
   background: color-mix(
     in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 88%,
-    black 12%
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 78%,
+    transparent 22%
   );
   color: var(--text-secondary);
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+  box-shadow: 0 10px 22px color-mix(in srgb, black 18%, transparent);
 }
 
 .adaptive-footer-dock .manager-bar-add {
@@ -14083,10 +14120,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 0;
   background: color-mix(
     in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 88%,
-    black 12%
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 78%,
+    transparent 22%
   );
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+  box-shadow: 0 10px 22px color-mix(in srgb, black 18%, transparent);
   color: var(--text-secondary);
 }
 
@@ -14096,19 +14136,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   justify-content: center;
   min-height: 100%;
   text-align: center;
+  line-height: 1;
+  transform: translateY(-0.5px);
 }
 
 .adaptive-footer-dock .manager-btn-menu {
   right: 6px;
   width: 18px;
   height: 18px;
+  background: color-mix(
+    in srgb,
+    black 36%,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg)))
+  );
 }
 
 .adaptive-footer-dock .manager-btn:hover {
   background: color-mix(
     in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
-    var(--bg-hover)
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 72%,
+    var(--bg-hover) 28%
   );
   border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
 }
@@ -14116,8 +14163,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-dock .manager-bar-add:hover {
   background: color-mix(
     in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
-    var(--bg-hover)
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 72%,
+    var(--bg-hover) 28%
   );
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
@@ -14300,6 +14347,16 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
 
   .adaptive-footer-dock .manager-bar:not(.hidden) {
     display: flex !important;
+  }
+
+  .adaptive-footer-dock .manager-btn {
+    padding-right: 30px;
+  }
+
+  .adaptive-footer-dock .manager-btn-menu {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .adaptive-footer-context .touch-controller.embedded .touch-bar-main {

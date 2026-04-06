@@ -553,7 +553,8 @@ function createInputElements(): {
   const nextToolsToggleBtn = document.createElement('button');
   nextToolsToggleBtn.type = 'button';
   nextToolsToggleBtn.className = 'smart-input-tools-toggle';
-  nextToolsToggleBtn.textContent = '+';
+  nextToolsToggleBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   nextToolsToggleBtn.title = t('smartInput.tools');
   nextToolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
   toolsToggleBtn = nextToolsToggleBtn;
@@ -674,8 +675,8 @@ function createInputElements(): {
 
   inputRow.appendChild(textarea);
   inputRow.appendChild(nextInlineToolHost);
-  inputRow.appendChild(nextToolsToggleBtn);
   inputRow.appendChild(nextSendBtn);
+  inputRow.appendChild(nextToolsToggleBtn);
   inputRow.appendChild(photoInput);
   inputRow.appendChild(attachInput);
 
@@ -726,7 +727,9 @@ function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLB
       button.title = t('smartInput.attach');
       button.addEventListener('click', () => {
         maybePinToolForActiveSession(tool, options.pinOnUse);
-        sharedAttachInput?.click();
+        if (sharedAttachInput) {
+          sharedAttachInput.click();
+        }
       });
       break;
     case 'photo':
@@ -737,7 +740,9 @@ function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLB
       button.addEventListener('click', () => {
         maybePinToolForActiveSession(tool, options.pinOnUse);
         if (isTouchPrimaryDevice()) {
-          sharedPhotoInput?.click();
+          if (sharedPhotoInput) {
+            sharedPhotoInput.click();
+          }
           return;
         }
 
@@ -967,6 +972,7 @@ function setToolsPanelOpen(open: boolean): void {
   }
   toolsPanel.hidden = !shouldOpen;
   toolsToggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  toolsToggleBtn.classList.toggle('open', shouldOpen);
   if (!footerResizeObserver) {
     queueFooterReserveSync();
   }
