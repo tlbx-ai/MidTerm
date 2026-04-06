@@ -519,5 +519,10 @@
   "dialog.cancel": "Отмена",
   "smartInput.autoSend": "Автоотправка",
   "smartInput.photo": "Сделать фото",
-  "smartInput.attach": "Прикрепить файл"
+  "smartInput.attach": "Прикрепить файл",
+  "smartInput.removeAttachment": "Remove attachment",
+  "smartInput.fileBadge": "FILE",
+  "smartInput.imageTooLarge": "Image exceeds the 10MB Lens limit",
+  "smartInput.attachmentUploadFailed": "Attachment upload failed",
+  "smartInput.attachmentSendFailed": "Lens send failed"
 }

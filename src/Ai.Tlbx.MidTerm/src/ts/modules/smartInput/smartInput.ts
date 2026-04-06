@@ -10,7 +10,12 @@
 import { $currentSettings, $activeSessionId, $voiceServerPassword } from '../../stores';
 import { t } from '../i18n';
 import { submitSessionText } from '../input/submit';
-import { handleLensEscape, isLensActiveSession } from '../lens/input';
+import {
+  createLensTurnRequest,
+  handleLensEscape,
+  isLensActiveSession,
+  submitQueuedLensTurn,
+} from '../lens/input';
 import {
   LENS_QUICK_SETTINGS_CHANGED_EVENT,
   getLensQuickSettingsDraft,
@@ -20,13 +25,22 @@ import {
 import { shouldShowManagerBar } from '../managerBar/visibility';
 import { onTabActivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
-import { handleFileDrop } from '../terminal';
+import { handleFileDrop, showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
 import {
   ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
   calculateAdaptiveFooterReservedHeight,
   getAdaptiveFooterRailSequence,
 } from './layout';
+import {
+  type LensComposerDraftAttachment,
+  MAX_LENS_IMAGE_BYTES,
+  cloneLensComposerDraftAttachments,
+  createLensComposerDraftAttachment,
+  isLensComposerImageFile,
+  releaseLensComposerDraftAttachmentPreviews,
+} from './lensAttachments';
+import { submitLensComposerDraft } from './lensAttachmentSubmission';
 import { startTranscription, stopTranscription } from './transcription';
 import {
   shouldShowDockedSmartInput,
@@ -47,6 +61,7 @@ let toolsToggleBtn: HTMLButtonElement | null = null;
 let toolsPanel: HTMLDivElement | null = null;
 let toolButtonsStrip: HTMLDivElement | null = null;
 let inlineToolHost: HTMLDivElement | null = null;
+let lensAttachmentHost: HTMLDivElement | null = null;
 let sharedPhotoInput: HTMLInputElement | null = null;
 let sharedAttachInput: HTMLInputElement | null = null;
 let toolsPanelOpen = false;
@@ -71,6 +86,7 @@ const MAX_TEXTAREA_LINES = 5;
 const AUTO_SEND_LONG_PRESS_MS = 520;
 const MOBILE_BREAKPOINT_PX = 768;
 const sessionDrafts = new Map<string, string>();
+const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 
 type ToolKind = 'mic' | 'attach' | 'photo';
@@ -191,6 +207,40 @@ function resolveShowFooter(args: {
     Boolean(args.activeSessionId) &&
     (args.showInput || args.showAutomation || args.showContext || args.showStatus)
   );
+}
+
+function getLensDraftAttachments(sessionId: string | null): LensComposerDraftAttachment[] {
+  return sessionId ? (lensAttachmentDrafts.get(sessionId) ?? []) : [];
+}
+
+function setLensDraftAttachments(
+  sessionId: string,
+  attachments: readonly LensComposerDraftAttachment[],
+): void {
+  if (attachments.length === 0) {
+    lensAttachmentDrafts.delete(sessionId);
+    return;
+  }
+
+  lensAttachmentDrafts.set(sessionId, [...attachments]);
+}
+
+function clearLensDraftAttachments(sessionId: string, revokePreviews = true): void {
+  const attachments = lensAttachmentDrafts.get(sessionId);
+  if (!attachments) {
+    return;
+  }
+
+  lensAttachmentDrafts.delete(sessionId);
+  if (revokePreviews) {
+    releaseLensComposerDraftAttachmentPreviews(attachments);
+  }
+}
+
+function detachLensDraftAttachments(sessionId: string): LensComposerDraftAttachment[] {
+  const attachments = getLensDraftAttachments(sessionId);
+  lensAttachmentDrafts.delete(sessionId);
+  return cloneLensComposerDraftAttachments(attachments);
 }
 
 /**
@@ -535,6 +585,14 @@ function createInputElements(): {
   const inputRow = document.createElement('div');
   inputRow.className = 'smart-input-row';
 
+  const editorHost = document.createElement('div');
+  editorHost.className = 'smart-input-editor';
+
+  const nextLensAttachmentHost = document.createElement('div');
+  nextLensAttachmentHost.className = 'smart-input-attachments';
+  nextLensAttachmentHost.hidden = true;
+  lensAttachmentHost = nextLensAttachmentHost;
+
   const textarea = document.createElement('textarea');
   textarea.className = 'smart-input-textarea';
   textarea.rows = 1;
@@ -571,7 +629,7 @@ function createInputElements(): {
   photoInput.hidden = true;
   photoInput.addEventListener('change', () => {
     if (photoInput.files?.length) {
-      void handleFileDrop(photoInput.files);
+      void handleSmartInputSelectedFiles(photoInput.files);
     }
     photoInput.value = '';
   });
@@ -583,7 +641,7 @@ function createInputElements(): {
   attachInput.hidden = true;
   attachInput.addEventListener('change', () => {
     if (attachInput.files?.length) {
-      void handleFileDrop(attachInput.files);
+      void handleSmartInputSelectedFiles(attachInput.files);
     }
     attachInput.value = '';
   });
@@ -617,6 +675,21 @@ function createInputElements(): {
     });
   });
 
+  textarea.addEventListener('paste', (event) => {
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || !isLensActiveSession(sessionId)) {
+      return;
+    }
+
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    addLensComposerFiles(sessionId, files);
+  });
+
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const sessionId = $activeSessionId.get();
@@ -629,7 +702,7 @@ function createInputElements(): {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendText(textarea);
+      void sendText(textarea);
     }
   });
 
@@ -667,10 +740,12 @@ function createInputElements(): {
       return;
     }
 
-    sendText(textarea);
+    void sendText(textarea);
   });
 
-  inputRow.appendChild(textarea);
+  editorHost.appendChild(nextLensAttachmentHost);
+  editorHost.appendChild(textarea);
+  inputRow.appendChild(editorHost);
   inputRow.appendChild(nextInlineToolHost);
   inputRow.appendChild(nextSendBtn);
   inputRow.appendChild(nextToolsToggleBtn);
@@ -748,7 +823,7 @@ function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLB
           return;
         }
 
-        void captureImageFromWebcam((files) => handleFileDrop(files));
+        void captureImageFromWebcam((files) => handleSmartInputSelectedFiles(files));
       });
       break;
   }
@@ -1092,24 +1167,201 @@ function toggleAutoSendEnabled(): void {
   syncSmartInputVisibility();
 }
 
-function sendText(ta: HTMLTextAreaElement): void {
-  const text = ta.value;
-  if (!text) return;
+function renderLensAttachmentDrafts(sessionId: string | null): void {
+  if (!lensAttachmentHost) {
+    return;
+  }
 
+  lensAttachmentHost.replaceChildren();
+  if (!sessionId || !isLensActiveSession(sessionId)) {
+    lensAttachmentHost.hidden = true;
+    return;
+  }
+
+  const attachments = getLensDraftAttachments(sessionId);
+  if (attachments.length === 0) {
+    lensAttachmentHost.hidden = true;
+    return;
+  }
+
+  for (const attachment of attachments) {
+    const chip = document.createElement('div');
+    chip.className = `smart-input-attachment-chip smart-input-attachment-chip-${attachment.kind}`;
+    chip.title = attachment.displayName;
+
+    if (attachment.previewUrl) {
+      const preview = document.createElement('img');
+      preview.className = 'smart-input-attachment-thumb';
+      preview.src = attachment.previewUrl;
+      preview.alt = attachment.displayName;
+      chip.appendChild(preview);
+    } else {
+      const icon = document.createElement('span');
+      icon.className = 'smart-input-attachment-icon';
+      icon.textContent = t('smartInput.fileBadge');
+      chip.appendChild(icon);
+    }
+
+    const label = document.createElement('span');
+    label.className = 'smart-input-attachment-label';
+    label.textContent = attachment.displayName;
+    chip.appendChild(label);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'smart-input-attachment-remove';
+    removeButton.textContent = '×';
+    removeButton.title = `${t('smartInput.removeAttachment')} ${attachment.displayName}`;
+    removeButton.setAttribute(
+      'aria-label',
+      `${t('smartInput.removeAttachment')} ${attachment.displayName}`,
+    );
+    removeButton.addEventListener('click', () => {
+      removeLensComposerFile(sessionId, attachment.id);
+      activeTextarea?.focus({ preventScroll: true });
+    });
+    chip.appendChild(removeButton);
+
+    lensAttachmentHost.appendChild(chip);
+  }
+
+  lensAttachmentHost.hidden = false;
+}
+
+function removeLensComposerFile(sessionId: string, attachmentId: string): void {
+  const attachments = getLensDraftAttachments(sessionId);
+  const nextAttachments: LensComposerDraftAttachment[] = [];
+  for (const attachment of attachments) {
+    if (attachment.id === attachmentId) {
+      releaseLensComposerDraftAttachmentPreviews([attachment]);
+      continue;
+    }
+
+    nextAttachments.push(attachment);
+  }
+
+  setLensDraftAttachments(sessionId, nextAttachments);
+  renderLensAttachmentDrafts($activeSessionId.get());
+}
+
+function addLensComposerFiles(sessionId: string, files: readonly File[]): void {
+  const nextAttachments = [...getLensDraftAttachments(sessionId)];
+  let errorMessage: string | null = null;
+
+  for (const file of files) {
+    if (isLensComposerImageFile(file) && file.size > MAX_LENS_IMAGE_BYTES) {
+      errorMessage = `${t('smartInput.imageTooLarge')}: ${file.name}`;
+      continue;
+    }
+
+    nextAttachments.push(createLensComposerDraftAttachment(file));
+  }
+
+  setLensDraftAttachments(sessionId, nextAttachments);
+  renderLensAttachmentDrafts($activeSessionId.get());
+
+  if (errorMessage) {
+    showDropToast(errorMessage);
+  }
+}
+
+async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
   const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
+  if (!sessionId || files.length === 0) {
+    return;
+  }
 
-  void submitSmartInput(sessionId, text);
+  if (!isLensActiveSession(sessionId)) {
+    await handleFileDrop(files);
+    return;
+  }
 
+  addLensComposerFiles(sessionId, Array.from(files));
+  activeTextarea?.focus({ preventScroll: true });
+}
+
+function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElement): void {
   ta.value = '';
   persistDraftForSession(sessionId, '');
+  clearLensDraftAttachments(sessionId);
   syncDraftForActiveSession();
+  renderLensAttachmentDrafts($activeSessionId.get());
   ta.scrollTop = 0;
   resizeTextarea(ta);
   if (!footerResizeObserver) {
     queueFooterReserveSync();
   }
   ta.focus();
+}
+
+async function sendText(ta: HTMLTextAreaElement): Promise<void> {
+  const text = ta.value;
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+
+  const lensAttachments = getLensDraftAttachments(sessionId);
+  if (!text && lensAttachments.length === 0) {
+    return;
+  }
+
+  if (!isLensActiveSession(sessionId) || lensAttachments.length === 0) {
+    if (!text) {
+      return;
+    }
+
+    void submitSmartInput(sessionId, text);
+    clearSubmittedSmartInputState(sessionId, ta);
+    return;
+  }
+
+  const attachmentDrafts = detachLensDraftAttachments(sessionId);
+  const draftText = text;
+  renderLensAttachmentDrafts($activeSessionId.get());
+
+  try {
+    const { queuedTurn } = await submitLensComposerDraft({
+      sessionId,
+      text: draftText,
+      attachments: attachmentDrafts,
+      uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
+      uploadFile,
+      createTurnRequest: createLensTurnRequest,
+      submitQueuedTurn: submitQueuedLensTurn,
+    });
+
+    clearSubmittedSmartInputState(sessionId, ta);
+
+    void queuedTurn
+      .then(() => {
+        releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
+      })
+      .catch((error: unknown) => {
+        const shouldRestore =
+          (sessionDrafts.get(sessionId) ?? '') === '' &&
+          getLensDraftAttachments(sessionId).length === 0;
+        if (shouldRestore) {
+          persistDraftForSession(sessionId, draftText);
+          setLensDraftAttachments(sessionId, attachmentDrafts);
+        } else {
+          releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
+        }
+        syncDraftForActiveSession();
+        renderLensAttachmentDrafts($activeSessionId.get());
+        showDropToast(
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : t('smartInput.attachmentSendFailed'),
+        );
+      });
+  } catch (error) {
+    setLensDraftAttachments(sessionId, attachmentDrafts);
+    renderLensAttachmentDrafts($activeSessionId.get());
+    showDropToast(
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : t('smartInput.attachmentUploadFailed'),
+    );
+  }
 }
 
 function persistDraftForSession(sessionId: string | null, draftOverride?: string): void {
@@ -1141,11 +1393,13 @@ function applyDraftToTextarea(
 function syncDraftForActiveSession(): void {
   const sessionId = $activeSessionId.get();
   applyDraftToTextarea(activeTextarea, sessionId);
+  renderLensAttachmentDrafts(sessionId);
   syncLensQuickSettingsControls();
 }
 
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
+  clearLensDraftAttachments(sessionId);
   sessionPinnedTools.delete(sessionId);
   if ($activeSessionId.get() === sessionId) {
     syncDraftForActiveSession();

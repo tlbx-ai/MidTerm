@@ -519,5 +519,10 @@
   "dialog.cancel": "キャンセル",
   "smartInput.autoSend": "自動送信",
   "smartInput.photo": "写真を撮る",
-  "smartInput.attach": "ファイルを添付"
+  "smartInput.attach": "ファイルを添付",
+  "smartInput.removeAttachment": "Remove attachment",
+  "smartInput.fileBadge": "FILE",
+  "smartInput.imageTooLarge": "Image exceeds the 10MB Lens limit",
+  "smartInput.attachmentUploadFailed": "Attachment upload failed",
+  "smartInput.attachmentSendFailed": "Lens send failed"
 }

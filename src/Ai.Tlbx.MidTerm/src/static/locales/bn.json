@@ -519,5 +519,10 @@
   "dialog.cancel": "বাতিল",
   "smartInput.autoSend": "স্বয়ংক্রিয় পাঠান",
   "smartInput.photo": "ছবি তুলুন",
-  "smartInput.attach": "ফাইল সংযুক্ত করুন"
+  "smartInput.attach": "ফাইল সংযুক্ত করুন",
+  "smartInput.removeAttachment": "Remove attachment",
+  "smartInput.fileBadge": "FILE",
+  "smartInput.imageTooLarge": "Image exceeds the 10MB Lens limit",
+  "smartInput.attachmentUploadFailed": "Attachment upload failed",
+  "smartInput.attachmentSendFailed": "Lens send failed"
 }

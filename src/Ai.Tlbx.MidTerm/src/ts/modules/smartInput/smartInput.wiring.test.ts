@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const source = readFileSync(path.join(__dirname, 'smartInput.ts'), 'utf8');
+const submissionSource = readFileSync(path.join(__dirname, 'lensAttachmentSubmission.ts'), 'utf8');
 const layoutSource = readFileSync(path.join(__dirname, 'layout.ts'), 'utf8');
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
@@ -54,6 +55,15 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain('font-size: 16px;');
+  });
+
+  it('keeps Lens attachment drafts in the composer until send-time upload', () => {
+    expect(source).toContain('lensAttachmentDrafts');
+    expect(source).toContain('handleSmartInputSelectedFiles');
+    expect(submissionSource).toContain('await args.uploadFile(args.sessionId, attachment.file);');
+    expect(submissionSource).toContain('queuedTurn: args.submitQueuedTurn(args.sessionId, request)');
+    expect(css).toContain('.smart-input-attachments {');
+    expect(css).toContain('.smart-input-attachment-chip {');
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {

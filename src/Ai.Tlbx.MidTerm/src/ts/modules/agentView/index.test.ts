@@ -4311,7 +4311,7 @@ describe('agentView dev errors', () => {
     expect(userEntries[0]?.attachments?.[0]?.displayName).toBe('screen.png');
   });
 
-  it.skip('keeps attachment-only user rows visible in the history', async () => {
+  it('keeps attachment-only user rows visible in the history', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
@@ -4349,28 +4349,18 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      items: [],
-      requests: [],
-      notices: [],
-    } as any;
-
-    const events = [
-      {
-        sequence: 1,
-        eventId: 'e-image-only',
-        sessionId: 's1',
-        provider: 'codex',
-        threadId: 'thread-1',
-        turnId: 'turn-2',
-        itemId: 'local-user:turn-2',
-        createdAt: '2026-03-22T01:40:00Z',
-        type: 'item.completed',
-        raw: null,
-        item: {
-          itemType: 'user_message',
+      transcript: [
+        {
+          entryId: 'user:turn-2',
+          order: 1,
+          kind: 'user',
           status: 'completed',
-          title: 'User message',
-          detail: '',
+          title: '',
+          body: '',
+          updatedAt: '2026-03-22T01:40:00Z',
+          turnId: 'turn-2',
+          itemId: 'local-user:turn-2',
+          itemType: 'user_message',
           attachments: [
             {
               kind: 'image',
@@ -4379,11 +4369,15 @@ describe('agentView dev errors', () => {
               displayName: 'photo.png',
             },
           ],
+          streaming: false,
         },
-      },
-    ] as any;
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot, []);
     const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);

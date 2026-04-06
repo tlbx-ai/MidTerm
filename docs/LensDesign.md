@@ -241,6 +241,9 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - The TypeScript Lens UI should render the common quick-settings surface from the canonical model without branching deeply on provider quirks.
 - Quick-settings changes should be sticky for the active Lens session and may also reuse provider-level draft defaults where that improves flow.
 - Quick-settings must communicate whether they affect the next turn, the active session runtime, or require a thread/runtime reopen behind the scenes.
+- Lens composer attachments should stage inside the composer itself as removable chips instead of triggering an immediate turn on selection.
+- Lens should allow attachment-only turns and should treat repeated paste or repeated `+` actions as additive until the user explicitly removes a chip or sends the turn.
+- Clipboard paste inside the active Lens composer should capture browser-exposed files/images into those chips while leaving plain-text paste behavior intact.
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
@@ -297,6 +300,7 @@ Status in this branch/work item:
 - implemented: i18n-backed MidTerm Lens labels, buttons, helper copy, ready-state text, and interruption text
 - implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
 - implemented: hidden/background Lens sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
+- implemented: mouseup inside the Lens surface no longer routes through terminal focus reclaim, so drag text selection in Lens remains intact after the mouse button is released
 - implemented: long non-diff machine-oriented Lens bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
 - implemented: Lens diff rows stay expanded by default, suppress non-essential unified-diff preamble noise where possible, and cap visible diff rendering at 200 lines plus an ellipsis marker
 - implemented: Lens diff rows remove artificial blank spacing between lines and show old/new hunk line numbers when the diff provides them
@@ -318,6 +322,8 @@ Status in this branch/work item:
 - implemented: Lens and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
 - implemented: desktop Lens quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals the editable controls as a compact sheet
+- implemented: Lens Smart Input now stages file/image selections and clipboard files as removable composer chips, and the `+` / photo actions no longer auto-submit a Lens turn on selection
+- implemented: Lens send now uploads queued composer attachments at send time and submits them together with the current prompt text, including attachment-only turns
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls

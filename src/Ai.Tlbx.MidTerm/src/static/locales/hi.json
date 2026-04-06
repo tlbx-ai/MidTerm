@@ -519,5 +519,10 @@
   "dialog.cancel": "रद्द करें",
   "smartInput.autoSend": "स्वतः भेजें",
   "smartInput.photo": "फ़ोटो लें",
-  "smartInput.attach": "फ़ाइल संलग्न करें"
+  "smartInput.attach": "फ़ाइल संलग्न करें",
+  "smartInput.removeAttachment": "Remove attachment",
+  "smartInput.fileBadge": "FILE",
+  "smartInput.imageTooLarge": "Image exceeds the 10MB Lens limit",
+  "smartInput.attachmentUploadFailed": "Attachment upload failed",
+  "smartInput.attachmentSendFailed": "Lens send failed"
 }

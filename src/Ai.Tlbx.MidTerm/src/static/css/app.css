@@ -13791,9 +13791,97 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   width: 100%;
 }
 
-.smart-input-textarea {
+.smart-input-editor {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.smart-input-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.smart-input-attachments[hidden] {
+  display: none !important;
+}
+
+.smart-input-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(100%, 240px);
+  padding: 4px 8px 4px 4px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(
+    in srgb,
+    var(--terminal-ui-background, var(--terminal-bg)) 94%,
+    var(--bg-elevated-opaque, black) 6%
+  );
+}
+
+.smart-input-attachment-chip-image {
+  padding-left: 4px;
+}
+
+.smart-input-attachment-thumb,
+.smart-input-attachment-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex: 0 0 auto;
+}
+
+.smart-input-attachment-thumb {
+  object-fit: cover;
+}
+
+.smart-input-attachment-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.smart-input-attachment-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.smart-input-attachment-remove {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-secondary) 92%, transparent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.smart-input-attachment-remove:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.smart-input-textarea {
+  width: 100%;
   min-height: 44px;
   padding: 10px 12px;
   border-radius: 10px;
@@ -14293,6 +14381,18 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
 
   .smart-input-row {
     align-items: stretch;
+  }
+
+  .smart-input-editor {
+    gap: 8px;
+  }
+
+  .smart-input-attachments {
+    gap: 8px;
+  }
+
+  .smart-input-attachment-chip {
+    max-width: 100%;
   }
 
   .smart-input-textarea {

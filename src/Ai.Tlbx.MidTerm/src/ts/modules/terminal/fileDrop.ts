@@ -130,7 +130,7 @@ function isRejectedFile(filename: string): boolean {
   return REJECTED_EXTENSIONS.has(getFileExtension(filename));
 }
 
-function showDropToast(message: string, sticky = false): void {
+export function showDropToast(message: string, sticky = false): void {
   const existing = document.querySelector('.drop-toast');
   if (existing) existing.remove();
 
@@ -324,7 +324,7 @@ export function sanitizePasteContent(text: string): string {
 /**
  * Upload a file to the server for the given session
  */
-async function uploadFile(sessionId: string, file: File): Promise<string | null> {
+export async function uploadFile(sessionId: string, file: File): Promise<string | null> {
   const formData = new FormData();
   formData.append('file', file);
 

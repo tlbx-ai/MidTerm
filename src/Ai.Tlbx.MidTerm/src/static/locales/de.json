@@ -530,5 +530,10 @@
   "dialog.cancel": "Abbrechen",
   "smartInput.autoSend": "Sofort senden",
   "smartInput.photo": "Foto aufnehmen",
-  "smartInput.attach": "Datei anhängen"
+  "smartInput.attach": "Datei anhängen",
+  "smartInput.removeAttachment": "Anhang entfernen",
+  "smartInput.fileBadge": "DATEI",
+  "smartInput.imageTooLarge": "Bild überschreitet das 10-MB-Limit",
+  "smartInput.attachmentUploadFailed": "Anhang konnte nicht hochgeladen werden",
+  "smartInput.attachmentSendFailed": "Lens-Senden fehlgeschlagen"
 }

@@ -522,5 +522,10 @@
   "dialog.cancel": "取消",
   "smartInput.autoSend": "自动发送",
   "smartInput.photo": "拍照",
-  "smartInput.attach": "附加文件"
+  "smartInput.attach": "附加文件",
+  "smartInput.removeAttachment": "Remove attachment",
+  "smartInput.fileBadge": "FILE",
+  "smartInput.imageTooLarge": "Image exceeds the 10MB Lens limit",
+  "smartInput.attachmentUploadFailed": "Attachment upload failed",
+  "smartInput.attachmentSendFailed": "Lens send failed"
 }
