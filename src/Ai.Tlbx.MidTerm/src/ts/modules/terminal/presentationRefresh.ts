@@ -25,9 +25,7 @@ export function isTerminalVisible(state: Pick<TerminalState, 'container'>): bool
   );
 }
 
-export function remeasureTerminalCells(
-  state: Pick<TerminalState, 'terminal' | 'container'>,
-): void {
+export function remeasureTerminalCells(state: Pick<TerminalState, 'terminal' | 'container'>): void {
   const privateTerminal = state.terminal as TerminalWithPrivateCore;
 
   // Force layout so xterm remeasures against the current container geometry.
