@@ -6,7 +6,13 @@
  * into unrelated sibling bars.
  */
 
-import { $currentSettings, $activeSessionId, $voiceServerPassword, getSession } from '../../stores';
+import {
+  $currentSettings,
+  $activeSessionId,
+  $settingsOpen,
+  $voiceServerPassword,
+  getSession,
+} from '../../stores';
 import { t } from '../i18n';
 import { submitSessionText } from '../input/submit';
 import {
@@ -159,34 +165,42 @@ function getSmartInputVisibilityState(): SmartInputVisibilityState {
 function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
   const visibilityState = getSmartInputVisibilityState();
   const settings = $currentSettings.get();
+  const settingsOpen = $settingsOpen.get();
   const activeSessionId = visibilityState.activeSessionId ?? null;
   const isMobile = isMobileViewport();
   const lensActive = visibilityState.lensActive;
-  const showInput = shouldShowDockedSmartInput(visibilityState);
-  const showAutomation = shouldShowManagerBar(settings?.managerBarEnabled, activeSessionId);
+  const showInput = !settingsOpen && shouldShowDockedSmartInput(visibilityState);
+  const showAutomation =
+    !settingsOpen && shouldShowManagerBar(settings?.managerBarEnabled, activeSessionId);
   const touchControlsAvailable = resolveTouchControlsAvailable({
     activeSessionId,
     isMobile,
     lensActive,
   });
-  const showContext = resolveShowContext({
-    isMobile,
-    lensActive,
-    touchControlsAvailable,
-  });
-  const showStatus = resolveShowStatus({
-    activeSessionId,
-    isMobile,
-    lensActive,
-    showInput,
-  });
-  const showFooter = resolveShowFooter({
-    activeSessionId,
-    showAutomation,
-    showContext,
-    showInput,
-    showStatus,
-  });
+  const showContext = settingsOpen
+    ? false
+    : resolveShowContext({
+        isMobile,
+        lensActive,
+        touchControlsAvailable,
+      });
+  const showStatus = settingsOpen
+    ? false
+    : resolveShowStatus({
+        activeSessionId,
+        isMobile,
+        lensActive,
+        showInput,
+      });
+  const showFooter = settingsOpen
+    ? false
+    : resolveShowFooter({
+        activeSessionId,
+        showAutomation,
+        showContext,
+        showInput,
+        showStatus,
+      });
   const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;
 
   return {
@@ -308,6 +322,10 @@ export function initSmartInput(): void {
     syncSmartInputVisibility();
   });
 
+  $settingsOpen.subscribe(() => {
+    syncSmartInputVisibility();
+  });
+
   $voiceServerPassword.subscribe(() => {
     syncVoiceInputAvailability();
   });
@@ -406,7 +424,7 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   const layoutState = getAdaptiveFooterLayoutState();
   if (!layoutState.showFooter) {
     hideAdaptiveFooter();
-    queueFooterReserveSync();
+    updateFooterReservedHeight();
     return;
   }
 

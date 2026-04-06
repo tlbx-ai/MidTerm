@@ -30,8 +30,12 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-lens-actions[hidden] {');
     expect(css).toContain('display: none !important;');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
-    expect(viewSource).toContain("lensQuickSettingsActions.className = 'smart-input-lens-actions';");
-    expect(viewSource).toContain("manager-bar-action-popover smart-input-lens-dropdown-menu hidden");
+    expect(viewSource).toContain(
+      "lensQuickSettingsActions.className = 'smart-input-lens-actions';",
+    );
+    expect(viewSource).toContain(
+      'manager-bar-action-popover smart-input-lens-dropdown-menu hidden',
+    );
   });
 
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {
@@ -41,11 +45,22 @@ describe('smart input tab wiring', () => {
     expect(html).toContain('id="adaptive-footer-context"');
     expect(html).toContain('id="adaptive-footer-status"');
     expect(html).toContain('id="manager-bar-overflow"');
-    expect(source).toContain('function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {');
+    expect(source).toContain(
+      'function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {',
+    );
     expect(source).toContain('showAutomation');
     expect(source).toContain('showStatus');
     expect(source).toContain('syncFooterRailOrder(layoutState);');
     expect(layoutSource).toContain("return ['primary', 'automation', 'context', 'status'];");
+  });
+
+  it('collapses the adaptive footer immediately while settings are open', () => {
+    expect(source).toContain('$settingsOpen');
+    expect(source).toContain('const settingsOpen = $settingsOpen.get();');
+    expect(source).toContain('$settingsOpen.subscribe(() => {');
+    expect(source).toContain('const showFooter = settingsOpen');
+    expect(source).toContain('hideAdaptiveFooter();');
+    expect(source).toContain('updateFooterReservedHeight();');
   });
 
   it('reserves only collapsed footer height and uses send gestures for auto-send toggling', () => {
@@ -73,18 +88,22 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('lensAttachmentDrafts');
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(submissionSource).toContain('await args.uploadFile(args.sessionId, attachment.file);');
-    expect(submissionSource).toContain('queuedTurn: args.submitQueuedTurn(args.sessionId, request)');
+    expect(submissionSource).toContain(
+      'queuedTurn: args.submitQueuedTurn(args.sessionId, request)',
+    );
     expect(css).toContain('.smart-input-attachments {');
     expect(css).toContain('.smart-input-attachment-chip {');
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
-    expect(source).toContain('footerStatusHost.classList.add(\'adaptive-footer-status-sheet-open\');');
+    expect(source).toContain(
+      "footerStatusHost.classList.add('adaptive-footer-status-sheet-open');",
+    );
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
     expect(source).toContain('dockedBar.appendChild(dom.toolsPanel);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
-    expect(source).toContain("event.stopPropagation();");
+    expect(source).toContain('event.stopPropagation();');
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
     expect(css).toContain('margin: 6px 0 0;');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
@@ -103,7 +122,7 @@ describe('smart input tab wiring', () => {
   it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {
     expect(source).toContain('bindSmartInputGlobalKeyBindings({');
     expect(source).toContain('hasInterruptibleLensTurnWork(sessionId)');
-    expect(keyBindingsSource).toContain("document.addEventListener(");
+    expect(keyBindingsSource).toContain('document.addEventListener(');
     expect(keyBindingsSource).toContain("'keydown'");
     expect(keyBindingsSource).toContain('event.stopImmediatePropagation();');
     expect(keyBindingsSource).toContain('true,');
@@ -115,7 +134,9 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');
     expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
-    expect(source).toContain("button.className = 'smart-input-lens-action smart-input-lens-resume';");
+    expect(source).toContain(
+      "button.className = 'smart-input-lens-action smart-input-lens-resume';",
+    );
     expect(source).toContain('session?.bookmarkId');
     expect(css).toContain('.smart-input-lens-actions {');
     expect(css).toContain('.smart-input-lens-action {');

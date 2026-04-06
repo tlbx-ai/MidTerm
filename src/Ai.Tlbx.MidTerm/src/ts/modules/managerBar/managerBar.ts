@@ -6,7 +6,7 @@
  * session that was active when the action was triggered.
  */
 
-import { $activeSessionId, $currentSettings, $managerBarQueue } from '../../stores';
+import { $activeSessionId, $currentSettings, $managerBarQueue, $settingsOpen } from '../../stores';
 import { updateSettings } from '../../api/client';
 import { icon } from '../../constants';
 import type { ManagerBarQueueEntry } from '../../types';
@@ -104,7 +104,9 @@ export function initManagerBar(): void {
 
   const syncManagerBarVisibility = (): void => {
     const settings = $currentSettings.get();
-    const visible = shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
+    const visible =
+      !$settingsOpen.get() &&
+      shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
     barEl?.classList.toggle('hidden', !visible);
     if (!visible) {
       overflowBtn?.setAttribute('hidden', '');
@@ -126,6 +128,10 @@ export function initManagerBar(): void {
   });
 
   $activeSessionId.subscribe(() => {
+    syncManagerBarVisibility();
+  });
+
+  $settingsOpen.subscribe(() => {
     syncManagerBarVisibility();
   });
 
@@ -726,7 +732,7 @@ function renderQueue(): void {
   const settings = $currentSettings.get();
   const activeSessionId = $activeSessionId.get();
   const visibleQueue =
-    settings?.managerBarEnabled && activeSessionId
+    !$settingsOpen.get() && settings?.managerBarEnabled && activeSessionId
       ? queueEntries
           .filter((entry) => entry.sessionId === activeSessionId)
           .filter((entry) => !pendingQueueRemovals.has(entry.queueId))
