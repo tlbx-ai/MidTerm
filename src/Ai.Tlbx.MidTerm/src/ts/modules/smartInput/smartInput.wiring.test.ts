@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const source = readFileSync(path.join(__dirname, 'smartInput.ts'), 'utf8');
+const metricsSource = readFileSync(path.join(__dirname, 'smartInputMetrics.ts'), 'utf8');
 const submissionSource = readFileSync(path.join(__dirname, 'lensAttachmentSubmission.ts'), 'utf8');
 const layoutSource = readFileSync(path.join(__dirname, 'layout.ts'), 'utf8');
+const viewSource = readFileSync(path.join(__dirname, 'smartInputView.ts'), 'utf8');
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
 
@@ -47,7 +49,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('setAdaptiveFooterReservedHeight(root, reserveHeight);');
     expect(source).toContain('window.dispatchEvent(');
     expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
-    expect(source).toContain("nextSendBtn.addEventListener('dblclick'");
+    expect(viewSource).toContain("sendBtn.addEventListener('dblclick', args.onSendDoubleClick);");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
     expect(css).toContain('.adaptive-footer-dock {');
     expect(css).toContain('.adaptive-footer-reserve {');
@@ -55,6 +57,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain('font-size: 16px;');
+    expect(metricsSource).toContain('const MAX_TEXTAREA_LINES = 5;');
   });
 
   it('keeps Lens attachment drafts in the composer until send-time upload', () => {
@@ -68,8 +71,8 @@ describe('smart input tab wiring', () => {
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
     expect(source).toContain('footerStatusHost.classList.add(\'adaptive-footer-status-sheet-open\');');
-    expect(source).toContain('dockedBar.appendChild(inputRow);');
-    expect(source).toContain('dockedBar.appendChild(toolsSurface);');
+    expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
+    expect(source).toContain('dockedBar.appendChild(dom.toolsPanel);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
     expect(source).toContain("event.stopPropagation();");
@@ -81,13 +84,13 @@ describe('smart input tab wiring', () => {
 
   it('uses an explicit picker helper for attach and photo tools instead of relying on raw hidden-input clicks', () => {
     expect(source).toContain('function openFileInputPicker(input: HTMLInputElement): void {');
-    expect(source).toContain("if (typeof input.showPicker === 'function')");
+    expect(viewSource).toContain("if (typeof input.showPicker === 'function')");
     expect(source).toContain('openFileInputPicker(sharedAttachInput);');
     expect(source).toContain('openFileInputPicker(sharedPhotoInput);');
   });
 
   it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {
-    expect(source).toContain("if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {");
+    expect(source).toContain("event.key === 'Escape'");
     expect(source).toContain('void handleLensEscape(sessionId);');
   });
 });

@@ -78,6 +78,7 @@ const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
+import { getActiveTab } from '../sessionTabs';
 
 let showBellNotification: (sessionId: string) => void = () => {};
 
@@ -105,6 +106,18 @@ let focusDebounceTimer: number | null = null;
 const ENTER_MODIFIER_LATCH_MAX_AGE_MS = 1500;
 const enterModifierLatches = new Map<string, EnterModifierLatchState>();
 let globalTerminalEnterOverrideInstalled = false;
+const FOCUS_RECLAIM_EXEMPT_SELECTOR = [
+  'button',
+  'a[href]',
+  'summary',
+  '[role="button"]',
+  '[role="menuitem"]',
+  '.adaptive-footer-dock',
+  '.manager-bar',
+  '.manager-bar-action-popover',
+  '[data-tab-panel="agent"]',
+  '[data-tab-panel="files"]',
+].join(', ');
 
 type TerminalKeyMatchEvent = {
   key?: string;
@@ -646,6 +659,40 @@ function hasNonTerminalFocus(): boolean {
 
 const FOCUS_STEALING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
+function hasActiveDocumentSelection(): boolean {
+  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
+    return false;
+  }
+
+  const selection = window.getSelection();
+  return Boolean(selection && !selection.isCollapsed && selection.rangeCount > 0);
+}
+
+function shouldSkipGlobalFocusReclaim(target: HTMLElement): boolean {
+  if (
+    FOCUS_STEALING_TAGS.has(target.tagName) ||
+    target.isContentEditable ||
+    target.closest('[contenteditable="true"]')
+  ) {
+    return true;
+  }
+
+  if (target.closest(FOCUS_RECLAIM_EXEMPT_SELECTOR)) {
+    return true;
+  }
+
+  if (hasActiveDocumentSelection()) {
+    return true;
+  }
+
+  const activeSessionId = $activeSessionId.get();
+  if (!activeSessionId) {
+    return false;
+  }
+
+  return getActiveTab(activeSessionId) !== 'terminal';
+}
+
 /**
  * Reclaim terminal focus after clicks on non-interactive UI (sidebar, buttons, etc.).
  * Skips refocus when the click lands on an element that needs its own keyboard input.
@@ -683,12 +730,13 @@ export function setupGlobalFocusReclaim(): void {
   }
 
   document.addEventListener('mouseup', (e) => {
-    const target = e.target as HTMLElement;
-    if (
-      FOCUS_STEALING_TAGS.has(target.tagName) ||
-      target.isContentEditable ||
-      target.closest('[contenteditable="true"]')
-    ) {
+    const target =
+      e.target instanceof HTMLElement
+        ? e.target
+        : e.target instanceof Node
+          ? e.target.parentElement
+          : null;
+    if (!target || shouldSkipGlobalFocusReclaim(target)) {
       return;
     }
     focusActiveTerminal();

@@ -1,7 +1,6 @@
 /**
  * Smart Input UI
  *
- * Owns the unified active-session footer dock for Terminal and Lens.
  * The dock can expose an input row, a mode-specific context row,
  * manager automation, and a status rail without splitting those concerns
  * into unrelated sibling bars.
@@ -35,7 +34,6 @@ import {
 import {
   type LensComposerDraftAttachment,
   MAX_LENS_IMAGE_BYTES,
-  cloneLensComposerDraftAttachments,
   createLensComposerDraftAttachment,
   isLensComposerImageFile,
   releaseLensComposerDraftAttachmentPreviews,
@@ -48,6 +46,29 @@ import {
   type SmartInputVisibilityState,
 } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
+import {
+  createSmartInputDom,
+  createToolButton,
+  createToolButtonsStrip,
+  formatLensQuickSettingsSummary,
+  openFileInputPicker as showSmartInputFilePicker,
+  renderTerminalStatusRow,
+  type ToolKind,
+} from './smartInputView';
+import {
+  applySessionDraftToTextarea,
+  clearLensDraftAttachmentsForSession,
+  detachLensDraftAttachmentsForSession,
+  getLensDraftAttachmentsForSession,
+  persistSessionDraft,
+  setLensDraftAttachmentsForSession,
+} from './smartInputDraftStore';
+import {
+  getCollapsedSmartInputTextareaHeight,
+  isMobileViewport,
+  isTouchPrimaryDevice,
+  resizeSmartInputTextarea,
+} from './smartInputMetrics';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -82,16 +103,10 @@ let footerResizeQueued = false;
 let footerResizeObserver: ResizeObserver | null = null;
 let lastReservedFooterHeightPx = Number.NaN;
 
-const MAX_TEXTAREA_LINES = 5;
 const AUTO_SEND_LONG_PRESS_MS = 520;
-const MOBILE_BREAKPOINT_PX = 768;
 const sessionDrafts = new Map<string, string>();
 const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
-
-type ToolKind = 'mic' | 'attach' | 'photo';
-
-const TOOL_ORDER: ToolKind[] = ['mic', 'attach', 'photo'];
 
 interface AdaptiveFooterLayoutState {
   activeSessionId: string | null | undefined;
@@ -210,37 +225,22 @@ function resolveShowFooter(args: {
 }
 
 function getLensDraftAttachments(sessionId: string | null): LensComposerDraftAttachment[] {
-  return sessionId ? (lensAttachmentDrafts.get(sessionId) ?? []) : [];
+  return getLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
 }
 
 function setLensDraftAttachments(
   sessionId: string,
   attachments: readonly LensComposerDraftAttachment[],
 ): void {
-  if (attachments.length === 0) {
-    lensAttachmentDrafts.delete(sessionId);
-    return;
-  }
-
-  lensAttachmentDrafts.set(sessionId, [...attachments]);
+  setLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId, attachments);
 }
 
 function clearLensDraftAttachments(sessionId: string, revokePreviews = true): void {
-  const attachments = lensAttachmentDrafts.get(sessionId);
-  if (!attachments) {
-    return;
-  }
-
-  lensAttachmentDrafts.delete(sessionId);
-  if (revokePreviews) {
-    releaseLensComposerDraftAttachmentPreviews(attachments);
-  }
+  clearLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId, revokePreviews);
 }
 
 function detachLensDraftAttachments(sessionId: string): LensComposerDraftAttachment[] {
-  const attachments = getLensDraftAttachments(sessionId);
-  lensAttachmentDrafts.delete(sessionId);
-  return cloneLensComposerDraftAttachments(attachments);
+  return detachLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
 }
 
 /**
@@ -371,11 +371,9 @@ export function initSmartInput(): void {
 export function showSmartInput(): void {
   syncSmartInputVisibility(true);
 }
-
 export function hideSmartInput(): void {
   syncSmartInputVisibility();
 }
-
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   ensureFooterHosts();
 
@@ -413,7 +411,6 @@ function hideAdaptiveFooter(): void {
   if (!footerDock) {
     return;
   }
-
   setToolsPanelOpen(false);
   setLensQuickSettingsSheetOpen(false);
   footerDock.hidden = true;
@@ -434,7 +431,6 @@ function ensureFooterResizeObserver(): void {
   if (footerResizeObserver || typeof ResizeObserver === 'undefined' || !footerDock) {
     return;
   }
-
   footerResizeObserver = new ResizeObserver(() => {
     queueFooterReserveSync();
   });
@@ -445,7 +441,6 @@ function applyFooterPresentation(layoutState: AdaptiveFooterLayoutState): void {
   if (!footerDock) {
     return;
   }
-
   footerDock.dataset.surface = layoutState.lensActive ? 'lens' : 'terminal';
   footerDock.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
   footerDock.dataset.material = layoutState.glassEnabled ? 'glass' : 'solid';
@@ -462,15 +457,162 @@ function createDockedDOM(): void {
   dockedBar = document.createElement('div');
   dockedBar.className = 'smart-input-docked';
 
-  const { inputRow, toolsStrip, toolsSurface } = createInputElements();
-  dockedBar.appendChild(inputRow);
-  dockedBar.appendChild(toolsSurface);
+  const dom = createSmartInputDom({
+    createToolsStrip: () => createToolButtonsStrip(getToolButtonRenderArgs()),
+    onAttachInputChange: (files) => {
+      void handleSmartInputSelectedFiles(files);
+    },
+    onLensEffortChange: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId || !isLensActiveSession(sessionId)) {
+        return;
+      }
+
+      setLensQuickSettingsDraft(sessionId, {
+        effort: lensEffortSelect?.value ?? null,
+      });
+    },
+    onLensModelInput: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId || !isLensActiveSession(sessionId)) {
+        return;
+      }
+
+      setLensQuickSettingsDraft(sessionId, {
+        model: lensModelInput?.value ?? null,
+      });
+    },
+    onLensPermissionChange: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId || !isLensActiveSession(sessionId)) {
+        return;
+      }
+
+      setLensQuickSettingsDraft(sessionId, {
+        permissionMode: lensPermissionSelect?.value ?? 'manual',
+      });
+    },
+    onLensPlanChange: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId || !isLensActiveSession(sessionId)) {
+        return;
+      }
+
+      setLensQuickSettingsDraft(sessionId, {
+        planMode: lensPlanSelect?.value ?? 'off',
+      });
+      syncSmartInputVisibility();
+    },
+    onPhotoInputChange: (files) => {
+      void handleSmartInputSelectedFiles(files);
+    },
+    onSendClick: () => {
+      if (suppressNextSendClick) {
+        suppressNextSendClick = false;
+        return;
+      }
+
+      if (activeTextarea) {
+        void sendText(activeTextarea);
+      }
+    },
+    onSendDoubleClick: (event) => {
+      if (isMobileViewport()) {
+        return;
+      }
+
+      event.preventDefault();
+      toggleAutoSendEnabled();
+    },
+    onSendPointerDown: () => {
+      if (!isMobileViewport()) {
+        return;
+      }
+
+      clearSendAutoSendLongPressTimer();
+      sendAutoSendLongPressTimer = window.setTimeout(() => {
+        toggleAutoSendEnabled();
+        suppressNextSendClick = true;
+        sendAutoSendLongPressTimer = null;
+      }, AUTO_SEND_LONG_PRESS_MS);
+    },
+    onSendPointerEnd: () => {
+      clearSendAutoSendLongPressTimer();
+    },
+    onTextareaFocus: () => {
+      queueFooterReserveSync();
+      requestAnimationFrame(() => {
+        footerDock?.scrollTo({ top: 0, behavior: 'auto' });
+      });
+    },
+    onTextareaInput: (textarea) => {
+      persistDraftForSession($activeSessionId.get(), textarea.value);
+      resizeSmartInputTextarea(textarea);
+      if (!footerResizeObserver) {
+        queueFooterReserveSync();
+      }
+    },
+    onTextareaKeydown: (event, textarea) => {
+      if (
+        event.key === 'Escape' &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
+        const sessionId = $activeSessionId.get();
+        if (sessionId && isLensActiveSession(sessionId)) {
+          event.preventDefault();
+          void handleLensEscape(sessionId);
+          return;
+        }
+      }
+
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        void sendText(textarea);
+      }
+    },
+    onTextareaPaste: (event) => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId || !isLensActiveSession(sessionId)) {
+        return;
+      }
+
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      addLensComposerFiles(sessionId, files);
+    },
+    onToolsToggleClick: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setToolsPanelOpen(!toolsPanelOpen);
+    },
+    resizeTextarea: resizeSmartInputTextarea,
+  });
+  dockedBar.appendChild(dom.inputRow);
+  dockedBar.appendChild(dom.toolsPanel);
   footerPrimaryHost.appendChild(dockedBar);
 
-  toolButtonsStrip = toolsStrip;
-  if (toolsPanel) {
-    toolsPanel.appendChild(toolButtonsStrip);
-  }
+  lensQuickSettingsRow = dom.lensQuickSettingsRow;
+  lensModelInput = dom.lensModelInput;
+  lensEffortSelect = dom.lensEffortSelect;
+  lensPlanSelect = dom.lensPlanSelect;
+  lensPermissionSelect = dom.lensPermissionSelect;
+  lensAttachmentHost = dom.lensAttachmentHost;
+  activeTextarea = dom.textarea;
+  sendBtn = dom.sendBtn;
+  toolsToggleBtn = dom.toolsToggleBtn;
+  inlineToolHost = dom.inlineToolHost;
+  sharedPhotoInput = dom.photoInput;
+  sharedAttachInput = dom.attachInput;
+  toolsPanel = dom.toolsPanel;
+  toolButtonsStrip = dom.toolsStrip;
+  toolsPanel.appendChild(toolButtonsStrip);
 
   touchControllerEl ??= document.getElementById('touch-controller');
   if (touchControllerEl && touchControllerEl.parentElement !== footerContextHost) {
@@ -479,369 +621,49 @@ function createDockedDOM(): void {
   }
 }
 
-function createInputElements(): {
-  inputRow: HTMLDivElement;
-  toolsStrip: HTMLDivElement;
-  toolsSurface: HTMLDivElement;
-} {
-  const nextLensQuickSettingsRow = document.createElement('div');
-  nextLensQuickSettingsRow.className = 'smart-input-lens-settings';
-  nextLensQuickSettingsRow.hidden = true;
-  lensQuickSettingsRow = nextLensQuickSettingsRow;
+function openFileInputPicker(input: HTMLInputElement): void {
+  showSmartInputFilePicker(input);
+}
 
-  lensModelInput = document.createElement('input');
-  lensModelInput.className = 'smart-input-lens-control smart-input-lens-model';
-  lensModelInput.type = 'text';
-  lensModelInput.placeholder = 'Default model';
-  lensModelInput.autocomplete = 'off';
-  lensModelInput.spellcheck = false;
-  lensModelInput.addEventListener('input', () => {
-    const sessionId = $activeSessionId.get();
-    if (!sessionId || !isLensActiveSession(sessionId)) {
-      return;
-    }
-
-    setLensQuickSettingsDraft(sessionId, {
-      model: lensModelInput?.value ?? null,
-    });
-  });
-
-  lensEffortSelect = document.createElement('select');
-  lensEffortSelect.className = 'smart-input-lens-control';
-  for (const [value, label] of [
-    ['', 'Default'],
-    ['low', 'Low'],
-    ['medium', 'Medium'],
-    ['high', 'High'],
-  ] as const) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    lensEffortSelect.appendChild(option);
-  }
-  lensEffortSelect.addEventListener('change', () => {
-    const sessionId = $activeSessionId.get();
-    if (!sessionId || !isLensActiveSession(sessionId)) {
-      return;
-    }
-
-    setLensQuickSettingsDraft(sessionId, {
-      effort: lensEffortSelect?.value ?? null,
-    });
-  });
-
-  lensPlanSelect = document.createElement('select');
-  lensPlanSelect.className = 'smart-input-lens-control';
-  for (const [value, label] of [
-    ['off', 'Plan off'],
-    ['on', 'Plan on'],
-  ] as const) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    lensPlanSelect.appendChild(option);
-  }
-  lensPlanSelect.addEventListener('change', () => {
-    const sessionId = $activeSessionId.get();
-    if (!sessionId || !isLensActiveSession(sessionId)) {
-      return;
-    }
-
-    setLensQuickSettingsDraft(sessionId, {
-      planMode: lensPlanSelect?.value ?? 'off',
-    });
-    syncSmartInputVisibility();
-  });
-
-  lensPermissionSelect = document.createElement('select');
-  lensPermissionSelect.className = 'smart-input-lens-control';
-  for (const [value, label] of [
-    ['manual', 'Manual'],
-    ['auto', 'Auto'],
-  ] as const) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    lensPermissionSelect.appendChild(option);
-  }
-  lensPermissionSelect.addEventListener('change', () => {
-    const sessionId = $activeSessionId.get();
-    if (!sessionId || !isLensActiveSession(sessionId)) {
-      return;
-    }
-
-    setLensQuickSettingsDraft(sessionId, {
-      permissionMode: lensPermissionSelect?.value ?? 'manual',
-    });
-  });
-
-  nextLensQuickSettingsRow.appendChild(createLensQuickSettingsField('Model', lensModelInput));
-  nextLensQuickSettingsRow.appendChild(createLensQuickSettingsField('Effort', lensEffortSelect));
-  nextLensQuickSettingsRow.appendChild(createLensQuickSettingsField('Plan', lensPlanSelect));
-  nextLensQuickSettingsRow.appendChild(
-    createLensQuickSettingsField('Permissions', lensPermissionSelect),
-  );
-
-  const inputRow = document.createElement('div');
-  inputRow.className = 'smart-input-row';
-
-  const editorHost = document.createElement('div');
-  editorHost.className = 'smart-input-editor';
-
-  const nextLensAttachmentHost = document.createElement('div');
-  nextLensAttachmentHost.className = 'smart-input-attachments';
-  nextLensAttachmentHost.hidden = true;
-  lensAttachmentHost = nextLensAttachmentHost;
-
-  const textarea = document.createElement('textarea');
-  textarea.className = 'smart-input-textarea';
-  textarea.rows = 1;
-  textarea.placeholder = t('smartInput.placeholder');
-  resizeTextarea(textarea);
-
-  const nextSendBtn = document.createElement('button');
-  nextSendBtn.type = 'button';
-  nextSendBtn.className = 'smart-input-send-btn';
-  nextSendBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
-  nextSendBtn.title = t('smartInput.sendGestureHint');
-  nextSendBtn.setAttribute('aria-label', t('smartInput.send'));
-  sendBtn = nextSendBtn;
-
-  const nextToolsToggleBtn = document.createElement('button');
-  nextToolsToggleBtn.type = 'button';
-  nextToolsToggleBtn.className = 'smart-input-tools-toggle';
-  nextToolsToggleBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-  nextToolsToggleBtn.title = t('smartInput.tools');
-  nextToolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
-  toolsToggleBtn = nextToolsToggleBtn;
-
-  const nextInlineToolHost = document.createElement('div');
-  nextInlineToolHost.className = 'smart-input-inline-tools';
-  nextInlineToolHost.hidden = true;
-  inlineToolHost = nextInlineToolHost;
-
-  const photoInput = document.createElement('input');
-  photoInput.type = 'file';
-  photoInput.accept = 'image/*';
-  photoInput.capture = 'environment';
-  photoInput.hidden = true;
-  photoInput.addEventListener('change', () => {
-    if (photoInput.files?.length) {
-      void handleSmartInputSelectedFiles(photoInput.files);
-    }
-    photoInput.value = '';
-  });
-  sharedPhotoInput = photoInput;
-
-  const attachInput = document.createElement('input');
-  attachInput.type = 'file';
-  attachInput.multiple = true;
-  attachInput.hidden = true;
-  attachInput.addEventListener('change', () => {
-    if (attachInput.files?.length) {
-      void handleSmartInputSelectedFiles(attachInput.files);
-    }
-    attachInput.value = '';
-  });
-  sharedAttachInput = attachInput;
-
-  const toolsSurface = document.createElement('div');
-  toolsSurface.className = 'smart-input-tools-surface';
-  toolsSurface.hidden = true;
-  toolsPanel = toolsSurface;
-
-  const toolsStrip = createToolButtonsStrip();
-
-  nextToolsToggleBtn.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setToolsPanelOpen(!toolsPanelOpen);
-  });
-
-  textarea.addEventListener('input', () => {
-    persistDraftForSession($activeSessionId.get(), textarea.value);
-    resizeTextarea(textarea);
-    if (!footerResizeObserver) {
-      queueFooterReserveSync();
-    }
-  });
-
-  textarea.addEventListener('focus', () => {
-    queueFooterReserveSync();
-    requestAnimationFrame(() => {
-      footerDock?.scrollTo({ top: 0, behavior: 'auto' });
-    });
-  });
-
-  textarea.addEventListener('paste', (event) => {
-    const sessionId = $activeSessionId.get();
-    if (!sessionId || !isLensActiveSession(sessionId)) {
-      return;
-    }
-
-    const files = Array.from(event.clipboardData?.files ?? []);
-    if (files.length === 0) {
-      return;
-    }
-
-    event.preventDefault();
-    addLensComposerFiles(sessionId, files);
-  });
-
-  textarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      const sessionId = $activeSessionId.get();
-      if (sessionId && isLensActiveSession(sessionId)) {
-        e.preventDefault();
-        void handleLensEscape(sessionId);
+function getToolButtonRenderArgs(): Parameters<typeof createToolButtonsStrip>[0] {
+  return {
+    canUseVoice: canUseSmartInputVoice(),
+    onAttachClick: (pinOnUse, event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      maybePinToolForActiveSession('attach', pinOnUse);
+      if (sharedAttachInput) {
+        openFileInputPicker(sharedAttachInput);
+      }
+    },
+    onMicPointerDown: (pinOnUse, event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      maybePinToolForActiveSession('mic', pinOnUse, false);
+      beginRecording();
+    },
+    onMicPointerLeave: () => {
+      if (isRecording) {
+        endRecording();
+      }
+    },
+    onMicPointerUp: () => {
+      endRecording();
+    },
+    onPhotoClick: (pinOnUse, event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      maybePinToolForActiveSession('photo', pinOnUse);
+      if (isTouchPrimaryDevice()) {
+        if (sharedPhotoInput) {
+          openFileInputPicker(sharedPhotoInput);
+        }
         return;
       }
-    }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void sendText(textarea);
-    }
-  });
-
-  nextSendBtn.addEventListener('dblclick', (event) => {
-    if (isMobileViewport()) {
-      return;
-    }
-
-    event.preventDefault();
-    toggleAutoSendEnabled();
-  });
-
-  nextSendBtn.addEventListener('pointerdown', () => {
-    if (!isMobileViewport()) {
-      return;
-    }
-
-    clearSendAutoSendLongPressTimer();
-    sendAutoSendLongPressTimer = window.setTimeout(() => {
-      toggleAutoSendEnabled();
-      suppressNextSendClick = true;
-      sendAutoSendLongPressTimer = null;
-    }, AUTO_SEND_LONG_PRESS_MS);
-  });
-
-  for (const eventName of ['pointerup', 'pointercancel', 'pointerleave']) {
-    nextSendBtn.addEventListener(eventName, () => {
-      clearSendAutoSendLongPressTimer();
-    });
-  }
-
-  nextSendBtn.addEventListener('click', () => {
-    if (suppressNextSendClick) {
-      suppressNextSendClick = false;
-      return;
-    }
-
-    void sendText(textarea);
-  });
-
-  editorHost.appendChild(nextLensAttachmentHost);
-  editorHost.appendChild(textarea);
-  inputRow.appendChild(editorHost);
-  inputRow.appendChild(nextInlineToolHost);
-  inputRow.appendChild(nextSendBtn);
-  inputRow.appendChild(nextToolsToggleBtn);
-  inputRow.appendChild(photoInput);
-  inputRow.appendChild(attachInput);
-
-  return { inputRow, toolsStrip, toolsSurface };
-}
-
-function createToolButtonsStrip(): HTMLDivElement {
-  const strip = document.createElement('div');
-  strip.className = 'smart-input-tools-strip';
-
-  for (const tool of TOOL_ORDER) {
-    strip.appendChild(createToolButton(tool, { pinOnUse: true }));
-  }
-
-  return strip;
-}
-
-function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.dataset.tool = tool;
-
-  switch (tool) {
-    case 'mic':
-      button.className = 'smart-input-mic-btn';
-      button.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
-      button.title = t('smartInput.mic');
-      button.hidden = !canUseSmartInputVoice();
-      button.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        maybePinToolForActiveSession(tool, options.pinOnUse, false);
-        beginRecording();
-      });
-      button.addEventListener('pointerup', () => {
-        endRecording();
-      });
-      button.addEventListener('pointerleave', () => {
-        if (isRecording) {
-          endRecording();
-        }
-      });
-      break;
-    case 'attach':
-      button.className = 'smart-input-attach-btn';
-      button.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
-      button.title = t('smartInput.attach');
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        maybePinToolForActiveSession(tool, options.pinOnUse);
-        if (sharedAttachInput) {
-          openFileInputPicker(sharedAttachInput);
-        }
-      });
-      break;
-    case 'photo':
-      button.className = 'smart-input-photo-btn';
-      button.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
-      button.title = t('smartInput.photo');
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        maybePinToolForActiveSession(tool, options.pinOnUse);
-        if (isTouchPrimaryDevice()) {
-          if (sharedPhotoInput) {
-            openFileInputPicker(sharedPhotoInput);
-          }
-          return;
-        }
-
-        void captureImageFromWebcam((files) => handleSmartInputSelectedFiles(files));
-      });
-      break;
-  }
-
-  return button;
-}
-
-function openFileInputPicker(input: HTMLInputElement): void {
-  try {
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-      return;
-    }
-  } catch {
-    // Fall back to click() when the browser rejects showPicker on this surface.
-  }
-
-  input.click();
+      void captureImageFromWebcam((files) => handleSmartInputSelectedFiles(files));
+    },
+  };
 }
 
 function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -949,7 +771,19 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     return;
   }
 
-  renderTerminalStatusRow(layoutState);
+  renderTerminalStatusRow({
+    autoSendEnabled: canUseSmartInputVoice() && autoSendEnabled,
+    footerStatusHost,
+    inputMode: layoutState.inputMode,
+    isMobile: layoutState.isMobile,
+    keysExpanded,
+    onToggleKeys: () => {
+      keysExpanded = !keysExpanded;
+      localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
+      syncSmartInputVisibility();
+    },
+    touchControlsAvailable: layoutState.touchControlsAvailable,
+  });
 }
 
 function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -994,61 +828,6 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 }
 
-function renderTerminalStatusRow(layoutState: AdaptiveFooterLayoutState): void {
-  if (!footerStatusHost) {
-    return;
-  }
-
-  const summary = document.createElement('div');
-  summary.className = 'adaptive-footer-status-summary';
-  summary.textContent = describeTerminalStatus(layoutState.inputMode);
-  footerStatusHost.appendChild(summary);
-
-  if (canUseSmartInputVoice() && autoSendEnabled) {
-    const autoSendPill = document.createElement('div');
-    autoSendPill.className = 'adaptive-footer-status-pill';
-    autoSendPill.textContent = t('smartInput.autoSend');
-    footerStatusHost.appendChild(autoSendPill);
-  }
-
-  if (layoutState.isMobile && layoutState.touchControlsAvailable) {
-    const keysToggle = document.createElement('button');
-    keysToggle.type = 'button';
-    keysToggle.className = 'adaptive-footer-status-toggle';
-    keysToggle.textContent = keysExpanded ? t('smartInput.keysHide') : t('smartInput.keysShow');
-    keysToggle.setAttribute('aria-pressed', keysExpanded ? 'true' : 'false');
-    keysToggle.addEventListener('click', () => {
-      keysExpanded = !keysExpanded;
-      localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
-      syncSmartInputVisibility();
-    });
-    footerStatusHost.appendChild(keysToggle);
-  }
-}
-
-function describeTerminalStatus(inputMode: string | null | undefined): string {
-  if (inputMode === 'smartinput') {
-    return t('smartInput.modeSmart');
-  }
-
-  if (inputMode === 'both') {
-    return t('smartInput.modeBoth');
-  }
-
-  return t('smartInput.modeKeyboard');
-}
-
-function formatLensQuickSettingsSummary(
-  draft: ReturnType<typeof getLensQuickSettingsDraft>,
-): string {
-  const parts = [
-    draft.model?.trim() || 'Default',
-    draft.effort?.trim() || 'Default',
-    draft.planMode === 'on' ? 'PLAN ON' : 'Plan Off',
-  ];
-  return parts.join(' · ');
-}
-
 function setToolsPanelOpen(open: boolean): void {
   if (!toolsPanel || !toolsToggleBtn) {
     return;
@@ -1076,18 +855,15 @@ function maybePinToolForActiveSession(
   if (!pinOnUse) {
     return;
   }
-
   const sessionId = $activeSessionId.get();
   if (!sessionId) {
     return;
   }
-
   const currentTools = sessionPinnedTools.get(sessionId) ?? [];
   if (!currentTools.includes(tool)) {
     sessionPinnedTools.set(sessionId, [...currentTools, tool]);
     renderPinnedToolsForSession(sessionId);
   }
-
   if (closePanel && toolsPanelOpen) {
     setToolsPanelOpen(false);
   }
@@ -1097,18 +873,15 @@ function renderPinnedToolsForSession(sessionId: string | null): void {
   if (!inlineToolHost) {
     return;
   }
-
   inlineToolHost.replaceChildren();
-
   if (!sessionId) {
     inlineToolHost.hidden = true;
     return;
   }
-
   const pinnedTools = sessionPinnedTools.get(sessionId) ?? [];
   let visibleToolCount = 0;
   for (const tool of pinnedTools) {
-    const button = createToolButton(tool, { pinOnUse: false });
+    const button = createToolButton(tool, false, getToolButtonRenderArgs());
     if (!button.hidden) {
       visibleToolCount += 1;
     }
@@ -1124,7 +897,6 @@ function setLensQuickSettingsSheetOpen(open: boolean): void {
   if (lensSettingsSummaryBtn) {
     lensSettingsSummaryBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-
   if (lensQuickSettingsRow) {
     lensQuickSettingsRow.hidden = !open;
   }
@@ -1135,17 +907,14 @@ function setLensQuickSettingsSheetOpen(open: boolean): void {
 
 function closeFooterTransientUi(): boolean {
   let closedAny = false;
-
   if (toolsPanel && !toolsPanel.hidden) {
     setToolsPanelOpen(false);
     closedAny = true;
   }
-
   if (lensQuickSettingsSheetOpen) {
     setLensQuickSettingsSheetOpen(false);
     closedAny = true;
   }
-
   return closedAny;
 }
 
@@ -1287,7 +1056,7 @@ function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElemen
   syncDraftForActiveSession();
   renderLensAttachmentDrafts($activeSessionId.get());
   ta.scrollTop = 0;
-  resizeTextarea(ta);
+  resizeSmartInputTextarea(ta);
   if (!footerResizeObserver) {
     queueFooterReserveSync();
   }
@@ -1365,31 +1134,15 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
 }
 
 function persistDraftForSession(sessionId: string | null, draftOverride?: string): void {
-  if (!sessionId) return;
-
-  const draft = draftOverride ?? activeTextarea?.value ?? '';
-  if (draft) {
-    sessionDrafts.set(sessionId, draft);
-    return;
-  }
-
-  sessionDrafts.delete(sessionId);
+  persistSessionDraft(sessionDrafts, sessionId, draftOverride ?? activeTextarea?.value ?? '');
 }
 
 function applyDraftToTextarea(
   textarea: HTMLTextAreaElement | null,
   sessionId: string | null,
 ): void {
-  if (!textarea) return;
-
-  const nextValue = sessionId ? (sessionDrafts.get(sessionId) ?? '') : '';
-  if (textarea.value !== nextValue) {
-    textarea.value = nextValue;
-  }
-  textarea.scrollTop = 0;
-  resizeTextarea(textarea);
+  applySessionDraftToTextarea(sessionDrafts, textarea, sessionId, resizeSmartInputTextarea);
 }
-
 function syncDraftForActiveSession(): void {
   const sessionId = $activeSessionId.get();
   applyDraftToTextarea(activeTextarea, sessionId);
@@ -1406,32 +1159,6 @@ export function removeSmartInputSessionState(sessionId: string): void {
     renderPinnedToolsForSession(sessionId);
   }
 }
-
-function resizeTextarea(textarea: HTMLTextAreaElement): void {
-  textarea.style.height = 'auto';
-
-  const computedStyle = getComputedStyle(textarea);
-  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
-  const fallbackFontSize = Number.parseFloat(computedStyle.fontSize) || 16;
-  const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : fallbackFontSize * 1.2;
-  const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
-  const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
-  const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
-  const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
-  const minHeight = Number.parseFloat(computedStyle.minHeight) || 0;
-  const maxHeight =
-    effectiveLineHeight * MAX_TEXTAREA_LINES +
-    paddingTop +
-    paddingBottom +
-    borderTop +
-    borderBottom;
-  const contentHeight = textarea.scrollHeight + borderTop + borderBottom;
-  const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
-
-  textarea.style.height = `${String(nextHeight)}px`;
-  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-}
-
 function beginRecording(): void {
   if (!canUseSmartInputVoice()) return;
   if (isRecording) return;
@@ -1506,22 +1233,6 @@ function getMicButtons(): HTMLButtonElement[] {
   return footerDock
     ? Array.from(footerDock.querySelectorAll<HTMLButtonElement>('.smart-input-mic-btn'))
     : [];
-}
-
-function createLensQuickSettingsField(
-  labelText: string,
-  control: HTMLInputElement | HTMLSelectElement,
-): HTMLLabelElement {
-  const field = document.createElement('label');
-  field.className = 'smart-input-lens-field';
-
-  const label = document.createElement('span');
-  label.className = 'smart-input-lens-label';
-  label.textContent = labelText;
-
-  field.appendChild(label);
-  field.appendChild(control);
-  return field;
 }
 
 function syncLensQuickSettingsControls(): void {
@@ -1609,7 +1320,7 @@ function updateFooterReservedHeight(): void {
 
   const textareaHeight = activeTextarea?.offsetHeight ?? null;
   const collapsedTextareaHeight = activeTextarea
-    ? getCollapsedTextareaHeight(activeTextarea)
+    ? getCollapsedSmartInputTextareaHeight(activeTextarea)
     : null;
   const reserveHeight = calculateAdaptiveFooterReservedHeight({
     dockHeight: footerDock.offsetHeight,
@@ -1639,32 +1350,6 @@ function setAdaptiveFooterReservedHeight(root: HTMLElement, reserveHeight: numbe
   );
 }
 
-function getCollapsedTextareaHeight(textarea: HTMLTextAreaElement): number {
-  const computedStyle = getComputedStyle(textarea);
-  const configuredMinHeight = Number.parseFloat(computedStyle.minHeight);
-  if (Number.isFinite(configuredMinHeight) && configuredMinHeight > 0) {
-    return configuredMinHeight;
-  }
-
-  const lineHeight = Number.parseFloat(computedStyle.lineHeight);
-  const fallbackFontSize = Number.parseFloat(computedStyle.fontSize) || 16;
-  const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : fallbackFontSize * 1.2;
-  const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
-  const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
-  const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
-  const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
-
-  return effectiveLineHeight + paddingTop + paddingBottom + borderTop + borderBottom;
-}
-
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {
   await submitSessionText(sessionId, text);
-}
-
-function isMobileViewport(): boolean {
-  return window.matchMedia(`(max-width: ${String(MOBILE_BREAKPOINT_PX)}px)`).matches;
-}
-
-function isTouchPrimaryDevice(): boolean {
-  return !matchMedia('(hover: hover) and (pointer: fine)').matches;
 }

@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
+const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
 const terminalOptionsSource = readFileSync(path.join(__dirname, 'terminalOptions.ts'), 'utf8');
 
@@ -39,5 +40,14 @@ describe('terminal surface wiring', () => {
   it('wires custom box-drawing glyph rendering to persisted terminal settings', () => {
     expect(terminalOptionsSource).toContain("| 'customGlyphs'");
     expect(terminalOptionsSource).toContain('customGlyphs: currentSettings?.customGlyphs ?? true,');
+  });
+
+  it('does not reclaim terminal focus from Lens, Files, or interactive Command Bay mouseup flows', () => {
+    expect(managerSource).toContain('const FOCUS_RECLAIM_EXEMPT_SELECTOR = [');
+    expect(managerSource).toContain("'.adaptive-footer-dock'");
+    expect(managerSource).toContain("'[data-tab-panel=\"agent\"]'");
+    expect(managerSource).toContain('function hasActiveDocumentSelection(): boolean {');
+    expect(managerSource).toContain('return getActiveTab(activeSessionId) !== \'terminal\';');
+    expect(managerSource).toContain('if (!target || shouldSkipGlobalFocusReclaim(target)) {');
   });
 });
