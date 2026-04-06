@@ -10,7 +10,7 @@ The important architectural point is that MidTerm is not only a terminal rendere
 Browser
 ├─ xterm.js terminals
 ├─ sidebar, layout engine, files/git/commands panels
-├─ Command Bay (smart input, middle manager bar, touch/mobile shell), diagnostics
+├─ Command Bay (smart input, automation bar, touch/mobile shell), diagnostics
 ├─ web preview iframe or detached preview window
 ├─ /ws/mux       binary terminal I/O
 ├─ /ws/state     JSON session/update state
@@ -83,7 +83,7 @@ The browser shell includes:
 - layout modules for split panes and dock overlays
 - session wrappers that add Files tabs plus web, commands, share, git, and experimental Lens surfaces per session
 - feature panels for files, git, commands, and web preview
-- Command Bay modules for smart input, the middle manager bar, touch controller, Lens quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
+- Command Bay modules for smart input, the automation bar, touch controller, Lens quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
 
 State is split between:
 
@@ -194,10 +194,10 @@ Each session wrapper adds:
 ### Command Bay
 
 The Command Bay is the shared active-session footer system beneath Terminal and Lens.
-It is the superset that now contains the old Smart Input composer, the old middle manager bar, the old Lens quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
+It is the superset that now contains the old Smart Input composer, the old automation bar (formerly the middle manager bar), the old Lens quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
 It exists because MidTerm no longer treats those pieces as unrelated bars stacked under the pane.
 - the primary rail hosts Smart Input / the composer when input is visible
-- the automation rail hosts the old middle manager bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands
+- the automation rail hosts the old automation bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands
 - the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal
 - the status rail hosts Lens model / effort / plan / permission awareness or terminal input-mode and keys-toggle status
 - Lens always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode

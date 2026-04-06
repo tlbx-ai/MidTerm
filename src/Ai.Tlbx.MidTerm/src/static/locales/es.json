@@ -160,7 +160,7 @@
   "settings.behavior.keepAwakeHint": "Evita la suspensión o el modo de espera mientras MidTerm tenga al menos una sesión activa. La pantalla aún puede apagarse. En los portátiles Mac, cerrar la tapa sigue poniendo el equipo en suspensión.",
   "settings.behavior.fileRadar": "Radar de Archivos",
   "settings.behavior.sidebarTerminalFilter": "Filtro de terminales en la barra lateral",
-  "settings.behavior.managerBar": "Barra de Administración Central",
+  "settings.behavior.managerBar": "Barra de Automatización",
   "settings.behavior.changelogAfterUpdate": "Mostrar registro de cambios después de actualizar",
   "settings.behavior.installAsApp": "Instalar como Aplicación",
   "settings.behavior.install": "Instalar",

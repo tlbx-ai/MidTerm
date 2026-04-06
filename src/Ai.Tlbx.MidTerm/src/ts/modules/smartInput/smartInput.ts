@@ -1284,14 +1284,17 @@ function syncLensQuickSettingsControls(): void {
   if (lensEffortSelect.value !== effortValue) {
     lensEffortSelect.value = effortValue;
   }
+  lensEffortSelect.dispatchEvent(new Event('midterm:sync'));
 
   if (lensPlanSelect.value !== draft.planMode) {
     lensPlanSelect.value = draft.planMode;
   }
+  lensPlanSelect.dispatchEvent(new Event('midterm:sync'));
 
   if (lensPermissionSelect.value !== draft.permissionMode) {
     lensPermissionSelect.value = draft.permissionMode;
   }
+  lensPermissionSelect.dispatchEvent(new Event('midterm:sync'));
 
   if (lensSettingsSummaryBtn) {
     lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary(draft);

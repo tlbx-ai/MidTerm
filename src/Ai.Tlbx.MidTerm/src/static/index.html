@@ -1747,7 +1747,7 @@
                     </p>
                     <div class="setting-row">
                       <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
-                        >Middle Manager Bar</label
+                        >Automation Bar</label
                       >
                       <input type="checkbox" id="setting-manager-bar" />
                     </div>
@@ -2475,14 +2475,23 @@ Enable terminal key log to capture Enter and modifier events.</pre
             hidden
           ></div>
 
-          <!-- Middle Manager Bar -->
+          <!-- Automation Bar -->
           <div id="manager-bar" class="manager-bar adaptive-footer-rail hidden">
             <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
+            <button
+              class="manager-bar-overflow"
+              id="manager-bar-overflow"
+              data-i18n-title="managerBar.more"
+              title="More automations"
+              hidden
+            >
+              🔽
+            </button>
             <button
               class="manager-bar-add"
               id="manager-bar-add"
               data-i18n-title="managerBar.addButton"
-              title="Add button"
+              title="Add automation"
             >
               +
             </button>
@@ -2860,7 +2869,7 @@ Enable terminal key log to capture Enter and modifier events.</pre
       <div class="modal-content manager-action-modal-content">
         <div class="modal-header">
           <h3 id="manager-action-modal-title" data-i18n="managerBar.modal.title">
-            Setup Middle Manager Action
+            Setup Automation
           </h3>
           <button id="btn-close-manager-action" class="modal-close">&times;</button>
         </div>

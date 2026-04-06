@@ -8207,17 +8207,11 @@ body.shared-session-mode .session-tab-bar {
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
   -webkit-backdrop-filter: blur(14px) saturate(110%);
   backdrop-filter: blur(14px) saturate(110%);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
+  overflow: visible;
 }
 
 .smart-input-lens-settings[hidden] {
   display: none !important;
-}
-
-.smart-input-lens-settings::-webkit-scrollbar {
-  display: none;
 }
 
 .smart-input-lens-field {
@@ -8274,6 +8268,54 @@ body.shared-session-mode .session-tab-bar {
     color 140ms ease;
 }
 
+.smart-input-lens-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.smart-input-lens-control-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(100%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.smart-input-lens-dropdown-trigger {
+  min-width: 78px;
+  justify-content: space-between;
+  gap: 10px;
+  padding-right: 0;
+  text-align: left;
+}
+
+.smart-input-lens-dropdown-trigger-label {
+  white-space: nowrap;
+}
+
+.smart-input-lens-dropdown-trigger-chevron {
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+  font-size: 12px;
+}
+
+.smart-input-lens-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: max(100%, 148px);
+}
+
+.smart-input-lens-dropdown-option.is-selected {
+  background: color-mix(in srgb, var(--accent-blue) 16%, var(--bg-hover));
+  color: var(--text-primary);
+}
+
 .smart-input-lens-control:focus {
   background: color-mix(in srgb, var(--text-input-background, var(--bg-input)) 55%, transparent);
 }
@@ -8285,17 +8327,6 @@ body.shared-session-mode .session-tab-bar {
 
 .smart-input-lens-control::placeholder {
   color: color-mix(in srgb, var(--text-muted) 92%, transparent);
-}
-
-.smart-input-lens-field select.smart-input-lens-control {
-  background-image:
-    linear-gradient(45deg, transparent 50%, color-mix(in srgb, var(--text-muted) 92%, transparent) 50%),
-    linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 92%, transparent) 50%, transparent 50%);
-  background-position:
-    calc(100% - 14px) calc(50% - 1px),
-    calc(100% - 9px) calc(50% - 1px);
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
 }
 
 /* Camera Capture Overlay */
@@ -9849,7 +9880,8 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .manager-btn {
@@ -9878,8 +9910,8 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   justify-content: center;
   min-height: 100%;
+  padding-bottom: 1px;
   line-height: 1;
-  transform: translateY(-0.5px);
 }
 
 .manager-btn-menu {
@@ -9957,6 +9989,12 @@ body.shared-session-mode .session-tab-bar {
   box-shadow: 0 10px 24px var(--shadow-color-lg);
 }
 
+.manager-bar-overflow-popover {
+  max-height: min(320px, calc(100vh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .manager-bar-action-popover.hidden {
   display: none !important;
 }
@@ -10010,6 +10048,40 @@ body.shared-session-mode .session-tab-bar {
     background-color 0.15s,
     color 0.15s,
     border-color 0.15s;
+}
+
+.manager-bar-overflow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--bg-elevated-opaque, var(--bg-elevated));
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--fs-base);
+  line-height: 1;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.manager-bar-overflow:hover {
+  background: var(--bg-active-opaque, var(--bg-active));
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.manager-btn-overflow-hidden {
+  display: none !important;
+}
+
+.manager-bar-overflow-item {
+  min-width: 180px;
 }
 
 .manager-bar-add:hover {
@@ -14408,13 +14480,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   font-size: 13px;
 }
 
+.smart-input-lens-dropdown-trigger {
+  min-height: 24px;
+}
+
 .smart-input-lens-model {
   min-width: 120px;
   max-width: 176px;
-}
-
-.smart-input-lens-settings::-webkit-scrollbar {
-  display: none;
 }
 
 .smart-input-lens-settings[hidden] {
@@ -14454,15 +14526,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-wrap: nowrap;
   justify-content: flex-start;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   white-space: nowrap;
-  scrollbar-width: none;
   margin-inline: auto;
-}
-
-.adaptive-footer-dock .manager-bar-buttons::-webkit-scrollbar {
-  display: none;
 }
 
 .adaptive-footer-dock .manager-btn {
@@ -14502,14 +14568,42 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--text-secondary);
 }
 
+.adaptive-footer-dock .manager-bar-overflow {
+  flex: 0 0 auto;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 10px;
+  padding: 0;
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 78%,
+    transparent 22%
+  );
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+  box-shadow: 0 10px 22px color-mix(in srgb, black 18%, transparent);
+  color: var(--text-secondary);
+}
+
+.adaptive-footer-dock .manager-bar-overflow:hover {
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 72%,
+    var(--bg-hover) 28%
+  );
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
+}
+
 .adaptive-footer-dock .manager-btn-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 100%;
+  padding-bottom: 1px;
   text-align: center;
   line-height: 1;
-  transform: translateY(-0.5px);
 }
 
 .adaptive-footer-dock .manager-btn-menu {

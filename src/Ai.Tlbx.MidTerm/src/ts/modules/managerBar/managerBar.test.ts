@@ -32,6 +32,10 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain("class=\"manager-btn-menu\"");
     expect(managerBarSource).toContain('function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): void {');
     expect(managerBarSource).toContain("popover.className = 'manager-bar-action-popover hidden';");
+    expect(managerBarSource).toContain("overflowBtn = document.getElementById('manager-bar-overflow') as HTMLButtonElement | null;");
+    expect(managerBarSource).toContain('function toggleOverflowMenu(): void {');
+    expect(managerBarSource).toContain('function syncOverflowedButtons(): void {');
+    expect(managerBarSource).toContain("element.classList.add('manager-btn-overflow-hidden');");
     expect(managerBarSource).toContain("if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {");
     expect(managerBarSource).toContain("buttonsEl.addEventListener('pointerdown', (event) => {");
     expect(managerBarSource).toContain("if (!target?.closest('.manager-btn-menu')) {");

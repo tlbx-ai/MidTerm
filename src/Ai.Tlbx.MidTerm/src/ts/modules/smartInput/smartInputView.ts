@@ -116,10 +116,17 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   lensPermissionSelect.addEventListener('change', args.onLensPermissionChange);
 
   lensQuickSettingsRow.appendChild(createLensQuickSettingsField('Model', lensModelInput));
-  lensQuickSettingsRow.appendChild(createLensQuickSettingsField('Effort', lensEffortSelect));
-  lensQuickSettingsRow.appendChild(createLensQuickSettingsField('Plan', lensPlanSelect));
   lensQuickSettingsRow.appendChild(
-    createLensQuickSettingsField('Permissions', lensPermissionSelect),
+    createLensQuickSettingsField('Effort', createLensQuickSettingsDropdown(lensEffortSelect)),
+  );
+  lensQuickSettingsRow.appendChild(
+    createLensQuickSettingsField('Plan', createLensQuickSettingsDropdown(lensPlanSelect)),
+  );
+  lensQuickSettingsRow.appendChild(
+    createLensQuickSettingsField(
+      'Permissions',
+      createLensQuickSettingsDropdown(lensPermissionSelect),
+    ),
   );
 
   const inputRow = document.createElement('div');
@@ -348,10 +355,7 @@ function describeTerminalStatus(inputMode: string | null | undefined): string {
   return t('smartInput.modeKeyboard');
 }
 
-function createLensQuickSettingsField(
-  labelText: string,
-  control: HTMLInputElement | HTMLSelectElement,
-): HTMLLabelElement {
+function createLensQuickSettingsField(labelText: string, control: HTMLElement): HTMLLabelElement {
   const field = document.createElement('label');
   field.className = 'smart-input-lens-field';
 
@@ -362,4 +366,106 @@ function createLensQuickSettingsField(
   field.appendChild(label);
   field.appendChild(control);
   return field;
+}
+
+function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'smart-input-lens-dropdown';
+
+  select.classList.add('smart-input-lens-control-native');
+  select.tabIndex = -1;
+  select.setAttribute('aria-hidden', 'true');
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'smart-input-lens-control smart-input-lens-dropdown-trigger';
+  trigger.setAttribute('aria-haspopup', 'menu');
+  trigger.setAttribute('aria-expanded', 'false');
+
+  const triggerLabel = document.createElement('span');
+  triggerLabel.className = 'smart-input-lens-dropdown-trigger-label';
+
+  const triggerChevron = document.createElement('span');
+  triggerChevron.className = 'smart-input-lens-dropdown-trigger-chevron';
+  triggerChevron.textContent = '▾';
+
+  trigger.appendChild(triggerLabel);
+  trigger.appendChild(triggerChevron);
+
+  const menu = document.createElement('div');
+  menu.className = 'manager-bar-action-popover smart-input-lens-dropdown-menu hidden';
+
+  const closeMenu = (): void => {
+    menu.classList.add('hidden');
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+
+  const syncSelection = (): void => {
+    const selectedOption = [...select.options].find((option) => option.value === select.value);
+    triggerLabel.textContent = selectedOption ? selectedOption.textContent.trim() : '';
+    menu
+      .querySelectorAll<HTMLButtonElement>('.smart-input-lens-dropdown-option')
+      .forEach((button) => {
+        button.classList.toggle('is-selected', button.dataset.value === select.value);
+      });
+  };
+
+  for (const option of [...select.options]) {
+    const optionButton = document.createElement('button');
+    optionButton.type = 'button';
+    optionButton.className = 'manager-bar-action-popover-btn smart-input-lens-dropdown-option';
+    optionButton.dataset.value = option.value;
+    optionButton.textContent = option.textContent || option.value;
+    optionButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (select.value !== option.value) {
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: false }));
+      }
+      syncSelection();
+      closeMenu();
+    });
+    menu.appendChild(optionButton);
+  }
+
+  trigger.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const nextOpen = menu.classList.contains('hidden');
+    document
+      .querySelectorAll<HTMLElement>('.smart-input-lens-dropdown-menu:not(.hidden)')
+      .forEach((openMenu) => {
+        if (openMenu !== menu) {
+          openMenu.classList.add('hidden');
+        }
+      });
+    document
+      .querySelectorAll<HTMLButtonElement>(
+        '.smart-input-lens-dropdown-trigger[aria-expanded="true"]',
+      )
+      .forEach((openTrigger) => {
+        if (openTrigger !== trigger) {
+          openTrigger.setAttribute('aria-expanded', 'false');
+        }
+      });
+    menu.classList.toggle('hidden', !nextOpen);
+    trigger.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+  });
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Node) || !wrapper.contains(target)) {
+      closeMenu();
+    }
+  });
+
+  select.addEventListener('change', syncSelection);
+  select.addEventListener('midterm:sync', syncSelection as EventListener);
+  syncSelection();
+
+  wrapper.appendChild(select);
+  wrapper.appendChild(trigger);
+  wrapper.appendChild(menu);
+  return wrapper;
 }

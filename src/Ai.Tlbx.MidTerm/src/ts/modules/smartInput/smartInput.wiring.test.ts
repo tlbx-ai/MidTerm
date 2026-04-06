@@ -27,6 +27,8 @@ describe('smart input tab wiring', () => {
   it('keeps Lens quick settings hidden when the hidden attribute is set', () => {
     expect(css).toContain('.smart-input-lens-settings[hidden] {');
     expect(css).toContain('display: none !important;');
+    expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
+    expect(viewSource).toContain("manager-bar-action-popover smart-input-lens-dropdown-menu hidden");
   });
 
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {
@@ -35,6 +37,7 @@ describe('smart input tab wiring', () => {
     expect(html).toContain('id="adaptive-footer-primary"');
     expect(html).toContain('id="adaptive-footer-context"');
     expect(html).toContain('id="adaptive-footer-status"');
+    expect(html).toContain('id="manager-bar-overflow"');
     expect(source).toContain('function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {');
     expect(source).toContain('showAutomation');
     expect(source).toContain('showStatus');
@@ -80,6 +83,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('margin: 6px 0 0;');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
     expect(css).toContain('overflow: visible;');
+    expect(css).toContain('.manager-btn-overflow-hidden {');
   });
 
   it('uses an explicit picker helper for attach and photo tools instead of relying on raw hidden-input clicks', () => {

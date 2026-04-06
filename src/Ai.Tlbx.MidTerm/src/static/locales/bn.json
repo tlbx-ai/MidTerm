@@ -160,7 +160,7 @@
   "settings.behavior.keepAwakeHint": "MidTerm-এ অন্তত একটি সক্রিয় সেশন থাকলে স্লিপ বা স্ট্যান্ডবাই প্রতিরোধ করে। স্ক্রিন তবুও বন্ধ হতে পারে। Mac ল্যাপটপে ঢাকনা বন্ধ করলে কম্পিউটার তবুও স্লিপে যায়।",
   "settings.behavior.fileRadar": "File Radar",
   "settings.behavior.sidebarTerminalFilter": "সাইডবার টার্মিনাল ফিল্টার",
-  "settings.behavior.managerBar": "Middle Manager Bar",
+  "settings.behavior.managerBar": "Automation Bar",
   "settings.behavior.changelogAfterUpdate": "আপডেটের পরে পরিবর্তন দেখান",
   "settings.behavior.installAsApp": "অ্যাপ হিসেবে ইনস্টল",
   "settings.behavior.install": "ইনস্টল",

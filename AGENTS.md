@@ -70,3 +70,8 @@ Rules:
 - Read that document before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, or hierarchy changes.
 - Treat `docs/LensDesign.md` as a maintained design contract, not a one-off note.
 - Any future Lens UI change that affects fundamentals must update `docs/LensDesign.md` in the same work so the current design understanding remains traceable for future sessions.
+
+## Command Bay Naming
+
+- In user-facing MidTerm UI and docs, prefer `Automation Bar` over the old `Middle Manager Bar` name.
+- `middle manager bar` may still appear in older code identifiers and APIs, but new visible labels and architectural descriptions should use `Automation Bar`.

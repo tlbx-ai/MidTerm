@@ -37,10 +37,15 @@ let barEl: HTMLElement | null = null;
 let queueEl: HTMLElement | null = null;
 let buttonsEl: HTMLElement | null = null;
 let addBtn: HTMLElement | null = null;
+let overflowBtn: HTMLButtonElement | null = null;
 let mobileDropdown: HTMLElement | null = null;
 let menuPopoverEl: HTMLElement | null = null;
+let overflowPopoverEl: HTMLElement | null = null;
 let openMenuButtonId: string | null = null;
 let openMenuAnchorEl: HTMLButtonElement | null = null;
+let overflowActionIds: string[] = [];
+let managerBarResizeObserver: ResizeObserver | null = null;
+let overflowLayoutFrameId: number | null = null;
 
 let modalEl: HTMLElement | null = null;
 let modalBackdrop: HTMLElement | null = null;
@@ -88,19 +93,27 @@ export function initManagerBar(): void {
   queueEl = document.getElementById('manager-bar-queue');
   buttonsEl = document.getElementById('manager-bar-buttons');
   addBtn = document.getElementById('manager-bar-add');
+  overflowBtn = document.getElementById('manager-bar-overflow') as HTMLButtonElement | null;
   mobileDropdown = document.getElementById('mobile-actions-dropdown');
 
   ensureManagerActionModalElements();
   ensureMenuPopover();
+  ensureOverflowPopover();
 
-  if (!barEl || !buttonsEl || !addBtn || !queueEl) return;
+  if (!barEl || !buttonsEl || !addBtn || !overflowBtn || !queueEl) return;
 
   const syncManagerBarVisibility = (): void => {
     const settings = $currentSettings.get();
     const visible = shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
     barEl?.classList.toggle('hidden', !visible);
+    if (!visible) {
+      overflowBtn?.setAttribute('hidden', '');
+      overflowActionIds = [];
+      closeOpenManagerOverflow();
+    }
     renderMobileButtons(visible ? renderedButtons : []);
     renderQueue();
+    scheduleOverflowLayout();
   };
 
   $currentSettings.subscribe((settings) => {
@@ -160,6 +173,7 @@ export function initManagerBar(): void {
   });
 
   document.addEventListener('click', handleDocumentClickForManagerMenu);
+  document.addEventListener('click', handleDocumentClickForManagerOverflow);
 
   addBtn.addEventListener('click', (event) => {
     event.preventDefault();
@@ -168,16 +182,31 @@ export function initManagerBar(): void {
     openActionModal();
   });
 
+  overflowBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleOverflowMenu();
+  });
+
   window.addEventListener('resize', () => {
     positionManagerActionMenu();
+    scheduleOverflowLayout();
   });
   document.addEventListener(
     'scroll',
     () => {
       positionManagerActionMenu();
+      positionManagerOverflowMenu();
     },
     true,
   );
+  managerBarResizeObserver = new ResizeObserver(() => {
+    scheduleOverflowLayout();
+    positionManagerActionMenu();
+    positionManagerOverflowMenu();
+  });
+  managerBarResizeObserver.observe(barEl);
+  managerBarResizeObserver.observe(buttonsEl);
 
   if (mobileDropdown) {
     mobileDropdown.addEventListener('click', (event) => {
@@ -288,6 +317,17 @@ function ensureMenuPopover(): void {
   menuPopoverEl = popover;
 }
 
+function ensureOverflowPopover(): void {
+  if (overflowPopoverEl) {
+    return;
+  }
+
+  const popover = document.createElement('div');
+  popover.className = 'manager-bar-action-popover manager-bar-overflow-popover hidden';
+  document.body.appendChild(popover);
+  overflowPopoverEl = popover;
+}
+
 function bindModalEvents(): void {
   modalCloseBtn?.addEventListener('click', closeActionModal);
   modalCancelBtn?.addEventListener('click', closeActionModal);
@@ -358,6 +398,7 @@ function renderButtons(buttons: NormalizedManagerButton[]): void {
   if (!buttonsEl) return;
 
   closeOpenManagerMenus();
+  closeOpenManagerOverflow();
   buttonsEl.innerHTML = '';
   for (const button of buttons) {
     const wrapper = document.createElement('span');
@@ -368,6 +409,7 @@ function renderButtons(buttons: NormalizedManagerButton[]): void {
       `<button class="manager-btn-menu" title="${escapeHtml(t('session.actions'))}" aria-label="${escapeHtml(t('session.actions'))}" aria-haspopup="menu" aria-expanded="false" type="button">${icon('menu')}</button>`;
     buttonsEl.appendChild(wrapper);
   }
+  scheduleOverflowLayout();
 }
 
 function handleDocumentClickForManagerMenu(event: MouseEvent): void {
@@ -377,6 +419,18 @@ function handleDocumentClickForManagerMenu(event: MouseEvent): void {
   }
 
   closeOpenManagerMenus();
+}
+
+function handleDocumentClickForManagerOverflow(event: MouseEvent): void {
+  const target = resolveEventElement(event.target);
+  if (
+    target?.closest('.manager-bar-overflow') ||
+    target?.closest('.manager-bar-overflow-popover')
+  ) {
+    return;
+  }
+
+  closeOpenManagerOverflow();
 }
 
 function closeOpenManagerMenus(): boolean {
@@ -406,6 +460,20 @@ function closeOpenManagerMenus(): boolean {
   return closedAny;
 }
 
+function closeOpenManagerOverflow(): boolean {
+  if (!overflowBtn || !overflowPopoverEl) {
+    return false;
+  }
+
+  const wasOpen = !overflowPopoverEl.classList.contains('hidden');
+  overflowPopoverEl.classList.add('hidden');
+  overflowPopoverEl.replaceChildren();
+  overflowPopoverEl.style.removeProperty('left');
+  overflowPopoverEl.style.removeProperty('top');
+  overflowBtn.setAttribute('aria-expanded', 'false');
+  return wasOpen;
+}
+
 function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): void {
   const isSameMenu = openMenuButtonId === actionId && !menuPopoverEl?.classList.contains('hidden');
   closeOpenManagerMenus();
@@ -425,6 +493,24 @@ function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): v
   openMenuAnchorEl = anchor;
   menuPopoverEl?.classList.remove('hidden');
   positionManagerActionMenu();
+}
+
+function toggleOverflowMenu(): void {
+  if (!overflowBtn || !overflowPopoverEl || overflowActionIds.length === 0) {
+    return;
+  }
+
+  const isOpen = !overflowPopoverEl.classList.contains('hidden');
+  if (isOpen) {
+    closeOpenManagerOverflow();
+    return;
+  }
+
+  closeOpenManagerMenus();
+  renderOverflowMenuItems();
+  overflowPopoverEl.classList.remove('hidden');
+  overflowBtn.setAttribute('aria-expanded', 'true');
+  positionManagerOverflowMenu();
 }
 
 function positionManagerActionMenu(): void {
@@ -453,6 +539,145 @@ function positionManagerActionMenu(): void {
 
   menuPopoverEl.style.left = `${String(Math.round(left))}px`;
   menuPopoverEl.style.top = `${String(Math.round(top))}px`;
+}
+
+function positionManagerOverflowMenu(): void {
+  if (!overflowPopoverEl || !overflowBtn || overflowPopoverEl.classList.contains('hidden')) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = overflowBtn.getBoundingClientRect();
+  const popoverRect = overflowPopoverEl.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
+
+  let left = triggerRect.right - popoverRect.width;
+  left = Math.max(
+    viewportPadding,
+    Math.min(left, window.innerWidth - viewportPadding - popoverRect.width),
+  );
+
+  let top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
+  top = Math.max(
+    viewportPadding,
+    Math.min(top, window.innerHeight - viewportPadding - popoverRect.height),
+  );
+
+  overflowPopoverEl.style.left = `${String(Math.round(left))}px`;
+  overflowPopoverEl.style.top = `${String(Math.round(top))}px`;
+}
+
+function renderOverflowMenuItems(): void {
+  if (!overflowPopoverEl) {
+    return;
+  }
+
+  overflowPopoverEl.replaceChildren();
+  for (const actionId of overflowActionIds) {
+    const action = renderedButtons.find((entry) => entry.id === actionId);
+    if (!action) {
+      continue;
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
+    button.textContent = action.label;
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeOpenManagerOverflow();
+      runButton(action.id);
+    });
+    overflowPopoverEl.appendChild(button);
+  }
+}
+
+function scheduleOverflowLayout(): void {
+  if (overflowLayoutFrameId !== null) {
+    window.cancelAnimationFrame(overflowLayoutFrameId);
+  }
+
+  overflowLayoutFrameId = window.requestAnimationFrame(() => {
+    overflowLayoutFrameId = null;
+    syncOverflowedButtons();
+  });
+}
+
+function syncOverflowedButtons(): void {
+  if (!barEl || !buttonsEl || !addBtn || !overflowBtn) {
+    return;
+  }
+
+  const buttonElements = [...buttonsEl.querySelectorAll<HTMLElement>('.manager-btn')];
+  if (buttonElements.length === 0) {
+    buttonsEl.style.maxWidth = '';
+    overflowBtn.setAttribute('hidden', '');
+    overflowActionIds = [];
+    closeOpenManagerOverflow();
+    return;
+  }
+
+  for (const element of buttonElements) {
+    element.classList.remove('manager-btn-overflow-hidden');
+  }
+
+  const gap = 6;
+  const overflowWidth = 32;
+  const availableBarWidth = Math.max(0, Math.floor(barEl.clientWidth));
+  const addWidth = Math.ceil(addBtn.getBoundingClientRect().width);
+  const fullAvailableWidth = Math.max(0, availableBarWidth - addWidth - gap);
+
+  const buttonWidths = buttonElements.map((element) =>
+    Math.ceil(element.getBoundingClientRect().width),
+  );
+  const totalWidth = buttonWidths.reduce(
+    (sum, width, index) => sum + width + (index > 0 ? gap : 0),
+    0,
+  );
+
+  if (totalWidth <= fullAvailableWidth) {
+    buttonsEl.style.maxWidth = `${String(fullAvailableWidth)}px`;
+    overflowBtn.setAttribute('hidden', '');
+    overflowActionIds = [];
+    closeOpenManagerOverflow();
+    return;
+  }
+
+  const visibleBudget = Math.max(0, fullAvailableWidth - overflowWidth - gap);
+  const nextOverflowIds: string[] = [];
+  let consumedWidth = 0;
+
+  buttonElements.forEach((element, index) => {
+    const width = (buttonWidths[index] ?? 0) + (index > 0 ? gap : 0);
+    const id = element.dataset.id ?? '';
+    if (consumedWidth + width <= visibleBudget || consumedWidth === 0) {
+      consumedWidth += width;
+      element.classList.remove('manager-btn-overflow-hidden');
+      return;
+    }
+
+    element.classList.add('manager-btn-overflow-hidden');
+    if (id) {
+      nextOverflowIds.push(id);
+    }
+  });
+
+  buttonsEl.style.maxWidth = `${String(Math.max(0, visibleBudget))}px`;
+  overflowActionIds = nextOverflowIds;
+  if (overflowActionIds.length === 0) {
+    overflowBtn.setAttribute('hidden', '');
+    closeOpenManagerOverflow();
+    return;
+  }
+
+  overflowBtn.removeAttribute('hidden');
+  if (overflowPopoverEl && !overflowPopoverEl.classList.contains('hidden')) {
+    renderOverflowMenuItems();
+    positionManagerOverflowMenu();
+  }
 }
 
 function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
