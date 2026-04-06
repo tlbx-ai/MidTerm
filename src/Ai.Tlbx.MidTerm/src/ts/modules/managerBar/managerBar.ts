@@ -324,6 +324,18 @@ function ensureOverflowPopover(): void {
 
   const popover = document.createElement('div');
   popover.className = 'manager-bar-action-popover manager-bar-overflow-popover hidden';
+  popover.addEventListener('click', (event) => {
+    const target = resolveEventElement(event.target);
+    const actionButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item');
+    if (!actionButton?.dataset.actionId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeOpenManagerOverflow();
+    runButton(actionButton.dataset.actionId);
+  });
   document.body.appendChild(popover);
   overflowPopoverEl = popover;
 }
@@ -584,13 +596,8 @@ function renderOverflowMenuItems(): void {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
+    button.dataset.actionId = action.id;
     button.textContent = action.label;
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      closeOpenManagerOverflow();
-      runButton(action.id);
-    });
     overflowPopoverEl.appendChild(button);
   }
 }
@@ -611,6 +618,10 @@ function syncOverflowedButtons(): void {
     return;
   }
 
+  if (barEl.classList.contains('hidden')) {
+    return;
+  }
+
   const buttonElements = [...buttonsEl.querySelectorAll<HTMLElement>('.manager-btn')];
   if (buttonElements.length === 0) {
     buttonsEl.style.maxWidth = '';
@@ -624,11 +635,14 @@ function syncOverflowedButtons(): void {
     element.classList.remove('manager-btn-overflow-hidden');
   }
 
+  buttonsEl.style.maxWidth = '';
+  overflowBtn.setAttribute('hidden', '');
+
   const gap = 6;
   const overflowWidth = 32;
-  const availableBarWidth = Math.max(0, Math.floor(barEl.clientWidth));
+  const railWidth = Math.max(0, Math.floor(barEl.parentElement?.clientWidth ?? barEl.clientWidth));
   const addWidth = Math.ceil(addBtn.getBoundingClientRect().width);
-  const fullAvailableWidth = Math.max(0, availableBarWidth - addWidth - gap);
+  const fullAvailableWidth = Math.max(0, railWidth - addWidth - gap);
 
   const buttonWidths = buttonElements.map((element) =>
     Math.ceil(element.getBoundingClientRect().width),

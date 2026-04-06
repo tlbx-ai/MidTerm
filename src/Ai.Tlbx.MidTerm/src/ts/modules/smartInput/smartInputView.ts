@@ -355,8 +355,8 @@ function describeTerminalStatus(inputMode: string | null | undefined): string {
   return t('smartInput.modeKeyboard');
 }
 
-function createLensQuickSettingsField(labelText: string, control: HTMLElement): HTMLLabelElement {
-  const field = document.createElement('label');
+function createLensQuickSettingsField(labelText: string, control: HTMLElement): HTMLDivElement {
+  const field = document.createElement('div');
   field.className = 'smart-input-lens-field';
 
   const label = document.createElement('span');
