@@ -65,7 +65,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-symbol-shadow: drop-shadow(');
     expect(css).toContain('.smart-input-tools-toggle::before,');
     expect(css).toContain('font-size: 16px;');
-    expect(metricsSource).toContain('const MAX_TEXTAREA_LINES = 5;');
+    expect(metricsSource).toContain('const MAX_TEXTAREA_OVERLAY_LINES = 8;');
+    expect(metricsSource).toContain('const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;');
   });
 
   it('keeps Lens attachment drafts in the composer until send-time upload', () => {
@@ -87,6 +88,7 @@ describe('smart input tab wiring', () => {
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
     expect(css).toContain('margin: 6px 0 0;');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
+    expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.manager-btn-overflow-hidden {');
   });

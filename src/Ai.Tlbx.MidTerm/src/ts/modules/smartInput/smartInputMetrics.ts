@@ -1,4 +1,6 @@
-const MAX_TEXTAREA_LINES = 5;
+const COLLAPSED_TEXTAREA_LINES = 1;
+const MAX_TEXTAREA_OVERLAY_LINES = 8;
+const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;
 const MOBILE_BREAKPOINT_PX = 768;
 
 export function resizeSmartInputTextarea(textarea: HTMLTextAreaElement): void {
@@ -14,7 +16,7 @@ export function resizeSmartInputTextarea(textarea: HTMLTextAreaElement): void {
   const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
   const minHeight = Number.parseFloat(computedStyle.minHeight) || 0;
   const maxHeight =
-    effectiveLineHeight * MAX_TEXTAREA_LINES +
+    effectiveLineHeight * MAX_VISIBLE_TEXTAREA_LINES +
     paddingTop +
     paddingBottom +
     borderTop +
