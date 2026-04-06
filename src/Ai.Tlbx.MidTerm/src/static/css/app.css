@@ -13780,23 +13780,41 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: end;
+  display: flex;
+  align-items: flex-end;
   gap: 6px;
   width: 100%;
 }
 
 .smart-input-textarea {
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 44px;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border: 1px solid var(--border-subtle);
   background: color-mix(
     in srgb,
     var(--text-input-background, var(--bg-input)) 92%,
     var(--terminal-ui-background, var(--terminal-bg))
   );
+}
+
+.smart-input-textarea:focus {
+  border-color: var(--border-subtle);
+  outline: none;
+  box-shadow: none;
+}
+
+.smart-input-inline-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.smart-input-inline-tools[hidden] {
+  display: none !important;
 }
 
 .smart-input-tools-toggle,
@@ -13837,18 +13855,20 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  width: 100%;
+  align-self: flex-end;
+  width: fit-content;
+  max-width: min(100%, 232px);
   min-height: 0;
-  margin: 6px 0 0;
-  padding: 8px;
+  margin: 4px 0 0 auto;
+  padding: 6px;
   border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
   border-radius: 12px;
   background: color-mix(
     in srgb,
-    var(--terminal-ui-background, var(--terminal-bg)) 94%,
-    transparent
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 92%,
+    black 8%
   );
-  box-shadow: 0 14px 28px color-mix(in srgb, black 26%, transparent);
+  box-shadow: 0 10px 22px color-mix(in srgb, black 22%, transparent);
 }
 
 .smart-input-tools-surface[hidden] {
@@ -13858,7 +13878,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-tools-strip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .smart-input-mic-btn,
@@ -14014,7 +14034,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   gap: 6px;
   width: fit-content;
   max-width: 100%;
-  padding: 4px 0 0;
+  padding: 2px 0 0;
   background: none;
   border: 0;
   margin: 0;
@@ -14040,23 +14060,42 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock .manager-btn {
-  min-height: 34px;
-  padding: 0 28px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 30px 0 14px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, black 4%);
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 88%,
+    black 12%
+  );
   color: var(--text-secondary);
-  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
 }
 
 .adaptive-footer-dock .manager-bar-add {
   flex: 0 0 auto;
-  min-width: 34px;
-  min-height: 34px;
+  min-width: 28px;
+  min-height: 28px;
   border-radius: 10px;
   padding: 0;
-  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, black 4%);
-  border: 1px solid color-mix(in srgb, var(--border-color) 76%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 88%,
+    black 12%
+  );
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
   color: var(--text-secondary);
+}
+
+.adaptive-footer-dock .manager-btn-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  text-align: center;
 }
 
 .adaptive-footer-dock .manager-btn-menu {
@@ -14066,12 +14105,20 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock .manager-btn:hover {
-  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, var(--bg-hover));
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
+    var(--bg-hover)
+  );
   border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
 }
 
 .adaptive-footer-dock .manager-bar-add:hover {
-  background: color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, var(--bg-hover));
+  background: color-mix(
+    in srgb,
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
+    var(--bg-hover)
+  );
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--text-secondary) 72%, transparent);
 }
@@ -14197,7 +14244,6 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
   }
 
   .smart-input-row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: stretch;
   }
 
@@ -14225,6 +14271,10 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
+  }
+
+  .smart-input-inline-tools {
+    gap: 4px;
   }
 
   .adaptive-footer-context .smart-input-tools-strip .smart-input-mic-btn,

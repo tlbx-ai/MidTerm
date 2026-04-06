@@ -41,11 +41,13 @@ let footerStatusHost: HTMLDivElement | null = null;
 let dockedBar: HTMLDivElement | null = null;
 let touchControllerEl: HTMLElement | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
-let activeMicBtn: HTMLButtonElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let toolsToggleBtn: HTMLButtonElement | null = null;
 let toolsPanel: HTMLDivElement | null = null;
 let toolButtonsStrip: HTMLDivElement | null = null;
+let inlineToolHost: HTMLDivElement | null = null;
+let sharedPhotoInput: HTMLInputElement | null = null;
+let sharedAttachInput: HTMLInputElement | null = null;
 let toolsPanelOpen = false;
 let lensQuickSettingsRow: HTMLDivElement | null = null;
 let lensModelInput: HTMLInputElement | null = null;
@@ -68,6 +70,11 @@ const MAX_TEXTAREA_LINES = 5;
 const AUTO_SEND_LONG_PRESS_MS = 520;
 const MOBILE_BREAKPOINT_PX = 768;
 const sessionDrafts = new Map<string, string>();
+const sessionPinnedTools = new Map<string, ToolKind[]>();
+
+type ToolKind = 'mic' | 'attach' | 'photo';
+
+const TOOL_ORDER: ToolKind[] = ['mic', 'attach', 'photo'];
 
 interface AdaptiveFooterLayoutState {
   activeSessionId: string | null | undefined;
@@ -550,6 +557,36 @@ function createInputElements(): {
   nextToolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
   toolsToggleBtn = nextToolsToggleBtn;
 
+  const nextInlineToolHost = document.createElement('div');
+  nextInlineToolHost.className = 'smart-input-inline-tools';
+  nextInlineToolHost.hidden = true;
+  inlineToolHost = nextInlineToolHost;
+
+  const photoInput = document.createElement('input');
+  photoInput.type = 'file';
+  photoInput.accept = 'image/*';
+  photoInput.capture = 'environment';
+  photoInput.hidden = true;
+  photoInput.addEventListener('change', () => {
+    if (photoInput.files?.length) {
+      void handleFileDrop(photoInput.files);
+    }
+    photoInput.value = '';
+  });
+  sharedPhotoInput = photoInput;
+
+  const attachInput = document.createElement('input');
+  attachInput.type = 'file';
+  attachInput.multiple = true;
+  attachInput.hidden = true;
+  attachInput.addEventListener('change', () => {
+    if (attachInput.files?.length) {
+      void handleFileDrop(attachInput.files);
+    }
+    attachInput.value = '';
+  });
+  sharedAttachInput = attachInput;
+
   const toolsSurface = document.createElement('div');
   toolsSurface.className = 'smart-input-tools-surface';
   toolsSurface.hidden = true;
@@ -635,8 +672,11 @@ function createInputElements(): {
   });
 
   inputRow.appendChild(textarea);
+  inputRow.appendChild(nextInlineToolHost);
   inputRow.appendChild(nextToolsToggleBtn);
   inputRow.appendChild(nextSendBtn);
+  inputRow.appendChild(photoInput);
+  inputRow.appendChild(attachInput);
 
   return { inputRow, toolsStrip, toolsSurface };
 }
@@ -645,86 +685,67 @@ function createToolButtonsStrip(): HTMLDivElement {
   const strip = document.createElement('div');
   strip.className = 'smart-input-tools-strip';
 
-  const micBtn = document.createElement('button');
-  micBtn.type = 'button';
-  micBtn.className = 'smart-input-mic-btn';
-  micBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
-  micBtn.title = t('smartInput.mic');
-  micBtn.hidden = !canUseSmartInputVoice();
-  activeMicBtn = micBtn;
+  for (const tool of TOOL_ORDER) {
+    strip.appendChild(createToolButton(tool, { pinOnUse: true }));
+  }
 
-  micBtn.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    beginRecording();
-  });
-
-  micBtn.addEventListener('pointerup', () => {
-    endRecording();
-  });
-
-  micBtn.addEventListener('pointerleave', () => {
-    if (isRecording) {
-      endRecording();
-    }
-  });
-
-  const photoBtn = document.createElement('button');
-  photoBtn.type = 'button';
-  photoBtn.className = 'smart-input-photo-btn';
-  photoBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
-  photoBtn.title = t('smartInput.photo');
-
-  const photoInput = document.createElement('input');
-  photoInput.type = 'file';
-  photoInput.accept = 'image/*';
-  photoInput.capture = 'environment';
-  photoInput.hidden = true;
-
-  photoBtn.addEventListener('click', () => {
-    if (isTouchPrimaryDevice()) {
-      photoInput.click();
-      return;
-    }
-
-    void captureFromWebcam();
-  });
-  photoInput.addEventListener('change', () => {
-    if (photoInput.files?.length) {
-      void handleFileDrop(photoInput.files);
-    }
-    photoInput.value = '';
-  });
-
-  const attachBtn = document.createElement('button');
-  attachBtn.type = 'button';
-  attachBtn.className = 'smart-input-attach-btn';
-  attachBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
-  attachBtn.title = t('smartInput.attach');
-
-  const attachInput = document.createElement('input');
-  attachInput.type = 'file';
-  attachInput.multiple = true;
-  attachInput.hidden = true;
-
-  attachBtn.addEventListener('click', () => {
-    attachInput.click();
-  });
-  attachInput.addEventListener('change', () => {
-    if (attachInput.files?.length) {
-      void handleFileDrop(attachInput.files);
-    }
-    attachInput.value = '';
-  });
-
-  strip.appendChild(micBtn);
-  strip.appendChild(photoBtn);
-  strip.appendChild(photoInput);
-  strip.appendChild(attachBtn);
-  strip.appendChild(attachInput);
   return strip;
+}
+
+function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.tool = tool;
+
+  switch (tool) {
+    case 'mic':
+      button.className = 'smart-input-mic-btn';
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
+      button.title = t('smartInput.mic');
+      button.hidden = !canUseSmartInputVoice();
+      button.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        maybePinToolForActiveSession(tool, options.pinOnUse, false);
+        beginRecording();
+      });
+      button.addEventListener('pointerup', () => {
+        endRecording();
+      });
+      button.addEventListener('pointerleave', () => {
+        if (isRecording) {
+          endRecording();
+        }
+      });
+      break;
+    case 'attach':
+      button.className = 'smart-input-attach-btn';
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
+      button.title = t('smartInput.attach');
+      button.addEventListener('click', () => {
+        maybePinToolForActiveSession(tool, options.pinOnUse);
+        sharedAttachInput?.click();
+      });
+      break;
+    case 'photo':
+      button.className = 'smart-input-photo-btn';
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
+      button.title = t('smartInput.photo');
+      button.addEventListener('click', () => {
+        maybePinToolForActiveSession(tool, options.pinOnUse);
+        if (isTouchPrimaryDevice()) {
+          sharedPhotoInput?.click();
+          return;
+        }
+
+        void captureFromWebcam();
+      });
+      break;
+  }
+
+  return button;
 }
 
 function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -749,6 +770,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   const toolsInlineInContext = layoutState.lensActive && layoutState.isMobile;
+  renderPinnedToolsForSession(toolsInlineInContext ? null : (layoutState.activeSessionId ?? null));
   toolsToggleBtn?.toggleAttribute('hidden', toolsInlineInContext);
   if (toolsInlineInContext) {
     setToolsPanelOpen(false);
@@ -949,6 +971,57 @@ function setToolsPanelOpen(open: boolean): void {
   }
 }
 
+function maybePinToolForActiveSession(
+  tool: ToolKind,
+  pinOnUse: boolean,
+  closePanel: boolean = true,
+): void {
+  if (!pinOnUse) {
+    return;
+  }
+
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    return;
+  }
+
+  const currentTools = sessionPinnedTools.get(sessionId) ?? [];
+  if (!currentTools.includes(tool)) {
+    sessionPinnedTools.set(sessionId, [...currentTools, tool]);
+    renderPinnedToolsForSession(sessionId);
+  }
+
+  if (closePanel && toolsPanelOpen) {
+    setToolsPanelOpen(false);
+  }
+}
+
+function renderPinnedToolsForSession(sessionId: string | null): void {
+  if (!inlineToolHost) {
+    return;
+  }
+
+  inlineToolHost.replaceChildren();
+
+  if (!sessionId) {
+    inlineToolHost.hidden = true;
+    return;
+  }
+
+  const pinnedTools = sessionPinnedTools.get(sessionId) ?? [];
+  let visibleToolCount = 0;
+  for (const tool of pinnedTools) {
+    const button = createToolButton(tool, { pinOnUse: false });
+    if (!button.hidden) {
+      visibleToolCount += 1;
+    }
+    inlineToolHost.appendChild(button);
+  }
+
+  inlineToolHost.hidden = visibleToolCount === 0;
+  syncVoiceInputAvailability();
+}
+
 function setLensQuickSettingsSheetOpen(open: boolean): void {
   lensQuickSettingsSheetOpen = open;
   if (lensSettingsSummaryBtn) {
@@ -1051,8 +1124,10 @@ function syncDraftForActiveSession(): void {
 
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
+  sessionPinnedTools.delete(sessionId);
   if ($activeSessionId.get() === sessionId) {
     syncDraftForActiveSession();
+    renderPinnedToolsForSession(sessionId);
   }
 }
 
@@ -1085,7 +1160,9 @@ function beginRecording(): void {
   if (!canUseSmartInputVoice()) return;
   if (isRecording) return;
   isRecording = true;
-  activeMicBtn?.classList.add('recording');
+  getMicButtons().forEach((button) => {
+    button.classList.add('recording');
+  });
 
   const ta = activeTextarea;
   startTranscription(
@@ -1116,7 +1193,9 @@ function sendDirectly(text: string): void {
 function endRecording(): void {
   if (!isRecording) return;
   isRecording = false;
-  activeMicBtn?.classList.remove('recording');
+  getMicButtons().forEach((button) => {
+    button.classList.remove('recording');
+  });
   void stopTranscription();
 }
 
@@ -1126,9 +1205,9 @@ function canUseSmartInputVoice(): boolean {
 
 function syncVoiceInputAvailability(): void {
   const enabled = canUseSmartInputVoice();
-  if (activeMicBtn) {
-    activeMicBtn.hidden = !enabled;
-  }
+  getMicButtons().forEach((button) => {
+    button.hidden = !enabled;
+  });
 
   if (!enabled && isRecording) {
     endRecording();
@@ -1145,6 +1224,12 @@ function updateAutoSendVisibility(): void {
     sendBtn.setAttribute('data-autosend', active ? 'true' : 'false');
     sendBtn.title = active ? t('smartInput.autoSendOnHint') : t('smartInput.sendGestureHint');
   }
+}
+
+function getMicButtons(): HTMLButtonElement[] {
+  return footerDock
+    ? Array.from(footerDock.querySelectorAll<HTMLButtonElement>('.smart-input-mic-btn'))
+    : [];
 }
 
 function createLensQuickSettingsField(
