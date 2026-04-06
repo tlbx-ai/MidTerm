@@ -724,10 +724,11 @@ function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLB
         '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
       button.title = t('smartInput.attach');
       button.addEventListener('click', (event) => {
+        event.preventDefault();
         event.stopPropagation();
         maybePinToolForActiveSession(tool, options.pinOnUse);
         if (sharedAttachInput) {
-          sharedAttachInput.click();
+          openFileInputPicker(sharedAttachInput);
         }
       });
       break;
@@ -737,11 +738,12 @@ function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLB
         '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
       button.title = t('smartInput.photo');
       button.addEventListener('click', (event) => {
+        event.preventDefault();
         event.stopPropagation();
         maybePinToolForActiveSession(tool, options.pinOnUse);
         if (isTouchPrimaryDevice()) {
           if (sharedPhotoInput) {
-            sharedPhotoInput.click();
+            openFileInputPicker(sharedPhotoInput);
           }
           return;
         }
@@ -752,6 +754,19 @@ function createToolButton(tool: ToolKind, options: { pinOnUse: boolean }): HTMLB
   }
 
   return button;
+}
+
+function openFileInputPicker(input: HTMLInputElement): void {
+  try {
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+      return;
+    }
+  } catch {
+    // Fall back to click() when the browser rejects showPicker on this surface.
+  }
+
+  input.click();
 }
 
 function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {

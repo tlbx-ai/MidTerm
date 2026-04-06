@@ -69,6 +69,13 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('overflow: visible;');
   });
 
+  it('uses an explicit picker helper for attach and photo tools instead of relying on raw hidden-input clicks', () => {
+    expect(source).toContain('function openFileInputPicker(input: HTMLInputElement): void {');
+    expect(source).toContain("if (typeof input.showPicker === 'function')");
+    expect(source).toContain('openFileInputPicker(sharedAttachInput);');
+    expect(source).toContain('openFileInputPicker(sharedPhotoInput);');
+  });
+
   it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {
     expect(source).toContain("if (e.key === 'Escape' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {");
     expect(source).toContain('void handleLensEscape(sessionId);');

@@ -241,7 +241,13 @@ describe('settings persistence wiring', () => {
   it('keeps manager bar hover actions layout-stable', () => {
     expect(cssSource).toContain('.adaptive-footer-dock .manager-btn {');
     expect(cssSource).toContain('padding: 0 14px;');
+    expect(cssSource).toContain('.adaptive-footer-dock .manager-bar-buttons {');
+    expect(cssSource).toContain('width: fit-content;');
+    expect(cssSource).toContain('justify-content: flex-start;');
+    expect(cssSource).toContain('margin-inline: auto;');
     expect(cssSource).toContain('.manager-btn:hover .manager-btn-menu');
+    expect(cssSource).toContain('visibility: visible;');
+    expect(cssSource).toContain('pointer-events: auto;');
     expect(cssSource).toContain('.manager-bar-action-popover {');
     expect(cssSource).toContain('position: fixed;');
     expect(cssSource).toContain('min-width: 148px;');

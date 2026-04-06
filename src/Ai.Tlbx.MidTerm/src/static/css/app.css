@@ -9899,14 +9899,13 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-muted);
   cursor: pointer;
   z-index: 2;
-  visibility: hidden;
+  visibility: visible;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
   transition:
     opacity 0.15s ease,
     color 0.15s ease,
-    background-color 0.15s ease,
-    visibility 0s linear 0.15s;
+    background-color 0.15s ease;
 }
 
 .manager-btn-menu .icon {
@@ -9934,10 +9933,7 @@ body.shared-session-mode .session-tab-bar {
 .manager-btn:hover .manager-btn-menu,
 .manager-btn:focus-within .manager-btn-menu,
 .manager-btn.menu-open .manager-btn-menu {
-  visibility: visible;
   opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0s;
 }
 
 .manager-btn-menu:hover,
@@ -14082,13 +14078,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .adaptive-footer-dock .manager-bar-buttons {
   flex: 0 1 auto;
+  width: fit-content;
   flex-wrap: nowrap;
-  justify-content: center;
-  max-width: min(100%, calc(100vw - 120px));
+  justify-content: flex-start;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
   scrollbar-width: none;
+  margin-inline: auto;
 }
 
 .adaptive-footer-dock .manager-bar-buttons::-webkit-scrollbar {
@@ -14144,8 +14142,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .adaptive-footer-dock .manager-btn-menu {
   right: 6px;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   background: color-mix(
     in srgb,
     black 36%,
