@@ -15,6 +15,7 @@ public sealed partial class MidTermSettingsPublic
     public int DefaultCols { get; set; } = 120;
     public int DefaultRows { get; set; } = 30;
     public string DefaultWorkingDirectory { get; set; } = "";
+    public string TerminalEnvironmentVariables { get; set; } = "";
     public bool CodexYoloDefault { get; set; } = false;
     public string CodexEnvironmentVariables { get; set; } = "";
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;

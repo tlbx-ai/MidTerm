@@ -105,6 +105,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'string path, empty allowed',
     applyMode: 'new-session',
   }),
+  controlEntry('terminalEnvironmentVariables', 'setting-terminal-env', 'textarea', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'newline-delimited KEY=VALUE env vars',
+    applyMode: 'new-session',
+  }),
   controlEntry('codexYoloDefault', 'setting-codex-yolo-default', 'checkbox', false, {
     editable: true,
     storage: 'settings.json',

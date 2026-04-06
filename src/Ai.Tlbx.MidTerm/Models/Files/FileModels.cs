@@ -106,6 +106,8 @@ public sealed class FileSaveResponse
 public sealed class LauncherPathResponse
 {
     public string Path { get; set; } = string.Empty;
+    public string HomePath { get; set; } = string.Empty;
+    public string StartPath { get; set; } = string.Empty;
 }
 
 public sealed class LauncherDirectoryEntry

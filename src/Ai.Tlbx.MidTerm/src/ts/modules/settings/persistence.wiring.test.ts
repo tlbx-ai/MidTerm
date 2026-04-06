@@ -164,6 +164,13 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain("settingsView.addEventListener('keydown', armSettingsSave");
   });
 
+  it('applies the same env var validation rules to terminal and agent env textareas', () => {
+    expect(persistenceSource).toContain("document.getElementById('setting-terminal-env')");
+    expect(persistenceSource).toContain("document.getElementById('setting-codex-env')");
+    expect(persistenceSource).toContain("document.getElementById('setting-claude-env')");
+    expect(persistenceSource).toContain("textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));");
+  });
+
   it('preserves hydration state when rebinding autosave listeners', () => {
     expect(persistenceSource).toContain('unbindSettingsAutoSave(false);');
     expect(persistenceSource).toContain(

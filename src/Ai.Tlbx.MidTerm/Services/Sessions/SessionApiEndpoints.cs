@@ -149,7 +149,12 @@ public static partial class SessionApiEndpoints
         app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
         {
             var creation = await sessionManager.CreateSessionDetailedAsync(
-                request.Shell, request.Cols, request.Rows, request.WorkingDirectory, ct);
+                request.Shell,
+                request.Cols,
+                request.Rows,
+                request.WorkingDirectory,
+                applyTerminalEnvironmentVariables: false,
+                ct);
 
             if (!creation.Succeeded)
             {

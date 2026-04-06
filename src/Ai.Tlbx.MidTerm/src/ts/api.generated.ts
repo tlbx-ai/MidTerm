@@ -4050,6 +4050,7 @@ export interface components {
       /** Format: int32 */
       defaultRows: number;
       defaultWorkingDirectory: string;
+      terminalEnvironmentVariables: string;
       codexYoloDefault: boolean;
       codexEnvironmentVariables: string;
       claudeDangerouslySkipPermissionsDefault: boolean;

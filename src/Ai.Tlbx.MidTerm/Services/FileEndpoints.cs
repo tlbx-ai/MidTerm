@@ -18,9 +18,16 @@ public static class FileEndpoints
 
         app.MapGet("/api/files/picker/home", () =>
         {
-            var homePath = ResolveLauncherHomePath(settingsService.Load());
+            var settings = settingsService.Load();
+            var homePath = LauncherPathResolver.ResolveHomePath(settings);
+            var startPath = LauncherPathResolver.ResolveStartPath(settings);
             return Results.Json(
-                new LauncherPathResponse { Path = homePath },
+                new LauncherPathResponse
+                {
+                    Path = homePath,
+                    HomePath = homePath,
+                    StartPath = startPath
+                },
                 AppJsonContext.Default.LauncherPathResponse);
         });
 
@@ -480,31 +487,6 @@ public static class FileEndpoints
         {
             return Results.Problem(ex.Message);
         }
-    }
-
-    private static string ResolveLauncherHomePath(MidTermSettings settings)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            var configuredProfile = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(
-                settings.RunAsUser,
-                settings.RunAsUserSid);
-
-            if (!string.IsNullOrWhiteSpace(configuredProfile) && Directory.Exists(configuredProfile))
-            {
-                return configuredProfile;
-            }
-        }
-        else if (!string.IsNullOrWhiteSpace(settings.RunAsUser))
-        {
-            var unixHome = Path.Combine("/home", settings.RunAsUser);
-            if (Directory.Exists(unixHome))
-            {
-                return unixHome;
-            }
-        }
-
-        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
     private static IEnumerable<LauncherDirectoryEntry> GetLauncherRootEntries()

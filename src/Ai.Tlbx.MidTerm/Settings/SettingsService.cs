@@ -452,6 +452,7 @@ public sealed class SettingsService
         current.DefaultCols = old.DefaultCols;
         current.DefaultRows = old.DefaultRows;
         current.DefaultWorkingDirectory = old.DefaultWorkingDirectory;
+        current.TerminalEnvironmentVariables = old.TerminalEnvironmentVariables;
         current.CodexYoloDefault = old.CodexYoloDefault;
         current.CodexEnvironmentVariables = old.CodexEnvironmentVariables;
         current.ClaudeDangerouslySkipPermissionsDefault = old.ClaudeDangerouslySkipPermissionsDefault;

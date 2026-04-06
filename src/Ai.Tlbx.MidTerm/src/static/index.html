@@ -637,13 +637,22 @@
                   <span class="icon">&#xe90d;</span>
                   <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
                 </button>
-                <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
+                <button
+                  class="settings-tab"
+                  data-tab="command-bay"
+                  role="tab"
+                  aria-selected="false"
+                >
                   <span class="icon">&#xe993;</span>
-                  <span class="tab-label" data-i18n="settings.behavior">Behaviour</span>
+                  <span class="tab-label" data-i18n="settings.commandBay">Command Bay</span>
                 </button>
-                <button class="settings-tab" data-tab="agent-ui" role="tab" aria-selected="false">
+                <button class="settings-tab" data-tab="terminal" role="tab" aria-selected="false">
+                  <span class="icon">&#xe9d4;</span>
+                  <span class="tab-label" data-i18n="settings.terminal">Terminal</span>
+                </button>
+                <button class="settings-tab" data-tab="agent" role="tab" aria-selected="false">
                   <span class="icon">&#xe925;</span>
-                  <span class="tab-label" data-i18n="settings.agentUi">Agent UI</span>
+                  <span class="tab-label" data-i18n="settings.agent">Agent</span>
                 </button>
                 <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
                   <span class="icon">&#xe908;</span>
@@ -760,6 +769,24 @@
                           Dev (pre-release)
                         </option>
                       </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-changelog-after-update"
+                        data-i18n="settings.behavior.changelogAfterUpdate"
+                        >Show changelog after update</label
+                      >
+                      <input type="checkbox" id="setting-changelog-after-update" checked />
+                    </div>
+                    <div class="setting-row hidden" id="pwa-install-row">
+                      <label data-i18n="settings.behavior.installAsApp">Install as App</label>
+                      <button
+                        id="btn-install-pwa"
+                        class="btn-secondary"
+                        data-i18n="settings.behavior.install"
+                      >
+                        Install
+                      </button>
                     </div>
                     <div id="reinstall-hint" class="reinstall-hint hidden"></div>
                   </div>
@@ -1694,67 +1721,46 @@
                   </div>
                 </section>
 
-                <!-- Agent UI Panel -->
-                <section class="settings-panel hidden" data-panel="agent-ui">
-                  <h2 data-i18n="settings.agentUi.title">Agent UI</h2>
+                <!-- Command Bay Panel -->
+                <section class="settings-panel hidden" data-panel="command-bay">
+                  <h2 data-i18n="settings.commandBay.title">Command Bay</h2>
 
                   <div class="settings-section">
-                    <h3 data-i18n="settings.agentUi.agentDefaults">Agent Defaults</h3>
+                    <h3 data-i18n="settings.commandBay.commandBay">Command Bay</h3>
                     <div class="setting-row">
-                      <label
-                        for="setting-codex-yolo-default"
-                        data-i18n="settings.agentUi.codexYoloDefault"
-                        >Enable Codex --yolo by default</label
+                      <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
+                        >Input Mode</label
                       >
-                      <input type="checkbox" id="setting-codex-yolo-default" />
+                      <select id="setting-input-mode">
+                        <option value="keyboard" data-i18n="settings.options.inputKeyboard">
+                          Keyboard
+                        </option>
+                        <option value="smartinput" data-i18n="settings.options.inputSmartInput">
+                          Smart Input
+                        </option>
+                        <option value="both" data-i18n="settings.options.inputBoth">Both</option>
+                      </select>
                     </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-codex-env" data-i18n="settings.agentUi.codexEnv"
-                        >Codex Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-codex-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">
+                      Smart Input uses a floating text box instead of direct keyboard input. Ideal
+                      for mobile — prevents the on-screen keyboard from appearing.
+                    </p>
                     <div class="setting-row">
-                      <label
-                        for="setting-claude-dangerously-skip-permissions-default"
-                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
-                        >Enable Claude --dangerously-skip-permissions by default</label
+                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
+                        >Middle Manager Bar</label
                       >
-                      <input
-                        type="checkbox"
-                        id="setting-claude-dangerously-skip-permissions-default"
-                      />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
-                        >Claude Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-claude-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
+                      <input type="checkbox" id="setting-manager-bar" />
                     </div>
                   </div>
                 </section>
 
-                <!-- Behavior Panel -->
-                <section class="settings-panel hidden" data-panel="behavior">
-                  <h2 data-i18n="settings.behavior.title">Behaviour</h2>
+                <!-- Terminal Panel -->
+                <section class="settings-panel hidden" data-panel="terminal">
+                  <h2 data-i18n="settings.terminal.title">Terminal</h2>
 
                   <!-- Session Defaults -->
                   <div class="settings-section">
-                    <h3 data-i18n="settings.behavior.sessionDefaults">Session Defaults</h3>
+                    <h3 data-i18n="settings.terminal.terminalSessions">Terminal Sessions</h3>
                     <div class="setting-row">
                       <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
                         >Default Shell</label
@@ -1769,19 +1775,32 @@
                       <label
                         for="setting-working-dir"
                         data-i18n="settings.behavior.defaultWorkingDir"
-                        >Default Working Directory</label
+                        >New Session Start Location</label
                       >
                       <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
                         <input
                           type="text"
                           id="setting-working-dir"
                           data-i18n-placeholder="settings.behavior.defaultWorkingDirHint"
-                          placeholder="Leave empty for home directory"
+                          placeholder="Leave empty for the run-as home directory"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>
                         </button>
                       </div>
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-terminal-env" data-i18n="settings.terminal.env"
+                        >Terminal Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-terminal-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.terminal.envHint"
+                        placeholder="KEY=value"
+                      ></textarea>
                     </div>
                   </div>
 
@@ -1914,24 +1933,6 @@
                       <input type="checkbox" id="setting-smooth-scrolling" />
                     </div>
                     <div class="setting-row">
-                      <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
-                        >Input Mode</label
-                      >
-                      <select id="setting-input-mode">
-                        <option value="keyboard" data-i18n="settings.options.inputKeyboard">
-                          Keyboard
-                        </option>
-                        <option value="smartinput" data-i18n="settings.options.inputSmartInput">
-                          Smart Input
-                        </option>
-                        <option value="both" data-i18n="settings.options.inputBoth">Both</option>
-                      </select>
-                    </div>
-                    <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">
-                      Smart Input uses a floating text box instead of direct keyboard input. Ideal
-                      for mobile — prevents the on-screen keyboard from appearing.
-                    </p>
-                    <div class="setting-row">
                       <label
                         for="setting-scrollback-protection"
                         data-i18n="settings.behavior.scrollbackProtection"
@@ -2009,30 +2010,6 @@
                       >
                       <input type="checkbox" id="setting-show-sidebar-session-filter" />
                     </div>
-                    <div class="setting-row">
-                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
-                        >Middle Manager Bar</label
-                      >
-                      <input type="checkbox" id="setting-manager-bar" />
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-changelog-after-update"
-                        data-i18n="settings.behavior.changelogAfterUpdate"
-                        >Show changelog after update</label
-                      >
-                      <input type="checkbox" id="setting-changelog-after-update" checked />
-                    </div>
-                    <div class="setting-row hidden" id="pwa-install-row">
-                      <label data-i18n="settings.behavior.installAsApp">Install as App</label>
-                      <button
-                        id="btn-install-pwa"
-                        class="btn-secondary"
-                        data-i18n="settings.behavior.install"
-                      >
-                        Install
-                      </button>
-                    </div>
                   </div>
                   <!-- Integrations -->
                   <div class="settings-section">
@@ -2050,6 +2027,60 @@
                       Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
                       into remote hosts that run real tmux. Requires restart.
                     </p>
+                  </div>
+                </section>
+
+                <!-- Agent Panel -->
+                <section class="settings-panel hidden" data-panel="agent">
+                  <h2 data-i18n="settings.agent.title">Agent</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.agentUi.agentDefaults">Agent Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-yolo-default"
+                        data-i18n="settings.agentUi.codexYoloDefault"
+                        >Enable Codex --yolo by default</label
+                      >
+                      <input type="checkbox" id="setting-codex-yolo-default" />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-codex-env" data-i18n="settings.agentUi.codexEnv"
+                        >Codex Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-codex-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-claude-dangerously-skip-permissions-default"
+                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
+                        >Enable Claude --dangerously-skip-permissions by default</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-claude-dangerously-skip-permissions-default"
+                      />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
+                        >Claude Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-claude-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
                   </div>
                 </section>
 

@@ -49,10 +49,13 @@ interface LauncherDirectoryListResponse {
 
 interface LauncherPathResponse {
   path: string;
+  homePath: string;
+  startPath: string;
 }
 
 interface LauncherState {
   homePath: string;
+  startPath: string;
   currentPath: string;
   pathDraft: string;
   pathHistory: string[];
@@ -120,6 +123,8 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
 
 async function openSessionLauncherInternal(): Promise<SessionLauncherSelection | null> {
   const [home, roots] = await Promise.all([fetchHomePath(), fetchLauncherRoots()]);
+  const homePath = home.homePath || home.path;
+  const startPath = home.startPath || homePath;
 
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -191,9 +196,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     `;
 
     const state: LauncherState = {
-      homePath: home.path,
-      currentPath: home.path,
-      pathDraft: home.path,
+      homePath,
+      startPath,
+      currentPath: startPath,
+      pathDraft: startPath,
       pathHistory: [],
       parentPath: null,
       roots: roots.entries,
@@ -551,7 +557,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         }
       })();
     });
-    void loadDirectory(state.homePath, { recordHistory: false });
+    void loadDirectory(state.startPath, { recordHistory: false });
     void refreshHubState().catch(() => {});
 
     function launch(provider: LauncherProvider): void {

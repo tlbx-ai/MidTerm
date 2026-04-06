@@ -134,6 +134,9 @@ public static class ShareEndpoints
     {
         var shared = MidTermSettingsPublic.FromSettings(settings);
         shared.DefaultWorkingDirectory = "";
+        shared.TerminalEnvironmentVariables = "";
+        shared.CodexEnvironmentVariables = "";
+        shared.ClaudeEnvironmentVariables = "";
         shared.RunAsUser = null;
         shared.RunAsUserSid = null;
         shared.AuthenticationEnabled = false;

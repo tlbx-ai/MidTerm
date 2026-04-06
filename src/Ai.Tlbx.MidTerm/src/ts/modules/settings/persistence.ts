@@ -1133,6 +1133,7 @@ const ENVIRONMENT_VARIABLE_LINE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=.*$/;
 
 function validateAgentEnvironmentInputs(): boolean {
   const textareas = [
+    document.getElementById('setting-terminal-env') as HTMLTextAreaElement | null,
     document.getElementById('setting-codex-env') as HTMLTextAreaElement | null,
     document.getElementById('setting-claude-env') as HTMLTextAreaElement | null,
   ];

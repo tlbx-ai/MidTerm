@@ -20,4 +20,13 @@ describe('session launcher visibility wiring', () => {
     expect(css).toContain('.session-launcher-remote[hidden] {');
     expect(css).toContain('display: none !important;');
   });
+
+  it('uses the configured start path for initial load while keeping home as a separate target', () => {
+    expect(source).toContain('const homePath = home.homePath || home.path;');
+    expect(source).toContain('const startPath = home.startPath || homePath;');
+    expect(source).toContain('startPath,');
+    expect(source).toContain('currentPath: startPath,');
+    expect(source).toContain('pathDraft: startPath,');
+    expect(source).toContain('void loadDirectory(state.startPath, { recordHistory: false });');
+  });
 });

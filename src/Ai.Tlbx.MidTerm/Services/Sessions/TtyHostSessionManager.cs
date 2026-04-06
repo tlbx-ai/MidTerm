@@ -366,14 +366,53 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
-    public async Task<SessionInfo?> CreateSessionAsync(
+    public Task<SessionInfo?> CreateSessionAsync(
         string? shellType,
         int cols,
         int rows,
         string? workingDirectory,
         CancellationToken ct = default)
     {
-        return (await CreateSessionDetailedAsync(shellType, cols, rows, workingDirectory, ct).ConfigureAwait(false)).Session;
+        return CreateSessionAsync(
+            shellType,
+            cols,
+            rows,
+            workingDirectory,
+            applyTerminalEnvironmentVariables: true,
+            ct);
+    }
+
+    internal async Task<SessionInfo?> CreateSessionAsync(
+        string? shellType,
+        int cols,
+        int rows,
+        string? workingDirectory,
+        bool applyTerminalEnvironmentVariables,
+        CancellationToken ct = default)
+    {
+        return (await CreateSessionDetailedAsync(
+            shellType,
+            cols,
+            rows,
+            workingDirectory,
+            applyTerminalEnvironmentVariables,
+            ct).ConfigureAwait(false)).Session;
+    }
+
+    internal Task<SessionCreationResult> CreateSessionDetailedAsync(
+        string? shellType,
+        int cols,
+        int rows,
+        string? workingDirectory,
+        CancellationToken ct = default)
+    {
+        return CreateSessionDetailedAsync(
+            shellType,
+            cols,
+            rows,
+            workingDirectory,
+            applyTerminalEnvironmentVariables: true,
+            ct);
     }
 
     internal async Task<SessionCreationResult> CreateSessionDetailedAsync(
@@ -381,6 +420,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         int cols,
         int rows,
         string? workingDirectory,
+        bool applyTerminalEnvironmentVariables,
         CancellationToken ct = default)
     {
         var creationTimer = Stopwatch.StartNew();
@@ -398,8 +438,23 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var paneIndex = _registry.ReserveNextOrder();
         var mtToken = _generateToken?.Invoke();
         var scrollbackBytes = ResolveScrollbackBytes();
-        var spawnResult = TtyHostSpawner.SpawnTtyHost(sessionId, shellType, workingDirectory, cols, rows, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken, _runAsUser, _runAsUserSid,
-            scrollbackBytes, _mtPort, mtToken, paneIndex, _tmuxBinDir);
+        var terminalEnvironmentOverrides = ResolveTerminalEnvironmentOverrides(applyTerminalEnvironmentVariables);
+        var spawnResult = TtyHostSpawner.SpawnTtyHost(
+            sessionId,
+            shellType,
+            workingDirectory,
+            cols,
+            rows,
+            _instanceIdentity.InstanceId,
+            _instanceIdentity.OwnerToken,
+            _runAsUser,
+            _runAsUserSid,
+            scrollbackBytes,
+            terminalEnvironmentOverrides,
+            _mtPort,
+            mtToken,
+            paneIndex,
+            _tmuxBinDir);
         if (!spawnResult.Succeeded)
         {
             return SessionCreationResult.Failed(spawnResult.Failure!);
@@ -529,6 +584,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             configured,
             MidTermSettings.MinScrollbackBytes,
             MidTermSettings.MaxScrollbackBytes);
+    }
+
+    private IReadOnlyDictionary<string, string?>? ResolveTerminalEnvironmentOverrides(
+        bool applyTerminalEnvironmentVariables)
+    {
+        if (!applyTerminalEnvironmentVariables)
+        {
+            return null;
+        }
+
+        var configured = _settingsService?.Load().TerminalEnvironmentVariables;
+        return TerminalEnvironmentVariableParser.Parse(configured);
     }
 
     public void MarkTmuxCreated(string sessionId)

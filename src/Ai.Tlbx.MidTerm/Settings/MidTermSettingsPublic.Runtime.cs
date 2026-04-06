@@ -31,6 +31,7 @@ public sealed partial class MidTermSettingsPublic
             DefaultCols = settings.DefaultCols,
             DefaultRows = settings.DefaultRows,
             DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
+            TerminalEnvironmentVariables = settings.TerminalEnvironmentVariables,
             CodexYoloDefault = settings.CodexYoloDefault,
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
             ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
@@ -115,6 +116,7 @@ public sealed partial class MidTermSettingsPublic
         settings.DefaultCols = DefaultCols;
         settings.DefaultRows = DefaultRows;
         settings.DefaultWorkingDirectory = DefaultWorkingDirectory;
+        settings.TerminalEnvironmentVariables = TerminalEnvironmentVariables ?? string.Empty;
         settings.CodexYoloDefault = CodexYoloDefault;
         settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
         settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;

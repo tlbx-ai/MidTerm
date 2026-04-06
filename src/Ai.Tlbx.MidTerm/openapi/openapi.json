@@ -4853,6 +4853,7 @@
           "defaultCols",
           "defaultRows",
           "defaultWorkingDirectory",
+          "terminalEnvironmentVariables",
           "codexYoloDefault",
           "codexEnvironmentVariables",
           "claudeDangerouslySkipPermissionsDefault",
@@ -4936,6 +4937,9 @@
             "format": "int32"
           },
           "defaultWorkingDirectory": {
+            "type": "string"
+          },
+          "terminalEnvironmentVariables": {
             "type": "string"
           },
           "codexYoloDefault": {

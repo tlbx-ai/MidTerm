@@ -201,6 +201,7 @@ public static class TtyHostSpawner
         string? runAsUser,
         string? runAsUserSid,
         int scrollbackBytes,
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null,
         int? mtPort = null,
         string? mtToken = null,
         int? paneIndex = null,
@@ -227,9 +228,9 @@ public static class TtyHostSpawner
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
-        return SpawnWindows(args, runAsUser, runAsUserSid);
+        return SpawnWindows(args, runAsUser, runAsUserSid, environmentOverrides);
 #else
-        return SpawnUnix(sessionId, args, runAsUser);
+        return SpawnUnix(sessionId, args, runAsUser, environmentOverrides);
 #endif
 #pragma warning restore CA1416
     }
@@ -650,17 +651,23 @@ public static class TtyHostSpawner
         }
     }
 
-    private static TtyHostSpawnResult SpawnUnix(string sessionId, string args, string? runAsUser)
+    private static TtyHostSpawnResult SpawnUnix(
+        string sessionId,
+        string args,
+        string? runAsUser,
+        IReadOnlyDictionary<string, string?>? environmentOverrides)
     {
         var processId = 0;
 
         try
         {
-            if (OperatingSystem.IsMacOS() && TrySpawnMacOsViaLaunchAgent(sessionId, args, out processId))
+            if (OperatingSystem.IsMacOS() &&
+                TrySpawnMacOsViaLaunchAgent(sessionId, args, environmentOverrides, out processId))
             {
                 return TtyHostSpawnResult.Success(processId);
             }
 
+            var ttyHostArgs = ParseUnixArgs(args);
             ProcessStartInfo psi;
 
             // If running as root and runAsUser is configured, use sudo -u to drop privileges
@@ -680,13 +687,33 @@ public static class TtyHostSpawner
                 psi = new ProcessStartInfo
                 {
                     FileName = "sudo",
-                    Arguments = $"-H -u {runAsUser} {TtyHostPath} {args}",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = false,
                     RedirectStandardOutput = false,
                     RedirectStandardError = false
                 };
+                psi.ArgumentList.Add("-H");
+                psi.ArgumentList.Add("-u");
+                psi.ArgumentList.Add(runAsUser);
+                if (environmentOverrides is { Count: > 0 })
+                {
+                    psi.ArgumentList.Add("env");
+                    foreach (var (key, value) in environmentOverrides)
+                    {
+                        if (string.IsNullOrWhiteSpace(key) || value is null)
+                        {
+                            continue;
+                        }
+
+                        psi.ArgumentList.Add($"{key}={value}");
+                    }
+                }
+                psi.ArgumentList.Add(TtyHostPath);
+                foreach (var argument in ttyHostArgs)
+                {
+                    psi.ArgumentList.Add(argument);
+                }
                 Log.Info(() => $"TtyHostSpawner: Spawning as user: {runAsUser}");
             }
             else
@@ -694,13 +721,16 @@ public static class TtyHostSpawner
                 psi = new ProcessStartInfo
                 {
                     FileName = TtyHostPath,
-                    Arguments = args,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = false,
                     RedirectStandardOutput = false,
                     RedirectStandardError = false
                 };
+                foreach (var argument in ttyHostArgs)
+                {
+                    psi.ArgumentList.Add(argument);
+                }
             }
 
             var mtBinaryPath = GetMidTermBinaryPath();
@@ -708,6 +738,7 @@ public static class TtyHostSpawner
             {
                 psi.Environment[MtBinaryPathEnvironmentVariable] = mtBinaryPath;
             }
+            ApplyEnvironmentOverrides(psi.Environment, environmentOverrides);
 
             var process = Process.Start(psi);
             if (process is null)
@@ -750,7 +781,11 @@ public static class TtyHostSpawner
         }
     }
 
-    private static bool TrySpawnMacOsViaLaunchAgent(string sessionId, string args, out int processId)
+    private static bool TrySpawnMacOsViaLaunchAgent(
+        string sessionId,
+        string args,
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        out int processId)
     {
         processId = 0;
 
@@ -777,7 +812,8 @@ public static class TtyHostSpawner
             programArguments,
             stdoutPath,
             stderrPath,
-            GetMidTermBinaryPath());
+            GetMidTermBinaryPath(),
+            environmentOverrides);
         File.WriteAllText(plistPath, plistContent, Encoding.UTF8);
 
         _ = RunProcessSync("launchctl", ["bootout", $"gui/{uid}/{label}"], out _, out _, logFailures: false);
@@ -843,7 +879,8 @@ public static class TtyHostSpawner
         IReadOnlyList<string> programArguments,
         string stdoutPath,
         string stderrPath,
-        string? mtBinaryPath = null)
+        string? mtBinaryPath = null,
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null)
     {
         var argsBuilder = new StringBuilder();
         foreach (var argument in programArguments)
@@ -857,6 +894,32 @@ public static class TtyHostSpawner
         if (string.IsNullOrWhiteSpace(pathVar))
         {
             pathVar = AiCliCommandLocator.BuildFallbackPath();
+        }
+
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["PATH"] = pathVar
+        };
+        if (!string.IsNullOrWhiteSpace(mtBinaryPath))
+        {
+            environment[MtBinaryPathEnvironmentVariable] = mtBinaryPath;
+        }
+        ApplyEnvironmentOverrides(environment, environmentOverrides);
+
+        var environmentBuilder = new StringBuilder();
+        foreach (var (key, value) in environment)
+        {
+            if (string.IsNullOrWhiteSpace(key) || value is null)
+            {
+                continue;
+            }
+
+            environmentBuilder.Append("        <key>");
+            environmentBuilder.Append(EscapeXml(key));
+            environmentBuilder.AppendLine("</key>");
+            environmentBuilder.Append("        <string>");
+            environmentBuilder.Append(EscapeXml(value));
+            environmentBuilder.AppendLine("</string>");
         }
 
         return $$"""
@@ -879,9 +942,7 @@ public static class TtyHostSpawner
     <string>{{EscapeXml(stderrPath)}}</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PATH</key>
-        <string>{{EscapeXml(pathVar)}}</string>
-{{(string.IsNullOrWhiteSpace(mtBinaryPath) ? string.Empty : $"        <key>{MtBinaryPathEnvironmentVariable}</key>\n        <string>{EscapeXml(mtBinaryPath)}</string>\n")}}    </dict>
+{{environmentBuilder}}    </dict>
 </dict>
 </plist>
 """;
@@ -1002,61 +1063,87 @@ public static class TtyHostSpawner
 
 #if WINDOWS
     [SupportedOSPlatform("windows")]
-    private static TtyHostSpawnResult SpawnWindows(string args, string? runAsUser, string? runAsUserSid)
+    private static TtyHostSpawnResult SpawnWindows(
+        string args,
+        string? runAsUser,
+        string? runAsUserSid,
+        IReadOnlyDictionary<string, string?>? environmentOverrides)
     {
         var commandLine = $"\"{TtyHostPath}\" {args}";
 
         if (IsRunningAsSystem())
         {
-            return SpawnAsUser(commandLine, runAsUser, runAsUserSid);
+            return SpawnAsUser(commandLine, runAsUser, runAsUserSid, environmentOverrides);
         }
         else
         {
-            return SpawnDirect(commandLine);
+            return SpawnDirect(commandLine, environmentOverrides);
         }
     }
 
     [SupportedOSPlatform("windows")]
-    private static TtyHostSpawnResult SpawnDirect(string commandLine)
+    private static TtyHostSpawnResult SpawnDirect(
+        string commandLine,
+        IReadOnlyDictionary<string, string?>? environmentOverrides)
     {
         var si = new STARTUPINFO();
         si.cb = Marshal.SizeOf<STARTUPINFO>();
+        IntPtr environmentBlock = IntPtr.Zero;
 
-        var success = CreateProcess(
-            null,
-            commandLine,
-            IntPtr.Zero,
-            IntPtr.Zero,
-            false,
-            CREATE_NO_WINDOW,
-            IntPtr.Zero,
-            null,
-            ref si,
-            out var pi);
-
-        if (!success)
+        try
         {
-            var errorCode = Marshal.GetLastWin32Error();
-            var detail = new Win32Exception(errorCode).Message;
-            Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: CreateProcess failed: {errorCode} ({detail})"));
-            return TtyHostSpawnResult.Failed(
-                "Windows blocked the mthost process launch.",
-                detail: string.Create(CultureInfo.InvariantCulture, $"CreateProcess failed with Win32 error {errorCode}: {detail}"),
-                exceptionType: nameof(Win32Exception),
-                nativeErrorCode: errorCode);
+            if (environmentOverrides is { Count: > 0 })
+            {
+                environmentBlock = BuildWindowsEnvironmentBlock(environmentOverrides, pathPrependEntries: null);
+            }
+
+            var success = CreateProcess(
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                CREATE_NO_WINDOW | (environmentBlock != IntPtr.Zero ? CREATE_UNICODE_ENVIRONMENT : 0),
+                environmentBlock == IntPtr.Zero ? IntPtr.Zero : environmentBlock,
+                null,
+                ref si,
+                out var pi);
+
+            if (!success)
+            {
+                var errorCode = Marshal.GetLastWin32Error();
+                var detail = new Win32Exception(errorCode).Message;
+                Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: CreateProcess failed: {errorCode} ({detail})"));
+                return TtyHostSpawnResult.Failed(
+                    "Windows blocked the mthost process launch.",
+                    detail: string.Create(CultureInfo.InvariantCulture, $"CreateProcess failed with Win32 error {errorCode}: {detail}"),
+                    exceptionType: nameof(Win32Exception),
+                    nativeErrorCode: errorCode);
+            }
+
+            var processId = pi.dwProcessId;
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+
+            var pid = processId;
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost (PID: {pid})"));
+            return TtyHostSpawnResult.Success(processId);
         }
-
-        var processId = pi.dwProcessId;
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-
-        var pid = processId;
-        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost (PID: {pid})"));
-        return TtyHostSpawnResult.Success(processId);
+        finally
+        {
+            if (environmentBlock != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(environmentBlock);
+            }
+        }
     }
 
     [SupportedOSPlatform("windows")]
-    private static TtyHostSpawnResult SpawnAsUser(string commandLine, string? runAsUser, string? runAsUserSid)
+    private static TtyHostSpawnResult SpawnAsUser(
+        string commandLine,
+        string? runAsUser,
+        string? runAsUserSid,
+        IReadOnlyDictionary<string, string?>? environmentOverrides)
     {
         if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out var sessionId))
         {
@@ -1081,6 +1168,9 @@ public static class TtyHostSpawner
 
             try
             {
+                var mergedEnvironmentBlock = environmentOverrides is { Count: > 0 }
+                    ? BuildWindowsEnvironmentBlock(envBlock, environmentOverrides, pathPrependEntries: null)
+                    : envBlock;
                 var si = new STARTUPINFO();
                 si.cb = Marshal.SizeOf<STARTUPINFO>();
                 si.lpDesktop = Marshal.StringToHGlobalUni("winsta0\\default");
@@ -1097,7 +1187,7 @@ public static class TtyHostSpawner
                         IntPtr.Zero,
                         false,
                         CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-                        envBlock,
+                        mergedEnvironmentBlock,
                         null,
                         ref si,
                         out var pi);
@@ -1125,6 +1215,11 @@ public static class TtyHostSpawner
                 }
                 finally
                 {
+                    if (mergedEnvironmentBlock != envBlock)
+                    {
+                        Marshal.FreeHGlobal(mergedEnvironmentBlock);
+                    }
+
                     Marshal.FreeHGlobal(si.lpDesktop);
                 }
             }
@@ -1461,6 +1556,24 @@ public static class TtyHostSpawner
 
     [SupportedOSPlatform("windows")]
     private static IntPtr BuildWindowsEnvironmentBlock(
+        IReadOnlyDictionary<string, string?>? environmentOverrides,
+        IReadOnlyList<string>? pathPrependEntries)
+    {
+        var environment = Environment.GetEnvironmentVariables()
+            .Cast<System.Collections.DictionaryEntry>()
+            .Where(static entry => entry.Key is string)
+            .ToDictionary(
+                static entry => (string)entry.Key,
+                static entry => entry.Value?.ToString(),
+                StringComparer.OrdinalIgnoreCase);
+
+        ApplyEnvironmentOverrides(environment, environmentOverrides);
+        ApplyPathPrependEntries(environment, pathPrependEntries);
+        return SerializeWindowsEnvironmentBlock(environment);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static IntPtr BuildWindowsEnvironmentBlock(
         IntPtr baseEnvironmentBlock,
         IReadOnlyDictionary<string, string?>? environmentOverrides,
         IReadOnlyList<string>? pathPrependEntries)
@@ -1468,7 +1581,13 @@ public static class TtyHostSpawner
         var environment = ReadWindowsEnvironmentBlock(baseEnvironmentBlock);
         ApplyEnvironmentOverrides(environment, environmentOverrides);
         ApplyPathPrependEntries(environment, pathPrependEntries);
+        return SerializeWindowsEnvironmentBlock(environment);
+    }
 
+    [SupportedOSPlatform("windows")]
+    private static IntPtr SerializeWindowsEnvironmentBlock(
+        Dictionary<string, string?> environment)
+    {
         var entries = environment
             .Where(static pair => !string.IsNullOrWhiteSpace(pair.Key))
             .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
@@ -1477,7 +1596,6 @@ public static class TtyHostSpawner
         var payload = string.Join('\0', entries) + "\0\0";
         return Marshal.StringToHGlobalUni(payload);
     }
-
     [SupportedOSPlatform("windows")]
     private static Dictionary<string, string?> ReadWindowsEnvironmentBlock(IntPtr environmentBlock)
     {

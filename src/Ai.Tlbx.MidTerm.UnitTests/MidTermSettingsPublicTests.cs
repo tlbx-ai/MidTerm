@@ -126,6 +126,24 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripTerminalEnvironmentVariables()
+    {
+        var settings = new MidTermSettings
+        {
+            TerminalEnvironmentVariables = "FOO=bar\nEMPTY=\nJSON={\"enabled\":true}"
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal(settings.TerminalEnvironmentVariables, publicSettings.TerminalEnvironmentVariables);
+
+        settings.TerminalEnvironmentVariables = string.Empty;
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("FOO=bar\nEMPTY=\nJSON={\"enabled\":true}", settings.TerminalEnvironmentVariables);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripFontRenderingSettings()
     {
         var settings = new MidTermSettings

@@ -10,8 +10,9 @@ export type SettingsTab =
   | 'general'
   | 'hub'
   | 'appearance'
-  | 'agent-ui'
-  | 'behavior'
+  | 'command-bay'
+  | 'terminal'
+  | 'agent'
   | 'security'
   | 'diagnostics';
 
@@ -21,8 +22,9 @@ const VALID_TABS: SettingsTab[] = [
   'general',
   'hub',
   'appearance',
-  'agent-ui',
-  'behavior',
+  'command-bay',
+  'terminal',
+  'agent',
   'security',
   'diagnostics',
 ];
@@ -79,8 +81,8 @@ function bindTabEvents(): void {
 }
 
 function restoreLastTab(): void {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved && isValidTab(saved)) {
+  const saved = normalizeStoredSettingsTab(localStorage.getItem(STORAGE_KEY));
+  if (saved) {
     switchSettingsTab(saved);
   } else {
     switchSettingsTab(DEFAULT_TAB);
@@ -89,4 +91,15 @@ function restoreLastTab(): void {
 
 function isValidTab(tab: string): tab is SettingsTab {
   return VALID_TABS.includes(tab as SettingsTab);
+}
+
+export function normalizeStoredSettingsTab(tab: string | null): SettingsTab | null {
+  switch (tab) {
+    case 'behavior':
+      return 'terminal';
+    case 'agent-ui':
+      return 'agent';
+    default:
+      return tab && isValidTab(tab) ? tab : null;
+  }
 }
