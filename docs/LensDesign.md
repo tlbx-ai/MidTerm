@@ -312,6 +312,7 @@ Status in this branch/work item:
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 - implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
 - implemented: immediate command output is folded into the command row as a muted up-to-8-line tail instead of always rendering as a separate noisy row
+- implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows

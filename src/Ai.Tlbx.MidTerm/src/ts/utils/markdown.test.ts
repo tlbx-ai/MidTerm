@@ -100,11 +100,24 @@ describe('renderMarkdown', () => {
     expect(html).not.toContain('<em>');
   });
 
+  it('keeps single line breaks inside one dense paragraph', () => {
+    const html = renderMarkdown('First line\nSecond line');
+
+    expect(html).toBe('<p>First line<br>Second line</p>');
+  });
+
+  it('keeps blank lines as actual paragraph breaks', () => {
+    const html = renderMarkdown('First line\n\nSecond line');
+
+    expect(html).toBe('<p>First line</p>\n<p>Second line</p>');
+  });
+
   it('unwraps a single paragraph for dense chat rendering', () => {
     expect(renderMarkdownFragment('HELLO_FROM_CODEX')).toBe('HELLO_FROM_CODEX');
     expect(renderMarkdownFragment('Paragraph with **bold** text.')).toBe(
       'Paragraph with <strong>bold</strong> text.',
     );
+    expect(renderMarkdownFragment('First line\nSecond line')).toBe('First line<br>Second line');
     expect(renderMarkdownFragment('- one\n- two')).toContain('<ul>');
   });
 });

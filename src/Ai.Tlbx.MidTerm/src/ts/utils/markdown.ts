@@ -357,6 +357,46 @@ function renderMarkdownTables(text: string): string {
   return rendered.join('\n');
 }
 
+function isBlockLevelMarkdownLine(line: string): boolean {
+  return /^<(?:h\d|ul|ol|li|pre|blockquote|hr|table|thead|tbody|tr|th|td|figure|img|figcaption|div)\b/.test(
+    line,
+  );
+}
+
+function wrapMarkdownParagraphs(text: string): string {
+  const lines = text.split('\n');
+  const rendered: string[] = [];
+  const paragraphLines: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) {
+      return;
+    }
+
+    rendered.push(`<p>${paragraphLines.join('<br>')}</p>`);
+    paragraphLines.length = 0;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      continue;
+    }
+
+    if (isBlockLevelMarkdownLine(line)) {
+      flushParagraph();
+      rendered.push(line);
+      continue;
+    }
+
+    paragraphLines.push(line);
+  }
+
+  flushParagraph();
+  return rendered.join('\n');
+}
+
 export function renderMarkdown(text: string): string {
   const codeBlocks: string[] = [];
   const normalized = text.replace(/\r\n?/g, '\n');
@@ -402,11 +442,7 @@ export function renderMarkdown(text: string): string {
     return `<ol>${match.replace(/\n/g, '').replace(/ data-list="ol"/g, '')}</ol>`;
   });
 
-  html = html.replace(
-    /^(?!<(?:h\d|ul|ol|li|pre|blockquote|hr|table|thead|tbody|tr|th|td|figure|img|figcaption|div))(?!\s*$)(.+)$/gm,
-    '<p>$1</p>',
-  );
-  html = html.replace(/<p><\/p>/g, '');
+  html = wrapMarkdownParagraphs(html);
 
   for (let index = 0; index < codeBlocks.length; index += 1) {
     const codeBlock = codeBlocks[index];
