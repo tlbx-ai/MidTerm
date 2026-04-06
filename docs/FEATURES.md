@@ -308,7 +308,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F264a` Terminal and Lens now share one adaptive active-session footer dock instead of separate smart-input and manager bars.
 - `F265` Smart Input keeps a per-session draft buffer.
 - `F266` Switching active sessions preserves and restores Smart Input drafts.
-- `F267` Smart Input auto-grows its textarea up to one base line plus eight upward overlay lines, then falls back to internal scrolling.
+- `F267` Smart Input auto-grows its textarea up to one base line plus seven upward overlay lines, then falls back to internal scrolling.
 - `F267a` The footer dock reserves only its collapsed height, so multiline input growth expands upward over the pane instead of shrinking the active viewport.
 - `F268` Smart Input sends on Enter.
 - `F269` Smart Input inserts newlines on `Shift+Enter`.

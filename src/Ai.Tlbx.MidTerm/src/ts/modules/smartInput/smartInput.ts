@@ -639,7 +639,6 @@ function createDockedDOM(): void {
     resizeTextarea: resizeSmartInputTextarea,
   });
   dockedBar.appendChild(dom.inputRow);
-  dockedBar.appendChild(dom.toolsPanel);
   footerPrimaryHost.appendChild(dockedBar);
 
   lensQuickSettingsRow = dom.lensQuickSettingsRow;

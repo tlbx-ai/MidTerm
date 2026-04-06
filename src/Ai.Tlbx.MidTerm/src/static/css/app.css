@@ -14424,6 +14424,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-docked {
   position: relative;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 .smart-input-row {
@@ -14431,6 +14432,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   align-items: flex-end;
   gap: 6px;
   width: 100%;
+  position: relative;
+  overflow: visible;
 }
 
 .smart-input-editor {
@@ -14439,6 +14442,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-width: 0;
   flex-direction: column;
   gap: 6px;
+  position: relative;
+  overflow: visible;
+  z-index: 1;
 }
 
 .smart-input-attachments {
@@ -14538,6 +14544,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
+  position: relative;
+  z-index: 2;
 }
 
 .smart-input-textarea:focus {
@@ -14746,25 +14754,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-tools-surface {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  align-self: flex-end;
-  width: fit-content;
-  max-width: min(100%, 232px);
-  min-height: 0;
-  margin: 4px 0 0 auto;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-  border-radius: 12px;
-  background: color-mix(
-    in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 92%,
-    black 8%
-  );
-  box-shadow: 0 10px 22px color-mix(in srgb, black 22%, transparent);
-  position: relative;
-  z-index: 2;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 4;
+  min-width: 184px;
+  max-width: min(280px, calc(100vw - 24px));
+  margin: 0;
 }
 
 .smart-input-tools-surface[hidden] {
@@ -14775,6 +14771,60 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.smart-input-tools-surface .smart-input-tools-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.smart-input-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.smart-input-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.smart-input-tool-label {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-input-tools-surface .smart-input-tool-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  height: auto;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
+  color: var(--text-muted);
+  justify-content: flex-start;
+}
+
+.smart-input-tools-surface .smart-input-tool-button:hover,
+.smart-input-tools-surface .smart-input-tool-button:focus-visible {
+  background: color-mix(in srgb, var(--accent-blue) 20%, var(--bg-hover));
+  color: var(--text-primary);
+}
+
+.smart-input-tools-surface .smart-input-tool-label {
+  display: inline;
+  font-size: var(--fs-sm);
 }
 
 .smart-input-mic-btn,

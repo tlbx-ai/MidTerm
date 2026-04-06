@@ -79,8 +79,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain('--command-bay-symbol-shadow: drop-shadow(');
     expect(css).toContain('.smart-input-tools-toggle::before,');
+    expect(viewSource).toContain("toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';");
     expect(css).toContain('font-size: 16px;');
-    expect(metricsSource).toContain('const MAX_TEXTAREA_OVERLAY_LINES = 8;');
+    expect(metricsSource).toContain('const MAX_TEXTAREA_OVERLAY_LINES = 7;');
     expect(metricsSource).toContain('const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;');
   });
 
@@ -100,16 +101,26 @@ describe('smart input tab wiring', () => {
       "footerStatusHost.classList.add('adaptive-footer-status-sheet-open');",
     );
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
-    expect(source).toContain('dockedBar.appendChild(dom.toolsPanel);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
     expect(source).toContain('event.stopPropagation();');
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
-    expect(css).toContain('margin: 6px 0 0;');
+    expect(viewSource).toContain('inputRow.appendChild(toolsPanel);');
+    expect(css).toContain('bottom: calc(100% + 8px);');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
     expect(css).toContain('.adaptive-footer-primary {');
+    expect(css).toContain('.smart-input-editor {');
+    expect(css).toContain('.smart-input-textarea {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.manager-btn-overflow-hidden {');
+  });
+
+  it('renders the plus-menu tools as popover actions with icon and text labels', () => {
+    expect(viewSource).toContain("toolsToggleBtn.setAttribute('aria-haspopup', 'menu');");
+    expect(viewSource).toContain("button.classList.add('smart-input-tool-button');");
+    expect(viewSource).toContain("smart-input-tool-label");
+    expect(css).toContain('.smart-input-tools-surface .smart-input-tool-button {');
+    expect(css).toContain('.smart-input-tools-surface .smart-input-tool-label {');
   });
 
   it('uses an explicit picker helper for attach and photo tools instead of relying on raw hidden-input clicks', () => {

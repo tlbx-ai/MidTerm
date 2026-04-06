@@ -180,6 +180,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.35" stroke-linecap="round"/></svg>';
   toolsToggleBtn.title = t('smartInput.tools');
   toolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
+  toolsToggleBtn.setAttribute('aria-haspopup', 'menu');
   toolsToggleBtn.addEventListener('click', args.onToolsToggleClick);
 
   const inlineToolHost = document.createElement('div');
@@ -210,7 +211,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   });
 
   const toolsPanel = document.createElement('div');
-  toolsPanel.className = 'smart-input-tools-surface';
+  toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';
   toolsPanel.hidden = true;
 
   editorHost.appendChild(lensAttachmentHost);
@@ -219,6 +220,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   inputRow.appendChild(inlineToolHost);
   inputRow.appendChild(sendBtn);
   inputRow.appendChild(toolsToggleBtn);
+  inputRow.appendChild(toolsPanel);
   inputRow.appendChild(photoInput);
   inputRow.appendChild(attachInput);
 
@@ -261,12 +263,13 @@ export function createToolButton(
   const button = document.createElement('button');
   button.type = 'button';
   button.dataset.tool = tool;
+  button.classList.add('smart-input-tool-button');
 
   switch (tool) {
     case 'mic':
-      button.className = 'smart-input-mic-btn';
+      button.classList.add('smart-input-mic-btn');
       button.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>';
+        `<span class="smart-input-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></span><span class="smart-input-tool-label">${t('smartInput.mic')}</span>`;
       button.title = t('smartInput.mic');
       button.hidden = !args.canUseVoice;
       button.addEventListener('pointerdown', (event) => {
@@ -276,18 +279,18 @@ export function createToolButton(
       button.addEventListener('pointerleave', args.onMicPointerLeave);
       break;
     case 'attach':
-      button.className = 'smart-input-attach-btn';
+      button.classList.add('smart-input-attach-btn');
       button.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>';
+        `<span class="smart-input-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg></span><span class="smart-input-tool-label">${t('smartInput.attach')}</span>`;
       button.title = t('smartInput.attach');
       button.addEventListener('click', (event) => {
         args.onAttachClick(pinOnUse, event);
       });
       break;
     case 'photo':
-      button.className = 'smart-input-photo-btn';
+      button.classList.add('smart-input-photo-btn');
       button.innerHTML =
-        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>';
+        `<span class="smart-input-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg></span><span class="smart-input-tool-label">${t('smartInput.photo')}</span>`;
       button.title = t('smartInput.photo');
       button.addEventListener('click', (event) => {
         args.onPhotoClick(pinOnUse, event);
