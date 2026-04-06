@@ -907,9 +907,7 @@ body.has-app-background::after {
   opacity: 0.9;
   position: relative;
   overflow: hidden;
-  --session-heat-rgb: 10 14 26;
-  --session-heat-core-alpha: 0;
-  --session-heat-edge-alpha: 0;
+  --session-heat-gradient: transparent;
   --session-heat-opacity: 0;
   --session-heat-scale: 0;
   --session-heat-transition-ms: 0ms;
@@ -920,13 +918,7 @@ body.has-app-background::after {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(
-    180deg,
-    rgb(var(--session-heat-rgb) / var(--session-heat-edge-alpha)),
-    rgb(var(--session-heat-rgb) / var(--session-heat-core-alpha)) 35%,
-    rgb(var(--session-heat-rgb) / var(--session-heat-core-alpha)) 65%,
-    rgb(var(--session-heat-rgb) / var(--session-heat-edge-alpha))
-  );
+  background: var(--session-heat-gradient);
   opacity: var(--session-heat-opacity);
   transform: scaleY(var(--session-heat-scale));
   transform-origin: center center;

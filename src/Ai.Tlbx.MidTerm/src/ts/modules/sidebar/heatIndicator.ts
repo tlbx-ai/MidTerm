@@ -161,11 +161,10 @@ function applyHeatStyles(element: HTMLElement, heat: number, durationMs: number)
   const alpha = visible ? Math.min(1, heat * 2) : 0;
   const edgeAlpha = alpha * 0.15;
   const visibleScale = visible ? Math.max(4 / CANVAS_CSS_H, Math.sqrt(heat)) : 0;
+  const gradient = `linear-gradient(180deg, rgba(${r}, ${g}, ${b}, ${edgeAlpha.toFixed(3)}), rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)}) 35%, rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)}) 65%, rgba(${r}, ${g}, ${b}, ${edgeAlpha.toFixed(3)}))`;
 
   element.style.setProperty('--session-heat-transition-ms', `${Math.round(durationMs)}ms`);
-  element.style.setProperty('--session-heat-rgb', `${r} ${g} ${b}`);
-  element.style.setProperty('--session-heat-core-alpha', alpha.toFixed(3));
-  element.style.setProperty('--session-heat-edge-alpha', edgeAlpha.toFixed(3));
+  element.style.setProperty('--session-heat-gradient', gradient);
   element.style.setProperty('--session-heat-opacity', alpha.toFixed(3));
   element.style.setProperty('--session-heat-scale', visibleScale.toFixed(4));
 }
