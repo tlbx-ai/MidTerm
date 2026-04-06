@@ -1243,6 +1243,17 @@ public sealed partial class SessionLensPulseService
         return CompactHistoryBody(string.Join("\n", sections), takeHead);
     }
 
+    private static string ResolveRenderableToolItemType(string normalizedType, string? rawOutput)
+    {
+        if (normalizedType == "command_execution" &&
+            !string.IsNullOrWhiteSpace(rawOutput))
+        {
+            return "command_output";
+        }
+
+        return normalizedType;
+    }
+
     private static string SummarizeCommandText(string? value)
     {
         var normalized = NormalizeTranscriptText(value).Trim();
@@ -1380,11 +1391,13 @@ public sealed partial class SessionLensPulseService
                         toolState.RetainHeadOutput);
                 }
 
-                entry.Title = ResolveToolEntryTitle(normalizedType, lensEvent.Item.Title, toolState.CommandText);
+                var renderItemType = ResolveRenderableToolItemType(normalizedType, toolState.RawOutput);
+                entry.ItemType = renderItemType;
+                entry.Title = ResolveToolEntryTitle(renderItemType, lensEvent.Item.Title, toolState.CommandText);
                 entry.Body = BuildToolScreenBody(
-                    normalizedType,
+                    renderItemType,
                     toolState.CommandText,
-                    normalizedType is "command_output" or "file_change_output"
+                    renderItemType is "command_output" or "file_change_output"
                         ? toolState.RawOutput
                         : MergeTranscriptBody(entry.Body, lensEvent.Item.Detail),
                     streaming: !IsTerminalStatus(item.Status));

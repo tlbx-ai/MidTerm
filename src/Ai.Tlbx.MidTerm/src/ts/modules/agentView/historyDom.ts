@@ -530,6 +530,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function shouldRenderHistoryBody(entry: LensHistoryEntry): boolean {
+    if (entry.commandText?.trim() || (entry.commandOutputTail?.length ?? 0) > 0) {
+      return true;
+    }
+
     if (!entry.body.trim()) {
       return false;
     }

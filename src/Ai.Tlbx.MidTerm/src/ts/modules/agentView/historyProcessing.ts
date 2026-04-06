@@ -163,6 +163,7 @@ export function buildLensHistoryEntries(
 
       mergedEntries[targetIndex] = {
         ...targetEntry,
+        body: '',
         commandText: targetEntry.commandText ?? commandPresentation.commandText,
         commandOutputTail: commandPresentation.commandOutputTail,
       };
@@ -197,6 +198,7 @@ function applyDirectCommandPresentation(entry: LensHistoryEntry): void {
 
   entry.commandText = commandPresentation.commandText;
   entry.commandOutputTail = commandPresentation.commandOutputTail;
+  entry.body = '';
 }
 
 function resolveCommandPresentation(
@@ -210,6 +212,14 @@ function resolveCommandPresentation(
 
   if (normalizedType !== 'commandoutput') {
     return null;
+  }
+
+  if ((entry.commandText?.trim() ?? '').length > 0) {
+    const commandText = entry.commandText?.trim() ?? '';
+    return {
+      commandText,
+      commandOutputTail: entry.commandOutputTail ?? [],
+    };
   }
 
   return parseCommandOutputBody(entry.body);

@@ -3380,6 +3380,7 @@ describe('agentView dev errors', () => {
     expect(userEntry?.body).toContain('update report.md');
     expect(commandCallEntry?.commandText ?? commandCallEntry?.body).toContain('Get-Content report.md');
     expect(commandCallEntry?.commandOutputTail).toEqual(['status: TODO']);
+    expect(commandCallEntry?.body).toBe('');
     expect(history.some((entry) => entry.kind === 'tool' && entry.title === 'Command output')).toBe(
       false,
     );
@@ -3454,6 +3455,7 @@ describe('agentView dev errors', () => {
     const history = buildLensHistoryEntries(snapshot, []);
 
     expect(history).toHaveLength(1);
+    expect(history[0]?.body).toBe('');
     expect(history[0]?.commandText).toBe('git status --short --branch');
     expect(history[0]?.commandOutputTail).toEqual(['## dev...origin/dev']);
   });
