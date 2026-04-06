@@ -136,12 +136,7 @@ export function submitQueuedLensTurn(sessionId: string, request: LensTurnRequest
 
 export async function handleLensEscape(sessionId: string): Promise<boolean> {
   const state = getOrCreateLensTurnQueueState(sessionId);
-  const hasQueuedWork =
-    state.queuedTurns.length > 0 ||
-    state.queueDrainActive ||
-    state.interruptingForQueuedTurns ||
-    Boolean(state.activeQueuedTurnId);
-  const hasSubmittingTurn = state.submittingTurn && !state.currentTurnRunning;
+  const { hasQueuedWork, hasSubmittingTurn } = getLensEscapeWorkState(state);
 
   if (!state.currentTurnRunning && !hasQueuedWork && !hasSubmittingTurn) {
     return false;
@@ -180,6 +175,12 @@ export async function handleLensEscape(sessionId: string): Promise<boolean> {
 
   maybeDrainQueuedLensTurns(sessionId, state);
   return true;
+}
+
+export function hasInterruptibleLensTurnWork(sessionId: string): boolean {
+  const state = getOrCreateLensTurnQueueState(sessionId);
+  const { hasQueuedWork, hasSubmittingTurn } = getLensEscapeWorkState(state);
+  return state.currentTurnRunning || hasQueuedWork || hasSubmittingTurn;
 }
 
 export function syncLensTurnExecutionState(
@@ -314,6 +315,20 @@ function getOrCreateLensTurnQueueState(sessionId: string): LensTurnQueueState {
   };
   lensTurnQueueStates.set(sessionId, created);
   return created;
+}
+
+function getLensEscapeWorkState(state: LensTurnQueueState): {
+  hasQueuedWork: boolean;
+  hasSubmittingTurn: boolean;
+} {
+  return {
+    hasQueuedWork:
+      state.queuedTurns.length > 0 ||
+      state.queueDrainActive ||
+      state.interruptingForQueuedTurns ||
+      Boolean(state.activeQueuedTurnId),
+    hasSubmittingTurn: state.submittingTurn && !state.currentTurnRunning,
+  };
 }
 
 function shouldQueueLensTurn(state: LensTurnQueueState): boolean {

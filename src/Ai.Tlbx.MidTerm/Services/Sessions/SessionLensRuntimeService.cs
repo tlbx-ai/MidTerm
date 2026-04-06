@@ -350,7 +350,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             return state.Profile switch
             {
                 AiCliProfileService.CodexProfile => await InterruptCodexTurnAsync(state, request, ct).ConfigureAwait(false),
-                AiCliProfileService.ClaudeProfile => throw new InvalidOperationException("Claude Lens interrupt is not wired yet."),
+                AiCliProfileService.ClaudeProfile => await InterruptClaudeTurnAsync(state, request, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException("Lens runtime does not support interrupts for this provider.")
             };
         }
@@ -782,6 +782,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     {
         var quickSettings = CreateClaudeQuickSettings(request);
         state.QuickSettings = quickSettings;
+        var turnId = "turn-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
         var promptRequest = new SessionPromptRequest
         {
@@ -793,13 +794,34 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             throw new InvalidOperationException("Claude Lens runtime is not attached.");
         }
 
+        state.Claude!.ActiveTurnId = turnId;
+        state.Claude.InterruptRequested = false;
         EmitPulseQuickSettingsUpdated(state, quickSettings, "midterm.lens", "turn.start");
+        EmitSubmittedUserTurn(state, turnId, request);
+        EmitPulseTurnStarted(
+            state,
+            turnId,
+            quickSettings.Model,
+            quickSettings.Effort,
+            "midterm.lens",
+            "turn.start",
+            default);
+        EmitPulseSessionState(
+            state,
+            "session.state.changed",
+            "running",
+            "Running",
+            "Claude turn started.",
+            "midterm.lens",
+            "turn.start",
+            default);
 
         return new LensTurnStartResponse
         {
             SessionId = state.SessionId,
             Provider = AiCliProfileService.ClaudeProfile,
             ThreadId = state.Claude?.ResumeSessionId ?? state.SessionId,
+            TurnId = turnId,
             Status = "accepted",
             QuickSettings = CloneQuickSettingsSummary(quickSettings)
         };
@@ -829,6 +851,66 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
             ct).ConfigureAwait(false);
 
         AppendActivity(state, "warning", "turn.interrupt.requested", "Asked Codex to interrupt the active turn.", turnId);
+        return new LensCommandAcceptedResponse
+        {
+            SessionId = state.SessionId,
+            Status = "accepted",
+            TurnId = turnId
+        };
+    }
+
+    private async Task<LensCommandAcceptedResponse> InterruptClaudeTurnAsync(
+        LensRuntimeState state,
+        LensInterruptRequest request,
+        CancellationToken ct)
+    {
+        var claude = state.Claude;
+        if (claude is null || claude.ActiveProcess is null || claude.ActiveProcess.HasExited)
+        {
+            throw new InvalidOperationException("Claude Lens runtime is not attached.");
+        }
+
+        var turnId = string.IsNullOrWhiteSpace(request.TurnId) ? claude.ActiveTurnId : request.TurnId;
+        claude.InterruptRequested = true;
+
+        try
+        {
+            claude.KillActiveProcess();
+            if (claude.ActiveProcess is { HasExited: false } process)
+            {
+                await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+        }
+
+        claude.ActiveTurnId = null;
+        lock (state.SyncRoot)
+        {
+            SetStatus(state, LensRuntimeStatus.Ready, "Claude turn interrupted.");
+            AppendActivity(state, "warning", "turn.interrupt.requested", "Asked Claude to interrupt the active turn.", turnId);
+        }
+
+        EmitPulseTurnCompleted(
+            state,
+            turnId,
+            "interrupted",
+            "Interrupted",
+            null,
+            "midterm.lens",
+            "turn.interrupt",
+            default);
+        EmitPulseSessionState(
+            state,
+            "session.state.changed",
+            "ready",
+            "Ready",
+            "Claude turn interrupted.",
+            "midterm.lens",
+            "turn.interrupt",
+            default);
+
         return new LensCommandAcceptedResponse
         {
             SessionId = state.SessionId,
@@ -1958,8 +2040,10 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                 {
                     SetStatus(
                         state,
-                        exitCode == 0 ? LensRuntimeStatus.Ready : LensRuntimeStatus.Error,
-                        exitCode == 0
+                        exitCode == 0 || claude.InterruptRequested
+                            ? LensRuntimeStatus.Ready
+                            : LensRuntimeStatus.Error,
+                        exitCode == 0 || claude.InterruptRequested
                             ? "Claude Lens runtime is ready for the next prompt."
                             : $"Claude Lens runtime exited with code {exitCode.ToString(CultureInfo.InvariantCulture)}.");
                 }
@@ -2072,6 +2156,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                     var subtype = GetString(root, "subtype") ?? "unknown";
                     var isError = GetBoolean(root, "is_error");
                     var resultText = GetString(root, "result");
+                    var turnId = claude.ActiveTurnId;
                     if (!string.IsNullOrWhiteSpace(resultText))
                     {
                         state.AssistantText = resultText;
@@ -2083,6 +2168,26 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
                         "turn.completed",
                         $"Claude turn {subtype}.",
                         Trim(resultText, 220));
+                    EmitPulseTurnCompleted(
+                        state,
+                        turnId,
+                        isError ? "failed" : "completed",
+                        isError ? "Failed" : "Completed",
+                        isError ? resultText : null,
+                        "claude.stream-json",
+                        "result",
+                        root);
+                    EmitPulseSessionState(
+                        state,
+                        "session.state.changed",
+                        isError ? "error" : "ready",
+                        isError ? "Error" : "Ready",
+                        isError ? "Claude turn failed." : "Claude turn completed.",
+                        "claude.stream-json",
+                        "result",
+                        root);
+                    claude.ActiveTurnId = null;
+                    claude.InterruptRequested = false;
                     break;
                 }
             }
@@ -3372,6 +3477,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
         public string? ResumeSessionId { get; set; }
+        public string? ActiveTurnId { get; set; }
+        public bool InterruptRequested { get; set; }
 
         public void KillActiveProcess()
         {

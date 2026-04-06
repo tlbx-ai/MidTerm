@@ -12,6 +12,7 @@ import { submitSessionText } from '../input/submit';
 import {
   createLensTurnRequest,
   handleLensEscape,
+  hasInterruptibleLensTurnWork,
   isLensActiveSession,
   submitQueuedLensTurn,
 } from '../lens/input';
@@ -70,6 +71,7 @@ import {
   resizeSmartInputTextarea,
 } from './smartInputMetrics';
 import type { ResumeProvider } from '../providerResume';
+import { bindSmartInputGlobalKeyBindings } from './smartInputKeyBindings';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -344,26 +346,28 @@ export function initSmartInput(): void {
     }
   });
 
-  document.addEventListener('keydown', (e) => {
-    if (e.code === 'ControlRight') {
-      if (!getAdaptiveFooterLayoutState().showInput) return;
-      if (!canUseSmartInputVoice()) return;
-      if (isRecording) return;
-      e.preventDefault();
-      beginRecording();
-      return;
-    }
+  bindSmartInputGlobalKeyBindings({
+    beginRecording,
+    canUseVoice: canUseSmartInputVoice,
+    closeFooterTransientUi,
+    endRecording,
+    getInterruptibleLensSessionId: () => {
+      const sessionId = $activeSessionId.get();
+      if (
+        !sessionId ||
+        !isLensActiveSession(sessionId) ||
+        !hasInterruptibleLensTurnWork(sessionId)
+      ) {
+        return null;
+      }
 
-    if (e.key === 'Escape' && closeFooterTransientUi()) {
-      e.preventDefault();
-    }
-  });
-
-  document.addEventListener('keyup', (e) => {
-    if (e.code !== 'ControlRight') return;
-    if (!isRecording) return;
-    e.preventDefault();
-    endRecording();
+      return sessionId;
+    },
+    hasVisibleInput: () => getAdaptiveFooterLayoutState().showInput,
+    isRecording: () => isRecording,
+    onLensEscape: (sessionId) => {
+      void handleLensEscape(sessionId);
+    },
   });
 
   document.addEventListener('click', (event) => {

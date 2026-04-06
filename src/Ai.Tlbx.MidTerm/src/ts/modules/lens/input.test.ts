@@ -294,6 +294,55 @@ describe('lens input', () => {
     expect(interruptLensTurn).toHaveBeenCalledWith('s1', { turnId: 'turn-direct-1' });
   });
 
+  it('reports interruptible Lens work synchronously for running and submitting turns', async () => {
+    let resolveSubmission: ((value: unknown) => void) | null = null;
+    sendLensTurn.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmission = resolve;
+        }),
+    );
+
+    const { hasInterruptibleLensTurnWork, submitLensTurn, syncLensTurnExecutionState } =
+      await import('./input');
+
+    expect(hasInterruptibleLensTurnWork('s1')).toBe(false);
+
+    syncLensTurnExecutionState('s1', { turnId: 'turn-running-1', state: 'running' });
+    expect(hasInterruptibleLensTurnWork('s1')).toBe(true);
+
+    syncLensTurnExecutionState('s1', { turnId: 'turn-running-1', state: 'completed' });
+    expect(hasInterruptibleLensTurnWork('s1')).toBe(false);
+
+    const submission = submitLensTurn('s1', {
+      text: 'Interrupt me while submitting.',
+      model: null,
+      effort: null,
+      planMode: 'off',
+      permissionMode: 'manual',
+      attachments: [],
+    });
+
+    await Promise.resolve();
+    expect(hasInterruptibleLensTurnWork('s1')).toBe(true);
+
+    resolveSubmission?.({
+      sessionId: 's1',
+      status: 'accepted',
+      provider: 'codex',
+      turnId: 'turn-submitting-1',
+      threadId: 'thread-1',
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+    });
+
+    await submission;
+  });
+
   it('interrupts a queued turn even when Escape lands during the queued turn submission gap', async () => {
     interruptLensTurn.mockResolvedValue({
       sessionId: 's1',

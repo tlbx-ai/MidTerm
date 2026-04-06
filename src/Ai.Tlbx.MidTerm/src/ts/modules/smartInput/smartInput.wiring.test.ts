@@ -9,6 +9,7 @@ const source = readFileSync(path.join(__dirname, 'smartInput.ts'), 'utf8');
 const metricsSource = readFileSync(path.join(__dirname, 'smartInputMetrics.ts'), 'utf8');
 const submissionSource = readFileSync(path.join(__dirname, 'lensAttachmentSubmission.ts'), 'utf8');
 const layoutSource = readFileSync(path.join(__dirname, 'layout.ts'), 'utf8');
+const keyBindingsSource = readFileSync(path.join(__dirname, 'smartInputKeyBindings.ts'), 'utf8');
 const viewSource = readFileSync(path.join(__dirname, 'smartInputView.ts'), 'utf8');
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
@@ -94,6 +95,12 @@ describe('smart input tab wiring', () => {
   });
 
   it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {
+    expect(source).toContain('bindSmartInputGlobalKeyBindings({');
+    expect(source).toContain('hasInterruptibleLensTurnWork(sessionId)');
+    expect(keyBindingsSource).toContain("document.addEventListener(");
+    expect(keyBindingsSource).toContain("'keydown'");
+    expect(keyBindingsSource).toContain('event.stopImmediatePropagation();');
+    expect(keyBindingsSource).toContain('true,');
     expect(source).toContain("event.key === 'Escape'");
     expect(source).toContain('void handleLensEscape(sessionId);');
   });
