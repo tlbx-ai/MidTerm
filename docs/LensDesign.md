@@ -171,7 +171,7 @@ Provider-specific transport details belong in the C# runtime layer, not here. Th
 - When the final assistant item lands for a turn that already has streamed assistant text, Lens should reconcile that into one settled assistant row rather than showing both the streamed row and a second final duplicate.
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
-- When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. Only fall back to a generic `Working` label when no meaningful live provider label is available.
+- When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. User-prompt text and assistant-message text must not populate the busy bubble. Only fall back to a generic `Working` label when no meaningful live provider label is available.
 - While a turn is active, that busy bubble should also show a muted wall-clock duration counter plus a quiet `(Press Esc to cancel)` hint immediately after the animated label, not detached against the far edge of the pane.
 - The busy-label animation should sweep smoothly left-to-right and back again without a visible jump reset, and it should remain a pure CSS animation rather than relying on JavaScript timing.
 - When the turn settles back to the user, Lens should append one muted inline duration note such as `(Turn took 1m 4s)` into the history instead of leaving the elapsed time only in transient chrome.
@@ -339,6 +339,7 @@ Status in this branch/work item:
 - implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface
 - implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
+- implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label and phase-locks its CSS sweep to the turn clock so elapsed-time refreshes do not visibly restart the animation
 
 Still mandatory after this work whenever Lens evolves:
 

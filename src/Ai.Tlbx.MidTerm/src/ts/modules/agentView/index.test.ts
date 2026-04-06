@@ -4774,6 +4774,16 @@ describe('agentView dev errors', () => {
         streams: { assistantText: '' },
         items: [
           {
+            itemId: 'user-1',
+            turnId: 'turn-2',
+            itemType: 'user_message',
+            status: 'in_progress',
+            title: 'You',
+            detail: 'Explain why the busy indicator is wrong.',
+            attachments: [],
+            updatedAt: '2026-04-04T20:00:11Z',
+          },
+          {
             itemId: 'reasoning-1',
             turnId: 'turn-2',
             itemType: 'reasoning',
@@ -4815,6 +4825,35 @@ describe('agentView dev errors', () => {
     );
 
     expect(fallback[0]?.body).toBe('Working');
+  });
+
+  it('phase-locks the busy sweep to the turn start so elapsed refreshes do not restart the animation at frame zero', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(
+      Date.parse('2026-04-04T20:00:13.700Z'),
+    );
+
+    try {
+      const running = withTrailingBusyIndicator(
+        {
+          currentTurn: {
+            turnId: 'turn-2',
+            state: 'running',
+            startedAt: '2026-04-04T20:00:10.000Z',
+          },
+          session: { state: 'running' },
+          streams: { assistantText: '' },
+          items: [],
+        } as any,
+        [],
+        [],
+      );
+
+      expect(running[0]?.busyIndicator).toBe(true);
+      expect(running[0]?.busyAnimationOffsetMs).toBe(800);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 
   it('collapses long tool-style history bodies by default while keeping them monospace', async () => {

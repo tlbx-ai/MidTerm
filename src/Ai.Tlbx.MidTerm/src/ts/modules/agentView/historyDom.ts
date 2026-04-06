@@ -309,6 +309,13 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';
+    const animationOffsetMs = Math.max(0, Math.trunc(entry.busyAnimationOffsetMs ?? 0));
+    if (typeof label.style.setProperty === 'function') {
+      label.style.setProperty('--agent-busy-animation-offset-ms', `${animationOffsetMs}ms`);
+    } else {
+      const style = label.style as CSSStyleDeclaration & Record<string, string>;
+      style['--agent-busy-animation-offset-ms'] = `${animationOffsetMs}ms`;
+    }
     for (const [index, character] of Array.from(entry.body || 'Working').entries()) {
       const letter = document.createElement('span');
       letter.className = 'agent-history-busy-label-letter';

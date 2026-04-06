@@ -152,6 +152,7 @@ export interface LensHistoryEntry {
   sourceItemType?: string | null;
   busyIndicator?: boolean;
   busyElapsedText?: string | null;
+  busyAnimationOffsetMs?: number | null;
   turnDurationNote?: boolean;
   commandText?: string | null;
   commandOutputTail?: string[];

@@ -63,6 +63,18 @@ const GENERIC_BUSY_INDICATOR_LABELS = new Set([
   'user',
 ]);
 
+const BUSY_INDICATOR_EXCLUDED_ITEM_TYPES = new Set([
+  'assistant_message',
+  'assistantmessage',
+  'command_output',
+  'file_change_output',
+  'user_message',
+  'usermessage',
+]);
+
+const BUSY_SWEEP_DURATION_MS = 1450;
+const BUSY_SWEEP_CYCLE_MS = BUSY_SWEEP_DURATION_MS * 2;
+
 export function cloneHistoryAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
 ): LensAttachmentReference[] {
@@ -513,6 +525,7 @@ export function withTrailingBusyIndicator(
     meta: '',
     busyIndicator: true,
     busyElapsedText: formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot)),
+    busyAnimationOffsetMs: resolveBusyIndicatorAnimationOffsetMs(snapshot),
   });
   return nextEntries;
 }
@@ -546,6 +559,7 @@ function isBusyIndicatorItemCandidate(item: unknown, currentTurnId: string | nul
   }
 
   const candidate = item as {
+    itemType?: unknown;
     turnId?: unknown;
     status?: unknown;
   };
@@ -554,10 +568,24 @@ function isBusyIndicatorItemCandidate(item: unknown, currentTurnId: string | nul
     return false;
   }
 
+  const normalizedItemType = normalizeBusyIndicatorItemType(candidate.itemType);
+  if (BUSY_INDICATOR_EXCLUDED_ITEM_TYPES.has(normalizedItemType)) {
+    return false;
+  }
+
   const status = normalizeComparableHistoryText(
     typeof candidate.status === 'string' ? candidate.status : '',
   );
   return BUSY_INDICATOR_ITEM_STATUSES.some((busyStatus) => status.includes(busyStatus));
+}
+
+function normalizeBusyIndicatorItemType(itemType: unknown): string {
+  return typeof itemType === 'string'
+    ? itemType
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_')
+    : '';
 }
 
 function resolveBusyIndicatorLabelFromItem(item: unknown): string {
@@ -595,6 +623,15 @@ function resolveBusyIndicatorElapsedMs(snapshot: LensPulseSnapshotResponse): num
 
   const startMs = Date.parse(startedAt);
   return Number.isFinite(startMs) ? Math.max(0, Date.now() - startMs) : null;
+}
+
+function resolveBusyIndicatorAnimationOffsetMs(snapshot: LensPulseSnapshotResponse): number {
+  const elapsedMs = resolveBusyIndicatorElapsedMs(snapshot);
+  if (elapsedMs === null) {
+    return 0;
+  }
+
+  return elapsedMs % BUSY_SWEEP_CYCLE_MS;
 }
 
 export function withTurnDurationNotes(

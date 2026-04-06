@@ -11299,6 +11299,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: pre;
 }
 
 .agent-history-busy-status {
@@ -11325,8 +11326,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--text-muted) 68%, transparent);
   text-shadow: 0 0 0 transparent;
   animation: agent-history-busy-sweep 1.45s linear infinite alternate;
-  animation-delay: calc(var(--agent-busy-letter-index, 0) * 90ms);
+  animation-delay: calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms));
   animation-fill-mode: both;
+  white-space: pre;
 }
 
 @keyframes agent-history-busy-spin {

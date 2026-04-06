@@ -125,20 +125,26 @@ describe('agent view Lens wiring', () => {
   it('renders the busy indicator as Working with per-letter sweep animation', () => {
     expect(historyProcessingSource).toContain("lensText('lens.status.working', 'Working')");
     expect(historyProcessingSource).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');
+    expect(historyProcessingSource).toContain('BUSY_INDICATOR_EXCLUDED_ITEM_TYPES');
+    expect(historyProcessingSource).toContain('resolveBusyIndicatorAnimationOffsetMs(snapshot)');
     expect(historyDomSource).toContain('agent-history-busy-label-letter');
+    expect(historyDomSource).toContain('--agent-busy-animation-offset-ms');
     expect(historyDomSource).toContain('agent-history-busy-elapsed');
     expect(historyDomSource).toContain('(Press Esc to cancel)');
     expect(css).toContain('.agent-history-busy-bubble {');
     expect(css).toContain('justify-content: flex-start;');
     expect(css).toContain('.agent-history-busy-label {');
     expect(css).toContain('flex: 0 0 auto;');
+    expect(css).toContain('white-space: pre;');
     expect(css).toContain('.agent-history-busy-label-letter {');
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('animation: agent-history-busy-sweep 1.45s linear infinite alternate;');
+    expect(css).toContain('animation-delay: calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms));');
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration .agent-history-body {');
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
     expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
+    expect(lensDesign).toContain('User-prompt text and assistant-message text must not populate the busy bubble.');
     expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
     expect(lensDesign).toContain('hint immediately after the animated label');
     expect(lensDesign).toContain('append one muted inline duration note');
