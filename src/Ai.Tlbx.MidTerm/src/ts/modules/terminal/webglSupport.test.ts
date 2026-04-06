@@ -32,7 +32,7 @@ describe('webglSupport', () => {
     expect(shouldUseWebglRenderer(createSettings({ useWebGL: false }))).toBe(false);
   });
 
-  it('falls back to the DOM renderer when terminal transparency is active', () => {
+  it('keeps WebGL enabled when terminal-controlled cell backgrounds are transparent', () => {
     expect(
       shouldUseWebglRenderer({
         ...createSettings({}),
@@ -42,7 +42,7 @@ describe('webglSupport', () => {
         backgroundImageEnabled: true,
         backgroundImageFileName: 'wallpaper.png',
       } as MidTermSettingsPublic),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('keeps WebGL enabled when only the terminal surface is transparent', () => {

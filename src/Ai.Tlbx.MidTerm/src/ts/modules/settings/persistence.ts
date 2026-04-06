@@ -40,6 +40,7 @@ import {
 } from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
 import { syncTerminalRgbBackgroundTransparency } from '../terminal/rgbBackgroundTransparency';
+import { syncWebglTerminalCellBackgroundAlpha } from '../terminal/webglCellBackgroundAlpha';
 import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
@@ -110,6 +111,7 @@ function applySettingsLocally(settings: MidTermSettingsPublic): void {
   applyCssTheme(settings.theme);
   syncBoxDrawingStyle(settings.boxDrawingStyle);
   syncBoxDrawingScale(settings.boxDrawingScale);
+  syncWebglTerminalCellBackgroundAlpha(settings);
   applySettingsToTerminals();
   updateTabTitle();
   void setLocale(settings.language);
@@ -512,6 +514,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const settings = settingsOverride ?? $currentSettings.get();
   if (!settings) return;
 
+  syncWebglTerminalCellBackgroundAlpha(settings);
   applyBackgroundAppearance(settings);
   syncEffectiveXtermThemeDomOverrides(settings);
   const theme = getEffectiveXtermThemeForSettings(settings);

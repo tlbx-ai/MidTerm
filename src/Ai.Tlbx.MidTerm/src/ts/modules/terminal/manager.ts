@@ -72,6 +72,7 @@ import {
   disposeTerminalRgbBackgroundTransparency,
   syncTerminalRgbBackgroundTransparency,
 } from './rgbBackgroundTransparency';
+import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
 import { shouldUseWebglRenderer } from './webglSupport';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 
@@ -893,8 +894,10 @@ export function createTerminalForSession(
 
     // Load WebGL addon for GPU-accelerated rendering (with context limit)
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
-    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer($currentSettings.get()));
-    syncTerminalRgbBackgroundTransparency(state, $currentSettings.get());
+    const settings = $currentSettings.get();
+    syncWebglTerminalCellBackgroundAlpha(settings);
+    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+    syncTerminalRgbBackgroundTransparency(state, settings);
 
     // Load Web-Links addon for clickable URLs
     try {

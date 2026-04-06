@@ -24,6 +24,7 @@ declare global {
   }
 
   interface Window {
+    __MIDTERM_XTERM_WEBGL_CELL_BG_ALPHA__?: number;
     mmDebug?: {
       readonly terminals: Map<string, TerminalState>;
       readonly activeId: string | null;
