@@ -150,13 +150,20 @@ export function initManagerBar(): void {
     }
   });
 
-  document.addEventListener('click', handleDocumentClickForManagerMenu);
+  buttonsEl.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest('.manager-btn-menu')) {
+      return;
+    }
 
-  addBtn.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
+    event.stopPropagation();
   });
 
-  addBtn.addEventListener('click', () => {
+  document.addEventListener('click', handleDocumentClickForManagerMenu);
+
+  addBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     closeOpenManagerMenus();
     openActionModal();
   });

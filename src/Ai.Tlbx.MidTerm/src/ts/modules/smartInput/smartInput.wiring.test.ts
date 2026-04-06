@@ -62,6 +62,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('dockedBar.appendChild(toolsSurface);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
+    expect(source).toContain("event.stopPropagation();");
+    expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
     expect(css).toContain('margin: 6px 0 0;');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
     expect(css).toContain('overflow: visible;');

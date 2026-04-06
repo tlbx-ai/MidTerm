@@ -507,6 +507,8 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const customGlyphs = settings.customGlyphs;
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
+  document.documentElement.style.setProperty('--terminal-font-size', `${fontSize}px`);
+  document.documentElement.style.setProperty('--terminal-font-family', fontFamily);
   let hasFontChanges = false;
   syncBoxDrawingStyle(boxDrawingStyle);
   syncBoxDrawingScale(boxDrawingScale);

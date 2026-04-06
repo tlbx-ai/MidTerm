@@ -33,6 +33,9 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain('function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): void {');
     expect(managerBarSource).toContain("popover.className = 'manager-bar-action-popover hidden';");
     expect(managerBarSource).toContain("if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {");
+    expect(managerBarSource).toContain("buttonsEl.addEventListener('pointerdown', (event) => {");
+    expect(managerBarSource).toContain("if (!target?.closest('.manager-btn-menu')) {");
+    expect(managerBarSource).toContain('event.stopPropagation();');
   });
 
   it('guards burst enqueue clicks before sending duplicate queue requests', () => {

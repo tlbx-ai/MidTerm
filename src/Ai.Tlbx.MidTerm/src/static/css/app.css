@@ -503,7 +503,7 @@
 select,
 option,
 optgroup {
-  background-color: var(--bg-input);
+  background-color: var(--bg-elevated-opaque);
   color: var(--text-primary);
 }
 
@@ -9898,6 +9898,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(in srgb, var(--bg-hover) 68%, transparent);
   color: var(--text-muted);
   cursor: pointer;
+  z-index: 2;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
@@ -13803,13 +13804,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 1px solid var(--border-subtle);
   background: color-mix(
     in srgb,
-    var(--text-input-background, var(--bg-input)) 74%,
-    var(--terminal-ui-background, var(--terminal-bg)) 26%
+    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 82%,
+    transparent 18%
   );
   -webkit-backdrop-filter: blur(18px) saturate(112%);
   backdrop-filter: blur(18px) saturate(112%);
   color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
-  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
+  font-size: var(--terminal-font-size, 16px);
 }
 
 .smart-input-textarea:focus {
@@ -14149,6 +14151,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     black 36%,
     var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg)))
   );
+  z-index: 2;
 }
 
 .adaptive-footer-dock .manager-btn:hover {
