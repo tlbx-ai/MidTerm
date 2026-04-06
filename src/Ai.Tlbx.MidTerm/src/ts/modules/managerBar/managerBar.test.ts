@@ -36,6 +36,9 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain("buttonsEl.addEventListener('pointerdown', (event) => {");
     expect(managerBarSource).toContain("if (!target?.closest('.manager-btn-menu')) {");
     expect(managerBarSource).toContain('event.stopPropagation();');
+    expect(managerBarSource).toContain('function resolveEventElement(target: EventTarget | null): Element | null {');
+    expect(managerBarSource).toContain('if (target instanceof Element) {');
+    expect(managerBarSource).toContain('return target.parentElement;');
   });
 
   it('guards burst enqueue clicks before sending duplicate queue requests', () => {

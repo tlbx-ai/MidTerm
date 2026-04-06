@@ -128,7 +128,7 @@ export function initManagerBar(): void {
   });
 
   buttonsEl.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement | null;
+    const target = resolveEventElement(event.target);
     if (!target) return;
 
     const menuBtn = target.closest<HTMLButtonElement>('.manager-btn-menu');
@@ -151,7 +151,7 @@ export function initManagerBar(): void {
   });
 
   buttonsEl.addEventListener('pointerdown', (event) => {
-    const target = event.target as HTMLElement | null;
+    const target = resolveEventElement(event.target);
     if (!target?.closest('.manager-btn-menu')) {
       return;
     }
@@ -371,7 +371,7 @@ function renderButtons(buttons: NormalizedManagerButton[]): void {
 }
 
 function handleDocumentClickForManagerMenu(event: MouseEvent): void {
-  const target = event.target as HTMLElement | null;
+  const target = resolveEventElement(event.target);
   if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {
     return;
   }
@@ -978,6 +978,18 @@ function generateActionId(): string {
     return crypto.randomUUID();
   }
   return `manager-action-${Date.now()}`;
+}
+
+function resolveEventElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) {
+    return target;
+  }
+
+  if (target instanceof Node) {
+    return target.parentElement;
+  }
+
+  return null;
 }
 
 function escapeHtml(value: string): string {
