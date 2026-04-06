@@ -1,38 +1,17 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-interface FakeContext {
-  scale: ReturnType<typeof vi.fn>;
-  clearRect: ReturnType<typeof vi.fn>;
-  createLinearGradient: ReturnType<typeof vi.fn>;
-  beginPath: ReturnType<typeof vi.fn>;
-  moveTo: ReturnType<typeof vi.fn>;
-  arcTo: ReturnType<typeof vi.fn>;
-  closePath: ReturnType<typeof vi.fn>;
-  fill: ReturnType<typeof vi.fn>;
-  fillStyle: unknown;
+interface HeatElementMock {
+  style: {
+    setProperty: ReturnType<typeof vi.fn>;
+  };
 }
 
-function createCanvasMock() {
-  const gradient = { addColorStop: vi.fn() };
-  const ctx: FakeContext = {
-    scale: vi.fn(),
-    clearRect: vi.fn(),
-    createLinearGradient: vi.fn(() => gradient),
-    beginPath: vi.fn(),
-    moveTo: vi.fn(),
-    arcTo: vi.fn(),
-    closePath: vi.fn(),
-    fill: vi.fn(),
-    fillStyle: null,
+function createHeatElementMock(): HeatElementMock {
+  return {
+    style: {
+      setProperty: vi.fn(),
+    },
   };
-
-  const canvas = {
-    width: 0,
-    height: 0,
-    getContext: vi.fn(() => ctx),
-  };
-
-  return { canvas: canvas as any, ctx, gradient };
 }
 
 const getSessionsMock = vi.hoisted(() => vi.fn());
@@ -61,40 +40,43 @@ let unregisterHeatCanvas: typeof import('./heatIndicator').unregisterHeatCanvas;
 const heatIndicatorModulePromise = import('./heatIndicator');
 
 describe('heatIndicator', () => {
-  let rafQueue: FrameRequestCallback[] = [];
   let nowMs = Date.parse('2026-03-24T12:00:00.000Z');
   let intervalCallbacks = new Map<number, () => void>();
   let nextIntervalId = 1;
   let visibilityChangeListeners: Array<() => void> = [];
   let windowEventListeners = new Map<string, Array<() => void>>();
   let documentMock: { hidden: boolean; addEventListener: ReturnType<typeof vi.fn> };
+
   async function flushPromises(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
   }
 
-  function advanceAnimationFrames(durationMs: number, stepMs: number = 16): void {
-    const deadline = nowMs + durationMs;
-    while (rafQueue.length > 0 && nowMs < deadline) {
-      const callbacks = [...rafQueue];
-      rafQueue = [];
-      nowMs = Math.min(deadline, nowMs + stepMs);
-      callbacks.forEach((callback) => callback(stepMs));
-    }
-  }
-
-  function advanceTimeWithoutFrames(durationMs: number): void {
+  function advanceTime(durationMs: number): void {
     nowMs += durationMs;
-  }
-
-  function setDocumentHidden(hidden: boolean): void {
-    documentMock.hidden = hidden;
-    visibilityChangeListeners.forEach((listener) => listener());
   }
 
   async function runIntervalTick(id: number = 1): Promise<void> {
     intervalCallbacks.get(id)?.();
     await flushPromises();
+  }
+
+  async function advancePolls(durationMs: number, stepMs: number = 1000): Promise<void> {
+    const iterations = Math.floor(durationMs / stepMs);
+    for (let i = 0; i < iterations; i += 1) {
+      advanceTime(stepMs);
+      await runIntervalTick();
+    }
+
+    const remainder = durationMs - iterations * stepMs;
+    if (remainder > 0) {
+      advanceTime(remainder);
+    }
+  }
+
+  function setDocumentHidden(hidden: boolean): void {
+    documentMock.hidden = hidden;
+    visibilityChangeListeners.forEach((listener) => listener());
   }
 
   function buildSessionsResponse(
@@ -135,7 +117,6 @@ describe('heatIndicator', () => {
     getSessionsMock.mockReset();
     getSessionsMock.mockImplementation(async () => buildSessionsResponse([]));
 
-    rafQueue = [];
     intervalCallbacks = new Map<number, () => void>();
     nextIntervalId = 1;
     visibilityChangeListeners = [];
@@ -153,7 +134,6 @@ describe('heatIndicator', () => {
     };
 
     vi.stubGlobal('window', {
-      devicePixelRatio: 1,
       addEventListener: vi.fn((event: string, callback: () => void) => {
         const listeners = windowEventListeners.get(event) ?? [];
         listeners.push(callback);
@@ -171,13 +151,6 @@ describe('heatIndicator', () => {
       clearInterval: vi.fn((id: number) => {
         intervalCallbacks.delete(id);
       }),
-      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
-        rafQueue.push(callback);
-        return rafQueue.length;
-      }),
-      cancelAnimationFrame: vi.fn(() => {
-        rafQueue = [];
-      }),
     });
     vi.stubGlobal('document', documentMock);
     destroyHeatIndicator();
@@ -189,86 +162,90 @@ describe('heatIndicator', () => {
     vi.restoreAllMocks();
   });
 
-  it('preserves heat state across sidebar rerenders', async () => {
-    const firstCanvas = createCanvasMock();
-    registerHeatCanvas('session-1', firstCanvas.canvas);
+  it('preserves heat state across sidebar rerenders', () => {
+    const firstElement = createHeatElementMock();
+    registerHeatCanvas('session-1', firstElement as unknown as HTMLElement);
 
     setSessionHeat('session-1', 0.8);
-    advanceAnimationFrames(300);
+    advanceTime(300);
     const heatBeforeRerender = getSessionHeat('session-1');
+    const displayedBeforeRerender = getDisplayedSessionHeat('session-1');
+
     expect(heatBeforeRerender).toBeGreaterThan(0);
+    expect(displayedBeforeRerender).toBeGreaterThan(0.7);
 
     unregisterHeatCanvas('session-1');
     expect(getSessionHeat('session-1')).toBeCloseTo(heatBeforeRerender, 5);
 
-    const secondCanvas = createCanvasMock();
-    registerHeatCanvas('session-1', secondCanvas.canvas);
+    const secondElement = createHeatElementMock();
+    registerHeatCanvas('session-1', secondElement as unknown as HTMLElement);
 
     expect(getSessionHeat('session-1')).toBeCloseTo(heatBeforeRerender, 5);
-    expect(secondCanvas.ctx.fill).toHaveBeenCalled();
+    expect(getDisplayedSessionHeat('session-1')).toBeCloseTo(displayedBeforeRerender, 3);
+    expect(secondElement.style.setProperty).toHaveBeenCalled();
   });
 
-  it('drops heat state only when the session is pruned', async () => {
-    const canvas = createCanvasMock();
-    registerHeatCanvas('session-1', canvas.canvas);
+  it('drops heat state only when the session is pruned', () => {
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
 
     setSessionHeat('session-1', 0.6);
-    advanceAnimationFrames(300);
+    advanceTime(300);
     expect(getSessionHeat('session-1')).toBeGreaterThan(0);
 
     pruneHeatSessions([]);
     expect(getSessionHeat('session-1')).toBe(0);
   });
 
-  it('smoothly animates rendered heat toward the latest target', async () => {
-    const canvas = createCanvasMock();
-    registerHeatCanvas('session-1', canvas.canvas);
+  it('smoothly animates rendered heat toward the latest target', () => {
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
 
     setSessionHeat('session-1', 1);
 
     expect(getSessionHeat('session-1')).toBe(1);
     expect(getDisplayedSessionHeat('session-1')).toBe(0);
 
-    advanceAnimationFrames(300);
+    advanceTime(300);
 
     expect(getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
-    expect(canvas.ctx.fill.mock.calls.length).toBeGreaterThan(1);
+    expect(element.style.setProperty).toHaveBeenCalled();
   });
 
   it('decays slowly enough to preserve a visible session hierarchy', async () => {
-    const canvas = createCanvasMock();
-    registerHeatCanvas('session-1', canvas.canvas);
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
+    initHeatIndicator();
 
     setSessionHeat('session-1', 1);
-    advanceAnimationFrames(300);
+    advanceTime(300);
     expect(getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
 
     setSessionHeat('session-1', 0);
-    advanceAnimationFrames(42_000);
+    await advancePolls(42_000);
     expect(getDisplayedSessionHeat('session-1')).toBeCloseTo(0.25, 1);
 
-    advanceAnimationFrames(126_000);
+    await advancePolls(126_000);
     expect(getDisplayedSessionHeat('session-1')).toBeLessThan(0.01);
     expect(getDisplayedSessionHeat('session-1')).toBeGreaterThan(0);
   });
 
   it('recomputes decayed heat from elapsed time when returning from the background', async () => {
-    const canvas = createCanvasMock();
-    registerHeatCanvas('session-1', canvas.canvas);
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
     initHeatIndicator();
 
     setSessionHeat('session-1', 1);
-    advanceAnimationFrames(300);
+    advanceTime(300);
     expect(getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
 
     setDocumentHidden(true);
-    expect(rafQueue).toHaveLength(0);
-
-    advanceTimeWithoutFrames(42_000);
+    advanceTime(42_000);
     setDocumentHidden(false);
+    await flushPromises();
 
     expect(getDisplayedSessionHeat('session-1')).toBeCloseTo(0.25, 1);
-    expect(canvas.ctx.fill).toHaveBeenCalled();
+    expect(element.style.setProperty).toHaveBeenCalled();
   });
 
   it('does not create heat from zero-heat refreshes that only carry last output timestamps', async () => {
@@ -282,14 +259,14 @@ describe('heatIndicator', () => {
       ]),
     );
 
-    const canvas = createCanvasMock();
-    registerHeatCanvas('session-1', canvas.canvas);
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
     initHeatIndicator();
     await flushPromises();
 
     expect(getSessionHeat('session-1')).toBe(0);
     expect(getDisplayedSessionHeat('session-1')).toBe(0);
-    expect(canvas.ctx.fill).not.toHaveBeenCalled();
+    expect(element.style.setProperty).toHaveBeenCalled();
   });
 
   it('continues polling while the document is hidden', async () => {
@@ -303,8 +280,8 @@ describe('heatIndicator', () => {
       ]),
     );
 
-    const canvas = createCanvasMock();
-    registerHeatCanvas('session-1', canvas.canvas);
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
     initHeatIndicator();
     await flushPromises();
 

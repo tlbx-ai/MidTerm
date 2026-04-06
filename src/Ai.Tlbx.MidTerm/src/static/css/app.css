@@ -495,9 +495,11 @@
   --app-background-size: cover;
   --app-background-repeat: no-repeat;
   --app-background-position: center center;
-  --app-background-scale: 1;
-  --app-background-offset-x: 0px;
-  --app-background-offset-y: 0px;
+  --app-background-transform: translate3d(0px, 0px, 0) scale(1);
+  --app-background-animation: none;
+  --app-background-ken-burns-scale: 1;
+  --app-background-ken-burns-pan-x: 0%;
+  --app-background-ken-burns-pan-y: 0%;
 }
 
 select,
@@ -592,6 +594,49 @@ body::before {
   will-change: transform;
   z-index: -2;
   pointer-events: none;
+}
+
+@keyframes midterm-app-background-ken-burns {
+  0% {
+    transform: translate3d(
+        calc(var(--app-background-ken-burns-pan-x, 0%) * -1),
+        calc(var(--app-background-ken-burns-pan-y, 0%) * -1),
+        0
+      )
+      scale(var(--app-background-ken-burns-scale, 1));
+  }
+  25% {
+    transform: translate3d(
+        var(--app-background-ken-burns-pan-x, 0%),
+        calc(var(--app-background-ken-burns-pan-y, 0%) * -0.45),
+        0
+      )
+      scale(var(--app-background-ken-burns-scale, 1));
+  }
+  50% {
+    transform: translate3d(
+        calc(var(--app-background-ken-burns-pan-x, 0%) * 0.35),
+        var(--app-background-ken-burns-pan-y, 0%),
+        0
+      )
+      scale(var(--app-background-ken-burns-scale, 1));
+  }
+  75% {
+    transform: translate3d(
+        calc(var(--app-background-ken-burns-pan-x, 0%) * -0.8),
+        calc(var(--app-background-ken-burns-pan-y, 0%) * 0.3),
+        0
+      )
+      scale(var(--app-background-ken-burns-scale, 1));
+  }
+  100% {
+    transform: translate3d(
+        calc(var(--app-background-ken-burns-pan-x, 0%) * -1),
+        calc(var(--app-background-ken-burns-pan-y, 0%) * -1),
+        0
+      )
+      scale(var(--app-background-ken-burns-scale, 1));
+  }
 }
 
 body.has-app-background::after {
@@ -860,6 +905,35 @@ body.has-app-background::after {
   border-radius: 2px;
   margin-right: 6px;
   opacity: 0.9;
+  position: relative;
+  overflow: hidden;
+  --session-heat-rgb: 10 14 26;
+  --session-heat-core-alpha: 0;
+  --session-heat-edge-alpha: 0;
+  --session-heat-opacity: 0;
+  --session-heat-scale: 0;
+  --session-heat-transition-ms: 0ms;
+}
+
+.heat-canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgb(var(--session-heat-rgb) / var(--session-heat-edge-alpha)),
+    rgb(var(--session-heat-rgb) / var(--session-heat-core-alpha)) 35%,
+    rgb(var(--session-heat-rgb) / var(--session-heat-core-alpha)) 65%,
+    rgb(var(--session-heat-rgb) / var(--session-heat-edge-alpha))
+  );
+  opacity: var(--session-heat-opacity);
+  transform: scaleY(var(--session-heat-scale));
+  transform-origin: center center;
+  transition:
+    opacity var(--session-heat-transition-ms) linear,
+    transform var(--session-heat-transition-ms) linear,
+    background 0.15s linear;
 }
 
 .session-item:active {

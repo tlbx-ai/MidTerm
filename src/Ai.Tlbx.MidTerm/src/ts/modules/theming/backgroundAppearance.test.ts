@@ -15,12 +15,6 @@ class MockStyle {
   }
 }
 
-class MockStyleElement {
-  public textContent = '';
-
-  public setAttribute(): void {}
-}
-
 class MockClassList {
   private readonly values = new Set<string>();
 
@@ -50,8 +44,6 @@ class MockClassList {
 }
 
 const originalDocument = globalThis.document;
-const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
-const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
 const originalWindow = globalThis.window;
 const originalNavigator = globalThis.navigator;
 
@@ -98,26 +90,15 @@ function alphaOf(value: string): number {
 
 let rootStyle: MockStyle;
 let bodyClassList: MockClassList;
-let appendedStyleElements: MockStyleElement[];
-let resizeListeners: Array<() => void>;
 
 beforeEach(() => {
   rootStyle = new MockStyle();
   bodyClassList = new MockClassList();
-  appendedStyleElements = [];
-  resizeListeners = [];
 
   Object.defineProperty(globalThis, 'document', {
     value: {
       documentElement: { style: rootStyle },
       body: { classList: bodyClassList },
-      head: {
-        appendChild: (element: MockStyleElement) => {
-          appendedStyleElements.push(element);
-          return element;
-        },
-      },
-      createElement: () => new MockStyleElement(),
     },
     configurable: true,
     writable: true,
@@ -128,11 +109,7 @@ beforeEach(() => {
       innerWidth: 1280,
       innerHeight: 720,
       matchMedia: () => ({ matches: false }),
-      addEventListener: (eventName: string, listener: () => void) => {
-        if (eventName === 'resize') {
-          resizeListeners.push(listener);
-        }
-      },
+      addEventListener: () => undefined,
     },
     configurable: true,
     writable: true,
@@ -143,38 +120,11 @@ beforeEach(() => {
     configurable: true,
     writable: true,
   });
-
-  Object.defineProperty(globalThis, 'requestAnimationFrame', {
-    value: (callback: FrameRequestCallback) => {
-      callback(16);
-      return 1;
-    },
-    configurable: true,
-    writable: true,
-  });
-
-  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
-    value: () => undefined,
-    configurable: true,
-    writable: true,
-  });
 });
 
 afterEach(() => {
   Object.defineProperty(globalThis, 'document', {
     value: originalDocument,
-    configurable: true,
-    writable: true,
-  });
-
-  Object.defineProperty(globalThis, 'requestAnimationFrame', {
-    value: originalRequestAnimationFrame,
-    configurable: true,
-    writable: true,
-  });
-
-  Object.defineProperty(globalThis, 'cancelAnimationFrame', {
-    value: originalCancelAnimationFrame,
     configurable: true,
     writable: true,
   });
@@ -250,14 +200,14 @@ describe('backgroundAppearance', () => {
     );
     expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
     expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
-      'translate3d(0.00px, 0.00px, 0) scale(1.800)',
+      'translate3d(0px, 0px, 0) scale(1.800)',
     );
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-scale')).toBe('1.800');
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe('19.200%');
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe('12.800%');
     expect(rootStyle.getPropertyValue('--app-background-animation')).toMatch(
-      /^midterm-app-background-ken-burns-\d+ \d+\.\d{3}s linear infinite$/,
+      /^midterm-app-background-ken-burns \d+\.\d{3}s linear infinite$/,
     );
-    expect(appendedStyleElements).toHaveLength(1);
-    expect(appendedStyleElements[0]?.textContent).toContain('@keyframes midterm-app-background-ken-burns-');
-    expect(appendedStyleElements[0]?.textContent?.match(/transform:/g)).toHaveLength(65);
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#EAE2D8');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
@@ -282,13 +232,14 @@ describe('backgroundAppearance', () => {
     applyBackgroundAppearance(settings);
 
     const firstAnimation = rootStyle.getPropertyValue('--app-background-animation');
-    const firstKeyframes = appendedStyleElements[0]?.textContent;
+    const firstPanX = rootStyle.getPropertyValue('--app-background-ken-burns-pan-x');
+    const firstPanY = rootStyle.getPropertyValue('--app-background-ken-burns-pan-y');
 
     applyBackgroundAppearance(settings);
 
     expect(rootStyle.getPropertyValue('--app-background-animation')).toBe(firstAnimation);
-    expect(appendedStyleElements).toHaveLength(1);
-    expect(appendedStyleElements[0]?.textContent).toBe(firstKeyframes);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe(firstPanX);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe(firstPanY);
   });
 
   it('allows the UI transparency slider to reach a fully transparent UI shell', () => {
@@ -321,7 +272,7 @@ describe('backgroundAppearance', () => {
     );
 
     expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
-      'translate3d(0.00px, 0.00px, 0) scale(1.000)',
+      'translate3d(0px, 0px, 0) scale(1.000)',
     );
     expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
   });
@@ -367,7 +318,7 @@ describe('backgroundAppearance', () => {
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
   });
 
-  it('rebuilds the generated animation when the viewport changes', () => {
+  it('does not depend on resize-time keyframe regeneration', () => {
     applyBackgroundAppearance(
       createSettings({
         backgroundImageEnabled: true,
@@ -380,15 +331,26 @@ describe('backgroundAppearance', () => {
     );
 
     const firstAnimation = rootStyle.getPropertyValue('--app-background-animation');
-    const firstKeyframes = appendedStyleElements[0]?.textContent;
+    const firstPanX = rootStyle.getPropertyValue('--app-background-ken-burns-pan-x');
+    const firstPanY = rootStyle.getPropertyValue('--app-background-ken-burns-pan-y');
 
     Object.assign(globalThis.window, {
       innerWidth: 900,
       innerHeight: 900,
     });
-    resizeListeners[0]?.();
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
+      }),
+    );
 
-    expect(rootStyle.getPropertyValue('--app-background-animation')).not.toBe(firstAnimation);
-    expect(appendedStyleElements[0]?.textContent).not.toBe(firstKeyframes);
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe(firstAnimation);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe(firstPanX);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe(firstPanY);
   });
 });

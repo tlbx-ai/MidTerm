@@ -965,11 +965,11 @@ function createSessionItem(
 
   appendSessionActions(actions, session, sessionId, isPending, isRemoteSession, controlMode);
 
-  // Heat indicator canvas (left strip, shows byte activity as thermal color)
-  const heatCanvas = document.createElement('canvas');
-  heatCanvas.className = 'heat-canvas';
-  registerHeatCanvas(sessionId, heatCanvas);
-  item.prepend(heatCanvas);
+  // Heat indicator strip (left edge, driven by server-side session telemetry)
+  const heatIndicator = document.createElement('div');
+  heatIndicator.className = 'heat-canvas';
+  registerHeatCanvas(sessionId, heatIndicator);
+  item.prepend(heatIndicator);
 
   item.appendChild(info);
 
