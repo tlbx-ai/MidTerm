@@ -10271,6 +10271,10 @@ body.shared-session-mode .session-tab-bar {
     border-color 0.15s;
 }
 
+.manager-bar-overflow[hidden] {
+  display: none !important;
+}
+
 .manager-bar-overflow:hover {
   background: var(--bg-active-opaque, var(--bg-active));
   color: var(--text-primary);

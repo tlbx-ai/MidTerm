@@ -45,6 +45,8 @@ describe('smart input tab wiring', () => {
     expect(html).toContain('id="adaptive-footer-context"');
     expect(html).toContain('id="adaptive-footer-status"');
     expect(html).toContain('id="manager-bar-overflow"');
+    expect(css).toContain('.manager-bar-overflow[hidden] {');
+    expect(css).toContain('display: none !important;');
     expect(source).toContain(
       'function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {',
     );
