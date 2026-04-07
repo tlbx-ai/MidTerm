@@ -177,8 +177,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');
     expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
-    expect(source).toContain("shouldIgnoreFooterTransientUiDocumentClick(target)");
-    expect(source).toContain("target.closest('.provider-resume-picker-overlay')");
+    expect(source).toContain('shouldIgnoreFooterTransientUiDocumentClickSupport(target)');
+    expect(footerSupportSource).toContain("target.closest('.provider-resume-picker-overlay')");
     expect(lensResumeButtonSource).toContain(
       "button.className = 'smart-input-lens-action smart-input-lens-resume';",
     );

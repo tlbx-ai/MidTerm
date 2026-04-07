@@ -66,6 +66,12 @@ export function syncVoiceInputAvailability(args: {
   });
 }
 
+export function shouldIgnoreFooterTransientUiDocumentClick(target: Node): boolean {
+  return (
+    target instanceof HTMLElement && Boolean(target.closest('.provider-resume-picker-overlay'))
+  );
+}
+
 export function syncLensQuickSettingsControls(args: {
   lensQuickSettingsRow: HTMLDivElement | null;
   lensQuickSettingsActions: HTMLDivElement | null;

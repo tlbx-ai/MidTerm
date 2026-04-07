@@ -74,6 +74,7 @@ import {
   canUseSmartInputVoice as canUseSmartInputVoiceSupport,
   getMicButtons as getMicButtonsSupport,
   queueFooterReserveSync as queueFooterReserveSyncSupport,
+  shouldIgnoreFooterTransientUiDocumentClick as shouldIgnoreFooterTransientUiDocumentClickSupport,
   syncLensQuickSettingsControls as syncLensQuickSettingsControlsSupport,
   syncVoiceInputAvailability as syncVoiceInputAvailabilitySupport,
   updateAutoSendVisibility as updateAutoSendVisibilitySupport,
@@ -391,7 +392,7 @@ export function initSmartInput(): void {
 
   bindSmartInputGlobalKeyBindings({
     beginRecording,
-    canUseVoice: canUseSmartInputVoice,
+    canUseVoice: canUseSmartInputVoiceSupport,
     closeFooterTransientUi,
     endRecording,
     getInterruptibleLensSessionId: () => {
@@ -419,15 +420,16 @@ export function initSmartInput(): void {
       return;
     }
 
-    if (shouldIgnoreFooterTransientUiDocumentClick(target)) {
+    if (shouldIgnoreFooterTransientUiDocumentClickSupport(target)) {
       return;
     }
 
-    if (toolsPanel && toolsToggleBtn) {
-      const clickedInsideTools = toolsPanel.contains(target) || toolsToggleBtn.contains(target);
-      if (!clickedInsideTools) {
-        setToolsPanelOpen(false);
-      }
+    if (
+      toolsPanel &&
+      toolsToggleBtn &&
+      !(toolsPanel.contains(target) || toolsToggleBtn.contains(target))
+    ) {
+      setToolsPanelOpen(false);
     }
 
     if (lensQuickSettingsRow && lensSettingsSummaryBtn) {
@@ -440,15 +442,10 @@ export function initSmartInput(): void {
   });
 }
 
-function shouldIgnoreFooterTransientUiDocumentClick(target: Node): boolean {
-  return (
-    target instanceof HTMLElement && Boolean(target.closest('.provider-resume-picker-overlay'))
-  );
-}
-
 export function showSmartInput(): void {
   syncSmartInputVisibility(true);
 }
+
 export function hideSmartInput(): void {
   syncSmartInputVisibility();
 }
@@ -477,7 +474,7 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   footerDock?.toggleAttribute('hidden', false);
 
   syncVoiceInputAvailability();
-  updateAutoSendVisibility();
+  updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
   queueFooterReserveSync();
 
   if (focusTextarea && layoutState.showInput) {
@@ -734,7 +731,7 @@ function openFileInputPicker(input: HTMLInputElement): void {
 
 function getToolButtonRenderArgs(): Parameters<typeof createToolButtonsStrip>[0] {
   return {
-    canUseVoice: canUseSmartInputVoice(),
+    canUseVoice: canUseSmartInputVoiceSupport(),
     onAttachClick: (pinOnUse, event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -882,7 +879,7 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   const renderedTerminalStatus = renderTerminalStatusRow({
-    autoSendEnabled: canUseSmartInputVoice() && autoSendEnabled,
+    autoSendEnabled: canUseSmartInputVoiceSupport() && autoSendEnabled,
     footerStatusHost,
     isMobile: layoutState.isMobile,
     keysExpanded,
@@ -963,6 +960,7 @@ function syncLensQuickSettingsActions(sessionId: string): void {
     lensQuickSettingsActions.appendChild(resumeButton);
   }
 }
+
 function setToolsPanelOpen(open: boolean): void {
   if (!toolsPanel || !toolsToggleBtn) {
     return;
@@ -1057,13 +1055,13 @@ function clearSendAutoSendLongPressTimer(): void {
 }
 
 function toggleAutoSendEnabled(): void {
-  if (!canUseSmartInputVoice()) {
+  if (!canUseSmartInputVoiceSupport()) {
     return;
   }
 
   autoSendEnabled = !autoSendEnabled;
   localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
-  updateAutoSendVisibility();
+  updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
   syncSmartInputVisibility();
 }
 
@@ -1255,7 +1253,7 @@ export function removeSmartInputSessionState(sessionId: string): void {
   }
 }
 function beginRecording(pinOnUse: boolean = false): void {
-  if (!canUseSmartInputVoice()) return;
+  if (!canUseSmartInputVoiceSupport()) return;
   if (isRecording) return;
   isRecording = true;
   pendingMicPinSessionId = pinOnUse ? ($activeSessionId.get() ?? null) : null;
@@ -1303,10 +1301,6 @@ function endRecording(): void {
   void stopTranscription();
 }
 
-function canUseSmartInputVoice(): boolean {
-  return canUseSmartInputVoiceSupport();
-}
-
 function syncVoiceInputAvailability(): void {
   syncVoiceInputAvailabilitySupport({
     footerDock,
@@ -1316,10 +1310,6 @@ function syncVoiceInputAvailability(): void {
     isRecording,
     endRecording,
   });
-}
-
-function updateAutoSendVisibility(): void {
-  updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
 }
 
 function pinToolForSession(sessionId: string, tool: ToolKind): void {
