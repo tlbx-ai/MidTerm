@@ -157,6 +157,17 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('void handleLensEscape(sessionId);');
   });
 
+  it('submits from the command bay only on bare Enter', () => {
+    expect(source).toContain("import {");
+    expect(source).toContain("} from './enterBehavior';");
+    expect(source).toContain('shouldInsertLineBreakOnEnter');
+    expect(source).toContain('insertSmartInputLineBreak');
+    expect(source).toContain('if (shouldInsertLineBreakOnEnter(event)) {');
+    expect(source).toContain('insertSmartInputLineBreak(textarea);');
+    expect(source).toContain('if (shouldSubmitSmartInputOnEnter(event)) {');
+    expect(source).not.toContain("if (event.key === 'Enter' && !event.shiftKey) {");
+  });
+
   it('adds a bookmark-scoped provider resume action to the Lens Command Bay status rail', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');

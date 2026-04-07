@@ -77,6 +77,11 @@ import {
   updateFooterReservedHeight as updateFooterReservedHeightSupport,
 } from './footerSupport';
 import { createLensResumeButton } from './lensResumeButton';
+import {
+  insertSmartInputLineBreak,
+  shouldInsertLineBreakOnEnter,
+  shouldSubmitSmartInputOnEnter,
+} from './enterBehavior';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -620,7 +625,13 @@ function createDockedDOM(): void {
         }
       }
 
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (shouldInsertLineBreakOnEnter(event)) {
+        event.preventDefault();
+        insertSmartInputLineBreak(textarea);
+        return;
+      }
+
+      if (shouldSubmitSmartInputOnEnter(event)) {
         event.preventDefault();
         void sendText(textarea);
       }
