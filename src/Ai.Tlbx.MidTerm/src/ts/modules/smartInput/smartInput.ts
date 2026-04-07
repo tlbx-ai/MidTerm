@@ -43,6 +43,7 @@ import { submitLensComposerDraft } from './lensAttachmentSubmission';
 import { startTranscription, stopTranscription } from './transcription';
 import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
+import { renderLensAttachmentDraftView } from './attachmentDraftView';
 import {
   createSmartInputDom,
   createToolButton,
@@ -1049,64 +1050,16 @@ function toggleAutoSendEnabled(): void {
 }
 
 function renderLensAttachmentDrafts(sessionId: string | null): void {
-  if (!lensAttachmentHost) {
-    return;
-  }
-
-  lensAttachmentHost.replaceChildren();
-  if (!sessionId || !isLensActiveSession(sessionId)) {
-    lensAttachmentHost.hidden = true;
-    return;
-  }
-
-  const attachments = getLensDraftAttachments(sessionId);
-  if (attachments.length === 0) {
-    lensAttachmentHost.hidden = true;
-    return;
-  }
-
-  for (const attachment of attachments) {
-    const chip = document.createElement('div');
-    chip.className = `smart-input-attachment-chip smart-input-attachment-chip-${attachment.kind}`;
-    chip.title = attachment.displayName;
-
-    if (attachment.previewUrl) {
-      const preview = document.createElement('img');
-      preview.className = 'smart-input-attachment-thumb';
-      preview.src = attachment.previewUrl;
-      preview.alt = attachment.displayName;
-      chip.appendChild(preview);
-    } else {
-      const icon = document.createElement('span');
-      icon.className = 'smart-input-attachment-icon';
-      icon.textContent = t('smartInput.fileBadge');
-      chip.appendChild(icon);
-    }
-
-    const label = document.createElement('span');
-    label.className = 'smart-input-attachment-label';
-    label.textContent = attachment.displayName;
-    chip.appendChild(label);
-
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'smart-input-attachment-remove';
-    removeButton.textContent = '×';
-    removeButton.title = `${t('smartInput.removeAttachment')} ${attachment.displayName}`;
-    removeButton.setAttribute(
-      'aria-label',
-      `${t('smartInput.removeAttachment')} ${attachment.displayName}`,
-    );
-    removeButton.addEventListener('click', () => {
-      removeLensComposerFile(sessionId, attachment.id);
+  renderLensAttachmentDraftView({
+    attachments: sessionId ? getLensDraftAttachments(sessionId) : [],
+    host: lensAttachmentHost,
+    isLensActiveSession,
+    onFocusTextarea: () => {
       activeTextarea?.focus({ preventScroll: true });
-    });
-    chip.appendChild(removeButton);
-
-    lensAttachmentHost.appendChild(chip);
-  }
-
-  lensAttachmentHost.hidden = false;
+    },
+    onRemoveAttachment: removeLensComposerFile,
+    sessionId,
+  });
 }
 
 function removeLensComposerFile(sessionId: string, attachmentId: string): void {

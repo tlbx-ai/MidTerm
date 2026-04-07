@@ -387,7 +387,7 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
  */
 function performScan(sessionId: string, text: string): void {
   // Strip ANSI escape sequences before regex matching
-  /* eslint-disable no-control-regex */
+  /* eslint-disable no-control-regex -- Control-byte patterns are required to remove ANSI escape sequences before scanning terminal text. */
   const cleanText = text
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') // CSI sequences
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '') // OSC sequences
@@ -724,7 +724,7 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
-  /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
+  /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any -- xterm-link-provider still exposes legacy xterm typings, so this adapter cast is constrained to the registration boundary. */
   // xterm-link-provider references the old 'xterm' package types; cast required
   const term = terminal as any;
 

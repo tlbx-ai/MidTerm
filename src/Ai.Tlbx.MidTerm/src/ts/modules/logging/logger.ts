@@ -41,14 +41,12 @@ function writeLog(level: LogLevel, module: string, message: string, data?: unkno
   }
 
   if (isConcernEnabled(module)) {
-    switch (level) {
-      case LogLevel.Info:
-        console.info(formatted, data ?? '');
-        break;
-      case LogLevel.Verbose:
-        console.debug(formatted, data ?? '');
-        break;
+    if (level === LogLevel.Info) {
+      console.info(formatted, data ?? '');
+      return;
     }
+
+    console.debug(formatted, data ?? '');
   }
 }
 

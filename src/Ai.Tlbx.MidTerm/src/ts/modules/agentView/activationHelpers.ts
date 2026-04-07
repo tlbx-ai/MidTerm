@@ -347,10 +347,10 @@ export function historyLabel(kind: HistoryKind): string {
       return lensText('lens.label.plan', 'Plan');
     case 'diff':
       return lensText('lens.label.diff', 'Diff');
+    case 'system':
+      return lensText('lens.label.system', 'System');
     case 'notice':
       return lensText('lens.label.error', 'Error');
-    default:
-      return lensText('lens.label.system', 'System');
   }
 }
 

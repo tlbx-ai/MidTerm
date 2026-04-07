@@ -103,13 +103,13 @@ export function bindTerminalInteractionHandlers({
         navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
         terminal.clearSelection();
         return true;
+      case 'ignore':
+        return false;
       case 'sendKey':
         if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey) {
           sendInput(sessionId, '\x03');
           return true;
         }
-        return false;
-      default:
         return false;
     }
   };

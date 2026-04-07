@@ -272,7 +272,7 @@ function getLegacyKeyboardNumbers(event: KeyboardEvent): {
   keyCode: number;
   which: number;
 } {
-  /* eslint-disable @typescript-eslint/no-deprecated */
+  /* eslint-disable @typescript-eslint/no-deprecated -- KeyboardEvent legacy numeric fields are read only for cross-browser fallback normalization. */
   return {
     charCode: event.charCode,
     keyCode: event.keyCode,

@@ -686,10 +686,9 @@ function resolveHistoryEntryBaseHeight(kind: HistoryKind): number {
       return 68;
     case 'assistant':
       return 52;
+    case 'system':
     case 'notice':
       return 64;
-    default:
-      return 54;
   }
 }
 

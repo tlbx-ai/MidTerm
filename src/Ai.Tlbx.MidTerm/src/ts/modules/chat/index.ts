@@ -385,6 +385,12 @@ function formatTime(timestamp: string): string {
  */
 function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): string {
   switch (tool) {
+    case 'state_of_things':
+    case 'read_scrollback':
+    case 'create_session':
+    case 'close_session':
+    case 'bookmarks':
+      return `Tool: ${tool}`;
     case 'make_input': {
       const text = (args.text as string) || '';
       const formatted = formatInputText(text);
@@ -403,8 +409,6 @@ function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): 
       });
       return `Interactive sequence:\n${lines.join('\n')}`;
     }
-    default:
-      return `Tool: ${tool}`;
   }
 }
 

@@ -95,6 +95,8 @@ function isValidTab(tab: string): tab is SettingsTab {
 
 export function normalizeStoredSettingsTab(tab: string | null): SettingsTab | null {
   switch (tab) {
+    case null:
+      return null;
     case 'behavior':
       return 'terminal';
     case 'agent-ui':

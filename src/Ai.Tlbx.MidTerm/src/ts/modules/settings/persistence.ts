@@ -240,6 +240,10 @@ function readNumericRegistryControlValue(
 
 function readTypedRegistryControlValue(entry: SettingsRegistryEntry, rawValue: string): unknown {
   switch (entry.controlType) {
+    case undefined:
+      return rawValue;
+    case 'checkbox':
+      return rawValue === 'true';
     case 'nullable-string':
       return rawValue || null;
     case 'int':
@@ -257,9 +261,11 @@ function readTypedRegistryControlValue(entry: SettingsRegistryEntry, rawValue: s
     case 'textarea':
     case 'text':
     case 'select':
-    default:
       return rawValue;
   }
+
+  const unexpectedControlType: never = entry.controlType;
+  return unexpectedControlType;
 }
 
 function readRegistryControlValue(

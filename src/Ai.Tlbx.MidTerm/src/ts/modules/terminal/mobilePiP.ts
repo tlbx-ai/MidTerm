@@ -80,7 +80,7 @@ export function initMobilePiP(): void {
 
   if ('mediaSession' in navigator) {
     try {
-      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- MediaSession PiP action typing is still incomplete, so this cast is isolated to the feature-detection call site. */
       (navigator.mediaSession as any).setActionHandler('enterpictureinpicture', () => {
         void openPiPIfEligibleAsync();
       });

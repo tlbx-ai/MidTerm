@@ -1,5 +1,6 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import midtermComments from './eslint.comment-rules.mjs';
 import prettier from 'eslint-plugin-prettier/recommended';
 
 const tsconfigRootDir = import.meta.dirname;
@@ -16,6 +17,9 @@ export default tseslint.config(
   prettier,
   {
     files: ['src/ts/**/*.ts', 'vitest.config.ts'],
+    plugins: {
+      'midterm-comments': midtermComments,
+    },
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.json', './tsconfig.tools.json'],
@@ -48,6 +52,8 @@ export default tseslint.config(
       '@typescript-eslint/use-unknown-in-catch-callback-variable': 'error',
       '@typescript-eslint/no-deprecated': 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+      '@typescript-eslint/only-throw-error': 'error',
       '@typescript-eslint/ban-ts-comment': [
         'error',
         {
@@ -58,7 +64,11 @@ export default tseslint.config(
           minimumDescriptionLength: 5,
         },
       ],
+      'midterm-comments/require-disable-description': 'error',
+      'midterm-comments/no-unlimited-disable': 'error',
+      'midterm-comments/disable-enable-pair': 'error',
       'no-console': 'error',
+      'prefer-promise-reject-errors': 'error',
     },
   },
   {
@@ -69,10 +79,31 @@ export default tseslint.config(
   },
   {
     files: ['src/ts/**/*.ts'],
+    ignores: ['src/ts/api/**/*.ts', 'src/ts/api.generated.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/api.generated'],
+              message: 'Import generated OpenAPI types through src/ts/api/types.ts or API wrappers.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/ts/**/*.ts'],
     ignores: ['src/ts/api.generated.ts'],
     rules: {
-      'complexity': ['warn', 15],
-      'max-lines': ['warn', { max: 1200, skipBlankLines: true, skipComments: true }],
+      'complexity': ['error', 15],
+      'max-lines': ['error', { max: 1200, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': [
+        'error',
+        { max: 600, skipBlankLines: true, skipComments: true, IIFEs: true },
+      ],
     },
   },
   {
