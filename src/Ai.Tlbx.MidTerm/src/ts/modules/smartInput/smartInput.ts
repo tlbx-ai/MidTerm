@@ -441,7 +441,9 @@ export function initSmartInput(): void {
 }
 
 function shouldIgnoreFooterTransientUiDocumentClick(target: Node): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest('.provider-resume-picker-overlay'));
+  return (
+    target instanceof HTMLElement && Boolean(target.closest('.provider-resume-picker-overlay'))
+  );
 }
 
 export function showSmartInput(): void {
@@ -1171,7 +1173,7 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
       return;
     }
 
-    void submitSmartInput(sessionId, text);
+    void submitSessionText(sessionId, text);
     clearSubmittedSmartInputState(sessionId, ta);
     return;
   }
@@ -1257,7 +1259,7 @@ function beginRecording(pinOnUse: boolean = false): void {
   if (isRecording) return;
   isRecording = true;
   pendingMicPinSessionId = pinOnUse ? ($activeSessionId.get() ?? null) : null;
-  getMicButtons().forEach((button) => {
+  getMicButtonsSupport(footerDock).forEach((button) => {
     button.classList.add('recording');
   });
 
@@ -1284,13 +1286,13 @@ function beginRecording(pinOnUse: boolean = false): void {
 function sendDirectly(text: string): void {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
-  void submitSmartInput(sessionId, text);
+  void submitSessionText(sessionId, text);
 }
 
 function endRecording(): void {
   if (!isRecording) return;
   isRecording = false;
-  getMicButtons().forEach((button) => {
+  getMicButtonsSupport(footerDock).forEach((button) => {
     button.classList.remove('recording');
   });
   const sessionIdToPin = pendingMicPinSessionId;
@@ -1318,10 +1320,6 @@ function syncVoiceInputAvailability(): void {
 
 function updateAutoSendVisibility(): void {
   updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
-}
-
-function getMicButtons(): HTMLButtonElement[] {
-  return getMicButtonsSupport(footerDock);
 }
 
 function pinToolForSession(sessionId: string, tool: ToolKind): void {
@@ -1364,8 +1362,4 @@ function updateFooterReservedHeight(): void {
     lastReservedFooterHeightPx,
     setLastReservedFooterHeightPx,
   });
-}
-
-async function submitSmartInput(sessionId: string, text: string): Promise<void> {
-  await submitSessionText(sessionId, text);
 }

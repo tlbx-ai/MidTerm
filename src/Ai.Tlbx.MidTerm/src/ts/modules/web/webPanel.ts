@@ -96,12 +96,15 @@ let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
 let statusIndicator: HTMLElement | null = null;
+let actionMessage: HTMLElement | null = null;
+let screenshotButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 let statusRefreshTimer: number | null = null;
+let screenshotInFlight = false;
 type PreviewReloadMode = 'soft' | 'force' | 'hard';
 
 const FRAME_ALLOW_ATTR = `
@@ -178,10 +181,11 @@ export function initWebPanel(): void {
   iframeHost = document.getElementById('web-preview-iframe-host');
   previewTabs = document.getElementById('web-preview-tabs');
   statusIndicator = document.getElementById('web-preview-status-indicator');
+  actionMessage = document.getElementById('web-preview-action-message');
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
-  const screenshotBtn = document.getElementById('web-preview-screenshot');
+  screenshotButton = document.getElementById('web-preview-screenshot') as HTMLButtonElement | null;
 
   applyIframeSandbox();
   renderPreviewTabs();
@@ -199,7 +203,7 @@ export function initWebPanel(): void {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
     void handleRefresh(hard ? 'hard' : 'force');
   });
-  screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
+  screenshotButton?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     void handleClearCookies();
   });
@@ -924,63 +928,135 @@ function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
   }
 }
 
+function setActionMessage(severity: 'info' | 'error', message: string | null): void {
+  if (!actionMessage) {
+    return;
+  }
+
+  if (!message) {
+    actionMessage.textContent = '';
+    actionMessage.classList.add('hidden');
+    actionMessage.dataset.severity = '';
+    return;
+  }
+
+  actionMessage.textContent = message;
+  actionMessage.dataset.severity = severity;
+  actionMessage.classList.remove('hidden');
+}
+
+function setScreenshotButtonBusy(active: boolean): void {
+  if (!screenshotButton) {
+    return;
+  }
+
+  const idleGlyph = screenshotButton.dataset.idleGlyph ?? screenshotButton.innerHTML;
+  screenshotButton.dataset.idleGlyph = idleGlyph;
+  const idleTitle = screenshotButton.dataset.idleTitle ?? screenshotButton.title;
+  screenshotButton.dataset.idleTitle = idleTitle;
+
+  if (active) {
+    screenshotButton.disabled = true;
+    screenshotButton.setAttribute('aria-busy', 'true');
+    screenshotButton.classList.add('web-preview-action-working');
+    screenshotButton.innerHTML = '&#x21bb;';
+    screenshotButton.title = 'Capturing screenshot...';
+    return;
+  }
+
+  screenshotButton.disabled = false;
+  screenshotButton.setAttribute('aria-busy', 'false');
+  screenshotButton.classList.remove('web-preview-action-working');
+  screenshotButton.innerHTML = idleGlyph;
+  screenshotButton.title = idleTitle;
+}
+
 /**
  * Capture a screenshot of the active named web preview.
  */
 async function handleScreenshot(download = false): Promise<void> {
+  if (screenshotInFlight) {
+    return;
+  }
+
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   const iframe = getActiveIframe();
   if (!sessionId || !iframe || iframe.src === 'about:blank') {
+    setActionMessage('error', 'Screenshot failed: there is no active browser preview to capture.');
     return;
   }
+
+  screenshotInFlight = true;
+  setActionMessage('info', null);
+  setScreenshotButtonBusy(true);
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
 
-  const dataUrl = await captureBrowserScreenshotRaw(sessionId, undefined, previewName);
-  if (!dataUrl) {
-    log.warn(() => 'Browser screenshot capture failed');
-    return;
-  }
-
-  const blob = decodeScreenshotDataUrl(dataUrl);
-  if (!blob) {
-    log.warn(() => 'Failed to decode browser screenshot');
-    return;
-  }
-
-  if (download) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-    log.info(() => 'Screenshot downloaded');
-    return;
-  }
-
-  const file = new File([blob], filename, { type: 'image/png' });
-  const formData = new FormData();
-  formData.append('file', file);
-
   try {
+    const dataUrl = await captureBrowserScreenshotRaw(sessionId, undefined, previewName);
+    if (!dataUrl) {
+      setActionMessage(
+        'error',
+        'Screenshot failed: MidTerm did not receive image data back from the dev browser.',
+      );
+      log.warn(() => 'Browser screenshot capture failed');
+      return;
+    }
+
+    const blob = decodeScreenshotDataUrl(dataUrl);
+    if (!blob) {
+      setActionMessage('error', 'Screenshot failed: the returned image data could not be decoded.');
+      log.warn(() => 'Failed to decode browser screenshot');
+      return;
+    }
+
+    if (download) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      setActionMessage('info', null);
+      log.info(() => 'Screenshot downloaded');
+      return;
+    }
+
+    const file = new File([blob], filename, { type: 'image/png' });
+    const formData = new FormData();
+    formData.append('file', file);
+
     const resp = await fetch(`/api/sessions/${sessionId}/upload`, {
       method: 'POST',
       body: formData,
     });
     if (!resp.ok) {
+      setActionMessage(
+        'error',
+        `Screenshot failed: MidTerm could not upload it to the session (${resp.status}).`,
+      );
       log.warn(() => `Screenshot upload failed: ${resp.status}`);
       return;
     }
     const result = (await resp.json()) as UploadResponse;
     if (result.path) {
-      void pasteToTerminal(sessionId, result.path, true);
+      await pasteToTerminal(sessionId, result.path, true);
+      setActionMessage('info', null);
       log.info(() => 'Screenshot pasted to terminal');
+      return;
     }
+    setActionMessage(
+      'error',
+      'Screenshot failed: the upload completed but MidTerm did not return a usable file path.',
+    );
   } catch (err) {
+    setActionMessage('error', `Screenshot failed: ${String(err)}`);
     log.warn(() => `Screenshot upload error: ${String(err)}`);
+  } finally {
+    screenshotInFlight = false;
+    setScreenshotButtonBusy(false);
   }
 }
 

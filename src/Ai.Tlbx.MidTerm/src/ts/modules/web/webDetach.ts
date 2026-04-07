@@ -11,7 +11,7 @@ import {
   $webPreviewUrl,
   $webPreviewViewport,
 } from '../../stores';
-import { hideDetachedPlaceholder, loadPreview } from './webPanel';
+import { loadPreview } from './webPanel';
 import { createLogger } from '../logging';
 import {
   getActivePreviewName,
@@ -24,6 +24,7 @@ import {
 import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
+import { hideWebPreviewDockForDetach, openWebPreviewDock } from './webDock';
 
 const log = createLogger('webDetach');
 
@@ -129,11 +130,7 @@ function syncDetachedStateToActiveDock(sessionId: string, previewName: string): 
   }
 
   $webPreviewDetached.set(true);
-  const dockPanel = document.getElementById('web-preview-dock');
-  if (dockPanel) {
-    dockPanel.classList.add('hidden');
-    dockPanel.style.width = '';
-  }
+  hideWebPreviewDockForDetach();
 }
 
 /** Open a named web preview in a chromeless popup window and hide the dock panel. */
@@ -241,11 +238,7 @@ export function dockBack(sessionId?: string, previewName?: string): void {
 
   if (targetSessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()) {
     $webPreviewDetached.set(false);
-    hideDetachedPlaceholder();
-    const dockPanel = document.getElementById('web-preview-dock');
-    if (dockPanel) {
-      dockPanel.classList.remove('hidden');
-    }
+    openWebPreviewDock();
     void loadPreview();
     log.info(() => `Web preview docked back for ${targetSessionId}/${targetPreviewName}`);
   }
