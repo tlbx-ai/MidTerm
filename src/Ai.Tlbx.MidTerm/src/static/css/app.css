@@ -1,5 +1,7 @@
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--btn-secondary) var(--bg-primary);
 }
 
 .hub-toolbar {
@@ -490,6 +492,8 @@
   --transition-fast: 0.1s;
   --transition-normal: 0.15s;
   --transition-slow: 0.3s;
+  --smart-input-control-height: 40px;
+  --adaptive-footer-reserved-height: 0px;
 
   --app-background-image: none;
   --app-background-size: cover;
@@ -540,12 +544,6 @@ optgroup {
   background: var(--btn-secondary-hover);
 }
 
-/* Firefox scrollbar */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--btn-secondary) var(--bg-primary);
-}
-
 /* Utility classes */
 .truncate {
   white-space: nowrap;
@@ -573,10 +571,7 @@ body {
 @media (min-width: 769px) {
   body {
     box-sizing: border-box;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-right: env(safe-area-inset-right, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    padding-left: env(safe-area-inset-left, 0px);
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
 }
 
@@ -772,8 +767,7 @@ body.has-app-background::after {
 
 .session-list {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden auto;
   scrollbar-width: thin;
   scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
 }
@@ -1837,6 +1831,7 @@ body.has-app-background::after {
 
 /* Main content */
 .main-content {
+  --adaptive-footer-right-offset: 0px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1856,10 +1851,7 @@ body.has-app-background::after {
 
 .terminal-container {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   padding: 0;
   background-color: var(--terminal-canvas-background, var(--terminal-bg));
   touch-action: manipulation;
@@ -2441,10 +2433,7 @@ body.has-app-background::after {
 /* Center indicator - subtle outline for target area */
 .dock-center {
   position: absolute;
-  top: 25%;
-  left: 25%;
-  right: 25%;
-  bottom: 25%;
+  inset: 25%;
   border: 1px dashed var(--border-color);
   border-radius: var(--radius-md);
   background-color: transparent;
@@ -2726,10 +2715,7 @@ body.has-app-background::after {
   .sidebar-overlay {
     display: block;
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background: var(--overlay-bg);
     z-index: 999;
     opacity: 0;
@@ -3274,10 +3260,7 @@ body.has-app-background::after {
   /* Mobile session action backdrop (created via JS) */
   .session-action-backdrop {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background: var(--shadow-color-lg);
     z-index: 1002;
     -webkit-tap-highlight-color: transparent;
@@ -3294,8 +3277,7 @@ body.has-app-background::after {
     border-right: none !important;
     border-bottom: 1px solid var(--border-color) !important;
     padding: 0 !important;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
@@ -3429,7 +3411,6 @@ body.has-app-background::after {
     width: 100% !important;
     z-index: 200;
     border-left: none;
-    top: 0;
   }
 
   .terminal-page.file-viewer-docked .session-tab-panels,
@@ -3857,10 +3838,7 @@ body.has-app-background::after {
 /* Settings view */
 .settings-view {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: var(--bg-settings-opaque, var(--bg-settings));
   z-index: 100;
 }
@@ -3956,7 +3934,7 @@ body.has-app-background::after {
 }
 
 .settings-panel h2 {
-  margin: 0 0 24px 0;
+  margin: 0 0 24px;
   font-size: var(--fs-4xl);
   font-weight: 600;
   color: var(--text-primary);
@@ -3971,7 +3949,7 @@ body.has-app-background::after {
 }
 
 .settings-section h3 {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   font-size: var(--fs-md);
   font-weight: 600;
   text-transform: uppercase;
@@ -4089,7 +4067,6 @@ body.has-app-background::after {
 
 .background-image-empty,
 .background-image-name,
-.setting-hint,
 .slider-value {
   font-size: var(--fs-md);
   color: var(--text-secondary);
@@ -4099,11 +4076,6 @@ body.has-app-background::after {
   width: 100%;
   text-align: right;
   word-break: break-word;
-}
-
-.setting-hint {
-  width: 100%;
-  text-align: right;
 }
 
 .transparency-slider-row {
@@ -4526,10 +4498,7 @@ body.has-app-background::after {
 
 .restart-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: var(--overlay-bg-dark);
   display: flex;
   flex-direction: column;
@@ -4587,7 +4556,7 @@ body.has-app-background::after {
 .setting-hint {
   font-size: var(--fs-base);
   color: var(--text-secondary);
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
 }
 
 .setting-info {
@@ -5085,10 +5054,7 @@ body.has-app-background::after {
 /* Modal styles */
 .modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -5101,10 +5067,7 @@ body.has-app-background::after {
 
 .modal-backdrop {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: var(--overlay-bg-dark);
 }
 
@@ -5212,13 +5175,13 @@ body.has-app-background::after {
 .changelog-notes h3 {
   font-size: var(--fs-lg);
   color: var(--text-primary);
-  margin: 16px 0 8px 0;
+  margin: 16px 0 8px;
 }
 
 .changelog-notes h4 {
   font-size: var(--fs-base);
   color: var(--text-secondary);
-  margin: 12px 0 6px 0;
+  margin: 12px 0 6px;
 }
 
 .changelog-notes ul {
@@ -5555,7 +5518,7 @@ body.has-app-background::after {
 }
 
 .login-header h1 {
-  margin: 0 0 6px 0;
+  margin: 0 0 6px;
   font-size: var(--fs-4xl);
   font-weight: 600;
   color: var(--text-primary);
@@ -5807,10 +5770,7 @@ body.has-app-background::after {
 /* Modal Overlay (for dynamically created modals) */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: var(--overlay-bg-dark);
   display: flex;
   align-items: center;
@@ -7023,7 +6983,7 @@ body.shared-session-mode .session-tab-bar {
 .diag-help-text {
   font-size: var(--fs-base);
   color: var(--text-secondary);
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   line-height: 1.5;
 }
 
@@ -7123,7 +7083,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .trust-header h1 {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
   font-size: 28px;
   color: var(--text-primary);
 }
@@ -7143,7 +7103,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .trust-section h2 {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   font-size: var(--fs-xl);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-color);
@@ -7151,7 +7111,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .trust-section h3 {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   font-size: var(--fs-lg);
   color: var(--text-primary);
 }
@@ -7220,7 +7180,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .platform-group-title {
-  margin: 0 0 16px 0;
+  margin: 0 0 16px;
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-secondary);
@@ -7236,7 +7196,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .platform-panel h4 {
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   font-size: var(--fs-lg);
   color: var(--text-primary);
 }
@@ -7344,7 +7304,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .os-instructions p {
-  margin: 0 0 12px 0;
+  margin: 0 0 12px;
   color: var(--text-secondary);
   font-size: var(--fs-base);
 }
@@ -8264,11 +8224,7 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
 }
 
-:root {
-  --smart-input-control-height: 40px;
-}
-
-.smart-input-textarea {
+.adaptive-footer-dock .smart-input-textarea {
   flex: 1;
   resize: none;
   box-sizing: border-box;
@@ -8288,11 +8244,11 @@ body.shared-session-mode .session-tab-bar {
   scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent) transparent;
 }
 
-.smart-input-textarea:focus {
+.adaptive-footer-dock .smart-input-textarea:focus {
   border-color: var(--accent-blue);
 }
 
-.smart-input-textarea::placeholder {
+.adaptive-footer-dock .smart-input-textarea::placeholder {
   color: var(--text-muted);
 }
 
@@ -8390,7 +8346,7 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
 }
 
-.smart-input-lens-settings {
+.adaptive-footer-dock .smart-input-lens-settings {
   display: flex;
   flex-wrap: nowrap;
   gap: 0;
@@ -8415,7 +8371,7 @@ body.shared-session-mode .session-tab-bar {
   display: none !important;
 }
 
-.smart-input-lens-field {
+.adaptive-footer-dock .smart-input-lens-field {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -8426,7 +8382,7 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
-.smart-input-lens-field + .smart-input-lens-field::before {
+.adaptive-footer-dock .smart-input-lens-field + .smart-input-lens-field::before {
   content: '';
   position: absolute;
   left: 0;
@@ -8436,7 +8392,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(in srgb, var(--border-color) 48%, transparent);
 }
 
-.smart-input-lens-label {
+.adaptive-footer-dock .smart-input-lens-label {
   flex: 0 0 auto;
   font-size: 11px;
   line-height: 1;
@@ -8446,7 +8402,7 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
-.smart-input-lens-control {
+.adaptive-footer-dock .smart-input-lens-control {
   width: auto;
   min-width: 0;
   min-height: 28px;
@@ -8488,7 +8444,7 @@ body.shared-session-mode .session-tab-bar {
   white-space: nowrap;
 }
 
-.smart-input-lens-dropdown-trigger {
+.adaptive-footer-dock .smart-input-lens-dropdown-trigger {
   min-width: 78px;
   justify-content: space-between;
   gap: 10px;
@@ -8522,7 +8478,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(in srgb, var(--text-input-background, var(--bg-input)) 55%, transparent);
 }
 
-.smart-input-lens-model {
+.adaptive-footer-dock .smart-input-lens-model {
   min-width: 132px;
   max-width: 190px;
 }
@@ -8660,7 +8616,9 @@ body.shared-session-mode .session-tab-bar {
   font-size: var(--fs-base);
   font-family: inherit;
   cursor: pointer;
-  transition: background-color 0.1s;
+  transition:
+    transform 0.08s ease-out,
+    background 0.08s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -8684,7 +8642,7 @@ body.shared-session-mode .session-tab-bar {
   }
 
   .touch-modifiers .touch-key {
-    padding: 6px 6px;
+    padding: 6px;
   }
 }
 
@@ -8725,12 +8683,6 @@ body.shared-session-mode .session-tab-bar {
   transform: scale(0.9);
   background: var(--accent-blue);
   color: var(--bg-primary);
-}
-
-.touch-key {
-  transition:
-    transform 0.08s ease-out,
-    background 0.08s;
 }
 
 /* ==========================================================================
@@ -9034,8 +8986,7 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   color: var(--text-muted);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden auto;
   user-select: none;
   box-sizing: border-box;
   scrollbar-width: none;
@@ -11663,9 +11614,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown blockquote {
   margin-left: 0;
-  padding-left: 12px;
-  border-left: 2px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
-  color: var(--text-secondary);
+  padding-left: 0.9rem;
+  border-left: 2px solid color-mix(in srgb, var(--border-color) 92%, transparent);
+  color: color-mix(in srgb, var(--text-secondary) 94%, transparent);
 }
 
 .agent-markdown-figure {
@@ -11704,8 +11655,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown .agent-markdown-table-wrap {
   margin: 0 0 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto hidden;
   border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-dialog-chrome) 72%, transparent);
@@ -12020,16 +11970,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   margin-bottom: 2px;
 }
 
-.agent-history-markdown li + li {
-  margin-top: 1px;
-}
-
-.agent-history-markdown blockquote {
-  padding-left: 0.9rem;
-  border-left: 2px solid color-mix(in srgb, var(--border-color) 92%, transparent);
-  color: color-mix(in srgb, var(--text-secondary) 94%, transparent);
-}
-
 .agent-history-caret {
   display: inline-block;
   width: 0.55ch;
@@ -12163,15 +12103,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-notice .agent-history-body {
   font-size: 0.88rem;
   line-height: 1.56;
-}
-
-.agent-history-turn-duration .agent-history-body {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
-  font-size: 0.78rem;
-  line-height: 1.3;
 }
 
 .agent-history-attachments {
@@ -12728,8 +12659,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .file-browser-tree {
   width: 280px;
   flex-shrink: 0;
-  overflow-y: auto;
-  overflow-x: auto;
+  overflow: auto;
   border-right: 1px solid var(--border-color);
   background: var(--bg-sidebar);
 }
@@ -14376,14 +14306,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
    Adaptive Footer Dock
    ============================================================================= */
 
-:root {
-  --adaptive-footer-reserved-height: 0px;
-}
-
-.main-content {
-  --adaptive-footer-right-offset: 0px;
-}
-
 .adaptive-footer-reserve {
   flex: 0 0 auto;
   height: var(--adaptive-footer-reserved-height);
@@ -14501,18 +14423,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   background: none;
   border: 0;
   margin: 0;
+  position: relative;
+  box-sizing: border-box;
+  overflow: visible;
 }
 
 .adaptive-footer-primary > .smart-input-docked.visible {
   display: flex;
   flex-direction: column;
   gap: var(--command-bay-gap);
-  overflow: visible;
-}
-
-.smart-input-docked {
-  position: relative;
-  box-sizing: border-box;
   overflow: visible;
 }
 
@@ -14724,12 +14643,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   box-shadow: var(--command-bay-floating-button-shadow);
 }
 
-.smart-input-tools-toggle:hover,
-.smart-input-tools-toggle:focus-visible,
-.smart-input-tools-toggle:active,
-.smart-input-send-btn:hover,
-.smart-input-send-btn:focus-visible,
-.smart-input-send-btn:active {
+.adaptive-footer-dock .smart-input-tools-toggle:hover,
+.adaptive-footer-dock .smart-input-tools-toggle:focus-visible,
+.adaptive-footer-dock .smart-input-tools-toggle:active,
+.adaptive-footer-dock .smart-input-send-btn:hover,
+.adaptive-footer-dock .smart-input-send-btn:focus-visible,
+.adaptive-footer-dock .smart-input-send-btn:active {
   border-color: var(--command-bay-floating-button-border);
   -webkit-box-shadow: var(--command-bay-floating-button-shadow);
   box-shadow: var(--command-bay-floating-button-shadow);
@@ -14878,7 +14797,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none;
 }
 
-.smart-input-mic-btn.recording {
+.adaptive-footer-dock .smart-input-mic-btn.recording {
   background: color-mix(in srgb, var(--accent-red) 12%, var(--command-bay-surface));
   color: var(--command-bay-text);
   border-color: color-mix(in srgb, var(--accent-red) 34%, var(--command-bay-border));
@@ -15182,7 +15101,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   max-width: 176px;
 }
 
-.smart-input-lens-settings[hidden] {
+.adaptive-footer-dock .smart-input-lens-settings[hidden] {
   display: none !important;
 }
 
