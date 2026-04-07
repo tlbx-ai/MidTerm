@@ -420,7 +420,26 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
 
   const closeMenu = (): void => {
     menu.classList.add('hidden');
+    wrapper.classList.remove('smart-input-lens-dropdown-open-up');
     trigger.setAttribute('aria-expanded', 'false');
+  };
+
+  const updateMenuPlacement = (): void => {
+    if (menu.classList.contains('hidden')) {
+      wrapper.classList.remove('smart-input-lens-dropdown-open-up');
+      return;
+    }
+
+    const viewportPadding = 12;
+    const gap = 8;
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+    const availableAbove = triggerRect.top - viewportPadding - gap;
+    const openUp =
+      availableBelow < Math.min(menuRect.height, 220) && availableAbove > availableBelow;
+
+    wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);
   };
 
   const rebuildMenu = (): void => {
@@ -477,8 +496,14 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
           openTrigger.setAttribute('aria-expanded', 'false');
         }
       });
-    menu.classList.toggle('hidden', !nextOpen);
-    trigger.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    if (!nextOpen) {
+      closeMenu();
+      return;
+    }
+
+    menu.classList.remove('hidden');
+    updateMenuPlacement();
+    trigger.setAttribute('aria-expanded', 'true');
   });
 
   document.addEventListener('click', (event) => {
@@ -487,6 +512,8 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
       closeMenu();
     }
   });
+  window.addEventListener('resize', updateMenuPlacement);
+  document.addEventListener('scroll', updateMenuPlacement, true);
 
   select.addEventListener('midterm:options', rebuildMenu as EventListener);
   select.addEventListener('change', syncSelection);

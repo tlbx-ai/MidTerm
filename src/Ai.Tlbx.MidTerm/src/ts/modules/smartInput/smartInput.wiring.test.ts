@@ -32,6 +32,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-lens-actions[hidden] {');
     expect(css).toContain('display: none !important;');
     expect(css).toContain('.adaptive-footer-dock .smart-input-lens-dropdown-menu {');
+    expect(css).toContain(
+      '.smart-input-lens-dropdown.smart-input-lens-dropdown-open-up .smart-input-lens-dropdown-menu {',
+    );
     expect(css).toContain('position: absolute;');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensModelSelect)');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
@@ -41,6 +44,8 @@ describe('smart input tab wiring', () => {
     expect(viewSource).toContain(
       'manager-bar-action-popover smart-input-lens-dropdown-menu hidden',
     );
+    expect(viewSource).toContain("wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);");
+    expect(viewSource).toContain("document.addEventListener('scroll', updateMenuPlacement, true);");
   });
 
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {

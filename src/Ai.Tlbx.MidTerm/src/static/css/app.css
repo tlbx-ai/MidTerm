@@ -8469,6 +8469,11 @@ body.shared-session-mode .session-tab-bar {
   z-index: 1;
 }
 
+.smart-input-lens-dropdown.smart-input-lens-dropdown-open-up .smart-input-lens-dropdown-menu {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
 .smart-input-lens-dropdown-option.is-selected {
   background: color-mix(in srgb, var(--accent-blue) 16%, var(--bg-hover));
   color: var(--text-primary);
