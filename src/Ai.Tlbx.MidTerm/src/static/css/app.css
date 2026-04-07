@@ -14647,6 +14647,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--text-muted) 86%, transparent);
 }
 
+@supports (leading-trim: both) and (text-edge: cap alphabetic) {
+  .smart-input-textarea,
+  .smart-input-textarea::placeholder {
+    leading-trim: both;
+    text-edge: cap alphabetic;
+  }
+}
+
 .smart-input-inline-tools {
   display: inline-flex;
   align-items: center;

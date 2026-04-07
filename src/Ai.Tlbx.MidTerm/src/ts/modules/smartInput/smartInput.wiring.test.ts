@@ -122,6 +122,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('.smart-input-editor {');
     expect(css).toContain('.smart-input-textarea {');
+    expect(css).toContain('@supports (leading-trim: both) and (text-edge: cap alphabetic) {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.manager-btn-overflow-hidden {');
   });
