@@ -112,6 +112,7 @@ let lensSettingsSummaryBtn: HTMLButtonElement | null = null;
 let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
 let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
 let isRecording = false;
+let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
 let lensQuickSettingsSheetOpen = false;
 let sendAutoSendLongPressTimer: number | null = null;
@@ -735,8 +736,10 @@ function getToolButtonRenderArgs(): Parameters<typeof createToolButtonsStrip>[0]
     onMicPointerDown: (pinOnUse, event) => {
       event.preventDefault();
       event.stopPropagation();
-      maybePinToolForActiveSession('mic', pinOnUse, false);
-      beginRecording();
+      beginRecording(pinOnUse);
+    },
+    onMicPointerCancel: () => {
+      endRecording();
     },
     onMicPointerLeave: () => {
       if (isRecording) {
@@ -981,11 +984,7 @@ function maybePinToolForActiveSession(
   if (!sessionId) {
     return;
   }
-  const currentTools = sessionPinnedTools.get(sessionId) ?? [];
-  if (!currentTools.includes(tool)) {
-    sessionPinnedTools.set(sessionId, [...currentTools, tool]);
-    renderPinnedToolsForSession(sessionId);
-  }
+  pinToolForSession(sessionId, tool);
   if (closePanel && toolsPanelOpen) {
     setToolsPanelOpen(false);
   }
@@ -1245,10 +1244,11 @@ export function removeSmartInputSessionState(sessionId: string): void {
     renderPinnedToolsForSession(sessionId);
   }
 }
-function beginRecording(): void {
+function beginRecording(pinOnUse: boolean = false): void {
   if (!canUseSmartInputVoice()) return;
   if (isRecording) return;
   isRecording = true;
+  pendingMicPinSessionId = pinOnUse ? ($activeSessionId.get() ?? null) : null;
   getMicButtons().forEach((button) => {
     button.classList.add('recording');
   });
@@ -1285,6 +1285,11 @@ function endRecording(): void {
   getMicButtons().forEach((button) => {
     button.classList.remove('recording');
   });
+  const sessionIdToPin = pendingMicPinSessionId;
+  pendingMicPinSessionId = null;
+  if (sessionIdToPin) {
+    pinToolForSession(sessionIdToPin, 'mic');
+  }
   void stopTranscription();
 }
 
@@ -1309,6 +1314,14 @@ function updateAutoSendVisibility(): void {
 
 function getMicButtons(): HTMLButtonElement[] {
   return getMicButtonsSupport(footerDock);
+}
+
+function pinToolForSession(sessionId: string, tool: ToolKind): void {
+  const currentTools = sessionPinnedTools.get(sessionId) ?? [];
+  if (!currentTools.includes(tool)) {
+    sessionPinnedTools.set(sessionId, [...currentTools, tool]);
+    renderPinnedToolsForSession(sessionId);
+  }
 }
 
 function syncLensQuickSettingsControls(): void {

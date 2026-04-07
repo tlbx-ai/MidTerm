@@ -52,6 +52,7 @@ interface CreateSmartInputDomArgs {
 interface CreateToolButtonsStripArgs {
   canUseVoice: boolean;
   onAttachClick: (pinOnUse: boolean, event: MouseEvent) => void;
+  onMicPointerCancel: () => void;
   onMicPointerDown: (pinOnUse: boolean, event: PointerEvent) => void;
   onMicPointerLeave: () => void;
   onMicPointerUp: () => void;
@@ -279,6 +280,7 @@ export function createToolButton(
       button.addEventListener('pointerdown', (event) => {
         args.onMicPointerDown(pinOnUse, event);
       });
+      button.addEventListener('pointercancel', args.onMicPointerCancel);
       button.addEventListener('pointerup', args.onMicPointerUp);
       button.addEventListener('pointerleave', args.onMicPointerLeave);
       break;
