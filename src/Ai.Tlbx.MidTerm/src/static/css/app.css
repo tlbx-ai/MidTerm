@@ -8355,19 +8355,16 @@ body.shared-session-mode .session-tab-bar {
   flex-wrap: nowrap;
   gap: 0;
   align-items: stretch;
-  width: 100%;
+  box-sizing: border-box;
+  width: calc(100% - 2px);
   margin-top: 8px;
-  padding: 0 4px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
-  background: color-mix(
-    in srgb,
-    var(--terminal-ui-background, var(--terminal-bg)) 78%,
-    transparent
-  );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(110%);
-  backdrop-filter: blur(14px) saturate(110%);
+  min-height: var(--command-bay-automation-chip-height);
+  padding: 0 3px;
+  border-radius: var(--command-bay-pill-radius);
+  border: 1px solid var(--command-bay-ui-reactive-border);
+  background: var(--command-bay-ui-reactive-surface);
+  color: var(--command-bay-action-ink);
+  box-shadow: var(--command-bay-shadow);
   overflow: visible;
 }
 
@@ -8382,7 +8379,7 @@ body.shared-session-mode .session-tab-bar {
   gap: 8px;
   min-width: max-content;
   flex: 0 0 auto;
-  padding: 6px 12px;
+  padding: 2px 12px;
   position: relative;
 }
 
@@ -8390,10 +8387,10 @@ body.shared-session-mode .session-tab-bar {
   content: '';
   position: absolute;
   left: 0;
-  top: 9px;
-  bottom: 9px;
+  top: 6px;
+  bottom: 6px;
   width: 1px;
-  background: color-mix(in srgb, var(--border-color) 48%, transparent);
+  background: color-mix(in srgb, var(--command-bay-border) 92%, transparent);
 }
 
 .adaptive-footer-dock .smart-input-lens-label {
@@ -8402,22 +8399,22 @@ body.shared-session-mode .session-tab-bar {
   line-height: 1;
   letter-spacing: 0.04em;
   text-transform: none;
-  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+  color: var(--command-bay-action-ink);
   white-space: nowrap;
 }
 
 .adaptive-footer-dock .smart-input-lens-control {
   width: auto;
   min-width: 0;
-  min-height: 28px;
+  min-height: calc(var(--command-bay-automation-chip-height) - 4px);
   box-sizing: border-box;
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--text-primary);
-  padding: 4px 22px 4px 0;
+  color: var(--command-bay-action-ink);
+  padding: 2px 22px 2px 0;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--command-bay-automation-chip-font-size);
   font-weight: 500;
   line-height: 1.2;
   outline: none;
@@ -8461,7 +8458,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .smart-input-lens-dropdown-trigger-chevron {
-  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+  color: var(--command-bay-action-ink);
   font-size: 12px;
 }
 
@@ -14435,10 +14432,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     var(--command-bay-surface) 86%,
     transparent
   );
+  --command-bay-ui-reactive-surface: color-mix(
+    in srgb,
+    var(--command-bay-surface) 80%,
+    var(--terminal-ui-background, var(--terminal-bg)) 20%
+  );
+  --command-bay-ui-reactive-border: color-mix(
+    in srgb,
+    var(--command-bay-border) 80%,
+    var(--terminal-ui-background, var(--terminal-bg)) 20%
+  );
+  --command-bay-ui-reactive-floating-button-surface: var(--command-bay-ui-reactive-surface);
   --command-bay-floating-button-border: color-mix(
     in srgb,
     var(--command-bay-border) 40%,
     transparent
+  );
+  --command-bay-ui-reactive-floating-button-border: color-mix(
+    in srgb,
+    var(--command-bay-floating-button-border) 80%,
+    var(--terminal-ui-background, var(--terminal-bg)) 20%
   );
   --command-bay-floating-button-shadow: 0px 0px 40px 10px var(--command-bay-surface);
   --command-bay-shadow: 0 2px 8px color-mix(in srgb, black 8%, transparent);
@@ -14484,8 +14497,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
       color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 74%, transparent) 28%,
       color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent)
     );
-  -webkit-backdrop-filter: blur(18px) saturate(112%);
-  backdrop-filter: blur(18px) saturate(112%);
+  -webkit-backdrop-filter: blur(12.6px) saturate(112%);
+  backdrop-filter: blur(12.6px) saturate(112%);
 }
 
 .adaptive-footer-rail {
@@ -14651,7 +14664,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: var(--smart-input-textarea-padding-y) 12px;
   border-radius: 10px;
   border: 1px solid var(--command-bay-border-strong);
-  background: var(--command-bay-surface-strong);
+  background: var(--command-bay-ui-reactive-surface);
   color: var(--command-bay-text);
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
@@ -15311,11 +15324,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   align-items: center;
   justify-content: center;
   min-height: var(--command-bay-automation-chip-height);
-  padding: 0 12px;
+  padding: 0 11px;
   border-radius: var(--command-bay-pill-radius);
-  background: var(--command-bay-surface);
+  background: var(--command-bay-ui-reactive-surface);
   color: var(--command-bay-action-ink);
-  border: 1px solid var(--command-bay-border);
+  border: 1px solid var(--command-bay-ui-reactive-border);
   box-shadow: var(--command-bay-shadow);
   font-family: var(--font-ui);
   font-size: var(--command-bay-automation-chip-font-size);
@@ -15328,12 +15341,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .adaptive-footer-dock .manager-bar-add {
   flex: 0 0 auto;
-  min-width: var(--command-bay-control-height);
+  min-width: calc(var(--command-bay-control-height) - 2px);
   min-height: var(--command-bay-automation-chip-height);
   border-radius: var(--command-bay-pill-radius);
   padding: 0;
-  background: var(--command-bay-floating-button-surface);
-  border: 1px solid var(--command-bay-floating-button-border);
+  background: var(--command-bay-ui-reactive-floating-button-surface);
+  border: 1px solid var(--command-bay-ui-reactive-floating-button-border);
   -webkit-box-shadow: var(--command-bay-floating-button-shadow);
   box-shadow: var(--command-bay-floating-button-shadow);
   color: var(--command-bay-action-ink);
@@ -15347,12 +15360,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .adaptive-footer-dock .manager-bar-overflow {
   flex: 0 0 auto;
-  min-width: var(--command-bay-control-height);
+  min-width: calc(var(--command-bay-control-height) - 2px);
   min-height: var(--command-bay-automation-chip-height);
   border-radius: var(--command-bay-pill-radius);
   padding: 0;
-  background: var(--command-bay-floating-button-surface);
-  border: 1px solid var(--command-bay-floating-button-border);
+  background: var(--command-bay-ui-reactive-floating-button-surface);
+  border: 1px solid var(--command-bay-ui-reactive-floating-button-border);
   -webkit-box-shadow: var(--command-bay-floating-button-shadow);
   box-shadow: var(--command-bay-floating-button-shadow);
   color: var(--command-bay-action-ink);
