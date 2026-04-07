@@ -4580,6 +4580,79 @@
           }
         }
       },
+      "LensAttachmentReference": {
+        "required": [
+          "kind",
+          "path",
+          "mimeType",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensTurnRequest": {
+        "required": [
+          "attachments"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "planMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "permissionMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          }
+        }
+      },
       "LocalUpdateInfo": {
         "required": [
           "available",
@@ -4762,7 +4835,9 @@
         "required": [
           "queueId",
           "sessionId",
+          "kind",
           "action",
+          "turn",
           "phase",
           "nextPromptIndex",
           "completedCycles",
@@ -4778,8 +4853,28 @@
           "sessionId": {
             "type": "string"
           },
+          "kind": {
+            "type": "string"
+          },
           "action": {
-            "$ref": "#/components/schemas/ManagerBarButton"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManagerBarButton"
+              }
+            ]
+          },
+          "turn": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensTurnRequest"
+              }
+            ]
           },
           "phase": {
             "type": "string"

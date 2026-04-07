@@ -674,6 +674,7 @@
   "managerBar.scheduleRepeat.weekdays": "Weekdays",
   "managerBar.scheduleRepeat.weekends": "Weekends",
   "managerBar.queue.cooldown": "When heat drops below 25%",
+  "managerBar.queue.turn": "When the current turn returns to you",
   "managerBar.queue.chainCooldown": "Next chain step waits for cooldown",
   "managerBar.queue.chainRunning": "Chain in progress",
   "managerBar.queue.repeatCountPrefix": "Repeats left:",

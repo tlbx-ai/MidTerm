@@ -80,16 +80,11 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
         });
 
-        app.MapPost("/api/manager-bar/queue", (ManagerBarQueueEnqueueRequest request) =>
+        IResult EnqueueCommandBayQueueItem(ManagerBarQueueEnqueueRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
-            }
-
-            if (request.Action is null)
-            {
-                return Results.BadRequest("action required");
             }
 
             if (sessionManager.GetSession(request.SessionId) is null)
@@ -97,21 +92,40 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            var entry = managerBarQueueService.Enqueue(request.SessionId, request.Action);
+            ManagerBarQueueEntryDto? entry;
+            if (request.Action is not null)
+            {
+                entry = managerBarQueueService.Enqueue(request.SessionId, request.Action);
+            }
+            else if (request.Turn is not null)
+            {
+                entry = managerBarQueueService.EnqueuePrompt(request.SessionId, request.Turn);
+            }
+            else
+            {
+                return Results.BadRequest("action or turn required");
+            }
+
             if (entry is null)
             {
-                return Results.BadRequest("Only queued manager-bar actions can be enqueued.");
+                return Results.BadRequest("Only queued command-bay items can be enqueued.");
             }
 
             return Results.Json(entry, AppJsonContext.Default.ManagerBarQueueEntryDto);
-        });
+        }
 
-        app.MapDelete("/api/manager-bar/queue/{queueId}", (string queueId) =>
+        app.MapPost("/api/manager-bar/queue", EnqueueCommandBayQueueItem);
+        app.MapPost("/api/command-bay/queue", EnqueueCommandBayQueueItem);
+
+        IResult RemoveCommandBayQueueItem(string queueId)
         {
             return managerBarQueueService.Remove(queueId)
                 ? Results.Ok()
                 : Results.NotFound();
-        });
+        }
+
+        app.MapDelete("/api/manager-bar/queue/{queueId}", RemoveCommandBayQueueItem);
+        app.MapDelete("/api/command-bay/queue/{queueId}", RemoveCommandBayQueueItem);
 
         app.MapGet("/api/sessions", () =>
         {

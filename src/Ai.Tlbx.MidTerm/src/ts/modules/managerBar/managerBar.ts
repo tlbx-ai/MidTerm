@@ -6,10 +6,17 @@
  * session that was active when the action was triggered.
  */
 
-import { $activeSessionId, $currentSettings, $managerBarQueue, $settingsOpen } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $managerBarQueue,
+  $settingsOpen,
+  $sessions,
+} from '../../stores';
 import { updateSettings } from '../../api/client';
 import { icon } from '../../constants';
 import type { ManagerBarQueueEntry } from '../../types';
+import { enqueueCommandBayAction, removeCommandBayQueueEntry } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
@@ -779,10 +786,9 @@ function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
 function renderQueue(): void {
   if (!queueEl) return;
 
-  const settings = $currentSettings.get();
   const activeSessionId = $activeSessionId.get();
   const visibleQueue =
-    !$settingsOpen.get() && settings?.managerBarEnabled && activeSessionId
+    !$settingsOpen.get() && activeSessionId
       ? queueEntries
           .filter((entry) => entry.sessionId === activeSessionId)
           .filter((entry) => !pendingQueueRemovals.has(entry.queueId))
@@ -796,6 +802,7 @@ function renderQueue(): void {
     const item = document.createElement('div');
     item.className = 'manager-queue-item';
     item.dataset.queueId = entry.queueId;
+    item.dataset.kind = entry.kind;
 
     const title = document.createElement('div');
     title.className = 'manager-queue-title';
@@ -826,7 +833,15 @@ function renderQueue(): void {
 }
 
 function describeQueueTitle(entry: ManagerBarQueueEntry): string {
+  if (entry.kind === 'prompt') {
+    return describeQueuedPromptTitle(entry);
+  }
+
   const action = entry.action;
+  if (!action) {
+    return t('managerBar.modal.singlePrompt');
+  }
+
   if (action.actionType === 'chain') {
     const step = Math.min(action.prompts.length, entry.nextPromptIndex + 1);
     return `${action.label} (${step}/${action.prompts.length})`;
@@ -840,11 +855,16 @@ function describeQueueTitle(entry: ManagerBarQueueEntry): string {
 }
 
 function describeQueueCondition(entry: ManagerBarQueueEntry): string {
+  const usesTurnQueue = usesTurnQueueForSession(entry.sessionId);
   if (entry.phase === 'chainCooldown') {
-    return t('managerBar.queue.chainCooldown');
+    return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.chainCooldown');
   }
   if (entry.phase === 'pendingCooldown') {
-    return t('managerBar.queue.cooldown');
+    return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
+  }
+
+  if (!entry.action) {
+    return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
   }
 
   const trigger = entry.action.trigger;
@@ -867,7 +887,34 @@ function describeQueueCondition(entry: ManagerBarQueueEntry): string {
   if (trigger.kind === 'fireAndForget' && entry.action.actionType === 'chain') {
     return t('managerBar.queue.chainRunning');
   }
-  return t('managerBar.queue.cooldown');
+  return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
+}
+
+function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {
+  const text = entry.turn?.text?.trim() ?? '';
+  if (text.length > 0) {
+    return formatPromptPreview(text);
+  }
+
+  const attachments = entry.turn?.attachments ?? [];
+  const firstAttachment = attachments[0];
+  if (firstAttachment) {
+    const pathParts = firstAttachment.path
+      .split(/[\\/]/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    const firstLabel =
+      firstAttachment.displayName?.trim() ||
+      pathParts[pathParts.length - 1] ||
+      firstAttachment.path.trim();
+    return attachments.length > 1 ? `${firstLabel} +${attachments.length - 1}` : firstLabel;
+  }
+
+  return t('managerBar.modal.singlePrompt');
+}
+
+function usesTurnQueueForSession(sessionId: string): boolean {
+  return $sessions.get()[sessionId]?.lensOnly === true;
 }
 
 function openActionModal(existing?: NormalizedManagerButton): void {
@@ -1205,7 +1252,7 @@ function runButton(id: string): void {
   const sessionId = $activeSessionId.get();
   if (!action || !sessionId) return;
 
-  if (isImmediateManagerAction(action)) {
+  if (isImmediateManagerAction(action) && !usesTurnQueueForSession(sessionId)) {
     sendCommand(sessionId, action.prompts[0] ?? '');
     return;
   }
@@ -1225,14 +1272,7 @@ async function enqueueAction(sessionId: string, action: NormalizedManagerButton)
   pendingEnqueueGuards.set(enqueueGuardKey, now + QUEUE_ENQUEUE_DEDUP_WINDOW_MS);
 
   try {
-    const response = await fetch('/api/manager-bar/queue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, action }),
-    });
-    if (!response.ok) {
-      log.error(() => `Failed to enqueue manager bar action: ${response.status}`);
-    }
+    await enqueueCommandBayAction(sessionId, action);
   } catch (error) {
     log.error(() => `Failed to enqueue manager bar action: ${String(error)}`);
   }
@@ -1265,16 +1305,7 @@ async function removeQueueEntry(queueId: string): Promise<void> {
   renderQueue();
 
   try {
-    const response = await fetch(`/api/manager-bar/queue/${encodeURIComponent(queueId)}`, {
-      method: 'DELETE',
-    });
-    if (!response.ok && response.status !== 404) {
-      pendingQueueRemovals.delete(queueId);
-      renderQueue();
-      log.error(() => `Failed to dequeue manager bar action: ${response.status}`);
-      return;
-    }
-
+    await removeCommandBayQueueEntry(queueId);
     queueEntries = queueEntries.filter((entry) => entry.queueId !== queueId);
     pendingQueueRemovals.delete(queueId);
     renderQueue();

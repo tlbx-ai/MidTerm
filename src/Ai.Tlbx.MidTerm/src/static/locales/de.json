@@ -786,6 +786,7 @@
   "managerBar.scheduleRepeat.weekdays": "Werktags",
   "managerBar.scheduleRepeat.weekends": "Wochenenden",
   "managerBar.queue.cooldown": "Wenn die Auslastung unter 25 % fällt",
+  "managerBar.queue.turn": "Wenn der aktuelle Zug wieder bei dir ist",
   "managerBar.queue.chainCooldown": "Der nächste Kettenschritt wartet auf Cooldown",
   "managerBar.queue.chainRunning": "Kette läuft",
   "managerBar.queue.repeatCountPrefix": "Verbleibende Wiederholungen:",

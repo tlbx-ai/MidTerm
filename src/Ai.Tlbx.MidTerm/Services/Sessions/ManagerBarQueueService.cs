@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Sessions;
@@ -8,6 +9,8 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class ManagerBarQueueService : IAsyncDisposable
 {
+    private const string AutomationQueueKind = "automation";
+    private const string PromptQueueKind = "prompt";
     private const double CooldownHeatThreshold = 0.25;
     private const int PostTriggerIgnoreHeatMs = 5000;
     private const int PollIntervalMs = 500;
@@ -85,6 +88,55 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return null;
         }
 
+        return EnqueueAutomationCore(sessionId, normalizedAction);
+    }
+
+    public ManagerBarQueueEntryDto? EnqueuePrompt(string sessionId, LensTurnRequest turn)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || turn is null)
+        {
+            return null;
+        }
+
+        var normalizedTurn = NormalizeTurn(turn);
+        if (normalizedTurn is null)
+        {
+            return null;
+        }
+
+        var trimmedSessionId = sessionId.Trim();
+        if (!_runtime.SessionExists(trimmedSessionId))
+        {
+            return null;
+        }
+
+        var entry = new ManagerBarQueueEntryDto
+        {
+            QueueId = $"prompt-{Guid.NewGuid():N}",
+            SessionId = trimmedSessionId,
+            Kind = PromptQueueKind,
+            Action = null,
+            Turn = normalizedTurn,
+            Phase = QueuePhase.PendingCooldown,
+            NextPromptIndex = 0,
+            CompletedCycles = 0,
+            NextRunAt = null,
+            IgnoreHeatUntil = null,
+            AwaitingHeatRise = false
+        };
+
+        lock (_lock)
+        {
+            _entries.Add(CloneEntry(entry));
+            PersistLocked();
+        }
+
+        OnChanged?.Invoke();
+        return entry;
+    }
+
+    private ManagerBarQueueEntryDto? EnqueueAutomationCore(string sessionId, ManagerBarButton normalizedAction)
+    {
         var trimmedSessionId = sessionId.Trim();
         var now = _timeProvider.GetUtcNow();
         var phase = GetInitialQueuePhase(normalizedAction);
@@ -110,7 +162,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             {
                 QueueId = $"{normalizedAction.Id}-{Guid.NewGuid():N}",
                 SessionId = trimmedSessionId,
+                Kind = AutomationQueueKind,
                 Action = normalizedAction,
+                Turn = null,
                 Phase = phase,
                 NextPromptIndex = 0,
                 CompletedCycles = 0,
@@ -246,13 +300,14 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         await _startedTcs.Task.ConfigureAwait(false);
 
         var validSessionIds = new HashSet<string>(_runtime.GetActiveSessionIds(), StringComparer.Ordinal);
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var changed = false;
-        var pendingSends = new List<(string SessionId, string Prompt)>();
+        var pendingSends = new List<PendingQueueDispatch>();
 
         lock (_lock)
         {
-            for (var index = _entries.Count - 1; index >= 0; index--)
+            var dispatchedSessions = new HashSet<string>(StringComparer.Ordinal);
+            for (var index = 0; index < _entries.Count;)
             {
                 var entry = _entries[index];
                 if (!validSessionIds.Contains(entry.SessionId))
@@ -262,22 +317,43 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                     continue;
                 }
 
-                if (!IsQueueEntryReady(entry, now))
+                if (dispatchedSessions.Contains(entry.SessionId))
                 {
+                    index += 1;
                     continue;
                 }
 
-                var prompt = entry.Action.Prompts.ElementAtOrDefault(entry.NextPromptIndex);
-                if (string.IsNullOrWhiteSpace(prompt))
+                if (!IsQueueEntryReady(entry, now))
+                {
+                    index += 1;
+                    continue;
+                }
+
+                var dispatch = ResolveDispatch(entry);
+                if (dispatch is null)
                 {
                     _entries.RemoveAt(index);
                     changed = true;
                     continue;
                 }
 
-                pendingSends.Add((entry.SessionId, prompt));
-                AdvanceQueueEntry(entry, index, now);
+                pendingSends.Add(dispatch);
+                var queueId = entry.QueueId;
+                var sessionId = entry.SessionId;
+                var usesTurnQueue = _runtime.UsesTurnQueue(sessionId);
+                var removed = AdvanceQueueEntry(entry, index, now);
+                if (!usesTurnQueue)
+                {
+                    ApplyTerminalRearmFenceLocked(sessionId, now, queueId);
+                }
+
+                dispatchedSessions.Add(sessionId);
                 changed = true;
+
+                if (!removed)
+                {
+                    index += 1;
+                }
             }
 
             if (changed)
@@ -295,7 +371,14 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         {
             try
             {
-                await _runtime.SendPromptAsync(send.SessionId, send.Prompt, cancellationToken).ConfigureAwait(false);
+                if (send.Kind == PromptQueueKind && send.Turn is not null)
+                {
+                    await _runtime.SendTurnAsync(send.SessionId, send.Turn, cancellationToken).ConfigureAwait(false);
+                }
+                else if (!string.IsNullOrWhiteSpace(send.Prompt))
+                {
+                    await _runtime.SendPromptAsync(send.SessionId, send.Prompt, cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -311,18 +394,45 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private bool IsQueueEntryReady(ManagerBarQueueEntryDto entry, DateTimeOffset now)
     {
         var phase = ParsePhase(entry.Phase);
-        if (phase == QueuePhase.PendingImmediate)
+        if (_runtime.UsesTurnQueue(entry.SessionId))
+        {
+            if (!IsTimeGateReady(entry, phase, now))
+            {
+                return false;
+            }
+
+            return _runtime.IsTurnQueueReady(entry.SessionId);
+        }
+
+        if (!IsTimeGateReady(entry, phase, now))
+        {
+            return false;
+        }
+
+        var gateActive =
+            phase is QueuePhase.PendingCooldown or QueuePhase.ChainCooldown ||
+            entry.IgnoreHeatUntil is not null ||
+            entry.AwaitingHeatRise;
+        if (!gateActive)
         {
             return true;
         }
 
-        if (phase is QueuePhase.PendingCooldown or QueuePhase.ChainCooldown)
+        var heat = _runtime.GetCurrentHeat(entry.SessionId);
+        return EvaluateCooldown(entry, heat, now);
+    }
+
+    private static bool IsTimeGateReady(
+        ManagerBarQueueEntryDto entry,
+        string phase,
+        DateTimeOffset now)
+    {
+        if (phase is QueuePhase.PendingInterval or QueuePhase.PendingSchedule)
         {
-            var heat = _runtime.GetCurrentHeat(entry.SessionId);
-            return EvaluateCooldown(entry, heat, now);
+            return entry.NextRunAt is not null && now >= entry.NextRunAt.Value;
         }
 
-        return entry.NextRunAt is not null && now >= entry.NextRunAt.Value;
+        return true;
     }
 
     private static bool EvaluateCooldown(
@@ -348,46 +458,60 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return !entry.AwaitingHeatRise;
     }
 
-    private void AdvanceQueueEntry(ManagerBarQueueEntryDto entry, int index, DateTimeOffset now)
+    private bool AdvanceQueueEntry(ManagerBarQueueEntryDto entry, int index, DateTimeOffset now)
     {
+        if (string.Equals(entry.Kind, PromptQueueKind, StringComparison.Ordinal))
+        {
+            _entries.RemoveAt(index);
+            return true;
+        }
+
+        var action = entry.Action?.Normalize();
+        if (action is null)
+        {
+            _entries.RemoveAt(index);
+            return true;
+        }
+
+        entry.Action = action;
         entry.NextPromptIndex += 1;
-        if (entry.NextPromptIndex < entry.Action.Prompts.Count)
+        if (entry.NextPromptIndex < action.Prompts.Count)
         {
             entry.Phase = QueuePhase.ChainCooldown;
             entry.IgnoreHeatUntil = now.AddMilliseconds(PostTriggerIgnoreHeatMs);
             entry.AwaitingHeatRise = true;
             entry.NextRunAt = null;
-            return;
+            return false;
         }
 
         entry.CompletedCycles += 1;
         entry.NextPromptIndex = 0;
 
-        var trigger = entry.Action.Trigger.Normalize();
+        var trigger = action.Trigger.Normalize();
         switch (trigger.Kind)
         {
             case "fireAndForget":
             case "onCooldown":
                 _entries.RemoveAt(index);
-                return;
+                return true;
             case "repeatCount":
                 if (entry.CompletedCycles >= trigger.RepeatCount)
                 {
                     _entries.RemoveAt(index);
-                    return;
+                    return true;
                 }
 
                 entry.Phase = QueuePhase.PendingCooldown;
                 entry.IgnoreHeatUntil = now.AddMilliseconds(PostTriggerIgnoreHeatMs);
                 entry.AwaitingHeatRise = true;
                 entry.NextRunAt = null;
-                return;
+                return false;
             case "repeatInterval":
                 entry.Phase = QueuePhase.PendingInterval;
                 entry.NextRunAt = now.Add(IntervalToTimeSpan(trigger));
                 entry.IgnoreHeatUntil = null;
                 entry.AwaitingHeatRise = false;
-                return;
+                return false;
             case "schedule":
                 entry.Phase = QueuePhase.PendingSchedule;
                 entry.NextRunAt = ComputeNextScheduleTime(trigger.Schedule, now);
@@ -396,11 +520,30 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 if (entry.NextRunAt is null)
                 {
                     _entries.RemoveAt(index);
+                    return true;
                 }
-                return;
+                return false;
             default:
                 _entries.RemoveAt(index);
-                return;
+                return true;
+        }
+    }
+
+    private void ApplyTerminalRearmFenceLocked(string sessionId, DateTimeOffset now, string excludeQueueId)
+    {
+        var ignoreUntil = now.AddMilliseconds(PostTriggerIgnoreHeatMs);
+        foreach (var entry in _entries)
+        {
+            if (!string.Equals(entry.SessionId, sessionId, StringComparison.Ordinal) ||
+                string.Equals(entry.QueueId, excludeQueueId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            entry.IgnoreHeatUntil = entry.IgnoreHeatUntil is { } existing && existing > ignoreUntil
+                ? existing
+                : ignoreUntil;
+            entry.AwaitingHeatRise = true;
         }
     }
 
@@ -539,7 +682,32 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return null;
         }
 
+        var kind = NormalizeQueueKind(entry.Kind, entry.Action, entry.Turn);
         var normalizedAction = entry.Action?.Normalize();
+        var normalizedTurn = NormalizeTurn(entry.Turn);
+        if (kind == PromptQueueKind)
+        {
+            if (normalizedTurn is null)
+            {
+                return null;
+            }
+
+            return new ManagerBarQueueEntryDto
+            {
+                QueueId = string.IsNullOrWhiteSpace(entry.QueueId) ? Guid.NewGuid().ToString("N") : entry.QueueId,
+                SessionId = entry.SessionId.Trim(),
+                Kind = PromptQueueKind,
+                Action = null,
+                Turn = normalizedTurn,
+                Phase = ParsePhase(entry.Phase),
+                NextPromptIndex = 0,
+                CompletedCycles = 0,
+                NextRunAt = entry.NextRunAt,
+                IgnoreHeatUntil = entry.IgnoreHeatUntil,
+                AwaitingHeatRise = entry.AwaitingHeatRise
+            };
+        }
+
         if (normalizedAction is null || IsImmediateManagerAction(normalizedAction))
         {
             return null;
@@ -551,7 +719,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         {
             QueueId = string.IsNullOrWhiteSpace(entry.QueueId) ? Guid.NewGuid().ToString("N") : entry.QueueId,
             SessionId = entry.SessionId.Trim(),
+            Kind = AutomationQueueKind,
             Action = normalizedAction,
+            Turn = null,
             Phase = phase,
             NextPromptIndex = Math.Clamp(entry.NextPromptIndex, 0, maxPromptIndex),
             CompletedCycles = Math.Max(0, entry.CompletedCycles),
@@ -597,7 +767,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         {
             QueueId = entry.QueueId,
             SessionId = entry.SessionId,
-            Action = entry.Action.Normalize(),
+            Kind = NormalizeQueueKind(entry.Kind, entry.Action, entry.Turn),
+            Action = entry.Action?.Normalize(),
+            Turn = CloneTurn(entry.Turn),
             Phase = ParsePhase(entry.Phase),
             NextPromptIndex = entry.NextPromptIndex,
             CompletedCycles = entry.CompletedCycles,
@@ -611,6 +783,21 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     {
         return string.Equals(action.ActionType, "single", StringComparison.Ordinal)
                && string.Equals(action.Trigger.Kind, "fireAndForget", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeQueueKind(string? kind, ManagerBarButton? action, LensTurnRequest? turn)
+    {
+        if (string.Equals(kind, PromptQueueKind, StringComparison.Ordinal))
+        {
+            return PromptQueueKind;
+        }
+
+        if (turn is not null && action is null)
+        {
+            return PromptQueueKind;
+        }
+
+        return AutomationQueueKind;
     }
 
     private static string GetInitialQueuePhase(ManagerBarButton action)
@@ -714,6 +901,76 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     {
         return JsonSerializer.Serialize(entries, AppJsonContext.Default.ListManagerBarQueueEntryDto);
     }
+
+    private static PendingQueueDispatch? ResolveDispatch(ManagerBarQueueEntryDto entry)
+    {
+        if (string.Equals(entry.Kind, PromptQueueKind, StringComparison.Ordinal))
+        {
+            var turn = NormalizeTurn(entry.Turn);
+            return turn is null
+                ? null
+                : new PendingQueueDispatch(entry.SessionId, PromptQueueKind, turn.Text, turn);
+        }
+
+        var action = entry.Action?.Normalize();
+        var prompt = action?.Prompts.ElementAtOrDefault(entry.NextPromptIndex);
+        return string.IsNullOrWhiteSpace(prompt)
+            ? null
+            : new PendingQueueDispatch(entry.SessionId, AutomationQueueKind, prompt, null);
+    }
+
+    private static LensTurnRequest? NormalizeTurn(LensTurnRequest? turn)
+    {
+        if (turn is null)
+        {
+            return null;
+        }
+
+        var normalized = new LensTurnRequest
+        {
+            Text = string.IsNullOrWhiteSpace(turn.Text) ? null : turn.Text.Trim(),
+            Model = string.IsNullOrWhiteSpace(turn.Model) ? null : turn.Model.Trim(),
+            Effort = string.IsNullOrWhiteSpace(turn.Effort) ? null : turn.Effort.Trim(),
+            PlanMode = string.IsNullOrWhiteSpace(turn.PlanMode) ? null : turn.PlanMode.Trim(),
+            PermissionMode = string.IsNullOrWhiteSpace(turn.PermissionMode) ? null : turn.PermissionMode.Trim(),
+            Attachments = turn.Attachments?
+                .Select(CloneAttachment)
+                .Where(static attachment => attachment is not null)
+                .Cast<LensAttachmentReference>()
+                .ToList() ?? []
+        };
+
+        return string.IsNullOrWhiteSpace(normalized.Text) && normalized.Attachments.Count == 0
+            ? null
+            : normalized;
+    }
+
+    private static LensTurnRequest? CloneTurn(LensTurnRequest? turn)
+    {
+        return NormalizeTurn(turn);
+    }
+
+    private static LensAttachmentReference? CloneAttachment(LensAttachmentReference? attachment)
+    {
+        if (attachment is null || string.IsNullOrWhiteSpace(attachment.Path))
+        {
+            return null;
+        }
+
+        return new LensAttachmentReference
+        {
+            Kind = string.IsNullOrWhiteSpace(attachment.Kind) ? "file" : attachment.Kind.Trim(),
+            Path = attachment.Path.Trim(),
+            MimeType = string.IsNullOrWhiteSpace(attachment.MimeType) ? null : attachment.MimeType.Trim(),
+            DisplayName = string.IsNullOrWhiteSpace(attachment.DisplayName) ? null : attachment.DisplayName.Trim()
+        };
+    }
+
+    private sealed record PendingQueueDispatch(
+        string SessionId,
+        string Kind,
+        string? Prompt,
+        LensTurnRequest? Turn);
 
     public async ValueTask DisposeAsync()
     {

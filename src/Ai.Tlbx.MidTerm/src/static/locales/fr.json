@@ -786,6 +786,7 @@
   "managerBar.scheduleRepeat.weekdays": "Jours ouvrés",
   "managerBar.scheduleRepeat.weekends": "Week-ends",
   "managerBar.queue.cooldown": "Quand l’activité descend sous 25 %",
+  "managerBar.queue.turn": "Quand le tour actuel vous revient",
   "managerBar.queue.chainCooldown": "L’étape suivante de la chaîne attend le cooldown",
   "managerBar.queue.chainRunning": "Chaîne en cours",
   "managerBar.queue.repeatCountPrefix": "Répétitions restantes :",

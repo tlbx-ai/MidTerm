@@ -264,6 +264,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Lens quick settings should live in the dock status rail rather than as a separate detached manager strip.
 - That Lens status rail should stay intentionally small and session-oriented.
 - Normal terminal smart input should reuse the same dock shell while keeping Lens-only runtime controls out of ordinary terminal sessions.
+- If the user queues follow-up work from the shared Command Bay, Lens should render that queue as a compact vertical stack directly above the composer instead of inventing a separate floating queue surface.
+- Lens queue ownership belongs to MidTerm, not the browser. Queued Command Bay prompts and queued Automation Bar items must survive browser disconnects and drain only when the current turn has returned control to the user.
 - On desktop, Lens quick settings should read as a low-clutter translucent control rail rather than a full-width form.
 - The model quick setting should use a provider-scoped populated list, while still preserving any current non-preset model already active in the session or draft.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
@@ -395,6 +397,8 @@ Status in this branch/work item:
 - implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label and phase-locks its CSS sweep to the turn clock so elapsed-time refreshes do not visibly restart the animation
+- implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by MidTerm-owned persistent queue state rather than browser-local Lens-only submission state
+- implemented: explicit Lens sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
 
 Still mandatory after this work whenever Lens evolves:
 

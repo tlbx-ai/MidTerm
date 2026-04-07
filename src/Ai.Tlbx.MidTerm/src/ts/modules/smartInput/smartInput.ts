@@ -13,13 +13,13 @@ import {
   $voiceServerPassword,
 } from '../../stores';
 import { t } from '../i18n';
+import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import {
   createLensTurnRequest,
   handleLensEscape,
   hasInterruptibleLensTurnWork,
   isLensActiveSession,
-  submitQueuedLensTurn,
 } from '../lens/input';
 import {
   LENS_QUICK_SETTINGS_CHANGED_EVENT,
@@ -1166,13 +1166,20 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     return;
   }
 
-  if (!isLensActiveSession(sessionId) || lensAttachments.length === 0) {
+  if (!isLensActiveSession(sessionId)) {
     if (!text) {
       return;
     }
 
-    void submitSessionText(sessionId, text);
-    clearSubmittedSmartInputState(sessionId, ta);
+    try {
+      await enqueueCommandBayTurn(sessionId, {
+        text,
+        attachments: [],
+      });
+      clearSubmittedSmartInputState(sessionId, ta);
+    } catch (error) {
+      showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
+    }
     return;
   }
 
@@ -1188,40 +1195,28 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
       uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
       uploadFile,
       createTurnRequest: createLensTurnRequest,
-      submitQueuedTurn: submitQueuedLensTurn,
+      submitQueuedTurn: enqueueCommandBayTurn,
     });
 
+    await queuedTurn;
     clearSubmittedSmartInputState(sessionId, ta);
-
-    void queuedTurn
-      .then(() => {
-        releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
-      })
-      .catch((error: unknown) => {
-        const shouldRestore =
-          (sessionDrafts.get(sessionId) ?? '') === '' &&
-          getLensDraftAttachments(sessionId).length === 0;
-        if (shouldRestore) {
-          persistDraftForSession(sessionId, draftText);
-          setLensDraftAttachments(sessionId, attachmentDrafts);
-        } else {
-          releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
-        }
-        syncDraftForActiveSession();
-        renderLensAttachmentDrafts($activeSessionId.get());
-        showDropToast(
-          error instanceof Error && error.message.trim()
-            ? error.message
-            : t('smartInput.attachmentSendFailed'),
-        );
-      });
+    releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
   } catch (error) {
-    setLensDraftAttachments(sessionId, attachmentDrafts);
+    const shouldRestore =
+      (sessionDrafts.get(sessionId) ?? '') === '' &&
+      getLensDraftAttachments(sessionId).length === 0;
+    if (shouldRestore) {
+      persistDraftForSession(sessionId, draftText);
+      setLensDraftAttachments(sessionId, attachmentDrafts);
+    } else {
+      releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
+    }
+    syncDraftForActiveSession();
     renderLensAttachmentDrafts($activeSessionId.get());
     showDropToast(
       error instanceof Error && error.message.trim()
         ? error.message
-        : t('smartInput.attachmentUploadFailed'),
+        : t('smartInput.attachmentSendFailed'),
     );
   }
 }

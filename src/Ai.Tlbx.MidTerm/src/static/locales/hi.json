@@ -829,6 +829,7 @@
   "managerBar.scheduleRepeat.weekdays": "वर्कडेज़",
   "managerBar.scheduleRepeat.weekends": "वीकेंड",
   "managerBar.queue.cooldown": "जब activity 25% से नीचे आ जाए",
+  "managerBar.queue.turn": "जब मौजूदा टर्न फिर आपके पास लौट आए",
   "managerBar.queue.chainCooldown": "चेन का अगला स्टेप cooldown का इंतज़ार करेगा",
   "managerBar.queue.chainRunning": "चेन चल रही है",
   "managerBar.queue.repeatCountPrefix": "बाकी रिपीट:",

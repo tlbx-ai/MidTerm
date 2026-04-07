@@ -829,6 +829,7 @@
   "managerBar.scheduleRepeat.weekdays": "平日",
   "managerBar.scheduleRepeat.weekends": "週末",
   "managerBar.queue.cooldown": "アクティビティが25%未満になったら",
+  "managerBar.queue.turn": "現在のターンがあなたに戻ったら",
   "managerBar.queue.chainCooldown": "次のチェーン手順はCooldownを待機",
   "managerBar.queue.chainRunning": "チェーン実行中",
   "managerBar.queue.repeatCountPrefix": "残り回数:",

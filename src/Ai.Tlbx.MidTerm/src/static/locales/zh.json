@@ -829,6 +829,7 @@
   "managerBar.scheduleRepeat.weekdays": "工作日",
   "managerBar.scheduleRepeat.weekends": "周末",
   "managerBar.queue.cooldown": "当活动度降到 25% 以下时",
+  "managerBar.queue.turn": "当当前回合返回给你时",
   "managerBar.queue.chainCooldown": "命令链下一步会等待 cooldown",
   "managerBar.queue.chainRunning": "命令链执行中",
   "managerBar.queue.repeatCountPrefix": "剩余重复次数：",

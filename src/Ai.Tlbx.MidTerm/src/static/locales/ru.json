@@ -829,6 +829,7 @@
   "managerBar.scheduleRepeat.weekdays": "По будням",
   "managerBar.scheduleRepeat.weekends": "По выходным",
   "managerBar.queue.cooldown": "Когда активность упадет ниже 25%",
+  "managerBar.queue.turn": "Когда текущий ход вернется вам",
   "managerBar.queue.chainCooldown": "Следующий шаг цепочки ждёт cooldown",
   "managerBar.queue.chainRunning": "Цепочка выполняется",
   "managerBar.queue.repeatCountPrefix": "Осталось повторов:",

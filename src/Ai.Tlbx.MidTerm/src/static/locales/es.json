@@ -786,6 +786,7 @@
   "managerBar.scheduleRepeat.weekdays": "Días laborables",
   "managerBar.scheduleRepeat.weekends": "Fines de semana",
   "managerBar.queue.cooldown": "Cuando la actividad baje del 25 %",
+  "managerBar.queue.turn": "Cuando el turno actual vuelva a ti",
   "managerBar.queue.chainCooldown": "El siguiente paso de la cadena espera al cooldown",
   "managerBar.queue.chainRunning": "Cadena en curso",
   "managerBar.queue.repeatCountPrefix": "Repeticiones restantes:",

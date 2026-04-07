@@ -1,3 +1,4 @@
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using System.Globalization;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -45,8 +46,33 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         await using var restarted = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
         var snapshot = Assert.Single(restarted.GetSnapshot(["session-1"]));
         Assert.Equal("session-1", snapshot.SessionId);
-        Assert.Equal("Build", snapshot.Action.Label);
+        Assert.NotNull(snapshot.Action);
+        Assert.Equal("Build", snapshot.Action!.Label);
         Assert.Equal("repeatCount", snapshot.Action.Trigger.Kind);
+        Assert.Equal("pendingCooldown", snapshot.Phase);
+    }
+
+    [Fact]
+    public async Task EnqueuePrompt_PersistsAcrossRestart()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        await using (var initial = new ManagerBarQueueService(_stateDir, runtime, _timeProvider))
+        {
+            var entry = initial.EnqueuePrompt("session-1", new LensTurnRequest
+            {
+                Text = "Summarize the diff.",
+                Attachments = []
+            });
+
+            Assert.NotNull(entry);
+            Assert.Single(initial.GetSnapshot(["session-1"]));
+        }
+
+        await using var restarted = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        var snapshot = Assert.Single(restarted.GetSnapshot(["session-1"]));
+        Assert.Equal("prompt", snapshot.Kind);
+        Assert.Equal("Summarize the diff.", snapshot.Turn?.Text);
+        Assert.Null(snapshot.Action);
         Assert.Equal("pendingCooldown", snapshot.Phase);
     }
 
@@ -73,7 +99,8 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var entry = Assert.Single(filtered);
         Assert.Equal("session-2", entry.SessionId);
-        Assert.Equal("Two", entry.Action.Label);
+        Assert.NotNull(entry.Action);
+        Assert.Equal("Two", entry.Action!.Label);
     }
 
     [Fact]
@@ -107,6 +134,54 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         Assert.NotNull(second);
         Assert.NotEqual(first!.QueueId, second!.QueueId);
         Assert.Equal(2, service.GetSnapshot(["session-1"]).Count);
+    }
+
+    [Fact]
+    public async Task ProcessLoop_SendsPromptQueueInOrderAndRequiresHeatRearmBetweenItems()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.Start();
+
+        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "first" });
+        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "second" });
+
+        await Task.Delay(1200);
+
+        Assert.Equal(["first"], runtime.SentPrompts);
+
+        runtime.CurrentHeat = 0.8;
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+        await Task.Delay(1200);
+        Assert.Equal(["first"], runtime.SentPrompts);
+
+        runtime.CurrentHeat = 0.1;
+        await Task.Delay(1200);
+        Assert.Equal(["first", "second"], runtime.SentPrompts);
+    }
+
+    [Fact]
+    public async Task ProcessLoop_WaitsForLensTurnToReturnBeforeSendingQueuedTurn()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            UsesTurnQueueValue = true,
+            TurnQueueReady = false
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.Start();
+
+        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "queued turn" });
+
+        await Task.Delay(1200);
+        Assert.Empty(runtime.SentTurns);
+
+        runtime.TurnQueueReady = true;
+        await Task.Delay(1200);
+
+        Assert.Single(runtime.SentTurns);
+        Assert.Equal("queued turn", runtime.SentTurns[0].Text);
     }
 
     public async ValueTask DisposeAsync()
@@ -144,6 +219,11 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     private sealed class FakeRuntime : IManagerBarQueueRuntime
     {
         private readonly HashSet<string> _sessionIds;
+        public double CurrentHeat { get; set; }
+        public bool UsesTurnQueueValue { get; set; }
+        public bool TurnQueueReady { get; set; } = true;
+        public List<string> SentPrompts { get; } = [];
+        public List<LensTurnRequest> SentTurns { get; } = [];
 
         public FakeRuntime(IEnumerable<string> sessionIds)
         {
@@ -162,11 +242,54 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         public double GetCurrentHeat(string sessionId)
         {
-            return 0;
+            return CurrentHeat;
+        }
+
+        public bool UsesTurnQueue(string sessionId)
+        {
+            return UsesTurnQueueValue;
+        }
+
+        public bool IsTurnQueueReady(string sessionId)
+        {
+            return TurnQueueReady;
         }
 
         public Task SendPromptAsync(string sessionId, string prompt, CancellationToken cancellationToken)
         {
+            SentPrompts.Add(prompt);
+            return Task.CompletedTask;
+        }
+
+        public Task SendTurnAsync(string sessionId, LensTurnRequest request, CancellationToken cancellationToken)
+        {
+            if (!UsesTurnQueueValue)
+            {
+                if (!string.IsNullOrWhiteSpace(request.Text))
+                {
+                    SentPrompts.Add(request.Text);
+                }
+
+                return Task.CompletedTask;
+            }
+
+            SentTurns.Add(new LensTurnRequest
+            {
+                Text = request.Text,
+                Model = request.Model,
+                Effort = request.Effort,
+                PlanMode = request.PlanMode,
+                PermissionMode = request.PermissionMode,
+                Attachments = request.Attachments
+                    .Select(static attachment => new LensAttachmentReference
+                    {
+                        Kind = attachment.Kind,
+                        Path = attachment.Path,
+                        MimeType = attachment.MimeType,
+                        DisplayName = attachment.DisplayName
+                    })
+                    .ToList()
+            });
             return Task.CompletedTask;
         }
     }

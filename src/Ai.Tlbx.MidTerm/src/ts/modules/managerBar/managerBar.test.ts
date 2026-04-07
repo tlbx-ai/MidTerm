@@ -28,7 +28,7 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain('!$settingsOpen.get()');
     expect(managerBarSource).toContain('shouldShowManagerBar(settings?.managerBarEnabled');
     expect(managerBarSource).toContain('renderMobileButtons(visible ? renderedButtons : []);');
-    expect(managerBarSource).toContain('!$settingsOpen.get() && settings?.managerBarEnabled');
+    expect(managerBarSource).toContain('!$settingsOpen.get() && activeSessionId');
     expect(managerBarSource).toContain('$settingsOpen.subscribe(() => {');
   });
 
@@ -98,5 +98,13 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain('const pendingQueueRemovals = new Set<string>();');
     expect(managerBarSource).toContain("deleteBtn.addEventListener('click', (event) => {");
     expect(managerBarSource).toContain('pendingQueueRemovals.add(queueId);');
+    expect(managerBarSource).toContain('removeCommandBayQueueEntry(queueId);');
+  });
+
+  it('renders prompt queue items beside automation items in the same queue surface', () => {
+    expect(managerBarSource).toContain("if (entry.kind === 'prompt') {");
+    expect(managerBarSource).toContain('function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {');
+    expect(managerBarSource).toContain("return t('managerBar.modal.singlePrompt');");
+    expect(managerBarSource).toContain('function usesTurnQueueForSession(sessionId: string): boolean {');
   });
 });

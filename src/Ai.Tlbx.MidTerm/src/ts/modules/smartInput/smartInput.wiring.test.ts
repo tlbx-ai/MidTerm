@@ -110,6 +110,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
     expect(source).toContain('void openLensDraftAttachment(currentSessionId, attachment);');
+    expect(source).toContain('enqueueCommandBayTurn');
     expect(submissionSource).toContain('if (attachment.uploadedPath) {');
     expect(submissionSource).toContain(
       'queuedTurn: args.submitQueuedTurn(args.sessionId, request)',
@@ -179,6 +180,11 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('insertSmartInputLineBreak(textarea);');
     expect(source).toContain('if (shouldSubmitSmartInputOnEnter(event)) {');
     expect(source).not.toContain("if (event.key === 'Enter' && !event.shiftKey) {");
+  });
+
+  it('routes command-bay sends through the backend-owned queue instead of direct terminal submission', () => {
+    expect(source).toContain("await enqueueCommandBayTurn(sessionId, {");
+    expect(source).toContain("submitQueuedTurn: enqueueCommandBayTurn,");
   });
 
   it('adds a bookmark-scoped provider resume action to the Lens Command Bay status rail', () => {

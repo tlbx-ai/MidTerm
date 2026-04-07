@@ -3973,6 +3973,20 @@ export interface components {
       direction: null | string;
       children: null | components['schemas']['LayoutNode'][];
     };
+    LensAttachmentReference: {
+      kind: string;
+      path: string;
+      mimeType: null | string;
+      displayName: null | string;
+    };
+    LensTurnRequest: {
+      text?: null | string;
+      model?: null | string;
+      effort?: null | string;
+      planMode?: null | string;
+      permissionMode?: null | string;
+      attachments: components['schemas']['LensAttachmentReference'][];
+    };
     LocalUpdateInfo: {
       available: boolean;
       version: string;
@@ -4020,7 +4034,9 @@ export interface components {
     ManagerBarQueueEntryDto: {
       queueId: string;
       sessionId: string;
-      action: components['schemas']['ManagerBarButton'];
+      kind: string;
+      action: null | components['schemas']['ManagerBarButton'];
+      turn: null | components['schemas']['LensTurnRequest'];
       phase: string;
       /** Format: int32 */
       nextPromptIndex: number;

@@ -480,6 +480,22 @@ export interface ManagerBarQueueScheduleEntry {
   repeat: 'daily' | 'weekdays' | 'weekends';
 }
 
+export interface ManagerBarQueueAttachment {
+  kind: string;
+  path: string;
+  mimeType?: string | null;
+  displayName?: string | null;
+}
+
+export interface ManagerBarQueueTurn {
+  text?: string | null;
+  model?: string | null;
+  effort?: string | null;
+  planMode?: string | null;
+  permissionMode?: string | null;
+  attachments: ManagerBarQueueAttachment[];
+}
+
 export interface ManagerBarQueueTrigger {
   kind: 'fireAndForget' | 'onCooldown' | 'repeatCount' | 'repeatInterval' | 'schedule';
   repeatCount: number;
@@ -500,7 +516,9 @@ export interface ManagerBarQueueAction {
 export interface ManagerBarQueueEntry {
   queueId: string;
   sessionId: string;
-  action: ManagerBarQueueAction;
+  kind: 'automation' | 'prompt';
+  action?: ManagerBarQueueAction | null;
+  turn?: ManagerBarQueueTurn | null;
   phase:
     | 'pendingImmediate'
     | 'pendingCooldown'
