@@ -484,7 +484,7 @@
   "sessionTabs.web": "Pré-visualização web",
   "sessionTabs.webShort": "WEB",
   "webPreview.title": "Pré-visualização web",
-  "webPreview.urlPlaceholder": "https://localhost:3000",
+  "webPreview.urlPlaceholder": "type URL here",
   "webPreview.go": "Ir",
   "webPreview.refresh": "Atualizar",
   "webPreview.screenshot": "Captura para o terminal (Ctrl+clique para baixar)",

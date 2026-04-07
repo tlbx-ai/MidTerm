@@ -484,7 +484,7 @@
   "sessionTabs.web": "ওয়েব প্রিভিউ",
   "sessionTabs.webShort": "WEB",
   "webPreview.title": "ওয়েব প্রিভিউ",
-  "webPreview.urlPlaceholder": "https://localhost:3000",
+  "webPreview.urlPlaceholder": "type URL here",
   "webPreview.go": "যান",
   "webPreview.refresh": "রিফ্রেশ",
   "webPreview.screenshot": "টার্মিনালে স্ক্রিনশট (Ctrl+ক্লিক করে ডাউনলোড করুন)",

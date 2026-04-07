@@ -484,7 +484,7 @@
   "sessionTabs.web": "Веб-превью",
   "sessionTabs.webShort": "WEB",
   "webPreview.title": "Веб-превью",
-  "webPreview.urlPlaceholder": "https://localhost:3000",
+  "webPreview.urlPlaceholder": "type URL here",
   "webPreview.go": "Перейти",
   "webPreview.refresh": "Обновить",
   "webPreview.screenshot": "Скриншот в терминал (Ctrl+клик для скачивания)",

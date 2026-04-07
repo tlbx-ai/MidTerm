@@ -495,7 +495,7 @@
   "sessionTabs.web": "Web-Vorschau",
   "sessionTabs.webShort": "WEB",
   "webPreview.title": "Web-Vorschau",
-  "webPreview.urlPlaceholder": "https://localhost:3000",
+  "webPreview.urlPlaceholder": "type URL here",
   "webPreview.go": "Los",
   "webPreview.refresh": "Aktualisieren",
   "webPreview.screenshot": "Screenshot zum Terminal (Strg+Klick zum Herunterladen)",

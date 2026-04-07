@@ -775,7 +775,7 @@
   "agentView.unknownTime": "Unknown",
   "agentView.justNow": "Just now",
   "webPreview.title": "Web Preview",
-  "webPreview.urlPlaceholder": "https://localhost:3000",
+  "webPreview.urlPlaceholder": "type URL here",
   "webPreview.go": "Go",
   "webPreview.refresh": "Refresh",
   "webPreview.screenshot": "Screenshot to terminal (Ctrl+click to download)",
