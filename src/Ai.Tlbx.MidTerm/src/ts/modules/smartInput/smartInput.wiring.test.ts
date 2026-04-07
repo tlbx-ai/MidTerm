@@ -36,6 +36,7 @@ describe('smart input tab wiring', () => {
       '.smart-input-lens-dropdown.smart-input-lens-dropdown-open-up .smart-input-lens-dropdown-menu {',
     );
     expect(css).toContain('position: absolute;');
+    expect(css).toContain('z-index: 5;');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensModelSelect)');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
     expect(viewSource).toContain(
@@ -92,6 +93,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {");
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
+    expect(css).toContain('position: relative;');
+    expect(css).toContain('z-index: 3;');
     expect(css).toContain('--command-bay-control-height: 34px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
     expect(css).toContain('align-items: center;');
