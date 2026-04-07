@@ -3545,6 +3545,113 @@ describe('agentView dev errors', () => {
     expect(history[0]?.commandOutputTail).toEqual(['## dev...origin/dev']);
   });
 
+  it('renders normalized command-output rows through the dedicated command presentation', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'tool:cmd-1',
+      order: 1,
+      kind: 'tool',
+      tone: 'positive',
+      label: 'Tool',
+      title: 'Run command',
+      body: '',
+      meta: '',
+      sourceItemType: 'command_output',
+      commandText: 'git status --short --branch',
+      commandOutputTail: ['## dev...origin/dev'],
+    });
+
+    expect(presentation.mode).toBe('command');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(2);
+  });
+
+  it('preserves previously shown command tails when later updates regress the same row', async () => {
+    const { preservePersistentCommandEntries } = await import('./index');
+
+    const previousEntries = [
+      {
+        id: 'tool:cmd-1',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: '',
+        body: '',
+        meta: '',
+        sourceItemId: 'cmd-1',
+        sourceTurnId: 'turn-1',
+        sourceItemType: 'command_output',
+        commandText: 'git status --short --branch',
+        commandOutputTail: ['## dev...origin/dev'],
+      },
+    ] as any;
+
+    const entries = [
+      {
+        id: 'tool:cmd-1',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: 'Tool completed',
+        body: '',
+        meta: '20:00:03',
+        sourceItemId: 'cmd-1',
+        sourceTurnId: 'turn-1',
+        sourceItemType: 'command_execution',
+      },
+    ] as any;
+
+    const stabilized = preservePersistentCommandEntries(entries, previousEntries, {
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+    });
+
+    expect(stabilized).toHaveLength(1);
+    expect(stabilized[0]).toMatchObject({
+      body: '',
+      meta: '',
+      commandText: 'git status --short --branch',
+      commandOutputTail: ['## dev...origin/dev'],
+    });
+  });
+
+  it('keeps previously shown command rows materialized while they remain inside the active history window', async () => {
+    const { preservePersistentCommandEntries } = await import('./index');
+
+    const previousEntries = [
+      {
+        id: 'tool:cmd-1',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: '',
+        body: '',
+        meta: '',
+        sourceItemId: 'cmd-1',
+        sourceTurnId: 'turn-1',
+        sourceItemType: 'command_output',
+        commandText: 'git status --short --branch',
+        commandOutputTail: ['## dev...origin/dev'],
+      },
+    ] as any;
+
+    const stabilized = preservePersistentCommandEntries([], previousEntries, {
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+    });
+
+    expect(stabilized).toHaveLength(1);
+    expect(stabilized[0]).toMatchObject({
+      id: 'tool:cmd-1',
+      commandText: 'git status --short --branch',
+      commandOutputTail: ['## dev...origin/dev'],
+    });
+  });
+
   it.skip('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 

@@ -24,6 +24,7 @@ import {
   buildLensHistoryEntries,
   buildLensRuntimeStats,
   cloneHistoryAttachments,
+  preservePersistentCommandEntries,
   syncBusyIndicatorTicker,
   withActivationIssueNotice,
   withInlineLensStatus,
@@ -1024,7 +1025,11 @@ function renderAgentView(
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncLensTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   historyRender.syncRequestInteractionState(state, snapshot.requests);
-  const historyEntries = buildLensHistoryEntries(snapshot, events);
+  const historyEntries = preservePersistentCommandEntries(
+    buildLensHistoryEntries(snapshot, events),
+    state.historyEntries,
+    snapshot,
+  );
   const runtimeStats = buildLensRuntimeStats(snapshot);
   state.runtimeStats = runtimeStats;
   const visibleHistoryEntries = historyRender.suppressActiveComposerRequestEntries(
@@ -1150,6 +1155,7 @@ export {
   buildLensRuntimeStats,
   formatHistoryMeta,
   formatLensTurnDuration,
+  preservePersistentCommandEntries,
   shouldHideStatusInMeta,
   withActivationIssueNotice,
   withLiveAssistantState,

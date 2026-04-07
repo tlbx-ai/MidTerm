@@ -56,6 +56,12 @@ function isMachineHistoryKind(kind: HistoryKind): boolean {
   return kind === 'tool' || kind === 'reasoning' || kind === 'plan' || kind === 'diff';
 }
 
+export function hasInlineCommandPresentation(
+  entry: Pick<LensHistoryEntry, 'commandOutputTail' | 'commandText'>,
+): boolean {
+  return (entry.commandText?.trim() ?? '').length > 0 || (entry.commandOutputTail?.length ?? 0) > 0;
+}
+
 export function isCommandExecutionHistoryEntry(entry: LensHistoryEntry): boolean {
   const normalized = normalizeHistoryItemType(entry.sourceItemType);
   return (
@@ -71,6 +77,15 @@ export function isCommandOutputHistoryEntry(entry: LensHistoryEntry): boolean {
   return (
     entry.kind === 'tool' &&
     normalizeComparableHistoryText(entry.title) === normalizeComparableHistoryText('Command output')
+  );
+}
+
+function isToolCommandPresentationEntry(entry: LensHistoryEntry): boolean {
+  return (
+    entry.kind === 'tool' &&
+    (hasInlineCommandPresentation(entry) ||
+      isCommandExecutionHistoryEntry(entry) ||
+      isCommandOutputHistoryEntry(entry))
   );
 }
 
@@ -232,7 +247,7 @@ export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): History
     };
   }
 
-  if (isCommandExecutionHistoryEntry(entry)) {
+  if (isToolCommandPresentationEntry(entry)) {
     return {
       mode: 'command',
       collapsedByDefault: false,
@@ -709,7 +724,7 @@ export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidt
   const presentation = resolveHistoryBodyPresentation(entry);
   const bodyHeight =
     presentation.mode === 'command'
-      ? 24 + Math.min(8, entry.commandOutputTail?.length ?? 0) * 16
+      ? 24 + Math.min(12, entry.commandOutputTail?.length ?? 0) * 15
       : presentation.collapsedByDefault
         ? 40
         : Math.min(420, 18 * textLines);

@@ -71,6 +71,8 @@ describe('agent view Lens wiring', () => {
 
   it('styles command-execution rows as console-like Ran blocks with terminal monospace', () => {
     expect(css).toContain('.agent-history-command-body {');
+    expect(css).toContain('.agent-history-command-entry {');
+    expect(css).toContain('.agent-history-command-entry .agent-history-header,');
     expect(css).toContain('background: transparent;');
     expect(css).toContain('border: 0;');
     expect(css).toContain('font-family: var(--agent-history-mono-font-family, var(--font-mono));');
@@ -79,6 +81,7 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('Command-execution rows should render in a console-like `Ran …` form');
     expect(lensDesign).toContain('Command-execution rows should remain fully flat.');
     expect(lensDesign).toContain('fold up to 12 tail lines');
+    expect(lensDesign).toContain('must not downgrade it back into a generic tool row');
   });
 
   it('keeps machine-oriented history rows flat and dense', () => {
@@ -187,7 +190,9 @@ describe('agent view Lens wiring', () => {
 
   it('normalizes command-output transcript rows into persistent command presentations', () => {
     expect(historyProcessingSource).toContain('applyDirectCommandPresentation(mapped);');
+    expect(historyContentSource).toContain('export function hasInlineCommandPresentation(');
     expect(historyContentSource).toContain('export function parseCommandOutputBody(');
+    expect(historyProcessingSource).toContain('preservePersistentCommandEntries(');
     expect(historyProcessingSource).toContain("normalizedType !== 'commandoutput'");
   });
 });

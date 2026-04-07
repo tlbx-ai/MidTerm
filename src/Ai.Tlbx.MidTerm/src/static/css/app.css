@@ -11049,6 +11049,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   gap: 5px;
 }
 
+.agent-history-command-entry {
+  gap: 2px;
+  padding: 4px 0;
+  border-top: 0;
+}
+
+.agent-history-command-entry .agent-history-header,
+.agent-history-command-entry .agent-history-title {
+  display: none;
+}
+
 .agent-history-reasoning {
   border-top-color: color-mix(in srgb, var(--accent-blue) 24%, transparent);
 }
@@ -11472,8 +11483,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   margin: 0 0 0 2ch;
   color: color-mix(in srgb, var(--text-muted) 82%, transparent);
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.76rem;
+  line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
 }

@@ -224,6 +224,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - When command output is available immediately after a command-execution row, Lens should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - When the backend already materializes a command-output transcript row that contains both the command header and compact output window, Lens should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
+- Once a `Ran …` command row has been surfaced in the current Lens history window, later partial updates or transient backend shape changes must not downgrade it back into a generic tool row, strip its folded tail, or drop it from that materialized history slice.
 - Repetitive tool lifecycle chatter should collapse into the owning tool row instead of materializing as many visually separate history rows.
 - Command-execution rows and diff rows should not repeat timestamp meta. Those artifact rows should read like quiet console output, not timestamped chat turns.
 - Command-execution rows should remain fully flat. Do not wrap them in bordered cards, bubble shells, or inset containers that break text selection or console-like continuity.
@@ -365,6 +366,7 @@ Status in this branch/work item:
 - implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
 - implemented: immediate command output is folded into the command row as a muted up-to-12-line tail instead of always rendering as a separate noisy row
 - implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
+- implemented: command rows now stay on the dedicated flat `Ran …` presentation once normalized, preserving their folded tails across later partial updates and temporary shape regressions while that history window remains materialized
 - implemented: raw provider/tool chatter is reduced into canonical history rows so the normal Lens timeline does not mirror full wire-level noise
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane

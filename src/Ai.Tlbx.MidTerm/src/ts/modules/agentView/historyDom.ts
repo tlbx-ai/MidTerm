@@ -18,6 +18,7 @@ import {
 import { createRequestActionBlock as createRequestActionBlockInternal } from './historyRequestDom';
 import {
   buildRenderedDiffLines,
+  hasInlineCommandPresentation,
   resolveHistoryBodyPresentation,
   tokenizeCommandText,
 } from './historyContent';
@@ -169,6 +170,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     if (entry.turnDurationNote) {
       article.dataset.turnDurationNote = 'true';
       article.classList.add('agent-history-turn-duration');
+    }
+    if (entry.kind === 'tool' && hasInlineCommandPresentation(entry)) {
+      article.dataset.commandEntry = 'true';
+      article.classList.add('agent-history-command-entry');
     }
     if (entry.kind === 'assistant' && isAssistantPlaceholderEntry(entry)) {
       article.dataset.placeholder = 'true';
@@ -552,7 +557,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function shouldRenderHistoryBody(entry: LensHistoryEntry): boolean {
-    if (entry.commandText?.trim() || (entry.commandOutputTail?.length ?? 0) > 0) {
+    if (hasInlineCommandPresentation(entry)) {
       return true;
     }
 

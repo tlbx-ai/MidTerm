@@ -14,6 +14,7 @@ import {
   toneFromState,
 } from './activationHelpers';
 import {
+  hasInlineCommandPresentation,
   isCommandExecutionHistoryEntry,
   isCommandOutputHistoryEntry,
   normalizeHistoryItemType,
@@ -74,6 +75,13 @@ const BUSY_INDICATOR_EXCLUDED_ITEM_TYPES = new Set([
 
 const BUSY_SWEEP_DURATION_MS = 1450;
 const BUSY_SWEEP_CYCLE_MS = BUSY_SWEEP_DURATION_MS * 2;
+const COMMAND_HISTORY_ITEM_TYPES = new Set([
+  'command',
+  'commandcall',
+  'commandexecution',
+  'commandoutput',
+  'commandrun',
+]);
 
 export function cloneHistoryAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
@@ -118,6 +126,9 @@ export function buildLensHistoryEntries(
         mapped.requestId = entry.requestId;
       }
       applyDirectCommandPresentation(mapped);
+      if (hasInlineCommandPresentation(mapped)) {
+        mapped.meta = '';
+      }
       return mapped;
     })
     .filter((entry) => !isSuppressedLensRuntimeNoticeEntry(entry))
@@ -132,6 +143,63 @@ export function buildLensHistoryEntries(
         entry.kind === 'system' ||
         entry.kind === 'notice',
     );
+}
+
+export function preservePersistentCommandEntries(
+  entries: readonly LensHistoryEntry[],
+  previousEntries: readonly LensHistoryEntry[],
+  snapshot:
+    | Pick<LensPulseSnapshotResponse, 'historyWindowEnd' | 'historyWindowStart'>
+    | null
+    | undefined,
+): LensHistoryEntry[] {
+  if (entries.length === 0 && previousEntries.length === 0) {
+    return [];
+  }
+
+  const rememberedEntries = previousEntries.filter(isPersistentCommandEntry);
+  if (rememberedEntries.length === 0) {
+    return [...entries];
+  }
+
+  const rememberedByKey = new Map<string, LensHistoryEntry>();
+  for (const entry of rememberedEntries) {
+    for (const key of buildPersistentCommandKeys(entry)) {
+      if (!rememberedByKey.has(key)) {
+        rememberedByKey.set(key, entry);
+      }
+    }
+  }
+
+  const seenKeys = new Set<string>();
+  const nextEntries = entries.map((entry) => {
+    const remembered = resolveRememberedCommandEntry(entry, rememberedByKey);
+    const merged = mergePersistentCommandEntry(entry, remembered);
+    for (const key of buildPersistentCommandKeys(merged)) {
+      seenKeys.add(key);
+    }
+    return merged;
+  });
+
+  for (const remembered of rememberedEntries) {
+    const keys = buildPersistentCommandKeys(remembered);
+    if (keys.some((key) => seenKeys.has(key))) {
+      continue;
+    }
+
+    if (!shouldRetainMissingCommandEntry(remembered, snapshot)) {
+      continue;
+    }
+
+    nextEntries.push(cloneLensHistoryEntry(remembered));
+    for (const key of keys) {
+      seenKeys.add(key);
+    }
+  }
+
+  return nextEntries.sort(
+    (left, right) => left.order - right.order || left.id.localeCompare(right.id),
+  );
 }
 
 function isCommandExecutionSnapshotEntry(
@@ -177,6 +245,143 @@ function resolveCommandPresentation(
   }
 
   return parseCommandOutputBody(entry.body);
+}
+
+function isPersistentCommandEntry(entry: LensHistoryEntry): boolean {
+  if (entry.kind !== 'tool') {
+    return false;
+  }
+
+  if (hasInlineCommandPresentation(entry)) {
+    return true;
+  }
+
+  return COMMAND_HISTORY_ITEM_TYPES.has(normalizeHistoryItemType(entry.sourceItemType));
+}
+
+function buildPersistentCommandKeys(entry: LensHistoryEntry): string[] {
+  if (!isPersistentCommandEntry(entry)) {
+    return [];
+  }
+
+  return buildCommandLookupKeys(entry);
+}
+
+function buildCommandLookupKeys(entry: LensHistoryEntry): string[] {
+  const keys = new Set<string>();
+  const commandText = (entry.commandText ?? '').trim();
+  const normalizedCommandText = normalizeComparableHistoryText(commandText);
+  if (entry.id.trim()) {
+    keys.add(`id:${entry.id}`);
+  }
+  if ((entry.sourceItemId ?? '').trim()) {
+    keys.add(`item:${entry.sourceItemId}`);
+  }
+  if ((entry.sourceTurnId ?? '').trim() && normalizedCommandText) {
+    keys.add(`turncmd:${entry.sourceTurnId}:${normalizedCommandText}`);
+  }
+  if (normalizedCommandText) {
+    keys.add(`ordercmd:${Math.floor(entry.order)}:${normalizedCommandText}`);
+  }
+  return [...keys];
+}
+
+function resolveRememberedCommandEntry(
+  entry: LensHistoryEntry,
+  rememberedByKey: ReadonlyMap<string, LensHistoryEntry>,
+): LensHistoryEntry | null {
+  if (entry.kind !== 'tool') {
+    return null;
+  }
+
+  for (const key of buildCommandLookupKeys(entry)) {
+    const remembered = rememberedByKey.get(key);
+    if (remembered) {
+      return remembered;
+    }
+  }
+
+  return null;
+}
+
+function mergePersistentCommandEntry(
+  entry: LensHistoryEntry,
+  remembered: LensHistoryEntry | null,
+): LensHistoryEntry {
+  if (!remembered || entry.kind !== 'tool') {
+    return entry;
+  }
+
+  const rememberedCommandText = (remembered.commandText ?? '').trim();
+  const nextCommandText = (entry.commandText ?? '').trim() || rememberedCommandText;
+  const nextCommandOutputTail = resolveMergedCommandOutputTail(entry, remembered);
+  const shouldForceCommandPresentation = shouldForcePersistentCommandPresentation(
+    entry,
+    remembered,
+    nextCommandText,
+    nextCommandOutputTail,
+  );
+
+  if (!shouldForceCommandPresentation) {
+    return entry;
+  }
+
+  return {
+    ...entry,
+    body: '',
+    meta: '',
+    commandText: nextCommandText || null,
+    commandOutputTail: nextCommandOutputTail,
+  };
+}
+
+function resolveMergedCommandOutputTail(
+  entry: LensHistoryEntry,
+  remembered: LensHistoryEntry,
+): string[] {
+  return (entry.commandOutputTail?.length ?? 0) > 0
+    ? [...(entry.commandOutputTail ?? [])]
+    : [...(remembered.commandOutputTail ?? [])];
+}
+
+function shouldForcePersistentCommandPresentation(
+  entry: LensHistoryEntry,
+  remembered: LensHistoryEntry,
+  nextCommandText: string,
+  nextCommandOutputTail: readonly string[],
+): boolean {
+  if (nextCommandText.length > 0 || nextCommandOutputTail.length > 0) {
+    return true;
+  }
+
+  return isPersistentCommandEntry(entry) && isPersistentCommandEntry(remembered);
+}
+
+function shouldRetainMissingCommandEntry(
+  entry: LensHistoryEntry,
+  snapshot:
+    | Pick<LensPulseSnapshotResponse, 'historyWindowEnd' | 'historyWindowStart'>
+    | null
+    | undefined,
+): boolean {
+  if (!snapshot) {
+    return true;
+  }
+
+  const absoluteIndex = Math.max(0, Math.floor(entry.order) - 1);
+  return absoluteIndex >= snapshot.historyWindowStart && absoluteIndex < snapshot.historyWindowEnd;
+}
+
+function cloneLensHistoryEntry(entry: LensHistoryEntry): LensHistoryEntry {
+  const cloned: LensHistoryEntry = {
+    ...entry,
+    attachments: cloneHistoryAttachments(entry.attachments),
+    commandOutputTail: [...(entry.commandOutputTail ?? [])],
+  };
+  if (entry.actions) {
+    cloned.actions = entry.actions.map((action) => ({ ...action }));
+  }
+  return cloned;
 }
 
 function findMatchingCommandExecutionIndex(
