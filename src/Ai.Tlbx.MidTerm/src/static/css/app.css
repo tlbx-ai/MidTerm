@@ -14858,6 +14858,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none !important;
 }
 
+.adaptive-footer-dock .smart-input-lens-dropdown-menu {
+  position: absolute;
+}
+
 .smart-input-tools-strip {
   display: inline-flex;
   align-items: center;

@@ -31,6 +31,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-lens-settings[hidden] {');
     expect(css).toContain('.smart-input-lens-actions[hidden] {');
     expect(css).toContain('display: none !important;');
+    expect(css).toContain('.adaptive-footer-dock .smart-input-lens-dropdown-menu {');
+    expect(css).toContain('position: absolute;');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensModelSelect)');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
     expect(viewSource).toContain(
@@ -175,6 +177,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');
     expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
+    expect(source).toContain("shouldIgnoreFooterTransientUiDocumentClick(target)");
+    expect(source).toContain("target.closest('.provider-resume-picker-overlay')");
     expect(lensResumeButtonSource).toContain(
       "button.className = 'smart-input-lens-action smart-input-lens-resume';",
     );

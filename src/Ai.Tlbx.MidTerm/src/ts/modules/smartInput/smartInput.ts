@@ -419,6 +419,10 @@ export function initSmartInput(): void {
       return;
     }
 
+    if (shouldIgnoreFooterTransientUiDocumentClick(target)) {
+      return;
+    }
+
     if (toolsPanel && toolsToggleBtn) {
       const clickedInsideTools = toolsPanel.contains(target) || toolsToggleBtn.contains(target);
       if (!clickedInsideTools) {
@@ -434,6 +438,10 @@ export function initSmartInput(): void {
       }
     }
   });
+}
+
+function shouldIgnoreFooterTransientUiDocumentClick(target: Node): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest('.provider-resume-picker-overlay'));
 }
 
 export function showSmartInput(): void {
