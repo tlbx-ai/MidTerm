@@ -44,6 +44,7 @@ interface CreateSmartInputDomArgs {
   onTextareaInput: (textarea: HTMLTextAreaElement) => void;
   onTextareaKeydown: (event: KeyboardEvent, textarea: HTMLTextAreaElement) => void;
   onTextareaPaste: (event: ClipboardEvent) => void;
+  onToolsTogglePointerDown: (event: PointerEvent) => void;
   onToolsToggleClick: (event: MouseEvent) => void;
   resizeTextarea: (textarea: HTMLTextAreaElement) => void;
 }
@@ -60,7 +61,6 @@ interface CreateToolButtonsStripArgs {
 interface RenderTerminalStatusRowArgs {
   autoSendEnabled: boolean;
   footerStatusHost: HTMLDivElement;
-  inputMode: string | null | undefined;
   isMobile: boolean;
   keysExpanded: boolean;
   onToggleKeys: () => void;
@@ -185,6 +185,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   toolsToggleBtn.title = t('smartInput.tools');
   toolsToggleBtn.setAttribute('aria-label', t('smartInput.tools'));
   toolsToggleBtn.setAttribute('aria-haspopup', 'menu');
+  toolsToggleBtn.addEventListener('pointerdown', args.onToolsTogglePointerDown);
   toolsToggleBtn.addEventListener('click', args.onToolsToggleClick);
 
   const inlineToolHost = document.createElement('div');
@@ -315,17 +316,14 @@ export function openFileInputPicker(input: HTMLInputElement): void {
   input.click();
 }
 
-export function renderTerminalStatusRow(args: RenderTerminalStatusRowArgs): void {
-  const summary = document.createElement('div');
-  summary.className = 'adaptive-footer-status-summary';
-  summary.textContent = describeTerminalStatus(args.inputMode);
-  args.footerStatusHost.appendChild(summary);
-
+export function renderTerminalStatusRow(args: RenderTerminalStatusRowArgs): boolean {
+  let renderedAny = false;
   if (args.autoSendEnabled) {
     const autoSendPill = document.createElement('div');
     autoSendPill.className = 'adaptive-footer-status-pill';
     autoSendPill.textContent = t('smartInput.autoSend');
     args.footerStatusHost.appendChild(autoSendPill);
+    renderedAny = true;
   }
 
   if (args.isMobile && args.touchControlsAvailable) {
@@ -338,7 +336,10 @@ export function renderTerminalStatusRow(args: RenderTerminalStatusRowArgs): void
     keysToggle.setAttribute('aria-pressed', args.keysExpanded ? 'true' : 'false');
     keysToggle.addEventListener('click', args.onToggleKeys);
     args.footerStatusHost.appendChild(keysToggle);
+    renderedAny = true;
   }
+
+  return renderedAny;
 }
 
 export function formatLensQuickSettingsSummary(draft: {
@@ -373,18 +374,6 @@ export function setLensQuickSettingsDropdownOptions(
   }
 
   select.dispatchEvent(new Event('midterm:options'));
-}
-
-function describeTerminalStatus(inputMode: string | null | undefined): string {
-  if (inputMode === 'smartinput') {
-    return t('smartInput.modeSmart');
-  }
-
-  if (inputMode === 'both') {
-    return t('smartInput.modeBoth');
-  }
-
-  return t('smartInput.modeKeyboard');
 }
 
 function createLensQuickSettingsField(labelText: string, control: HTMLElement): HTMLDivElement {

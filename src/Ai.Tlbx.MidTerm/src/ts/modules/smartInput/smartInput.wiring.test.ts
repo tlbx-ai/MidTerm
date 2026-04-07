@@ -75,10 +75,12 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
     expect(viewSource).toContain("sendBtn.addEventListener('dblclick', args.onSendDoubleClick);");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
+    expect(source).toContain("footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);");
     expect(css).toContain('.adaptive-footer-dock {');
     expect(css).toContain('.adaptive-footer-reserve {');
     expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(css).toContain('.smart-input-tools-surface {');
+    expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {");
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
     expect(css).toContain('--command-bay-control-height: 34px;');
@@ -109,6 +111,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('shouldUseCompactLensStatusRail(layoutState)');
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
     expect(source).toContain('let toolsPanelOpen = false;');
+    expect(source).toContain('let suppressNextToolsToggleClick = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
     expect(source).toContain('event.stopPropagation();');
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
@@ -125,8 +128,10 @@ describe('smart input tab wiring', () => {
 
   it('renders the plus-menu tools as popover actions with icon and text labels', () => {
     expect(viewSource).toContain("toolsToggleBtn.setAttribute('aria-haspopup', 'menu');");
+    expect(viewSource).toContain("toolsToggleBtn.addEventListener('pointerdown', args.onToolsTogglePointerDown);");
     expect(viewSource).toContain("button.classList.add('smart-input-tool-button');");
     expect(viewSource).toContain("smart-input-tool-label");
+    expect(viewSource).not.toContain('describeTerminalStatus(');
     expect(css).toContain('.smart-input-tools-surface .smart-input-tool-button {');
     expect(css).toContain('.smart-input-tools-surface .smart-input-tool-label {');
   });

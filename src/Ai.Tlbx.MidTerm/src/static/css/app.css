@@ -15338,6 +15338,20 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {
   scroll-padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
 }
 
+.adaptive-footer-dock[data-device='mobile'] .smart-input-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {
+  position: static;
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 8px 0 0;
+}
+
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-primary {
   position: sticky;
   top: 0;
@@ -15360,7 +15374,6 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-foot
 }
 
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {
-  margin: 8px 0 0;
   max-height: min(24vh, 168px);
   overflow-y: auto;
   overscroll-behavior: contain;

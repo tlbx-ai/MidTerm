@@ -112,6 +112,7 @@ let lastSessionId: string | null = null;
 let lensQuickSettingsSheetOpen = false;
 let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
+let suppressNextToolsToggleClick = false;
 let footerResizeQueued = false;
 let footerResizeObserver: ResizeObserver | null = null;
 let lastReservedFooterHeightPx = Number.NaN;
@@ -634,9 +635,32 @@ function createDockedDOM(): void {
       event.preventDefault();
       addLensComposerFiles(sessionId, files);
     },
+    onToolsTogglePointerDown: (event) => {
+      if (!isMobileViewport()) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      suppressNextToolsToggleClick = true;
+      setToolsPanelOpen(!toolsPanelOpen);
+
+      const preserveComposerFocus =
+        activeTextarea === document.activeElement ||
+        document.body.classList.contains('keyboard-visible');
+      if (preserveComposerFocus) {
+        requestAnimationFrame(() => {
+          activeTextarea?.focus({ preventScroll: true });
+        });
+      }
+    },
     onToolsToggleClick: (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (suppressNextToolsToggleClick) {
+        suppressNextToolsToggleClick = false;
+        return;
+      }
       setToolsPanelOpen(!toolsPanelOpen);
     },
     resizeTextarea: resizeSmartInputTextarea,
@@ -819,10 +843,9 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     return;
   }
 
-  renderTerminalStatusRow({
+  const renderedTerminalStatus = renderTerminalStatusRow({
     autoSendEnabled: canUseSmartInputVoice() && autoSendEnabled,
     footerStatusHost,
-    inputMode: layoutState.inputMode,
     isMobile: layoutState.isMobile,
     keysExpanded,
     onToggleKeys: () => {
@@ -832,6 +855,7 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     },
     touchControlsAvailable: layoutState.touchControlsAvailable,
   });
+  footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);
 }
 
 function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
