@@ -21,6 +21,14 @@ export async function submitLensComposerDraft(
 ): Promise<{ request: LensTurnRequest; queuedTurn: Promise<void> }> {
   const uploadedPaths = await Promise.all(
     args.attachments.map(async (attachment) => {
+      if (attachment.uploadedPath) {
+        return attachment.uploadedPath;
+      }
+
+      if (!attachment.file) {
+        throw new Error(args.uploadFailureMessage);
+      }
+
       const path = await args.uploadFile(args.sessionId, attachment.file);
       if (!path) {
         throw new Error(args.uploadFailureMessage);

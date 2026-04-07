@@ -5,46 +5,36 @@ describe('lensAttachments', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates image draft attachments with preview URLs', async () => {
-    const createObjectURL = vi.fn(() => 'blob:preview');
-    const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: createObjectURL,
-    });
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: revokeObjectURL,
-    });
-
+  it('creates image draft attachments with server-backed preview URLs', async () => {
     const { createLensComposerDraftAttachment } = await import('./lensAttachments');
     const file = new File(['png'], 'screen.png', { type: 'image/png' });
-    const attachment = createLensComposerDraftAttachment(file);
+    const attachment = createLensComposerDraftAttachment(
+      's1',
+      file,
+      'Q:/repo/.midterm/uploads/screen.png',
+    );
 
     expect(attachment.kind).toBe('image');
-    expect(attachment.previewUrl).toBe('blob:preview');
+    expect(attachment.uploadedPath).toBe('Q:/repo/.midterm/uploads/screen.png');
+    expect(attachment.previewUrl).toBe(
+      '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
+    );
     expect(attachment.displayName).toBe('screen.png');
-    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(attachment.file).toBeNull();
   });
 
   it('creates non-image draft attachments without preview URLs', async () => {
-    const createObjectURL = vi.fn(() => 'blob:preview');
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: createObjectURL,
-    });
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: vi.fn(),
-    });
-
     const { createLensComposerDraftAttachment } = await import('./lensAttachments');
     const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
-    const attachment = createLensComposerDraftAttachment(file);
+    const attachment = createLensComposerDraftAttachment(
+      's1',
+      file,
+      'Q:/repo/.midterm/uploads/report.pdf',
+    );
 
     expect(attachment.kind).toBe('file');
     expect(attachment.previewUrl).toBeNull();
-    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(attachment.uploadedPath).toBe('Q:/repo/.midterm/uploads/report.pdf');
   });
 
   it('maps uploaded attachments into Lens attachment references', async () => {
@@ -55,11 +45,13 @@ describe('lensAttachments', () => {
         {
           id: 'a1',
           kind: 'image',
-          file: new File(['png'], 'screen.png', { type: 'image/png' }),
+          file: null,
+          uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
           displayName: 'screen.png',
           mimeType: 'image/png',
           sizeBytes: 3,
-          previewUrl: 'blob:preview',
+          previewUrl:
+            '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
         },
         'Q:/repo/.midterm/uploads/screen.png',
       ),
@@ -73,10 +65,6 @@ describe('lensAttachments', () => {
 
   it('releases preview URLs when drafts are discarded', async () => {
     const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: vi.fn(() => 'blob:preview'),
-    });
     Object.defineProperty(URL, 'revokeObjectURL', {
       configurable: true,
       value: revokeObjectURL,
@@ -88,6 +76,7 @@ describe('lensAttachments', () => {
         id: 'a1',
         kind: 'image',
         file: new File(['png'], 'screen.png', { type: 'image/png' }),
+        uploadedPath: null,
         displayName: 'screen.png',
         mimeType: 'image/png',
         sizeBytes: 3,
@@ -96,11 +85,23 @@ describe('lensAttachments', () => {
       {
         id: 'a2',
         kind: 'file',
-        file: new File(['txt'], 'note.txt', { type: 'text/plain' }),
+        file: null,
+        uploadedPath: 'Q:/repo/.midterm/uploads/note.txt',
         displayName: 'note.txt',
         mimeType: 'text/plain',
         sizeBytes: 4,
         previewUrl: null,
+      },
+      {
+        id: 'a3',
+        kind: 'image',
+        file: null,
+        uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
+        displayName: 'screen.png',
+        mimeType: 'image/png',
+        sizeBytes: 3,
+        previewUrl:
+          '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
       },
     ]);
 

@@ -14485,6 +14485,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding-left: 4px;
 }
 
+.smart-input-attachment-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.smart-input-attachment-open:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 72%, white 12%);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
 .smart-input-attachment-thumb,
 .smart-input-attachment-icon {
   width: 28px;

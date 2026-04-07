@@ -43,6 +43,7 @@ import { submitLensComposerDraft } from './lensAttachmentSubmission';
 import { startTranscription, stopTranscription } from './transcription';
 import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
+import { openLensDraftAttachment } from './attachmentDraftOpen';
 import { renderLensAttachmentDraftView } from './attachmentDraftView';
 import {
   createSmartInputDom,
@@ -58,6 +59,7 @@ import {
   clearLensDraftAttachmentsForSession,
   detachLensDraftAttachmentsForSession,
   getLensDraftAttachmentsForSession,
+  loadLensDraftAttachmentsForSession,
   persistSessionDraft,
   setLensDraftAttachmentsForSession,
 } from './smartInputDraftStore';
@@ -277,6 +279,13 @@ function resolveShowFooter(args: {
 }
 
 function getLensDraftAttachments(sessionId: string | null): LensComposerDraftAttachment[] {
+  if (sessionId && !lensAttachmentDrafts.has(sessionId)) {
+    const persistedAttachments = loadLensDraftAttachmentsForSession(sessionId);
+    if (persistedAttachments.length > 0) {
+      lensAttachmentDrafts.set(sessionId, persistedAttachments);
+    }
+  }
+
   return getLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
 }
 
@@ -649,7 +658,7 @@ function createDockedDOM(): void {
       }
 
       event.preventDefault();
-      addLensComposerFiles(sessionId, files);
+      void addLensComposerFiles(sessionId, files);
     },
     onToolsTogglePointerDown: (event) => {
       if (!isMobileViewport()) {
@@ -1054,6 +1063,9 @@ function renderLensAttachmentDrafts(sessionId: string | null): void {
     attachments: sessionId ? getLensDraftAttachments(sessionId) : [],
     host: lensAttachmentHost,
     isLensActiveSession,
+    onOpenAttachment: (currentSessionId, attachment) => {
+      void openLensDraftAttachment(currentSessionId, attachment);
+    },
     onFocusTextarea: () => {
       activeTextarea?.focus({ preventScroll: true });
     },
@@ -1078,7 +1090,7 @@ function removeLensComposerFile(sessionId: string, attachmentId: string): void {
   renderLensAttachmentDrafts($activeSessionId.get());
 }
 
-function addLensComposerFiles(sessionId: string, files: readonly File[]): void {
+async function addLensComposerFiles(sessionId: string, files: readonly File[]): Promise<void> {
   const nextAttachments = [...getLensDraftAttachments(sessionId)];
   let errorMessage: string | null = null;
 
@@ -1088,7 +1100,13 @@ function addLensComposerFiles(sessionId: string, files: readonly File[]): void {
       continue;
     }
 
-    nextAttachments.push(createLensComposerDraftAttachment(file));
+    const uploadedPath = await uploadFile(sessionId, file);
+    if (!uploadedPath) {
+      errorMessage ??= `${t('smartInput.attachmentUploadFailed')}: ${file.name}`;
+      continue;
+    }
+
+    nextAttachments.push(createLensComposerDraftAttachment(sessionId, file, uploadedPath));
   }
 
   setLensDraftAttachments(sessionId, nextAttachments);
@@ -1096,6 +1114,10 @@ function addLensComposerFiles(sessionId: string, files: readonly File[]): void {
 
   if (errorMessage) {
     showDropToast(errorMessage);
+  }
+
+  if ($activeSessionId.get() === sessionId) {
+    activeTextarea?.focus({ preventScroll: true });
   }
 }
 
@@ -1110,8 +1132,7 @@ async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
     return;
   }
 
-  addLensComposerFiles(sessionId, Array.from(files));
-  activeTextarea?.focus({ preventScroll: true });
+  await addLensComposerFiles(sessionId, Array.from(files));
 }
 
 function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElement): void {

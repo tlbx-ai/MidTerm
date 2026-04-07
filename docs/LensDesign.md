@@ -383,7 +383,7 @@ Status in this branch/work item:
 - implemented: constrained desktop Lens layouts now collapse quick settings into the same summary-plus-sheet pattern used on mobile instead of allowing the inline rail to run off screen
 - implemented: bookmark-scoped Lens `Resume` now lives inside that quick-settings line as a low-chrome text action directly after `Permissions` instead of as a detached status control
 - implemented: Lens Smart Input now stages file/image selections and clipboard files as removable composer chips, and the `+` / photo actions no longer auto-submit a Lens turn on selection
-- implemented: Lens send now uploads queued composer attachments at send time and submits them together with the current prompt text, including attachment-only turns
+- implemented: Lens composer attachments now upload as soon as they are staged so image chips render from server-backed file URLs and survive browser refresh; clicking a chip opens the standard file viewer, and Lens send reuses those staged upload paths for mixed or attachment-only turns
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: desktop Lens quick-settings menus are allowed to escape the compact rail without being clipped by the rail container

@@ -2,10 +2,20 @@ import type { LensAttachmentReference } from '../../api/types';
 
 export const MAX_LENS_IMAGE_BYTES = 10 * 1024 * 1024;
 
+export interface PersistedLensComposerDraftAttachment {
+  id: string;
+  kind: 'image' | 'file';
+  uploadedPath: string;
+  displayName: string;
+  mimeType: string | null;
+  sizeBytes: number;
+}
+
 export interface LensComposerDraftAttachment {
   id: string;
   kind: 'image' | 'file';
-  file: File;
+  file: File | null;
+  uploadedPath: string | null;
   displayName: string;
   mimeType: string | null;
   sizeBytes: number;
@@ -28,16 +38,40 @@ export function isLensComposerImageFile(file: Pick<File, 'type' | 'name'>): bool
   return file.type.toLowerCase().startsWith('image/') || hasImageExtension(file.name);
 }
 
-export function createLensComposerDraftAttachment(file: File): LensComposerDraftAttachment {
+export function buildLensComposerAttachmentPreviewUrl(sessionId: string, path: string): string {
+  return `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`;
+}
+
+export function createLensComposerDraftAttachment(
+  sessionId: string,
+  file: Pick<File, 'name' | 'size' | 'type'>,
+  uploadedPath: string,
+  localFile: File | null = null,
+): LensComposerDraftAttachment {
   const image = isLensComposerImageFile(file);
   return {
     id: createDraftAttachmentId(),
     kind: image ? 'image' : 'file',
-    file,
+    file: localFile,
+    uploadedPath,
     displayName: file.name || 'attachment',
     mimeType: file.type || null,
     sizeBytes: file.size,
-    previewUrl: image ? URL.createObjectURL(file) : null,
+    previewUrl: image ? buildLensComposerAttachmentPreviewUrl(sessionId, uploadedPath) : null,
+  };
+}
+
+export function hydrateLensComposerDraftAttachment(
+  sessionId: string,
+  attachment: PersistedLensComposerDraftAttachment,
+): LensComposerDraftAttachment {
+  return {
+    ...attachment,
+    file: null,
+    previewUrl:
+      attachment.kind === 'image'
+        ? buildLensComposerAttachmentPreviewUrl(sessionId, attachment.uploadedPath)
+        : null,
   };
 }
 
@@ -47,11 +81,28 @@ export function cloneLensComposerDraftAttachments(
   return attachments.map((attachment) => ({ ...attachment }));
 }
 
+export function toPersistedLensComposerDraftAttachment(
+  attachment: LensComposerDraftAttachment,
+): PersistedLensComposerDraftAttachment | null {
+  if (!attachment.uploadedPath) {
+    return null;
+  }
+
+  return {
+    id: attachment.id,
+    kind: attachment.kind,
+    uploadedPath: attachment.uploadedPath,
+    displayName: attachment.displayName,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes,
+  };
+}
+
 export function releaseLensComposerDraftAttachmentPreviews(
   attachments: readonly LensComposerDraftAttachment[],
 ): void {
   for (const attachment of attachments) {
-    if (attachment.previewUrl) {
+    if (attachment.previewUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(attachment.previewUrl);
     }
   }

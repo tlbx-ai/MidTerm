@@ -95,15 +95,18 @@ describe('smart input tab wiring', () => {
     expect(metricsSource).toContain('const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;');
   });
 
-  it('keeps Lens attachment drafts in the composer until send-time upload', () => {
+  it('keeps Lens attachment drafts as durable staged uploads in the composer', () => {
     expect(source).toContain('lensAttachmentDrafts');
     expect(source).toContain('handleSmartInputSelectedFiles');
-    expect(submissionSource).toContain('await args.uploadFile(args.sessionId, attachment.file);');
+    expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
+    expect(source).toContain('void openLensDraftAttachment(currentSessionId, attachment);');
+    expect(submissionSource).toContain('if (attachment.uploadedPath) {');
     expect(submissionSource).toContain(
       'queuedTurn: args.submitQueuedTurn(args.sessionId, request)',
     );
     expect(css).toContain('.smart-input-attachments {');
     expect(css).toContain('.smart-input-attachment-chip {');
+    expect(css).toContain('.smart-input-attachment-open {');
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {

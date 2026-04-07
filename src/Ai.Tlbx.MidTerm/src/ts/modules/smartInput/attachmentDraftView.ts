@@ -6,11 +6,19 @@ export function renderLensAttachmentDraftView(args: {
   sessionId: string | null;
   attachments: readonly LensComposerDraftAttachment[];
   isLensActiveSession: (sessionId: string) => boolean;
+  onOpenAttachment: (sessionId: string, attachment: LensComposerDraftAttachment) => void;
   onRemoveAttachment: (sessionId: string, attachmentId: string) => void;
   onFocusTextarea: () => void;
 }): void {
-  const { attachments, host, isLensActiveSession, onFocusTextarea, onRemoveAttachment, sessionId } =
-    args;
+  const {
+    attachments,
+    host,
+    isLensActiveSession,
+    onFocusTextarea,
+    onOpenAttachment,
+    onRemoveAttachment,
+    sessionId,
+  } = args;
   if (!host) {
     return;
   }
@@ -31,23 +39,35 @@ export function renderLensAttachmentDraftView(args: {
     chip.className = `smart-input-attachment-chip smart-input-attachment-chip-${attachment.kind}`;
     chip.title = attachment.displayName;
 
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'smart-input-attachment-open';
+    openButton.title = attachment.displayName;
+    openButton.setAttribute('aria-label', attachment.displayName);
+    openButton.addEventListener('click', () => {
+      onOpenAttachment(sessionId, attachment);
+    });
+
     if (attachment.previewUrl) {
       const preview = document.createElement('img');
       preview.className = 'smart-input-attachment-thumb';
       preview.src = attachment.previewUrl;
       preview.alt = attachment.displayName;
-      chip.appendChild(preview);
+      preview.loading = 'lazy';
+      preview.decoding = 'async';
+      openButton.appendChild(preview);
     } else {
       const icon = document.createElement('span');
       icon.className = 'smart-input-attachment-icon';
       icon.textContent = t('smartInput.fileBadge');
-      chip.appendChild(icon);
+      openButton.appendChild(icon);
     }
 
     const label = document.createElement('span');
     label.className = 'smart-input-attachment-label';
     label.textContent = attachment.displayName;
-    chip.appendChild(label);
+    openButton.appendChild(label);
+    chip.appendChild(openButton);
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
