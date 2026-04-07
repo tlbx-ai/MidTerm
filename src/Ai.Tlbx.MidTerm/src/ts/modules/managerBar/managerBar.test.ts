@@ -50,12 +50,12 @@ describe('manager bar visibility', () => {
     );
     expect(managerBarSource).toContain('function toggleOverflowMenu(): void {');
     expect(managerBarSource).toContain('function syncOverflowedButtons(): void {');
-    expect(managerBarSource).toContain("if (barEl.classList.contains('hidden')) {");
+    expect(managerBarSource).toContain("if (managerBar.classList.contains('hidden')) {");
     expect(managerBarSource).toContain(
-      'const railWidth = Math.max(0, Math.floor(barEl.parentElement?.clientWidth ?? barEl.clientWidth));',
+      'function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {',
     );
-    expect(managerBarSource).toContain("buttonsEl.style.maxWidth = '';");
-    expect(managerBarSource).toContain("overflowBtn.setAttribute('hidden', '');");
+    expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '';");
+    expect(managerBarSource).toContain("overflowButton.setAttribute('hidden', '');");
     expect(managerBarSource).toContain(
       "const actionButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item');",
     );
@@ -80,7 +80,7 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain(
       'const availableRailWidth = measuredRailWidth > 0 ? measuredRailWidth : railWidth;',
     );
-    expect(managerBarSource).toContain('const addWidth = getMeasuredWidth(addBtn);');
+    expect(managerBarSource).toContain('const addWidth = getMeasuredWidth(addButton);');
     expect(managerBarSource).toContain(
       'if (totalWidth <= fullAvailableWidth + OVERFLOW_LAYOUT_EPSILON_PX) {',
     );

@@ -53,50 +53,61 @@ type ChangeType = 'none' | 'membership' | 'data' | 'order';
  */
 function detectChangeType(sessions: Record<string, Session>): ChangeType {
   const newIds = new Set(Object.keys(sessions));
-
-  // Check for membership change (add/remove)
-  if (newIds.size !== previousSessionIds.size) {
+  if (hasMembershipChange(newIds, sessions)) {
     return 'membership';
   }
-  for (const id of newIds) {
-    if (!previousSessionIds.has(id)) return 'membership';
+  if (hasOrderChange(sessions)) {
+    return 'order';
   }
-
-  // Check for order change
-  for (const [id, session] of Object.entries(sessions)) {
-    const prev = previousSessions[id];
-    if (prev && session._order !== prev._order) {
-      return 'order';
-    }
-  }
-
-  // Check for parent change (triggers full re-render since ordering changes)
-  for (const [id, session] of Object.entries(sessions)) {
-    const prev = previousSessions[id];
-    if (prev && session.parentSessionId !== prev.parentSessionId) {
-      return 'membership';
-    }
-
-    if (prev && session.agentControlled !== prev.agentControlled) {
-      return 'membership';
-    }
-  }
-
-  // Check for data change
-  for (const [id, session] of Object.entries(sessions)) {
-    const prev = previousSessions[id];
-    if (!prev) continue;
-    if (
-      session.name !== prev.name ||
-      session.terminalTitle !== prev.terminalTitle ||
-      session.shellType !== prev.shellType ||
-      session.bookmarkId !== prev.bookmarkId
-    ) {
-      return 'data';
-    }
+  if (hasDataChange(sessions)) {
+    return 'data';
   }
 
   return 'none';
+}
+
+function hasMembershipChange(
+  newIds: ReadonlySet<string>,
+  sessions: Record<string, Session>,
+): boolean {
+  if (newIds.size !== previousSessionIds.size) {
+    return true;
+  }
+
+  for (const id of newIds) {
+    if (!previousSessionIds.has(id)) {
+      return true;
+    }
+  }
+
+  return Object.entries(sessions).some(([id, session]) => {
+    const prev = previousSessions[id];
+    return (
+      !!prev &&
+      (session.parentSessionId !== prev.parentSessionId ||
+        session.agentControlled !== prev.agentControlled)
+    );
+  });
+}
+
+function hasOrderChange(sessions: Record<string, Session>): boolean {
+  return Object.entries(sessions).some(([id, session]) => {
+    const prev = previousSessions[id];
+    return !!prev && session._order !== prev._order;
+  });
+}
+
+function hasDataChange(sessions: Record<string, Session>): boolean {
+  return Object.entries(sessions).some(([id, session]) => {
+    const prev = previousSessions[id];
+    return (
+      !!prev &&
+      (session.name !== prev.name ||
+        session.terminalTitle !== prev.terminalTitle ||
+        session.shellType !== prev.shellType ||
+        session.bookmarkId !== prev.bookmarkId)
+    );
+  });
 }
 
 // =============================================================================

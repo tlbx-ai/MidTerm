@@ -92,6 +92,20 @@ interface SessionActionsDeps {
   isLensOnlySession: (session: Session | null | undefined) => boolean;
 }
 
+interface ResolvedPinnedHistoryTarget {
+  commandLine: string | null;
+  dedupeKey: string;
+  executable: string;
+  fgInfo: ReturnType<typeof getForegroundInfo>;
+  foregroundProcessCommandLine: string | null;
+  foregroundProcessDisplayName: string | null;
+  foregroundProcessIdentity: string | null;
+  foregroundProcessName: string | null;
+  historyMode: ReturnType<typeof resolveSessionHistoryMode>;
+  surfaceType: 'trm' | 'cdx' | 'cld';
+  workingDirectory: string;
+}
+
 export function createSessionActionHandlers({
   animateBookmarkSaveSuccess,
   buildLensHistoryDedupeKey,
@@ -502,7 +516,10 @@ export function createSessionActionHandlers({
     }
   }
 
-  function resolvePinnedHistoryTarget(sessionId: string, session: Session) {
+  function resolvePinnedHistoryTarget(
+    sessionId: string,
+    session: Session,
+  ): ResolvedPinnedHistoryTarget | null {
     const historyMode = resolveSessionHistoryMode(session);
     const fgInfo = getForegroundInfo(sessionId);
     const surfaceType = getBookmarkSurfaceType(session, historyMode.profile);
@@ -557,6 +574,71 @@ export function createSessionActionHandlers({
     };
   }
 
+  function buildPinnedHistoryLabel(session: Session): string | null {
+    const trimmedName = (session.name || '').trim();
+    return trimmedName && trimmedName !== session.shellType ? trimmedName : null;
+  }
+
+  function buildPinnedHistoryEntryInput(
+    session: Session,
+    label: string | null,
+    target: ResolvedPinnedHistoryTarget,
+  ) {
+    return {
+      shellType: session.shellType,
+      executable: target.executable,
+      commandLine: target.commandLine,
+      workingDirectory: target.workingDirectory,
+      isStarred: true,
+      label,
+      dedupeKey: target.dedupeKey,
+      launchMode: target.historyMode.launchMode,
+      profile: target.historyMode.profile,
+      surfaceType: target.surfaceType,
+      foregroundProcessName: target.foregroundProcessName,
+      foregroundProcessCommandLine: target.foregroundProcessCommandLine,
+      foregroundProcessDisplayName: target.foregroundProcessDisplayName,
+      foregroundProcessIdentity: target.foregroundProcessIdentity,
+    };
+  }
+
+  async function ensurePinnedSessionBookmark(
+    sessionId: string,
+    session: Session,
+    bookmarkId: string,
+  ): Promise<void> {
+    const current = getSession(sessionId) ?? session;
+    if (current.bookmarkId === bookmarkId) {
+      return;
+    }
+
+    const { response } = await setSessionBookmark(sessionId, bookmarkId);
+    if (!response.ok) {
+      throw new Error(`Bookmark link failed with status ${response.status}.`);
+    }
+    setSession({ ...current, bookmarkId });
+  }
+
+  function logPinnedHistoryOutcome(
+    previousBookmarkId: string | null,
+    bookmarkId: string,
+    target: ResolvedPinnedHistoryTarget,
+  ): void {
+    if (previousBookmarkId && previousBookmarkId !== bookmarkId) {
+      log.info(() => `Pinned to history (new tuple): ${target.fgInfo.name} (id=${bookmarkId})`);
+      return;
+    }
+    if (previousBookmarkId === bookmarkId) {
+      log.info(
+        () =>
+          `Pinned to history (updated existing tuple): ${target.fgInfo.name} (id=${bookmarkId})`,
+      );
+      return;
+    }
+
+    log.info(() => `Pinned to history: ${target.fgInfo.name} (id=${bookmarkId})`);
+  }
+
   async function pinSessionToHistory(sessionId: string): Promise<void> {
     const session = getSession(sessionId);
     if (!session) {
@@ -564,8 +646,7 @@ export function createSessionActionHandlers({
       return;
     }
 
-    const trimmedName = (session.name || '').trim();
-    const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
+    const label = buildPinnedHistoryLabel(session);
     const previousBookmarkId = session.bookmarkId ?? null;
     const target = resolvePinnedHistoryTarget(sessionId, session);
     if (!target) {
@@ -573,47 +654,16 @@ export function createSessionActionHandlers({
     }
 
     try {
-      const id = await createHistoryEntry({
-        shellType: session.shellType,
-        executable: target.executable,
-        commandLine: target.commandLine,
-        workingDirectory: target.workingDirectory,
-        isStarred: true,
-        label,
-        dedupeKey: target.dedupeKey,
-        launchMode: target.historyMode.launchMode,
-        profile: target.historyMode.profile,
-        surfaceType: target.surfaceType,
-        foregroundProcessName: target.foregroundProcessName,
-        foregroundProcessCommandLine: target.foregroundProcessCommandLine,
-        foregroundProcessDisplayName: target.foregroundProcessDisplayName,
-        foregroundProcessIdentity: target.foregroundProcessIdentity,
-      });
+      const id = await createHistoryEntry(buildPinnedHistoryEntryInput(session, label, target));
 
       if (!id) {
         throw new Error('The bookmark service did not return an id.');
       }
 
-      const current = getSession(sessionId) ?? session;
-      if (current.bookmarkId !== id) {
-        const { response } = await setSessionBookmark(sessionId, id);
-        if (!response.ok) {
-          throw new Error(`Bookmark link failed with status ${response.status}.`);
-        }
-        setSession({ ...current, bookmarkId: id });
-      }
-
+      await ensurePinnedSessionBookmark(sessionId, session, id);
       refreshHistory();
       animateBookmarkSaveSuccess(sessionId);
-      if (previousBookmarkId && previousBookmarkId !== id) {
-        log.info(() => `Pinned to history (new tuple): ${target.fgInfo.name} (id=${id})`);
-      } else if (previousBookmarkId === id) {
-        log.info(
-          () => `Pinned to history (updated existing tuple): ${target.fgInfo.name} (id=${id})`,
-        );
-      } else {
-        log.info(() => `Pinned to history: ${target.fgInfo.name} (id=${id})`);
-      }
+      logPinnedHistoryOutcome(previousBookmarkId, id, target);
     } catch (error) {
       log.error(() => `Failed to pin session ${sessionId} to history: ${String(error)}`);
       await showAlert(error instanceof Error ? error.message : String(error), {

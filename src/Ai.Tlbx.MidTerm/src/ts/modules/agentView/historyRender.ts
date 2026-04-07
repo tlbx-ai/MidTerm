@@ -203,11 +203,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       (entry.commandOutputTail ?? []).join('\n'),
       buildHistoryAttachmentToken(entry),
       buildAssistantPreviewToken(entry, state),
-      (entry.actions ?? [])
-        .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
-        .join('|'),
+      buildHistoryActionToken(entry),
       buildHistoryClusterToken(cluster),
-      state?.activationActionBusy === true && (entry.actions?.length ?? 0) > 0 ? 'busy' : 'idle',
+      resolveHistoryEntryBusyToken(entry, state),
     ].join('||');
   }
 
@@ -239,6 +237,21 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           ':',
         )
       : '';
+  }
+
+  function buildHistoryActionToken(entry: LensHistoryEntry): string {
+    return (entry.actions ?? [])
+      .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
+      .join('|');
+  }
+
+  function resolveHistoryEntryBusyToken(
+    entry: LensHistoryEntry,
+    state: SessionLensViewState | undefined,
+  ): string {
+    return state?.activationActionBusy === true && (entry.actions?.length ?? 0) > 0
+      ? 'busy'
+      : 'idle';
   }
 
   function reconcileHistoryRenderPlan(
@@ -555,25 +568,12 @@ function resolveArtifactCluster(
   index: number,
 ): ArtifactClusterInfo | null {
   const entry = entries[index];
-  if (!entry || !['tool', 'reasoning', 'plan', 'diff'].includes(entry.kind)) {
+  if (!entry || !isArtifactClusterKind(entry.kind)) {
     return null;
   }
 
-  let start = index;
-  while (
-    start > 0 &&
-    ['tool', 'reasoning', 'plan', 'diff'].includes(entries[start - 1]?.kind ?? '')
-  ) {
-    start -= 1;
-  }
-
-  let end = index;
-  while (
-    end + 1 < entries.length &&
-    ['tool', 'reasoning', 'plan', 'diff'].includes(entries[end + 1]?.kind ?? '')
-  ) {
-    end += 1;
-  }
+  const start = findArtifactClusterBoundary(entries, index, -1);
+  const end = findArtifactClusterBoundary(entries, index, 1);
 
   const count = end - start + 1;
   const position =
@@ -586,4 +586,27 @@ function resolveArtifactCluster(
     count,
     onlyTools,
   };
+}
+
+function isArtifactClusterKind(kind: LensHistoryEntry['kind']): boolean {
+  return ['tool', 'reasoning', 'plan', 'diff'].includes(kind);
+}
+
+function findArtifactClusterBoundary(
+  entries: readonly LensHistoryEntry[],
+  index: number,
+  direction: -1 | 1,
+): number {
+  let boundary = index;
+  for (;;) {
+    const nextIndex = boundary + direction;
+    if (nextIndex < 0 || nextIndex >= entries.length) {
+      return boundary;
+    }
+    const nextEntry = entries[nextIndex];
+    if (!nextEntry || !isArtifactClusterKind(nextEntry.kind)) {
+      return boundary;
+    }
+    boundary = nextIndex;
+  }
 }

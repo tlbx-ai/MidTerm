@@ -384,33 +384,7 @@ function handleTouchEnd(e: TouchEvent): void {
     if (touchGhost) touchGhost.style.display = 'none';
     const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
     if (touchGhost) touchGhost.style.display = '';
-    const targetItem = closestSessionItem(el);
-
-    if (targetItem && targetItem !== draggedElement && !isLayoutActive()) {
-      const targetSessionId = isSameControlMode(targetItem) ? targetItem.dataset.sessionId : null;
-      if (targetSessionId) {
-        const sessions = $sessionList.get();
-        const fromIndex = sessions.findIndex((s) => s.id === draggedSessionId);
-        let toIndex = sessions.findIndex((s) => s.id === targetSessionId);
-
-        if (fromIndex !== -1 && toIndex !== -1) {
-          if (dropIndicatorPosition === 'below') {
-            toIndex = fromIndex < toIndex ? toIndex : toIndex + 1;
-          } else {
-            toIndex = fromIndex > toIndex ? toIndex : toIndex - 1;
-          }
-          toIndex = Math.max(0, Math.min(sessions.length - 1, toIndex));
-
-          reorderSessions(fromIndex, toIndex);
-
-          const newOrder = $sessionList
-            .get()
-            .map((s) => s.id)
-            .filter((id): id is string => !!id);
-          persistSessionOrder(newOrder);
-        }
-      }
-    }
+    finishTouchSessionReorder(closestSessionItem(el));
   }
 
   if (draggedElement) draggedElement.classList.remove('dragging');
@@ -423,6 +397,54 @@ function handleTouchEnd(e: TouchEvent): void {
   draggedElement = null;
   dropIndicatorPosition = null;
   touchActive = false;
+}
+
+function finishTouchSessionReorder(targetItem: HTMLElement | null): void {
+  if (
+    !targetItem ||
+    targetItem === draggedElement ||
+    isLayoutActive() ||
+    !isSameControlMode(targetItem)
+  ) {
+    return;
+  }
+
+  const targetSessionId = targetItem.dataset.sessionId;
+  if (!targetSessionId || !draggedSessionId) {
+    return;
+  }
+
+  const sessions = $sessionList.get();
+  const fromIndex = sessions.findIndex((session) => session.id === draggedSessionId);
+  const targetIndex = sessions.findIndex((session) => session.id === targetSessionId);
+  const nextIndex = resolveTouchDropIndex(fromIndex, targetIndex);
+  if (fromIndex === -1 || nextIndex === null) {
+    return;
+  }
+
+  reorderSessions(fromIndex, nextIndex);
+  const newOrder = $sessionList
+    .get()
+    .map((session) => session.id)
+    .filter((id): id is string => !!id);
+  persistSessionOrder(newOrder);
+}
+
+function resolveTouchDropIndex(fromIndex: number, targetIndex: number): number | null {
+  if (fromIndex === -1 || targetIndex === -1) {
+    return null;
+  }
+
+  const nextIndex =
+    dropIndicatorPosition === 'below'
+      ? fromIndex < targetIndex
+        ? targetIndex
+        : targetIndex + 1
+      : fromIndex > targetIndex
+        ? targetIndex
+        : targetIndex - 1;
+  const sessions = $sessionList.get();
+  return Math.max(0, Math.min(sessions.length - 1, nextIndex));
 }
 
 function cancelTouchDrag(): void {

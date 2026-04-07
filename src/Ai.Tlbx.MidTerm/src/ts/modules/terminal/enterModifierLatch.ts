@@ -29,6 +29,34 @@ function getEnterModifierKey(input: EnterModifierLatchInput): EnterModifierKey |
   return null;
 }
 
+function buildEnterModifierLatchState(
+  current: EnterModifierLatchState | null | undefined,
+  nowMs: number,
+): EnterModifierLatchState {
+  return {
+    ctrlPressed: current?.ctrlPressed ?? false,
+    shiftPressed: current?.shiftPressed ?? false,
+    lastUpdatedAtMs: nowMs,
+  };
+}
+
+function applyModifierPressedState(
+  next: EnterModifierLatchState,
+  modifier: EnterModifierKey,
+  input: EnterModifierLatchInput,
+  current: EnterModifierLatchState | null | undefined,
+): void {
+  const isPressed = input.type === 'keydown';
+  if (modifier === 'ctrl') {
+    next.ctrlPressed = isPressed;
+    next.shiftPressed = input.shiftKey || current?.shiftPressed || false;
+    return;
+  }
+
+  next.shiftPressed = isPressed;
+  next.ctrlPressed = input.ctrlKey || current?.ctrlPressed || false;
+}
+
 export function updateEnterModifierLatch(
   current: EnterModifierLatchState | null | undefined,
   input: EnterModifierLatchInput,
@@ -39,20 +67,8 @@ export function updateEnterModifierLatch(
     return current ?? null;
   }
 
-  const next: EnterModifierLatchState = {
-    ctrlPressed: current?.ctrlPressed ?? false,
-    shiftPressed: current?.shiftPressed ?? false,
-    lastUpdatedAtMs: nowMs,
-  };
-  const isPressed = input.type === 'keydown';
-
-  if (modifier === 'ctrl') {
-    next.ctrlPressed = isPressed;
-    next.shiftPressed = input.shiftKey || current?.shiftPressed || false;
-  } else {
-    next.shiftPressed = isPressed;
-    next.ctrlPressed = input.ctrlKey || current?.ctrlPressed || false;
-  }
+  const next = buildEnterModifierLatchState(current, nowMs);
+  applyModifierPressedState(next, modifier, input, current);
 
   if (!next.ctrlPressed && !next.shiftPressed) {
     return null;

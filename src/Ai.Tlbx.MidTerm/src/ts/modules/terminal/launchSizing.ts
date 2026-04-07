@@ -18,23 +18,33 @@ interface LaunchSizingSettings {
   fontWeightBold?: string;
 }
 
+function resolveDefaultLaunchDimensions(settings: LaunchSizingSettings | null | undefined): {
+  cols: number;
+  rows: number;
+} {
+  return {
+    cols: settings?.defaultCols ?? 120,
+    rows: settings?.defaultRows ?? 30,
+  };
+}
+
+function canMeasureLaunchDimensions(): boolean {
+  return $isMainBrowser.get() && !!dom.terminalsArea;
+}
+
 export async function resolveLaunchDimensions(
   settings: LaunchSizingSettings | null | undefined,
   logPrefix: string,
 ): Promise<{ cols: number; rows: number }> {
-  const defaultCols = settings?.defaultCols ?? 120;
-  const defaultRows = settings?.defaultRows ?? 30;
+  const defaults = resolveDefaultLaunchDimensions(settings);
+  const terminalsArea = dom.terminalsArea;
 
-  if (!$isMainBrowser.get()) {
-    return { cols: defaultCols, rows: defaultRows };
-  }
-
-  if (!dom.terminalsArea) {
-    return { cols: defaultCols, rows: defaultRows };
+  if (!canMeasureLaunchDimensions() || !terminalsArea) {
+    return defaults;
   }
 
   const dims = await calculateOptimalDimensions(
-    dom.terminalsArea,
+    terminalsArea,
     getEffectiveTerminalFontSize(settings?.fontSize ?? 14),
     getConfiguredTerminalFontFamily(),
     settings?.lineHeight ?? 1,
@@ -44,5 +54,5 @@ export async function resolveLaunchDimensions(
     `${logPrefix}-${crypto.randomUUID().slice(0, 8)}`,
   );
 
-  return dims ?? { cols: defaultCols, rows: defaultRows };
+  return dims ?? defaults;
 }

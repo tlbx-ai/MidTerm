@@ -350,30 +350,31 @@ export function isPointInLayoutArea(x: number, y: number): boolean {
  */
 export function findSessionAtPoint(x: number, y: number): string | null {
   if (!layoutRoot || !isLayoutActive()) {
-    // Check standalone terminal
-    if (dom.terminalsArea) {
-      const container = dom.terminalsArea.querySelector('.terminal-container:not(.hidden)');
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-          const id = container.id.replace('terminal-', '');
-          return id || null;
-        }
-      }
-    }
-    return null;
+    return findStandaloneSessionAtPoint(x, y);
   }
 
-  // Find pane at point
   const panes = layoutRoot.querySelectorAll('.layout-leaf');
   for (const pane of panes) {
-    const rect = pane.getBoundingClientRect();
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+    if (isPointInRect(x, y, pane.getBoundingClientRect())) {
       return (pane as HTMLElement).dataset.sessionId ?? null;
     }
   }
 
   return null;
+}
+
+function findStandaloneSessionAtPoint(x: number, y: number): string | null {
+  const container = dom.terminalsArea?.querySelector('.terminal-container:not(.hidden)');
+  if (!container || !isPointInRect(x, y, container.getBoundingClientRect())) {
+    return null;
+  }
+
+  const id = container.id.replace('terminal-', '');
+  return id || null;
+}
+
+function isPointInRect(x: number, y: number, rect: DOMRect): boolean {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
 /**

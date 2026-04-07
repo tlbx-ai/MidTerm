@@ -122,53 +122,7 @@ export function buildLensHistoryEntries(
     })
     .filter((entry) => !isSuppressedLensRuntimeNoticeEntry(entry))
     .sort((left, right) => left.order - right.order)
-    .reduce<LensHistoryEntry[]>((mergedEntries, entry) => {
-      if (!isCommandOutputHistoryEntry(entry)) {
-        mergedEntries.push(entry);
-        return mergedEntries;
-      }
-
-      let targetIndex = -1;
-      for (let index = mergedEntries.length - 1; index >= 0; index -= 1) {
-        const candidate = mergedEntries[index];
-        if (!candidate || !isCommandExecutionHistoryEntry(candidate)) {
-          continue;
-        }
-
-        const sameSourceItem =
-          candidate.sourceItemId &&
-          entry.sourceItemId &&
-          candidate.sourceItemId === entry.sourceItemId;
-        if (sameSourceItem || candidate.id === entry.id) {
-          targetIndex = index;
-          break;
-        }
-      }
-
-      const previousEntry = mergedEntries[mergedEntries.length - 1];
-      if (targetIndex < 0 && previousEntry && isCommandExecutionHistoryEntry(previousEntry)) {
-        targetIndex = mergedEntries.length - 1;
-      }
-
-      if (targetIndex < 0) {
-        mergedEntries.push(entry);
-        return mergedEntries;
-      }
-
-      const targetEntry = mergedEntries[targetIndex];
-      const commandPresentation = resolveCommandPresentation(entry);
-      if (!targetEntry || !commandPresentation) {
-        return mergedEntries;
-      }
-
-      mergedEntries[targetIndex] = {
-        ...targetEntry,
-        body: '',
-        commandText: targetEntry.commandText ?? commandPresentation.commandText,
-        commandOutputTail: commandPresentation.commandOutputTail,
-      };
-      return mergedEntries;
-    }, [])
+    .reduce<LensHistoryEntry[]>(mergeCommandOutputHistoryEntries, [])
     .filter(
       (entry) =>
         entry.body.trim() ||
@@ -223,6 +177,59 @@ function resolveCommandPresentation(
   }
 
   return parseCommandOutputBody(entry.body);
+}
+
+function findMatchingCommandExecutionIndex(
+  mergedEntries: readonly LensHistoryEntry[],
+  entry: LensHistoryEntry,
+): number {
+  for (let index = mergedEntries.length - 1; index >= 0; index -= 1) {
+    const candidate = mergedEntries[index];
+    if (!candidate || !isCommandExecutionHistoryEntry(candidate)) {
+      continue;
+    }
+
+    const sameSourceItem =
+      candidate.sourceItemId && entry.sourceItemId && candidate.sourceItemId === entry.sourceItemId;
+    if (sameSourceItem || candidate.id === entry.id) {
+      return index;
+    }
+  }
+
+  const previousEntry = mergedEntries[mergedEntries.length - 1];
+  return previousEntry && isCommandExecutionHistoryEntry(previousEntry)
+    ? mergedEntries.length - 1
+    : -1;
+}
+
+function mergeCommandOutputHistoryEntries(
+  mergedEntries: LensHistoryEntry[],
+  entry: LensHistoryEntry,
+): LensHistoryEntry[] {
+  if (!isCommandOutputHistoryEntry(entry)) {
+    mergedEntries.push(entry);
+    return mergedEntries;
+  }
+
+  const targetIndex = findMatchingCommandExecutionIndex(mergedEntries, entry);
+  if (targetIndex < 0) {
+    mergedEntries.push(entry);
+    return mergedEntries;
+  }
+
+  const targetEntry = mergedEntries[targetIndex];
+  const commandPresentation = resolveCommandPresentation(entry);
+  if (!targetEntry || !commandPresentation) {
+    return mergedEntries;
+  }
+
+  mergedEntries[targetIndex] = {
+    ...targetEntry,
+    body: '',
+    commandText: targetEntry.commandText ?? commandPresentation.commandText,
+    commandOutputTail: commandPresentation.commandOutputTail,
+  };
+  return mergedEntries;
 }
 
 export function isSuppressedLensRuntimeNoticeEntry(
@@ -644,47 +651,56 @@ function resolveBusyIndicatorAnimationOffsetMs(snapshot: LensPulseSnapshotRespon
   return elapsedMs % BUSY_SWEEP_CYCLE_MS;
 }
 
-export function withTurnDurationNotes(
+function maybeRememberCompletedTurnDuration(
   snapshot: LensPulseSnapshotResponse,
-  entries: LensHistoryEntry[],
   state: SessionLensViewState,
-): LensHistoryEntry[] {
+): void {
   const turnId = snapshot.currentTurn.turnId ?? null;
   const startedAt = snapshot.currentTurn.startedAt ?? null;
   const completedAt = snapshot.currentTurn.completedAt || snapshot.generatedAt;
+  const currentTurnState = normalizeComparableHistoryText(snapshot.currentTurn.state || '');
   if (
-    turnId &&
-    startedAt &&
-    completedAt &&
-    !state.completedTurnDurationEntries.has(turnId) &&
-    !['running', 'in progress'].includes(
-      normalizeComparableHistoryText(snapshot.currentTurn.state || ''),
-    )
+    !turnId ||
+    !startedAt ||
+    !completedAt ||
+    state.completedTurnDurationEntries.has(turnId) ||
+    ['running', 'in progress'].includes(currentTurnState)
   ) {
-    const durationMs = Date.parse(completedAt) - Date.parse(startedAt);
-    if (Number.isFinite(durationMs) && durationMs >= 0) {
-      state.completedTurnDurationEntries.set(turnId, {
-        id: `turn-duration:${turnId}`,
-        order: Number.MAX_SAFE_INTEGER,
-        kind: 'system',
-        tone: 'info',
-        label: '',
-        title: '',
-        body: `(Turn took ${formatLensTurnDuration(durationMs)})`,
-        meta: '',
-        sourceTurnId: turnId,
-        turnDurationNote: true,
-      });
-    }
+    return;
   }
 
+  const durationMs = Date.parse(completedAt) - Date.parse(startedAt);
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return;
+  }
+
+  state.completedTurnDurationEntries.set(turnId, {
+    id: `turn-duration:${turnId}`,
+    order: Number.MAX_SAFE_INTEGER,
+    kind: 'system',
+    tone: 'info',
+    label: '',
+    title: '',
+    body: `(Turn took ${formatLensTurnDuration(durationMs)})`,
+    meta: '',
+    sourceTurnId: turnId,
+    turnDurationNote: true,
+  });
+}
+
+function pruneCompletedTurnDurationEntries(state: SessionLensViewState): void {
   const turnIds = [...state.completedTurnDurationEntries.keys()];
   for (const staleTurnId of turnIds.slice(0, Math.max(0, turnIds.length - 64))) {
     state.completedTurnDurationEntries.delete(staleTurnId);
   }
+}
 
+function appendTurnDurationEntries(
+  entries: readonly LensHistoryEntry[],
+  state: SessionLensViewState,
+): LensHistoryEntry[] {
   if (state.completedTurnDurationEntries.size === 0) {
-    return entries;
+    return [...entries];
   }
 
   const nextEntries = [...entries];
@@ -707,6 +723,16 @@ export function withTurnDurationNotes(
   }
 
   return nextEntries.sort((left, right) => left.order - right.order);
+}
+
+export function withTurnDurationNotes(
+  snapshot: LensPulseSnapshotResponse,
+  entries: LensHistoryEntry[],
+  state: SessionLensViewState,
+): LensHistoryEntry[] {
+  maybeRememberCompletedTurnDuration(snapshot, state);
+  pruneCompletedTurnDurationEntries(state);
+  return appendTurnDurationEntries(entries, state);
 }
 
 export function syncBusyIndicatorTicker(args: {

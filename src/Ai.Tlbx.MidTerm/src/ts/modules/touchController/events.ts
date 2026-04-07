@@ -180,33 +180,62 @@ function buildKeySequence(
   }
 
   const modCode = getModifierCode(mods);
-
-  if (['up', 'down', 'left', 'right'].includes(key)) {
-    const arrows: Record<string, string> = { up: 'A', down: 'B', right: 'C', left: 'D' };
-    return `\x1b[1;${modCode}${arrows[key] ?? ''}`;
+  const modifiedSpecialSequence = resolveModifiedSpecialKeySequence(key, modCode, mods.shift);
+  if (modifiedSpecialSequence) {
+    return modifiedSpecialSequence;
   }
 
-  if (key === 'home') return `\x1b[1;${modCode}H`;
-  if (key === 'end') return `\x1b[1;${modCode}F`;
-
-  if (key === 'pgup') return `\x1b[5;${modCode}~`;
-  if (key === 'pgdn') return `\x1b[6;${modCode}~`;
-
-  if (key === 'tab' && mods.shift) {
-    return '\x1b[Z';
-  }
-
-  if (mods.ctrl && baseSequence.length === 1) {
-    const charCode = baseSequence.charCodeAt(0);
-    if (charCode >= 65 && charCode <= 90) {
-      return String.fromCharCode(charCode - 64);
-    }
-    if (charCode >= 97 && charCode <= 122) {
-      return String.fromCharCode(charCode - 96);
-    }
+  const modifiedCtrlSequence = resolveCtrlModifiedPrintableSequence(baseSequence, mods.ctrl);
+  if (modifiedCtrlSequence) {
+    return modifiedCtrlSequence;
   }
 
   return baseSequence;
+}
+
+function resolveModifiedSpecialKeySequence(
+  key: string,
+  modCode: number,
+  shiftPressed: boolean,
+): string | null {
+  const arrows: Record<string, string> = { up: 'A', down: 'B', right: 'C', left: 'D' };
+  if (key in arrows) {
+    return `\x1b[1;${modCode}${arrows[key] ?? ''}`;
+  }
+  if (key === 'home') {
+    return `\x1b[1;${modCode}H`;
+  }
+  if (key === 'end') {
+    return `\x1b[1;${modCode}F`;
+  }
+  if (key === 'pgup') {
+    return `\x1b[5;${modCode}~`;
+  }
+  if (key === 'pgdn') {
+    return `\x1b[6;${modCode}~`;
+  }
+  if (key === 'tab' && shiftPressed) {
+    return '\x1b[Z';
+  }
+  return null;
+}
+
+function resolveCtrlModifiedPrintableSequence(
+  baseSequence: string,
+  ctrlPressed: boolean,
+): string | null {
+  if (!ctrlPressed || baseSequence.length !== 1) {
+    return null;
+  }
+
+  const charCode = baseSequence.charCodeAt(0);
+  if (charCode >= 65 && charCode <= 90) {
+    return String.fromCharCode(charCode - 64);
+  }
+  if (charCode >= 97 && charCode <= 122) {
+    return String.fromCharCode(charCode - 96);
+  }
+  return null;
 }
 
 function cancelLongPress(): void {

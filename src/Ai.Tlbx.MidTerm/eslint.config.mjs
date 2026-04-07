@@ -71,7 +71,7 @@ export default tseslint.config(
     files: ['src/ts/**/*.ts'],
     ignores: ['src/ts/api.generated.ts'],
     rules: {
-      'complexity': ['warn', 20],
+      'complexity': ['warn', 15],
       'max-lines': ['warn', { max: 1200, skipBlankLines: true, skipComments: true }],
     },
   },

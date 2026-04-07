@@ -33,6 +33,8 @@ import { shouldShowManagerBar } from './visibility';
 const log = createLogger('managerBar');
 const QUEUE_ENQUEUE_DEDUP_WINDOW_MS = 1500;
 const OVERFLOW_LAYOUT_EPSILON_PX = 0.75;
+const OVERFLOW_BUTTON_GAP_PX = 6;
+const OVERFLOW_MENU_BUTTON_WIDTH_PX = 32;
 
 let barEl: HTMLElement | null = null;
 let queueEl: HTMLElement | null = null;
@@ -624,17 +626,18 @@ function syncOverflowedButtons(): void {
   if (!barEl || !buttonsEl || !addBtn || !overflowBtn) {
     return;
   }
+  const managerBar = barEl;
+  const buttonStrip = buttonsEl;
+  const addButton = addBtn;
+  const overflowButton = overflowBtn;
 
-  if (barEl.classList.contains('hidden')) {
+  if (managerBar.classList.contains('hidden')) {
     return;
   }
 
-  const buttonElements = [...buttonsEl.querySelectorAll<HTMLElement>('.manager-btn')];
+  const buttonElements = [...buttonStrip.querySelectorAll<HTMLElement>('.manager-btn')];
   if (buttonElements.length === 0) {
-    buttonsEl.style.maxWidth = '';
-    overflowBtn.setAttribute('hidden', '');
-    overflowActionIds = [];
-    closeOpenManagerOverflow();
+    resetOverflowLayoutState(buttonStrip, overflowButton);
     return;
   }
 
@@ -642,40 +645,88 @@ function syncOverflowedButtons(): void {
     element.classList.remove('manager-btn-overflow-hidden');
   }
 
-  buttonsEl.style.maxWidth = '';
-  overflowBtn.setAttribute('hidden', '');
-
-  const gap = 6;
-  const overflowWidth = 32;
-  const railWidth = Math.max(0, Math.floor(barEl.parentElement?.clientWidth ?? barEl.clientWidth));
-  const measuredRailWidth = Math.max(
-    0,
-    barEl.parentElement?.getBoundingClientRect().width ?? barEl.getBoundingClientRect().width,
-  );
-  const availableRailWidth = measuredRailWidth > 0 ? measuredRailWidth : railWidth;
-  const addWidth = getMeasuredWidth(addBtn);
-  const fullAvailableWidth = Math.max(0, availableRailWidth - addWidth - gap);
+  resetOverflowLayoutChrome(buttonStrip, overflowButton);
+  const fullAvailableWidth = getAvailableManagerRailWidth(managerBar, addButton);
 
   const buttonWidths = buttonElements.map((element) => getMeasuredWidth(element));
   const totalWidth = buttonWidths.reduce(
-    (sum, width, index) => sum + width + (index > 0 ? gap : 0),
+    (sum, width, index) => sum + width + (index > 0 ? OVERFLOW_BUTTON_GAP_PX : 0),
     0,
   );
 
   if (totalWidth <= fullAvailableWidth + OVERFLOW_LAYOUT_EPSILON_PX) {
-    buttonsEl.style.maxWidth = `${String(fullAvailableWidth)}px`;
-    overflowBtn.setAttribute('hidden', '');
-    overflowActionIds = [];
-    closeOpenManagerOverflow();
+    buttonStrip.style.maxWidth = `${String(fullAvailableWidth)}px`;
+    resetOverflowMenuState(overflowButton);
     return;
   }
 
-  const visibleBudget = Math.max(0, fullAvailableWidth - overflowWidth - gap);
+  const visibleBudget = Math.max(
+    0,
+    fullAvailableWidth - OVERFLOW_MENU_BUTTON_WIDTH_PX - OVERFLOW_BUTTON_GAP_PX,
+  );
+  const nextOverflowIds = collectOverflowActionIds(buttonElements, buttonWidths, visibleBudget);
+
+  buttonStrip.style.maxWidth = `${String(Math.max(0, visibleBudget))}px`;
+  overflowActionIds = nextOverflowIds;
+  if (overflowActionIds.length === 0) {
+    resetOverflowMenuState(overflowButton);
+    return;
+  }
+
+  overflowButton.removeAttribute('hidden');
+  if (overflowPopoverEl && !overflowPopoverEl.classList.contains('hidden')) {
+    renderOverflowMenuItems();
+    positionManagerOverflowMenu();
+  }
+}
+
+function resetOverflowLayoutChrome(
+  buttonStrip: HTMLElement,
+  overflowButton: HTMLButtonElement,
+): void {
+  buttonStrip.style.maxWidth = '';
+  overflowButton.setAttribute('hidden', '');
+}
+
+function resetOverflowMenuState(overflowButton: HTMLButtonElement): void {
+  overflowButton.setAttribute('hidden', '');
+  overflowActionIds = [];
+  closeOpenManagerOverflow();
+}
+
+function resetOverflowLayoutState(
+  buttonStrip: HTMLElement,
+  overflowButton: HTMLButtonElement,
+): void {
+  resetOverflowLayoutChrome(buttonStrip, overflowButton);
+  resetOverflowMenuState(overflowButton);
+}
+
+function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {
+  const railWidth = Math.max(
+    0,
+    Math.floor(managerBar.parentElement?.clientWidth ?? managerBar.clientWidth),
+  );
+  const measuredRailWidth = Math.max(
+    0,
+    managerBar.parentElement?.getBoundingClientRect().width ??
+      managerBar.getBoundingClientRect().width,
+  );
+  const availableRailWidth = measuredRailWidth > 0 ? measuredRailWidth : railWidth;
+  const addWidth = getMeasuredWidth(addButton);
+  return Math.max(0, availableRailWidth - addWidth - OVERFLOW_BUTTON_GAP_PX);
+}
+
+function collectOverflowActionIds(
+  buttonElements: HTMLElement[],
+  buttonWidths: number[],
+  visibleBudget: number,
+): string[] {
   const nextOverflowIds: string[] = [];
   let consumedWidth = 0;
 
   buttonElements.forEach((element, index) => {
-    const width = (buttonWidths[index] ?? 0) + (index > 0 ? gap : 0);
+    const width = (buttonWidths[index] ?? 0) + (index > 0 ? OVERFLOW_BUTTON_GAP_PX : 0);
     const id = element.dataset.id ?? '';
     if (
       consumedWidth + width <= visibleBudget + OVERFLOW_LAYOUT_EPSILON_PX ||
@@ -692,19 +743,7 @@ function syncOverflowedButtons(): void {
     }
   });
 
-  buttonsEl.style.maxWidth = `${String(Math.max(0, visibleBudget))}px`;
-  overflowActionIds = nextOverflowIds;
-  if (overflowActionIds.length === 0) {
-    overflowBtn.setAttribute('hidden', '');
-    closeOpenManagerOverflow();
-    return;
-  }
-
-  overflowBtn.removeAttribute('hidden');
-  if (overflowPopoverEl && !overflowPopoverEl.classList.contains('hidden')) {
-    renderOverflowMenuItems();
-    positionManagerOverflowMenu();
-  }
+  return nextOverflowIds;
 }
 
 function getMeasuredWidth(element: HTMLElement): number {
@@ -836,16 +875,7 @@ function openActionModal(existing?: NormalizedManagerButton): void {
     return;
   }
 
-  if (
-    !modalEl ||
-    !modalTitleEl ||
-    !labelInput ||
-    !typeSelect ||
-    !triggerSelect ||
-    !repeatCountInput ||
-    !repeatEveryValueInput ||
-    !repeatEveryUnitSelect
-  ) {
+  if (!hasManagerActionModalElements()) {
     return;
   }
 
@@ -853,16 +883,7 @@ function openActionModal(existing?: NormalizedManagerButton): void {
   editingActionId = existing?.id ?? null;
   clearModalError();
 
-  modalTitleEl.textContent = existing
-    ? t('managerBar.modal.editTitle')
-    : t('managerBar.modal.title');
-  labelInput.value = action.label;
-  typeSelect.value = action.actionType;
-  triggerSelect.value = action.trigger.kind;
-  repeatCountInput.value = String(action.trigger.repeatCount);
-  repeatEveryValueInput.value = String(action.trigger.repeatEveryValue);
-  repeatEveryUnitSelect.value = action.trigger.repeatEveryUnit;
-
+  populateManagerActionModal(action, existing);
   renderPromptEditors(
     action.actionType === 'chain' ? Math.max(action.prompts.length, 1) : 1,
     action.prompts,
@@ -875,12 +896,57 @@ function openActionModal(existing?: NormalizedManagerButton): void {
     releaseBackButtonLayer = registerBackButtonLayer(closeActionModal);
   }
 
-  modalEl.classList.remove('hidden');
-  const modalBody = modalEl.querySelector<HTMLElement>('.manager-action-modal-body');
+  const activeModalEl = modalEl;
+  if (!activeModalEl) {
+    return;
+  }
+
+  activeModalEl.classList.remove('hidden');
+  const modalBody = activeModalEl.querySelector<HTMLElement>('.manager-action-modal-body');
   if (modalBody) {
     modalBody.scrollTop = 0;
   }
   focusPrimaryPrompt();
+}
+
+function hasManagerActionModalElements(): boolean {
+  return !!(
+    modalEl &&
+    modalTitleEl &&
+    labelInput &&
+    typeSelect &&
+    triggerSelect &&
+    repeatCountInput &&
+    repeatEveryValueInput &&
+    repeatEveryUnitSelect
+  );
+}
+
+function populateManagerActionModal(
+  action: NormalizedManagerButton,
+  existing?: NormalizedManagerButton,
+): void {
+  if (
+    !modalTitleEl ||
+    !labelInput ||
+    !typeSelect ||
+    !triggerSelect ||
+    !repeatCountInput ||
+    !repeatEveryValueInput ||
+    !repeatEveryUnitSelect
+  ) {
+    return;
+  }
+
+  modalTitleEl.textContent = existing
+    ? t('managerBar.modal.editTitle')
+    : t('managerBar.modal.title');
+  labelInput.value = action.label;
+  typeSelect.value = action.actionType;
+  triggerSelect.value = action.trigger.kind;
+  repeatCountInput.value = String(action.trigger.repeatCount);
+  repeatEveryValueInput.value = String(action.trigger.repeatEveryValue);
+  repeatEveryUnitSelect.value = action.trigger.repeatEveryUnit;
 }
 
 function closeActionModal(): void {
@@ -897,7 +963,7 @@ function saveModalAction(): void {
 
   const actionType = getModalActionType();
   const prompts = readPromptValues();
-  if (prompts.length === 0 || prompts.every((prompt) => prompt.trim().length === 0)) {
+  if (!hasValidManagerActionPrompts(prompts)) {
     showModalError(t('managerBar.modal.errorPromptRequired'));
     return;
   }
@@ -909,7 +975,26 @@ function saveModalAction(): void {
     return;
   }
 
-  const action = normalizeManagerBarButton({
+  const action = buildManagerActionFromModal(actionType, prompts, triggerKind, schedule);
+
+  const currentButtons = normalizeManagerBarButtons(
+    settings.managerBarButtons as unknown as ManagerButton[],
+  );
+  saveButtons(upsertManagerAction(currentButtons, action));
+  closeActionModal();
+}
+
+function hasValidManagerActionPrompts(prompts: string[]): boolean {
+  return prompts.length > 0 && prompts.some((prompt) => prompt.trim().length > 0);
+}
+
+function buildManagerActionFromModal(
+  actionType: ManagerActionType,
+  prompts: string[],
+  triggerKind: ManagerTriggerKind,
+  schedule: ManagerBarScheduleEntry[],
+): NormalizedManagerButton {
+  return normalizeManagerBarButton({
     id: editingActionId ?? generateActionId(),
     label: labelInput?.value ?? '',
     text: prompts[0] ?? '',
@@ -923,10 +1008,12 @@ function saveModalAction(): void {
       schedule,
     },
   });
+}
 
-  const currentButtons = normalizeManagerBarButtons(
-    settings.managerBarButtons as unknown as ManagerButton[],
-  );
+function upsertManagerAction(
+  currentButtons: NormalizedManagerButton[],
+  action: NormalizedManagerButton,
+): NormalizedManagerButton[] {
   const nextButtons = [...currentButtons];
   const index = editingActionId
     ? nextButtons.findIndex((button) => button.id === editingActionId)
@@ -936,9 +1023,7 @@ function saveModalAction(): void {
   } else {
     nextButtons.push(action);
   }
-
-  saveButtons(nextButtons);
-  closeActionModal();
+  return nextButtons;
 }
 
 function renderPromptEditors(count: number, values: string[], actionType: ManagerActionType): void {

@@ -426,77 +426,77 @@ function buildFallbackDiffLines(lines: readonly string[]): DiffRenderLine[] {
 }
 
 function buildRenderedDiffChunk(section: ParsedDiffSection, line: string): DiffRenderLine[] {
-  const rendered: DiffRenderLine[] = [];
   const state = section.lineState;
 
   if (line.startsWith('@@')) {
     applyDiffHunkHeader(state, line);
-    rendered.push({
-      text: line,
-      className: resolveDiffLineClassName(line),
-    });
-    return rendered;
+    return [createPlainDiffRenderLine(line)];
   }
 
   if (state.oldLineNumber === null && state.newLineNumber === null) {
-    rendered.push({
-      text: line || ' ',
-      className: resolveDiffLineClassName(line),
-    });
-    return rendered;
+    return [createPlainDiffRenderLine(line || ' ')];
   }
 
   if (line.startsWith('+')) {
-    rendered.push(
-      createDiffRenderLine(
-        line,
-        resolveDiffLineClassName(line),
-        undefined,
-        state.newLineNumber ?? undefined,
-      ),
-    );
-    if (state.newLineNumber !== null) {
-      state.newLineNumber += 1;
-    }
-
-    return rendered;
+    return [createAddedDiffRenderLine(line, state)];
   }
 
   if (line.startsWith('-')) {
-    rendered.push(
-      createDiffRenderLine(line, resolveDiffLineClassName(line), state.oldLineNumber ?? undefined),
-    );
-    if (state.oldLineNumber !== null) {
-      state.oldLineNumber += 1;
-    }
-
-    return rendered;
+    return [createRemovedDiffRenderLine(line, state)];
   }
 
   if (line.startsWith('\\')) {
-    rendered.push({
-      text: line,
-      className: resolveDiffLineClassName(line),
-    });
-    return rendered;
+    return [createPlainDiffRenderLine(line)];
   }
 
-  rendered.push(
-    createDiffRenderLine(
-      line || ' ',
-      resolveDiffLineClassName(line),
-      state.oldLineNumber ?? undefined,
-      state.newLineNumber ?? undefined,
-    ),
+  return [createContextDiffRenderLine(line || ' ', state)];
+}
+
+function createPlainDiffRenderLine(text: string): DiffRenderLine {
+  return {
+    text,
+    className: resolveDiffLineClassName(text),
+  };
+}
+
+function createAddedDiffRenderLine(line: string, state: DiffLineState): DiffRenderLine {
+  const rendered = createDiffRenderLine(
+    line,
+    resolveDiffLineClassName(line),
+    undefined,
+    state.newLineNumber ?? undefined,
+  );
+  if (state.newLineNumber !== null) {
+    state.newLineNumber += 1;
+  }
+  return rendered;
+}
+
+function createRemovedDiffRenderLine(line: string, state: DiffLineState): DiffRenderLine {
+  const rendered = createDiffRenderLine(
+    line,
+    resolveDiffLineClassName(line),
+    state.oldLineNumber ?? undefined,
   );
   if (state.oldLineNumber !== null) {
     state.oldLineNumber += 1;
   }
+  return rendered;
+}
 
+function createContextDiffRenderLine(line: string, state: DiffLineState): DiffRenderLine {
+  const rendered = createDiffRenderLine(
+    line,
+    resolveDiffLineClassName(line),
+    state.oldLineNumber ?? undefined,
+    state.newLineNumber ?? undefined,
+  );
   if (state.newLineNumber !== null) {
     state.newLineNumber += 1;
   }
-
+  if (state.oldLineNumber !== null) {
+    state.oldLineNumber += 1;
+  }
   return rendered;
 }
 

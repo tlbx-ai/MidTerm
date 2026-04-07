@@ -516,23 +516,8 @@ export function syncTerminalColorSchemeOptions(
     );
   }
 
-  if ((settings?.terminalColorSchemes.length ?? 0) > 0) {
-    const group = document.createElement('optgroup');
-    group.label = 'Custom Schemes';
-
-    for (const definition of settings?.terminalColorSchemes ?? []) {
-      const option = document.createElement('option');
-      option.value = definition.name;
-      option.textContent = definition.name;
-      group.appendChild(option);
-    }
-
-    select.appendChild(group);
-  }
-
-  select.value = Array.from(select.options).some((option) => option.value === requestedValue)
-    ? requestedValue
-    : 'auto';
+  appendCustomTerminalColorSchemeOptions(select, settings?.terminalColorSchemes ?? []);
+  syncSelectedTerminalColorSchemeOption(select, requestedValue);
 
   ensureTerminalColorSchemeEditorRendered();
   syncTerminalColorSchemeEditorSourceOptions(settings, select.value);
@@ -544,4 +529,32 @@ export function syncTerminalColorSchemeOptions(
   } else {
     syncTerminalColorSchemeEditorActions(settings);
   }
+}
+
+function appendCustomTerminalColorSchemeOptions(
+  select: HTMLSelectElement,
+  schemes: readonly MidTermSettingsPublic['terminalColorSchemes'][number][],
+): void {
+  if (schemes.length === 0) {
+    return;
+  }
+
+  const group = document.createElement('optgroup');
+  group.label = 'Custom Schemes';
+  for (const definition of schemes) {
+    const option = document.createElement('option');
+    option.value = definition.name;
+    option.textContent = definition.name;
+    group.appendChild(option);
+  }
+  select.appendChild(group);
+}
+
+function syncSelectedTerminalColorSchemeOption(
+  select: HTMLSelectElement,
+  requestedValue: string,
+): void {
+  select.value = Array.from(select.options).some((option) => option.value === requestedValue)
+    ? requestedValue
+    : 'auto';
 }

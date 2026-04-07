@@ -581,74 +581,101 @@ function handleBrowserUiCommand(msg: BrowserUiMessage): void {
   void checkVersionAndReload();
 
   switch (msg.command) {
-    case 'detach': {
-      const target = resolveBrowserUiTarget(msg);
-      if (!target) {
-        break;
-      }
-      setSessionMode(target.sessionId, target.previewName, 'detached');
-      void detachPreview(target.sessionId, target.previewName);
+    case 'detach':
+      handleDetachBrowserUiCommand(msg);
       break;
-    }
-    case 'dock': {
-      const target = resolveBrowserUiTarget(msg);
-      if (!target) {
-        break;
-      }
-      setSessionMode(target.sessionId, target.previewName, 'docked');
-      dockBack(target.sessionId, target.previewName);
-      if ($activeSessionId.get() === target.sessionId) {
-        void syncActiveWebPreview();
-      }
+    case 'dock':
+      handleDockBrowserUiCommand(msg);
       break;
-    }
-    case 'viewport': {
-      const target = resolveBrowserUiTarget(msg);
-      if (!target) {
-        break;
-      }
-      const preview = getSessionPreview(target.sessionId, target.previewName);
-      if (
-        preview?.mode === 'detached' &&
-        isDetachedOpenForSession(target.sessionId, target.previewName) &&
-        setDetachedPreviewViewport(
-          target.sessionId,
-          target.previewName,
-          msg.width ?? 0,
-          msg.height ?? 0,
-        )
-      ) {
-        break;
-      }
-
-      setSessionMode(target.sessionId, target.previewName, 'docked');
-      if ($activeSessionId.get() === target.sessionId) {
-        openWebPreviewDock();
-        void syncActiveWebPreview().finally(() => {
-          setViewportSize(msg.width ?? 0, msg.height ?? 0);
-        });
-      }
+    case 'viewport':
+      handleViewportBrowserUiCommand(msg);
       break;
-    }
-    case 'open': {
-      const target = resolveBrowserUiTarget(msg);
-      if (!target || !msg.url) {
-        break;
-      }
-      setSessionMode(target.sessionId, target.previewName, 'docked');
-      if (msg.url) {
-        void handleBrowserOpen(
-          target.sessionId,
-          target.previewName,
-          msg.url,
-          msg.activateSession === true,
-        );
-      }
+    case 'open':
+      handleOpenBrowserUiCommand(msg);
       break;
-    }
     default:
       log.warn(() => `Unknown browser-ui command: ${msg.command}`);
   }
+}
+
+function handleDetachBrowserUiCommand(msg: BrowserUiMessage): void {
+  const target = resolveBrowserUiTarget(msg);
+  if (!target) {
+    return;
+  }
+
+  setSessionMode(target.sessionId, target.previewName, 'detached');
+  void detachPreview(target.sessionId, target.previewName);
+}
+
+function handleDockBrowserUiCommand(msg: BrowserUiMessage): void {
+  const target = resolveBrowserUiTarget(msg);
+  if (!target) {
+    return;
+  }
+
+  setSessionMode(target.sessionId, target.previewName, 'docked');
+  dockBack(target.sessionId, target.previewName);
+  if ($activeSessionId.get() === target.sessionId) {
+    void syncActiveWebPreview();
+  }
+}
+
+function handleViewportBrowserUiCommand(msg: BrowserUiMessage): void {
+  const target = resolveBrowserUiTarget(msg);
+  if (!target) {
+    return;
+  }
+
+  if (
+    applyDetachedPreviewViewport(
+      target.sessionId,
+      target.previewName,
+      msg.width ?? 0,
+      msg.height ?? 0,
+    )
+  ) {
+    return;
+  }
+
+  setSessionMode(target.sessionId, target.previewName, 'docked');
+  if ($activeSessionId.get() !== target.sessionId) {
+    return;
+  }
+
+  openWebPreviewDock();
+  void syncActiveWebPreview().finally(() => {
+    setViewportSize(msg.width ?? 0, msg.height ?? 0);
+  });
+}
+
+function applyDetachedPreviewViewport(
+  sessionId: string,
+  previewName: string,
+  width: number,
+  height: number,
+): boolean {
+  const preview = getSessionPreview(sessionId, previewName);
+  return (
+    preview?.mode === 'detached' &&
+    isDetachedOpenForSession(sessionId, previewName) &&
+    setDetachedPreviewViewport(sessionId, previewName, width, height)
+  );
+}
+
+function handleOpenBrowserUiCommand(msg: BrowserUiMessage): void {
+  const target = resolveBrowserUiTarget(msg);
+  if (!target || !msg.url) {
+    return;
+  }
+
+  setSessionMode(target.sessionId, target.previewName, 'docked');
+  void handleBrowserOpen(
+    target.sessionId,
+    target.previewName,
+    msg.url,
+    msg.activateSession === true,
+  );
 }
 
 function resolveBrowserUiTarget(

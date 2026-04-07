@@ -799,57 +799,18 @@ async function openFileSelection(
   state: GitPanelState,
   selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
 ): Promise<void> {
-  const existing =
-    state.selection?.kind === 'file' &&
-    state.selection.path === selection.path &&
-    state.selection.scope === selection.scope
-      ? state.selection
-      : null;
+  const existing = getExistingFileSelection(state, selection);
 
   if (existing && !existing.loading && existing.diff) {
     renderPanel(state);
     return;
   }
 
-  state.selection = {
-    kind: 'file',
-    path: selection.path,
-    scope: selection.scope,
-    status: selection.status,
-    originalPath: selection.originalPath,
-    diff: existing?.diff ?? null,
-    loading: true,
-    error: null,
-  };
+  state.selection = createLoadingFileSelection(selection, existing?.diff ?? null);
   renderPanel(state);
 
   if (selection.status === 'untracked') {
-    state.selection = {
-      kind: 'file',
-      path: selection.path,
-      scope: selection.scope,
-      status: selection.status,
-      originalPath: selection.originalPath,
-      diff: {
-        scope: selection.scope,
-        title: 'Working tree diff',
-        isTruncated: false,
-        files: [
-          createFallbackDiffFile({
-            kind: 'file',
-            path: selection.path,
-            scope: selection.scope,
-            status: selection.status,
-            originalPath: selection.originalPath,
-            diff: null,
-            loading: false,
-            error: null,
-          }),
-        ],
-      },
-      loading: false,
-      error: null,
-    };
+    state.selection = createUntrackedFileSelection(selection);
     renderPanel(state);
     return;
   }
@@ -865,7 +826,59 @@ async function openFileSelection(
     return;
   }
 
-  state.selection = {
+  state.selection = createResolvedFileSelection(selection, currentSelection, diff);
+  renderPanel(state);
+}
+
+function getExistingFileSelection(
+  state: GitPanelState,
+  selection: Pick<GitFileSelection, 'path' | 'scope'>,
+): GitFileSelection | null {
+  return state.selection?.kind === 'file' &&
+    state.selection.path === selection.path &&
+    state.selection.scope === selection.scope
+    ? state.selection
+    : null;
+}
+
+function createLoadingFileSelection(
+  selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
+  diff: GitFileSelection['diff'],
+): GitFileSelection {
+  return {
+    kind: 'file',
+    path: selection.path,
+    scope: selection.scope,
+    status: selection.status,
+    originalPath: selection.originalPath,
+    diff,
+    loading: true,
+    error: null,
+  };
+}
+
+function createUntrackedFileSelection(
+  selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
+): GitFileSelection {
+  const fileSelection = createLoadingFileSelection(selection, null);
+  return {
+    ...fileSelection,
+    diff: {
+      scope: selection.scope,
+      title: 'Working tree diff',
+      isTruncated: false,
+      files: [createFallbackDiffFile(fileSelection)],
+    },
+    loading: false,
+  };
+}
+
+function createResolvedFileSelection(
+  selection: Pick<GitFileSelection, 'path' | 'scope' | 'status' | 'originalPath'>,
+  currentSelection: GitFileSelection,
+  diff: GitDiffViewResponse | null,
+): GitFileSelection {
+  return {
     kind: 'file',
     path: selection.path,
     scope: selection.scope,
@@ -883,7 +896,6 @@ async function openFileSelection(
     loading: false,
     error: diff ? null : 'Unable to load diff.',
   };
-  renderPanel(state);
 }
 
 async function openCommitSelection(state: GitPanelState, hash: string): Promise<void> {

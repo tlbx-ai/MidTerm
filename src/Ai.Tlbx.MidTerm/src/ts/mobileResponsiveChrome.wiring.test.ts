@@ -9,6 +9,10 @@ const projectRoot = path.resolve(__dirname, '../..');
 const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
 const css = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
 const mainSource = readFileSync(path.join(projectRoot, 'src/ts/main.ts'), 'utf8');
+const mobileActionsSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/sessionTabs/mobileActions.ts'),
+  'utf8',
+);
 
 describe('mobile responsive chrome wiring', () => {
   it('nests the mobile tab strip inside the mobile topbar', () => {
@@ -18,16 +22,14 @@ describe('mobile responsive chrome wiring', () => {
   });
 
   it('toggles merged mobile topbar state from the active session', () => {
-    expect(mainSource).toContain("title?.toggleAttribute('hidden', Boolean(activeSessionId));");
-    expect(mainSource).toContain(
+    expect(mainSource).toContain("from './modules/sessionTabs/mobileActions'");
+    expect(mobileActionsSource).toContain("title?.toggleAttribute('hidden', Boolean(activeSessionId));");
+    expect(mobileActionsSource).toContain(
       "topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));",
     );
-    expect(mainSource).toContain(
-      "const agentSurfaceSession = resolveSessionSurfaceMode(activeSession) === 'agent';",
-    );
-    expect(mainSource).toContain(
-      "activeSessionId !== null && agentSurfaceSession && isTabAvailable(activeSessionId, 'agent');",
-    );
+    expect(mobileActionsSource).toContain("resolveSessionSurfaceMode(activeSession) === 'agent'");
+    expect(mobileActionsSource).toContain("activeSessionId !== null &&");
+    expect(mobileActionsSource).toContain("isTabAvailable(activeSessionId, 'agent');");
   });
 
   it('keeps mobile footer controls in the adaptive dock instead of hiding automation outright', () => {

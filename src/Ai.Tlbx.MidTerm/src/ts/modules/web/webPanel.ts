@@ -563,14 +563,9 @@ function postCookieBridgeResponse(
   target.postMessage(message, '*');
 }
 
-async function handleCookieBridgeRequest(
-  event: MessageEvent<unknown>,
+function createCookieBridgeResponseMessage(
   request: PreviewCookieRequestMessage,
-): Promise<void> {
-  const target = event.source as WindowProxy | null;
-  const activePreview = getActivePreview();
-  const routeKey = activePreview?.routeKey ?? getActiveDockedClient()?.routeKey ?? null;
-
+): PreviewCookieResponseMessage {
   const responseMessage: PreviewCookieResponseMessage = {
     type: 'mt-cookie-response',
     requestId: request.requestId,
@@ -587,6 +582,43 @@ async function handleCookieBridgeRequest(
   if (typeof request.previewName === 'string') {
     responseMessage.previewName = request.previewName;
   }
+  return responseMessage;
+}
+
+function buildCookieBridgeUrl(routeKey: string, upstreamUrl?: string | null): URL {
+  const url = new URL(getCookieBridgePath(routeKey), window.location.origin);
+  if (upstreamUrl) {
+    url.searchParams.set('u', upstreamUrl);
+  }
+  return url;
+}
+
+async function fetchCookieBridge(
+  request: PreviewCookieRequestMessage,
+  routeKey: string,
+): Promise<Response> {
+  const upstreamUrl =
+    typeof request.upstreamUrl === 'string' ? request.upstreamUrl : getActiveUrl();
+  const url = buildCookieBridgeUrl(routeKey, upstreamUrl);
+  if (request.action === 'set') {
+    return fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: request.raw ?? '' }),
+    });
+  }
+
+  return fetch(url.toString(), { method: 'GET' });
+}
+
+async function handleCookieBridgeRequest(
+  event: MessageEvent<unknown>,
+  request: PreviewCookieRequestMessage,
+): Promise<void> {
+  const target = event.source as WindowProxy | null;
+  const activePreview = getActivePreview();
+  const routeKey = activePreview?.routeKey ?? getActiveDockedClient()?.routeKey ?? null;
+  const responseMessage = createCookieBridgeResponseMessage(request);
 
   if (!routeKey) {
     responseMessage.error = 'No active preview route';
@@ -594,22 +626,8 @@ async function handleCookieBridgeRequest(
     return;
   }
 
-  const upstreamUrl =
-    typeof request.upstreamUrl === 'string' ? request.upstreamUrl : getActiveUrl();
-  const url = new URL(getCookieBridgePath(routeKey), window.location.origin);
-  if (upstreamUrl) {
-    url.searchParams.set('u', upstreamUrl);
-  }
-
   try {
-    const response =
-      request.action === 'set'
-        ? await fetch(url.toString(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ raw: request.raw ?? '' }),
-          })
-        : await fetch(url.toString(), { method: 'GET' });
+    const response = await fetchCookieBridge(request, routeKey);
 
     if (!response.ok) {
       responseMessage.error = `Cookie bridge failed: ${response.status}`;
@@ -626,12 +644,24 @@ async function handleCookieBridgeRequest(
   postCookieBridgeResponse(target, responseMessage);
 }
 
-/** Load the current active named preview into the iframe. */
-export async function loadPreview(reloadToken?: string): Promise<void> {
-  if (!iframeHost) {
-    return;
-  }
+function clearActivePreviewFrame(): void {
+  setVisiblePreviewFrame(null);
+  loadedUrl = null;
+  hideStatusIndicator();
+}
 
+function isStillActivePreviewSession(sessionId: string, previewName: string): boolean {
+  return $activeSessionId.get() === sessionId && getActivePreviewName() === previewName;
+}
+
+async function resolvePreviewLoadContext(): Promise<{
+  sessionId: string;
+  previewName: string;
+  currentUrl: string;
+  currentTargetRevision: number;
+  frameKey: string;
+  previewClient: BrowserPreviewClientResponse;
+} | null> {
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   const currentPreview = getActivePreview();
@@ -639,29 +669,62 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
   const currentTargetRevision = currentPreview?.targetRevision ?? 0;
 
   if (!currentUrl || !sessionId) {
-    setVisiblePreviewFrame(null);
-    loadedUrl = null;
-    hideStatusIndicator();
-    return;
+    clearActivePreviewFrame();
+    return null;
   }
-
-  const frameKey = getPreviewFrameKey(sessionId, previewName);
 
   const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
-  if ($activeSessionId.get() !== sessionId || getActivePreviewName() !== previewName) {
-    return;
+  if (!isStillActivePreviewSession(sessionId, previewName)) {
+    return null;
   }
-
   if (!previewClient) {
     setVisiblePreviewFrame(null);
     log.warn(() => `Failed to create browser preview client for ${sessionId}/${previewName}`);
     await refreshBrowserPreviewStatus();
+    return null;
+  }
+
+  return {
+    sessionId,
+    previewName,
+    currentUrl,
+    currentTargetRevision,
+    frameKey: getPreviewFrameKey(sessionId, previewName),
+    previewClient,
+  };
+}
+
+function ensurePreviewLoadFrame(sessionId: string, previewName: string): HTMLIFrameElement | null {
+  const frame = ensurePreviewIframe(sessionId, previewName);
+  if (!frame) {
+    log.warn(() => `Failed to allocate dock iframe for ${sessionId}/${previewName}`);
+    return null;
+  }
+  return frame;
+}
+
+function resetBrokenPreviewFrame(frame: HTMLIFrameElement): void {
+  frame.name = '';
+  frame.src = 'about:blank';
+  frame.classList.add('hidden');
+  frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+}
+
+/** Load the current active named preview into the iframe. */
+export async function loadPreview(reloadToken?: string): Promise<void> {
+  if (!iframeHost) {
     return;
   }
 
-  const initialFrame = ensurePreviewIframe(sessionId, previewName);
+  const context = await resolvePreviewLoadContext();
+  if (!context) {
+    return;
+  }
+
+  const { sessionId, previewName, currentUrl, currentTargetRevision, frameKey, previewClient } =
+    context;
+  const initialFrame = ensurePreviewLoadFrame(sessionId, previewName);
   if (!initialFrame) {
-    log.warn(() => `Failed to allocate dock iframe for ${sessionId}/${previewName}`);
     return;
   }
 
@@ -701,10 +764,7 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
     loadedUrl = currentUrl;
     await refreshBrowserPreviewStatus();
   } catch {
-    frame.name = '';
-    frame.src = 'about:blank';
-    frame.classList.add('hidden');
-    frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+    resetBrokenPreviewFrame(frame);
     await refreshBrowserPreviewStatus();
   }
 }

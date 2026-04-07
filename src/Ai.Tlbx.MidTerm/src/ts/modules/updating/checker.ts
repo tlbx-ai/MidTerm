@@ -324,6 +324,46 @@ export function checkForUpdates(e?: MouseEvent): void {
     });
 }
 
+function setNoUpdatesStatusVisibility(statusNone: HTMLElement | null, hidden: boolean): void {
+  statusNone?.classList.toggle('hidden', hidden);
+}
+
+function appendUpdateCard(container: HTMLElement, options: UpdateCardOptions | null): void {
+  if (!options) {
+    return;
+  }
+
+  container.appendChild(createUpdateCard(options));
+}
+
+function createGitHubUpdateCard(update: UpdateInfo | null): UpdateCardOptions | null {
+  if (!update?.available) {
+    return null;
+  }
+
+  return {
+    type: 'github',
+    title: 'GitHub Release',
+    version: update.latestVersion,
+    sessionsPreserved: update.sessionsPreserved,
+    onApply: applyUpdate,
+  };
+}
+
+function createLocalUpdateCard(update: UpdateInfo | null): UpdateCardOptions | null {
+  if (!update?.environment || !update.localUpdate?.available) {
+    return null;
+  }
+
+  return {
+    type: 'local',
+    title: 'Local Build',
+    version: update.localUpdate.version,
+    sessionsPreserved: update.localUpdate.sessionsPreserved,
+    onApply: applyLocalUpdate,
+  };
+}
+
 /**
  * Render both GitHub and Local update cards
  */
@@ -336,45 +376,22 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
 
   // Error state
   if (error) {
-    if (statusNone) statusNone.classList.add('hidden');
+    setNoUpdatesStatusVisibility(statusNone, true);
     container.innerHTML = `<div class="update-status-error">${error}</div>`;
     return;
   }
 
-  const hasGitHub = update?.available ?? false;
-  const hasLocal = update?.environment && update.localUpdate?.available;
+  const gitHubCard = createGitHubUpdateCard(update);
+  const localCard = createLocalUpdateCard(update);
 
-  // No updates available
-  if (!hasGitHub && !hasLocal) {
-    if (statusNone) statusNone.classList.remove('hidden');
+  if (!gitHubCard && !localCard) {
+    setNoUpdatesStatusVisibility(statusNone, false);
     return;
   }
 
-  if (statusNone) statusNone.classList.add('hidden');
-
-  // GitHub update card
-  if (hasGitHub && update) {
-    const card = createUpdateCard({
-      type: 'github',
-      title: 'GitHub Release',
-      version: update.latestVersion,
-      sessionsPreserved: update.sessionsPreserved,
-      onApply: applyUpdate,
-    });
-    container.appendChild(card);
-  }
-
-  // Local update card (only in dev environment)
-  if (hasLocal && update.localUpdate) {
-    const card = createUpdateCard({
-      type: 'local',
-      title: 'Local Build',
-      version: update.localUpdate.version,
-      sessionsPreserved: update.localUpdate.sessionsPreserved,
-      onApply: applyLocalUpdate,
-    });
-    container.appendChild(card);
-  }
+  setNoUpdatesStatusVisibility(statusNone, true);
+  appendUpdateCard(container, gitHubCard);
+  appendUpdateCard(container, localCard);
 }
 
 interface UpdateCardOptions {

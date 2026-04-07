@@ -146,40 +146,59 @@ async function readResponseBody(response: Response): Promise<string> {
     .catch(() => '');
 }
 
+function resolveApiProblemText(value: unknown, fallback: string, response: Response): string {
+  return typeof value === 'string' && value.trim() ? value : response.statusText || fallback;
+}
+
+function buildParsedApiProblem(
+  response: Response,
+  parsed: Record<string, unknown>,
+  fallback: string,
+): ConstructorParameters<typeof ApiProblemError>[0] {
+  const problem: ConstructorParameters<typeof ApiProblemError>[0] = {
+    status: response.status,
+    title: resolveApiProblemText(parsed.title, fallback, response),
+    detail: resolveApiProblemText(parsed.detail, fallback, response),
+  };
+
+  if (typeof parsed.errorDetails === 'string') {
+    problem.errorDetails = parsed.errorDetails;
+  }
+  if (typeof parsed.errorStage === 'string') {
+    problem.errorStage = parsed.errorStage;
+  }
+  if (typeof parsed.exceptionType === 'string') {
+    problem.exceptionType = parsed.exceptionType;
+  }
+  if (typeof parsed.nativeErrorCode === 'number') {
+    problem.nativeErrorCode = parsed.nativeErrorCode;
+  }
+
+  return problem;
+}
+
+function tryParseApiProblemBody(
+  response: Response,
+  body: string,
+  fallback: string,
+): ConstructorParameters<typeof ApiProblemError>[0] | null {
+  if (!body.startsWith('{')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    return buildParsedApiProblem(response, parsed, fallback);
+  } catch {
+    return null;
+  }
+}
+
 async function throwApiProblem(response: Response, fallback: string): Promise<never> {
   const body = await readResponseBody(response);
-  if (body.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(body) as Record<string, unknown>;
-      const problem: ConstructorParameters<typeof ApiProblemError>[0] = {
-        status: response.status,
-        title:
-          typeof parsed.title === 'string' && parsed.title.trim()
-            ? parsed.title
-            : response.statusText || fallback,
-        detail:
-          typeof parsed.detail === 'string' && parsed.detail.trim()
-            ? parsed.detail
-            : response.statusText || fallback,
-      };
-      if (typeof parsed.errorDetails === 'string') {
-        problem.errorDetails = parsed.errorDetails;
-      }
-      if (typeof parsed.errorStage === 'string') {
-        problem.errorStage = parsed.errorStage;
-      }
-      if (typeof parsed.exceptionType === 'string') {
-        problem.exceptionType = parsed.exceptionType;
-      }
-      if (typeof parsed.nativeErrorCode === 'number') {
-        problem.nativeErrorCode = parsed.nativeErrorCode;
-      }
-      throw new ApiProblemError(problem);
-    } catch (error) {
-      if (error instanceof ApiProblemError) {
-        throw error;
-      }
-    }
+  const parsedProblem = tryParseApiProblemBody(response, body, fallback);
+  if (parsedProblem) {
+    throw new ApiProblemError(parsedProblem);
   }
 
   throw new ApiProblemError({

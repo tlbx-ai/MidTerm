@@ -224,6 +224,44 @@ function setRegistryControlValue(
   setElementValue(entry.controlId, (value ?? fallback) as string | number);
 }
 
+function readNumericRegistryControlValue(
+  rawValue: string,
+  entry: SettingsRegistryEntry,
+  parser: (value: string) => number,
+): number | string | boolean | null {
+  const parsed = parser(rawValue);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  const fallback = getRegistryFallbackValue(entry);
+  return typeof fallback === 'number' ? fallback : null;
+}
+
+function readTypedRegistryControlValue(entry: SettingsRegistryEntry, rawValue: string): unknown {
+  switch (entry.controlType) {
+    case 'nullable-string':
+      return rawValue || null;
+    case 'int':
+      return readNumericRegistryControlValue(rawValue, entry, (value) =>
+        Number.parseInt(value, 10),
+      );
+    case 'float':
+      return readNumericRegistryControlValue(rawValue, entry, Number.parseFloat);
+    case 'shell-select':
+      return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
+        ? rawValue
+        : null;
+    case 'boolean-select':
+      return rawValue === 'custom';
+    case 'textarea':
+    case 'text':
+    case 'select':
+    default:
+      return rawValue;
+  }
+}
+
 function readRegistryControlValue(
   entry: SettingsRegistryEntry,
   prevSettings: MidTermSettingsPublic | null,
@@ -241,30 +279,7 @@ function readRegistryControlValue(
   }
 
   const rawValue = getElementValue(entry.controlId, String(getRegistryFallbackValue(entry)));
-
-  switch (entry.controlType) {
-    case 'nullable-string':
-      return rawValue || null;
-    case 'int': {
-      const parsed = Number.parseInt(rawValue, 10);
-      return Number.isFinite(parsed) ? parsed : entry.fallbackValue;
-    }
-    case 'float': {
-      const parsed = Number.parseFloat(rawValue);
-      return Number.isFinite(parsed) ? parsed : entry.fallbackValue;
-    }
-    case 'shell-select':
-      return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
-        ? rawValue
-        : null;
-    case 'boolean-select':
-      return rawValue === 'custom';
-    case 'textarea':
-    case 'text':
-    case 'select':
-    default:
-      return rawValue;
-  }
+  return readTypedRegistryControlValue(entry, rawValue);
 }
 
 function buildSettingsUpdateFromRegistry(

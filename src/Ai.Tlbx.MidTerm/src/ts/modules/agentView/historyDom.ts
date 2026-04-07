@@ -129,6 +129,33 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
 
     const article = document.createElement('article');
+    applyHistoryEntryChrome(article, entry, artifactCluster);
+
+    if (artifactCluster?.label) {
+      article.appendChild(createArtifactClusterLabel(artifactCluster));
+    }
+
+    article.appendChild(createHistoryHeader(entry, sessionId));
+    appendHistoryTitle(article, entry);
+    appendHistoryBody(article, entry, sessionId);
+
+    const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
+    if (attachmentBlock) {
+      article.appendChild(attachmentBlock);
+    }
+
+    if (entry.actions?.length) {
+      article.appendChild(createHistoryActionBlock(sessionId, entry.actions));
+    }
+
+    return article;
+  }
+
+  function applyHistoryEntryChrome(
+    article: HTMLElement,
+    entry: LensHistoryEntry,
+    artifactCluster: ArtifactClusterInfo | null,
+  ): void {
     article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
     article.dataset.kind = entry.kind;
     article.dataset.tone = entry.tone;
@@ -152,11 +179,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       article.dataset.placeholder = 'true';
       article.classList.add('agent-history-assistant-placeholder');
     }
+  }
 
-    if (artifactCluster?.label) {
-      article.appendChild(createArtifactClusterLabel(artifactCluster));
-    }
-
+  function createHistoryHeader(entry: LensHistoryEntry, sessionId: string): HTMLElement {
     const header = document.createElement('div');
     header.className = 'agent-history-header';
 
@@ -174,35 +199,37 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       meta.textContent = entry.meta;
       header.appendChild(meta);
     }
-    article.appendChild(header);
 
+    return header;
+  }
+
+  function appendHistoryTitle(article: HTMLElement, entry: LensHistoryEntry): void {
     const titleText = normalizeHistoryTitle(entry);
-    if (titleText) {
-      const title = document.createElement('div');
-      title.className = 'agent-history-title';
-      title.textContent = titleText;
-      article.appendChild(title);
+    if (!titleText) {
+      return;
     }
 
-    if (shouldRenderHistoryBody(entry)) {
-      const presentation = resolveHistoryBodyPresentation(entry);
-      article.appendChild(
-        presentation.collapsedByDefault
-          ? createCollapsedHistoryBody(entry, sessionId, presentation)
-          : createHistoryBodyContent(entry, sessionId, presentation),
-      );
+    const title = document.createElement('div');
+    title.className = 'agent-history-title';
+    title.textContent = titleText;
+    article.appendChild(title);
+  }
+
+  function appendHistoryBody(
+    article: HTMLElement,
+    entry: LensHistoryEntry,
+    sessionId: string,
+  ): void {
+    if (!shouldRenderHistoryBody(entry)) {
+      return;
     }
 
-    const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
-    if (attachmentBlock) {
-      article.appendChild(attachmentBlock);
-    }
-
-    if (entry.actions?.length) {
-      article.appendChild(createHistoryActionBlock(sessionId, entry.actions));
-    }
-
-    return article;
+    const presentation = resolveHistoryBodyPresentation(entry);
+    article.appendChild(
+      presentation.collapsedByDefault
+        ? createCollapsedHistoryBody(entry, sessionId, presentation)
+        : createHistoryBodyContent(entry, sessionId, presentation),
+    );
   }
 
   function createHistoryBodyContent(

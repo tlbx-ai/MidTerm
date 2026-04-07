@@ -211,51 +211,19 @@ function applyNavigationKeyAuditResult(
   applicationCursorMode: boolean,
 ): boolean {
   switch (ev.keyCode) {
-    case 37: {
-      const key = resolveArrowKey('D', modifiers, applicationCursorMode, ev.metaKey);
-      if (!key) {
-        return false;
-      }
-      result.key = key;
-      return true;
-    }
-    case 38: {
-      const key = resolveArrowKey('A', modifiers, applicationCursorMode, ev.metaKey);
-      if (!key) {
-        return false;
-      }
-      result.key = key;
-      return true;
-    }
-    case 39: {
-      const key = resolveArrowKey('C', modifiers, applicationCursorMode, ev.metaKey);
-      if (!key) {
-        return false;
-      }
-      result.key = key;
-      return true;
-    }
-    case 40: {
-      const key = resolveArrowKey('B', modifiers, applicationCursorMode, ev.metaKey);
-      if (!key) {
-        return false;
-      }
-      result.key = key;
-      return true;
-    }
+    case 37:
+      return applyArrowNavigationKey(result, 'D', modifiers, applicationCursorMode, ev.metaKey);
+    case 38:
+      return applyArrowNavigationKey(result, 'A', modifiers, applicationCursorMode, ev.metaKey);
+    case 39:
+      return applyArrowNavigationKey(result, 'C', modifiers, applicationCursorMode, ev.metaKey);
+    case 40:
+      return applyArrowNavigationKey(result, 'B', modifiers, applicationCursorMode, ev.metaKey);
     case 33:
-      if (ev.shiftKey) {
-        result.type = 'pageUp';
-      } else {
-        result.key = ev.ctrlKey ? `${ESC}[5;${String(modifiers + 1)}~` : `${ESC}[5~`;
-      }
+      applyPageNavigationKey(result, ev, modifiers, 'pageUp', '5');
       return true;
     case 34:
-      if (ev.shiftKey) {
-        result.type = 'pageDown';
-      } else {
-        result.key = ev.ctrlKey ? `${ESC}[6;${String(modifiers + 1)}~` : `${ESC}[6~`;
-      }
+      applyPageNavigationKey(result, ev, modifiers, 'pageDown', '6');
       return true;
     case 35:
       result.key = resolveHomeEndKey('F', modifiers, applicationCursorMode);
@@ -266,6 +234,39 @@ function applyNavigationKeyAuditResult(
     default:
       return false;
   }
+}
+
+function applyArrowNavigationKey(
+  result: TerminalKeyAuditResult,
+  code: 'A' | 'B' | 'C' | 'D',
+  modifiers: number,
+  applicationCursorMode: boolean,
+  metaKey: boolean,
+): boolean {
+  const key = resolveArrowKey(code, modifiers, applicationCursorMode, metaKey);
+  if (!key) {
+    return false;
+  }
+
+  result.key = key;
+  return true;
+}
+
+function applyPageNavigationKey(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  modifiers: number,
+  type: 'pageUp' | 'pageDown',
+  keySuffix: '5' | '6',
+): void {
+  if (ev.shiftKey) {
+    result.type = type;
+    return;
+  }
+
+  result.key = ev.ctrlKey
+    ? `${ESC}[${keySuffix};${String(modifiers + 1)}~`
+    : `${ESC}[${keySuffix}~`;
 }
 
 function applyFunctionKeyAuditResult(
@@ -294,37 +295,69 @@ function applyAltKeyAuditResult(
 
   const keyMapping = KEYCODE_KEY_MAPPINGS[ev.keyCode];
   const mappedKey = keyMapping?.[ev.shiftKey ? 1 : 0];
-  if (mappedKey) {
-    result.key = ESC + mappedKey;
+  if (applyMappedAltKey(result, mappedKey)) {
     return true;
   }
 
-  if (ev.keyCode >= 65 && ev.keyCode <= 90) {
-    const keyCode = ev.ctrlKey ? ev.keyCode - 64 : ev.keyCode + 32;
-    let keyString = String.fromCharCode(keyCode);
-    if (ev.shiftKey) {
-      keyString = keyString.toUpperCase();
-    }
-    result.key = ESC + keyString;
+  if (applyAltLetterKey(result, ev)) {
     return true;
   }
 
-  if (ev.keyCode === 32) {
-    result.key = ESC + (ev.ctrlKey ? NUL : ' ');
+  if (applyAltSpaceKey(result, ev)) {
     return true;
   }
 
-  if (ev.key === 'Dead' && ev.code.startsWith('Key')) {
-    let keyString = ev.code.slice(3, 4);
-    if (!ev.shiftKey) {
-      keyString = keyString.toLowerCase();
-    }
-    result.key = ESC + keyString;
-    result.cancel = true;
+  if (applyAltDeadKey(result, ev)) {
     return true;
   }
 
   return false;
+}
+
+function applyMappedAltKey(result: TerminalKeyAuditResult, mappedKey: string | undefined): boolean {
+  if (!mappedKey) {
+    return false;
+  }
+
+  result.key = ESC + mappedKey;
+  return true;
+}
+
+function applyAltLetterKey(result: TerminalKeyAuditResult, ev: TerminalKeyAuditInput): boolean {
+  if (ev.keyCode < 65 || ev.keyCode > 90) {
+    return false;
+  }
+
+  const keyCode = ev.ctrlKey ? ev.keyCode - 64 : ev.keyCode + 32;
+  let keyString = String.fromCharCode(keyCode);
+  if (ev.shiftKey) {
+    keyString = keyString.toUpperCase();
+  }
+  result.key = ESC + keyString;
+  return true;
+}
+
+function applyAltSpaceKey(result: TerminalKeyAuditResult, ev: TerminalKeyAuditInput): boolean {
+  if (ev.keyCode !== 32) {
+    return false;
+  }
+
+  result.key = ESC + (ev.ctrlKey ? NUL : ' ');
+  return true;
+}
+
+function applyAltDeadKey(result: TerminalKeyAuditResult, ev: TerminalKeyAuditInput): boolean {
+  if (ev.key !== 'Dead' || !ev.code.startsWith('Key')) {
+    return false;
+  }
+
+  let keyString = ev.code.slice(3, 4);
+  if (!ev.shiftKey) {
+    keyString = keyString.toLowerCase();
+  }
+  result.key = ESC + keyString;
+  result.cancel = true;
+  return true;
 }
 
 function applyMacMetaKeyAuditResult(

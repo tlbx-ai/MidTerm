@@ -11,6 +11,8 @@ const submissionSource = readFileSync(path.join(__dirname, 'lensAttachmentSubmis
 const layoutSource = readFileSync(path.join(__dirname, 'layout.ts'), 'utf8');
 const keyBindingsSource = readFileSync(path.join(__dirname, 'smartInputKeyBindings.ts'), 'utf8');
 const viewSource = readFileSync(path.join(__dirname, 'smartInputView.ts'), 'utf8');
+const footerSupportSource = readFileSync(path.join(__dirname, 'footerSupport.ts'), 'utf8');
+const lensResumeButtonSource = readFileSync(path.join(__dirname, 'lensResumeButton.ts'), 'utf8');
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
 
@@ -67,11 +69,11 @@ describe('smart input tab wiring', () => {
   });
 
   it('reserves only collapsed footer height and uses send gestures for auto-send toggling', () => {
-    expect(source).toContain('calculateAdaptiveFooterReservedHeight');
+    expect(footerSupportSource).toContain('calculateAdaptiveFooterReservedHeight');
     expect(layoutSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
     expect(source).toContain('ResizeObserver');
-    expect(source).toContain('setAdaptiveFooterReservedHeight(root, reserveHeight);');
-    expect(source).toContain('window.dispatchEvent(');
+    expect(footerSupportSource).toContain('setAdaptiveFooterReservedHeight(');
+    expect(footerSupportSource).toContain('window.dispatchEvent(');
     expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
     expect(viewSource).toContain("sendBtn.addEventListener('dblclick', args.onSendDoubleClick);");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
@@ -159,10 +161,10 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');
     expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
-    expect(source).toContain(
+    expect(lensResumeButtonSource).toContain(
       "button.className = 'smart-input-lens-action smart-input-lens-resume';",
     );
-    expect(source).toContain('session?.bookmarkId');
+    expect(lensResumeButtonSource).toContain('session?.bookmarkId');
     expect(css).toContain('.smart-input-lens-actions {');
     expect(css).toContain('.smart-input-lens-action {');
   });

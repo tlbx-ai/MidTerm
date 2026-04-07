@@ -102,20 +102,18 @@ import {
   initLayoutPersistence,
   getLayoutRoot,
 } from './modules/layout';
-import {
-  initSessionTabs,
-  getActiveTab,
-  getTabLabelForSession,
-  isTabAvailable,
-  setSessionLensAvailability,
-  switchTab,
-} from './modules/sessionTabs';
-import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from './modules/sessionSurface';
+import { initSessionTabs, setSessionLensAvailability, switchTab } from './modules/sessionTabs';
 import {
   initAgentView,
   getLensDebugScenarioNames,
   showLensDebugScenario,
 } from './modules/agentView';
+import {
+  activateMobileTab,
+  bindMobileActionsMenu,
+  closeMobileActionsMenu,
+  syncMobileTabActionState,
+} from './modules/sessionTabs/mobileActions';
 import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
 import { initFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket } from './modules/git';
@@ -1146,159 +1144,6 @@ function clickActiveSessionTabBarControl(selector: string): void {
   if (!tabBar) return;
   const control = tabBar.querySelector<HTMLButtonElement>(selector);
   control?.click();
-}
-
-function syncMobileTabActionState(): void {
-  const activeSessionId = $activeSessionId.get();
-  const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
-  const activeSession = activeSessionId ? getSession(activeSessionId) : null;
-  const agentSurfaceSession = resolveSessionSurfaceMode(activeSession) === 'agent';
-  const agentVisible =
-    activeSessionId !== null && agentSurfaceSession && isTabAvailable(activeSessionId, 'agent');
-  const strip = document.getElementById('mobile-tab-strip');
-  const topbar = document.getElementById('mobile-topbar');
-  const title = document.getElementById('mobile-title');
-
-  const syncButton = (
-    elementId: string,
-    options: {
-      active: boolean;
-      hidden?: boolean;
-      label?: string;
-    },
-  ): void => {
-    const button = document.getElementById(elementId) as HTMLButtonElement | null;
-    if (!button) {
-      return;
-    }
-
-    button.classList.toggle('active', options.active);
-    if (typeof options.hidden === 'boolean') {
-      button.toggleAttribute('hidden', options.hidden);
-    }
-
-    if (typeof options.label === 'string') {
-      button.title = options.label;
-      button.setAttribute('aria-label', options.label);
-      const labelNode = button.querySelector<HTMLElement>('.mobile-actions-label, span');
-      if (labelNode) {
-        labelNode.textContent = options.label;
-      }
-    }
-  };
-
-  const terminalLabel = activeSessionId
-    ? getTabLabelForSession(activeSessionId, 'terminal')
-    : t('session.terminal');
-  const agentLabel = activeSession ? getAgentSurfaceLabel(activeSession) : t('sessionTabs.agent');
-
-  strip?.toggleAttribute('hidden', !activeSessionId);
-  title?.toggleAttribute('hidden', Boolean(activeSessionId));
-  topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));
-  syncButton('btn-mobile-tab-terminal', {
-    active: activeTab === 'terminal',
-    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
-    label: terminalLabel,
-  });
-  syncButton('btn-mobile-tab-agent', {
-    active: activeTab === 'agent',
-    hidden: !agentVisible,
-    label: agentLabel,
-  });
-  syncButton('btn-mobile-tab-files', {
-    active: activeTab === 'files',
-    label: t('sessionTabs.files'),
-  });
-  syncButton('btn-mobile-strip-terminal', {
-    active: activeTab === 'terminal',
-    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
-    label: terminalLabel,
-  });
-  syncButton('btn-mobile-strip-agent', {
-    active: activeTab === 'agent',
-    hidden: !agentVisible,
-    label: agentLabel,
-  });
-  syncButton('btn-mobile-strip-files', {
-    active: activeTab === 'files',
-    label: t('sessionTabs.files'),
-  });
-}
-
-function activateMobileTab(tab: 'terminal' | 'agent' | 'files'): void {
-  const activeId = $activeSessionId.get();
-  if (!activeId) {
-    return;
-  }
-
-  if (tab === 'agent' && !isTabAvailable(activeId, 'agent')) {
-    return;
-  }
-
-  switchTab(activeId, tab);
-  syncMobileTabActionState();
-}
-
-function closeMobileActionsMenu(): void {
-  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
-  const dropdown = document.getElementById('mobile-actions-dropdown');
-  if (!toggleBtn || !dropdown) return;
-
-  dropdown.setAttribute('hidden', '');
-  toggleBtn.setAttribute('aria-expanded', 'false');
-}
-
-function toggleMobileActionsMenu(): void {
-  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
-  const dropdown = document.getElementById('mobile-actions-dropdown');
-  if (!toggleBtn || !dropdown) return;
-
-  const isOpen = !dropdown.hasAttribute('hidden');
-  if (isOpen) {
-    closeMobileActionsMenu();
-    return;
-  }
-
-  syncMobileTabActionState();
-  dropdown.removeAttribute('hidden');
-  toggleBtn.setAttribute('aria-expanded', 'true');
-}
-
-function bindMobileActionsMenu(): void {
-  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
-  const dropdown = document.getElementById('mobile-actions-dropdown');
-  const actions = document.getElementById('topbar-actions');
-  if (!toggleBtn || !dropdown || !actions) return;
-
-  // Ensure deterministic closed state on startup/hot reload.
-  closeMobileActionsMenu();
-
-  toggleBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleMobileActionsMenu();
-  });
-
-  dropdown.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('button')) {
-      closeMobileActionsMenu();
-    }
-  });
-
-  document.addEventListener('click', (e) => {
-    const target = e.target as Node | null;
-    if (target && !actions.contains(target)) {
-      closeMobileActionsMenu();
-    }
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeMobileActionsMenu();
-    }
-  });
-
-  window.addEventListener('orientationchange', closeMobileActionsMenu);
 }
 
 // =============================================================================

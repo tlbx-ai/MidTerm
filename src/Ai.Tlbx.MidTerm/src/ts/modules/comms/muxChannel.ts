@@ -809,6 +809,94 @@ function writeTerminalData(
   });
 }
 
+function updateReconnectFreezeForOutput(
+  state: TerminalState,
+  data: Uint8Array,
+  cols: number,
+  rows: number,
+): void {
+  if (state.reconnectFreezeOverlay && (data.length > 0 || (cols > 0 && rows > 0))) {
+    removeReconnectFreeze(state);
+  }
+}
+
+function processTerminalOutputCursorState(
+  state: TerminalState,
+  sessionId: string,
+  data: Uint8Array,
+): {
+  data: Uint8Array;
+} & ReturnType<typeof processCursorVisibilityControls> {
+  if (data.length >= 8) {
+    scanBracketedPaste(data, sessionId);
+  }
+
+  const shouldHideCursor = shouldHideCursorForOutput(state, data);
+  const cursorVisibility = processCursorVisibilityControls(
+    data,
+    shouldHideCursor || state.burstCursorHidden === true,
+  );
+  if (cursorVisibility.remoteCursorVisible !== null) {
+    state.remoteCursorVisible = cursorVisibility.remoteCursorVisible;
+  }
+  if (shouldHideCursor) {
+    hideBurstCursor(state);
+  }
+  if (data.length > 0) {
+    scheduleBurstCursorShow(state);
+  }
+  return cursorVisibility;
+}
+
+function applyTerminalResizeIfNeeded(
+  sessionId: string,
+  state: TerminalState,
+  cols: number,
+  rows: number,
+): void {
+  if (!(cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened)) {
+    return;
+  }
+
+  const currentCols = state.terminal.cols;
+  const currentRows = state.terminal.rows;
+  if (currentCols === cols && currentRows === rows) {
+    return;
+  }
+
+  try {
+    state.terminal.resize(cols, rows);
+    state.serverCols = cols;
+    state.serverRows = rows;
+    applyTerminalScaling(sessionId, state);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    log.warn(() => `Terminal resize deferred: ${message}`);
+  }
+}
+
+function writeOutputDataWithPathScan(
+  sessionId: string,
+  state: TerminalState,
+  sequenceEnd: bigint,
+  data: Uint8Array,
+  generation: number,
+): void {
+  if (data.length === 0) {
+    return;
+  }
+
+  writeTerminalData(sessionId, state, sequenceEnd, data, generation, () => {
+    if (sessionId === $activeSessionId.get()) {
+      queueMicrotask(() => {
+        if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
+          scanOutputForPaths(sessionId, data);
+        }
+      });
+    }
+  });
+}
+
 function writeToTerminal(
   sessionId: string,
   state: TerminalState,
@@ -818,69 +906,10 @@ function writeToTerminal(
   data: Uint8Array,
   generation: number,
 ): void {
-  if (state.reconnectFreezeOverlay && (data.length > 0 || (cols > 0 && rows > 0))) {
-    removeReconnectFreeze(state);
-  }
-
-  // Track bracketed paste mode by scanning raw bytes (no string allocation)
-  if (data.length >= 8) {
-    scanBracketedPaste(data, sessionId);
-  }
-
-  const shouldHideCursor = shouldHideCursorForOutput(state, data);
-  // Codex emits cursor show/hide commands inside redraw frames, so strip them while the
-  // burst-hider is active and restore the last requested visibility after the burst settles.
-  const cursorVisibility = processCursorVisibilityControls(
-    data,
-    shouldHideCursor || state.burstCursorHidden === true,
-  );
-
-  if (cursorVisibility.remoteCursorVisible !== null) {
-    state.remoteCursorVisible = cursorVisibility.remoteCursorVisible;
-  }
-
-  if (shouldHideCursor) {
-    hideBurstCursor(state);
-  }
-
-  if (data.length > 0) {
-    scheduleBurstCursorShow(state);
-  }
-
-  // Resize if dimensions are valid and different
-  if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened) {
-    const currentCols = state.terminal.cols;
-    const currentRows = state.terminal.rows;
-
-    if (currentCols !== cols || currentRows !== rows) {
-      try {
-        state.terminal.resize(cols, rows);
-        state.serverCols = cols;
-        state.serverRows = rows;
-        applyTerminalScaling(sessionId, state);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        log.warn(() => `Terminal resize deferred: ${message}`);
-      }
-    }
-  }
-
-  // Always write data if present
-  if (cursorVisibility.data.length > 0) {
-    const writtenData = cursorVisibility.data;
-    writeTerminalData(sessionId, state, sequenceEnd, writtenData, generation, () => {
-      // File path scanning is intentionally kicked behind the xterm write callback.
-      // The terminal parse path is latency-sensitive; File Radar can lag slightly
-      // without affecting correctness.
-      if (sessionId === $activeSessionId.get()) {
-        queueMicrotask(() => {
-          if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
-            scanOutputForPaths(sessionId, writtenData);
-          }
-        });
-      }
-    });
-  }
+  updateReconnectFreezeForOutput(state, data, cols, rows);
+  const cursorVisibility = processTerminalOutputCursorState(state, sessionId, data);
+  applyTerminalResizeIfNeeded(sessionId, state, cols, rows);
+  writeOutputDataWithPathScan(sessionId, state, sequenceEnd, cursorVisibility.data, generation);
 
   // DISABLED: Was causing cursor to disappear in some cases
   // if (didResize) {

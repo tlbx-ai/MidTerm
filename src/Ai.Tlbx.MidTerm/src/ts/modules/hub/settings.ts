@@ -68,6 +68,35 @@ function setMachineModalTitle(machineId: string | null): void {
   title.textContent = machineId ? t('settings.hub.editHost') : t('settings.hub.addHost');
 }
 
+function applyMachineSecretPlaceholders(machine: HubMachineState | undefined): void {
+  const apiKeyInput = getInput('hub-machine-api-key');
+  const passwordInput = getInput('hub-machine-password');
+  if (apiKeyInput) {
+    apiKeyInput.placeholder =
+      machine?.machine.hasApiKey === true
+        ? t('settings.hub.apiKeyStoredPlaceholder')
+        : t('settings.hub.apiKeyPlaceholder');
+  }
+  if (passwordInput) {
+    passwordInput.placeholder =
+      machine?.machine.hasPassword === true
+        ? t('settings.hub.passwordStoredPlaceholder')
+        : t('settings.hub.passwordPlaceholder');
+  }
+}
+
+function populateMachineModal(machine: HubMachineState | undefined): void {
+  const machineIdInput = getInput('hub-machine-id');
+  const urlInput = getInput('hub-machine-url');
+
+  if (machine && machineIdInput && urlInput) {
+    machineIdInput.value = machine.machine.id;
+    urlInput.value = machine.machine.baseUrl;
+  }
+
+  applyMachineSecretPlaceholders(machine);
+}
+
 function openMachineModal(machineId?: string): void {
   const modal = getMachineModal();
   if (!modal) {
@@ -76,25 +105,7 @@ function openMachineModal(machineId?: string): void {
 
   clearMachineModal();
   const machine = machineId ? getMachineById(machineId) : undefined;
-  const machineIdInput = getInput('hub-machine-id');
-  const urlInput = getInput('hub-machine-url');
-  const apiKeyInput = getInput('hub-machine-api-key');
-  const passwordInput = getInput('hub-machine-password');
-
-  if (machine && machineIdInput && urlInput && apiKeyInput && passwordInput) {
-    machineIdInput.value = machine.machine.id;
-    urlInput.value = machine.machine.baseUrl;
-    apiKeyInput.placeholder = machine.machine.hasApiKey
-      ? t('settings.hub.apiKeyStoredPlaceholder')
-      : t('settings.hub.apiKeyPlaceholder');
-    passwordInput.placeholder = machine.machine.hasPassword
-      ? t('settings.hub.passwordStoredPlaceholder')
-      : t('settings.hub.passwordPlaceholder');
-  } else {
-    if (apiKeyInput) apiKeyInput.placeholder = t('settings.hub.apiKeyPlaceholder');
-    if (passwordInput) passwordInput.placeholder = t('settings.hub.passwordPlaceholder');
-  }
-
+  populateMachineModal(machine);
   setMachineModalTitle(machine?.machine.id ?? null);
   if (!releaseBackButtonLayer) {
     releaseBackButtonLayer = registerBackButtonLayer(closeMachineModal);

@@ -371,6 +371,38 @@ type TerminalWithPrivateFocusInternals = TerminalState['terminal'] & {
   };
 };
 
+function syncTerminalFocusClasses(
+  state: TerminalState,
+  focused: boolean,
+  privateCore: TerminalWithPrivateFocusInternals['_core'],
+): HTMLDivElement | null {
+  const xtermRoot = getOwnedXtermRoot(state.container);
+  if (xtermRoot) {
+    xtermRoot.classList.toggle('focus', focused);
+  }
+
+  if (privateCore?.element && privateCore.element !== xtermRoot) {
+    privateCore.element.classList.toggle('focus', focused);
+  }
+
+  return xtermRoot;
+}
+
+function fireTerminalFocusEvent(
+  privateCore: TerminalWithPrivateFocusInternals['_core'],
+  focused: boolean,
+): void {
+  try {
+    if (focused) {
+      privateCore?._onFocus?.fire();
+    } else {
+      privateCore?._onBlur?.fire();
+    }
+  } catch {
+    // xterm internals may not be ready during initial open.
+  }
+}
+
 function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
   const privateTerminal = state.terminal as TerminalWithPrivateFocusInternals;
   const privateCore = privateTerminal._core;
@@ -383,13 +415,7 @@ function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
     return;
   }
 
-  if (xtermRoot) {
-    xtermRoot.classList.toggle('focus', focused);
-  }
-
-  if (privateCore?.element && privateCore.element !== xtermRoot) {
-    privateCore.element.classList.toggle('focus', focused);
-  }
+  syncTerminalFocusClasses(state, focused, privateCore);
 
   if (!privateCore || !coreBrowserService) {
     return;
@@ -400,16 +426,7 @@ function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
   // the renderer paints the active cursor while MidTerm owns the actual DOM focus.
   coreBrowserService._isFocused = focused;
   coreBrowserService._cachedIsFocused = undefined;
-
-  try {
-    if (focused) {
-      privateCore._onFocus?.fire();
-    } else {
-      privateCore._onBlur?.fire();
-    }
-  } catch {
-    // xterm internals may not be ready during initial open.
-  }
+  fireTerminalFocusEvent(privateCore, focused);
 }
 
 function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement | null {

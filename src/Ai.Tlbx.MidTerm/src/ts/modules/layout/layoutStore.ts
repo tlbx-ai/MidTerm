@@ -537,20 +537,21 @@ export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefin
   };
   const nextSnapshotKey = serializeLayoutSnapshot(normalized);
 
-  if (normalizedRevision < previousServerRevision) {
-    return;
-  }
-
-  if (pendingSnapshotKey !== null && normalizedRevision === previousServerRevision) {
+  if (
+    shouldIgnoreServerLayoutSnapshot(
+      normalizedRevision,
+      previousServerRevision,
+      currentSnapshotKey,
+      nextSnapshotKey,
+    )
+  ) {
     return;
   }
 
   lastServerRevision = normalizedRevision;
   lastServerSnapshotKey = nextSnapshotKey;
 
-  if (pendingSnapshotKey === nextSnapshotKey) {
-    pendingSnapshotKey = null;
-  } else if (pendingSnapshotKey !== null && currentSnapshotKey === pendingSnapshotKey) {
+  if (reconcilePendingServerLayoutSnapshot(currentSnapshotKey, nextSnapshotKey)) {
     return;
   }
 
@@ -564,18 +565,49 @@ export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefin
 
   $layout.set({ root: normalized.root });
 
-  if (!normalized.root) {
+  applyServerFocusedSessionState(normalized.root, normalized.focusedSessionId);
+}
+
+function shouldIgnoreServerLayoutSnapshot(
+  normalizedRevision: number,
+  previousServerRevision: number,
+  currentSnapshotKey: string,
+  nextSnapshotKey: string,
+): boolean {
+  if (normalizedRevision < previousServerRevision) {
+    return true;
+  }
+  if (pendingSnapshotKey !== null && normalizedRevision === previousServerRevision) {
+    return true;
+  }
+  return nextSnapshotKey === currentSnapshotKey;
+}
+
+function reconcilePendingServerLayoutSnapshot(
+  currentSnapshotKey: string,
+  nextSnapshotKey: string,
+): boolean {
+  if (pendingSnapshotKey === nextSnapshotKey) {
+    pendingSnapshotKey = null;
+    return false;
+  }
+
+  return pendingSnapshotKey !== null && currentSnapshotKey === pendingSnapshotKey;
+}
+
+function applyServerFocusedSessionState(
+  root: LayoutNode | null,
+  focusedSessionId: string | null,
+): void {
+  if (!root) {
     $focusedSessionId.set(null);
     return;
   }
 
   const ids: string[] = [];
-  collectSessionIdsFromNode(normalized.root, ids);
+  collectSessionIdsFromNode(root, ids);
   const focusedId =
-    normalized.focusedSessionId && ids.includes(normalized.focusedSessionId)
-      ? normalized.focusedSessionId
-      : (ids[0] ?? null);
-
+    focusedSessionId && ids.includes(focusedSessionId) ? focusedSessionId : (ids[0] ?? null);
   $focusedSessionId.set(focusedId);
   if (focusedId) {
     $activeSessionId.set(focusedId);

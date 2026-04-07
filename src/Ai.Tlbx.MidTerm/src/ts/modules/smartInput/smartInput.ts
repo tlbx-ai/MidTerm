@@ -11,7 +11,6 @@ import {
   $activeSessionId,
   $settingsOpen,
   $voiceServerPassword,
-  getSession,
 } from '../../stores';
 import { t } from '../i18n';
 import { submitSessionText } from '../input/submit';
@@ -25,21 +24,14 @@ import {
 import {
   LENS_QUICK_SETTINGS_CHANGED_EVENT,
   getLensQuickSettingsDraft,
-  getLensQuickSettingsEffective,
-  getLensQuickSettingsProvider,
   setLensQuickSettingsDraft,
 } from '../lens/quickSettings';
-import { getLensModelOptions } from '../lens/modelOptions';
 import { shouldShowManagerBar } from '../managerBar/visibility';
 import { onTabActivated } from '../sessionTabs';
-import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
+import { onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop, showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
-import {
-  ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
-  calculateAdaptiveFooterReservedHeight,
-  getAdaptiveFooterRailSequence,
-} from './layout';
+import { getAdaptiveFooterRailSequence } from './layout';
 import {
   type LensComposerDraftAttachment,
   MAX_LENS_IMAGE_BYTES,
@@ -49,11 +41,7 @@ import {
 } from './lensAttachments';
 import { submitLensComposerDraft } from './lensAttachmentSubmission';
 import { startTranscription, stopTranscription } from './transcription';
-import {
-  shouldShowDockedSmartInput,
-  shouldShowLensQuickSettings,
-  type SmartInputVisibilityState,
-} from './visibility';
+import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
 import {
   createSmartInputDom,
@@ -62,7 +50,6 @@ import {
   formatLensQuickSettingsSummary,
   openFileInputPicker as showSmartInputFilePicker,
   renderTerminalStatusRow,
-  setLensQuickSettingsDropdownOptions,
   type ToolKind,
 } from './smartInputView';
 import {
@@ -74,13 +61,22 @@ import {
   setLensDraftAttachmentsForSession,
 } from './smartInputDraftStore';
 import {
-  getCollapsedSmartInputTextareaHeight,
   isMobileViewport,
   isTouchPrimaryDevice,
   resizeSmartInputTextarea,
 } from './smartInputMetrics';
 import type { ResumeProvider } from '../providerResume';
 import { bindSmartInputGlobalKeyBindings } from './smartInputKeyBindings';
+import {
+  canUseSmartInputVoice as canUseSmartInputVoiceSupport,
+  getMicButtons as getMicButtonsSupport,
+  queueFooterReserveSync as queueFooterReserveSyncSupport,
+  syncLensQuickSettingsControls as syncLensQuickSettingsControlsSupport,
+  syncVoiceInputAvailability as syncVoiceInputAvailabilitySupport,
+  updateAutoSendVisibility as updateAutoSendVisibilitySupport,
+  updateFooterReservedHeight as updateFooterReservedHeightSupport,
+} from './footerSupport';
+import { createLensResumeButton } from './lensResumeButton';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -221,6 +217,14 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
     touchControlsAvailable,
     touchControlsExpanded: touchControlsAvailable && keysExpanded,
   };
+}
+
+function setFooterResizeQueued(queued: boolean): void {
+  footerResizeQueued = queued;
+}
+
+function setLastReservedFooterHeightPx(value: number): void {
+  lastReservedFooterHeightPx = value;
 }
 
 function resolveTouchControlsAvailable(args: {
@@ -919,55 +923,11 @@ function syncLensQuickSettingsActions(sessionId: string): void {
   }
 
   lensQuickSettingsActions.replaceChildren();
-  const resumeButton = createLensResumeButton(sessionId);
+  const resumeButton = createLensResumeButton(sessionId, lensResumeConversationHandler);
   lensQuickSettingsActions.hidden = !resumeButton;
   if (resumeButton) {
     lensQuickSettingsActions.appendChild(resumeButton);
   }
-}
-
-function createLensResumeButton(sessionId: string): HTMLButtonElement | null {
-  const session = getSession(sessionId);
-  const provider = normalizeResumeProvider(session?.profileHint);
-  const workingDirectory = session?.currentDirectory?.trim();
-  if (
-    !session?.bookmarkId ||
-    !provider ||
-    !workingDirectory ||
-    !session.lensOnly ||
-    !lensResumeConversationHandler
-  ) {
-    return null;
-  }
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'smart-input-lens-action smart-input-lens-resume';
-  button.textContent = t('smartInput.resume');
-  button.title = `${t('smartInput.resumeConversation')} ${
-    provider === 'claude' ? t('sessionLauncher.claudeTitle') : t('sessionLauncher.codexTitle')
-  }`;
-  button.setAttribute('aria-label', button.title);
-  button.addEventListener('click', () => {
-    void lensResumeConversationHandler?.({
-      sessionId,
-      provider,
-      workingDirectory,
-    });
-  });
-  return button;
-}
-
-function normalizeResumeProvider(profile: string | null | undefined): ResumeProvider | null {
-  if (profile === 'claude') {
-    return 'claude';
-  }
-
-  if (profile === 'codex') {
-    return 'codex';
-  }
-
-  return null;
 }
 function setToolsPanelOpen(open: boolean): void {
   if (!toolsPanel || !toolsToggleBtn) {
@@ -1344,157 +1304,60 @@ function endRecording(): void {
 }
 
 function canUseSmartInputVoice(): boolean {
-  return isDevMode() && Boolean($voiceServerPassword.get());
+  return canUseSmartInputVoiceSupport();
 }
 
 function syncVoiceInputAvailability(): void {
-  const enabled = canUseSmartInputVoice();
-  getMicButtons().forEach((button) => {
-    button.hidden = !enabled;
+  syncVoiceInputAvailabilitySupport({
+    footerDock,
+    dockedBar,
+    sendBtn,
+    autoSendEnabled,
+    isRecording,
+    endRecording,
   });
-
-  if (!enabled && isRecording) {
-    endRecording();
-  }
-
-  updateAutoSendVisibility();
 }
 
 function updateAutoSendVisibility(): void {
-  const active = autoSendEnabled && canUseSmartInputVoice();
-  dockedBar?.classList.toggle('autosend-active', active);
-  sendBtn?.classList.toggle('autosend-latched', active);
-  if (sendBtn) {
-    sendBtn.setAttribute('data-autosend', active ? 'true' : 'false');
-    sendBtn.title = active ? t('smartInput.autoSendOnHint') : t('smartInput.sendGestureHint');
-  }
+  updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
 }
 
 function getMicButtons(): HTMLButtonElement[] {
-  return footerDock
-    ? Array.from(footerDock.querySelectorAll<HTMLButtonElement>('.smart-input-mic-btn'))
-    : [];
+  return getMicButtonsSupport(footerDock);
 }
 
 function syncLensQuickSettingsControls(): void {
-  if (
-    !lensQuickSettingsRow ||
-    !lensQuickSettingsActions ||
-    !lensModelSelect ||
-    !lensEffortSelect ||
-    !lensPlanSelect ||
-    !lensPermissionSelect
-  ) {
-    return;
-  }
-
-  const visibilityState = getSmartInputVisibilityState();
-  if (!shouldShowLensQuickSettings(visibilityState)) {
-    if (dockedBar) {
-      dockedBar.dataset.lensSession = 'false';
-    }
-    lensQuickSettingsRow.hidden = true;
-    lensQuickSettingsActions.replaceChildren();
-    lensQuickSettingsActions.hidden = true;
-    delete lensQuickSettingsRow.dataset.provider;
-    setLensQuickSettingsSheetOpen(false);
-    return;
-  }
-
-  const sessionId = visibilityState.activeSessionId as string;
-  const provider = getLensQuickSettingsProvider(sessionId);
-  const draft = getLensQuickSettingsDraft(sessionId);
-  const effective = getLensQuickSettingsEffective(sessionId);
-  if (dockedBar) {
-    dockedBar.dataset.lensSession = 'true';
-  }
-  lensQuickSettingsRow.dataset.provider = provider ?? '';
-
-  setLensQuickSettingsDropdownOptions(
+  syncLensQuickSettingsControlsSupport({
+    lensQuickSettingsRow,
+    lensQuickSettingsActions,
     lensModelSelect,
-    getLensModelOptions({
-      provider,
-      currentValues: [draft.model, effective.model],
-    }),
-  );
-
-  const modelValue = draft.model ?? '';
-  if (lensModelSelect.value !== modelValue) {
-    lensModelSelect.value = modelValue;
-  }
-  lensModelSelect.dispatchEvent(new Event('midterm:sync'));
-
-  const effortValue = draft.effort ?? '';
-  if (lensEffortSelect.value !== effortValue) {
-    lensEffortSelect.value = effortValue;
-  }
-  lensEffortSelect.dispatchEvent(new Event('midterm:sync'));
-
-  if (lensPlanSelect.value !== draft.planMode) {
-    lensPlanSelect.value = draft.planMode;
-  }
-  lensPlanSelect.dispatchEvent(new Event('midterm:sync'));
-
-  if (lensPermissionSelect.value !== draft.permissionMode) {
-    lensPermissionSelect.value = draft.permissionMode;
-  }
-  lensPermissionSelect.dispatchEvent(new Event('midterm:sync'));
-
-  if (lensSettingsSummaryBtn) {
-    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary(draft);
-    lensSettingsSummaryBtn.dataset.planMode = draft.planMode;
-  }
+    lensEffortSelect,
+    lensPlanSelect,
+    lensPermissionSelect,
+    lensSettingsSummaryBtn,
+    dockedBar,
+    getVisibilityState: getSmartInputVisibilityState,
+    setLensQuickSettingsSheetOpen,
+  });
 }
 
 function queueFooterReserveSync(): void {
-  if (footerResizeQueued) {
-    return;
-  }
-
-  footerResizeQueued = true;
-  requestAnimationFrame(() => {
-    footerResizeQueued = false;
-    updateFooterReservedHeight();
+  queueFooterReserveSyncSupport({
+    footerResizeQueued,
+    setFooterResizeQueued,
+    updateFooterReservedHeight: () => {
+      updateFooterReservedHeight();
+    },
   });
 }
 
 function updateFooterReservedHeight(): void {
-  const root = document.documentElement;
-  if (!footerDock || footerDock.hidden) {
-    setAdaptiveFooterReservedHeight(root, 0);
-    return;
-  }
-
-  const textareaHeight = activeTextarea?.offsetHeight ?? null;
-  const collapsedTextareaHeight = activeTextarea
-    ? getCollapsedSmartInputTextareaHeight(activeTextarea)
-    : null;
-  const reserveHeight = calculateAdaptiveFooterReservedHeight({
-    dockHeight: footerDock.offsetHeight,
-    textareaHeight,
-    collapsedTextareaHeight,
+  updateFooterReservedHeightSupport({
+    footerDock,
+    activeTextarea,
+    lastReservedFooterHeightPx,
+    setLastReservedFooterHeightPx,
   });
-
-  setAdaptiveFooterReservedHeight(root, reserveHeight);
-}
-
-function setAdaptiveFooterReservedHeight(root: HTMLElement, reserveHeight: number): void {
-  const normalizedReserveHeight = Math.max(0, Math.round(reserveHeight));
-  root.style.setProperty(
-    '--adaptive-footer-reserved-height',
-    `${String(normalizedReserveHeight)}px`,
-  );
-
-  if (lastReservedFooterHeightPx === normalizedReserveHeight) {
-    return;
-  }
-
-  lastReservedFooterHeightPx = normalizedReserveHeight;
-  window.dispatchEvent(
-    new CustomEvent(ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT, {
-      detail: { reservedHeightPx: normalizedReserveHeight },
-    }),
-  );
 }
 
 async function submitSmartInput(sessionId: string, text: string): Promise<void> {

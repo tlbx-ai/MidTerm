@@ -455,6 +455,55 @@ function collectEligibleTextNodes(root: Node): Text[] {
   return textNodes;
 }
 
+function createInlineMatchNode(htmlFactory: HtmlElementFactory, match: AssistantInlineToken): Node {
+  switch (match.kind) {
+    case 'url': {
+      const link = htmlFactory.createElement('a');
+      link.className = 'agent-history-inline-link agent-history-inline-url';
+      link.href = match.href ?? match.text;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = match.text;
+      return link;
+    }
+    case 'file': {
+      const link = htmlFactory.createElement('a');
+      link.className = 'agent-history-inline-link agent-history-inline-file';
+      link.href = '#';
+      link.dataset.filePath = match.filePath ?? '';
+      link.dataset.filePathKind = match.filePathKind ?? 'absolute';
+      if (typeof match.line === 'number') {
+        link.dataset.fileLine = String(match.line);
+      }
+      if (typeof match.column === 'number') {
+        link.dataset.fileColumn = String(match.column);
+      }
+      link.textContent = match.text;
+      return link;
+    }
+    case 'git': {
+      const link = htmlFactory.createElement('a');
+      link.className = 'agent-history-inline-link agent-history-inline-git-hash';
+      link.href = '#';
+      link.dataset.gitHash = match.hash ?? match.text;
+      link.textContent = match.text;
+      return link;
+    }
+    case 'number': {
+      const span = htmlFactory.createElement('span');
+      span.className = 'agent-history-inline-number';
+      span.textContent = match.text;
+      return span;
+    }
+    case 'table_rule': {
+      const span = htmlFactory.createElement('span');
+      span.className = 'agent-history-inline-table-rule';
+      span.textContent = match.text;
+      return span;
+    }
+  }
+}
+
 function buildReplacementFragment(
   documentRef: Document,
   text: string,
@@ -472,59 +521,7 @@ function buildReplacementFragment(
     if (match.start > cursor) {
       fragment.append(htmlFactory.createTextNode(text.slice(cursor, match.start)));
     }
-
-    switch (match.kind) {
-      case 'url': {
-        const link = htmlFactory.createElement('a');
-        link.className = 'agent-history-inline-link agent-history-inline-url';
-        link.href = match.href ?? match.text;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = match.text;
-        fragment.append(link);
-        break;
-      }
-      case 'file': {
-        const link = htmlFactory.createElement('a');
-        link.className = 'agent-history-inline-link agent-history-inline-file';
-        link.href = '#';
-        link.dataset.filePath = match.filePath ?? '';
-        link.dataset.filePathKind = match.filePathKind ?? 'absolute';
-        if (typeof match.line === 'number') {
-          link.dataset.fileLine = String(match.line);
-        }
-        if (typeof match.column === 'number') {
-          link.dataset.fileColumn = String(match.column);
-        }
-        link.textContent = match.text;
-        fragment.append(link);
-        break;
-      }
-      case 'git': {
-        const link = htmlFactory.createElement('a');
-        link.className = 'agent-history-inline-link agent-history-inline-git-hash';
-        link.href = '#';
-        link.dataset.gitHash = match.hash ?? match.text;
-        link.textContent = match.text;
-        fragment.append(link);
-        break;
-      }
-      case 'number': {
-        const span = htmlFactory.createElement('span');
-        span.className = 'agent-history-inline-number';
-        span.textContent = match.text;
-        fragment.append(span);
-        break;
-      }
-      case 'table_rule': {
-        const span = htmlFactory.createElement('span');
-        span.className = 'agent-history-inline-table-rule';
-        span.textContent = match.text;
-        fragment.append(span);
-        break;
-      }
-    }
-
+    fragment.append(createInlineMatchNode(htmlFactory, match));
     cursor = match.end;
   }
 
