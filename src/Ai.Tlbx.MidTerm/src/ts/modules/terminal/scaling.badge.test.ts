@@ -255,15 +255,15 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
-  it('resizes immediately after the browser becomes main and clears the badge path', () => {
+  it('keeps passive scaling free of resize side effects after the browser becomes main', () => {
     const harness = createTerminalHarness(80, 24);
     sessionTerminals.set('s1', harness.state as never);
     $isMainBrowser.set(true);
 
     applyTerminalScalingSync(harness.state as never);
 
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
-    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
+    expect(sendResize).not.toHaveBeenCalled();
     expect(harness.getOverlay()).toBeNull();
     expect(harness.xterm.style.transform ?? '').toBe('');
   });

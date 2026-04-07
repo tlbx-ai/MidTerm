@@ -53,7 +53,7 @@ import { bindTerminalInteractionHandlers } from './interactionBindings';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
 
 import { createLogger } from '../logging';
-import { registerFileLinkProvider, scanOutputForPaths, clearPathAllowlist } from './fileLinks';
+import { registerFileLinkProvider, clearPathAllowlist } from './fileLinks';
 import { getEffectiveTerminalFontSize } from './fontSize';
 import {
   buildTerminalFontStack,
@@ -1000,7 +1000,7 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
  * Write an output frame to the terminal, handling dimension updates
  */
 export function writeOutputFrame(
-  sessionId: string,
+  _sessionId: string,
   state: TerminalState,
   payload: Uint8Array,
 ): void {
@@ -1031,14 +1031,7 @@ export function writeOutputFrame(
 
   // Write terminal data
   if (frame.data.length > 0) {
-    state.terminal.write(frame.data, () => {
-      // Buffered replay should yield the main thread to xterm first so a tab
-      // opening after reconnect catches up visually before File Radar does its
-      // extra decode and pattern matching work.
-      queueMicrotask(() => {
-        scanOutputForPaths(sessionId, frame.data);
-      });
-    });
+    state.terminal.write(frame.data);
   }
 }
 
@@ -1252,6 +1245,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   if (state.burstCursorRestoreTimer != null) {
     clearTimeout(state.burstCursorRestoreTimer);
   }
+  state.burstCursorRestoreDueAtMs = null;
   state.reconnectFreezeOverlay?.remove();
 
   // Clean up pending title update timer

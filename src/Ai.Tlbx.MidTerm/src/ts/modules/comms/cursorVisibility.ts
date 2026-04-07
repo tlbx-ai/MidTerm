@@ -148,6 +148,37 @@ function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
   return false;
 }
 
+function clearBurstCursorRestoreSchedule(state: TerminalState): void {
+  if (state.burstCursorRestoreTimer != null) {
+    clearTimeout(state.burstCursorRestoreTimer);
+    state.burstCursorRestoreTimer = null;
+  }
+
+  state.burstCursorRestoreDueAtMs = null;
+}
+
+function armBurstCursorRestoreTimer(state: TerminalState): void {
+  const dueAt = state.burstCursorRestoreDueAtMs;
+  if (dueAt == null) {
+    state.burstCursorRestoreTimer = null;
+    return;
+  }
+
+  const delayMs = Math.max(0, dueAt - performance.now());
+  state.burstCursorRestoreTimer = window.setTimeout(() => {
+    state.burstCursorRestoreTimer = null;
+
+    const currentDueAt = state.burstCursorRestoreDueAtMs;
+    if (currentDueAt != null && currentDueAt - performance.now() > 1) {
+      armBurstCursorRestoreTimer(state);
+      return;
+    }
+
+    state.burstCursorRestoreDueAtMs = null;
+    showBurstCursor(state);
+  }, delayMs);
+}
+
 export function hideBurstCursor(state: TerminalState): void {
   if (!state.burstCursorHidden) {
     if (!state.syncOutputCursorHidden) {
@@ -156,10 +187,7 @@ export function hideBurstCursor(state: TerminalState): void {
     state.burstCursorHidden = true;
   }
 
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
+  clearBurstCursorRestoreSchedule(state);
 }
 
 export function showBurstCursor(state: TerminalState): void {
@@ -167,10 +195,7 @@ export function showBurstCursor(state: TerminalState): void {
     return;
   }
 
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
+  clearBurstCursorRestoreSchedule(state);
 
   if (state.burstCursorHidden) {
     state.burstCursorHidden = false;
@@ -183,13 +208,10 @@ export function scheduleBurstCursorShow(state: TerminalState): void {
     return;
   }
 
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
+  state.burstCursorRestoreDueAtMs = performance.now() + CURSOR_IDLE_SHOW_MS;
+  if (state.burstCursorRestoreTimer == null) {
+    armBurstCursorRestoreTimer(state);
   }
-
-  state.burstCursorRestoreTimer = window.setTimeout(() => {
-    showBurstCursor(state);
-  }, CURSOR_IDLE_SHOW_MS);
 }
 
 export function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): boolean {

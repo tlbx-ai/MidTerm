@@ -273,6 +273,7 @@ describe('muxChannel', () => {
 
   it('yields between drain slices so flood output does not monopolize the main thread', async () => {
     vi.useFakeTimers();
+    vi.stubGlobal('MessageChannel', undefined);
 
     const harness = await loadHarness([0, 9, 9, 9, 9]);
     const sessionId = 'sess1234';

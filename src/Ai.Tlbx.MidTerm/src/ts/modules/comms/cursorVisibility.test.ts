@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { processCursorVisibilityControls } from './cursorVisibility';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  processCursorVisibilityControls,
+  scheduleBurstCursorShow,
+  showBurstCursor,
+} from './cursorVisibility';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -9,6 +13,19 @@ function text(value: string): number[] {
 }
 
 describe('processCursorVisibilityControls', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    vi.stubGlobal('window', globalThis);
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it('tracks DECTCEM visibility without changing data when suppression is off', () => {
     const data = Uint8Array.from([
       ...text('pre'),
@@ -65,5 +82,38 @@ describe('processCursorVisibilityControls', () => {
     expect(raw8BitResult.remoteCursorVisible).toBe(false);
     expect(decoder.decode(utf8C1Result.data)).toBe('y');
     expect(utf8C1Result.remoteCursorVisible).toBe(true);
+  });
+
+  it('extends burst cursor restore deadlines without resetting the timeout on every frame', () => {
+    const state = {
+      terminal: {
+        write: vi.fn(),
+      },
+      burstCursorHidden: true,
+      remoteCursorVisible: true,
+      syncOutputCursorHidden: false,
+      burstCursorRestoreTimer: null,
+      burstCursorRestoreDueAtMs: null,
+    } as never;
+
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+    scheduleBurstCursorShow(state);
+    expect(timeoutSpy).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(500);
+    vi.setSystemTime(500);
+    scheduleBurstCursorShow(state);
+    expect(timeoutSpy).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(149);
+    expect(state.terminal.write).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(state.terminal.write).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(500);
+    expect(state.terminal.write).toHaveBeenCalledWith('\x1b[?25h');
   });
 });

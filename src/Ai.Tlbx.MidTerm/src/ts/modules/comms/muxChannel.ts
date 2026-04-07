@@ -490,6 +490,8 @@ const OUTPUT_DRAIN_BUDGET_MS = 8;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 let outputQueueGeneration = 0;
+let yieldToMainChannel: MessageChannel | null = null;
+const pendingYieldToMainResolves: Array<() => void> = [];
 
 function compactSessionQueue(queue: SessionOutputQueue): void {
   if (queue.index > 0) {
@@ -507,6 +509,21 @@ function yieldToMain(): Promise<void> {
   if (typeof scheduler?.yield === 'function') {
     return scheduler.yield();
   }
+
+  if (typeof MessageChannel !== 'undefined') {
+    if (!yieldToMainChannel) {
+      yieldToMainChannel = new MessageChannel();
+      yieldToMainChannel.port1.onmessage = () => {
+        pendingYieldToMainResolves.shift()?.();
+      };
+    }
+
+    return new Promise((resolve) => {
+      pendingYieldToMainResolves.push(resolve);
+      yieldToMainChannel?.port2.postMessage(0);
+    });
+  }
+
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
@@ -1003,7 +1020,7 @@ function handleMuxOutputFrame(type: number, sessionId: string, payload: Uint8Arr
     _sessionBytesCallback?.(sessionId, termDataBytes);
   }
   if (payload.length >= 4) {
-    queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
+    queueOutputFrame(sessionId, payload, type === MUX_TYPE_COMPRESSED_OUTPUT);
   }
   return true;
 }
@@ -1509,6 +1526,10 @@ export function resetMuxChannelRuntimeForTests(): void {
   bracketedPasteState.clear();
   outputRttListeners.clear();
   pendingInputQueue.length = 0;
+  pendingYieldToMainResolves.length = 0;
+  yieldToMainChannel?.port1.close();
+  yieldToMainChannel?.port2.close();
+  yieldToMainChannel = null;
 
   clearQueuedOutput();
   pendingOutputFrames.clear();

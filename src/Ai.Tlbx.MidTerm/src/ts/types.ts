@@ -108,6 +108,7 @@ export interface TerminalState {
   earlyDataDisposable?: { dispose: () => void };
   cursorHideTimer?: number | null;
   burstCursorRestoreTimer?: number | null;
+  burstCursorRestoreDueAtMs?: number | null;
   lastBurstOutputAtMs?: number | null;
   lastLocalInputAtMs?: number | null;
   remoteCursorVisible?: boolean;

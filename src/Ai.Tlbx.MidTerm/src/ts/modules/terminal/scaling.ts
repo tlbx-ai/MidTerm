@@ -957,22 +957,10 @@ function applyScaledDownTerminalState(args: {
   showOverlay: (label: string) => void;
   resetScaleState: () => void;
 }): void {
-  const {
-    container,
-    xterm,
-    state,
-    scale,
-    isMainBrowser,
-    hasOptimalSizeMismatch,
-    showOverlay,
-    resetScaleState,
-  } = args;
+  const { container, xterm, state, scale, isMainBrowser, showOverlay, resetScaleState } = args;
   if (isMainBrowser) {
     resetScaleState();
     removeScalingOverlay(container);
-    if (hasOptimalSizeMismatch) {
-      scheduleMainBrowserResize();
-    }
     return;
   }
 
@@ -1005,7 +993,6 @@ function applyUndersizedTerminalState(args: {
   if (viewportMismatchTooSmall) {
     if (isMainBrowser) {
       removeScalingOverlay(container);
-      scheduleMainBrowserResize();
       return;
     }
     const overlayLabel = $isMainBrowser.get()
@@ -1196,7 +1183,7 @@ function ensureMainBrowserContainerResizeObserver(): void {
   if (!mainBrowserContainerResizeObserver) {
     mainBrowserContainerResizeObserver = new ResizeObserver(() => {
       if ($isMainBrowser.get()) {
-        autoResizeAllTerminalsImmediate();
+        scheduleMainBrowserResize();
       }
     });
   }
