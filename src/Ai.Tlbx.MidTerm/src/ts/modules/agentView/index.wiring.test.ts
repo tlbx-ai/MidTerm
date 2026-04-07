@@ -26,9 +26,15 @@ describe('agent view Lens wiring', () => {
   });
 
   it('uses slightly larger user and assistant metadata in full-width Lens layout', () => {
-    expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,");
-    expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-meta,");
+    expect(css).toContain(
+      ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,",
+    );
+    expect(css).toContain(
+      ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-meta,",
+    );
     expect(css).toContain('font-size: 9px;');
+    expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {");
+    expect(css).toContain('display: none;');
   });
 
   it('lets agent message typography follow the configurable agent UI font while machine rows stay on terminal monospace', () => {
@@ -45,6 +51,9 @@ describe('agent view Lens wiring', () => {
   it('documents the above-body metadata rule in the Lens design contract', () => {
     expect(lensDesign).toContain(
       'In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.',
+    );
+    expect(lensDesign).toContain(
+      'the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label',
     );
   });
 
@@ -169,13 +178,18 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('animation: agent-history-busy-sweep 1.45s linear infinite alternate;');
     expect(css).toContain('animation-delay: calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms));');
     expect(css).toContain('.agent-history-busy-cancel {');
-    expect(css).toContain('.agent-history-turn-duration .agent-history-body {');
+    expect(css).toContain('.agent-history-turn-duration-body {');
+    expect(css).toContain('.agent-history-turn-duration-marker {');
+    expect(css).toContain('.agent-history-turn-duration-segment {');
+    expect(css).toContain('.agent-history-turn-duration-label {');
+    expect(historyDomSource).toContain('createTurnDurationNoteBody(entry)');
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
     expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
     expect(lensDesign).toContain('User-prompt text and assistant-message text must not populate the busy bubble.');
     expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
     expect(lensDesign).toContain('hint immediately after the animated label');
     expect(lensDesign).toContain('append one muted inline duration note');
+    expect(lensDesign).toContain('vertical rule above and below the text');
   });
 
   it('routes plain Escape from the Lens surface through Lens interruption', () => {

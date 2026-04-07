@@ -192,6 +192,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - They should anchor the start of a turn without dominating the screen.
 - Repeated rendering of the same user turn is forbidden.
 - In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.
+- In Codex Lens, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label when the row is otherwise plainly identifiable as assistant output.
 
 ### Assistant output
 
@@ -205,6 +206,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - While a turn is active, that busy bubble should also show a muted wall-clock duration counter plus a quiet `(Press Esc to cancel)` hint immediately after the animated label, not detached against the far edge of the pane.
 - The busy-label animation should sweep smoothly left-to-right and back again without a visible jump reset, and it should remain a pure CSS animation rather than relying on JavaScript timing.
 - When the turn settles back to the user, Lens should append one muted inline duration note such as `(Turn took 1m 4s)` into the history instead of leaving the elapsed time only in transient chrome.
+- That turn-settled duration note should render as a quiet end-of-turn marker with a short vertical rule above and below the text, rather than as ordinary paragraph text.
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 
@@ -377,6 +379,7 @@ Status in this branch/work item:
 - implemented: the only animated history activity element is the trailing global busy bubble, now rendered as a rotating SVG triangle with a blue center dot instead of pulsing ellipsis dots
 - implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
 - implemented: Codex Lens now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
+- implemented: Codex Lens now keeps the quiet role label on user rows while omitting the redundant repeated `Agent` badge on assistant message rows
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Lens diff rows now use console-style `Edited {path}` file headers and tighter green/red hunk blocks with line numbers
@@ -399,6 +402,7 @@ Status in this branch/work item:
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label and phase-locks its CSS sweep to the turn clock so elapsed-time refreshes do not visibly restart the animation
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by MidTerm-owned persistent queue state rather than browser-local Lens-only submission state
 - implemented: explicit Lens sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
+- implemented: settled turn-duration notes now render as a quiet vertical end-of-turn marker with the duration label centered between short rule segments
 
 Still mandatory after this work whenever Lens evolves:
 

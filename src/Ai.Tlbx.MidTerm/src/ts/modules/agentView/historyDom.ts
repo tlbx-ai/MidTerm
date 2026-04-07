@@ -56,6 +56,30 @@ type AgentHistoryDomDeps = {
   logWarn: (message: () => string) => void;
 };
 
+function createTurnDurationNoteBody(entry: LensHistoryEntry): HTMLElement {
+  const body = document.createElement('div');
+  body.className = 'agent-history-body agent-history-turn-duration-body';
+
+  const marker = document.createElement('div');
+  marker.className = 'agent-history-turn-duration-marker';
+
+  const topSegment = document.createElement('span');
+  topSegment.className = 'agent-history-turn-duration-segment';
+  marker.appendChild(topSegment);
+
+  const label = document.createElement('span');
+  label.className = 'agent-history-turn-duration-label';
+  label.textContent = entry.body;
+  marker.appendChild(label);
+
+  const bottomSegment = document.createElement('span');
+  bottomSegment.className = 'agent-history-turn-duration-segment';
+  marker.appendChild(bottomSegment);
+
+  body.appendChild(marker);
+  return body;
+}
+
 export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
     const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
@@ -237,6 +261,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     sessionId: string,
     presentation: HistoryBodyPresentation,
   ): HTMLElement {
+    if (entry.turnDurationNote) {
+      return createTurnDurationNoteBody(entry);
+    }
+
     switch (presentation.mode) {
       case 'plain': {
         const body = document.createElement('div');
