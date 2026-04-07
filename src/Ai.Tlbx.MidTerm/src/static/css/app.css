@@ -8510,6 +8510,7 @@ body.shared-session-mode .session-tab-bar {
   top: calc(100% + 8px);
   right: 0;
   min-width: max(100%, 148px);
+  z-index: 1;
 }
 
 .smart-input-lens-dropdown-option.is-selected {
@@ -14945,6 +14946,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   justify-content: flex-start;
 }
 
+.adaptive-footer-status[data-lens-compact='true'] {
+  width: 100%;
+  align-self: stretch;
+  justify-content: space-between;
+  min-height: var(--command-bay-control-height);
+}
+
 .adaptive-footer-status-label,
 .adaptive-footer-status-summary {
   min-width: 0;
@@ -15007,9 +15015,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 1px solid var(--command-bay-border);
   background: var(--command-bay-surface);
   box-shadow: var(--command-bay-shadow);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
+  overflow: visible;
 }
 
 .smart-input-lens-field {
@@ -15114,6 +15120,57 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 10px;
   overflow: visible;
   box-shadow: none;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-field {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 0;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-field + .smart-input-lens-field::before {
+  display: none;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-control,
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-dropdown,
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-dropdown-trigger,
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-model {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-control {
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--text-input-background, var(--bg-input)) 76%,
+    transparent
+  );
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-actions {
+  width: 100%;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-actions::before {
+  display: none;
 }
 
 .adaptive-footer-dock .manager-bar {

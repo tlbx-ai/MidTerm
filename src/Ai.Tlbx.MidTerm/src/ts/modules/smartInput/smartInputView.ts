@@ -4,6 +4,11 @@ export type ToolKind = 'mic' | 'attach' | 'photo';
 
 export const TOOL_ORDER: ToolKind[] = ['mic', 'attach', 'photo'];
 
+export interface LensQuickSettingsOption {
+  value: string;
+  label: string;
+}
+
 export interface SmartInputDomRefs {
   attachInput: HTMLInputElement;
   inlineToolHost: HTMLDivElement;
@@ -11,7 +16,7 @@ export interface SmartInputDomRefs {
   lensAttachmentHost: HTMLDivElement;
   lensQuickSettingsActions: HTMLDivElement;
   lensEffortSelect: HTMLSelectElement;
-  lensModelInput: HTMLInputElement;
+  lensModelSelect: HTMLSelectElement;
   lensPermissionSelect: HTMLSelectElement;
   lensPlanSelect: HTMLSelectElement;
   lensQuickSettingsRow: HTMLDivElement;
@@ -27,7 +32,7 @@ interface CreateSmartInputDomArgs {
   createToolsStrip: () => HTMLDivElement;
   onAttachInputChange: (files: FileList) => void;
   onLensEffortChange: () => void;
-  onLensModelInput: () => void;
+  onLensModelChange: () => void;
   onLensPermissionChange: () => void;
   onLensPlanChange: () => void;
   onPhotoInputChange: (files: FileList) => void;
@@ -67,13 +72,10 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   lensQuickSettingsRow.className = 'smart-input-lens-settings';
   lensQuickSettingsRow.hidden = true;
 
-  const lensModelInput = document.createElement('input');
-  lensModelInput.className = 'smart-input-lens-control smart-input-lens-model';
-  lensModelInput.type = 'text';
-  lensModelInput.placeholder = 'Default model';
-  lensModelInput.autocomplete = 'off';
-  lensModelInput.spellcheck = false;
-  lensModelInput.addEventListener('input', args.onLensModelInput);
+  const lensModelSelect = document.createElement('select');
+  lensModelSelect.className = 'smart-input-lens-control';
+  setLensQuickSettingsDropdownOptions(lensModelSelect, [{ value: '', label: 'Default model' }]);
+  lensModelSelect.addEventListener('change', args.onLensModelChange);
 
   const lensEffortSelect = document.createElement('select');
   lensEffortSelect.className = 'smart-input-lens-control';
@@ -116,7 +118,9 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   }
   lensPermissionSelect.addEventListener('change', args.onLensPermissionChange);
 
-  lensQuickSettingsRow.appendChild(createLensQuickSettingsField('Model', lensModelInput));
+  const lensModelDropdown = createLensQuickSettingsDropdown(lensModelSelect);
+  lensModelDropdown.classList.add('smart-input-lens-model');
+  lensQuickSettingsRow.appendChild(createLensQuickSettingsField('Model', lensModelDropdown));
   lensQuickSettingsRow.appendChild(
     createLensQuickSettingsField('Effort', createLensQuickSettingsDropdown(lensEffortSelect)),
   );
@@ -231,7 +235,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     lensAttachmentHost,
     lensQuickSettingsActions,
     lensEffortSelect,
-    lensModelInput,
+    lensModelSelect,
     lensPermissionSelect,
     lensPlanSelect,
     lensQuickSettingsRow,
@@ -350,6 +354,27 @@ export function formatLensQuickSettingsSummary(draft: {
   return parts.join(' · ');
 }
 
+export function setLensQuickSettingsDropdownOptions(
+  select: HTMLSelectElement,
+  options: readonly LensQuickSettingsOption[],
+): void {
+  const previousValue = select.value;
+  select.replaceChildren();
+
+  for (const option of options) {
+    const optionEl = document.createElement('option');
+    optionEl.value = option.value;
+    optionEl.textContent = option.label;
+    select.appendChild(optionEl);
+  }
+
+  if ([...select.options].some((option) => option.value === previousValue)) {
+    select.value = previousValue;
+  }
+
+  select.dispatchEvent(new Event('midterm:options'));
+}
+
 function describeTerminalStatus(inputMode: string | null | undefined): string {
   if (inputMode === 'smartinput') {
     return t('smartInput.modeSmart');
@@ -407,6 +432,28 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     trigger.setAttribute('aria-expanded', 'false');
   };
 
+  const rebuildMenu = (): void => {
+    menu.replaceChildren();
+    for (const option of [...select.options]) {
+      const optionButton = document.createElement('button');
+      optionButton.type = 'button';
+      optionButton.className = 'manager-bar-action-popover-btn smart-input-lens-dropdown-option';
+      optionButton.dataset.value = option.value;
+      optionButton.textContent = option.textContent || option.value;
+      optionButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (select.value !== option.value) {
+          select.value = option.value;
+          select.dispatchEvent(new Event('change', { bubbles: false }));
+        }
+        syncSelection();
+        closeMenu();
+      });
+      menu.appendChild(optionButton);
+    }
+  };
+
   const syncSelection = (): void => {
     const selectedOption = [...select.options].find((option) => option.value === select.value);
     triggerLabel.textContent = selectedOption ? selectedOption.textContent.trim() : '';
@@ -417,24 +464,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
       });
   };
 
-  for (const option of [...select.options]) {
-    const optionButton = document.createElement('button');
-    optionButton.type = 'button';
-    optionButton.className = 'manager-bar-action-popover-btn smart-input-lens-dropdown-option';
-    optionButton.dataset.value = option.value;
-    optionButton.textContent = option.textContent || option.value;
-    optionButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (select.value !== option.value) {
-        select.value = option.value;
-        select.dispatchEvent(new Event('change', { bubbles: false }));
-      }
-      syncSelection();
-      closeMenu();
-    });
-    menu.appendChild(optionButton);
-  }
+  rebuildMenu();
 
   trigger.addEventListener('click', (event) => {
     event.preventDefault();
@@ -467,6 +497,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     }
   });
 
+  select.addEventListener('midterm:options', rebuildMenu as EventListener);
   select.addEventListener('change', syncSelection);
   select.addEventListener('midterm:sync', syncSelection as EventListener);
   syncSelection();

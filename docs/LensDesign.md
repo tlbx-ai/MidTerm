@@ -264,10 +264,12 @@ Future refactors may improve or replace the implementation of any of the above, 
 - That Lens status rail should stay intentionally small and session-oriented.
 - Normal terminal smart input should reuse the same dock shell while keeping Lens-only runtime controls out of ordinary terminal sessions.
 - On desktop, Lens quick settings should read as a low-clutter translucent control rail rather than a full-width form.
+- The model quick setting should use a provider-scoped populated list, while still preserving any current non-preset model already active in the session or draft.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
 - MidTerm's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
 - On mobile, Lens should keep model/effort/plan awareness always visible in the dock status rail and may reveal the full editable quick-settings surface as a compact sheet from that status row.
+- When desktop width becomes constrained enough that the inline quick-settings rail would overflow, Lens should fall back to that same summary-plus-sheet pattern instead of letting controls spill off screen.
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Lens content.
 - Only the prompt textbox's extra multiline growth may expand upward over the pane as overlay chrome; the rest of the Command Bay must remain pane-reserving once the collapsed dock reserve is established.
@@ -377,11 +379,14 @@ Status in this branch/work item:
 - implemented: Lens and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
 - implemented: desktop Lens quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals the editable controls as a compact sheet
+- implemented: Lens model quick settings now use provider-scoped populated lists instead of a freeform textbox, while preserving current non-preset models already present in session state
+- implemented: constrained desktop Lens layouts now collapse quick settings into the same summary-plus-sheet pattern used on mobile instead of allowing the inline rail to run off screen
 - implemented: bookmark-scoped Lens `Resume` now lives inside that quick-settings line as a low-chrome text action directly after `Permissions` instead of as a detached status control
 - implemented: Lens Smart Input now stages file/image selections and clipboard files as removable composer chips, and the `+` / photo actions no longer auto-submit a Lens turn on selection
 - implemented: Lens send now uploads queued composer attachments at send time and submits them together with the current prompt text, including attachment-only turns
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
+- implemented: desktop Lens quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 - implemented: Lens plain `Esc` now interrupts active Lens turns from the composer, touch-controller, focused Lens surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap
 - implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface

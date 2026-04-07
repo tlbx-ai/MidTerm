@@ -29,6 +29,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-lens-settings[hidden] {');
     expect(css).toContain('.smart-input-lens-actions[hidden] {');
     expect(css).toContain('display: none !important;');
+    expect(viewSource).toContain('createLensQuickSettingsDropdown(lensModelSelect)');
     expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
     expect(viewSource).toContain(
       "lensQuickSettingsActions.className = 'smart-input-lens-actions';",
@@ -79,6 +80,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(css).toContain('.smart-input-tools-surface {');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
+    expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
     expect(css).toContain('--command-bay-control-height: 34px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
     expect(css).toContain('align-items: center;');
@@ -104,6 +106,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain(
       "footerStatusHost.classList.add('adaptive-footer-status-sheet-open');",
     );
+    expect(source).toContain('shouldUseCompactLensStatusRail(layoutState)');
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
@@ -112,6 +115,7 @@ describe('smart input tab wiring', () => {
     expect(viewSource).toContain('inputRow.appendChild(toolsPanel);');
     expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
     expect(css).toContain('.smart-input-lens-settings-sheet {');
+    expect(css).toContain('overflow: visible;');
     expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('.smart-input-editor {');
     expect(css).toContain('.smart-input-textarea {');

@@ -25,9 +25,11 @@ import {
 import {
   LENS_QUICK_SETTINGS_CHANGED_EVENT,
   getLensQuickSettingsDraft,
+  getLensQuickSettingsEffective,
   getLensQuickSettingsProvider,
   setLensQuickSettingsDraft,
 } from '../lens/quickSettings';
+import { getLensModelOptions } from '../lens/modelOptions';
 import { shouldShowManagerBar } from '../managerBar/visibility';
 import { onTabActivated } from '../sessionTabs';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
@@ -60,6 +62,7 @@ import {
   formatLensQuickSettingsSummary,
   openFileInputPicker as showSmartInputFilePicker,
   renderTerminalStatusRow,
+  setLensQuickSettingsDropdownOptions,
   type ToolKind,
 } from './smartInputView';
 import {
@@ -97,7 +100,7 @@ let sharedAttachInput: HTMLInputElement | null = null;
 let toolsPanelOpen = false;
 let lensQuickSettingsRow: HTMLDivElement | null = null;
 let lensQuickSettingsActions: HTMLDivElement | null = null;
-let lensModelInput: HTMLInputElement | null = null;
+let lensModelSelect: HTMLSelectElement | null = null;
 let lensEffortSelect: HTMLSelectElement | null = null;
 let lensPlanSelect: HTMLSelectElement | null = null;
 let lensPermissionSelect: HTMLSelectElement | null = null;
@@ -516,14 +519,14 @@ function createDockedDOM(): void {
         effort: lensEffortSelect?.value ?? null,
       });
     },
-    onLensModelInput: () => {
+    onLensModelChange: () => {
       const sessionId = $activeSessionId.get();
       if (!sessionId || !isLensActiveSession(sessionId)) {
         return;
       }
 
       setLensQuickSettingsDraft(sessionId, {
-        model: lensModelInput?.value ?? null,
+        model: lensModelSelect?.value ?? null,
       });
     },
     onLensPermissionChange: () => {
@@ -643,7 +646,7 @@ function createDockedDOM(): void {
 
   lensQuickSettingsRow = dom.lensQuickSettingsRow;
   lensQuickSettingsActions = dom.lensQuickSettingsActions;
-  lensModelInput = dom.lensModelInput;
+  lensModelSelect = dom.lensModelSelect;
   lensEffortSelect = dom.lensEffortSelect;
   lensPlanSelect = dom.lensPlanSelect;
   lensPermissionSelect = dom.lensPermissionSelect;
@@ -802,6 +805,7 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
 
   footerStatusHost.replaceChildren();
   footerStatusHost.classList.remove('adaptive-footer-status-sheet-open');
+  footerStatusHost.dataset.lensCompact = 'false';
   footerStatusHost.toggleAttribute('hidden', !layoutState.showStatus);
   syncLensQuickSettingsControls();
 
@@ -835,7 +839,7 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     !footerStatusHost ||
     !lensQuickSettingsRow ||
     !lensQuickSettingsActions ||
-    !lensModelInput ||
+    !lensModelSelect ||
     !lensEffortSelect ||
     !lensPlanSelect ||
     !lensPermissionSelect
@@ -846,8 +850,10 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   const sessionId = layoutState.activeSessionId as string;
   const draft = getLensQuickSettingsDraft(sessionId);
   syncLensQuickSettingsActions(sessionId);
+  const useCompactRail = shouldUseCompactLensStatusRail(layoutState);
+  footerStatusHost.dataset.lensCompact = useCompactRail ? 'true' : 'false';
 
-  if (!layoutState.isMobile) {
+  if (!useCompactRail) {
     lensQuickSettingsRow.classList.remove('smart-input-lens-settings-sheet');
     lensQuickSettingsRow.hidden = false;
     footerStatusHost.appendChild(lensQuickSettingsRow);
@@ -872,6 +878,15 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     footerStatusHost.classList.add('adaptive-footer-status-sheet-open');
     footerStatusHost.appendChild(lensQuickSettingsRow);
   }
+}
+
+function shouldUseCompactLensStatusRail(layoutState: AdaptiveFooterLayoutState): boolean {
+  if (layoutState.isMobile) {
+    return true;
+  }
+
+  const availableWidth = Math.round(footerDock?.getBoundingClientRect().width ?? window.innerWidth);
+  return availableWidth <= 720;
 }
 
 function syncLensQuickSettingsActions(sessionId: string): void {
@@ -1341,7 +1356,7 @@ function syncLensQuickSettingsControls(): void {
   if (
     !lensQuickSettingsRow ||
     !lensQuickSettingsActions ||
-    !lensModelInput ||
+    !lensModelSelect ||
     !lensEffortSelect ||
     !lensPlanSelect ||
     !lensPermissionSelect
@@ -1365,25 +1380,25 @@ function syncLensQuickSettingsControls(): void {
   const sessionId = visibilityState.activeSessionId as string;
   const provider = getLensQuickSettingsProvider(sessionId);
   const draft = getLensQuickSettingsDraft(sessionId);
+  const effective = getLensQuickSettingsEffective(sessionId);
   if (dockedBar) {
     dockedBar.dataset.lensSession = 'true';
   }
   lensQuickSettingsRow.dataset.provider = provider ?? '';
 
-  const modelPlaceholder =
-    provider === 'claude'
-      ? 'Default Claude model'
-      : provider === 'codex'
-        ? 'Default Codex model'
-        : 'Default model';
-  if (lensModelInput.placeholder !== modelPlaceholder) {
-    lensModelInput.placeholder = modelPlaceholder;
-  }
+  setLensQuickSettingsDropdownOptions(
+    lensModelSelect,
+    getLensModelOptions({
+      provider,
+      currentValues: [draft.model, effective.model],
+    }),
+  );
 
   const modelValue = draft.model ?? '';
-  if (lensModelInput.value !== modelValue) {
-    lensModelInput.value = modelValue;
+  if (lensModelSelect.value !== modelValue) {
+    lensModelSelect.value = modelValue;
   }
+  lensModelSelect.dispatchEvent(new Event('midterm:sync'));
 
   const effortValue = draft.effort ?? '';
   if (lensEffortSelect.value !== effortValue) {
