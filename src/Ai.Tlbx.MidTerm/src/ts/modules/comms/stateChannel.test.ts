@@ -293,6 +293,37 @@ describe('stateChannel browser-ui handling', () => {
     });
   });
 
+  it('does not switch sessions when browser open explicitly disables activation', async () => {
+    const { stores, ws } = await loadHarness();
+    mocks.setWebPreviewTarget.mockResolvedValue({
+      sessionId: 'agent5678',
+      previewName: 'default',
+      routeKey: 'route-1',
+      url: 'http://localhost:3000',
+      active: true,
+      targetRevision: 1,
+    });
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        activateSession: false,
+      }),
+    } as MessageEvent<string>);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.selectSession).not.toHaveBeenCalled();
+    expect(stores.$activeSessionId.get()).toBe('user1234');
+    expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+    expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+  });
+
   it('checks frontend version on state websocket reconnect', async () => {
     const { ws } = await loadHarness();
 

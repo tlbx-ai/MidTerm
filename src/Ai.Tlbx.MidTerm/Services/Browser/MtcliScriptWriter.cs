@@ -230,7 +230,7 @@ public static class MtcliScriptWriter
         mt_open() {
           local url="$1" open_out status
           _MREQUIRECTX "mt_open" || return $?
-          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":false}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
             return $code
@@ -760,7 +760,7 @@ public static class MtcliScriptWriter
         function Mt-Open {
             param([string]$Url)
             _MRequireSessionContext "mt_open"
-            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$false}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
             }
