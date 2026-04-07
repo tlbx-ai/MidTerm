@@ -964,8 +964,12 @@ body.has-app-background::after {
 }
 
 @media (hover: hover) {
-  .session-item:hover {
-    background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
+  .session-item:not(.active):hover {
+    background-color: color-mix(
+      in srgb,
+      var(--sidebar-item-hover-background, var(--bg-session-hover)) 70%,
+      transparent
+    );
     transform: translateX(2px);
     --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
   }

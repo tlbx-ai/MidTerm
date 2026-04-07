@@ -251,6 +251,10 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));',
     );
+    expect(cssSource).toContain('.session-item:not(.active):hover {');
+    expect(cssSource).toContain(
+      'var(--sidebar-item-hover-background, var(--bg-session-hover)) 70%,',
+    );
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
     );
