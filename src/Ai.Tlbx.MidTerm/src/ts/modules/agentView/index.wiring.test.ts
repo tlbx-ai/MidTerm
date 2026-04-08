@@ -138,10 +138,16 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('box-shadow: none;');
     expect(css).toContain('.agent-history-markdown p,');
     expect(css).toContain('.agent-history-markdown .agent-markdown-gap {');
-    expect(css).toContain('height: calc(0.5em * var(--agent-markdown-gap-lines, 1));');
+    expect(css).toContain('height: calc(0.25em * var(--agent-markdown-gap-lines, 1));');
     expect(css).toContain('.agent-history-markdown li + li {');
     expect(css).toContain('.agent-history-markdown li {');
-    expect(css).toContain('line-height: 1.28;');
+    expect(css).toContain('padding-inline-start: 1.65rem;');
+    expect(css).toContain('.agent-history-markdown ul > li::before {');
+    expect(css).toContain(".agent-history-markdown ul > li::before {\n  content: '•';");
+    expect(css).toContain('.agent-history-markdown ol {');
+    expect(css).toContain('counter-reset: agent-history-ordered-list;');
+    expect(css).toContain('.agent-history-markdown ol > li::before {');
+    expect(css).toContain('counter(agent-history-ordered-list)');
     expect(lensDesign).toContain('Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows.');
     expect(lensDesign).toContain('Markdown paragraph and list spacing should be dense and terminal-like.');
     expect(lensDesign).toContain('Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults');
