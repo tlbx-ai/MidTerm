@@ -50,8 +50,10 @@ public sealed partial class MidTermSettingsPublic
             DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
             TerminalEnvironmentVariables = settings.TerminalEnvironmentVariables,
             CodexYoloDefault = settings.CodexYoloDefault,
+            CodexDefaultLensModel = settings.CodexDefaultLensModel,
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
             ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
+            ClaudeDefaultLensModel = settings.ClaudeDefaultLensModel,
             ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
@@ -138,8 +140,10 @@ public sealed partial class MidTermSettingsPublic
         settings.DefaultWorkingDirectory = DefaultWorkingDirectory;
         settings.TerminalEnvironmentVariables = TerminalEnvironmentVariables ?? string.Empty;
         settings.CodexYoloDefault = CodexYoloDefault;
+        settings.CodexDefaultLensModel = CodexDefaultLensModel?.Trim() ?? string.Empty;
         settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
         settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
+        settings.ClaudeDefaultLensModel = ClaudeDefaultLensModel?.Trim() ?? string.Empty;
         settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
         settings.AgentMessageFontFamily = NormalizeAgentMessageFontFamily(
             AgentMessageFontFamily,

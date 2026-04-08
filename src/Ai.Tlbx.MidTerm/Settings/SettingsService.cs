@@ -454,8 +454,10 @@ public sealed class SettingsService
         current.DefaultWorkingDirectory = old.DefaultWorkingDirectory;
         current.TerminalEnvironmentVariables = old.TerminalEnvironmentVariables;
         current.CodexYoloDefault = old.CodexYoloDefault;
+        current.CodexDefaultLensModel = old.CodexDefaultLensModel;
         current.CodexEnvironmentVariables = old.CodexEnvironmentVariables;
         current.ClaudeDangerouslySkipPermissionsDefault = old.ClaudeDangerouslySkipPermissionsDefault;
+        current.ClaudeDefaultLensModel = old.ClaudeDefaultLensModel;
         current.ClaudeEnvironmentVariables = old.ClaudeEnvironmentVariables;
         current.FontSize = old.FontSize;
         current.FontFamily = old.FontFamily;

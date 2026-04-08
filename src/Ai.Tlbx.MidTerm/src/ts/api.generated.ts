@@ -4070,8 +4070,10 @@ export interface components {
       defaultWorkingDirectory: string;
       terminalEnvironmentVariables: string;
       codexYoloDefault: boolean;
+      codexDefaultLensModel: string;
       codexEnvironmentVariables: string;
       claudeDangerouslySkipPermissionsDefault: boolean;
+      claudeDefaultLensModel: string;
       claudeEnvironmentVariables: string;
       agentMessageFontFamily: string;
       showAgentMessageTimestamps: boolean;

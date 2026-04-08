@@ -117,6 +117,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'new-session',
   }),
+  preserveEntry('codexDefaultLensModel', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'string model id, empty allowed',
+    applyMode: 'new-session',
+  }),
   controlEntry('codexEnvironmentVariables', 'setting-codex-env', 'textarea', '', {
     editable: true,
     storage: 'settings.json',
@@ -135,6 +141,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'new-session',
     },
   ),
+  preserveEntry('claudeDefaultLensModel', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'string model id, empty allowed',
+    applyMode: 'new-session',
+  }),
   controlEntry('claudeEnvironmentVariables', 'setting-claude-env', 'textarea', '', {
     editable: true,
     storage: 'settings.json',

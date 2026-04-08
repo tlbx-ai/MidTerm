@@ -144,6 +144,28 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripLensDefaultModels()
+    {
+        var settings = new MidTermSettings
+        {
+            CodexDefaultLensModel = "gpt-5.4-codex",
+            ClaudeDefaultLensModel = "claude-sonnet-4-6"
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal("gpt-5.4-codex", publicSettings.CodexDefaultLensModel);
+        Assert.Equal("claude-sonnet-4-6", publicSettings.ClaudeDefaultLensModel);
+
+        settings.CodexDefaultLensModel = string.Empty;
+        settings.ClaudeDefaultLensModel = string.Empty;
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("gpt-5.4-codex", settings.CodexDefaultLensModel);
+        Assert.Equal("claude-sonnet-4-6", settings.ClaudeDefaultLensModel);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripFontRenderingSettings()
     {
         var settings = new MidTermSettings

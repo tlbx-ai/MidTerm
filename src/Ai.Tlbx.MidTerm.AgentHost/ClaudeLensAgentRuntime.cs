@@ -1134,7 +1134,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
         return LensQuickSettings.CreateSummary(
-            null,
+            LensProviderRuntimeConfiguration.GetClaudeDefaultModel(),
             null,
             LensQuickSettings.PlanModeOff,
             defaultPermissionMode,
@@ -1147,7 +1147,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
         return LensQuickSettings.CreateSummary(
-            request.Model,
+            request.Model ?? LensProviderRuntimeConfiguration.GetClaudeDefaultModel(),
             request.Effort,
             request.PlanMode,
             request.PermissionMode,

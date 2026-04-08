@@ -424,6 +424,7 @@ Status in this branch/work item:
 - implemented: Lens composer attachments now upload as soon as they are staged so image chips render from server-backed file URLs and survive browser refresh; clicking a chip opens the standard file viewer, and Lens send reuses those staged upload paths for mixed or attachment-only turns
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
+- implemented: provider-scoped remembered default Lens models are now persisted in MidTerm-owned settings and seed new Lens sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists
 - implemented: desktop Lens quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 - implemented: Lens plain `Esc` now interrupts active Lens turns from the composer, touch-controller, focused Lens surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap

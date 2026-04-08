@@ -4961,8 +4961,10 @@
           "defaultWorkingDirectory",
           "terminalEnvironmentVariables",
           "codexYoloDefault",
+          "codexDefaultLensModel",
           "codexEnvironmentVariables",
           "claudeDangerouslySkipPermissionsDefault",
+          "claudeDefaultLensModel",
           "claudeEnvironmentVariables",
           "agentMessageFontFamily",
           "showAgentMessageTimestamps",
@@ -5054,11 +5056,17 @@
           "codexYoloDefault": {
             "type": "boolean"
           },
+          "codexDefaultLensModel": {
+            "type": "string"
+          },
           "codexEnvironmentVariables": {
             "type": "string"
           },
           "claudeDangerouslySkipPermissionsDefault": {
             "type": "boolean"
+          },
+          "claudeDefaultLensModel": {
+            "type": "string"
           },
           "claudeEnvironmentVariables": {
             "type": "string"

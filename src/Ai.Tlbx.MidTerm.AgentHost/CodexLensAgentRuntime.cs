@@ -1952,7 +1952,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
         return LensQuickSettings.CreateSummary(
-            null,
+            LensProviderRuntimeConfiguration.GetCodexDefaultModel(),
             null,
             LensQuickSettings.PlanModeOff,
             defaultPermissionMode,
@@ -1965,7 +1965,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
         return LensQuickSettings.CreateSummary(
-            request.Model,
+            request.Model ?? LensProviderRuntimeConfiguration.GetCodexDefaultModel(),
             request.Effort,
             request.PlanMode,
             request.PermissionMode,

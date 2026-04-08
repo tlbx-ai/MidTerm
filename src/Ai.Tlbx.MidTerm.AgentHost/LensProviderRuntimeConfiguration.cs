@@ -5,7 +5,9 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 internal static class LensProviderRuntimeConfiguration
 {
     private const string CodexYoloDefaultEnvironmentVariable = "MIDTERM_LENS_CODEX_YOLO_DEFAULT";
+    private const string CodexDefaultModelEnvironmentVariable = "MIDTERM_LENS_CODEX_DEFAULT_MODEL";
     private const string CodexEnvironmentVariablesEnvironmentVariable = "MIDTERM_LENS_CODEX_ENVIRONMENT_VARIABLES";
+    private const string ClaudeDefaultModelEnvironmentVariable = "MIDTERM_LENS_CLAUDE_DEFAULT_MODEL";
     private const string ClaudeEnvironmentVariablesEnvironmentVariable = "MIDTERM_LENS_CLAUDE_ENVIRONMENT_VARIABLES";
     private const string ClaudeDangerouslySkipPermissionsEnvironmentVariable = "MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS";
 
@@ -63,9 +65,20 @@ internal static class LensProviderRuntimeConfiguration
     public static bool GetCodexYoloDefault()
     {
         return bool.TryParse(
-                   Environment.GetEnvironmentVariable(CodexYoloDefaultEnvironmentVariable),
-                   out var enabled) &&
+            Environment.GetEnvironmentVariable(CodexYoloDefaultEnvironmentVariable),
+            out var enabled) &&
                enabled;
+    }
+
+    public static string? GetCodexDefaultModel()
+    {
+        return NormalizeOptionalValue(Environment.GetEnvironmentVariable(CodexDefaultModelEnvironmentVariable))
+               ?? "gpt-5.4";
+    }
+
+    public static string? GetClaudeDefaultModel()
+    {
+        return NormalizeOptionalValue(Environment.GetEnvironmentVariable(ClaudeDefaultModelEnvironmentVariable));
     }
 
     private static IReadOnlyDictionary<string, string> ReadEnvironmentVariables(string provider)
@@ -128,6 +141,11 @@ internal static class LensProviderRuntimeConfiguration
         }
 
         return true;
+    }
+
+    private static string? NormalizeOptionalValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static IReadOnlyDictionary<string, string> Empty { get; } = new Dictionary<string, string>(0, StringComparer.Ordinal);
