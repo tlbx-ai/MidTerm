@@ -285,6 +285,9 @@ async function activateAgentView(sessionId: string): Promise<void> {
 
   if (state.snapshot && state.disconnectStream && state.streamConnected) {
     renderCurrentAgentView(sessionId, { immediate: true });
+    if (state.historyAutoScrollPinned && state.snapshot.hasNewerHistory) {
+      void refreshLensSnapshot(sessionId, { latestWindow: true });
+    }
     return;
   }
 
@@ -823,6 +826,9 @@ async function compactHiddenLensSessionHistory(
 
       applyLensSnapshotWindowState(current, latestSnapshot);
       current.snapshot = latestSnapshot;
+      if (isLensViewVisible(sessionId, current)) {
+        renderCurrentAgentView(sessionId, { immediate: true });
+      }
       return;
     } catch (error) {
       log.warn(() => `Failed to compact hidden Lens history for ${sessionId}: ${String(error)}`);

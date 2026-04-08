@@ -1359,6 +1359,66 @@ describe('agentView dev errors', () => {
     expect(historyHost.scrollTop).toBe(0);
   });
 
+  it('re-entering a still-connected Lens tab refreshes the latest history window when the cached window is stale', async () => {
+    const disconnectStream = vi.fn();
+    openLensEventStream.mockImplementation((...args: any[]) => {
+      const handlers = args[4];
+      handlers?.onOpen?.();
+      return disconnectStream;
+    });
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot.mockResolvedValue(
+      createSnapshot({
+        latestSequence: 40,
+        totalHistoryCount: 400,
+        historyWindowStart: 160,
+        historyWindowEnd: 240,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+        transcript: Array.from({ length: 80 }, (_value, index) => ({
+          entryId: `assistant:${index + 161}`,
+          turnId: 'turn-1',
+          itemId: `assistant-${index + 161}`,
+          requestId: null,
+          order: index + 161,
+          kind: 'assistant',
+          status: 'completed',
+          title: 'Assistant',
+          body: `Historical row ${index + 161}`,
+          updatedAt: '2026-03-28T11:00:00Z',
+          streaming: false,
+          attachments: [],
+          createdAt: '2026-03-28T11:00:00Z',
+        })),
+      }),
+    );
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+    });
+
+    getLensSnapshot.mockClear();
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensSnapshot).toHaveBeenCalledWith('s1', undefined, 80);
+    });
+  });
+
   it('returning from browser background snaps the active Lens session back to the live edge', async () => {
     const disconnectStream = vi.fn();
     openLensEventStream.mockReturnValue(disconnectStream);

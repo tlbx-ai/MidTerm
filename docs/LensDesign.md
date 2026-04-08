@@ -404,6 +404,7 @@ Status in this branch/work item:
 - implemented: visible-row virtualization now prefers browser-measured row heights over static heuristics and keeps those measurements as the render window shifts
 - implemented: older-history paging now restores scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
 - implemented: when off-window canonical history changes arrive while the user is browsing older history, Lens now refreshes that window instead of silently leaving remote spacer geometry stale
+- implemented: when a hidden Lens session returns to view while its cached browser window is still off the live edge, Lens now refreshes the latest window and rerenders immediately when hidden-history compaction finishes so the viewport does not strand the user inside spacer-only voids
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
