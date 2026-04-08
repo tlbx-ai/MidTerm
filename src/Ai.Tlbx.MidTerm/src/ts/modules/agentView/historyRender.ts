@@ -265,12 +265,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     entry: LensHistoryEntry,
     state: SessionLensViewState | undefined,
   ): string {
-    if (entry.kind !== 'assistant' || !state) {
-      return '';
-    }
-
-    const previews = state.assistantMarkdownCache.get(entry.id)?.imagePreviews ?? [];
-    return previews.map((preview) => preview.resolvedPath).join('|');
+    void state;
+    return (entry.imagePreviews ?? []).map((preview) => preview.resolvedPath).join('|');
   }
 
   function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {

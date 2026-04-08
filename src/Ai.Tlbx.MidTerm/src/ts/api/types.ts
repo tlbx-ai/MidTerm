@@ -73,6 +73,25 @@ export interface LensAttachmentReference {
   displayName?: string | null;
 }
 
+export interface LensInlineFileReference {
+  field: 'title' | 'body' | 'commandText';
+  displayText: string;
+  path: string;
+  pathKind: 'absolute' | 'relative';
+  resolvedPath?: string | null;
+  exists: boolean;
+  isDirectory: boolean;
+  mimeType?: string | null;
+  line?: number | null;
+  column?: number | null;
+}
+
+export interface LensInlineImagePreview {
+  displayPath: string;
+  resolvedPath: string;
+  mimeType?: string | null;
+}
+
 export interface LensCommandAcceptedResponse {
   sessionId: string;
   status: string;
@@ -299,6 +318,8 @@ export interface LensPulseHistoryEntry {
   commandText?: string | null;
   body: string;
   attachments: LensAttachmentReference[];
+  fileMentions?: LensInlineFileReference[];
+  imagePreviews?: LensInlineImagePreview[];
   streaming: boolean;
   createdAt: string;
   updatedAt: string;

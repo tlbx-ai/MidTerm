@@ -50,8 +50,12 @@ public sealed partial class SessionLensPulseService
         SettingsService? settingsService = null,
         string? storeDirectory = null,
         bool? enableScreenLogging = null,
-        string? screenLogDirectory = null)
+        string? screenLogDirectory = null,
+        TtyHostSessionManager? sessionManager = null,
+        SessionPathAllowlistService? allowlistService = null)
     {
+        _sessionManager = sessionManager;
+        _allowlistService = allowlistService;
         _storeDirectory = storeDirectory ??
                           (settingsService is not null
                               ? Path.Combine(settingsService.SettingsDirectory, "lens-history")
@@ -709,7 +713,7 @@ public sealed partial class SessionLensPulseService
         }
     }
 
-    private static LensPulseSnapshotResponse CloneSnapshot(
+    private LensPulseSnapshotResponse CloneSnapshot(
         string sessionId,
         long latestSequence,
         LensConversationState state,
@@ -737,7 +741,7 @@ public sealed partial class SessionLensPulseService
         var historySlice = orderedHistory
             .Skip(boundedStart)
             .Take(boundedCount)
-            .Select(CloneTranscriptEntry)
+            .Select(entry => CloneTranscriptEntry(sessionId, entry))
             .ToList();
         var historyWindowEnd = boundedStart + historySlice.Count;
         var estimatedHistoryBeforeWindowPx = estimatedHeights.Take(boundedStart).Sum();
@@ -931,7 +935,7 @@ public sealed partial class SessionLensPulseService
         };
     }
 
-    private static LensPulseDeltaResponse BuildDelta(
+    private LensPulseDeltaResponse BuildDelta(
         string sessionId,
         long latestSequence,
         LensConversationState state,
@@ -956,7 +960,7 @@ public sealed partial class SessionLensPulseService
             QuickSettings = CloneQuickSettingsSummary(state.QuickSettings),
             Streams = CloneStreamsSummary(state.Streams),
             HistoryUpserts = historyIds
-                .Select(id => state.TranscriptEntries.TryGetValue(id, out var entry) ? CloneTranscriptEntry(entry) : null)
+                .Select(id => state.TranscriptEntries.TryGetValue(id, out var entry) ? CloneTranscriptEntry(sessionId, entry) : null)
                 .Where(static entry => entry is not null)
                 .Select(static entry => entry!)
                 .OrderBy(entry => entry.Order)
@@ -2020,9 +2024,12 @@ public sealed partial class SessionLensPulseService
             CommandText = source.CommandText,
             Body = source.Body,
             Attachments = CloneAttachments(source.Attachments),
+            FileMentions = CloneInlineFileReferences(source.FileMentions),
+            ImagePreviews = CloneInlineImagePreviews(source.ImagePreviews),
             Streaming = source.Streaming,
             CreatedAt = source.CreatedAt,
-            UpdatedAt = source.UpdatedAt
+            UpdatedAt = source.UpdatedAt,
+            EnrichmentSourceSignature = source.EnrichmentSourceSignature
         };
     }
 
@@ -2043,6 +2050,11 @@ public sealed partial class SessionLensPulseService
         var charsPerLine = Math.Max(18, (int)Math.Floor(contentWidth / averageCharWidthPx));
         var textLines = EstimateWrappedTextLines(entry.Body, charsPerLine);
         var bodyHeight = Math.Min(420, 18 * textLines);
+        if (entry.ImagePreviews.Count > 0)
+        {
+            var previewRows = (int)Math.Ceiling(entry.ImagePreviews.Count / 3d);
+            bodyHeight += previewRows * 128 + 12;
+        }
         return ResolveTranscriptBaseHeightPx(entry.Kind) + bodyHeight;
     }
 

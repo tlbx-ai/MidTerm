@@ -344,6 +344,8 @@ function cloneSnapshotHistoryEntry(entry: LensPulseHistoryEntry): LensPulseHisto
   return {
     ...entry,
     attachments: cloneHistoryAttachments(entry.attachments),
+    fileMentions: (entry.fileMentions ?? []).map((mention) => ({ ...mention })),
+    imagePreviews: (entry.imagePreviews ?? []).map((preview) => ({ ...preview })),
   };
 }
 

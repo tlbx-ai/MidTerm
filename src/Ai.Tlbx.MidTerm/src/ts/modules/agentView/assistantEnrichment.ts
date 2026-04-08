@@ -4,6 +4,7 @@ import {
   resolveFilePath,
   type FilePathInfo,
 } from '../../api/client';
+import type { LensInlineFileReference, LensInlineImagePreview } from '../../api/types';
 import {
   QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL,
   RELATIVE_PATH_PATTERN,
@@ -15,14 +16,6 @@ import {
   normalizePathCandidate,
   shouldRejectRelativeMatch,
 } from '../terminal/fileRadar.patterns';
-import type {
-  AssistantImageCandidate,
-  AssistantImagePreview,
-  AssistantMarkdownCacheEntry,
-  LensHistoryEntry,
-  SessionLensViewState,
-} from './types';
-
 const IMAGE_EXTENSION_PATTERN = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|tiff?|webp)$/i;
 const BARE_URL_PATTERN = /(?:https?:\/\/|mailto:|www\.)[^\s<>"')\]]+/gi;
 const GIT_HASH_PATTERN = /\b[0-9a-f]{7,40}\b/gi;
@@ -42,6 +35,10 @@ export interface AssistantInlineToken {
   href?: string;
   filePath?: string;
   filePathKind?: 'absolute' | 'relative';
+  resolvedPath?: string;
+  exists?: boolean;
+  isDirectory?: boolean;
+  mimeType?: string | null;
   line?: number | null;
   column?: number | null;
   hash?: string;
@@ -49,7 +46,6 @@ export interface AssistantInlineToken {
 
 interface HtmlBuildResult {
   html: string;
-  imageCandidates: AssistantImageCandidate[];
 }
 
 interface HtmlElementFactory {
@@ -69,6 +65,14 @@ interface ResolvedFilePathData {
   mimeType?: string | null;
   modified?: string | null;
   isText?: boolean | null;
+}
+
+interface AssistantImageCandidate {
+  displayText: string;
+  normalizedPath: string;
+  pathKind: 'absolute' | 'relative';
+  line?: number | null;
+  column?: number | null;
 }
 
 function isRootedPath(path: string): boolean {
@@ -313,6 +317,87 @@ function collectRelativePathMatches(
   }
 }
 
+function collectProvidedFileMatches(
+  text: string,
+  matches: AssistantInlineToken[],
+  fileMentions: readonly LensInlineFileReference[],
+  imageCandidates: Map<string, AssistantImageCandidate>,
+): void {
+  const sortedMentions = [...fileMentions].sort(
+    (left, right) => right.displayText.length - left.displayText.length,
+  );
+  for (const mention of sortedMentions) {
+    const displayText = mention.displayText.trim();
+    const filePath = mention.path.trim();
+    if (!displayText || !filePath) {
+      continue;
+    }
+
+    let searchStart = 0;
+    while (searchStart < text.length) {
+      const tokenStart = text.indexOf(displayText, searchStart);
+      if (tokenStart < 0) {
+        break;
+      }
+
+      const tokenEnd = tokenStart + displayText.length;
+      addMatch(
+        matches,
+        createProvidedFileToken(mention, displayText, filePath, tokenStart, tokenEnd),
+      );
+      addProvidedImageCandidate(imageCandidates, mention, displayText);
+
+      searchStart = tokenEnd;
+    }
+  }
+}
+
+function createProvidedFileToken(
+  mention: LensInlineFileReference,
+  displayText: string,
+  filePath: string,
+  start: number,
+  end: number,
+): AssistantInlineToken {
+  const token: AssistantInlineToken = {
+    kind: 'file',
+    start,
+    end,
+    text: displayText,
+    filePath,
+    filePathKind: mention.pathKind,
+    exists: mention.exists,
+    isDirectory: mention.isDirectory,
+    line: mention.line ?? null,
+    column: mention.column ?? null,
+  };
+  if (mention.resolvedPath) {
+    token.resolvedPath = mention.resolvedPath;
+  }
+  if (mention.mimeType) {
+    token.mimeType = mention.mimeType;
+  }
+  return token;
+}
+
+function addProvidedImageCandidate(
+  imageCandidates: Map<string, AssistantImageCandidate>,
+  mention: LensInlineFileReference,
+  displayText: string,
+): void {
+  if (!mention.resolvedPath || mention.isDirectory || !isImagePath(mention.resolvedPath)) {
+    return;
+  }
+
+  imageCandidates.set(`${mention.pathKind}:${mention.resolvedPath}`, {
+    displayText,
+    normalizedPath: mention.resolvedPath,
+    pathKind: mention.pathKind,
+    line: mention.line ?? null,
+    column: mention.column ?? null,
+  });
+}
+
 function collectGitHashMatches(text: string, matches: AssistantInlineToken[]): void {
   GIT_HASH_PATTERN.lastIndex = 0;
   for (const match of text.matchAll(GIT_HASH_PATTERN)) {
@@ -390,33 +475,47 @@ function collectTableRuleMatches(text: string, matches: AssistantInlineToken[]):
 function buildInlineMatches(
   text: string,
   imageCandidates: Map<string, AssistantImageCandidate>,
+  fileMentions?: readonly LensInlineFileReference[],
 ): AssistantInlineToken[] {
   const matches: AssistantInlineToken[] = [];
   collectBareUrlMatches(text, matches);
-  collectAbsolutePathMatches(
-    text,
-    QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL,
-    'absolute',
-    matches,
-    imageCandidates,
-  );
-  collectAbsolutePathMatches(text, UNC_PATH_PATTERN_GLOBAL, 'absolute', matches, imageCandidates);
-  collectAbsolutePathMatches(text, WIN_PATH_PATTERN_GLOBAL, 'absolute', matches, imageCandidates);
-  collectAbsolutePathMatches(text, UNIX_PATH_PATTERN_GLOBAL, 'absolute', matches, imageCandidates);
-  collectRelativePathMatches(text, matches, imageCandidates);
+  if (fileMentions && fileMentions.length > 0) {
+    collectProvidedFileMatches(text, matches, fileMentions, imageCandidates);
+  } else {
+    collectAbsolutePathMatches(
+      text,
+      QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL,
+      'absolute',
+      matches,
+      imageCandidates,
+    );
+    collectAbsolutePathMatches(text, UNC_PATH_PATTERN_GLOBAL, 'absolute', matches, imageCandidates);
+    collectAbsolutePathMatches(text, WIN_PATH_PATTERN_GLOBAL, 'absolute', matches, imageCandidates);
+    collectAbsolutePathMatches(
+      text,
+      UNIX_PATH_PATTERN_GLOBAL,
+      'absolute',
+      matches,
+      imageCandidates,
+    );
+    collectRelativePathMatches(text, matches, imageCandidates);
+  }
   collectGitHashMatches(text, matches);
   collectNumberMatches(text, matches);
   collectTableRuleMatches(text, matches);
   return matches.sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
-export function scanAssistantTextEnrichment(text: string): {
+export function scanAssistantTextEnrichment(
+  text: string,
+  fileMentions?: readonly LensInlineFileReference[],
+): {
   tokens: AssistantInlineToken[];
   imageCandidates: AssistantImageCandidate[];
 } {
   const imageCandidates = new Map<string, AssistantImageCandidate>();
   return {
-    tokens: buildInlineMatches(text, imageCandidates),
+    tokens: buildInlineMatches(text, imageCandidates, fileMentions),
     imageCandidates: [...imageCandidates.values()].slice(0, MAX_IMAGE_CANDIDATES),
   };
 }
@@ -431,7 +530,7 @@ function shouldSkipTextNode(node: Text): boolean {
     return true;
   }
 
-  const disallowed = parent.closest('a, code, pre, table, thead, tbody, tr, th, td');
+  const disallowed = parent.closest('a');
   return disallowed !== null;
 }
 
@@ -458,32 +557,31 @@ function collectEligibleTextNodes(root: Node): Text[] {
 function createInlineMatchNode(htmlFactory: HtmlElementFactory, match: AssistantInlineToken): Node {
   switch (match.kind) {
     case 'url': {
-      const link = htmlFactory.createElement('a');
-      link.className = 'agent-history-inline-link agent-history-inline-url';
+      const link = createInlineLink(
+        htmlFactory,
+        'agent-history-inline-link agent-history-inline-url',
+      );
       link.href = match.href ?? match.text;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
       link.textContent = match.text;
       return link;
     }
     case 'file': {
-      const link = htmlFactory.createElement('a');
-      link.className = 'agent-history-inline-link agent-history-inline-file';
+      const link = createInlineLink(
+        htmlFactory,
+        'agent-history-inline-link agent-history-inline-file',
+      );
       link.href = '#';
       link.dataset.filePath = match.filePath ?? '';
       link.dataset.filePathKind = match.filePathKind ?? 'absolute';
-      if (typeof match.line === 'number') {
-        link.dataset.fileLine = String(match.line);
-      }
-      if (typeof match.column === 'number') {
-        link.dataset.fileColumn = String(match.column);
-      }
+      applyFileLinkDataset(link, match);
       link.textContent = match.text;
       return link;
     }
     case 'git': {
-      const link = htmlFactory.createElement('a');
-      link.className = 'agent-history-inline-link agent-history-inline-git-hash';
+      const link = createInlineLink(
+        htmlFactory,
+        'agent-history-inline-link agent-history-inline-git-hash',
+      );
       link.href = '#';
       link.dataset.gitHash = match.hash ?? match.text;
       link.textContent = match.text;
@@ -504,13 +602,43 @@ function createInlineMatchNode(htmlFactory: HtmlElementFactory, match: Assistant
   }
 }
 
+function createInlineLink(htmlFactory: HtmlElementFactory, className: string): HTMLAnchorElement {
+  const link = htmlFactory.createElement('a');
+  link.className = className;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  return link;
+}
+
+function applyFileLinkDataset(link: HTMLAnchorElement, match: AssistantInlineToken): void {
+  if (match.resolvedPath) {
+    link.dataset.fileResolvedPath = match.resolvedPath;
+  }
+  if (typeof match.exists === 'boolean') {
+    link.dataset.fileExists = match.exists ? 'true' : 'false';
+  }
+  if (typeof match.isDirectory === 'boolean') {
+    link.dataset.fileIsDirectory = match.isDirectory ? 'true' : 'false';
+  }
+  if (match.mimeType) {
+    link.dataset.fileMimeType = match.mimeType;
+  }
+  if (typeof match.line === 'number') {
+    link.dataset.fileLine = String(match.line);
+  }
+  if (typeof match.column === 'number') {
+    link.dataset.fileColumn = String(match.column);
+  }
+}
+
 function buildReplacementFragment(
   documentRef: Document,
   text: string,
   imageCandidates: Map<string, AssistantImageCandidate>,
+  fileMentions?: readonly LensInlineFileReference[],
 ): DocumentFragment | null {
   const htmlFactory = createHtmlElementFactory(documentRef);
-  const matches = buildInlineMatches(text, imageCandidates);
+  const matches = buildInlineMatches(text, imageCandidates, fileMentions);
   if (matches.length === 0) {
     return null;
   }
@@ -532,7 +660,10 @@ function buildReplacementFragment(
   return fragment;
 }
 
-export function buildAssistantEnrichedHtml(markdownHtml: string): HtmlBuildResult {
+export function buildAssistantEnrichedHtml(
+  markdownHtml: string,
+  fileMentions?: readonly LensInlineFileReference[],
+): HtmlBuildResult {
   const documentRef = document;
   const htmlFactory = createHtmlElementFactory(documentRef);
   const container = htmlFactory.createElement('div');
@@ -542,7 +673,7 @@ export function buildAssistantEnrichedHtml(markdownHtml: string): HtmlBuildResul
 
   for (const textNode of textNodes) {
     const text = textNode.textContent;
-    const replacement = buildReplacementFragment(documentRef, text, imageCandidates);
+    const replacement = buildReplacementFragment(documentRef, text, imageCandidates, fileMentions);
     if (replacement) {
       textNode.replaceWith(replacement);
     }
@@ -554,10 +685,27 @@ export function buildAssistantEnrichedHtml(markdownHtml: string): HtmlBuildResul
     }
   }
 
-  return {
-    html: container.innerHTML,
-    imageCandidates: [...imageCandidates.values()].slice(0, MAX_IMAGE_CANDIDATES),
-  };
+  return { html: container.innerHTML };
+}
+
+export function enrichInteractiveTextContent(
+  container: HTMLElement,
+  fileMentions?: readonly LensInlineFileReference[],
+): void {
+  if (!fileMentions || fileMentions.length === 0) {
+    return;
+  }
+
+  const documentRef = container.ownerDocument;
+  const imageCandidates = new Map<string, AssistantImageCandidate>();
+  const textNodes = collectEligibleTextNodes(container);
+  for (const textNode of textNodes) {
+    const text = textNode.textContent;
+    const replacement = buildReplacementFragment(documentRef, text, imageCandidates, fileMentions);
+    if (replacement) {
+      textNode.replaceWith(replacement);
+    }
+  }
 }
 
 async function ensureAbsoluteFileInfo(
@@ -625,65 +773,6 @@ async function resolveAssistantFileReference(
   }
 }
 
-async function resolveImageCandidatePreview(
-  sessionId: string,
-  candidate: AssistantImageCandidate,
-): Promise<AssistantImagePreview | null> {
-  const resolved = await resolveAssistantFileReference(
-    sessionId,
-    candidate.normalizedPath,
-    candidate.pathKind,
-  );
-  if (!resolved?.info.exists || resolved.info.isDirectory) {
-    return null;
-  }
-
-  const mimeType = resolved.info.mimeType ?? '';
-  if (!mimeType.startsWith('image/') && !isImagePath(resolved.resolvedPath)) {
-    return null;
-  }
-
-  return {
-    resolvedPath: resolved.resolvedPath,
-    displayPath: candidate.displayText,
-    mimeType: mimeType || null,
-  };
-}
-
-export async function ensureAssistantImagePreviews(
-  sessionId: string,
-  entry: LensHistoryEntry,
-  cache: AssistantMarkdownCacheEntry,
-  state: SessionLensViewState,
-  rerender: (sessionId: string) => void,
-): Promise<void> {
-  if (entry.live || cache.imagePreviewResolutionStarted || cache.imageCandidates.length === 0) {
-    return;
-  }
-
-  cache.imagePreviewResolutionStarted = true;
-  const previews = (
-    await Promise.all(
-      cache.imageCandidates.map((candidate) => resolveImageCandidatePreview(sessionId, candidate)),
-    )
-  ).filter((preview): preview is AssistantImagePreview => preview !== null);
-
-  const currentCache = state.assistantMarkdownCache.get(entry.id);
-  if (!currentCache || currentCache !== cache || currentCache.body !== entry.body) {
-    return;
-  }
-
-  const nextToken = previews.map((preview) => preview.resolvedPath).join('|');
-  const currentToken = currentCache.imagePreviews.map((preview) => preview.resolvedPath).join('|');
-  if (nextToken === currentToken) {
-    currentCache.imagePreviews = previews;
-    return;
-  }
-
-  currentCache.imagePreviews = previews;
-  rerender(sessionId);
-}
-
 export function wireAssistantInteractiveContent(container: HTMLElement, sessionId: string): void {
   for (const link of queryAll<HTMLAnchorElement>(container, 'a[data-file-path]')) {
     if (link.dataset.assistantLinkBound === 'true') {
@@ -695,11 +784,27 @@ export function wireAssistantInteractiveContent(container: HTMLElement, sessionI
       event.preventDefault();
       const filePath = link.dataset.filePath;
       const pathKind = link.dataset.filePathKind === 'relative' ? 'relative' : 'absolute';
+      const resolvedPath = link.dataset.fileResolvedPath;
+      const exists = link.dataset.fileExists === 'true';
+      const isDirectory = link.dataset.fileIsDirectory === 'true';
+      const mimeType = link.dataset.fileMimeType ?? '';
       if (!filePath) {
         return;
       }
 
       void (async () => {
+        if (resolvedPath && exists) {
+          await openAssistantFile(resolvedPath, {
+            exists: true,
+            isDirectory,
+            size: null,
+            mimeType,
+            modified: null,
+            isText: !isDirectory && !mimeType.startsWith('image/'),
+          });
+          return;
+        }
+
         const resolved = await resolveAssistantFileReference(sessionId, filePath, pathKind);
         if (!resolved?.info.exists) {
           return;
@@ -731,7 +836,7 @@ export function wireAssistantInteractiveContent(container: HTMLElement, sessionI
 export function createAssistantImagePreviewBlock(
   documentRef: Document,
   sessionId: string,
-  previews: readonly AssistantImagePreview[],
+  previews: readonly LensInlineImagePreview[],
 ): HTMLElement | null {
   if (previews.length === 0) {
     return null;

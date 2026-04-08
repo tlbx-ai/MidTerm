@@ -11729,18 +11729,21 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   text-underline-offset: 2px;
 }
 
-.agent-history-markdown .agent-history-inline-link {
+.agent-history-inline-link {
+  color: color-mix(in srgb, var(--accent-cyan) 82%, white 10%);
+  font: inherit;
+  line-height: inherit;
+  text-decoration:
+    underline
+    dotted
+    color-mix(in srgb, var(--accent-cyan) 58%, transparent);
   text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
-.agent-history-markdown .agent-history-inline-file,
-.agent-history-markdown .agent-history-inline-git-hash {
-  font-family: var(--agent-history-mono-font-family, var(--font-mono));
-}
-
-.agent-history-markdown .agent-history-inline-file {
-  color: color-mix(in srgb, var(--accent-cyan) 76%, var(--text-primary) 24%);
-  text-decoration-color: color-mix(in srgb, var(--accent-cyan) 38%, transparent);
+.agent-history-inline-file,
+.agent-history-inline-git-hash {
+  color: color-mix(in srgb, var(--accent-cyan) 88%, white 6%);
 }
 
 .agent-history-markdown .agent-history-inline-git-hash {

@@ -4,7 +4,7 @@ import { renderMarkdownFragment } from '../../utils/markdown';
 import {
   buildAssistantEnrichedHtml,
   createAssistantImagePreviewBlock,
-  ensureAssistantImagePreviews,
+  enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
 import type { LensPulseRequestSummary } from '../../api/client';
@@ -103,6 +103,38 @@ function createDiffLineNumberNode(value: number | undefined, lane: 'old' | 'new'
   return cell;
 }
 
+function getEntryFileMentions(entry: LensHistoryEntry, field: 'title' | 'body' | 'commandText') {
+  return (entry.fileMentions ?? []).filter((mention) => mention.field === field);
+}
+
+function appendEntryImagePreviews(
+  body: HTMLElement,
+  entry: LensHistoryEntry,
+  sessionId: string,
+): void {
+  const previewBlock = createAssistantImagePreviewBlock(
+    document,
+    sessionId,
+    entry.imagePreviews ?? [],
+  );
+  if (previewBlock) {
+    body.appendChild(previewBlock);
+  }
+}
+
+function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
+  if (container.childElementCount !== 1) {
+    return;
+  }
+
+  const first = container.firstElementChild;
+  if (!first || first.tagName !== 'P' || first.attributes.length > 0) {
+    return;
+  }
+
+  container.innerHTML = first.innerHTML;
+}
+
 export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
     const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
@@ -179,7 +211,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
 
     article.appendChild(createHistoryHeader(entry, sessionId));
-    appendHistoryTitle(article, entry);
+    appendHistoryTitle(article, entry, sessionId);
     appendHistoryBody(article, entry, sessionId);
 
     const attachmentBlock = createHistoryAttachmentBlock(sessionId, entry.attachments);
@@ -250,7 +282,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return header;
   }
 
-  function appendHistoryTitle(article: HTMLElement, entry: LensHistoryEntry): void {
+  function appendHistoryTitle(
+    article: HTMLElement,
+    entry: LensHistoryEntry,
+    sessionId: string,
+  ): void {
     const titleText = normalizeHistoryTitle(entry);
     if (!titleText) {
       return;
@@ -259,6 +295,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     const title = document.createElement('div');
     title.className = 'agent-history-title';
     title.textContent = titleText;
+    enrichInteractiveTextContent(title, getEntryFileMentions(entry, 'title'));
+    wireAssistantInteractiveContent(title, sessionId);
     article.appendChild(title);
   }
 
@@ -293,14 +331,20 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         const body = document.createElement('div');
         body.className = 'agent-history-body';
         body.textContent = entry.body;
+        enrichInteractiveTextContent(body, getEntryFileMentions(entry, 'body'));
+        wireAssistantInteractiveContent(body, sessionId);
+        appendEntryImagePreviews(body, entry, sessionId);
         return body;
       }
       case 'command':
-        return createCommandHistoryBody(entry);
+        return createCommandHistoryBody(entry, sessionId);
       case 'streaming': {
         const body = document.createElement('div');
         body.className = 'agent-history-body agent-history-streaming-body';
         body.textContent = entry.body;
+        enrichInteractiveTextContent(body, getEntryFileMentions(entry, 'body'));
+        wireAssistantInteractiveContent(body, sessionId);
+        appendEntryImagePreviews(body, entry, sessionId);
         return body;
       }
       case 'markdown': {
@@ -313,24 +357,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         collapseSingleParagraphMarkdownBody(content);
         wireAssistantInteractiveContent(content, sessionId);
         body.appendChild(content);
-        const state = deps.getState(sessionId);
-        if (state) {
-          void ensureAssistantImagePreviews(
-            sessionId,
-            entry,
-            cache,
-            state,
-            deps.renderCurrentAgentView,
-          );
-        }
-        const previewBlock = createAssistantImagePreviewBlock(
-          document,
-          sessionId,
-          cache.imagePreviews,
-        );
-        if (previewBlock) {
-          body.appendChild(previewBlock);
-        }
+        appendEntryImagePreviews(body, entry, sessionId);
         return body;
       }
       case 'diff':
@@ -339,12 +366,15 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         const body = document.createElement('pre');
         body.className = 'agent-history-body';
         body.textContent = entry.body;
+        enrichInteractiveTextContent(body, getEntryFileMentions(entry, 'body'));
+        wireAssistantInteractiveContent(body, sessionId);
+        appendEntryImagePreviews(body, entry, sessionId);
         return body;
       }
     }
   }
 
-  function createCommandHistoryBody(entry: LensHistoryEntry): HTMLElement {
+  function createCommandHistoryBody(entry: LensHistoryEntry, sessionId: string): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
     const commandLine = document.createElement('div');
@@ -360,15 +390,20 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       part.textContent = token.text;
       commandLine.appendChild(part);
     }
+    enrichInteractiveTextContent(commandLine, getEntryFileMentions(entry, 'commandText'));
+    wireAssistantInteractiveContent(commandLine, sessionId);
 
     body.appendChild(commandLine);
     if ((entry.commandOutputTail?.length ?? 0) > 0) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
       output.textContent = entry.commandOutputTail?.join('\n') ?? '';
+      enrichInteractiveTextContent(output, getEntryFileMentions(entry, 'body'));
+      wireAssistantInteractiveContent(output, sessionId);
       body.appendChild(output);
     }
 
+    appendEntryImagePreviews(body, entry, sessionId);
     return body;
   }
 
@@ -534,47 +569,47 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return spacer;
   }
 
-  function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
-    if (container.childElementCount !== 1) {
-      return;
-    }
-
-    const first = container.firstElementChild;
-    if (!first || first.tagName !== 'P' || first.attributes.length > 0) {
-      return;
-    }
-
-    container.innerHTML = first.innerHTML;
-  }
-
   function getCachedAssistantMarkdown(
     sessionId: string,
     entry: LensHistoryEntry,
   ): AssistantMarkdownCacheEntry {
+    const fileMentions = getEntryFileMentions(entry, 'body');
+    const fileMentionToken = fileMentions
+      .map((mention) =>
+        [
+          mention.displayText,
+          mention.path,
+          mention.pathKind,
+          mention.resolvedPath ?? '',
+          mention.exists ? '1' : '0',
+          mention.isDirectory ? '1' : '0',
+        ].join(':'),
+      )
+      .join('|');
     const state = deps.getState(sessionId);
     if (!state) {
-      const fallback = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body));
+      const fallback = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body), fileMentions);
       return {
         body: entry.body,
         html: fallback.html,
-        imageCandidates: fallback.imageCandidates,
-        imagePreviews: [],
-        imagePreviewResolutionStarted: false,
+        fileMentionToken,
       };
     }
 
     const existing = state.assistantMarkdownCache.get(entry.id);
-    if (existing && existing.body === entry.body) {
+    if (
+      existing &&
+      existing.body === entry.body &&
+      existing.fileMentionToken === fileMentionToken
+    ) {
       return existing;
     }
 
-    const enriched = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body));
+    const enriched = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body), fileMentions);
     const next: AssistantMarkdownCacheEntry = {
       body: entry.body,
       html: enriched.html,
-      imageCandidates: enriched.imageCandidates,
-      imagePreviews: [],
-      imagePreviewResolutionStarted: false,
+      fileMentionToken,
     };
     state.assistantMarkdownCache.set(entry.id, next);
     return next;

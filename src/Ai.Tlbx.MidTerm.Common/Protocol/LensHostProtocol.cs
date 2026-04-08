@@ -348,9 +348,35 @@ public sealed class LensPulseTranscriptEntry
     public string? CommandText { get; set; }
     public string Body { get; set; } = string.Empty;
     public List<LensAttachmentReference> Attachments { get; set; } = [];
+    public List<LensInlineFileReference> FileMentions { get; set; } = [];
+    public List<LensInlineImagePreview> ImagePreviews { get; set; } = [];
     public bool Streaming { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonIgnore]
+    public string? EnrichmentSourceSignature { get; set; }
+}
+
+public sealed class LensInlineFileReference
+{
+    public string Field { get; set; } = "body";
+    public string DisplayText { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+    public string PathKind { get; set; } = "relative";
+    public string? ResolvedPath { get; set; }
+    public bool Exists { get; set; }
+    public bool IsDirectory { get; set; }
+    public string? MimeType { get; set; }
+    public int? Line { get; set; }
+    public int? Column { get; set; }
+}
+
+public sealed class LensInlineImagePreview
+{
+    public string DisplayPath { get; set; } = string.Empty;
+    public string ResolvedPath { get; set; } = string.Empty;
+    public string? MimeType { get; set; }
 }
 
 public sealed class LensPulseItemSummary
@@ -671,6 +697,10 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensPulseStreamsSummary))]
 [JsonSerializable(typeof(LensPulseTranscriptEntry))]
 [JsonSerializable(typeof(List<LensPulseTranscriptEntry>))]
+[JsonSerializable(typeof(LensInlineFileReference))]
+[JsonSerializable(typeof(List<LensInlineFileReference>))]
+[JsonSerializable(typeof(LensInlineImagePreview))]
+[JsonSerializable(typeof(List<LensInlineImagePreview>))]
 [JsonSerializable(typeof(LensPulseItemSummary))]
 [JsonSerializable(typeof(List<LensPulseItemSummary>))]
 [JsonSerializable(typeof(LensPulseRequestSummary))]

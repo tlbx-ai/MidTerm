@@ -94,4 +94,48 @@ describe('scanAssistantTextEnrichment', () => {
       result.tokens.some((token) => token.kind === 'file' && token.text.includes('Results.Forbid')),
     ).toBe(false);
   });
+
+  it('uses provided file mentions and preserves resolved metadata', () => {
+    const result = scanAssistantTextEnrichment('Open src/app.ts and assets/panel.png', [
+      {
+        field: 'body',
+        displayText: 'src/app.ts',
+        path: 'src/app.ts',
+        pathKind: 'relative',
+        resolvedPath: 'Q:\\repo\\src\\app.ts',
+        exists: true,
+        isDirectory: false,
+        mimeType: 'text/plain',
+      },
+      {
+        field: 'body',
+        displayText: 'assets/panel.png',
+        path: 'assets/panel.png',
+        pathKind: 'relative',
+        resolvedPath: 'Q:\\repo\\assets\\panel.png',
+        exists: true,
+        isDirectory: false,
+        mimeType: 'image/png',
+      },
+    ]);
+
+    expect(result.tokens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'file',
+          text: 'src/app.ts',
+          filePath: 'src/app.ts',
+          resolvedPath: 'Q:\\repo\\src\\app.ts',
+          mimeType: 'text/plain',
+        }),
+        expect.objectContaining({
+          kind: 'file',
+          text: 'assets/panel.png',
+          filePath: 'assets/panel.png',
+          resolvedPath: 'Q:\\repo\\assets\\panel.png',
+          mimeType: 'image/png',
+        }),
+      ]),
+    );
+  });
 });

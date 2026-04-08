@@ -1903,6 +1903,69 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_EnrichesTranscriptEntriesWithClickableFileMentionsAndImagePreviews()
+    {
+        var service = new SessionLensPulseService();
+        var tempRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-inline-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var imagePath = Path.Combine(tempRoot, "preview.png");
+            File.WriteAllText(imagePath, "preview");
+
+            var folderPath = Path.Combine(tempRoot, "docs");
+            Directory.CreateDirectory(folderPath);
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "e-inline-file",
+                SessionId = "s-inline-file",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                ItemId = "assistant-1",
+                CreatedAt = ParseUtc("2026-04-08T12:00:00Z"),
+                Type = "item.completed",
+                Item = new LensPulseItemPayload
+                {
+                    ItemType = "assistant_message",
+                    Status = "completed",
+                    Title = $"Edited {imagePath}",
+                    Detail = $"Inspect {imagePath} and {folderPath}{Path.DirectorySeparatorChar}."
+                }
+            });
+
+            var snapshot = service.GetSnapshot("s-inline-file");
+
+            Assert.NotNull(snapshot);
+            var transcriptEntry = Assert.Single(snapshot!.Transcript);
+            Assert.Contains(
+                transcriptEntry.FileMentions,
+                mention => mention.Field == "body" &&
+                           mention.DisplayText.Contains("preview.png", StringComparison.Ordinal) &&
+                           mention.Exists &&
+                           string.Equals(mention.ResolvedPath, imagePath, StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(
+                transcriptEntry.FileMentions,
+                mention => mention.Field == "body" &&
+                           mention.DisplayText.Contains("docs", StringComparison.Ordinal) &&
+                           mention.Exists &&
+                           mention.IsDirectory);
+            Assert.Contains(
+                transcriptEntry.ImagePreviews,
+                preview => string.Equals(preview.ResolvedPath, imagePath, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void HasHistory_TracksWhetherCanonicalLensEventsExist()
     {
         var service = new SessionLensPulseService();

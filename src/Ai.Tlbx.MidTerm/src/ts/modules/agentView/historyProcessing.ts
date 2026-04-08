@@ -5,7 +5,12 @@ import type {
   LensPulseRequestSummary,
   LensPulseSnapshotResponse,
 } from '../../api/client';
-import type { LensAttachmentReference, LensPulseRuntimeNotice } from '../../api/types';
+import type {
+  LensAttachmentReference,
+  LensInlineFileReference,
+  LensInlineImagePreview,
+  LensPulseRuntimeNotice,
+} from '../../api/types';
 import { $currentSettings } from '../../stores';
 import {
   formatAbsoluteTime,
@@ -91,6 +96,18 @@ export function cloneHistoryAttachments(
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
+function cloneFileMentions(
+  fileMentions: readonly LensInlineFileReference[] | undefined,
+): LensInlineFileReference[] {
+  return fileMentions?.map((mention) => ({ ...mention })) ?? [];
+}
+
+function cloneImagePreviews(
+  imagePreviews: readonly LensInlineImagePreview[] | undefined,
+): LensInlineImagePreview[] {
+  return imagePreviews?.map((preview) => ({ ...preview })) ?? [];
+}
+
 export function buildLensHistoryEntries(
   snapshot: LensPulseSnapshotResponse,
   _events: LensPulseEvent[],
@@ -120,6 +137,8 @@ export function buildLensHistoryEntries(
             ? ''
             : formatHistoryMeta(kind, statusLabel, entry.updatedAt),
         attachments: cloneHistoryAttachments(entry.attachments),
+        fileMentions: cloneFileMentions(entry.fileMentions),
+        imagePreviews: cloneImagePreviews(entry.imagePreviews),
         live: entry.streaming,
         sourceItemId: entry.itemId ?? null,
         sourceTurnId: entry.turnId ?? null,
@@ -396,6 +415,8 @@ function cloneLensHistoryEntry(entry: LensHistoryEntry): LensHistoryEntry {
     ...entry,
     attachments: cloneHistoryAttachments(entry.attachments),
     commandOutputTail: [...(entry.commandOutputTail ?? [])],
+    fileMentions: cloneFileMentions(entry.fileMentions),
+    imagePreviews: cloneImagePreviews(entry.imagePreviews),
   };
   if (entry.actions) {
     cloned.actions = entry.actions.map((action) => ({ ...action }));

@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
-const lensDesign = readFileSync(path.join(__dirname, '../../../../../../docs/LensDesign.md'), 'utf8');
+const lensDesign = readFileSync(
+  path.join(__dirname, '../../../../../../docs/LensDesign.md'),
+  'utf8',
+);
 const indexSource = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 const historyContentSource = readFileSync(path.join(__dirname, 'historyContent.ts'), 'utf8');
 const historyDomSource = readFileSync(path.join(__dirname, 'historyDom.ts'), 'utf8');
@@ -33,7 +36,9 @@ describe('agent view Lens wiring', () => {
       ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-meta,",
     );
     expect(css).toContain('font-size: 9px;');
-    expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {");
+    expect(css).toContain(
+      ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {",
+    );
     expect(css).toContain('display: none;');
     expect(css).toContain(
       ":root:not([data-agent-show-message-timestamps='true']) .agent-history-assistant .agent-history-meta {",
@@ -94,7 +99,7 @@ describe('agent view Lens wiring', () => {
   it('replaces changed history rows instead of mutating past DOM nodes in place', () => {
     expect(indexSource).not.toContain('updateHistoryEntryNode(');
     expect(lensDesign).toContain(
-      "Future updates must not mutate an already-rendered older row into a different row identity.",
+      'Future updates must not mutate an already-rendered older row into a different row identity.',
     );
   });
 
@@ -109,7 +114,9 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('color: var(--text-primary);');
     expect(css).toContain('.agent-history-command-token-command {');
     expect(css).toContain('.agent-history-command-output-tail {');
-    expect(lensDesign).toContain('Command-execution rows should render in a console-like `Ran …` form');
+    expect(lensDesign).toContain(
+      'Command-execution rows should render in a console-like `Ran …` form',
+    );
     expect(lensDesign).toContain('Command-execution rows should remain fully flat.');
     expect(lensDesign).toContain('fold up to 12 tail lines');
     expect(lensDesign).toContain('must not downgrade it back into a generic tool row');
@@ -135,7 +142,9 @@ describe('agent view Lens wiring', () => {
   });
 
   it('documents finalized assistant enrichment without leaking into streaming or artifact rows', () => {
-    expect(css).toContain('.agent-history-markdown .agent-history-inline-file {');
+    expect(css).toContain('.agent-history-inline-link {');
+    expect(css).toContain('text-decoration:');
+    expect(css).toContain('    dotted');
     expect(css).toContain('.agent-history-inline-previews {');
     expect(css).toContain('.agent-history-inline-preview-frame {');
     expect(css).toContain('.agent-history-attachment-image-frame {');
@@ -143,9 +152,7 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain(
       'Finalized assistant messages may receive a post-settlement enrichment pass',
     );
-    expect(lensDesign).toContain(
-      'Assistant-only semantic tinting should remain subtle.',
-    );
+    expect(lensDesign).toContain('Assistant-only semantic tinting should remain subtle.');
     expect(lensDesign).toContain(
       'Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.',
     );
@@ -159,12 +166,14 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-diff-line-gutter {');
     expect(css).toContain('.agent-history-diff-line-number-old {');
     expect(css).toContain('.agent-history-diff-line-number-new {');
-    expect(historyContentSource).toContain("Edited ${displayPath}");
+    expect(historyContentSource).toContain('Edited ${displayPath}');
     expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
     expect(lensDesign).toContain(
       'That diff line-number gutter should stay structurally consistent across context, removed, and added lines;',
     );
-    expect(lensDesign).toContain('Command-execution rows and diff rows should not repeat timestamp meta.');
+    expect(lensDesign).toContain(
+      'Command-execution rows and diff rows should not repeat timestamp meta.',
+    );
   });
 
   it('keeps runtime token stats in a compact hovering overlay instead of history rows', () => {
@@ -173,27 +182,43 @@ describe('agent view Lens wiring', () => {
     expect(historyDomSource).toContain('formatTokenWindowCompact(stats)');
     expect(css).toContain('.agent-runtime-stats {');
     expect(css).toContain('.agent-runtime-stats-detail {');
-    expect(lensDesign).toContain('Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows.');
-    expect(lensDesign).toContain('Lens should expose that telemetry in a compact hovering stats display');
+    expect(lensDesign).toContain(
+      'Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows.',
+    );
+    expect(lensDesign).toContain(
+      'Lens should expose that telemetry in a compact hovering stats display',
+    );
   });
 
   it('documents the selection-preservation rule for passive Lens rerenders', () => {
     expect(indexSource).toContain('hasActiveLensSelectionInPanel');
     expect(focusReclaimSource).toContain("element.closest?.('.agent-view-panel') != null");
-    expect(lensDesign).toContain('Passive rerenders must not clear an active text selection inside Lens.');
+    expect(lensDesign).toContain(
+      'Passive rerenders must not clear an active text selection inside Lens.',
+    );
   });
 
   it('documents the current Lens usability floor and canonical-only retention stance', () => {
-    expect(lensDesign).toContain('the visible result after those changes must not regress below the current Lens floor');
+    expect(lensDesign).toContain(
+      'the visible result after those changes must not regress below the current Lens floor',
+    );
     expect(lensDesign).toContain('persistent `Ran …` command rows with folded output tails');
-    expect(lensDesign).toContain('deterministic older-history paging through a bounded virtualized window');
-    expect(lensDesign).toContain('Raw provider inputs are transient reducer inputs, not retained Lens history.');
-    expect(lensDesign).toContain('it should be dropped instead of preserved in a hidden Lens data layer.');
+    expect(lensDesign).toContain(
+      'deterministic older-history paging through a bounded virtualized window',
+    );
+    expect(lensDesign).toContain(
+      'Raw provider inputs are transient reducer inputs, not retained Lens history.',
+    );
+    expect(lensDesign).toContain(
+      'it should be dropped instead of preserved in a hidden Lens data layer.',
+    );
   });
 
   it('renders the busy indicator as Working with per-letter sweep animation', () => {
     expect(historyProcessingSource).toContain("lensText('lens.status.working', 'Working')");
-    expect(historyProcessingSource).toContain('resolveBusyIndicatorLabelFromSnapshotItems(snapshot)');
+    expect(historyProcessingSource).toContain(
+      'resolveBusyIndicatorLabelFromSnapshotItems(snapshot)',
+    );
     expect(historyProcessingSource).toContain('BUSY_INDICATOR_EXCLUDED_ITEM_TYPES');
     expect(historyProcessingSource).toContain('resolveBusyIndicatorAnimationOffsetMs(snapshot)');
     expect(historyDomSource).toContain('agent-history-busy-label-letter');
@@ -208,7 +233,9 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-busy-label-letter {');
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('animation: agent-history-busy-sweep 1.45s linear infinite alternate;');
-    expect(css).toContain('animation-delay: calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms));');
+    expect(css).toContain(
+      'animation-delay: calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms));',
+    );
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration-body {');
     expect(css).toContain('.agent-history-turn-duration-marker {');
@@ -218,9 +245,15 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('width: 90%;');
     expect(historyDomSource).toContain('createTurnDurationNoteBody(entry)');
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
-    expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
-    expect(lensDesign).toContain('User-prompt text and assistant-message text must not populate the busy bubble.');
-    expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
+    expect(lensDesign).toContain(
+      'When the provider exposes a live in-progress task/tool/reasoning detail label',
+    );
+    expect(lensDesign).toContain(
+      'User-prompt text and assistant-message text must not populate the busy bubble.',
+    );
+    expect(lensDesign).toContain(
+      'busy bubble should also show a muted wall-clock duration counter',
+    );
     expect(lensDesign).toContain('hint immediately after the animated label');
     expect(lensDesign).toContain('append one muted inline duration note');
     expect(lensDesign).toContain('near-full-width end-of-turn marker');
