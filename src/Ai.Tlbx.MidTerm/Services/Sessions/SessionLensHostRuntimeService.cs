@@ -674,8 +674,14 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    state.LastError = line.Trim();
-                    Log.Info(() => $"mtagenthost[{state.SessionId}] {line.Trim()}");
+                    var sanitized = LensHistoryTextSanitizer.Sanitize(line);
+                    if (string.IsNullOrWhiteSpace(sanitized))
+                    {
+                        continue;
+                    }
+
+                    state.LastError = sanitized;
+                    Log.Info(() => $"mtagenthost[{state.SessionId}] {sanitized}");
                 }
             }
         }
@@ -900,7 +906,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private static void UpdateStateFromEvent(HostRuntimeState state, LensPulseEvent lensEvent)
     {
         state.LastError = lensEvent.RuntimeMessage?.Message is not null && lensEvent.Type == "runtime.error"
-            ? lensEvent.RuntimeMessage.Message
+            ? LensHistoryTextSanitizer.Sanitize(lensEvent.RuntimeMessage.Message)
             : state.LastError;
 
         state.Status = lensEvent.Type switch

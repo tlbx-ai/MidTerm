@@ -11101,6 +11101,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border-top-color: color-mix(in srgb, var(--accent-red) 28%, transparent);
 }
 
+.agent-history-system {
+  border-top-color: color-mix(in srgb, var(--agent-lens-rail) 24%, transparent);
+}
+
 .agent-history-header {
   display: flex;
   gap: 8px;
@@ -11221,6 +11225,21 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-system .agent-history-title,
 .agent-history-notice .agent-history-title {
   display: none;
+}
+
+.agent-history-system .agent-history-header {
+  gap: 6px;
+}
+
+.agent-history-system .agent-history-badge-system {
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+}
+
+.agent-history-system .agent-history-meta {
+  font-size: 9px;
+  color: color-mix(in srgb, var(--text-muted) 72%, transparent);
 }
 
 .agent-history-meta {
@@ -11429,20 +11448,24 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-turn-duration-body {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
 }
 
 .agent-history-turn-duration-marker {
-  display: inline-grid;
-  grid-template-rows: 10px auto 10px;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 90%;
+  max-width: 100%;
   min-width: 0;
 }
 
 .agent-history-turn-duration-segment {
   display: block;
-  width: 1px;
-  height: 10px;
+  flex: 1 1 0;
+  min-width: 18px;
+  height: 1px;
   background: color-mix(in srgb, var(--text-muted) 42%, transparent);
 }
 
@@ -12199,10 +12222,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-request .agent-history-body,
-.agent-history-system .agent-history-body,
 .agent-history-notice .agent-history-body {
   font-size: 0.88rem;
   line-height: 1.56;
+}
+
+.agent-history-system .agent-history-body {
+  font-size: 0.81rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
 }
 
 .agent-history-attachments {

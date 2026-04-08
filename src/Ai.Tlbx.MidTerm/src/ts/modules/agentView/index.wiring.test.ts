@@ -57,6 +57,20 @@ describe('agent view Lens wiring', () => {
     );
   });
 
+  it('keeps system runtime rows quieter and documents sanitized runtime notices', () => {
+    expect(css).toContain('.agent-history-system {');
+    expect(css).toContain('.agent-history-system .agent-history-badge-system {');
+    expect(css).toContain('.agent-history-system .agent-history-meta {');
+    expect(css).toContain('.agent-history-system .agent-history-body {');
+    expect(css).toContain('font-size: 0.81rem;');
+    expect(lensDesign).toContain(
+      'Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Lens history.',
+    );
+    expect(lensDesign).toContain(
+      'runtime/system notice text is sanitized for ANSI/control-byte noise, de-duplicates repeated message/detail payloads, and system rows render with quieter metadata/body emphasis than the main conversation lane',
+    );
+  });
+
   it('binds the Lens pane background to terminal transparency tokens', () => {
     expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
     expect(lensDesign).toContain(
@@ -182,6 +196,8 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-turn-duration-marker {');
     expect(css).toContain('.agent-history-turn-duration-segment {');
     expect(css).toContain('.agent-history-turn-duration-label {');
+    expect(css).toContain('justify-content: center;');
+    expect(css).toContain('width: 90%;');
     expect(historyDomSource).toContain('createTurnDurationNoteBody(entry)');
     expect(css).toContain('@keyframes agent-history-busy-sweep {');
     expect(lensDesign).toContain('When the provider exposes a live in-progress task/tool/reasoning detail label');
@@ -189,7 +205,7 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('busy bubble should also show a muted wall-clock duration counter');
     expect(lensDesign).toContain('hint immediately after the animated label');
     expect(lensDesign).toContain('append one muted inline duration note');
-    expect(lensDesign).toContain('vertical rule above and below the text');
+    expect(lensDesign).toContain('near-full-width end-of-turn marker');
   });
 
   it('routes plain Escape from the Lens surface through Lens interruption', () => {

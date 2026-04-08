@@ -1697,12 +1697,14 @@ public sealed partial class SessionLensPulseService
             return;
         }
 
+        var message = LensHistoryTextSanitizer.Sanitize(lensEvent.RuntimeMessage.Message);
+        var detail = LensHistoryTextSanitizer.Sanitize(lensEvent.RuntimeMessage.Detail);
         state.Notices.Add(new LensPulseRuntimeNotice
         {
             EventId = lensEvent.EventId,
             Type = lensEvent.Type,
-            Message = lensEvent.RuntimeMessage.Message,
-            Detail = lensEvent.RuntimeMessage.Detail,
+            Message = message,
+            Detail = detail,
             CreatedAt = lensEvent.CreatedAt
         });
         if (state.Notices.Count > 64)
@@ -1717,10 +1719,7 @@ public sealed partial class SessionLensPulseService
             lensEvent.CreatedAt);
         entry.Status = RuntimeTranscriptStatusFromEventType(lensEvent.Type);
         entry.Title = RuntimeTranscriptTitleFromEventType(lensEvent.Type);
-        entry.Body = string.Join(
-            "\n\n",
-            new[] { lensEvent.RuntimeMessage.Message, lensEvent.RuntimeMessage.Detail }
-                .Where(static value => !string.IsNullOrWhiteSpace(value)));
+        entry.Body = LensHistoryTextSanitizer.JoinDistinctSections(message, detail);
         entry.Streaming = false;
         entry.UpdatedAt = lensEvent.CreatedAt;
     }

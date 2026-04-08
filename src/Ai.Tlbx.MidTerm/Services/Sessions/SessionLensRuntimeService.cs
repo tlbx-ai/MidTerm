@@ -1464,7 +1464,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
                 lock (state.SyncRoot)
                 {
-                    state.LastError = line.Trim();
+                    state.LastError = LensHistoryTextSanitizer.Sanitize(line);
                 }
             }
         }
@@ -2085,7 +2085,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
 
                 lock (state.SyncRoot)
                 {
-                    state.LastError = line.Trim();
+                    state.LastError = LensHistoryTextSanitizer.Sanitize(line);
                 }
             }
         }

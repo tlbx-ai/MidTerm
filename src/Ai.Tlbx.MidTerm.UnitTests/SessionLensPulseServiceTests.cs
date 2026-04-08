@@ -1743,6 +1743,42 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_SanitizesAndDeduplicatesRuntimeNoticeHistoryBody()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "e-runtime-sanitize",
+            SessionId = "s-runtime-sanitize",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = ParseUtc("2026-04-08T10:05:57Z"),
+            Type = "runtime.warning",
+            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            {
+                Message = "\u001b[2m2026-04-08T10:05:57.503361Z ERROR codex_core::tools::router: error=apply_patch verification failed\u001b[0m",
+                Detail = "\u001b[2m2026-04-08T10:05:57.503361Z ERROR codex_core::tools::router: error=apply_patch verification failed\u001b[0m"
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-runtime-sanitize");
+
+        Assert.NotNull(snapshot);
+        var transcriptEntry = Assert.Single(snapshot!.Transcript);
+        Assert.Equal("system", transcriptEntry.Kind);
+        Assert.DoesNotContain('\u001b', transcriptEntry.Body);
+        Assert.DoesNotContain("[0m", transcriptEntry.Body, StringComparison.Ordinal);
+        Assert.Equal(
+            "2026-04-08T10:05:57.503361Z ERROR codex_core::tools::router: error=apply_patch verification failed",
+            transcriptEntry.Body);
+
+        var runtimeNotice = Assert.Single(snapshot.Notices);
+        Assert.Equal(transcriptEntry.Body, runtimeNotice.Message);
+        Assert.Equal(transcriptEntry.Body, runtimeNotice.Detail);
+    }
+
+    [Fact]
     public void GetSnapshot_RendersReasoningAndPlanItemsUsingDedicatedTranscriptKinds()
     {
         var service = new SessionLensPulseService();
