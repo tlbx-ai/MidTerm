@@ -1966,6 +1966,94 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_DefersFileMentionEnrichmentForStreamingTranscriptEntriesUntilTheySettle()
+    {
+        var service = new SessionLensPulseService();
+        var tempRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-inline-streaming-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var imagePath = Path.Combine(tempRoot, "preview.png");
+            File.WriteAllText(imagePath, "preview");
+            var detail = $"Inspect {imagePath}";
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "turn-start",
+                SessionId = "s-inline-streaming",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                CreatedAt = ParseUtc("2026-04-09T00:58:12Z"),
+                Type = "turn.started",
+                TurnStarted = new LensPulseTurnStartedPayload()
+            });
+            service.Append(new LensPulseEvent
+            {
+                EventId = "assistant-delta",
+                SessionId = "s-inline-streaming",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                CreatedAt = ParseUtc("2026-04-09T00:58:13Z"),
+                Type = "content.delta",
+                ContentDelta = new LensPulseContentDeltaPayload
+                {
+                    StreamKind = "assistant_text",
+                    Delta = detail
+                }
+            });
+
+            var streamingSnapshot = service.GetSnapshot("s-inline-streaming");
+
+            Assert.NotNull(streamingSnapshot);
+            var streamingEntry = Assert.Single(streamingSnapshot!.Transcript);
+            Assert.True(streamingEntry.Streaming);
+            Assert.Empty(streamingEntry.FileMentions);
+            Assert.Empty(streamingEntry.ImagePreviews);
+
+            service.Append(new LensPulseEvent
+            {
+                EventId = "assistant-final",
+                SessionId = "s-inline-streaming",
+                Provider = "codex",
+                ThreadId = "thread-1",
+                TurnId = "turn-1",
+                ItemId = "assistant-1",
+                CreatedAt = ParseUtc("2026-04-09T00:58:14Z"),
+                Type = "item.completed",
+                Item = new LensPulseItemPayload
+                {
+                    ItemType = "assistant_message",
+                    Status = "completed",
+                    Detail = detail
+                }
+            });
+
+            var settledSnapshot = service.GetSnapshot("s-inline-streaming");
+
+            Assert.NotNull(settledSnapshot);
+            var settledEntry = Assert.Single(settledSnapshot!.Transcript);
+            Assert.False(settledEntry.Streaming);
+            Assert.Contains(
+                settledEntry.FileMentions,
+                mention => mention.Field == "body" &&
+                           string.Equals(mention.ResolvedPath, imagePath, StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(
+                settledEntry.ImagePreviews,
+                preview => string.Equals(preview.ResolvedPath, imagePath, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void HasHistory_TracksWhetherCanonicalLensEventsExist()
     {
         var service = new SessionLensPulseService();

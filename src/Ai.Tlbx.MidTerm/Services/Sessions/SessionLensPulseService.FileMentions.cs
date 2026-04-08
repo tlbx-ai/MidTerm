@@ -124,9 +124,17 @@ public sealed partial class SessionLensPulseService
     {
         var nextSignature = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"{entry.Title}\u001f{entry.Body}\u001f{entry.CommandText}");
+            $"{(entry.Streaming ? 1 : 0)}\u001f{entry.Title}\u001f{entry.Body}\u001f{entry.CommandText}");
         if (string.Equals(entry.EnrichmentSourceSignature, nextSignature, StringComparison.Ordinal))
         {
+            return entry;
+        }
+
+        if (entry.Streaming)
+        {
+            entry.FileMentions = [];
+            entry.ImagePreviews = [];
+            entry.EnrichmentSourceSignature = nextSignature;
             return entry;
         }
 

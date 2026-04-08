@@ -149,6 +149,9 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-inline-preview-frame {');
     expect(css).toContain('.agent-history-attachment-image-frame {');
     expect(css).toContain('object-fit: contain;');
+    expect(historyDomSource).toContain(
+      'Keep streamed assistant text raw until settlement so FileRadar enrichment',
+    );
     expect(lensDesign).toContain(
       'Finalized assistant messages may receive a post-settlement enrichment pass',
     );

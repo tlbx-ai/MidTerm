@@ -406,7 +406,7 @@ Status in this branch/work item:
 - implemented: when off-window canonical history changes arrive while the user is browsing older history, Lens now refreshes that window instead of silently leaving remote spacer geometry stale
 - implemented: when a hidden Lens session returns to view while its cached browser window is still off the live edge, Lens now refreshes the latest window and rerenders immediately when hidden-history compaction finishes so the viewport does not strand the user inside spacer-only voids
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
-- implemented: Lens transcript rows now receive canonical C# file-mention enrichment before they reach the browser, so title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
+- implemented: finalized Lens transcript rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass, while streaming assistant text stays raw until settlement
 - implemented: clickable Lens file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles

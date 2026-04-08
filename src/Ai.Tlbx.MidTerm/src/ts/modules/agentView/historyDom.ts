@@ -342,9 +342,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         const body = document.createElement('div');
         body.className = 'agent-history-body agent-history-streaming-body';
         body.textContent = entry.body;
-        enrichInteractiveTextContent(body, getEntryFileMentions(entry, 'body'));
-        wireAssistantInteractiveContent(body, sessionId);
-        appendEntryImagePreviews(body, entry, sessionId);
+        // Keep streamed assistant text raw until settlement so FileRadar enrichment
+        // and inline image previews do not churn on every incoming delta.
         return body;
       }
       case 'markdown': {
