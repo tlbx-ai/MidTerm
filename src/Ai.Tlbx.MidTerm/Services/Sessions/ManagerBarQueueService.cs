@@ -24,6 +24,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private readonly TaskCompletionSource _startedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private List<ManagerBarQueueEntryDto> _entries = [];
     private readonly Dictionary<string, RecentEnqueue> _recentEnqueues = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _activeImmediatePromptDispatchSessions = new(StringComparer.Ordinal);
     private string _serializedState = string.Empty;
     private Task? _processingTask;
 
@@ -93,46 +94,69 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
     public ManagerBarQueueEntryDto? EnqueuePrompt(string sessionId, LensTurnRequest turn)
     {
-        if (string.IsNullOrWhiteSpace(sessionId) || turn is null)
+        if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
         {
             return null;
         }
 
-        var normalizedTurn = NormalizeTurn(turn);
-        if (normalizedTurn is null)
-        {
-            return null;
-        }
-
-        var trimmedSessionId = sessionId.Trim();
-        if (!_runtime.SessionExists(trimmedSessionId))
-        {
-            return null;
-        }
-
-        var entry = new ManagerBarQueueEntryDto
-        {
-            QueueId = $"prompt-{Guid.NewGuid():N}",
-            SessionId = trimmedSessionId,
-            Kind = PromptQueueKind,
-            Action = null,
-            Turn = normalizedTurn,
-            Phase = QueuePhase.PendingCooldown,
-            NextPromptIndex = 0,
-            CompletedCycles = 0,
-            NextRunAt = null,
-            IgnoreHeatUntil = null,
-            AwaitingHeatRise = false
-        };
-
+        ManagerBarQueueEntryDto entry;
         lock (_lock)
         {
-            _entries.Add(CloneEntry(entry));
-            PersistLocked();
+            entry = EnqueuePromptLocked(trimmedSessionId, normalizedTurn);
         }
 
         OnChanged?.Invoke();
-        return entry;
+        return CloneEntry(entry);
+    }
+
+    public async Task<(bool Accepted, ManagerBarQueueEntryDto? Entry)> SubmitPromptAsync(
+        string sessionId,
+        LensTurnRequest turn,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
+        {
+            return (false, null);
+        }
+
+        ManagerBarQueueEntryDto? queuedEntry = null;
+        LensTurnRequest? immediateTurn = null;
+        lock (_lock)
+        {
+            if (CanDispatchPromptImmediatelyLocked(trimmedSessionId))
+            {
+                _activeImmediatePromptDispatchSessions.Add(trimmedSessionId);
+                immediateTurn = CloneTurn(normalizedTurn);
+            }
+            else
+            {
+                queuedEntry = EnqueuePromptLocked(trimmedSessionId, normalizedTurn);
+            }
+        }
+
+        if (queuedEntry is not null)
+        {
+            OnChanged?.Invoke();
+            return (true, CloneEntry(queuedEntry));
+        }
+
+        if (immediateTurn is null)
+        {
+            return (false, null);
+        }
+
+        try
+        {
+            await _runtime.SendTurnAsync(trimmedSessionId, immediateTurn, cancellationToken).ConfigureAwait(false);
+            return (true, null);
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _activeImmediatePromptDispatchSessions.Remove(trimmedSessionId);
+            }
+        }
     }
 
     private ManagerBarQueueEntryDto? EnqueueAutomationCore(string sessionId, ManagerBarButton normalizedAction)
@@ -971,6 +995,72 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         string Kind,
         string? Prompt,
         LensTurnRequest? Turn);
+
+    private bool TryNormalizePromptSubmission(
+        string? sessionId,
+        LensTurnRequest? turn,
+        out string trimmedSessionId,
+        out LensTurnRequest normalizedTurn)
+    {
+        trimmedSessionId = string.Empty;
+        normalizedTurn = new LensTurnRequest();
+        if (string.IsNullOrWhiteSpace(sessionId) || turn is null)
+        {
+            return false;
+        }
+
+        var normalized = NormalizeTurn(turn);
+        if (normalized is null)
+        {
+            return false;
+        }
+
+        trimmedSessionId = sessionId.Trim();
+        if (!_runtime.SessionExists(trimmedSessionId))
+        {
+            return false;
+        }
+
+        normalizedTurn = normalized;
+        return true;
+    }
+
+    private ManagerBarQueueEntryDto EnqueuePromptLocked(string sessionId, LensTurnRequest normalizedTurn)
+    {
+        var entry = new ManagerBarQueueEntryDto
+        {
+            QueueId = $"prompt-{Guid.NewGuid():N}",
+            SessionId = sessionId,
+            Kind = PromptQueueKind,
+            Action = null,
+            Turn = normalizedTurn,
+            Phase = QueuePhase.PendingCooldown,
+            NextPromptIndex = 0,
+            CompletedCycles = 0,
+            NextRunAt = null,
+            IgnoreHeatUntil = null,
+            AwaitingHeatRise = false
+        };
+
+        _entries.Add(CloneEntry(entry));
+        PersistLocked();
+        return entry;
+    }
+
+    private bool CanDispatchPromptImmediatelyLocked(string sessionId)
+    {
+        if (_entries.Count > 0 || _activeImmediatePromptDispatchSessions.Count > 0)
+        {
+            return false;
+        }
+
+        if (_runtime.UsesTurnQueue(sessionId))
+        {
+            return _runtime.IsTurnQueueReady(sessionId);
+        }
+
+        return _runtime.GetCurrentHeat(sessionId) <= CooldownHeatThreshold;
+    }
 
     public async ValueTask DisposeAsync()
     {

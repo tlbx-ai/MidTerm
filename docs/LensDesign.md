@@ -273,6 +273,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Normal terminal smart input should reuse the same dock shell while keeping Lens-only runtime controls out of ordinary terminal sessions.
 - If the user queues follow-up work from the shared Command Bay, Lens should render that queue as a compact vertical stack directly above the composer instead of inventing a separate floating queue surface.
 - Lens queue ownership belongs to MidTerm, not the browser. Queued Command Bay prompts and queued Automation Bar items must survive browser disconnects and drain only when the current turn has returned control to the user.
+- If the shared Command Bay queue is empty and the active session can accept work immediately, MidTerm should fast-track that submission directly to the runtime instead of briefly rendering a one-item queued row before sending. For Lens sessions this means the turn has returned to the user; for Terminal sessions this means the session is idle enough to pass the cooldown heat gate.
 - On desktop, Lens quick settings should read as a low-clutter translucent control rail rather than a full-width form.
 - The model quick setting should use a provider-scoped populated list, while still preserving any current non-preset model already active in the session or draft.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
@@ -412,6 +413,7 @@ Status in this branch/work item:
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label and phase-locks its CSS sweep to the turn clock so elapsed-time refreshes do not visibly restart the animation
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by MidTerm-owned persistent queue state rather than browser-local Lens-only submission state
 - implemented: explicit Lens sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
+- implemented: shared Command Bay prompt submissions now bypass the visible queue entirely when that queue is empty and the target session can accept work immediately, so idle Terminal sends and user-turn Lens sends do not flash a transient queued row before dispatch
 - implemented: settled turn-duration notes now render as a quiet near-full-width horizontal end-of-turn marker with the duration label centered between rule segments
 - implemented: runtime/system notice text is sanitized for ANSI/control-byte noise, de-duplicates repeated message/detail payloads, and system rows render with quieter metadata/body emphasis than the main conversation lane
 - implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values

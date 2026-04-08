@@ -80,7 +80,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
         });
 
-        IResult EnqueueCommandBayQueueItem(ManagerBarQueueEnqueueRequest request)
+        async Task<IResult> EnqueueCommandBayQueueItem(ManagerBarQueueEnqueueRequest request, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
@@ -99,7 +99,20 @@ public static partial class SessionApiEndpoints
             }
             else if (request.Turn is not null)
             {
-                entry = managerBarQueueService.EnqueuePrompt(request.SessionId, request.Turn);
+                var (accepted, queuedEntry) = await managerBarQueueService
+                    .SubmitPromptAsync(request.SessionId, request.Turn, ct)
+                    .ConfigureAwait(false);
+                if (!accepted)
+                {
+                    return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                }
+
+                if (queuedEntry is null)
+                {
+                    return Results.Ok();
+                }
+
+                entry = queuedEntry;
             }
             else
             {

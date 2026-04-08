@@ -77,6 +77,101 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SubmitPromptAsync_FastTracksTerminalPromptWhenQueueEmptyAndHeatIsLow()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            CurrentHeat = 0.1
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitPromptAsync(
+            "session-1",
+            new LensTurnRequest
+            {
+                Text = "status"
+            });
+
+        Assert.True(accepted);
+        Assert.Null(entry);
+        Assert.Equal(["status"], runtime.SentPrompts);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task SubmitPromptAsync_QueuesTerminalPromptWhenHeatIsHigh()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            CurrentHeat = 0.8
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitPromptAsync(
+            "session-1",
+            new LensTurnRequest
+            {
+                Text = "status"
+            });
+
+        Assert.True(accepted);
+        Assert.NotNull(entry);
+        Assert.Empty(runtime.SentPrompts);
+        Assert.Single(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task SubmitPromptAsync_FastTracksLensPromptWhenTurnHasReturnedToUser()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            UsesTurnQueueValue = true,
+            TurnQueueReady = true
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitPromptAsync(
+            "session-1",
+            new LensTurnRequest
+            {
+                Text = "queued turn"
+            });
+
+        Assert.True(accepted);
+        Assert.Null(entry);
+        var turn = Assert.Single(runtime.SentTurns);
+        Assert.Equal("queued turn", turn.Text);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task SubmitPromptAsync_QueuesLensPromptWhenTurnIsStillRunning()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            UsesTurnQueueValue = true,
+            TurnQueueReady = false
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitPromptAsync(
+            "session-1",
+            new LensTurnRequest
+            {
+                Text = "queued turn"
+            });
+
+        Assert.True(accepted);
+        Assert.NotNull(entry);
+        Assert.Empty(runtime.SentTurns);
+        Assert.Single(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
     public async Task GetSnapshot_FiltersQueueEntriesToValidSessions()
     {
         var runtime = new FakeRuntime(["session-1", "session-2"]);
