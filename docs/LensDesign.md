@@ -241,6 +241,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Command-execution rows should render in a console-like `Ran …` form with lightweight syntax coloring: command name, flags/parameters, quoted strings, and shell operators should be visually distinct without turning the row into a card.
 - When command output is available immediately after a command-execution row, Lens should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
+- Folded command-output tails should remain raw terminal text. Do not apply assistant-style semantic enrichment, clickable file-path decoration, or inline image previews inside those noisy tail lines.
 - When the backend already materializes a command-output transcript row that contains both the command header and compact output window, Lens should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
 - Canonical command-output transcript rows should preserve the command header as structured command metadata rather than forcing the browser to recover it from a truncated body.
 - Omission markers such as `... earlier output omitted ...` or `... N earlier lines omitted ...` are output-tail metadata, not command headers, and Lens must never render them as the `Ran …` command text.
@@ -396,6 +397,7 @@ Status in this branch/work item:
 - implemented: command and file-read tool output is screen-summarized before it reaches both the Lens UI and the dev screen log
 - implemented: command-execution tool rows now render as console-like `Ran …` lines with lightweight syntax highlighting and the configured terminal monospace stack
 - implemented: immediate command output is folded into the command row as a muted up-to-12-line tail instead of always rendering as a separate noisy row
+- implemented: folded command-output tails now stay raw terminal text without assistant-style file-path linkification or inline image previews
 - implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
 - implemented: command-output transcript rows now carry canonical command text separately from the truncated output body, so omission markers cannot be mis-promoted into fake `Ran ...` commands and compact tails keep their line structure
 - implemented: command rows now stay on the dedicated flat `Ran …` presentation once normalized, preserving their folded tails across later partial updates and temporary shape regressions while that history window remains materialized

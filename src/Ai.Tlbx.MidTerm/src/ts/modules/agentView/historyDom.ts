@@ -397,12 +397,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
       output.textContent = entry.commandOutputTail?.join('\n') ?? '';
-      enrichInteractiveTextContent(output, getEntryFileMentions(entry, 'body'));
-      wireAssistantInteractiveContent(output, sessionId);
+      // Keep folded command tails as raw terminal text instead of applying
+      // FileRadar-style enrichment or thumbnail previews to noisy output.
       body.appendChild(output);
     }
 
-    appendEntryImagePreviews(body, entry, sessionId);
     return body;
   }
 

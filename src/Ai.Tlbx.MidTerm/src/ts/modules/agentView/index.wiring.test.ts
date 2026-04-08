@@ -119,7 +119,15 @@ describe('agent view Lens wiring', () => {
     );
     expect(lensDesign).toContain('Command-execution rows should remain fully flat.');
     expect(lensDesign).toContain('fold up to 12 tail lines');
+    expect(lensDesign).toContain('Folded command-output tails should remain raw terminal text.');
     expect(lensDesign).toContain('must not downgrade it back into a generic tool row');
+    expect(historyDomSource).toContain(
+      'Keep folded command tails as raw terminal text instead of applying',
+    );
+    expect(historyDomSource).not.toContain(
+      "enrichInteractiveTextContent(output, getEntryFileMentions(entry, 'body'));",
+    );
+    expect(historyDomSource).not.toContain('wireAssistantInteractiveContent(output, sessionId);');
   });
 
   it('keeps machine-oriented history rows flat and dense', () => {
