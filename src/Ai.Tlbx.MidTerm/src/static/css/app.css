@@ -11325,7 +11325,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--text-primary);
   font-family: var(--agent-history-assistant-font-family);
   font-size: 1rem;
-  line-height: 1.7;
+  line-height: 1.52;
 }
 
 .agent-history-busy-indicator {
@@ -11465,6 +11465,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown {
   overflow: hidden;
+  line-height: 1.45;
 }
 
 .agent-history-turn-duration {
@@ -11685,21 +11686,46 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown h2,
 .agent-history-markdown h3,
 .agent-history-markdown h4 {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
 }
 
 .agent-history-markdown p {
-  margin: 0 0 1px;
+  margin: 0;
+}
+
+.agent-history-markdown p + p,
+.agent-history-markdown p + ul,
+.agent-history-markdown p + ol,
+.agent-history-markdown ul + p,
+.agent-history-markdown ol + p,
+.agent-history-markdown ul + ul,
+.agent-history-markdown ol + ol,
+.agent-history-markdown ul + ol,
+.agent-history-markdown ol + ul {
+  margin-top: 0.34em;
 }
 
 .agent-history-markdown ul,
 .agent-history-markdown ol {
-  padding-left: 18px;
-  margin-bottom: 2px;
+  padding-left: 1.1rem;
+  margin-bottom: 0;
+}
+
+.agent-history-markdown li {
+  margin: 0;
+  line-height: 1.38;
 }
 
 .agent-history-markdown li + li {
-  margin-top: 1px;
+  margin-top: 0;
+}
+
+.agent-history-markdown li > p {
+  margin: 0;
+}
+
+.agent-history-markdown br {
+  line-height: 1.2;
 }
 
 .agent-history-markdown a {
@@ -12123,7 +12149,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-markdown pre,
 .agent-history-markdown figure {
   margin-top: 0;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .agent-history-caret {
@@ -12758,7 +12784,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
   .agent-history-assistant .agent-history-body {
     font-size: 0.95rem;
-    line-height: 1.6;
+    line-height: 1.48;
   }
 
   .agent-history-user {

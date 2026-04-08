@@ -250,6 +250,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Command-execution rows should remain fully flat. Do not wrap them in bordered cards, bubble shells, or inset containers that break text selection or console-like continuity.
 - Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows. Tool, reasoning, plan, diff, and command artifacts should stay flat unless a future design contract explicitly reintroduces structure.
 - Markdown paragraph and list spacing should be dense and terminal-like. Simple line breaks and bullet lists must not create chat-style empty-line gaps between adjacent lines.
+- Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults, roughly closer to a half-line pause than a full chat-paragraph gap.
+- Bullet and numbered lists should stack compactly, with minimal vertical slack between adjacent items and between the surrounding text and the list block.
 - Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
 - That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
 - Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.

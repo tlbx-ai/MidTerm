@@ -122,11 +122,15 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('border-radius: 0;');
     expect(css).toContain('box-shadow: none;');
     expect(css).toContain('.agent-history-markdown p,');
-    expect(css).toContain('margin-bottom: 2px;');
+    expect(css).toContain('.agent-history-markdown p + p,');
+    expect(css).toContain('margin-top: 0.34em;');
     expect(css).toContain('.agent-history-markdown li + li {');
-    expect(css).toContain('margin-top: 1px;');
+    expect(css).toContain('.agent-history-markdown li {');
+    expect(css).toContain('line-height: 1.38;');
     expect(lensDesign).toContain('Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows.');
     expect(lensDesign).toContain('Markdown paragraph and list spacing should be dense and terminal-like.');
+    expect(lensDesign).toContain('Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults');
+    expect(lensDesign).toContain('Bullet and numbered lists should stack compactly');
   });
 
   it('documents finalized assistant enrichment without leaking into streaming or artifact rows', () => {
