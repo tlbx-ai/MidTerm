@@ -35,15 +35,18 @@ export function renderLensAttachmentDraftView(args: {
   }
 
   for (const attachment of attachments) {
+    const chipLabel = attachment.referenceLabel
+      ? `${attachment.referenceLabel} · ${attachment.displayName}`
+      : attachment.displayName;
     const chip = document.createElement('div');
     chip.className = `smart-input-attachment-chip smart-input-attachment-chip-${attachment.kind}`;
-    chip.title = attachment.displayName;
+    chip.title = chipLabel;
 
     const openButton = document.createElement('button');
     openButton.type = 'button';
     openButton.className = 'smart-input-attachment-open';
-    openButton.title = attachment.displayName;
-    openButton.setAttribute('aria-label', attachment.displayName);
+    openButton.title = chipLabel;
+    openButton.setAttribute('aria-label', chipLabel);
     openButton.addEventListener('click', () => {
       onOpenAttachment(sessionId, attachment);
     });
@@ -65,7 +68,7 @@ export function renderLensAttachmentDraftView(args: {
 
     const label = document.createElement('span');
     label.className = 'smart-input-attachment-label';
-    label.textContent = attachment.displayName;
+    label.textContent = chipLabel;
     openButton.appendChild(label);
     chip.appendChild(openButton);
 
@@ -73,11 +76,8 @@ export function renderLensAttachmentDraftView(args: {
     removeButton.type = 'button';
     removeButton.className = 'smart-input-attachment-remove';
     removeButton.textContent = '×';
-    removeButton.title = `${t('smartInput.removeAttachment')} ${attachment.displayName}`;
-    removeButton.setAttribute(
-      'aria-label',
-      `${t('smartInput.removeAttachment')} ${attachment.displayName}`,
-    );
+    removeButton.title = `${t('smartInput.removeAttachment')} ${chipLabel}`;
+    removeButton.setAttribute('aria-label', `${t('smartInput.removeAttachment')} ${chipLabel}`);
     removeButton.addEventListener('click', () => {
       onRemoveAttachment(sessionId, attachment.id);
       onFocusTextarea();

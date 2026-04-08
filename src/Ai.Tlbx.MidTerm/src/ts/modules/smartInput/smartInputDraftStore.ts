@@ -74,6 +74,16 @@ function tryParsePersistedLensDraftAttachment(
     uploadedPath,
     displayName,
     mimeType: typeof attachment.mimeType === 'string' ? attachment.mimeType : null,
+    referenceKind:
+      attachment.referenceKind === 'image' ||
+      attachment.referenceKind === 'file' ||
+      attachment.referenceKind === 'text'
+        ? attachment.referenceKind
+        : null,
+    referenceLabel:
+      typeof attachment.referenceLabel === 'string' ? attachment.referenceLabel : null,
+    referenceOrdinal:
+      typeof attachment.referenceOrdinal === 'number' ? attachment.referenceOrdinal : null,
     sizeBytes,
   };
 }

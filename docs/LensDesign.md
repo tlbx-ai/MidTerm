@@ -320,6 +320,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Lens composer attachments should stage inside the composer itself as removable chips instead of triggering an immediate turn on selection.
 - Lens should allow attachment-only turns and should treat repeated paste or repeated `+` actions as additive until the user explicitly removes a chip or sends the turn.
 - Clipboard paste inside the active Lens composer should capture browser-exposed files/images into those chips while leaving plain-text paste behavior intact.
+- Image attachments staged in the Lens composer should also insert stable inline reference tokens such as `[Image 1]` at the caret so the prompt text can refer to those attachments explicitly.
+- Those inline reference tokens must behave atomically: caret placement may land only before or after the token, partial selection should expand to the full token, and deleting a token must also remove its staged composer chip.
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
@@ -430,6 +432,7 @@ Status in this branch/work item:
 - implemented: bookmark-scoped Lens `Resume` now lives inside that quick-settings line as a low-chrome text action directly after `Permissions` instead of as a detached status control
 - implemented: Lens Smart Input now stages file/image selections and clipboard files as removable composer chips, and the `+` / photo actions no longer auto-submit a Lens turn on selection
 - implemented: Lens composer attachments now upload as soon as they are staged so image chips render from server-backed file URLs and survive browser refresh; clicking a chip opens the standard file viewer, and Lens send reuses those staged upload paths for mixed or attachment-only turns
+- implemented: staged Lens image attachments now also insert stable atomic inline references such as `[Image 1]` into the composer text, and removing either the inline reference or the chip removes the other so prompt text can refer to specific images deterministically
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: provider-scoped remembered default Lens models are now persisted in MidTerm-owned settings and seed new Lens sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists

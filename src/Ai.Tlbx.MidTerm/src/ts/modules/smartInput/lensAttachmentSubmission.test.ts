@@ -6,13 +6,11 @@ describe('lensAttachmentSubmission', () => {
       .fn<(_: string, __: File) => Promise<string | null>>()
       .mockResolvedValueOnce('Q:/repo/.midterm/uploads/screen.png')
       .mockResolvedValueOnce('Q:/repo/.midterm/uploads/report.pdf');
-    const createTurnRequest = vi.fn(
-      (text: string, attachments: unknown[], sessionId: string) => ({
-        text,
-        attachments,
-        sessionId,
-      }),
-    );
+    const createTurnRequest = vi.fn((text: string, attachments: unknown[], sessionId: string) => ({
+      text,
+      attachments,
+      sessionId,
+    }));
     const submitQueuedTurn = vi.fn(async () => {});
 
     const { submitLensComposerDraft } = await import('./lensAttachmentSubmission');
@@ -27,6 +25,9 @@ describe('lensAttachmentSubmission', () => {
           uploadedPath: null,
           displayName: 'screen.png',
           mimeType: 'image/png',
+          referenceKind: 'image',
+          referenceLabel: 'Image 1',
+          referenceOrdinal: 1,
           sizeBytes: 3,
           previewUrl: null,
         },
@@ -37,6 +38,9 @@ describe('lensAttachmentSubmission', () => {
           uploadedPath: null,
           displayName: 'report.pdf',
           mimeType: 'application/pdf',
+          referenceKind: null,
+          referenceLabel: null,
+          referenceOrdinal: null,
           sizeBytes: 3,
           previewUrl: null,
         },
@@ -88,13 +92,11 @@ describe('lensAttachmentSubmission', () => {
 
   it('reuses already-uploaded draft attachment paths without uploading again', async () => {
     const uploadFile = vi.fn<(_: string, __: File) => Promise<string | null>>();
-    const createTurnRequest = vi.fn(
-      (text: string, attachments: unknown[], sessionId: string) => ({
-        text,
-        attachments,
-        sessionId,
-      }),
-    );
+    const createTurnRequest = vi.fn((text: string, attachments: unknown[], sessionId: string) => ({
+      text,
+      attachments,
+      sessionId,
+    }));
     const submitQueuedTurn = vi.fn(async () => {});
 
     const { submitLensComposerDraft } = await import('./lensAttachmentSubmission');
@@ -109,6 +111,9 @@ describe('lensAttachmentSubmission', () => {
           uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
           displayName: 'screen.png',
           mimeType: 'image/png',
+          referenceKind: 'image',
+          referenceLabel: 'Image 1',
+          referenceOrdinal: 1,
           sizeBytes: 3,
           previewUrl:
             '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
@@ -155,6 +160,9 @@ describe('lensAttachmentSubmission', () => {
             uploadedPath: null,
             displayName: 'screen.png',
             mimeType: 'image/png',
+            referenceKind: 'image',
+            referenceLabel: 'Image 1',
+            referenceOrdinal: 1,
             sizeBytes: 3,
             previewUrl: null,
           },

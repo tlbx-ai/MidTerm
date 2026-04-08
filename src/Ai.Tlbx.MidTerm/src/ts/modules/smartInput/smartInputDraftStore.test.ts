@@ -20,10 +20,8 @@ describe('smartInputDraftStore', () => {
   });
 
   it('persists uploaded Lens draft attachments per session and restores them after reload', async () => {
-    const {
-      loadLensDraftAttachmentsForSession,
-      setLensDraftAttachmentsForSession,
-    } = await import('./smartInputDraftStore');
+    const { loadLensDraftAttachmentsForSession, setLensDraftAttachmentsForSession } =
+      await import('./smartInputDraftStore');
 
     const drafts = new Map();
     setLensDraftAttachmentsForSession(drafts, 's1', [
@@ -34,6 +32,9 @@ describe('smartInputDraftStore', () => {
         uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
         displayName: 'screen.png',
         mimeType: 'image/png',
+        referenceKind: 'image',
+        referenceLabel: 'Image 1',
+        referenceOrdinal: 1,
         sizeBytes: 3,
         previewUrl:
           '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
@@ -48,6 +49,9 @@ describe('smartInputDraftStore', () => {
         uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
         displayName: 'screen.png',
         mimeType: 'image/png',
+        referenceKind: 'image',
+        referenceLabel: 'Image 1',
+        referenceOrdinal: 1,
         sizeBytes: 3,
         previewUrl:
           '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
@@ -71,6 +75,9 @@ describe('smartInputDraftStore', () => {
         uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
         displayName: 'screen.png',
         mimeType: 'image/png',
+        referenceKind: 'image',
+        referenceLabel: 'Image 1',
+        referenceOrdinal: 1,
         sizeBytes: 3,
         previewUrl:
           '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',

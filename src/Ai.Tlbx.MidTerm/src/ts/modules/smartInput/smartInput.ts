@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- smartInput.ts remains a legacy integration hub; this change isolates new composer logic without risking a broad same-turn file split. */
 /**
  * Smart Input UI
  *
@@ -57,12 +58,10 @@ import {
   type ToolKind,
 } from './smartInputView';
 import {
-  applySessionDraftToTextarea,
   clearLensDraftAttachmentsForSession,
   detachLensDraftAttachmentsForSession,
   getLensDraftAttachmentsForSession,
   loadLensDraftAttachmentsForSession,
-  persistSessionDraft,
   setLensDraftAttachmentsForSession,
 } from './smartInputDraftStore';
 import {
@@ -88,6 +87,25 @@ import {
   shouldInsertLineBreakOnEnter,
   shouldSubmitSmartInputOnEnter,
 } from './enterBehavior';
+import {
+  allocateSmartInputComposerReferenceOrdinal,
+  cloneSmartInputComposerDraft,
+  createSmartInputComposerDraft,
+  deleteSmartInputComposerBackward,
+  deleteSmartInputComposerForward,
+  getSmartInputComposerReferenceIdsInSelection,
+  getSmartInputComposerText,
+  hasSmartInputComposerReferences,
+  insertSmartInputComposerReferences,
+  insertSmartInputComposerText,
+  normalizeSmartInputComposerSelection,
+  pruneSmartInputComposerReferences,
+  replaceSmartInputComposerText,
+  type SmartInputComposerDraft,
+  type SmartInputComposerReferenceKind,
+  type SmartInputComposerResolvedReference,
+  type SmartInputComposerSelection,
+} from './smartInputComposerDraft';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -126,7 +144,7 @@ let footerResizeObserver: ResizeObserver | null = null;
 let lastReservedFooterHeightPx = Number.NaN;
 
 const AUTO_SEND_LONG_PRESS_MS = 520;
-const sessionDrafts = new Map<string, string>();
+const sessionDrafts = new Map<string, SmartInputComposerDraft>();
 const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 let lensResumeConversationHandler:
@@ -306,6 +324,194 @@ function clearLensDraftAttachments(sessionId: string, revokePreviews = true): vo
 
 function detachLensDraftAttachments(sessionId: string): LensComposerDraftAttachment[] {
   return detachLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
+}
+
+function buildSmartInputReferenceTokenText(label: string): string {
+  return `[${label}]`;
+}
+
+function formatSmartInputReferenceLabel(
+  kind: SmartInputComposerReferenceKind,
+  ordinal: number,
+): string {
+  const prefix =
+    kind === 'image'
+      ? t('smartInput.referenceImage')
+      : kind === 'file'
+        ? t('smartInput.referenceFile')
+        : t('smartInput.referenceText');
+  return `${prefix} ${ordinal.toString()}`;
+}
+
+function resolveComposerReference(
+  sessionId: string,
+  referenceId: string,
+): SmartInputComposerResolvedReference | null {
+  const attachment = getLensDraftAttachments(sessionId).find(
+    (candidate) => candidate.id === referenceId,
+  );
+  if (!attachment?.referenceLabel || !attachment.referenceKind) {
+    return null;
+  }
+
+  return {
+    referenceId,
+    kind: attachment.referenceKind,
+    label: attachment.referenceLabel,
+    tokenText: buildSmartInputReferenceTokenText(attachment.referenceLabel),
+  };
+}
+
+function getSessionDraft(sessionId: string | null): SmartInputComposerDraft {
+  if (!sessionId) {
+    return createSmartInputComposerDraft();
+  }
+
+  return sessionDrafts.get(sessionId) ?? createSmartInputComposerDraft();
+}
+
+function getSessionDraftText(sessionId: string | null): string {
+  if (!sessionId) {
+    return '';
+  }
+
+  return getSmartInputComposerText(getSessionDraft(sessionId), (referenceId) =>
+    resolveComposerReference(sessionId, referenceId),
+  );
+}
+
+function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): void {
+  const validReferenceIds = new Set(
+    getLensDraftAttachments(sessionId).map((attachment) => attachment.id),
+  );
+  const normalizedDraft = pruneSmartInputComposerReferences(draft, validReferenceIds);
+  if (normalizedDraft.parts.length === 0) {
+    sessionDrafts.delete(sessionId);
+    return;
+  }
+
+  sessionDrafts.set(sessionId, normalizedDraft);
+}
+
+function setSessionDraftText(sessionId: string, text: string): void {
+  setSessionDraft(sessionId, replaceSmartInputComposerText(getSessionDraft(sessionId), text));
+}
+
+function draftHasInlineReferences(sessionId: string | null): boolean {
+  return sessionId ? hasSmartInputComposerReferences(getSessionDraft(sessionId)) : false;
+}
+
+function getSmartInputComposerSelection(
+  textarea: HTMLTextAreaElement,
+): SmartInputComposerSelection {
+  return {
+    start: textarea.selectionStart,
+    end: textarea.selectionEnd,
+  };
+}
+
+function renderSessionDraftIntoTextarea(
+  sessionId: string | null,
+  textarea: HTMLTextAreaElement | null,
+  selection: SmartInputComposerSelection | null = null,
+): void {
+  if (!textarea) {
+    return;
+  }
+
+  const nextValue = getSessionDraftText(sessionId);
+  if (textarea.value !== nextValue) {
+    textarea.value = nextValue;
+  }
+  if (selection) {
+    textarea.setSelectionRange(selection.start, selection.end);
+  }
+  textarea.scrollTop = 0;
+  resizeSmartInputTextarea(textarea);
+}
+
+function updateSessionDraftAndTextarea(
+  sessionId: string,
+  draft: SmartInputComposerDraft,
+  textarea: HTMLTextAreaElement | null = null,
+  selection: SmartInputComposerSelection | null = null,
+): void {
+  setSessionDraft(sessionId, draft);
+  if ($activeSessionId.get() === sessionId) {
+    renderSessionDraftIntoTextarea(sessionId, textarea ?? activeTextarea, selection);
+  }
+}
+
+function setActiveTextareaSelection(
+  textarea: HTMLTextAreaElement,
+  selection: SmartInputComposerSelection,
+): void {
+  textarea.setSelectionRange(selection.start, selection.end);
+}
+
+function syncTextareaSelectionToComposerBoundaries(textarea: HTMLTextAreaElement): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId || !draftHasInlineReferences(sessionId)) {
+    return;
+  }
+
+  const normalizedSelection = normalizeSmartInputComposerSelection(
+    getSessionDraft(sessionId),
+    getSmartInputComposerSelection(textarea),
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  if (
+    normalizedSelection.start !== textarea.selectionStart ||
+    normalizedSelection.end !== textarea.selectionEnd
+  ) {
+    setActiveTextareaSelection(textarea, normalizedSelection);
+  }
+}
+
+function createImageDraftAttachmentWithReference(
+  sessionId: string,
+  file: File,
+  uploadedPath: string,
+): LensComposerDraftAttachment {
+  const draft = getSessionDraft(sessionId);
+  const attachment = createLensComposerDraftAttachment(sessionId, file, uploadedPath);
+  const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'image');
+  attachment.referenceKind = 'image';
+  attachment.referenceOrdinal = referenceOrdinal;
+  attachment.referenceLabel = formatSmartInputReferenceLabel('image', referenceOrdinal);
+  setSessionDraft(sessionId, draft);
+  return attachment;
+}
+
+function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly string[]): void {
+  if (attachmentIds.length === 0) {
+    return;
+  }
+
+  const toRemove = new Set(attachmentIds);
+  const attachments = getLensDraftAttachments(sessionId);
+  const nextAttachments: LensComposerDraftAttachment[] = [];
+  for (const attachment of attachments) {
+    if (toRemove.has(attachment.id)) {
+      releaseLensComposerDraftAttachmentPreviews([attachment]);
+      continue;
+    }
+
+    nextAttachments.push(attachment);
+  }
+
+  setLensDraftAttachments(sessionId, nextAttachments);
+  setSessionDraft(
+    sessionId,
+    pruneSmartInputComposerReferences(
+      getSessionDraft(sessionId),
+      new Set(nextAttachments.map((attachment) => attachment.id)),
+    ),
+  );
+  if ($activeSessionId.get() === sessionId) {
+    renderSessionDraftIntoTextarea(sessionId, activeTextarea);
+    renderLensAttachmentDrafts(sessionId);
+  }
 }
 
 /**
@@ -622,8 +828,29 @@ function createDockedDOM(): void {
         footerDock?.scrollTo({ top: 0, behavior: 'auto' });
       });
     },
+    onTextareaBeforeInput: (event, textarea) => {
+      handleSmartInputBeforeInput(event, textarea);
+    },
+    onTextareaCut: (event, textarea) => {
+      handleSmartInputCut(event, textarea);
+    },
     onTextareaInput: (textarea) => {
-      persistDraftForSession($activeSessionId.get(), textarea.value);
+      const sessionId = $activeSessionId.get();
+      if (sessionId) {
+        if (draftHasInlineReferences(sessionId)) {
+          renderSessionDraftIntoTextarea(
+            sessionId,
+            textarea,
+            normalizeSmartInputComposerSelection(
+              getSessionDraft(sessionId),
+              getSmartInputComposerSelection(textarea),
+              (referenceId) => resolveComposerReference(sessionId, referenceId),
+            ),
+          );
+        } else {
+          setSessionDraftText(sessionId, textarea.value);
+        }
+      }
       resizeSmartInputTextarea(textarea);
       if (!footerResizeObserver) {
         queueFooterReserveSync();
@@ -647,7 +874,12 @@ function createDockedDOM(): void {
 
       if (shouldInsertLineBreakOnEnter(event)) {
         event.preventDefault();
-        insertSmartInputLineBreak(textarea);
+        const sessionId = $activeSessionId.get();
+        if (sessionId && draftHasInlineReferences(sessionId)) {
+          insertComposerTextAtSelection(sessionId, textarea, '\n');
+        } else {
+          insertSmartInputLineBreak(textarea);
+        }
         return;
       }
 
@@ -658,23 +890,39 @@ function createDockedDOM(): void {
     },
     onTextareaPaste: (event) => {
       const sessionId = $activeSessionId.get();
-      if (!sessionId || !isLensActiveSession(sessionId)) {
+      if (!sessionId) {
         return;
       }
 
-      if (!clipboardDataMayContainLensComposerImage(event.clipboardData)) {
+      if (
+        isLensActiveSession(sessionId) &&
+        clipboardDataMayContainLensComposerImage(event.clipboardData)
+      ) {
+        event.preventDefault();
+        const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
+        void (async () => {
+          const files = await extractLensComposerPasteImageFiles(event.clipboardData);
+          if (files.length === 0) {
+            return;
+          }
+
+          await addLensComposerFiles(sessionId, files, selection);
+        })();
         return;
       }
 
-      event.preventDefault();
-      void (async () => {
-        const files = await extractLensComposerPasteImageFiles(event.clipboardData);
-        if (files.length === 0) {
+      if (draftHasInlineReferences(sessionId)) {
+        const text = event.clipboardData?.getData('text/plain') ?? '';
+        if (!text) {
           return;
         }
 
-        await addLensComposerFiles(sessionId, files);
-      })();
+        event.preventDefault();
+        insertComposerTextAtSelection(sessionId, activeTextarea, text);
+      }
+    },
+    onTextareaSelect: (textarea) => {
+      syncTextareaSelectionToComposerBoundaries(textarea);
     },
     onToolsTogglePointerDown: (event) => {
       if (!isMobileViewport()) {
@@ -1090,23 +1338,23 @@ function renderLensAttachmentDrafts(sessionId: string | null): void {
 }
 
 function removeLensComposerFile(sessionId: string, attachmentId: string): void {
-  const attachments = getLensDraftAttachments(sessionId);
-  const nextAttachments: LensComposerDraftAttachment[] = [];
-  for (const attachment of attachments) {
-    if (attachment.id === attachmentId) {
-      releaseLensComposerDraftAttachmentPreviews([attachment]);
-      continue;
-    }
-
-    nextAttachments.push(attachment);
-  }
-
-  setLensDraftAttachments(sessionId, nextAttachments);
-  renderLensAttachmentDrafts($activeSessionId.get());
+  removeAttachmentsByIds(sessionId, [attachmentId]);
 }
 
-async function addLensComposerFiles(sessionId: string, files: readonly File[]): Promise<void> {
+// eslint-disable-next-line complexity -- this upload/stage path coordinates validation, staged uploads, inline token insertion, and attachment sync in one workflow.
+async function addLensComposerFiles(
+  sessionId: string,
+  files: readonly File[],
+  selection: SmartInputComposerSelection | null = null,
+): Promise<void> {
   const nextAttachments = [...getLensDraftAttachments(sessionId)];
+  const nextSelection =
+    selection ??
+    (() => {
+      const draftTextLength = getSessionDraftText(sessionId).length;
+      return { start: draftTextLength, end: draftTextLength };
+    })();
+  const insertedReferenceIds: string[] = [];
   let errorMessage: string | null = null;
 
   for (const file of files) {
@@ -1121,10 +1369,39 @@ async function addLensComposerFiles(sessionId: string, files: readonly File[]): 
       continue;
     }
 
-    nextAttachments.push(createLensComposerDraftAttachment(sessionId, file, uploadedPath));
+    const attachment = isLensComposerImageFile(file)
+      ? createImageDraftAttachmentWithReference(sessionId, file, uploadedPath)
+      : createLensComposerDraftAttachment(sessionId, file, uploadedPath);
+    nextAttachments.push(attachment);
+    if (attachment.referenceLabel) {
+      insertedReferenceIds.push(attachment.id);
+    }
   }
 
   setLensDraftAttachments(sessionId, nextAttachments);
+  if (insertedReferenceIds.length > 0) {
+    const draft = getSessionDraft(sessionId);
+    const removedReferenceIds = getSmartInputComposerReferenceIdsInSelection(
+      draft,
+      nextSelection,
+      (referenceId) => resolveComposerReference(sessionId, referenceId),
+    );
+    const insertResult = insertSmartInputComposerReferences(
+      draft,
+      nextSelection,
+      insertedReferenceIds,
+      (referenceId) => resolveComposerReference(sessionId, referenceId),
+    );
+    updateSessionDraftAndTextarea(
+      sessionId,
+      insertResult.draft,
+      activeTextarea,
+      $activeSessionId.get() === sessionId ? insertResult.selection : null,
+    );
+    removeAttachmentsByIds(sessionId, removedReferenceIds);
+  } else if ($activeSessionId.get() === sessionId) {
+    renderSessionDraftIntoTextarea(sessionId, activeTextarea);
+  }
   renderLensAttachmentDrafts($activeSessionId.get());
 
   if (errorMessage) {
@@ -1134,6 +1411,124 @@ async function addLensComposerFiles(sessionId: string, files: readonly File[]): 
   if ($activeSessionId.get() === sessionId) {
     activeTextarea?.focus({ preventScroll: true });
   }
+}
+
+function insertComposerTextAtSelection(
+  sessionId: string,
+  textarea: HTMLTextAreaElement | null,
+  text: string,
+): void {
+  const targetTextarea = textarea ?? activeTextarea;
+  if (!targetTextarea) {
+    setSessionDraftText(sessionId, `${getSessionDraftText(sessionId)}${text}`);
+    return;
+  }
+
+  const draft = getSessionDraft(sessionId);
+  const selection = getSmartInputComposerSelection(targetTextarea);
+  const removedReferenceIds = getSmartInputComposerReferenceIdsInSelection(
+    draft,
+    selection,
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  const insertResult = insertSmartInputComposerText(draft, selection, text, (referenceId) =>
+    resolveComposerReference(sessionId, referenceId),
+  );
+  updateSessionDraftAndTextarea(
+    sessionId,
+    insertResult.draft,
+    targetTextarea,
+    insertResult.selection,
+  );
+  removeAttachmentsByIds(sessionId, removedReferenceIds);
+}
+
+function deleteComposerRangeFromSelection(
+  sessionId: string,
+  textarea: HTMLTextAreaElement,
+  direction: 'backward' | 'forward',
+): void {
+  const deleteResult =
+    direction === 'backward'
+      ? deleteSmartInputComposerBackward(
+          getSessionDraft(sessionId),
+          getSmartInputComposerSelection(textarea),
+          (referenceId) => resolveComposerReference(sessionId, referenceId),
+        )
+      : deleteSmartInputComposerForward(
+          getSessionDraft(sessionId),
+          getSmartInputComposerSelection(textarea),
+          (referenceId) => resolveComposerReference(sessionId, referenceId),
+        );
+
+  updateSessionDraftAndTextarea(sessionId, deleteResult.draft, textarea, deleteResult.selection);
+  removeAttachmentsByIds(sessionId, deleteResult.removedReferenceIds);
+}
+
+// eslint-disable-next-line complexity -- beforeinput normalization must branch on browser input types to keep inline references atomic inside the textarea.
+function handleSmartInputBeforeInput(event: InputEvent, textarea: HTMLTextAreaElement): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId || !draftHasInlineReferences(sessionId)) {
+    return;
+  }
+
+  switch (event.inputType) {
+    case 'deleteContentBackward':
+    case 'deleteWordBackward':
+    case 'deleteSoftLineBackward':
+    case 'deleteHardLineBackward':
+      event.preventDefault();
+      deleteComposerRangeFromSelection(sessionId, textarea, 'backward');
+      return;
+    case 'deleteContentForward':
+    case 'deleteWordForward':
+    case 'deleteSoftLineForward':
+    case 'deleteHardLineForward':
+      event.preventDefault();
+      deleteComposerRangeFromSelection(sessionId, textarea, 'forward');
+      return;
+    case 'insertText':
+    case 'insertCompositionText':
+    case 'insertReplacementText':
+      event.preventDefault();
+      insertComposerTextAtSelection(sessionId, textarea, event.data ?? '');
+      return;
+    case 'insertLineBreak':
+    case 'insertParagraph':
+      event.preventDefault();
+      insertComposerTextAtSelection(sessionId, textarea, '\n');
+      return;
+    default:
+      syncTextareaSelectionToComposerBoundaries(textarea);
+  }
+}
+
+function handleSmartInputCut(event: ClipboardEvent, textarea: HTMLTextAreaElement): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId || !draftHasInlineReferences(sessionId)) {
+    return;
+  }
+
+  const draft = getSessionDraft(sessionId);
+  const selection = normalizeSmartInputComposerSelection(
+    draft,
+    getSmartInputComposerSelection(textarea),
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  if (selection.start === selection.end) {
+    return;
+  }
+
+  event.preventDefault();
+  event.clipboardData?.setData(
+    'text/plain',
+    getSessionDraftText(sessionId).slice(selection.start, selection.end),
+  );
+  const deleteResult = deleteSmartInputComposerBackward(draft, selection, (referenceId) =>
+    resolveComposerReference(sessionId, referenceId),
+  );
+  updateSessionDraftAndTextarea(sessionId, deleteResult.draft, textarea, deleteResult.selection);
+  removeAttachmentsByIds(sessionId, deleteResult.removedReferenceIds);
 }
 
 async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
@@ -1147,12 +1542,16 @@ async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
     return;
   }
 
-  await addLensComposerFiles(sessionId, Array.from(files));
+  await addLensComposerFiles(
+    sessionId,
+    Array.from(files),
+    activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null,
+  );
 }
 
 function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElement): void {
+  sessionDrafts.delete(sessionId);
   ta.value = '';
-  persistDraftForSession(sessionId, '');
   clearLensDraftAttachments(sessionId);
   syncDraftForActiveSession();
   renderLensAttachmentDrafts($activeSessionId.get());
@@ -1165,9 +1564,12 @@ function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElemen
 }
 
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
-  const text = ta.value;
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
+  const draft = getSessionDraft(sessionId);
+  const text = getSmartInputComposerText(draft, (referenceId) =>
+    resolveComposerReference(sessionId, referenceId),
+  );
 
   const lensAttachments = getLensDraftAttachments(sessionId);
   if (!text && lensAttachments.length === 0) {
@@ -1192,13 +1594,13 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   }
 
   const attachmentDrafts = detachLensDraftAttachments(sessionId);
-  const draftText = text;
+  const draftSnapshot = cloneSmartInputComposerDraft(draft);
   renderLensAttachmentDrafts($activeSessionId.get());
 
   try {
     const { queuedTurn } = await submitLensComposerDraft({
       sessionId,
-      text: draftText,
+      text,
       attachments: attachmentDrafts,
       uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
       uploadFile,
@@ -1211,11 +1613,10 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
   } catch (error) {
     const shouldRestore =
-      (sessionDrafts.get(sessionId) ?? '') === '' &&
-      getLensDraftAttachments(sessionId).length === 0;
+      !getSessionDraftText(sessionId) && getLensDraftAttachments(sessionId).length === 0;
     if (shouldRestore) {
-      persistDraftForSession(sessionId, draftText);
       setLensDraftAttachments(sessionId, attachmentDrafts);
+      setSessionDraft(sessionId, draftSnapshot);
     } else {
       releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
     }
@@ -1230,14 +1631,31 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
 }
 
 function persistDraftForSession(sessionId: string | null, draftOverride?: string): void {
-  persistSessionDraft(sessionDrafts, sessionId, draftOverride ?? activeTextarea?.value ?? '');
+  if (!sessionId) {
+    return;
+  }
+
+  if (typeof draftOverride === 'string') {
+    setSessionDraftText(sessionId, draftOverride);
+    return;
+  }
+
+  if (
+    !activeTextarea ||
+    $activeSessionId.get() !== sessionId ||
+    draftHasInlineReferences(sessionId)
+  ) {
+    return;
+  }
+
+  setSessionDraftText(sessionId, activeTextarea.value);
 }
 
 function applyDraftToTextarea(
   textarea: HTMLTextAreaElement | null,
   sessionId: string | null,
 ): void {
-  applySessionDraftToTextarea(sessionDrafts, textarea, sessionId, resizeSmartInputTextarea);
+  renderSessionDraftIntoTextarea(sessionId, textarea);
 }
 function syncDraftForActiveSession(): void {
   const sessionId = $activeSessionId.get();
@@ -1267,9 +1685,9 @@ function beginRecording(pinOnUse: boolean = false): void {
   const ta = activeTextarea;
   startTranscription(
     (delta) => {
-      if (ta && !autoSendEnabled) {
-        ta.value += delta;
-        ta.dispatchEvent(new Event('input'));
+      const sessionId = $activeSessionId.get();
+      if (ta && sessionId && !autoSendEnabled) {
+        insertComposerTextAtSelection(sessionId, ta, delta);
       }
     },
     (completed) => {
@@ -1277,8 +1695,13 @@ function beginRecording(pinOnUse: boolean = false): void {
       if (autoSendEnabled) {
         sendDirectly(completed);
       } else if (ta) {
-        ta.value = completed;
-        ta.dispatchEvent(new Event('input'));
+        const sessionId = $activeSessionId.get();
+        if (!sessionId) {
+          return;
+        }
+
+        setSessionDraftText(sessionId, completed);
+        renderSessionDraftIntoTextarea(sessionId, ta);
       }
     },
   );
@@ -1314,6 +1737,8 @@ function syncVoiceInputAvailability(): void {
     endRecording,
   });
 }
+
+/* eslint-enable max-lines */
 
 function pinToolForSession(sessionId: string, tool: ToolKind): void {
   const currentTools = sessionPinnedTools.get(sessionId) ?? [];

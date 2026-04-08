@@ -1,4 +1,5 @@
 import type { LensAttachmentReference } from '../../api/types';
+import type { SmartInputComposerReferenceKind } from './smartInputComposerDraft';
 
 export const MAX_LENS_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -8,6 +9,9 @@ export interface PersistedLensComposerDraftAttachment {
   uploadedPath: string;
   displayName: string;
   mimeType: string | null;
+  referenceKind: SmartInputComposerReferenceKind | null;
+  referenceLabel: string | null;
+  referenceOrdinal: number | null;
   sizeBytes: number;
 }
 
@@ -18,6 +22,9 @@ export interface LensComposerDraftAttachment {
   uploadedPath: string | null;
   displayName: string;
   mimeType: string | null;
+  referenceKind: SmartInputComposerReferenceKind | null;
+  referenceLabel: string | null;
+  referenceOrdinal: number | null;
   sizeBytes: number;
   previewUrl: string | null;
 }
@@ -348,6 +355,9 @@ export function createLensComposerDraftAttachment(
     uploadedPath,
     displayName: file.name || 'attachment',
     mimeType: file.type || null,
+    referenceKind: null,
+    referenceLabel: null,
+    referenceOrdinal: null,
     sizeBytes: file.size,
     previewUrl: image ? buildLensComposerAttachmentPreviewUrl(sessionId, uploadedPath) : null,
   };
@@ -386,6 +396,9 @@ export function toPersistedLensComposerDraftAttachment(
     uploadedPath: attachment.uploadedPath,
     displayName: attachment.displayName,
     mimeType: attachment.mimeType,
+    referenceKind: attachment.referenceKind,
+    referenceLabel: attachment.referenceLabel,
+    referenceOrdinal: attachment.referenceOrdinal,
     sizeBytes: attachment.sizeBytes,
   };
 }

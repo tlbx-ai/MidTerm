@@ -40,10 +40,13 @@ interface CreateSmartInputDomArgs {
   onSendDoubleClick: (event: MouseEvent) => void;
   onSendPointerDown: () => void;
   onSendPointerEnd: () => void;
+  onTextareaBeforeInput: (event: InputEvent, textarea: HTMLTextAreaElement) => void;
+  onTextareaCut: (event: ClipboardEvent, textarea: HTMLTextAreaElement) => void;
   onTextareaFocus: () => void;
   onTextareaInput: (textarea: HTMLTextAreaElement) => void;
   onTextareaKeydown: (event: KeyboardEvent, textarea: HTMLTextAreaElement) => void;
   onTextareaPaste: (event: ClipboardEvent) => void;
+  onTextareaSelect: (textarea: HTMLTextAreaElement) => void;
   onToolsTogglePointerDown: (event: PointerEvent) => void;
   onToolsToggleClick: (event: MouseEvent) => void;
   resizeTextarea: (textarea: HTMLTextAreaElement) => void;
@@ -155,11 +158,20 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   textarea.rows = 1;
   textarea.placeholder = t('smartInput.placeholder');
   args.resizeTextarea(textarea);
+  textarea.addEventListener('beforeinput', (event) => {
+    args.onTextareaBeforeInput(event, textarea);
+  });
+  textarea.addEventListener('cut', (event) => {
+    args.onTextareaCut(event, textarea);
+  });
   textarea.addEventListener('input', () => {
     args.onTextareaInput(textarea);
   });
   textarea.addEventListener('focus', args.onTextareaFocus);
   textarea.addEventListener('paste', args.onTextareaPaste);
+  textarea.addEventListener('select', () => {
+    args.onTextareaSelect(textarea);
+  });
   textarea.addEventListener('keydown', (event) => {
     args.onTextareaKeydown(event, textarea);
   });
