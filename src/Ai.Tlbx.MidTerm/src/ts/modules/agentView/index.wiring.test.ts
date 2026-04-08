@@ -35,6 +35,9 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('font-size: 9px;');
     expect(css).toContain(".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {");
     expect(css).toContain('display: none;');
+    expect(css).toContain(
+      ":root:not([data-agent-show-message-timestamps='true']) .agent-history-assistant .agent-history-meta {",
+    );
   });
 
   it('lets agent message typography follow the configurable agent UI font while machine rows stay on terminal monospace', () => {
@@ -50,10 +53,13 @@ describe('agent view Lens wiring', () => {
 
   it('documents the above-body metadata rule in the Lens design contract', () => {
     expect(lensDesign).toContain(
-      'In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.',
+      'In Codex Lens, user rows should place their quiet role label and timestamp above the message body, not below it.',
     );
     expect(lensDesign).toContain(
       'the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label',
+    );
+    expect(lensDesign).toContain(
+      'assistant rows should place any optional timestamp above the message body when that preference is enabled',
     );
   });
 
@@ -99,6 +105,8 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('background: transparent;');
     expect(css).toContain('border: 0;');
     expect(css).toContain('font-family: var(--agent-history-mono-font-family, var(--font-mono));');
+    expect(css).toContain('.agent-history-command-prefix {');
+    expect(css).toContain('color: var(--text-primary);');
     expect(css).toContain('.agent-history-command-token-command {');
     expect(css).toContain('.agent-history-command-output-tail {');
     expect(lensDesign).toContain('Command-execution rows should render in a console-like `Ran …` form');
@@ -142,10 +150,15 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-diff-line-file {');
     expect(css).toContain('.agent-history-diff-line-add {');
     expect(css).toContain('.agent-history-diff-line-delete {');
-    expect(css).toContain('.agent-history-diff-line-add > .agent-history-diff-line-number:first-child,');
-    expect(css).toContain('grid-column: 1 / span 2;');
+    expect(css).toContain(".agent-history-diff-line[data-has-line-numbers='true'] {");
+    expect(css).toContain('.agent-history-diff-line-gutter {');
+    expect(css).toContain('.agent-history-diff-line-number-old {');
+    expect(css).toContain('.agent-history-diff-line-number-new {');
     expect(historyContentSource).toContain("Edited ${displayPath}");
     expect(lensDesign).toContain('Diff file headers should read like console work artifacts');
+    expect(lensDesign).toContain(
+      'That diff line-number gutter should stay structurally consistent across context, removed, and added lines;',
+    );
     expect(lensDesign).toContain('Command-execution rows and diff rows should not repeat timestamp meta.');
   });
 

@@ -51,6 +51,14 @@ Future refactors may improve or replace the implementation of any of the above, 
 - `timeline` means the rendered visual presentation of that history in the Lens UI.
 - `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names and should not be used as the Lens UI concept.
 
+## Runtime Boundary
+
+- Explicit Codex and Claude Lens sessions must ingest exactly one MidTerm-owned canonical runtime stream, and that stream must come through `mtagenthost`.
+- `mtagenthost` is the only place where provider-specific transport, protocol parsing, and event adaptation belong for Lens.
+- MidTerm must not keep a parallel in-process provider adapter, duplicate parser, or silent fallback runtime for the same Lens provider path.
+- If `mtagenthost` attach fails, Lens should surface that failure and remain unattached rather than switching to a second provider ingestion path with different behavior.
+- The frontend should consume the same canonical MidTerm Lens concepts regardless of provider and regardless of the provider's raw wire shape.
+
 ## Core Principles
 
 ### 1. Stable chronology
@@ -194,7 +202,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - User prompts should be visually distinct but compact.
 - They should anchor the start of a turn without dominating the screen.
 - Repeated rendering of the same user turn is forbidden.
-- In Codex Lens, user and assistant rows should place their quiet role label and timestamp above the message body, not below it.
+- In Codex Lens, user rows should place their quiet role label and timestamp above the message body, not below it.
+- In Codex Lens, assistant rows should place any optional timestamp above the message body when that preference is enabled, but should default to no repeated assistant timestamp.
 - In Codex Lens, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label when the row is otherwise plainly identifiable as assistant output.
 
 ### Assistant output
@@ -219,6 +228,9 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Starts, progress, completion, and failure should read as one evolving activity line or block where possible.
 - Raw transport noise must not leak into the UI.
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Lens history.
+- When Codex or Claude emits an unknown structured provider event, MidTerm should preserve it as a canonical diagnostic history item instead of silently dropping it.
+- Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown MidTerm fallback output rather than pretending to be a first-class mapped concept.
+- Lens should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before MidTerm ships a dedicated mapping.
 - Tool, reasoning, plan, diff, request, and system rows should share one restrained structural language instead of mixing rail markers, unrelated borders, and unrelated card treatments.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
@@ -257,6 +269,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Diff rows should stay expanded by default instead of hiding behind the generic machine-output disclosure treatment.
 - Lens should trim non-essential unified-diff preamble noise where possible and prioritize the file header plus actual hunk content.
 - When unified diff hunks provide old/new coordinates, Lens should show a subtle old/new line-number gutter beside the diff text.
+- That diff line-number gutter should stay structurally consistent across context, removed, and added lines; do not switch between doubled columns, stretched single columns, or other per-row numbering layouts that make the gutter look accidental.
 - Diff file headers should read like console work artifacts, preferring `Edited {full path}` above the hunk blocks rather than raw `diff --git` preamble.
 - Extremely large diff bodies should remain bounded in the timeline: render the first 200 visible diff lines, then end with an ellipsis marker instead of dumping the full tail.
 - File-oriented information should use monospace sparingly and preserve readability.
@@ -364,6 +377,7 @@ Status in this branch/work item:
 - implemented: hidden/background Lens sessions may continue ingesting runtime state, but history DOM work is deferred until that Lens surface is visible again
 - implemented: hidden/background Lens sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Lens history is treated as a bounded browser-side view window over MidTerm-owned canonical history rather than as an unbounded full-history browser cache
+- implemented: explicit Codex and Claude Lens sessions now route through `mtagenthost` as the single structured runtime boundary; `SessionLensRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
 - implemented: Lens retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: MidTerm-side Lens persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Lens surface no longer routes through terminal focus reclaim, so drag text selection in Lens remains intact after the mouse button is released
@@ -391,9 +405,11 @@ Status in this branch/work item:
 - implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
 - implemented: Codex Lens now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
 - implemented: Codex Lens now keeps the quiet role label on user rows while omitting the redundant repeated `Agent` badge on assistant message rows
+- implemented: assistant-message timestamps are now controlled by an Agent setting, default hidden, while user-row timestamps remain visible above the prompt body
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Lens diff rows now use console-style `Edited {path}` file headers and tighter green/red hunk blocks with line numbers
+- implemented: Lens diff code lines now use one consistent old/new gutter shape across context, delete, and add rows instead of changing numbering layout per row type
 - implemented: Lens and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
 - implemented: desktop Lens quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals the editable controls as a compact sheet

@@ -29,6 +29,8 @@ public sealed class MidTermSettings
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
     public string ClaudeEnvironmentVariables { get; set; } = "";
     public string AgentMessageFontFamily { get; set; } = "default";
+    public bool ShowAgentMessageTimestamps { get; set; } = false;
+    public bool ShowUnknownAgentMessages { get; set; } = true;
 
     private static ShellType GetPlatformDefaultShell()
     {

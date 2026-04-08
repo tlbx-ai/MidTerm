@@ -562,6 +562,9 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     '--agent-ui-font-family',
     buildAgentMessageFontStack(settings.agentMessageFontFamily),
   );
+  document.documentElement.dataset.agentShowMessageTimestamps = settings.showAgentMessageTimestamps
+    ? 'true'
+    : 'false';
   let hasFontChanges = false;
   syncBoxDrawingStyle(boxDrawingStyle);
   syncBoxDrawingScale(boxDrawingScale);

@@ -54,6 +54,8 @@ public sealed partial class MidTermSettingsPublic
             ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
             ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
+            ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
+            ShowUnknownAgentMessages = settings.ShowUnknownAgentMessages,
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             LineHeight = settings.LineHeight,
@@ -142,6 +144,8 @@ public sealed partial class MidTermSettingsPublic
         settings.AgentMessageFontFamily = NormalizeAgentMessageFontFamily(
             AgentMessageFontFamily,
             DefaultAgentMessageFontFamily);
+        settings.ShowAgentMessageTimestamps = ShowAgentMessageTimestamps;
+        settings.ShowUnknownAgentMessages = ShowUnknownAgentMessages;
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);

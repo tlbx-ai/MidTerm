@@ -80,6 +80,29 @@ function createTurnDurationNoteBody(entry: LensHistoryEntry): HTMLElement {
   return body;
 }
 
+function createDiffLineGutterNode(
+  oldLineNumber: number | undefined,
+  newLineNumber: number | undefined,
+): HTMLElement {
+  const gutter = document.createElement('span');
+  gutter.className = 'agent-history-diff-line-gutter';
+  gutter.appendChild(createDiffLineNumberNode(oldLineNumber, 'old'));
+  gutter.appendChild(createDiffLineNumberNode(newLineNumber, 'new'));
+  return gutter;
+}
+
+function createDiffLineNumberNode(value: number | undefined, lane: 'old' | 'new'): HTMLElement {
+  const cell = document.createElement('span');
+  cell.className = `agent-history-diff-line-number agent-history-diff-line-number-${lane}`;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    cell.textContent = String(value);
+  } else {
+    cell.textContent = '';
+    cell.setAttribute('aria-hidden', 'true');
+  }
+  return cell;
+}
+
 export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
     const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
@@ -409,8 +432,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     for (const line of buildRenderedDiffLines(bodyText, cwd && cwd.length > 0 ? cwd : null)) {
       const row = document.createElement('span');
       row.className = `agent-history-diff-line ${line.className}`;
-      row.appendChild(createDiffLineNumberNode(line.oldLineNumber));
-      row.appendChild(createDiffLineNumberNode(line.newLineNumber));
+      const hasLineNumbers =
+        typeof line.oldLineNumber === 'number' || typeof line.newLineNumber === 'number';
+      if (hasLineNumbers) {
+        row.dataset.hasLineNumbers = 'true';
+        row.appendChild(createDiffLineGutterNode(line.oldLineNumber, line.newLineNumber));
+      }
       const text = document.createElement('span');
       text.className = 'agent-history-diff-line-text';
       text.textContent = line.text || ' ';
@@ -419,18 +446,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
     body.appendChild(content);
     return body;
-  }
-
-  function createDiffLineNumberNode(value: number | undefined): HTMLElement {
-    const cell = document.createElement('span');
-    cell.className = 'agent-history-diff-line-number';
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      cell.textContent = String(value);
-    } else {
-      cell.textContent = '';
-      cell.setAttribute('aria-hidden', 'true');
-    }
-    return cell;
   }
 
   function createCollapsedHistoryBody(

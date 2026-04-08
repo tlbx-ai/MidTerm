@@ -20,6 +20,7 @@ const declineLensRequest = vi.fn();
 const resolveLensUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
+let currentSettings: any = { showUnknownAgentMessages: true };
 const activeSessionSubscribers: Array<(sessionId: string | null) => void> = [];
 const documentEventListeners = new Map<string, Array<() => void>>();
 const windowEventListeners = new Map<string, Array<() => void>>();
@@ -137,6 +138,10 @@ vi.mock('../../stores', () => ({
       return () => {};
     },
   },
+  $currentSettings: {
+    get: () => currentSettings,
+    subscribe: () => () => {},
+  },
   getSession: () => ({
     id: 's1',
     currentDirectory: 'Q:\\repos\\MidTerm',
@@ -244,6 +249,7 @@ describe('agentView dev errors', () => {
     resolveLensUserInput.mockReset();
     showDevErrorDialog.mockReset();
     activeSessionId = null;
+    currentSettings = { showUnknownAgentMessages: true };
     activeSessionSubscribers.length = 0;
     documentEventListeners.clear();
     windowEventListeners.clear();
@@ -5594,6 +5600,57 @@ describe('agentView dev errors', () => {
     });
   });
 
+  it('renders diff code lines through one stable old/new gutter shape', async () => {
+    const { createAgentHistoryDom } = await import('./historyDom');
+
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshLensSnapshot: async () => {},
+      renderCurrentAgentView: () => {},
+      retryLensActivation: async () => {},
+      logWarn: () => {},
+    });
+
+    const entry = {
+      id: 'diff-structured',
+      order: 1,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: [
+        'diff --git a/report.md b/report.md',
+        '--- a/report.md',
+        '+++ b/report.md',
+        '@@ -4,3 +4,4 @@',
+        ' line 4',
+        '-line 5 old',
+        '+line 5 new',
+      ].join('\n'),
+      meta: '',
+    } as const;
+
+    const article = historyDom.createHistoryEntry(entry, 's1') as any;
+    const body = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-diff-body'),
+    );
+    const content = body.children.find((child: any) =>
+      String(child.className).includes('agent-history-diff-content'),
+    );
+    const contextRow = content.children[2];
+    const deleteRow = content.children[3];
+    const addRow = content.children[4];
+
+    expect(contextRow.dataset.hasLineNumbers).toBe('true');
+    expect(deleteRow.dataset.hasLineNumbers).toBe('true');
+    expect(addRow.dataset.hasLineNumbers).toBe('true');
+    expect(contextRow.children[0].className).toContain('agent-history-diff-line-gutter');
+    expect(deleteRow.children[0].className).toContain('agent-history-diff-line-gutter');
+    expect(addRow.children[0].className).toContain('agent-history-diff-line-gutter');
+    expect(deleteRow.children[0].children).toHaveLength(2);
+    expect(addRow.children[0].children).toHaveLength(2);
+  });
+
   it('resolves diff file headers against the session working directory when available', async () => {
     const { buildRenderedDiffLines } = await import('./index');
 
@@ -5892,5 +5949,88 @@ describe('agentView dev errors', () => {
     expect(requiresWindowRefresh).toBe(true);
     expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(4200);
     expect(snapshot.estimatedHistoryAfterWindowPx).toBe(3000);
+  });
+  it('shows unknown agent fallback entries by default and hides them when disabled', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-04-08T16:40:00Z',
+      latestSequence: 1,
+      totalHistoryCount: 1,
+      estimatedTotalHistoryHeightPx: 84,
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-08T16:40:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-04-08T16:39:00Z',
+        completedAt: '2026-04-08T16:40:00Z',
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [
+        {
+          entryId: 'tool:item-unknown-1',
+          order: 1,
+          estimatedHeightPx: 84,
+          kind: 'tool',
+          turnId: 'turn-1',
+          itemId: 'item-unknown-1',
+          requestId: null,
+          status: 'completed',
+          itemType: 'unknown_agent_message',
+          title: 'Unknown agent message',
+          body: 'Method: codex/event/background_terminal_wait\n{"msg":{"text":"Waited for background terminal  npm run lint"}}',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-08T16:40:00Z',
+          updatedAt: '2026-04-08T16:40:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    currentSettings = { showUnknownAgentMessages: true };
+    const visibleHistory = buildLensHistoryEntries(snapshot, []);
+    expect(visibleHistory).toHaveLength(1);
+    expect(visibleHistory[0]?.sourceItemType).toBe('unknown_agent_message');
+
+    currentSettings = { showUnknownAgentMessages: false };
+    const hiddenHistory = buildLensHistoryEntries(snapshot, []);
+    expect(hiddenHistory).toHaveLength(0);
   });
 });

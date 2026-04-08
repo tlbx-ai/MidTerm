@@ -4074,6 +4074,8 @@ export interface components {
       claudeDangerouslySkipPermissionsDefault: boolean;
       claudeEnvironmentVariables: string;
       agentMessageFontFamily: string;
+      showAgentMessageTimestamps: boolean;
+      showUnknownAgentMessages: boolean;
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;

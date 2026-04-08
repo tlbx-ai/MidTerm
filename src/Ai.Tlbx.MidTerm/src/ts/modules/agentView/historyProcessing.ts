@@ -6,6 +6,7 @@ import type {
   LensPulseSnapshotResponse,
 } from '../../api/client';
 import type { LensAttachmentReference, LensPulseRuntimeNotice } from '../../api/types';
+import { $currentSettings } from '../../stores';
 import {
   formatAbsoluteTime,
   historyLabel,
@@ -131,6 +132,7 @@ export function buildLensHistoryEntries(
       }
       return mapped;
     })
+    .filter((entry) => shouldShowUnknownAgentMessages() || !isUnknownAgentFallbackEntry(entry))
     .filter((entry) => !isSuppressedLensRuntimeNoticeEntry(entry))
     .sort((left, right) => left.order - right.order)
     .reduce<LensHistoryEntry[]>(mergeCommandOutputHistoryEntries, [])
@@ -257,6 +259,14 @@ function isPersistentCommandEntry(entry: LensHistoryEntry): boolean {
   }
 
   return COMMAND_HISTORY_ITEM_TYPES.has(normalizeHistoryItemType(entry.sourceItemType));
+}
+
+function shouldShowUnknownAgentMessages(): boolean {
+  return $currentSettings.get()?.showUnknownAgentMessages !== false;
+}
+
+function isUnknownAgentFallbackEntry(entry: Pick<LensHistoryEntry, 'sourceItemType'>): boolean {
+  return normalizeHistoryItemType(entry.sourceItemType) === 'unknownagentmessage';
 }
 
 function buildPersistentCommandKeys(entry: LensHistoryEntry): string[] {

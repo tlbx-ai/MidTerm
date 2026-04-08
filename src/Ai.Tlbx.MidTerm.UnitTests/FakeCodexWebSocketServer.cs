@@ -23,7 +23,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitRichTranscriptItems,
         bool emitTurnIds,
         bool emitLateDiffAfterCompletion,
-        bool emitMcpToolProgress)
+        bool emitMcpToolProgress,
+        bool emitUnknownAgentNotification)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
@@ -32,6 +33,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitTurnIds = emitTurnIds;
         EmitLateDiffAfterCompletion = emitLateDiffAfterCompletion;
         EmitMcpToolProgress = emitMcpToolProgress;
+        EmitUnknownAgentNotification = emitUnknownAgentNotification;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
@@ -51,16 +53,27 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitMcpToolProgress { get; }
 
+    public bool EmitUnknownAgentNotification { get; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
         bool emitRichTranscriptItems = false,
         bool emitTurnIds = false,
         bool emitLateDiffAfterCompletion = false,
-        bool emitMcpToolProgress = false)
+        bool emitMcpToolProgress = false,
+        bool emitUnknownAgentNotification = false)
     {
         var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
-        return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply, emitRichTranscriptItems, emitTurnIds, emitLateDiffAfterCompletion, emitMcpToolProgress);
+        return new FakeCodexWebSocketServer(
+            endpoint,
+            loadedThreadId,
+            assistantReply,
+            emitRichTranscriptItems,
+            emitTurnIds,
+            emitLateDiffAfterCompletion,
+            emitMcpToolProgress,
+            emitUnknownAgentNotification);
     }
 
     public async ValueTask DisposeAsync()
@@ -340,6 +353,24 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                     }
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
+                            if (EmitUnknownAgentNotification)
+                            {
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "codex/event/background_terminal_wait",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        itemId = "item-command-1",
+                                        msg = new
+                                        {
+                                            turn_id = turnId,
+                                            item_id = "item-command-1",
+                                            text = "Waited for background terminal  npm run lint"
+                                        }
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                            }
                             await SendJsonAsync(socket, new
                             {
                                 method = "item/completed",

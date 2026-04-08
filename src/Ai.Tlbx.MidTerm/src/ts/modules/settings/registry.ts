@@ -147,6 +147,30 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'known agent message font family',
     applyMode: 'immediate',
   }),
+  controlEntry(
+    'showAgentMessageTimestamps',
+    'setting-show-agent-message-timestamps',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
+  controlEntry(
+    'showUnknownAgentMessages',
+    'setting-show-unknown-agent-messages',
+    'checkbox',
+    true,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry('fontSize', 'setting-font-size', 'int', 14, {
     editable: true,
     storage: 'settings.json',

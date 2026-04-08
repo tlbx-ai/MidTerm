@@ -638,6 +638,94 @@ public sealed class MtAgentHostCodexIntegrationTests
     }
 
     [Fact]
+    public async Task MtAgentHost_EmitsFallbackLensItemForUnknownCodexNotifications()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-unknown-1",
+            assistantReply: "Unknown event handled.",
+            emitRichTranscriptItems: true,
+            emitTurnIds: true,
+            emitUnknownAgentNotification: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-unknown",
+                SessionId = "session-remote-unknown",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-remote-unknown",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-unknown-1"
+                    },
+                    ResumeThreadId = "thread-remote-unknown-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-unknown");
+            _ = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "session.ready",
+                maxEvents: 4);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-unknown",
+                SessionId = "session-remote-unknown",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Show an unknown Codex event.",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-unknown");
+            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "turn.completed",
+                maxEvents: 20);
+
+            Assert.Contains(
+                turnEvents,
+                envelope => envelope.Event.Type == "item.updated" &&
+                            envelope.Event.TurnId == "turn-remote-1" &&
+                            envelope.Event.Item?.ItemType == "unknown_agent_message" &&
+                            envelope.Event.Item?.Title == "Unknown agent message" &&
+                            envelope.Event.Item?.Detail?.Contains("codex/event/background_terminal_wait", StringComparison.Ordinal) == true &&
+                            envelope.Event.Item?.Detail?.Contains("Waited for background terminal  npm run lint", StringComparison.Ordinal) == true);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
     public async Task MtAgentHost_PreservesPayloadTurnIdForLateCodexDiffNotifications()
     {
         await using var fakeServer = FakeCodexWebSocketServer.Start(

@@ -198,6 +198,42 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripShowAgentMessageTimestamps()
+    {
+        var settings = new MidTermSettings
+        {
+            ShowAgentMessageTimestamps = true
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.ShowAgentMessageTimestamps);
+
+        settings.ShowAgentMessageTimestamps = false;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.ShowAgentMessageTimestamps);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripShowUnknownAgentMessages()
+    {
+        var settings = new MidTermSettings
+        {
+            ShowUnknownAgentMessages = false
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.False(publicSettings.ShowUnknownAgentMessages);
+
+        settings.ShowUnknownAgentMessages = true;
+        publicSettings.ApplyTo(settings);
+
+        Assert.False(settings.ShowUnknownAgentMessages);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripCustomTerminalColorSchemes()
     {
         var settings = new MidTermSettings

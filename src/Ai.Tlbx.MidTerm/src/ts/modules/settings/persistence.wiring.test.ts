@@ -155,6 +155,12 @@ describe('settings persistence wiring', () => {
     expect(
       SETTINGS_REGISTRY.find((entry) => entry.key === 'agentMessageFontFamily')?.validation,
     ).toBe('known agent message font family');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'showAgentMessageTimestamps')?.validation,
+    ).toBe('boolean');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'showUnknownAgentMessages')?.validation,
+    ).toBe('boolean');
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'customGlyphs')?.validation).toBe(
       'boolean, rendered as custom or font box drawing',
     );
@@ -184,6 +190,7 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain("document.getElementById('setting-codex-env')");
     expect(persistenceSource).toContain("document.getElementById('setting-claude-env')");
     expect(persistenceSource).toContain("'--agent-ui-font-family'");
+    expect(persistenceSource).toContain('document.documentElement.dataset.agentShowMessageTimestamps =');
     expect(persistenceSource).toContain("textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));");
   });
 

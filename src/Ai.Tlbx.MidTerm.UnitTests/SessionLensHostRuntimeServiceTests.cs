@@ -545,7 +545,7 @@ public sealed class SessionLensHostRuntimeServiceTests
     }
 
     [Fact]
-    public async Task SessionLensRuntimeService_FallsBackToLegacyCodexWhenMtAgentHostColdAttachThrows()
+    public async Task SessionLensRuntimeService_DoesNotFallbackWhenMtAgentHostColdAttachThrows()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
         var pulse = new SessionLensPulseService();
@@ -577,46 +577,27 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         var session = new SessionInfoDto
         {
-            Id = "session-runtime-codex-host-fallback-1",
+            Id = "session-runtime-codex-host-attach-failure-1",
             CurrentDirectory = fakeCodex.Root,
             ForegroundName = "codex"
         };
 
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
 
-        Assert.True(attached);
-        Assert.True(runtime.IsAttached(session.Id));
-        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
-        Assert.Equal("codex-app-server", runtimeSnapshot.TransportKey);
-        Assert.Equal("Codex app-server runtime", runtimeSnapshot.TransportLabel);
-        Assert.Equal("ready", runtimeSnapshot.Status);
+        Assert.False(attached);
+        Assert.False(runtime.IsAttached(session.Id));
+        Assert.False(runtime.TryGetSnapshot(session.Id, out _));
 
-        var turn = await runtime.StartTurnAsync(
-            session.Id,
-            new LensTurnRequest
-            {
-                Text = "Confirm the fallback runtime keeps turn ids on transcript events.",
-                Attachments = []
-            });
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            runtime.StartTurnAsync(
+                session.Id,
+                new LensTurnRequest
+                {
+                    Text = "Host attach failed, so Lens must not invent a second Codex runtime.",
+                    Attachments = []
+                }));
 
-        Assert.Equal("accepted", turn.Status);
-        Assert.NotNull(turn.TurnId);
-
-        var events = await WaitForEventsAsync(
-            pulse,
-            session.Id,
-            current => current.Events.Any(lensEvent => lensEvent.Type == "content.delta"));
-
-        Assert.Contains(
-            events.Events,
-            lensEvent => lensEvent.Type == "item.completed" &&
-                         string.Equals(lensEvent.ItemId, $"local-user:{turn.TurnId}", StringComparison.Ordinal) &&
-                         string.Equals(lensEvent.TurnId, turn.TurnId, StringComparison.Ordinal));
-        Assert.Contains(
-            events.Events,
-            lensEvent => lensEvent.Type == "content.delta" &&
-                         string.Equals(lensEvent.TurnId, turn.TurnId, StringComparison.Ordinal) &&
-                         string.Equals(lensEvent.ContentDelta?.StreamKind, "assistant_text", StringComparison.Ordinal));
+        Assert.Equal("Lens runtime is not attached.", error.Message);
     }
 
     [Fact]

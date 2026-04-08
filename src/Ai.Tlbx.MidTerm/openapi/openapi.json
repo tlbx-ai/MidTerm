@@ -4965,6 +4965,8 @@
           "claudeDangerouslySkipPermissionsDefault",
           "claudeEnvironmentVariables",
           "agentMessageFontFamily",
+          "showAgentMessageTimestamps",
+          "showUnknownAgentMessages",
           "fontSize",
           "fontFamily",
           "lineHeight",
@@ -5063,6 +5065,12 @@
           },
           "agentMessageFontFamily": {
             "type": "string"
+          },
+          "showAgentMessageTimestamps": {
+            "type": "boolean"
+          },
+          "showUnknownAgentMessages": {
+            "type": "boolean"
           },
           "fontSize": {
             "type": "integer",

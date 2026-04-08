@@ -1164,6 +1164,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 break;
             }
+
+            default:
+                EmitUnknownCodexNotificationFallback(method, payload);
+                break;
         }
     }
 
@@ -1183,6 +1187,45 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 Delta = delta
             };
         }));
+    }
+
+    private void EmitUnknownCodexNotificationFallback(string method, JsonElement payload)
+    {
+        _emit(CreateEvent(
+            "item.updated",
+            ResolveUnknownCodexTurnId(payload),
+            null,
+            null,
+            method.StartsWith("codex/event/", StringComparison.Ordinal)
+                ? "codex.eventmsg"
+                : "codex.app-server.notification",
+            method,
+            payload,
+            lensEvent =>
+            {
+                lensEvent.Item = new LensPulseItemPayload
+                {
+                    ItemType = "unknown_agent_message",
+                    Status = "completed",
+                    Title = "Unknown agent message",
+                    Detail = BuildUnknownCodexFallbackDetail(method, payload)
+                };
+            }));
+    }
+
+    private string? ResolveUnknownCodexTurnId(JsonElement payload)
+    {
+        return ResolveTurnId(payload)
+               ?? GetString(payload, "msg", "turn_id")
+               ?? GetString(payload, "msg", "turnId");
+    }
+
+    private static string BuildUnknownCodexFallbackDetail(string method, JsonElement payload)
+    {
+        var rawPayload = BuildCompactJsonDetail(payload);
+        return string.IsNullOrWhiteSpace(rawPayload)
+            ? $"Method: {method}"
+            : $"Method: {method}\n{rawPayload}";
     }
 
     private string? ResolveTurnId(JsonElement payload, string? fallbackTurnId = null)

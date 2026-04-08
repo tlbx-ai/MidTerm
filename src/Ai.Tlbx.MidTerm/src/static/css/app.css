@@ -11534,7 +11534,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-command-prefix {
-  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
+  color: var(--text-primary);
 }
 
 .agent-history-command-token-command {
@@ -11569,6 +11569,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+:root:not([data-agent-show-message-timestamps='true']) .agent-history-assistant .agent-history-meta {
+  display: none;
 }
 
 .agent-history-disclosure-shell {
@@ -12178,16 +12182,30 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-diff-line {
-  display: grid;
-  grid-template-columns: minmax(0, 4.5ch) minmax(0, 4.5ch) minmax(0, 1fr);
+  display: block;
   align-items: baseline;
   white-space: nowrap;
   border-radius: 4px;
 }
 
+.agent-history-diff-line[data-has-line-numbers='true'] {
+  display: grid;
+  grid-template-columns: minmax(0, 10.5ch) minmax(0, 1fr);
+}
+
+.agent-history-diff-line-gutter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: baseline;
+  min-width: 0;
+  padding: 1px 6px 1px 10px;
+  column-gap: 6px;
+  border-right: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  margin-right: 10px;
+}
+
 .agent-history-diff-line-number {
   min-width: 0;
-  padding: 1px 8px 1px 10px;
   color: color-mix(in srgb, currentColor 54%, transparent);
   text-align: right;
   font-size: 0.74rem;
@@ -12199,14 +12217,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   content: ' ';
 }
 
-.agent-history-diff-line-add > .agent-history-diff-line-number:first-child,
-.agent-history-diff-line-delete > .agent-history-diff-line-number:nth-child(2) {
-  display: none;
+.agent-history-diff-line-number-old {
+  color: color-mix(in srgb, currentColor 48%, transparent);
 }
 
-.agent-history-diff-line-add > .agent-history-diff-line-number:nth-child(2),
-.agent-history-diff-line-delete > .agent-history-diff-line-number:first-child {
-  grid-column: 1 / span 2;
+.agent-history-diff-line-number-new {
+  color: color-mix(in srgb, currentColor 62%, transparent);
 }
 
 .agent-history-diff-line-text {
