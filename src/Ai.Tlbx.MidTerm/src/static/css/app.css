@@ -326,6 +326,8 @@
   --bg-tertiary: #161821; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
   --terminal-ui-background: var(--terminal-bg);
+  --workspace-pane-background: var(--terminal-canvas-background, var(--terminal-bg));
+  --workspace-pane-chrome-background: var(--terminal-ui-background, var(--terminal-bg));
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
@@ -8954,7 +8956,7 @@ body.shared-session-mode .session-tab-bar {
 .file-viewer-video {
   width: 100%;
   max-height: calc(85vh - 100px);
-  background: var(--bg-terminal);
+  background: var(--workspace-pane-background);
 }
 
 /* File viewer: Audio */
@@ -8975,7 +8977,7 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
 }
 
 .file-viewer-editor-shell,
@@ -8983,13 +8985,13 @@ body.shared-session-mode .session-tab-bar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 0;
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
 }
 
 .file-viewer-line-gutter {
   width: calc(var(--file-viewer-gutter-width, 2ch) + 28px);
   padding: 16px 12px 16px 16px;
-  background: var(--bg-secondary);
+  background: var(--workspace-pane-chrome-background);
   border-right: 1px solid var(--border-color);
   color: var(--text-muted);
   overflow: hidden auto;
@@ -9016,7 +9018,7 @@ body.shared-session-mode .session-tab-bar {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
 }
 
 .file-viewer-text {
@@ -9030,7 +9032,7 @@ body.shared-session-mode .session-tab-bar {
   font-size: var(--file-viewer-font-size, 14px);
   line-height: var(--file-viewer-line-height, 1.5);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
   white-space: pre;
   tab-size: 4;
   -moz-tab-size: 4;
@@ -9048,7 +9050,7 @@ body.shared-session-mode .session-tab-bar {
   font-size: var(--file-viewer-font-size, 14px);
   line-height: var(--file-viewer-line-height, 1.5);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
   border: none;
   outline: none;
   resize: none;
@@ -9096,7 +9098,7 @@ body.shared-session-mode .session-tab-bar {
   display: block;
   width: 100%;
   padding: 12px;
-  background: var(--bg-secondary);
+  background: var(--workspace-pane-chrome-background);
   border: 1px solid var(--border-color);
   border-top: none;
   color: var(--accent-blue);
@@ -9402,7 +9404,7 @@ body.shared-session-mode .session-tab-bar {
   right: 0;
   bottom: 0;
   width: 400px;
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -9420,7 +9422,7 @@ body.shared-session-mode .session-tab-bar {
   height: var(--bar-height);
   box-sizing: border-box;
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-elevated);
+  background: var(--workspace-pane-chrome-background);
   gap: 8px;
 }
 
@@ -9450,6 +9452,7 @@ body.shared-session-mode .session-tab-bar {
 .file-viewer-dock-body {
   flex: 1;
   overflow: auto;
+  background: var(--workspace-pane-background);
 }
 
 /* Terminal shrinks when dock is open */
@@ -9573,7 +9576,7 @@ body.shared-session-mode .session-tab-bar {
   right: 0;
   bottom: 0;
   width: 400px;
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -9588,7 +9591,7 @@ body.shared-session-mode .session-tab-bar {
   box-sizing: border-box;
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
-  background-color: var(--terminal-bg);
+  background: var(--workspace-pane-chrome-background);
   gap: 8px;
 }
 
@@ -9641,7 +9644,7 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
 }
 
 .terminal-page.git-docked .session-tab-panels {
@@ -9658,7 +9661,7 @@ body.shared-session-mode .session-tab-bar {
   right: 0;
   bottom: 0;
   width: 400px;
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -9691,7 +9694,7 @@ body.shared-session-mode .session-tab-bar {
   height: var(--bar-height);
   box-sizing: border-box;
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-terminal);
+  background: var(--workspace-pane-chrome-background);
   gap: 8px;
 }
 
@@ -9728,7 +9731,11 @@ body.shared-session-mode .session-tab-bar {
   gap: 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(180deg, var(--bg-terminal), var(--bg-elevated));
+  background: linear-gradient(
+    180deg,
+    var(--workspace-pane-chrome-background),
+    var(--workspace-pane-background)
+  );
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -9765,8 +9772,12 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-tab.active {
   border-color: var(--accent-gold);
-  border-bottom-color: var(--bg-terminal);
-  background: linear-gradient(180deg, var(--bg-elevated), color-mix(in srgb, var(--accent-gold-10) 55%, var(--bg-terminal)));
+  border-bottom-color: var(--workspace-pane-background);
+  background: linear-gradient(
+    180deg,
+    var(--workspace-pane-chrome-background),
+    color-mix(in srgb, var(--accent-gold-10) 55%, var(--workspace-pane-background))
+  );
   color: var(--text-primary);
   box-shadow: inset 0 0 0 1px var(--accent-gold-25);
 }
@@ -9785,7 +9796,7 @@ body.shared-session-mode .session-tab-bar {
   padding: 6px 8px;
   gap: 4px;
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-elevated);
+  background: var(--workspace-pane-chrome-background);
 }
 
 .web-preview-dock-url-bar input {
@@ -9822,7 +9833,7 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-action-message {
   padding: 7px 10px;
   border-bottom: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-elevated) 90%, black 10%);
+  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 92%, transparent);
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   line-height: 1.35;
@@ -9833,13 +9844,17 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-action-message[data-severity='error'] {
-  background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-elevated) 88%);
+  background: color-mix(in srgb, var(--accent-red) 12%, var(--workspace-pane-chrome-background) 88%);
   color: color-mix(in srgb, var(--accent-red) 68%, var(--text-primary) 32%);
   border-bottom-color: color-mix(in srgb, var(--accent-red) 28%, var(--border-color) 72%);
 }
 
 .web-preview-action-message[data-severity='info'] {
-  background: color-mix(in srgb, var(--accent-blue-10) 55%, var(--bg-elevated) 45%);
+  background: color-mix(
+    in srgb,
+    var(--accent-blue-10) 55%,
+    var(--workspace-pane-chrome-background) 45%
+  );
   color: var(--text-primary);
   border-bottom-color: color-mix(in srgb, var(--accent-blue-25) 55%, var(--border-color) 45%);
 }
@@ -9877,7 +9892,7 @@ body.shared-session-mode .session-tab-bar {
   height: 28px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-elevated) 88%, black 12%);
+  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 90%, transparent);
   color: var(--text-secondary);
   font-size: 15px;
   font-weight: 700;
@@ -9897,19 +9912,31 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-status-indicator[data-severity='info'] {
   border-color: var(--accent-blue-25);
-  background: color-mix(in srgb, var(--accent-blue-10) 62%, var(--bg-elevated) 38%);
+  background: color-mix(
+    in srgb,
+    var(--accent-blue-10) 62%,
+    var(--workspace-pane-chrome-background) 38%
+  );
   color: var(--accent-blue-hover);
 }
 
 .web-preview-status-indicator[data-severity='warn'] {
   border-color: var(--accent-gold-25);
-  background: color-mix(in srgb, var(--accent-gold-10) 62%, var(--bg-elevated) 38%);
+  background: color-mix(
+    in srgb,
+    var(--accent-gold-10) 62%,
+    var(--workspace-pane-chrome-background) 38%
+  );
   color: var(--accent-gold);
 }
 
 .web-preview-status-indicator[data-severity='error'] {
   border-color: color-mix(in srgb, var(--accent-red) 45%, var(--border-color) 55%);
-  background: color-mix(in srgb, var(--accent-red) 14%, var(--bg-elevated) 86%);
+  background: color-mix(
+    in srgb,
+    var(--accent-red) 14%,
+    var(--workspace-pane-chrome-background) 86%
+  );
   color: color-mix(in srgb, var(--accent-red) 58%, var(--text-primary) 42%);
 }
 
@@ -9917,13 +9944,14 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   overflow: hidden;
   position: relative;
+  background: var(--workspace-pane-background);
 }
 
 .web-preview-dock-body.viewport-constrained {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-tertiary);
+  background: var(--workspace-pane-background);
 }
 
 #web-preview-iframe-host {
@@ -9986,6 +10014,7 @@ body.shared-session-mode .session-tab-bar {
   align-items: center;
   justify-content: center;
   gap: 12px;
+  background: var(--workspace-pane-background);
   color: var(--text-secondary);
   font-size: var(--fs-md);
 }
@@ -12782,6 +12811,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   height: 100%;
   overflow: hidden;
+  background: var(--workspace-pane-background);
 }
 
 .file-browser-tree {
@@ -12789,13 +12819,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-shrink: 0;
   overflow: auto;
   border-right: 1px solid var(--border-color);
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
 }
 
 .file-browser-preview {
   flex: 1;
   overflow: auto;
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
 }
 
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
@@ -13085,7 +13115,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
 }
 
 .preview-text-body > .file-viewer-editor-shell,
@@ -13170,7 +13200,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
   font-size: var(--fs-base);
   font-family: var(--font-ui-emoji);
 }
@@ -13193,7 +13223,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--bg-primary) 88%, var(--bg-sidebar));
+  background: var(--workspace-pane-background);
 }
 
 .git-inspector-header {
@@ -13208,7 +13238,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 6px 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  background: var(--bg-surface);
+  background: var(--workspace-pane-chrome-background);
   color: var(--text-secondary);
   font: inherit;
   cursor: pointer;
@@ -13247,7 +13277,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 12px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-elevated) 75%, transparent);
+  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 78%, transparent);
 }
 
 .git-inspector-title-row {
@@ -13305,7 +13335,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   margin: 0;
   padding: 12px;
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  background: var(--workspace-pane-chrome-background);
   color: var(--text-primary);
   font-family: var(--font-mono);
   white-space: pre-wrap;
@@ -13315,7 +13345,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .git-panel-summary {
   padding: 10px 12px 12px;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(180deg, var(--bg-terminal), var(--bg-elevated));
+  background: linear-gradient(
+    180deg,
+    var(--workspace-pane-chrome-background),
+    var(--workspace-pane-background)
+  );
 }
 
 .git-panel-summary-title-row {
@@ -13346,7 +13380,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .git-summary-pill {
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 88%, transparent);
   color: var(--text-secondary);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -13427,7 +13461,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--accent-blue-25) var(--bg-sidebar);
+  scrollbar-color: var(--accent-blue-25) var(--workspace-pane-background);
 }
 
 .git-panel-sections-fill {
@@ -13442,7 +13476,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .git-panel-sections::-webkit-scrollbar-track,
 .git-commits-list::-webkit-scrollbar-track {
-  background: var(--bg-sidebar);
+  background: var(--workspace-pane-background);
 }
 
 .git-panel-sections::-webkit-scrollbar-thumb,
@@ -13714,7 +13748,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 8px 12px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  background: var(--bg-surface);
+  background: var(--workspace-pane-chrome-background);
   color: var(--text-secondary);
   font: inherit;
   cursor: pointer;
@@ -13723,7 +13757,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 /* --- Diff view --- */
 
 .git-diff-view {
-  background: var(--bg-primary);
+  background: var(--workspace-pane-background);
 }
 
 .git-diff-content {
@@ -13772,7 +13806,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent);
+  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 72%, transparent);
 }
 
 .git-command-copy {
@@ -13805,7 +13839,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .git-patch-empty {
   padding: 12px;
   border-radius: var(--radius-sm);
-  background: var(--bg-terminal);
+  background: var(--workspace-pane-chrome-background);
   color: var(--text-secondary);
 }
 
@@ -13826,7 +13860,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .git-diff-lines {
   margin: 0;
   padding: 10px 12px;
-  background: var(--bg-terminal);
+  background: var(--workspace-pane-background);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
