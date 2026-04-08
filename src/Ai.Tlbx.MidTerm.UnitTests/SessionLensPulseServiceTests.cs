@@ -1118,6 +1118,59 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
+    public void GetSnapshot_PreservesCommandTextWhenCommandOutputTailOmitsEarlierContent()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-start",
+            SessionId = "s-command-tail",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-1",
+            CreatedAt = ParseUtc("2026-04-08T18:00:00Z"),
+            Type = "item.started",
+            Item = new LensPulseItemPayload
+            {
+                ItemType = "command_execution",
+                Status = "in_progress",
+                Title = "Tool started",
+                Detail = "codex -m gpt-5.4"
+            }
+        });
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "cmd-out",
+            SessionId = "s-command-tail",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "cmd-1",
+            CreatedAt = ParseUtc("2026-04-08T18:00:01Z"),
+            Type = "content.delta",
+            ContentDelta = new LensPulseContentDeltaPayload
+            {
+                StreamKind = "command_output",
+                Delta = string.Join(
+                    '\n',
+                    Enumerable.Range(1, 32).Select(index => string.Create(CultureInfo.InvariantCulture, $"line {index} {new string('x', 520)}")))
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-command-tail");
+
+        Assert.NotNull(snapshot);
+        var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
+        Assert.Equal("command_output", toolEntry.ItemType);
+        Assert.Equal("codex -m gpt-5.4", toolEntry.CommandText);
+        Assert.Contains('\n', toolEntry.Body);
+        Assert.Contains("line ", toolEntry.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GetSnapshot_KeepsSeparateCommandOutputHistoryPerCommandWhenStreamsLackItemIds()
     {
         var service = new SessionLensPulseService();

@@ -3653,6 +3653,69 @@ describe('agentView dev errors', () => {
     expect(history[0]?.commandOutputTail).toEqual(['## dev...origin/dev']);
   });
 
+  it('uses canonical commandText for truncated command-output rows instead of treating omission markers as commands', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      transcript: [
+        {
+          entryId: 'tool:cmd-omitted',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Run command',
+          commandText: 'codex -m gpt-5.4',
+          body: '... earlier output omitted ...\nline 28 xxxxx\nline 29 xxxxx',
+          itemId: 'cmd-1',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-08T18:00:00Z',
+          updatedAt: '2026-04-08T18:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandText).toBe('codex -m gpt-5.4');
+    expect(history[0]?.commandOutputTail).toEqual([
+      '... earlier output omitted ...',
+      'line 28 xxxxx',
+      'line 29 xxxxx',
+    ]);
+  });
+
+  it('does not synthesize a Ran row from omission markers when command text is unavailable', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      transcript: [
+        {
+          entryId: 'tool:cmd-omitted-raw',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Run command',
+          body: '... earlier output omitted ...\nline 28 xxxxx',
+          itemId: 'cmd-1',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-08T18:00:00Z',
+          updatedAt: '2026-04-08T18:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandText ?? '').toBe('');
+    expect(history[0]?.body).toContain('... earlier output omitted ...');
+  });
+
   it('renders normalized command-output rows through the dedicated command presentation', async () => {
     const { resolveHistoryBodyPresentation } = await import('./index');
 

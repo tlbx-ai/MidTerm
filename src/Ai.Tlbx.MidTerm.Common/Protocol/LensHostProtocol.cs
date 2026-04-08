@@ -345,6 +345,7 @@ public sealed class LensPulseTranscriptEntry
     public string Status { get; set; } = string.Empty;
     public string? ItemType { get; set; }
     public string? Title { get; set; }
+    public string? CommandText { get; set; }
     public string Body { get; set; } = string.Empty;
     public List<LensAttachmentReference> Attachments { get; set; } = [];
     public bool Streaming { get; set; }

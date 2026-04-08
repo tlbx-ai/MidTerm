@@ -105,7 +105,7 @@ function buildHistoryBodyPreview(body: string): string {
   return `${singleLine.slice(0, COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS - 1)}…`;
 }
 
-function extractCommandOutputTail(body: string): string[] {
+export function extractCommandOutputTail(body: string): string[] {
   const lines = normalizeHistoryBodyLines(body)
     .map((line) => line.replace(/\s+$/g, ''))
     .filter(
@@ -125,7 +125,7 @@ export function parseCommandOutputBody(
   }
 
   const commandText = lines[firstContentIndex]?.trim() ?? '';
-  if (!commandText) {
+  if (!commandText || isCommandOutputOmissionMarker(commandText)) {
     return null;
   }
 
@@ -139,6 +139,15 @@ export function parseCommandOutputBody(
     commandText,
     commandOutputTail: extractCommandOutputTail(outputBody),
   };
+}
+
+function isCommandOutputOmissionMarker(line: string): boolean {
+  const normalized = line.trim().toLowerCase();
+  return (
+    normalized === '... earlier output omitted ...' ||
+    /^\.\.\. \d+ earlier lines omitted \.\.\.$/.test(normalized) ||
+    /^\.\.\. \d+ more lines omitted \.\.\.$/.test(normalized)
+  );
 }
 
 function readWhitespaceToken(source: string, start: number): number {

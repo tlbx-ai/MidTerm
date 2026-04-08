@@ -1265,6 +1265,9 @@ public sealed partial class SessionLensPulseService
                 toolState.RawOutput,
                 lensEvent.ContentDelta.Delta,
                 toolState.RetainHeadOutput);
+            entry.CommandText = string.IsNullOrWhiteSpace(toolState.CommandText)
+                ? null
+                : toolState.CommandText;
             entry.Title = ResolveToolEntryTitle(
                 lensEvent.ContentDelta.StreamKind,
                 entry.Title,
@@ -1466,7 +1469,7 @@ public sealed partial class SessionLensPulseService
                 sections.Add(string.Create(CultureInfo.InvariantCulture, $"... {omittedLineCount} earlier lines omitted ..."));
             }
 
-            sections.AddRange(visibleLines.Select(CompactHistoryLine));
+            sections.AddRange(visibleLines.Select(static line => CompactHistoryLine(line)));
 
             if (omittedLineCount > 0 && takeHead)
             {
@@ -1480,7 +1483,7 @@ public sealed partial class SessionLensPulseService
             sections.Add("Waiting for output...");
         }
 
-        return CompactHistoryBody(string.Join("\n", sections), takeHead);
+        return CompactHistorySections(sections);
     }
 
     private static string ResolveRenderableToolItemType(string normalizedType, string? rawOutput)
@@ -1597,18 +1600,21 @@ public sealed partial class SessionLensPulseService
         switch (transcriptKind)
         {
             case "user":
+                entry.CommandText = null;
                 entry.Title = null;
                 entry.Body = PreferMeaningfulText(entry.Body, lensEvent.Item.Detail) ?? string.Empty;
                 entry.Streaming = false;
                 PromoteUserTranscriptEntryToTurnLead(state, entry);
                 break;
             case "assistant":
+                entry.CommandText = null;
                 entry.Title = null;
                 entry.Body = MergeAssistantItemDetail(entry.Body, lensEvent.Item.Detail, item.Status);
                 entry.Streaming = !IsTerminalStatus(item.Status);
                 break;
             case "reasoning":
             case "plan":
+                entry.CommandText = null;
                 entry.Title = PreferMeaningfulText(entry.Title, lensEvent.Item.Title);
                 entry.Body = MergeTranscriptBody(entry.Body, lensEvent.Item.Detail);
                 entry.Streaming = !IsTerminalStatus(item.Status);
@@ -1633,6 +1639,9 @@ public sealed partial class SessionLensPulseService
 
                 var renderItemType = ResolveRenderableToolItemType(normalizedType, toolState.RawOutput);
                 entry.ItemType = renderItemType;
+                entry.CommandText = string.IsNullOrWhiteSpace(toolState.CommandText)
+                    ? null
+                    : toolState.CommandText;
                 entry.Title = ResolveToolEntryTitle(renderItemType, lensEvent.Item.Title, toolState.CommandText);
                 entry.Body = BuildToolScreenBody(
                     renderItemType,
@@ -2008,6 +2017,7 @@ public sealed partial class SessionLensPulseService
             Status = source.Status,
             ItemType = source.ItemType,
             Title = source.Title,
+            CommandText = source.CommandText,
             Body = source.Body,
             Attachments = CloneAttachments(source.Attachments),
             Streaming = source.Streaming,
@@ -2760,7 +2770,25 @@ public sealed partial class SessionLensPulseService
 
     private static string AppendRetainedToolOutput(string? existing, string? incoming, bool retainHead)
     {
-        return AppendRetainedStreamText(existing, incoming, MaxToolRawOutputChars, retainHead, separateWithNewline: true);
+        var normalizedIncoming = NormalizeTranscriptText(incoming);
+        if (string.IsNullOrWhiteSpace(normalizedIncoming))
+        {
+            return NormalizeTranscriptText(existing);
+        }
+
+        var normalizedExisting = StripRetentionMarkers(NormalizeTranscriptText(existing));
+        if (string.IsNullOrWhiteSpace(normalizedExisting))
+        {
+            return RetainWithinLineBudget(normalizedIncoming, MaxToolRawOutputChars, retainHead);
+        }
+
+        var separator = !normalizedExisting.EndsWith('\n') && !normalizedIncoming.StartsWith('\n')
+            ? "\n"
+            : string.Empty;
+        return RetainWithinLineBudget(
+            normalizedExisting + separator + normalizedIncoming,
+            MaxToolRawOutputChars,
+            retainHead);
     }
 
     private static string AppendRetainedTranscriptChunk(string? existing, string? incoming, int maxChars, bool retainHead)
@@ -2815,6 +2843,71 @@ public sealed partial class SessionLensPulseService
             : string.Concat(marker, "\n", normalized.AsSpan(normalized.Length - availableChars));
     }
 
+    private static string RetainWithinLineBudget(string? value, int maxChars, bool retainHead)
+    {
+        var normalized = NormalizeTranscriptText(value);
+        if (normalized.Length <= maxChars)
+        {
+            return normalized;
+        }
+
+        var lines = normalized.Split('\n');
+        if (lines.Length <= 1)
+        {
+            return RetainWithinBudget(normalized, maxChars, retainHead);
+        }
+
+        var marker = retainHead ? HeadRetentionMarker : TailRetentionMarker;
+        var reserved = marker.Length + 1;
+        if (reserved >= maxChars)
+        {
+            return RetainWithinBudget(normalized, maxChars, retainHead);
+        }
+
+        var selectedLines = new List<string>();
+        var usedChars = reserved;
+
+        if (retainHead)
+        {
+            foreach (var line in lines)
+            {
+                var lineCost = line.Length + (selectedLines.Count > 0 ? 1 : 0);
+                if (usedChars + lineCost > maxChars)
+                {
+                    break;
+                }
+
+                selectedLines.Add(line);
+                usedChars += lineCost;
+            }
+
+            return selectedLines.Count == 0
+                ? RetainWithinBudget(normalized, maxChars, retainHead)
+                : string.Join("\n", selectedLines) + "\n" + marker;
+        }
+
+        for (var index = lines.Length - 1; index >= 0; index--)
+        {
+            var line = lines[index];
+            var lineCost = line.Length + (selectedLines.Count > 0 ? 1 : 0);
+            if (usedChars + lineCost > maxChars)
+            {
+                break;
+            }
+
+            selectedLines.Add(line);
+            usedChars += lineCost;
+        }
+
+        if (selectedLines.Count == 0)
+        {
+            return RetainWithinBudget(normalized, maxChars, retainHead);
+        }
+
+        selectedLines.Reverse();
+        return marker + "\n" + string.Join("\n", selectedLines);
+    }
+
     private static string StripRetentionMarkers(string value)
     {
         if (string.IsNullOrEmpty(value))
@@ -2849,6 +2942,69 @@ public sealed partial class SessionLensPulseService
         }
 
         return string.Concat(line.AsSpan(0, availableChars), " ", HeadRetentionMarker);
+    }
+
+    private static string CompactHistoryLine(string line, int maxChars)
+    {
+        if (maxChars <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (line.Length <= maxChars)
+        {
+            return line;
+        }
+
+        var availableChars = maxChars - HeadRetentionMarker.Length - 1;
+        if (availableChars <= 0)
+        {
+            return line[..Math.Min(line.Length, maxChars)];
+        }
+
+        return string.Concat(line.AsSpan(0, availableChars), " ", HeadRetentionMarker);
+    }
+
+    private static string CompactHistorySections(IReadOnlyList<string> sections)
+    {
+        if (sections.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var normalizedSections = sections
+            .Select(static (string section) => section ?? string.Empty)
+            .ToArray();
+        var body = string.Join("\n", normalizedSections);
+        if (body.Length <= MaxHistoryBodyChars)
+        {
+            return body;
+        }
+
+        var nonEmptyIndices = normalizedSections
+            .Select((section, index) => (section, index))
+            .Where(static item => item.section.Length > 0)
+            .Select(static item => item.index)
+            .ToArray();
+        if (nonEmptyIndices.Length == 0)
+        {
+            return body[..Math.Min(body.Length, MaxHistoryBodyChars)];
+        }
+
+        var availableChars = Math.Max(0, MaxHistoryBodyChars - Math.Max(0, normalizedSections.Length - 1));
+        var remainingChars = availableChars;
+        var remainingSections = nonEmptyIndices.Length;
+
+        foreach (var index in nonEmptyIndices)
+        {
+            var maxChars = Math.Max(24, Math.Min(MaxHistoryLineChars, remainingChars / Math.Max(1, remainingSections)));
+            var compacted = CompactHistoryLine(normalizedSections[index], maxChars);
+            normalizedSections[index] = compacted;
+            remainingChars = Math.Max(0, remainingChars - compacted.Length);
+            remainingSections--;
+        }
+
+        return string.Join("\n", normalizedSections);
     }
 
     private static string CompactHistoryBody(string body, bool retainHead)
@@ -3068,6 +3224,7 @@ public sealed partial class SessionLensPulseService
             Status = entry.Status,
             Label = ResolveHistoryLabel(kind),
             Title = entry.Title ?? string.Empty,
+            CommandText = entry.CommandText ?? string.Empty,
             Meta = FormatHistoryMeta(kind, statusLabel, entry.UpdatedAt),
             Body = diffScreenBody,
             RenderMode = ResolveHistoryRenderMode(kind, entry.Streaming),
@@ -3107,6 +3264,7 @@ public sealed partial class SessionLensPulseService
             hash.Add(entry.ItemType ?? string.Empty, StringComparer.Ordinal);
             hash.Add(entry.Status, StringComparer.Ordinal);
             hash.Add(entry.Title, StringComparer.Ordinal);
+            hash.Add(entry.CommandText, StringComparer.Ordinal);
             hash.Add(entry.Meta, StringComparer.Ordinal);
             hash.Add(entry.Body, StringComparer.Ordinal);
             hash.Add(entry.RenderMode, StringComparer.Ordinal);
@@ -3574,6 +3732,7 @@ public sealed partial class SessionLensPulseService
         public string Status { get; init; } = string.Empty;
         public string Label { get; init; } = string.Empty;
         public string Title { get; init; } = string.Empty;
+        public string CommandText { get; init; } = string.Empty;
         public string Meta { get; init; } = string.Empty;
         public string Body { get; init; } = string.Empty;
         public string RenderMode { get; init; } = string.Empty;

@@ -296,6 +296,7 @@ export interface LensPulseHistoryEntry {
   status: string;
   itemType?: string | null;
   title?: string | null;
+  commandText?: string | null;
   body: string;
   attachments: LensAttachmentReference[];
   streaming: boolean;

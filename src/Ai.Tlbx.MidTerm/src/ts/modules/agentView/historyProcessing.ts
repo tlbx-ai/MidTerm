@@ -15,6 +15,7 @@ import {
   toneFromState,
 } from './activationHelpers';
 import {
+  extractCommandOutputTail,
   hasInlineCommandPresentation,
   isCommandExecutionHistoryEntry,
   isCommandOutputHistoryEntry,
@@ -113,6 +114,7 @@ export function buildLensHistoryEntries(
         label: historyLabel(kind),
         title: entry.title || '',
         body: entry.body || '',
+        commandText: entry.commandText ?? null,
         meta:
           kind === 'diff' || isCommandExecutionSnapshotEntry(entry)
             ? ''
@@ -240,9 +242,16 @@ function resolveCommandPresentation(
 
   if ((entry.commandText?.trim() ?? '').length > 0) {
     const commandText = entry.commandText?.trim() ?? '';
+    const parsedBody = parseCommandOutputBody(entry.body);
     return {
       commandText,
-      commandOutputTail: entry.commandOutputTail ?? [],
+      commandOutputTail:
+        entry.commandOutputTail ??
+        (parsedBody &&
+        normalizeComparableHistoryText(parsedBody.commandText) ===
+          normalizeComparableHistoryText(commandText)
+          ? parsedBody.commandOutputTail
+          : extractCommandOutputTail(entry.body)),
     };
   }
 
