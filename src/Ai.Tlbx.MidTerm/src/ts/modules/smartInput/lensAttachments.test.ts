@@ -37,6 +37,75 @@ describe('lensAttachments', () => {
     expect(attachment.uploadedPath).toBe('Q:/repo/.midterm/uploads/report.pdf');
   });
 
+  it('detects pasted image clipboard data from data transfer items', async () => {
+    const { clipboardDataMayContainLensComposerImage, extractLensComposerPasteImageFiles } =
+      await import('./lensAttachments');
+    const clipboardImage = new File(['png'], 'copied-image.png', { type: 'image/png' });
+    const clipboardData = {
+      files: [],
+      items: [
+        {
+          kind: 'file',
+          type: 'image/png',
+          getAsFile: () => clipboardImage,
+        },
+      ],
+      getData: () => '',
+    };
+
+    expect(clipboardDataMayContainLensComposerImage(clipboardData as unknown as DataTransfer)).toBe(
+      true,
+    );
+    await expect(
+      extractLensComposerPasteImageFiles(clipboardData as unknown as DataTransfer, null),
+    ).resolves.toEqual([clipboardImage]);
+  });
+
+  it('extracts pasted image files from copied html image markup', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      blob: async () => new Blob(['img'], { type: 'image/webp' }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { clipboardDataMayContainLensComposerImage, extractLensComposerPasteImageFiles } =
+      await import('./lensAttachments');
+    const clipboardData = {
+      files: [],
+      items: [],
+      getData: (type: string) =>
+        type === 'text/html' ? '<img src="https://cdn.example.com/photo">' : '',
+    };
+
+    expect(clipboardDataMayContainLensComposerImage(clipboardData as unknown as DataTransfer)).toBe(
+      true,
+    );
+
+    const files = await extractLensComposerPasteImageFiles(
+      clipboardData as unknown as DataTransfer,
+      null,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/photo');
+    expect(files).toHaveLength(1);
+    expect(files[0]?.type).toBe('image/webp');
+    expect(files[0]?.name).toBe('photo.webp');
+  });
+
+  it('falls back to navigator clipboard image blobs when paste data lacks files', async () => {
+    const { extractLensComposerPasteImageFiles } = await import('./lensAttachments');
+    const files = await extractLensComposerPasteImageFiles(null, async () => [
+      {
+        types: ['image/avif'],
+        getType: async () => new Blob(['avif'], { type: 'image/avif' }),
+      },
+    ]);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.type).toBe('image/avif');
+    expect(files[0]?.name).toMatch(/\.avif$/);
+  });
+
   it('maps uploaded attachments into Lens attachment references', async () => {
     const { toLensAttachmentReference } = await import('./lensAttachments');
 
@@ -107,5 +176,23 @@ describe('lensAttachments', () => {
 
     expect(revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview');
+  });
+
+  it('keeps copied html text paste alone when it does not carry image content', async () => {
+    const { clipboardDataMayContainLensComposerImage, extractLensComposerPasteImageFiles } =
+      await import('./lensAttachments');
+    const clipboardData = {
+      files: [],
+      items: [],
+      getData: (type: string) =>
+        type === 'text/html' ? '<p>regular copied text</p>' : 'regular copied text',
+    };
+
+    expect(clipboardDataMayContainLensComposerImage(clipboardData as unknown as DataTransfer)).toBe(
+      false,
+    );
+    await expect(
+      extractLensComposerPasteImageFiles(clipboardData as unknown as DataTransfer, null),
+    ).resolves.toEqual([]);
   });
 });

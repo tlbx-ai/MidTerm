@@ -33,6 +33,8 @@ import { handleFileDrop, showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
+  clipboardDataMayContainLensComposerImage,
+  extractLensComposerPasteImageFiles,
   type LensComposerDraftAttachment,
   MAX_LENS_IMAGE_BYTES,
   createLensComposerDraftAttachment,
@@ -660,13 +662,19 @@ function createDockedDOM(): void {
         return;
       }
 
-      const files = Array.from(event.clipboardData?.files ?? []);
-      if (files.length === 0) {
+      if (!clipboardDataMayContainLensComposerImage(event.clipboardData)) {
         return;
       }
 
       event.preventDefault();
-      void addLensComposerFiles(sessionId, files);
+      void (async () => {
+        const files = await extractLensComposerPasteImageFiles(event.clipboardData);
+        if (files.length === 0) {
+          return;
+        }
+
+        await addLensComposerFiles(sessionId, files);
+      })();
     },
     onToolsTogglePointerDown: (event) => {
       if (!isMobileViewport()) {
