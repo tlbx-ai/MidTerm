@@ -2503,7 +2503,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         var parts = new List<string>();
         if (total.HasValue)
         {
-            parts.Add($"Used {total.Value.ToString(CultureInfo.InvariantCulture)} tokens");
+            parts.Add($"Session total {total.Value.ToString(CultureInfo.InvariantCulture)} tokens");
         }
 
         if (max.HasValue)

@@ -239,6 +239,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
 - Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Lens should interpret them as session telemetry instead of timeline content.
 - Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing context-window usage as a percent-of-limit summary plus accumulated session input/output token totals.
+- If the provider notice only exposes cumulative session token totals rather than reliable live context occupancy, Lens must not fake a context percent; it should fall back to the window limit plus session in/out totals instead.
 
 ### Plan-mode questions and approvals
 
@@ -405,6 +406,7 @@ Status in this branch/work item:
 - implemented: explicit Lens sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
 - implemented: settled turn-duration notes now render as a quiet near-full-width horizontal end-of-turn marker with the duration label centered between rule segments
 - implemented: runtime/system notice text is sanitized for ANSI/control-byte noise, de-duplicates repeated message/detail payloads, and system rows render with quieter metadata/body emphasis than the main conversation lane
+- implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values
 
 Still mandatory after this work whenever Lens evolves:
 

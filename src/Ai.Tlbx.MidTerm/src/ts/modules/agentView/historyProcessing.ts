@@ -515,7 +515,7 @@ export function buildLensRuntimeStats(
 function parseCodexContextWindowNotice(
   notice: Pick<LensPulseRuntimeNotice, 'message' | 'detail'>,
 ): {
-  usedTokens: number;
+  usedTokens: number | null;
   windowTokens: number;
   lastTurnInputTokens: number;
   lastTurnOutputTokens: number;
@@ -531,20 +531,39 @@ function parseCodexContextWindowNotice(
     return null;
   }
 
-  const match = detail.match(
+  const contextMatch = detail.match(
     /Used\s+(\d+)\s+tokens,\s+window\s+(\d+),\s+last turn in\/out\s+(\d+)\/(\d+)/i,
   );
-  if (!match) {
+  if (contextMatch) {
+    const [, usedTokensText, windowTokensText, inputTokensText, outputTokensText] = contextMatch;
+    if (!usedTokensText || !windowTokensText || !inputTokensText || !outputTokensText) {
+      return null;
+    }
+
+    const usedTokens = Number.parseInt(usedTokensText, 10);
+    const windowTokens = Number.parseInt(windowTokensText, 10);
+    return {
+      usedTokens: usedTokens <= windowTokens ? usedTokens : null,
+      windowTokens,
+      lastTurnInputTokens: Number.parseInt(inputTokensText, 10),
+      lastTurnOutputTokens: Number.parseInt(outputTokensText, 10),
+    };
+  }
+
+  const totalOnlyMatch = detail.match(
+    /(?:Session\s+total|Total)\s+(\d+)\s+tokens,\s+window\s+(\d+),\s+last turn in\/out\s+(\d+)\/(\d+)/i,
+  );
+  if (!totalOnlyMatch) {
     return null;
   }
 
-  const [, usedTokensText, windowTokensText, inputTokensText, outputTokensText] = match;
-  if (!usedTokensText || !windowTokensText || !inputTokensText || !outputTokensText) {
+  const [, , windowTokensText, inputTokensText, outputTokensText] = totalOnlyMatch;
+  if (!windowTokensText || !inputTokensText || !outputTokensText) {
     return null;
   }
 
   return {
-    usedTokens: Number.parseInt(usedTokensText, 10),
+    usedTokens: null,
     windowTokens: Number.parseInt(windowTokensText, 10),
     lastTurnInputTokens: Number.parseInt(inputTokensText, 10),
     lastTurnOutputTokens: Number.parseInt(outputTokensText, 10),

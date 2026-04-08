@@ -697,16 +697,24 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function formatTokenWindowCompact(stats: LensRuntimeStatsSummary): string {
-    if (stats.windowUsedTokens === null || stats.windowTokenLimit === null) {
-      return '-- of --';
+    if (stats.windowTokenLimit === null) {
+      return '--';
+    }
+
+    if (stats.windowUsedTokens === null) {
+      return `Window ${formatTokenCount(stats.windowTokenLimit)}`;
     }
 
     return `${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)}`;
   }
 
   function formatTokenWindowDetail(stats: LensRuntimeStatsSummary): string {
-    if (stats.windowUsedTokens === null || stats.windowTokenLimit === null) {
-      return 'Context -- of --';
+    if (stats.windowTokenLimit === null) {
+      return 'Window --';
+    }
+
+    if (stats.windowUsedTokens === null) {
+      return `Window ${formatTokenCount(stats.windowTokenLimit)}`;
     }
 
     return `Context ${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)} (${formatTokenCount(stats.windowUsedTokens)} used)`;
