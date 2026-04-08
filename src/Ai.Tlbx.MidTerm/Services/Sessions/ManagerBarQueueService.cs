@@ -24,7 +24,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private readonly TaskCompletionSource _startedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private List<ManagerBarQueueEntryDto> _entries = [];
     private readonly Dictionary<string, RecentEnqueue> _recentEnqueues = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _activeImmediatePromptDispatchSessions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _activeImmediateDispatchSessions = new(StringComparer.Ordinal);
     private string _serializedState = string.Empty;
     private Task? _processingTask;
 
@@ -78,18 +78,29 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
     public ManagerBarQueueEntryDto? Enqueue(string sessionId, ManagerBarButton action)
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (!TryNormalizeActionSubmission(sessionId, action, out var trimmedSessionId, out var normalizedAction))
         {
             return null;
         }
 
-        var normalizedAction = action.Normalize();
         if (IsImmediateManagerAction(normalizedAction))
         {
             return null;
         }
 
-        return EnqueueAutomationCore(sessionId, normalizedAction);
+        var now = _timeProvider.GetUtcNow();
+        ManagerBarQueueEntryDto? entry;
+        lock (_lock)
+        {
+            entry = EnqueueAutomationCoreLocked(trimmedSessionId, normalizedAction, now);
+        }
+
+        if (entry is not null)
+        {
+            OnChanged?.Invoke();
+        }
+
+        return entry is null ? null : CloneEntry(entry);
     }
 
     public ManagerBarQueueEntryDto? EnqueuePrompt(string sessionId, LensTurnRequest turn)
@@ -123,9 +134,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         LensTurnRequest? immediateTurn = null;
         lock (_lock)
         {
-            if (CanDispatchPromptImmediatelyLocked(trimmedSessionId))
+            if (CanDispatchImmediatelyLocked(trimmedSessionId))
             {
-                _activeImmediatePromptDispatchSessions.Add(trimmedSessionId);
+                _activeImmediateDispatchSessions.Add(trimmedSessionId);
                 immediateTurn = CloneTurn(normalizedTurn);
             }
             else
@@ -154,15 +165,68 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         {
             lock (_lock)
             {
-                _activeImmediatePromptDispatchSessions.Remove(trimmedSessionId);
+                _activeImmediateDispatchSessions.Remove(trimmedSessionId);
             }
         }
     }
 
-    private ManagerBarQueueEntryDto? EnqueueAutomationCore(string sessionId, ManagerBarButton normalizedAction)
+    public async Task<(bool Accepted, ManagerBarQueueEntryDto? Entry)> SubmitActionAsync(
+        string sessionId,
+        ManagerBarButton action,
+        CancellationToken cancellationToken = default)
     {
-        var trimmedSessionId = sessionId.Trim();
+        if (!TryNormalizeActionSubmission(sessionId, action, out var trimmedSessionId, out var normalizedAction))
+        {
+            return (false, null);
+        }
+
         var now = _timeProvider.GetUtcNow();
+        ManagerBarQueueEntryDto? queuedEntry = null;
+        string? immediatePrompt = null;
+
+        lock (_lock)
+        {
+            if (IsImmediateManagerAction(normalizedAction) && CanDispatchImmediatelyLocked(trimmedSessionId))
+            {
+                _activeImmediateDispatchSessions.Add(trimmedSessionId);
+                immediatePrompt = normalizedAction.Prompts[0];
+            }
+            else
+            {
+                queuedEntry = EnqueueAutomationCoreLocked(trimmedSessionId, normalizedAction, now);
+            }
+        }
+
+        if (queuedEntry is not null)
+        {
+            OnChanged?.Invoke();
+            return (true, CloneEntry(queuedEntry));
+        }
+
+        if (string.IsNullOrWhiteSpace(immediatePrompt))
+        {
+            return (false, null);
+        }
+
+        try
+        {
+            await _runtime.SendPromptAsync(trimmedSessionId, immediatePrompt, cancellationToken).ConfigureAwait(false);
+            return (true, null);
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _activeImmediateDispatchSessions.Remove(trimmedSessionId);
+            }
+        }
+    }
+
+    private ManagerBarQueueEntryDto? EnqueueAutomationCoreLocked(
+        string trimmedSessionId,
+        ManagerBarButton normalizedAction,
+        DateTimeOffset now)
+    {
         var phase = GetInitialQueuePhase(normalizedAction);
         var nextRunAt = phase == QueuePhase.PendingSchedule
             ? ComputeNextScheduleTime(normalizedAction.Trigger.Schedule, now)
@@ -172,37 +236,31 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return null;
         }
 
-        ManagerBarQueueEntryDto entry;
-        lock (_lock)
+        PruneRecentEnqueuesLocked(now);
+        var enqueueSignature = BuildEnqueueSignature(trimmedSessionId, normalizedAction);
+        if (TryGetRecentDuplicateLocked(enqueueSignature, now, out var existing))
         {
-            PruneRecentEnqueuesLocked(now);
-            var enqueueSignature = BuildEnqueueSignature(trimmedSessionId, normalizedAction);
-            if (TryGetRecentDuplicateLocked(enqueueSignature, now, out var existing))
-            {
-                return existing;
-            }
-
-            entry = new ManagerBarQueueEntryDto
-            {
-                QueueId = $"{normalizedAction.Id}-{Guid.NewGuid():N}",
-                SessionId = trimmedSessionId,
-                Kind = AutomationQueueKind,
-                Action = normalizedAction,
-                Turn = null,
-                Phase = phase,
-                NextPromptIndex = 0,
-                CompletedCycles = 0,
-                NextRunAt = nextRunAt,
-                IgnoreHeatUntil = null,
-                AwaitingHeatRise = false
-            };
-
-            _entries.Add(CloneEntry(entry));
-            _recentEnqueues[enqueueSignature] = new RecentEnqueue(entry.QueueId, now);
-            PersistLocked();
+            return existing;
         }
 
-        OnChanged?.Invoke();
+        var entry = new ManagerBarQueueEntryDto
+        {
+            QueueId = $"{normalizedAction.Id}-{Guid.NewGuid():N}",
+            SessionId = trimmedSessionId,
+            Kind = AutomationQueueKind,
+            Action = normalizedAction,
+            Turn = null,
+            Phase = phase,
+            NextPromptIndex = 0,
+            CompletedCycles = 0,
+            NextRunAt = nextRunAt,
+            IgnoreHeatUntil = null,
+            AwaitingHeatRise = false
+        };
+
+        _entries.Add(CloneEntry(entry));
+        _recentEnqueues[enqueueSignature] = new RecentEnqueue(entry.QueueId, now);
+        PersistLocked();
         return entry;
     }
 
@@ -732,7 +790,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             };
         }
 
-        if (normalizedAction is null || IsImmediateManagerAction(normalizedAction))
+        if (normalizedAction is null)
         {
             return null;
         }
@@ -1025,6 +1083,29 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return true;
     }
 
+    private bool TryNormalizeActionSubmission(
+        string? sessionId,
+        ManagerBarButton? action,
+        out string trimmedSessionId,
+        out ManagerBarButton normalizedAction)
+    {
+        trimmedSessionId = string.Empty;
+        normalizedAction = new ManagerBarButton();
+        if (string.IsNullOrWhiteSpace(sessionId) || action is null)
+        {
+            return false;
+        }
+
+        trimmedSessionId = sessionId.Trim();
+        if (!_runtime.SessionExists(trimmedSessionId))
+        {
+            return false;
+        }
+
+        normalizedAction = action.Normalize();
+        return true;
+    }
+
     private ManagerBarQueueEntryDto EnqueuePromptLocked(string sessionId, LensTurnRequest normalizedTurn)
     {
         var entry = new ManagerBarQueueEntryDto
@@ -1047,9 +1128,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return entry;
     }
 
-    private bool CanDispatchPromptImmediatelyLocked(string sessionId)
+    private bool CanDispatchImmediatelyLocked(string sessionId)
     {
-        if (_entries.Count > 0 || _activeImmediatePromptDispatchSessions.Count > 0)
+        if (_entries.Count > 0 || _activeImmediateDispatchSessions.Count > 0)
         {
             return false;
         }

@@ -95,7 +95,20 @@ public static partial class SessionApiEndpoints
             ManagerBarQueueEntryDto? entry;
             if (request.Action is not null)
             {
-                entry = managerBarQueueService.Enqueue(request.SessionId, request.Action);
+                var (accepted, queuedEntry) = await managerBarQueueService
+                    .SubmitActionAsync(request.SessionId, request.Action, ct)
+                    .ConfigureAwait(false);
+                if (!accepted)
+                {
+                    return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                }
+
+                if (queuedEntry is null)
+                {
+                    return Results.Ok();
+                }
+
+                entry = queuedEntry;
             }
             else if (request.Turn is not null)
             {

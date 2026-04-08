@@ -172,6 +172,70 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SubmitActionAsync_FastTracksImmediateLensActionWhenTurnHasReturnedToUser()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            UsesTurnQueueValue = true,
+            TurnQueueReady = true
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitActionAsync(
+            "session-1",
+            new ManagerBarButton
+            {
+                Label = "Status",
+                ActionType = "single",
+                Prompts = ["status"],
+                Trigger = new ManagerBarTrigger
+                {
+                    Kind = "fireAndForget"
+                }
+            });
+
+        Assert.True(accepted);
+        Assert.Null(entry);
+        Assert.Equal(["status"], runtime.SentPrompts);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task SubmitActionAsync_QueuesImmediateLensActionWhenTurnIsStillRunning()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            UsesTurnQueueValue = true,
+            TurnQueueReady = false
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitActionAsync(
+            "session-1",
+            new ManagerBarButton
+            {
+                Label = "Status",
+                ActionType = "single",
+                Prompts = ["status"],
+                Trigger = new ManagerBarTrigger
+                {
+                    Kind = "fireAndForget"
+                }
+            });
+
+        Assert.True(accepted);
+        Assert.NotNull(entry);
+        Assert.Equal("automation", entry.Kind);
+        Assert.Equal("Status", entry.Action?.Label);
+        Assert.Empty(runtime.SentPrompts);
+        var snapshot = Assert.Single(service.GetSnapshot(["session-1"]));
+        Assert.Equal("Status", snapshot.Action?.Label);
+        Assert.Equal("fireAndForget", snapshot.Action?.Trigger.Kind);
+    }
+
+    [Fact]
     public async Task GetSnapshot_FiltersQueueEntriesToValidSessions()
     {
         var runtime = new FakeRuntime(["session-1", "session-2"]);
