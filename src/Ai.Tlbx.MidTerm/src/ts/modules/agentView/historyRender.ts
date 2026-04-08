@@ -1,20 +1,21 @@
 import { t } from '../i18n';
 import { estimateHistoryEntryHeight } from './historyContent';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
+import {
+  buildHistoryVirtualWindowKey,
+  computeHistoryVirtualWindow,
+  HISTORY_VIRTUALIZE_AFTER,
+} from './historyViewport';
 import type { LensPulseRequestSummary, LensPulseSnapshotResponse } from '../../api/client';
 import type {
   ArtifactClusterInfo,
   HistoryRenderPlan,
   HistoryScrollMetrics,
   HistoryViewportMetrics,
-  HistoryVirtualWindow,
   HistoryVisibleEntry,
   LensHistoryEntry,
   SessionLensViewState,
 } from './types';
-
-const HISTORY_OVERSCAN_PX = 800;
-const HISTORY_VIRTUALIZE_AFTER = 50;
 
 function lensText(key: string, fallback: string): string {
   const translated = t(key);
@@ -95,35 +96,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const metrics = readHistoryViewportMetrics(viewport);
     const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
-
-    let scrollAdjusted = false;
-    if (state && state.pendingHistoryPrependOffsetPx > 0 && !state.historyAutoScrollPinned) {
-      const restoreOffset = state.pendingHistoryPrependOffsetPx;
-      state.pendingHistoryPrependOffsetPx = 0;
-      scrollAdjusted = syncViewportScrollPosition(viewport, viewport.scrollTop + restoreOffset);
-      if (scrollAdjusted) {
-        state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
-      }
-    }
-
-    if (state?.historyAutoScrollPinned) {
-      const didAutoScroll = syncViewportScrollPosition(
-        viewport,
-        viewport.scrollHeight - viewport.clientHeight,
-      );
-      if (didAutoScroll && entries.length > HISTORY_VIRTUALIZE_AFTER) {
-        deps.scheduleHistoryRender(sessionId);
-      }
-
-      const current = deps.getState(sessionId);
-      if (current) {
-        current.historyAutoScrollPinned = true;
-        current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
-        renderScrollToBottomControl(panel, current);
-      }
-    } else if (state && scrollAdjusted) {
-      renderScrollToBottomControl(panel, state);
-    }
+    const measurementChanged = state
+      ? measureRenderedHistoryHeights(state, renderPlan.visibleEntries, metrics.clientWidth)
+      : false;
+    finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state, measurementChanged);
   }
 
   function buildHistoryRenderPlan(
@@ -134,36 +110,28 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     if (entries.length === 0) {
       return {
         emptyStateText: lensText('lens.emptyHistory', 'No history entries yet.'),
+        virtualWindowKey: null,
         topSpacerPx: 0,
         bottomSpacerPx: 0,
         visibleEntries: [],
       };
     }
 
+    const resolveEntryHeight = (entry: LensHistoryEntry) =>
+      resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth);
     const virtualWindow = computeHistoryVirtualWindow(
       entries,
       metrics.scrollTop,
       metrics.clientHeight,
       metrics.clientWidth,
+      resolveEntryHeight,
     );
-    const remoteAverageHeight =
-      entries.length > 0
-        ? entries.reduce(
-            (sum, entry) => sum + estimateHistoryEntryHeight(entry, metrics.clientWidth),
-            0,
-          ) / entries.length
-        : 92;
-    const remoteTopSpacerPx = Math.max(
-      0,
-      Math.round((state?.snapshot?.historyWindowStart ?? 0) * remoteAverageHeight),
-    );
-    const totalHistoryCount = state?.snapshot?.totalHistoryCount ?? entries.length;
-    const historyWindowEnd = state?.snapshot?.historyWindowEnd ?? entries.length;
-    const remoteBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
-    const remoteBottomSpacerPx = Math.max(0, Math.round(remoteBottomCount * remoteAverageHeight));
+    const remoteTopSpacerPx = Math.max(0, state?.snapshot?.estimatedHistoryBeforeWindowPx ?? 0);
+    const remoteBottomSpacerPx = Math.max(0, state?.snapshot?.estimatedHistoryAfterWindowPx ?? 0);
 
     return {
       emptyStateText: null,
+      virtualWindowKey: buildHistoryVirtualWindowKey(virtualWindow),
       topSpacerPx: remoteTopSpacerPx + virtualWindow.topSpacerPx,
       bottomSpacerPx: remoteBottomSpacerPx + virtualWindow.bottomSpacerPx,
       visibleEntries: entries
@@ -179,6 +147,80 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           };
         }),
     };
+  }
+
+  function resolveHistoryMeasurementWidthBucket(clientWidth: number): number {
+    return Math.max(240, Math.round(clientWidth / 40) * 40);
+  }
+
+  function resolveHistoryViewportEntryHeight(
+    entry: LensHistoryEntry,
+    state: SessionLensViewState | undefined,
+    clientWidth: number,
+  ): number {
+    if (!state) {
+      return estimateHistoryEntryHeight(entry, clientWidth);
+    }
+
+    const widthBucket = resolveHistoryMeasurementWidthBucket(clientWidth);
+    if (state.historyMeasuredWidthBucket !== widthBucket) {
+      state.historyMeasuredWidthBucket = widthBucket;
+      state.historyMeasuredHeights.clear();
+      state.historyLastVirtualWindowKey = null;
+    }
+
+    return (
+      state.historyMeasuredHeights.get(entry.id) ?? estimateHistoryEntryHeight(entry, clientWidth)
+    );
+  }
+
+  function finalizeRenderedHistoryState(
+    sessionId: string,
+    panel: HTMLDivElement,
+    viewport: HTMLDivElement,
+    entries: readonly LensHistoryEntry[],
+    state: SessionLensViewState | undefined,
+    measurementChanged: boolean,
+  ): void {
+    const scrollAdjusted =
+      state && state.pendingHistoryPrependAnchor && !state.historyAutoScrollPinned
+        ? restorePendingHistoryAnchor(viewport, state)
+        : false;
+
+    if (state?.historyAutoScrollPinned) {
+      syncPinnedHistoryViewport(sessionId, panel, viewport, entries.length);
+    } else if (state && scrollAdjusted) {
+      state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
+      renderScrollToBottomControl(panel, state);
+    }
+
+    if (measurementChanged && entries.length > HISTORY_VIRTUALIZE_AFTER) {
+      deps.scheduleHistoryRender(sessionId);
+    }
+  }
+
+  function syncPinnedHistoryViewport(
+    sessionId: string,
+    panel: HTMLDivElement,
+    viewport: HTMLDivElement,
+    entryCount: number,
+  ): void {
+    const didAutoScroll = syncViewportScrollPosition(
+      viewport,
+      viewport.scrollHeight - viewport.clientHeight,
+    );
+    if (didAutoScroll && entryCount > HISTORY_VIRTUALIZE_AFTER) {
+      deps.scheduleHistoryRender(sessionId);
+    }
+
+    const current = deps.getState(sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.historyAutoScrollPinned = true;
+    current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
+    renderScrollToBottomControl(panel, current);
   }
 
   function buildHistoryEntrySignature(
@@ -300,6 +342,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     syncOrderedChildren(container, nextChildren);
+    state.historyLastVirtualWindowKey = plan.virtualWindowKey;
   }
 
   function ensureEmptyHistoryNode(state: SessionLensViewState, text: string): HTMLDivElement {
@@ -346,6 +389,92 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       cluster: visibleEntry.cluster,
     });
     return node;
+  }
+
+  function measureRenderedHistoryHeights(
+    state: SessionLensViewState,
+    visibleEntries: readonly HistoryVisibleEntry[],
+    clientWidth: number,
+  ): boolean {
+    const widthBucket = resolveHistoryMeasurementWidthBucket(clientWidth);
+    if (state.historyMeasuredWidthBucket !== widthBucket) {
+      state.historyMeasuredWidthBucket = widthBucket;
+      state.historyMeasuredHeights.clear();
+      state.historyLastVirtualWindowKey = null;
+    }
+
+    let changed = false;
+    for (const visibleEntry of visibleEntries) {
+      const rendered = state.historyRenderedNodes.get(visibleEntry.key);
+      if (!rendered?.node || typeof rendered.node.getBoundingClientRect !== 'function') {
+        continue;
+      }
+
+      const measuredHeight = Math.max(1, Math.round(rendered.node.getBoundingClientRect().height));
+      const previousHeight = state.historyMeasuredHeights.get(visibleEntry.key);
+      if (previousHeight !== measuredHeight) {
+        state.historyMeasuredHeights.set(visibleEntry.key, measuredHeight);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      state.historyLastVirtualWindowKey = null;
+    }
+
+    return changed;
+  }
+
+  function restorePendingHistoryAnchor(
+    viewport: HTMLDivElement,
+    state: SessionLensViewState,
+  ): boolean {
+    const anchor = state.pendingHistoryPrependAnchor;
+    if (!anchor) {
+      return false;
+    }
+
+    const anchorNode = state.historyRenderedNodes.get(anchor.entryId)?.node;
+    if (!anchorNode || typeof anchorNode.getBoundingClientRect !== 'function') {
+      return false;
+    }
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const anchorRect = anchorNode.getBoundingClientRect();
+    state.pendingHistoryPrependAnchor = null;
+    return syncViewportScrollPosition(
+      viewport,
+      viewport.scrollTop + (anchorRect.top - viewportRect.top - anchor.topOffsetPx),
+    );
+  }
+
+  function captureHistoryViewportAnchor(state: SessionLensViewState): boolean {
+    const viewport = state.historyViewport;
+    if (!viewport) {
+      state.pendingHistoryPrependAnchor = null;
+      return false;
+    }
+
+    const viewportRect = viewport.getBoundingClientRect();
+    let bestAnchor: { entryId: string; topOffsetPx: number } | null = null;
+    for (const [entryId, rendered] of state.historyRenderedNodes) {
+      if (typeof rendered.node.getBoundingClientRect !== 'function') {
+        continue;
+      }
+
+      const nodeRect = rendered.node.getBoundingClientRect();
+      if (nodeRect.bottom < viewportRect.top || nodeRect.top > viewportRect.bottom) {
+        continue;
+      }
+
+      const topOffsetPx = nodeRect.top - viewportRect.top;
+      if (!bestAnchor || topOffsetPx < bestAnchor.topOffsetPx) {
+        bestAnchor = { entryId, topOffsetPx };
+      }
+    }
+
+    state.pendingHistoryPrependAnchor = bestAnchor;
+    return bestAnchor !== null;
   }
 
   function syncOrderedChildren(container: HTMLElement, nodes: readonly HTMLElement[]): void {
@@ -465,13 +594,32 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     renderScrollToBottomControl(state.panel, state);
   }
 
+  function shouldRenderForViewportScroll(state: SessionLensViewState): boolean {
+    const viewport = state.historyViewport;
+    if (!viewport || state.historyEntries.length <= HISTORY_VIRTUALIZE_AFTER) {
+      return false;
+    }
+
+    const metrics = readHistoryViewportMetrics(viewport);
+    const virtualWindow = computeHistoryVirtualWindow(
+      state.historyEntries,
+      metrics.scrollTop,
+      metrics.clientHeight,
+      metrics.clientWidth,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+    );
+    return buildHistoryVirtualWindowKey(virtualWindow) !== state.historyLastVirtualWindowKey;
+  }
+
   return {
+    captureHistoryViewportAnchor,
     renderActivationView,
     renderComposerInterruption,
     renderHistory,
     renderScrollToBottomControl,
     readHistoryScrollMetrics,
     scrollHistoryToBottom,
+    shouldRenderForViewportScroll,
     suppressActiveComposerRequestEntries,
     syncRequestInteractionState,
   };
@@ -506,61 +654,6 @@ function findActiveComposerRequest(
         (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
       )[0] ?? null
   );
-}
-
-function computeHistoryVirtualWindow(
-  entries: ReadonlyArray<LensHistoryEntry>,
-  scrollTop: number,
-  clientHeight: number,
-  clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
-): HistoryVirtualWindow {
-  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
-    return { start: 0, end: entries.length, topSpacerPx: 0, bottomSpacerPx: 0 };
-  }
-
-  const targetTop = Math.max(0, scrollTop - HISTORY_OVERSCAN_PX);
-  const targetBottom = scrollTop + clientHeight + HISTORY_OVERSCAN_PX;
-  let cumulative = 0;
-  let start = 0;
-  let topSpacerPx = 0;
-
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry) {
-      continue;
-    }
-
-    const height = estimateHistoryEntryHeight(entry, clientWidth);
-    if (cumulative + height >= targetTop) {
-      start = index;
-      topSpacerPx = cumulative;
-      break;
-    }
-    cumulative += height;
-  }
-
-  cumulative = topSpacerPx;
-  let end = start;
-  while (end < entries.length && cumulative < targetBottom) {
-    const entry = entries[end];
-    if (!entry) {
-      break;
-    }
-    cumulative += estimateHistoryEntryHeight(entry, clientWidth);
-    end += 1;
-  }
-
-  const totalHeight = entries.reduce(
-    (sum, entry) => sum + estimateHistoryEntryHeight(entry, clientWidth),
-    0,
-  );
-
-  return {
-    start,
-    end: Math.max(end, start + 1),
-    topSpacerPx,
-    bottomSpacerPx: Math.max(0, totalHeight - cumulative),
-  };
 }
 
 function resolveArtifactCluster(

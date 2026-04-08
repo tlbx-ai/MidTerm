@@ -17,7 +17,6 @@ import type {
   LensHistoryEntry,
   SessionLensViewState,
 } from './types';
-import { estimateHistoryEntryHeight } from './historyContent';
 import {
   applyOptimisticLensTurns,
   buildActivationHistoryEntries,
@@ -39,7 +38,6 @@ import {
 } from './snapshotState';
 import {
   hasActiveLensSelectionInPanel,
-  HISTORY_VIRTUALIZE_AFTER,
   resolveHistoryAutoScrollPinned,
   stabilizeHistoryEntryOrder,
 } from './historyViewport';
@@ -95,6 +93,8 @@ const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
 let lensSelectionGuardBound = false;
+let lensForegroundRecoveryBound = false;
+let lensForegroundRecoveryPending = false;
 
 const historyDom = createAgentHistoryDom({
   getState: (sessionId) => viewStates.get(sessionId),
@@ -145,6 +145,7 @@ export function initAgentView(): void {
   bindLensTurnLifecycle();
   bindActiveLensSessionRendering();
   bindLensSelectionGuard();
+  bindLensForegroundRecovery();
   onTabActivated('agent', (sessionId, panel) => {
     ensureAgentViewSkeleton(sessionId, panel, (targetSessionId) => {
       void handleLensEscape(targetSessionId);
@@ -216,6 +217,8 @@ export function resetAgentViewRuntimeForTests(): void {
   lensTurnLifecycleBound = false;
   lensActiveSessionBound = false;
   lensSelectionGuardBound = false;
+  lensForegroundRecoveryBound = false;
+  lensForegroundRecoveryPending = false;
 }
 
 /**
@@ -535,10 +538,13 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     renderDirty: false,
     assistantMarkdownCache: new Map<string, AssistantMarkdownCacheEntry>(),
     historyRenderedNodes: new Map<string, HistoryRenderedNode>(),
+    historyMeasuredHeights: new Map<string, number>(),
+    historyMeasuredWidthBucket: 0,
     historyTopSpacer: null,
     historyBottomSpacer: null,
     historyEmptyState: null,
-    pendingHistoryPrependOffsetPx: 0,
+    pendingHistoryPrependAnchor: null,
+    historyLastVirtualWindowKey: null,
     historyExpandedEntries: new Set<string>(),
     runtimeStats: null,
     busyIndicatorTickHandle: null,
@@ -561,7 +567,7 @@ function prepareLensForForeground(state: SessionLensViewState): void {
   state.historyAutoScrollPinned = true;
   state.historyLastScrollMetrics = null;
   state.historyLastUserScrollIntentAt = 0;
-  state.pendingHistoryPrependOffsetPx = 0;
+  state.pendingHistoryPrependAnchor = null;
 
   if (state.historyViewport) {
     state.historyViewport.scrollTop = 0;
@@ -605,11 +611,12 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     });
     current.historyLastScrollMetrics = scrollMetrics;
     historyRender.renderScrollToBottomControl(current.panel, current);
+    const fetchThresholdPx = Math.max(
+      LENS_HISTORY_FETCH_THRESHOLD_PX,
+      Math.round(currentViewport.clientHeight * 0.8),
+    );
 
-    if (
-      current.snapshot?.hasOlderHistory &&
-      currentViewport.scrollTop <= LENS_HISTORY_FETCH_THRESHOLD_PX
-    ) {
+    if (current.snapshot?.hasOlderHistory && currentViewport.scrollTop <= fetchThresholdPx) {
       void loadOlderLensHistoryWindow(sessionId, current);
     }
 
@@ -617,7 +624,7 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       void loadLatestLensHistoryWindow(sessionId, current);
     }
 
-    if (current.historyEntries.length > HISTORY_VIRTUALIZE_AFTER) {
+    if (historyRender.shouldRenderForViewportScroll(current)) {
       scheduleHistoryRender(sessionId);
     }
   });
@@ -631,6 +638,60 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       historyRender.scrollHistoryToBottom(sessionId, 'smooth');
     });
   }
+}
+
+function bindLensForegroundRecovery(): void {
+  if (
+    lensForegroundRecoveryBound ||
+    typeof document === 'undefined' ||
+    typeof document.addEventListener !== 'function' ||
+    typeof window === 'undefined' ||
+    typeof window.addEventListener !== 'function'
+  ) {
+    return;
+  }
+
+  const recoverForegroundLensState = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
+
+    if (!lensForegroundRecoveryPending) {
+      return;
+    }
+
+    lensForegroundRecoveryPending = false;
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || getActiveTab(sessionId) !== 'agent') {
+      return;
+    }
+
+    const state = viewStates.get(sessionId);
+    if (!state) {
+      return;
+    }
+
+    prepareLensForForeground(state);
+    renderCurrentAgentView(sessionId, { immediate: true });
+    if (state.snapshot) {
+      void refreshLensSnapshot(sessionId, { latestWindow: true });
+    }
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      lensForegroundRecoveryPending = true;
+      return;
+    }
+
+    recoverForegroundLensState();
+  });
+  window.addEventListener('blur', () => {
+    lensForegroundRecoveryPending = true;
+  });
+  window.addEventListener('focus', recoverForegroundLensState);
+  window.addEventListener('pageshow', recoverForegroundLensState);
+  lensForegroundRecoveryBound = true;
 }
 
 function scheduleHistoryRender(sessionId: string): void {
@@ -688,8 +749,11 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
           return;
         }
 
-        applyCanonicalLensDelta(current, delta);
+        const requiresWindowRefresh = applyCanonicalLensDelta(current, delta);
         scheduleHistoryRender(sessionId);
+        if (requiresWindowRefresh) {
+          void refreshLensSnapshot(sessionId);
+        }
       },
       onError: () => {
         const current = viewStates.get(sessionId);
@@ -722,7 +786,8 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.historyTopSpacer = null;
   state.historyBottomSpacer = null;
   state.historyEmptyState = null;
-  state.pendingHistoryPrependOffsetPx = 0;
+  state.pendingHistoryPrependAnchor = null;
+  state.historyLastVirtualWindowKey = null;
   state.renderDirty = true;
 
   const historyHost = state.panel.querySelector<HTMLElement>('[data-agent-field="history"]');
@@ -836,24 +901,9 @@ async function loadOlderLensHistoryWindow(
 
   state.refreshInFlight = true;
   try {
+    historyRender.captureHistoryViewportAnchor(state);
     const nextWindowCount = state.historyWindowCount + (existingWindowStart - nextStart);
     const nextSnapshot = await getLensSnapshot(sessionId, nextStart, nextWindowCount);
-    const nextWindowStart = nextSnapshot.historyWindowStart;
-    const prependedEntries = nextSnapshot.transcript.slice(
-      0,
-      Math.max(0, existingWindowStart - nextWindowStart),
-    );
-    const prependedHistoryEntries = buildLensHistoryEntries(
-      {
-        ...nextSnapshot,
-        transcript: prependedEntries,
-      },
-      [],
-    );
-    state.pendingHistoryPrependOffsetPx = prependedHistoryEntries.reduce(
-      (sum, entry) => sum + estimateHistoryEntryHeight(entry),
-      0,
-    );
     applyLensSnapshotWindowState(state, nextSnapshot);
     state.snapshot = nextSnapshot;
     renderCurrentAgentView(sessionId);

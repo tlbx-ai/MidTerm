@@ -21,6 +21,8 @@ const resolveLensUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
 const activeSessionSubscribers: Array<(sessionId: string | null) => void> = [];
+const documentEventListeners = new Map<string, Array<() => void>>();
+const windowEventListeners = new Map<string, Array<() => void>>();
 let resetAgentViewRuntimeForTests: typeof import('./index').resetAgentViewRuntimeForTests;
 const agentViewModulePromise = import('./index');
 
@@ -91,6 +93,30 @@ function createMockDomNode(overrides: Record<string, unknown> = {}): any {
   };
 
   return Object.assign(node, overrides);
+}
+
+function registerEventListener(
+  store: Map<string, Array<() => void>>,
+  event: string,
+  callback: EventListenerOrEventListenerObject,
+): void {
+  const listeners = store.get(event) ?? [];
+  const normalized =
+    typeof callback === 'function' ? callback : callback.handleEvent.bind(callback);
+  listeners.push(normalized as () => void);
+  store.set(event, listeners);
+}
+
+function triggerDocumentEvent(event: string): void {
+  for (const listener of documentEventListeners.get(event) ?? []) {
+    listener();
+  }
+}
+
+function triggerWindowEvent(event: string): void {
+  for (const listener of windowEventListeners.get(event) ?? []) {
+    listener();
+  }
 }
 
 vi.mock('../sessionTabs', () => ({
@@ -170,11 +196,18 @@ describe('agentView dev errors', () => {
         appendChild: vi.fn(),
         childNodes: [],
       }),
+      addEventListener: vi.fn((event: string, callback: EventListenerOrEventListenerObject) => {
+        registerEventListener(documentEventListeners, event, callback);
+      }),
+      visibilityState: 'visible',
+      hidden: false,
     });
     vi.stubGlobal('window', {
       clearTimeout: vi.fn(),
       setTimeout: vi.fn(() => 1),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn((event: string, callback: EventListenerOrEventListenerObject) => {
+        registerEventListener(windowEventListeners, event, callback);
+      }),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(() => true),
       location: {
@@ -212,6 +245,8 @@ describe('agentView dev errors', () => {
     showDevErrorDialog.mockReset();
     activeSessionId = null;
     activeSessionSubscribers.length = 0;
+    documentEventListeners.clear();
+    windowEventListeners.clear();
     resetAgentViewRuntimeForTests();
   });
 
@@ -1312,6 +1347,73 @@ describe('agentView dev errors', () => {
 
     await vi.waitFor(() => {
       expect(getLensSnapshot).toHaveBeenNthCalledWith(1, 's1');
+      expect(getLensSnapshot).toHaveBeenNthCalledWith(2, 's1', undefined, 80);
+    });
+
+    expect(historyHost.scrollTop).toBe(0);
+  });
+
+  it('returning from browser background snaps the active Lens session back to the live edge', async () => {
+    const disconnectStream = vi.fn();
+    openLensEventStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensSnapshot
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 40,
+          totalHistoryCount: 400,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 45,
+          totalHistoryCount: 405,
+          historyWindowStart: 325,
+          historyWindowEnd: 405,
+          hasOlderHistory: true,
+          hasNewerHistory: false,
+        }),
+      );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.scrollTop = 1337;
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensSnapshot).toHaveBeenNthCalledWith(1, 's1');
+    });
+
+    historyHost.scrollTop = 987;
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'hidden';
+    (document as { visibilityState: string; hidden: boolean }).hidden = true;
+    triggerDocumentEvent('visibilitychange');
+
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'visible';
+    (document as { visibilityState: string; hidden: boolean }).hidden = false;
+    triggerDocumentEvent('visibilitychange');
+
+    await vi.waitFor(() => {
       expect(getLensSnapshot).toHaveBeenNthCalledWith(2, 's1', undefined, 80);
     });
 
@@ -5522,6 +5624,9 @@ describe('agentView dev errors', () => {
       generatedAt: '2026-03-28T10:00:00Z',
       latestSequence: 1,
       totalHistoryCount: 1,
+      estimatedTotalHistoryHeightPx: 52,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
       historyWindowStart: 0,
       historyWindowEnd: 1,
       hasOlderHistory: false,
@@ -5560,6 +5665,7 @@ describe('agentView dev errors', () => {
         {
           entryId: 'assistant:assistant-1',
           order: 1,
+          estimatedHeightPx: 52,
           kind: 'assistant',
           turnId: 'turn-1',
           itemId: 'assistant-1',
@@ -5585,12 +5691,13 @@ describe('agentView dev errors', () => {
       historyWindowCount: 80,
     } as any;
 
-    applyCanonicalLensDelta(state, {
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:01Z',
       latestSequence: 2,
       totalHistoryCount: 1,
+      estimatedTotalHistoryHeightPx: 68,
       session: {
         state: 'running',
         stateLabel: 'Running',
@@ -5625,6 +5732,7 @@ describe('agentView dev errors', () => {
         {
           entryId: 'assistant:assistant-1',
           order: 1,
+          estimatedHeightPx: 68,
           kind: 'assistant',
           turnId: 'turn-1',
           itemId: 'assistant-1',
@@ -5647,14 +5755,142 @@ describe('agentView dev errors', () => {
       noticeUpserts: [],
     });
 
+    expect(requiresWindowRefresh).toBe(false);
     expect(snapshot.latestSequence).toBe(2);
     expect(snapshot.generatedAt).toBe('2026-03-28T10:00:01Z');
     expect(snapshot.streams.assistantText).toBe('Hello');
     expect(snapshot.transcript).toHaveLength(1);
     expect(snapshot.transcript[0]?.body).toBe('Hello');
+    expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(0);
     expect(snapshot.transcript[0]?.streaming).toBe(true);
     expect(snapshot.historyWindowStart).toBe(0);
     expect(snapshot.historyWindowEnd).toBe(1);
     expect(snapshot.hasNewerHistory).toBe(false);
+  });
+
+  it('requests a snapshot refresh when off-window history changes arrive while browsing older history', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-scroll',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:00Z',
+      latestSequence: 5,
+      totalHistoryCount: 120,
+      estimatedTotalHistoryHeightPx: 9600,
+      estimatedHistoryBeforeWindowPx: 4200,
+      estimatedHistoryAfterWindowPx: 3000,
+      historyWindowStart: 40,
+      historyWindowEnd: 80,
+      hasOlderHistory: true,
+      hasNewerHistory: true,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-scroll',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-scroll',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-28T10:00:00Z',
+        completedAt: null,
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: 'off',
+        permissionMode: 'default',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [
+        {
+          entryId: 'assistant:window-1',
+          order: 41,
+          estimatedHeightPx: 84,
+          kind: 'assistant',
+          turnId: 'turn-scroll',
+          itemId: 'assistant-window-1',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Older visible history',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T09:59:00Z',
+          updatedAt: '2026-03-28T09:59:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 40,
+      historyWindowCount: 40,
+    } as any;
+
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+      sessionId: 's-scroll',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:02Z',
+      latestSequence: 6,
+      totalHistoryCount: 121,
+      estimatedTotalHistoryHeightPx: 9684,
+      session: snapshot.session,
+      thread: snapshot.thread,
+      currentTurn: snapshot.currentTurn,
+      quickSettings: snapshot.quickSettings,
+      streams: snapshot.streams,
+      historyUpserts: [
+        {
+          entryId: 'assistant:new-tail',
+          order: 121,
+          estimatedHeightPx: 84,
+          kind: 'assistant',
+          turnId: 'turn-scroll',
+          itemId: 'assistant-new-tail',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'New tail entry',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T10:00:02Z',
+          updatedAt: '2026-03-28T10:00:02Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(requiresWindowRefresh).toBe(true);
+    expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(4200);
+    expect(snapshot.estimatedHistoryAfterWindowPx).toBe(3000);
   });
 });

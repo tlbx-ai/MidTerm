@@ -236,6 +236,7 @@ export interface LensPulseDeltaResponse {
   generatedAt: string;
   latestSequence: number;
   totalHistoryCount: number;
+  estimatedTotalHistoryHeightPx?: number;
   session: LensPulseSessionSummary;
   thread: LensPulseThreadSummary;
   currentTurn: LensPulseTurnSummary;
@@ -287,6 +288,7 @@ export interface LensPulseStreamsSummary {
 export interface LensPulseHistoryEntry {
   entryId: string;
   order: number;
+  estimatedHeightPx?: number;
   kind: string;
   turnId?: string | null;
   itemId?: string | null;
@@ -342,6 +344,9 @@ export interface LensPulseSnapshotResponse {
   generatedAt: string;
   latestSequence: number;
   totalHistoryCount: number;
+  estimatedTotalHistoryHeightPx?: number;
+  estimatedHistoryBeforeWindowPx?: number;
+  estimatedHistoryAfterWindowPx?: number;
   historyWindowStart: number;
   historyWindowEnd: number;
   hasOlderHistory: boolean;

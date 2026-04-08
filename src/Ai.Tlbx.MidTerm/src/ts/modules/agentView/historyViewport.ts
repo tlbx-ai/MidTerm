@@ -5,6 +5,8 @@ const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const HISTORY_OVERSCAN_PX = 800;
 export const HISTORY_VIRTUALIZE_AFTER = 50;
 
+type HistoryHeightResolver = (entry: LensHistoryEntry, index: number) => number;
+
 export function stabilizeHistoryEntryOrder(
   entries: readonly LensHistoryEntry[],
 ): LensHistoryEntry[] {
@@ -58,6 +60,7 @@ export function computeHistoryVirtualWindow(
   scrollTop: number,
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
+  resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryVirtualWindow {
   if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
     return {
@@ -73,6 +76,9 @@ export function computeHistoryVirtualWindow(
   let cumulative = 0;
   let start = 0;
   let topSpacerPx = 0;
+  const heightForEntry =
+    resolveEntryHeight ??
+    ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
@@ -80,7 +86,7 @@ export function computeHistoryVirtualWindow(
       continue;
     }
 
-    const height = estimateHistoryEntryHeight(entry, clientWidth);
+    const height = heightForEntry(entry, index);
     if (cumulative + height >= targetTop) {
       start = index;
       topSpacerPx = cumulative;
@@ -97,14 +103,11 @@ export function computeHistoryVirtualWindow(
       break;
     }
 
-    cumulative += estimateHistoryEntryHeight(entry, clientWidth);
+    cumulative += heightForEntry(entry, end);
     end += 1;
   }
 
-  const totalHeight = entries.reduce(
-    (sum, entry) => sum + estimateHistoryEntryHeight(entry, clientWidth),
-    0,
-  );
+  const totalHeight = entries.reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
 
   return {
     start,
@@ -112,6 +115,10 @@ export function computeHistoryVirtualWindow(
     topSpacerPx,
     bottomSpacerPx: Math.max(0, totalHeight - cumulative),
   };
+}
+
+export function buildHistoryVirtualWindowKey(window: HistoryVirtualWindow): string {
+  return `${window.start}:${window.end}`;
 }
 
 export function hasActiveLensSelectionInPanel(

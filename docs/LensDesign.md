@@ -99,6 +99,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Lens must not retain thousands of history nodes in the live DOM.
 - Once the visible history grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
 - Virtualization must preserve stable scroll behavior and not break streaming updates at the bottom.
+- Lens scrollbar geometry for unseen history must come from MidTerm-owned canonical history metrics, not from averaging the currently loaded browser slice.
+- Lens should combine backend-owned unseen-history estimates with browser-measured visible-row heights so the scrollbar stays stable even when history rows vary substantially in height.
 - Lens history transport should be window-aware: MidTerm may deliver only the currently materialized history slice plus total-count/window metadata, and the UI should request older or newer slices on demand instead of assuming the full history is resident in the browser.
 - Browser-resident Lens history should stay bounded to a working window instead of accumulating the full session scrollback in memory.
 - When a Lens surface becomes hidden or inactive, its rendered history DOM should be dropped and its retained browser-side history window should collapse back toward a small latest-history slice while the runtime keeps ingesting canonical state.
@@ -130,6 +132,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Automatic scrolling may resume only after the user reaches the bottom again or explicitly presses a "back to bottom" control.
 - When a Lens surface is reopened, reactivated, or restored after being hidden, it should re-enter at the live edge in follow mode by default unless the user is in the middle of an explicit older-history navigation flow.
 - When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
+- When older-history paging prepends more canonical rows, Lens should preserve the reader position by anchoring to a stable visible history row identity and restoring against that row's real DOM offset, not by summing guessed row heights.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage
@@ -314,6 +317,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - The browser should request older/newer history as explicit window fetches and should not receive arbitrary unseen history by default.
 - Multiple browsers attached to one Lens session should share the same MidTerm-owned canonical history while independently fetching only the windows each browser currently needs.
 - Re-entry and reconnect should prefer a latest anchored window plus live follow mode by default; older-history windows should be fetched only after explicit user navigation.
+- If the user is browsing an older window and off-window history mutations arrive, Lens should refresh that canonical window rather than pretending remote spacer geometry can be corrected from partial browser knowledge alone.
 
 ## Dev Diagnostics
 
@@ -350,7 +354,7 @@ Status in this branch/work item:
 - implemented: when a visible history row changes materially, Lens now replaces that row node by stable key instead of mutating an older DOM node into a new future shape
 - implemented: scroll-follow suppression while the user is away from the live edge, plus an explicit return-to-bottom control
 - implemented: non-user layout growth and sizing changes no longer clear live-edge follow state by themselves; only explicit user scrolling moves Lens out of follow mode
-- implemented: when a hidden Lens surface is shown again, it restores a fresh latest-history window and re-enters live-edge follow mode by default instead of preserving a stale hidden-session mid-history scroll offset
+- implemented: when a hidden Lens surface is shown again, whether by MidTerm tab reactivation or browser foreground return, it restores a fresh latest-history window and re-enters live-edge follow mode by default instead of preserving a stale mid-history scroll offset
 - implemented: terminal-font monospace rendering for machine-oriented Lens content
 - implemented: provider-stream-driven assistant rendering so partial assistant text can appear before the final provider message lands
 - implemented: responsive Lens styling for mobile-sized layouts
@@ -374,6 +378,10 @@ Status in this branch/work item:
 - implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
 - implemented: command rows now stay on the dedicated flat `Ran …` presentation once normalized, preserving their folded tails across later partial updates and temporary shape regressions while that history window remains materialized
 - implemented: raw provider/tool chatter is reduced into canonical history rows so the normal Lens timeline does not mirror full wire-level noise
+- implemented: unseen-history spacer geometry now comes from MidTerm-owned canonical height estimates in the Lens snapshot instead of averaging the currently loaded browser slice
+- implemented: visible-row virtualization now prefers browser-measured row heights over static heuristics and keeps those measurements as the render window shifts
+- implemented: older-history paging now restores scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
+- implemented: when off-window canonical history changes arrive while the user is browsing older history, Lens now refreshes that window instead of silently leaving remote spacer geometry stale
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles

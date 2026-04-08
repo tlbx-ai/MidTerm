@@ -272,7 +272,11 @@ public sealed class SessionLensPulseServiceTests
         Assert.Equal(12, snapshot.HistoryWindowEnd);
         Assert.True(snapshot.HasOlderHistory);
         Assert.False(snapshot.HasNewerHistory);
+        Assert.True(snapshot.EstimatedTotalHistoryHeightPx > 0);
+        Assert.True(snapshot.EstimatedHistoryBeforeWindowPx > 0);
+        Assert.Equal(0, snapshot.EstimatedHistoryAfterWindowPx);
         Assert.Equal(5, snapshot.Transcript.Count);
+        Assert.All(snapshot.Transcript, entry => Assert.True(entry.EstimatedHeightPx > 0));
         Assert.Equal("entry-7", snapshot.Transcript[0].Body);
         Assert.Equal("entry-11", snapshot.Transcript[^1].Body);
     }

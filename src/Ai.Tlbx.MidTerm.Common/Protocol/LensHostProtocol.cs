@@ -174,6 +174,7 @@ public sealed class LensPulseDeltaResponse
     public DateTimeOffset GeneratedAt { get; set; }
     public long LatestSequence { get; set; }
     public int TotalHistoryCount { get; set; }
+    public int EstimatedTotalHistoryHeightPx { get; set; }
     public LensPulseSessionSummary Session { get; set; } = new();
     public LensPulseThreadSummary Thread { get; set; } = new();
     public LensPulseTurnSummary CurrentTurn { get; set; } = new();
@@ -195,6 +196,9 @@ public sealed class LensPulseSnapshotResponse
     public DateTimeOffset GeneratedAt { get; set; }
     public long LatestSequence { get; set; }
     public int TotalHistoryCount { get; set; }
+    public int EstimatedTotalHistoryHeightPx { get; set; }
+    public int EstimatedHistoryBeforeWindowPx { get; set; }
+    public int EstimatedHistoryAfterWindowPx { get; set; }
     public int HistoryWindowStart { get; set; }
     public int HistoryWindowEnd { get; set; }
     public bool HasOlderHistory { get; set; }
@@ -333,6 +337,7 @@ public sealed class LensPulseTranscriptEntry
 {
     public string EntryId { get; set; } = string.Empty;
     public long Order { get; set; }
+    public int EstimatedHeightPx { get; set; }
     public string Kind { get; set; } = string.Empty;
     public string? TurnId { get; set; }
     public string? ItemId { get; set; }

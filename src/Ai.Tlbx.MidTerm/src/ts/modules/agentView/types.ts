@@ -39,10 +39,13 @@ export interface SessionLensViewState {
   renderDirty: boolean;
   assistantMarkdownCache: Map<string, AssistantMarkdownCacheEntry>;
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
+  historyMeasuredHeights: Map<string, number>;
+  historyMeasuredWidthBucket: number;
   historyTopSpacer: HTMLDivElement | null;
   historyBottomSpacer: HTMLDivElement | null;
   historyEmptyState: HTMLDivElement | null;
-  pendingHistoryPrependOffsetPx: number;
+  pendingHistoryPrependAnchor: HistoryViewportAnchor | null;
+  historyLastVirtualWindowKey: string | null;
   historyExpandedEntries: Set<string>;
   runtimeStats: LensRuntimeStatsSummary | null;
   busyIndicatorTickHandle: number | null;
@@ -186,6 +189,7 @@ export interface HistoryVisibleEntry {
 
 export interface HistoryRenderPlan {
   emptyStateText: string | null;
+  virtualWindowKey: string | null;
   topSpacerPx: number;
   bottomSpacerPx: number;
   visibleEntries: HistoryVisibleEntry[];
@@ -196,6 +200,11 @@ export interface HistoryRenderedNode {
   signature: string;
   entry: LensHistoryEntry;
   cluster: ArtifactClusterInfo | null;
+}
+
+export interface HistoryViewportAnchor {
+  entryId: string;
+  topOffsetPx: number;
 }
 
 export interface HistoryBodyPresentation {

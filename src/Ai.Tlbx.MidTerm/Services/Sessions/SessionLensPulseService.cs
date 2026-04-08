@@ -719,7 +719,11 @@ public sealed partial class SessionLensPulseService
         var orderedHistory = state.TranscriptEntries.Values
             .OrderBy(entry => entry.Order)
             .ToList();
+        var estimatedHeights = orderedHistory
+            .Select(static entry => EstimateTranscriptEntryHeightPx(entry))
+            .ToList();
         var totalHistoryCount = orderedHistory.Count;
+        var estimatedTotalHistoryHeightPx = estimatedHeights.Sum();
         var boundedStart = Math.Clamp(historyWindowStart, 0, totalHistoryCount == 0 ? 0 : totalHistoryCount - 1);
         var boundedCount = historyWindowCount is null
             ? totalHistoryCount
@@ -736,6 +740,8 @@ public sealed partial class SessionLensPulseService
             .Select(CloneTranscriptEntry)
             .ToList();
         var historyWindowEnd = boundedStart + historySlice.Count;
+        var estimatedHistoryBeforeWindowPx = estimatedHeights.Take(boundedStart).Sum();
+        var estimatedHistoryAfterWindowPx = estimatedHeights.Skip(historyWindowEnd).Sum();
 
         return new LensPulseSnapshotResponse
         {
@@ -744,6 +750,9 @@ public sealed partial class SessionLensPulseService
             GeneratedAt = state.Session.LastEventAt ?? DateTimeOffset.UtcNow,
             LatestSequence = latestSequence,
             TotalHistoryCount = totalHistoryCount,
+            EstimatedTotalHistoryHeightPx = estimatedTotalHistoryHeightPx,
+            EstimatedHistoryBeforeWindowPx = estimatedHistoryBeforeWindowPx,
+            EstimatedHistoryAfterWindowPx = estimatedHistoryAfterWindowPx,
             HistoryWindowStart = boundedStart,
             HistoryWindowEnd = historyWindowEnd,
             HasOlderHistory = boundedStart > 0,
@@ -940,6 +949,7 @@ public sealed partial class SessionLensPulseService
             GeneratedAt = state.Session.LastEventAt ?? lensEvent.CreatedAt,
             LatestSequence = latestSequence,
             TotalHistoryCount = state.TranscriptEntries.Count,
+            EstimatedTotalHistoryHeightPx = EstimateTotalHistoryHeightPx(state),
             Session = CloneSessionSummary(state.Session),
             Thread = CloneThreadSummary(state.Thread),
             CurrentTurn = CloneTurnSummary(state.CurrentTurn),
@@ -1836,6 +1846,7 @@ public sealed partial class SessionLensPulseService
             GeneratedAt = source.GeneratedAt,
             LatestSequence = source.LatestSequence,
             TotalHistoryCount = source.TotalHistoryCount,
+            EstimatedTotalHistoryHeightPx = source.EstimatedTotalHistoryHeightPx,
             Session = CloneSessionSummary(source.Session),
             Thread = CloneThreadSummary(source.Thread),
             CurrentTurn = CloneTurnSummary(source.CurrentTurn),
@@ -1989,6 +2000,7 @@ public sealed partial class SessionLensPulseService
         {
             EntryId = source.EntryId,
             Order = source.Order,
+            EstimatedHeightPx = EstimateTranscriptEntryHeightPx(source),
             Kind = source.Kind,
             TurnId = source.TurnId,
             ItemId = source.ItemId,
@@ -2002,6 +2014,75 @@ public sealed partial class SessionLensPulseService
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt
         };
+    }
+
+    private static int EstimateTotalHistoryHeightPx(LensConversationState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return state.TranscriptEntries.Values.Sum(static entry => EstimateTranscriptEntryHeightPx(entry));
+    }
+
+    private static int EstimateTranscriptEntryHeightPx(LensPulseTranscriptEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        const int viewportWidth = 960;
+        var horizontalChrome = ResolveTranscriptHorizontalChromePx(entry.Kind);
+        var contentWidth = Math.Max(140, viewportWidth - horizontalChrome);
+        var averageCharWidthPx = ResolveTranscriptAverageCharWidthPx(entry.Kind);
+        var charsPerLine = Math.Max(18, (int)Math.Floor(contentWidth / averageCharWidthPx));
+        var textLines = EstimateWrappedTextLines(entry.Body, charsPerLine);
+        var bodyHeight = Math.Min(420, 18 * textLines);
+        return ResolveTranscriptBaseHeightPx(entry.Kind) + bodyHeight;
+    }
+
+    private static int ResolveTranscriptHorizontalChromePx(string? kind)
+    {
+        return string.Equals(kind, "user", StringComparison.Ordinal)
+            ? 72
+            : UsesCompactTranscriptChrome(kind) ? 56 : 28;
+    }
+
+    private static double ResolveTranscriptAverageCharWidthPx(string? kind)
+    {
+        return UsesCompactTranscriptChrome(kind) ? 7.4d : 8.1d;
+    }
+
+    private static int ResolveTranscriptBaseHeightPx(string? kind)
+    {
+        return kind switch
+        {
+            "tool" or "reasoning" or "diff" or "plan" => 84,
+            "request" => 108,
+            "user" => 68,
+            "assistant" => 52,
+            "system" or "notice" => 64,
+            _ => 64
+        };
+    }
+
+    private static bool UsesCompactTranscriptChrome(string? kind)
+    {
+        return kind is "tool" or "reasoning" or "diff" or "request" or "system" or "notice";
+    }
+
+    private static int EstimateWrappedTextLines(string? body, int charsPerLine)
+    {
+        if (string.IsNullOrEmpty(body))
+        {
+            return 1;
+        }
+
+        var effectiveCharsPerLine = Math.Max(1, charsPerLine);
+        var lines = body.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var lineCount = 0;
+        foreach (var line in lines)
+        {
+            var length = Math.Max(1, line.Length);
+            lineCount += Math.Max(1, (int)Math.Ceiling(length / (double)effectiveCharsPerLine));
+        }
+
+        return Math.Max(1, lineCount);
     }
 
     private static LensPulseItemSummary CloneItemSummary(LensPulseItemSummary source)

@@ -43,9 +43,19 @@ export function collapseSnapshotToLatestWindow(
       ? snapshot.transcript.slice(-targetWindowCount)
       : snapshot.transcript.slice();
   const totalHistoryCount = Math.max(snapshot.totalHistoryCount, retainedEntries.length);
+  const retainedEstimatedHeightPx = sumEstimatedHistoryHeights(retainedEntries);
 
   snapshot.transcript = retainedEntries;
   snapshot.totalHistoryCount = totalHistoryCount;
+  snapshot.estimatedTotalHistoryHeightPx = Math.max(
+    snapshot.estimatedTotalHistoryHeightPx ?? 0,
+    retainedEstimatedHeightPx,
+  );
+  snapshot.estimatedHistoryBeforeWindowPx = Math.max(
+    0,
+    snapshot.estimatedTotalHistoryHeightPx - retainedEstimatedHeightPx,
+  );
+  snapshot.estimatedHistoryAfterWindowPx = 0;
   snapshot.historyWindowEnd = totalHistoryCount;
   snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - retainedEntries.length);
   snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
@@ -57,13 +67,17 @@ export function collapseSnapshotToLatestWindow(
 export function applyCanonicalLensDelta(
   state: SessionLensViewState,
   delta: LensPulseDeltaResponse,
-): void {
+): boolean {
   const snapshot = state.snapshot;
   if (!snapshot) {
-    return;
+    return false;
   }
 
   const previousTotalHistoryCount = snapshot.totalHistoryCount;
+  snapshot.estimatedTotalHistoryHeightPx = Math.max(
+    delta.estimatedTotalHistoryHeightPx ?? 0,
+    snapshot.estimatedTotalHistoryHeightPx ?? 0,
+  );
   snapshot.provider = delta.provider || snapshot.provider;
   snapshot.generatedAt = delta.generatedAt;
   snapshot.latestSequence = Math.max(snapshot.latestSequence, delta.latestSequence);
@@ -80,7 +94,7 @@ export function applyCanonicalLensDelta(
     delta.requestRemovals,
   );
   snapshot.notices = upsertSnapshotNotices(snapshot.notices, delta.noticeUpserts);
-  applyHistoryWindowDelta(
+  return applyHistoryWindowDelta(
     state,
     snapshot,
     previousTotalHistoryCount,
@@ -95,69 +109,166 @@ function applyHistoryWindowDelta(
   previousTotalHistoryCount: number,
   upserts: readonly LensPulseHistoryEntry[],
   removals: readonly string[],
-): void {
+): boolean {
   const currentWindowStart = snapshot.historyWindowStart;
   const currentWindowEnd = snapshot.historyWindowEnd;
   const wasLiveEdge = currentWindowEnd >= previousTotalHistoryCount;
   const nextEntries = snapshot.transcript.map(cloneSnapshotHistoryEntry);
   const entryIndexById = new Map(nextEntries.map((entry, index) => [entry.entryId, index]));
+  const requiresWindowRefresh = resolveHistoryWindowRefreshRequirement(
+    wasLiveEdge,
+    currentWindowStart,
+    currentWindowEnd,
+    upserts,
+    removals,
+    entryIndexById,
+  );
 
+  applyHistoryEntryRemovals(nextEntries, entryIndexById, removals);
+  applyHistoryEntryUpserts(
+    nextEntries,
+    entryIndexById,
+    upserts,
+    wasLiveEdge,
+    currentWindowStart,
+    currentWindowEnd,
+  );
+
+  nextEntries.sort((left, right) => left.order - right.order);
+  const targetWindowCount = Math.max(1, state.historyWindowCount || LENS_HISTORY_WINDOW_SIZE);
+  applyHistoryWindowEntries(
+    snapshot,
+    nextEntries,
+    wasLiveEdge,
+    currentWindowStart,
+    currentWindowEnd,
+    targetWindowCount,
+    requiresWindowRefresh,
+  );
+
+  snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
+  snapshot.hasNewerHistory = snapshot.historyWindowEnd < snapshot.totalHistoryCount;
+  state.historyWindowStart = snapshot.historyWindowStart;
+  state.historyWindowCount = Math.max(snapshot.transcript.length, targetWindowCount);
+  return requiresWindowRefresh;
+}
+
+function resolveHistoryWindowRefreshRequirement(
+  wasLiveEdge: boolean,
+  currentWindowStart: number,
+  currentWindowEnd: number,
+  upserts: readonly LensPulseHistoryEntry[],
+  removals: readonly string[],
+  entryIndexById: ReadonlyMap<string, number>,
+): boolean {
+  if (wasLiveEdge) {
+    return false;
+  }
+
+  const hasOffWindowUpsert = upserts.some((upsert) => {
+    const absoluteIndex = Math.max(0, upsert.order - 1);
+    return absoluteIndex < currentWindowStart || absoluteIndex >= currentWindowEnd;
+  });
+  const hasOffWindowRemoval =
+    removals.length > 0 && removals.some((entryId) => !entryIndexById.has(entryId));
+  return hasOffWindowUpsert || hasOffWindowRemoval;
+}
+
+function applyHistoryEntryRemovals(
+  entries: LensPulseHistoryEntry[],
+  entryIndexById: Map<string, number>,
+  removals: readonly string[],
+): void {
   for (const entryId of removals) {
     const index = entryIndexById.get(entryId);
     if (index === undefined) {
       continue;
     }
 
-    nextEntries.splice(index, 1);
+    entries.splice(index, 1);
     entryIndexById.delete(entryId);
-    reindexHistoryEntryMap(entryIndexById, nextEntries);
+    reindexHistoryEntryMap(entryIndexById, entries);
   }
+}
 
+function applyHistoryEntryUpserts(
+  entries: LensPulseHistoryEntry[],
+  entryIndexById: Map<string, number>,
+  upserts: readonly LensPulseHistoryEntry[],
+  wasLiveEdge: boolean,
+  currentWindowStart: number,
+  currentWindowEnd: number,
+): void {
   for (const upsert of upserts) {
     const cloned = cloneSnapshotHistoryEntry(upsert);
     const existingIndex = entryIndexById.get(cloned.entryId);
     if (existingIndex !== undefined) {
-      nextEntries.splice(existingIndex, 1, cloned);
+      entries.splice(existingIndex, 1, cloned);
       continue;
     }
 
     if (wasLiveEdge) {
-      nextEntries.push(cloned);
-      entryIndexById.set(cloned.entryId, nextEntries.length - 1);
+      entries.push(cloned);
+      entryIndexById.set(cloned.entryId, entries.length - 1);
       continue;
     }
 
     const absoluteIndex = Math.max(0, cloned.order - 1);
     if (absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd) {
-      nextEntries.push(cloned);
-      entryIndexById.set(cloned.entryId, nextEntries.length - 1);
+      entries.push(cloned);
+      entryIndexById.set(cloned.entryId, entries.length - 1);
     }
   }
+}
 
-  nextEntries.sort((left, right) => left.order - right.order);
-  const targetWindowCount = Math.max(1, state.historyWindowCount || LENS_HISTORY_WINDOW_SIZE);
-
+function applyHistoryWindowEntries(
+  snapshot: LensPulseSnapshotResponse,
+  entries: readonly LensPulseHistoryEntry[],
+  wasLiveEdge: boolean,
+  currentWindowStart: number,
+  currentWindowEnd: number,
+  targetWindowCount: number,
+  requiresWindowRefresh: boolean,
+): void {
   if (wasLiveEdge) {
-    const trimmedEntries =
-      nextEntries.length > targetWindowCount
-        ? nextEntries.slice(-targetWindowCount)
-        : nextEntries.slice();
-    snapshot.transcript = trimmedEntries;
-    snapshot.historyWindowEnd = snapshot.totalHistoryCount;
-    snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - trimmedEntries.length);
-  } else {
-    snapshot.transcript = nextEntries.filter((entry) => {
-      const absoluteIndex = Math.max(0, entry.order - 1);
-      return absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd;
-    });
-    snapshot.historyWindowStart = currentWindowStart;
-    snapshot.historyWindowEnd = snapshot.historyWindowStart + snapshot.transcript.length;
+    applyLiveEdgeHistoryWindow(snapshot, entries, targetWindowCount);
+    return;
   }
 
-  snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
-  snapshot.hasNewerHistory = snapshot.historyWindowEnd < snapshot.totalHistoryCount;
-  state.historyWindowStart = snapshot.historyWindowStart;
-  state.historyWindowCount = Math.max(snapshot.transcript.length, targetWindowCount);
+  snapshot.transcript = entries.filter((entry) => {
+    const absoluteIndex = Math.max(0, entry.order - 1);
+    return absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd;
+  });
+  snapshot.historyWindowStart = currentWindowStart;
+  snapshot.historyWindowEnd = snapshot.historyWindowStart + snapshot.transcript.length;
+  if (requiresWindowRefresh) {
+    return;
+  }
+
+  const currentWindowEstimatedHeightPx = sumEstimatedHistoryHeights(snapshot.transcript);
+  snapshot.estimatedHistoryAfterWindowPx = Math.max(
+    0,
+    (snapshot.estimatedTotalHistoryHeightPx ?? 0) -
+      (snapshot.estimatedHistoryBeforeWindowPx ?? 0) -
+      currentWindowEstimatedHeightPx,
+  );
+}
+
+function applyLiveEdgeHistoryWindow(
+  snapshot: LensPulseSnapshotResponse,
+  entries: readonly LensPulseHistoryEntry[],
+  targetWindowCount: number,
+): void {
+  const trimmedEntries =
+    entries.length > targetWindowCount ? entries.slice(-targetWindowCount) : entries.slice();
+  snapshot.transcript = trimmedEntries;
+  snapshot.historyWindowEnd = snapshot.totalHistoryCount;
+  snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - trimmedEntries.length);
+  snapshot.estimatedHistoryAfterWindowPx = 0;
+  snapshot.estimatedHistoryBeforeWindowPx = Math.max(
+    0,
+    (snapshot.estimatedTotalHistoryHeightPx ?? 0) - sumEstimatedHistoryHeights(trimmedEntries),
+  );
 }
 
 function reindexHistoryEntryMap(
@@ -234,6 +345,10 @@ function cloneSnapshotHistoryEntry(entry: LensPulseHistoryEntry): LensPulseHisto
     ...entry,
     attachments: cloneHistoryAttachments(entry.attachments),
   };
+}
+
+function sumEstimatedHistoryHeights(entries: readonly LensPulseHistoryEntry[]): number {
+  return entries.reduce((sum, entry) => sum + Math.max(0, entry.estimatedHeightPx ?? 0), 0);
 }
 
 function cloneSnapshotItemSummary(
