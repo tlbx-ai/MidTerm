@@ -12,8 +12,11 @@ import { t } from '../i18n';
 import { sessionTerminals, hiddenSessionIds } from '../../state';
 import { sendInput, sendResize } from '../comms/muxChannel';
 import { getTerminalOptions } from '../terminal/terminalOptions';
+import { syncTerminalWebglState } from '../terminal/manager';
+import { syncTerminalLigatureState } from '../terminal/ligatures';
+import { shouldUseWebglRenderer } from '../terminal/webglSupport';
 import { escapeHtml } from '../../utils';
-import { $isMainBrowser } from '../../stores';
+import { $currentSettings, $isMainBrowser } from '../../stores';
 
 export { hiddenSessionIds } from '../../state';
 
@@ -95,8 +98,17 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
     serverCols: 120,
     serverRows: 30,
     opened: true,
+    hasWebgl: false,
+    webglAddon: null,
+    ligatureJoinerId: null,
   };
   sessionTerminals.set(hiddenSessionId, termState);
+
+  const settings = $currentSettings.get();
+  if (settings) {
+    syncTerminalWebglState(hiddenSessionId, termState, shouldUseWebglRenderer(settings));
+    syncTerminalLigatureState(termState, settings.terminalLigaturesEnabled);
+  }
 
   terminal.onData((data: string) => {
     sendInput(hiddenSessionId, data);

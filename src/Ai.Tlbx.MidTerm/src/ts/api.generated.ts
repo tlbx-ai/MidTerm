@@ -4081,6 +4081,7 @@ export interface components {
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;
+      terminalLigaturesEnabled: boolean;
       /** Format: double */
       lineHeight: number;
       /** Format: double */
@@ -4137,6 +4138,7 @@ export interface components {
       showSidebarSessionFilter: boolean;
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
+      commandBayLigaturesEnabled: boolean;
       devMode: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;

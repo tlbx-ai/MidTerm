@@ -29,6 +29,7 @@ public sealed partial class MidTermSettingsPublic
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code";
+    public bool TerminalLigaturesEnabled { get; set; } = true;
     public double LineHeight { get; set; } = 1;
     public double LetterSpacing { get; set; } = 0;
     public string FontWeight { get; set; } = "normal";
@@ -75,6 +76,7 @@ public sealed partial class MidTermSettingsPublic
     public bool ShowSidebarSessionFilter { get; set; } = false;
     public bool TmuxCompatibility { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
+    public bool CommandBayLigaturesEnabled { get; set; } = true;
     public bool DevMode { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
     public bool ShowUpdateNotification { get; set; } = true;

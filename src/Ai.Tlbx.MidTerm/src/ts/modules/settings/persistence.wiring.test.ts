@@ -100,9 +100,7 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain(
       "const fontSizeInput = document.getElementById('setting-font-size')",
     );
-    expect(persistenceSource).toContain(
-      "const boxDrawingScaleInput = document.getElementById(",
-    );
+    expect(persistenceSource).toContain('const boxDrawingScaleInput = document.getElementById(');
     expect(persistenceSource).toContain("'setting-box-drawing-scale'");
     expect(persistenceSource).toContain(
       "const lineHeightInput = document.getElementById('setting-line-height')",
@@ -135,9 +133,7 @@ describe('settings persistence wiring', () => {
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?max="2"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?step="0.05"/);
     expect(html).toMatch(/id="setting-letter-spacing"[\s\S]*?step="0.05"/);
-    expect(html).toContain(
-      '<option value="custom" data-i18n="settings.options.boxDrawingCustom">',
-    );
+    expect(html).toContain('<option value="custom" data-i18n="settings.options.boxDrawingCustom">');
     expect(html).toContain('<option value="font" data-i18n="settings.options.boxDrawingFont">');
     expect(html).toContain('<option value="normal" data-i18n="settings.options.fontWeightNormal">');
     expect(html).toContain('<option value="bold" data-i18n="settings.options.fontWeightBold">');
@@ -181,7 +177,9 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain('let settingsFormHydrated = false;');
     expect(persistenceSource).toContain('let settingsSaveArmed = false;');
     expect(persistenceSource).toContain('if (!settingsFormHydrated || !settingsSaveArmed) {');
-    expect(persistenceSource).toContain("settingsView.addEventListener('pointerdown', armSettingsSave");
+    expect(persistenceSource).toContain(
+      "settingsView.addEventListener('pointerdown', armSettingsSave",
+    );
     expect(persistenceSource).toContain("settingsView.addEventListener('keydown', armSettingsSave");
   });
 
@@ -190,8 +188,28 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain("document.getElementById('setting-codex-env')");
     expect(persistenceSource).toContain("document.getElementById('setting-claude-env')");
     expect(persistenceSource).toContain("'--agent-ui-font-family'");
-    expect(persistenceSource).toContain('document.documentElement.dataset.agentShowMessageTimestamps =');
-    expect(persistenceSource).toContain("textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));");
+    expect(persistenceSource).toContain('document.documentElement.dataset.commandBayLigatures =');
+    expect(persistenceSource).toContain(
+      'document.documentElement.dataset.agentShowMessageTimestamps =',
+    );
+    expect(persistenceSource).toContain(
+      "textarea.setCustomValidity(t('settings.agentUi.agentEnvInvalid'));",
+    );
+  });
+
+  it('wires ligature toggles into the command bay and terminal appearance panels', () => {
+    expect(html).toContain('id="setting-command-bay-ligatures-enabled"');
+    expect(html).toContain('id="setting-terminal-ligatures-enabled"');
+    expect(cssSource).toContain(
+      ":root:not([data-command-bay-ligatures='false']) .smart-input-textarea",
+    );
+    expect(cssSource).toContain(":root[data-command-bay-ligatures='false'] .smart-input-textarea");
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'commandBayLigaturesEnabled')?.validation,
+    ).toBe('boolean');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalLigaturesEnabled')?.validation,
+    ).toBe('boolean');
   });
 
   it('preserves hydration state when rebinding autosave listeners', () => {
@@ -204,14 +222,14 @@ describe('settings persistence wiring', () => {
 
   it('preserves non-default select values when hydrating the settings form', () => {
     expect(persistenceSource).toContain("option.dataset.preservedValue = 'true';");
-    expect(persistenceSource).toContain("option.textContent = nextValue;");
+    expect(persistenceSource).toContain('option.textContent = nextValue;');
   });
 
   it('keeps the saved run-as user selectable even if discovery misses it', () => {
     expect(persistenceSource).toContain('selectedUser &&');
     expect(persistenceSource).toContain('!users.some(');
-    expect(persistenceSource).toContain("option.value = selectedUser;");
-    expect(persistenceSource).toContain("option.textContent = selectedUser;");
+    expect(persistenceSource).toContain('option.value = selectedUser;');
+    expect(persistenceSource).toContain('option.textContent = selectedUser;');
     expect(persistenceSource).toContain('option.selected = true;');
   });
 
@@ -297,9 +315,7 @@ describe('settings persistence wiring', () => {
   it('allows all transparency sliders to reach 100 percent', () => {
     expect(html).toMatch(/id="setting-ui-transparency"[\s\S]*?max="100"/);
     expect(html).toMatch(/id="setting-terminal-transparency"[\s\S]*?max="100"/);
-    expect(html).toMatch(
-      /id="setting-terminal-cell-background-transparency"[\s\S]*?max="100"/,
-    );
+    expect(html).toMatch(/id="setting-terminal-cell-background-transparency"[\s\S]*?max="100"/);
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'uiTransparency')?.validation).toBe(
       'integer, clamped to 0-100',
     );
@@ -307,9 +323,8 @@ describe('settings persistence wiring', () => {
       SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalTransparency')?.validation,
     ).toBe('integer, clamped to 0-100');
     expect(
-      SETTINGS_REGISTRY.find(
-        (entry) => entry.key === 'terminalCellBackgroundTransparency',
-      )?.validation,
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalCellBackgroundTransparency')
+        ?.validation,
     ).toBe('integer, clamped to 0-100');
   });
 

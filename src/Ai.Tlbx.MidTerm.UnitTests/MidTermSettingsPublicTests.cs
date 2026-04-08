@@ -170,6 +170,7 @@ public sealed class MidTermSettingsPublicTests
     {
         var settings = new MidTermSettings
         {
+            TerminalLigaturesEnabled = true,
             LineHeight = 1.2,
             LetterSpacing = 0.4,
             FontWeight = "500",
@@ -178,21 +179,42 @@ public sealed class MidTermSettingsPublicTests
 
         var publicSettings = MidTermSettingsPublic.FromSettings(settings);
 
+        Assert.True(publicSettings.TerminalLigaturesEnabled);
         Assert.Equal(1.2, publicSettings.LineHeight);
         Assert.Equal(0.4, publicSettings.LetterSpacing);
         Assert.Equal("500", publicSettings.FontWeight);
         Assert.Equal("700", publicSettings.FontWeightBold);
 
+        settings.TerminalLigaturesEnabled = false;
         settings.LineHeight = 1;
         settings.LetterSpacing = 0;
         settings.FontWeight = "normal";
         settings.FontWeightBold = "bold";
         publicSettings.ApplyTo(settings);
 
+        Assert.True(settings.TerminalLigaturesEnabled);
         Assert.Equal(1.2, settings.LineHeight);
         Assert.Equal(0.4, settings.LetterSpacing);
         Assert.Equal("500", settings.FontWeight);
         Assert.Equal("700", settings.FontWeightBold);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripCommandBayLigaturesSetting()
+    {
+        var settings = new MidTermSettings
+        {
+            CommandBayLigaturesEnabled = true
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.CommandBayLigaturesEnabled);
+
+        settings.CommandBayLigaturesEnabled = false;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.CommandBayLigaturesEnabled);
     }
 
     [Fact]

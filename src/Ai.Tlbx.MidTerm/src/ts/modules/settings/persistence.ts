@@ -39,6 +39,7 @@ import {
   normalizeTerminalLetterSpacing,
 } from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
+import { syncTerminalLigatureState } from '../terminal/ligatures';
 import { syncTerminalRgbBackgroundTransparency } from '../terminal/rgbBackgroundTransparency';
 import { syncWebglTerminalCellBackgroundAlpha } from '../terminal/webglCellBackgroundAlpha';
 import {
@@ -120,6 +121,93 @@ function applySettingsLocally(settings: MidTermSettingsPublic): void {
   if ($settingsOpen.get() && dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
   }
+}
+
+function hasTerminalTypographyChanges(
+  state: TerminalState,
+  fontFamily: string,
+  fontSize: number,
+  lineHeight: number,
+  letterSpacing: number,
+  fontWeight: TerminalFontWeight,
+  fontWeightBold: TerminalFontWeight,
+): boolean {
+  return (
+    state.terminal.options.fontFamily !== fontFamily ||
+    state.terminal.options.fontSize !== fontSize ||
+    state.terminal.options.lineHeight !== lineHeight ||
+    state.terminal.options.letterSpacing !== letterSpacing ||
+    String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight ||
+    String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
+      fontWeightBold
+  );
+}
+
+function applyTerminalSettingsToState(args: {
+  sessionId: string;
+  state: TerminalState;
+  settings: MidTermSettingsPublic;
+  theme: ITerminalOptions['theme'] | undefined;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontWeight: TerminalFontWeight;
+  fontWeightBold: TerminalFontWeight;
+  customGlyphs: boolean;
+  contrastRatio: number;
+  scrollbarStyle: ReturnType<typeof normalizeScrollbarStyle>;
+}): boolean {
+  const {
+    sessionId,
+    state,
+    settings,
+    theme,
+    fontFamily,
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+    fontWeightBold,
+    customGlyphs,
+    contrastRatio,
+    scrollbarStyle,
+  } = args;
+
+  const hasTypographyChanges = hasTerminalTypographyChanges(
+    state,
+    fontFamily,
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+    fontWeightBold,
+  );
+
+  state.terminal.options.cursorBlink = settings.cursorBlink;
+  state.terminal.options.cursorStyle = settings.cursorStyle;
+  state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
+  state.terminal.options.fontFamily = fontFamily;
+  state.terminal.options.fontSize = fontSize;
+  state.terminal.options.lineHeight = lineHeight;
+  state.terminal.options.letterSpacing = letterSpacing;
+  state.terminal.options.fontWeight = fontWeight;
+  state.terminal.options.fontWeightBold = fontWeightBold;
+  state.terminal.options.customGlyphs = customGlyphs;
+  if (theme) {
+    state.terminal.options.theme = theme;
+  }
+  state.terminal.options.minimumContrastRatio = contrastRatio;
+  state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
+  state.terminal.options.scrollback = settings.scrollbackLines;
+  syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+  syncTerminalLigatureState(state, settings.terminalLigaturesEnabled);
+  syncTerminalRgbBackgroundTransparency(state, settings);
+
+  applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
+  refreshTerminalPresentation(sessionId, state);
+
+  return hasTypographyChanges;
 }
 
 /**
@@ -562,6 +650,9 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     '--agent-ui-font-family',
     buildAgentMessageFontStack(settings.agentMessageFontFamily),
   );
+  document.documentElement.dataset.commandBayLigatures = settings.commandBayLigaturesEnabled
+    ? 'true'
+    : 'false';
   document.documentElement.dataset.agentShowMessageTimestamps = settings.showAgentMessageTimestamps
     ? 'true'
     : 'false';
@@ -573,37 +664,24 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
 
   for (const [sessionId, state] of sessionTerminals.entries()) {
     if (
-      state.terminal.options.fontFamily !== fontFamily ||
-      state.terminal.options.fontSize !== fontSize ||
-      state.terminal.options.lineHeight !== lineHeight ||
-      state.terminal.options.letterSpacing !== letterSpacing ||
-      String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight ||
-      String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
-        fontWeightBold
+      applyTerminalSettingsToState({
+        sessionId,
+        state,
+        settings,
+        theme,
+        fontFamily,
+        fontSize,
+        lineHeight,
+        letterSpacing,
+        fontWeight,
+        fontWeightBold,
+        customGlyphs,
+        contrastRatio,
+        scrollbarStyle,
+      })
     ) {
       hasFontChanges = true;
     }
-
-    state.terminal.options.cursorBlink = settings.cursorBlink;
-    state.terminal.options.cursorStyle = settings.cursorStyle;
-    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
-    state.terminal.options.fontFamily = fontFamily;
-    state.terminal.options.fontSize = fontSize;
-    state.terminal.options.lineHeight = lineHeight;
-    state.terminal.options.letterSpacing = letterSpacing;
-    state.terminal.options.fontWeight = fontWeight;
-    state.terminal.options.fontWeightBold = fontWeightBold;
-    state.terminal.options.customGlyphs = customGlyphs;
-    state.terminal.options.theme = theme;
-    state.terminal.options.minimumContrastRatio = contrastRatio;
-    state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
-    state.terminal.options.scrollback = settings.scrollbackLines;
-    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
-    syncTerminalRgbBackgroundTransparency(state, settings);
-
-    applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
-
-    refreshTerminalPresentation(sessionId, state);
   }
 
   if (hasFontChanges) {

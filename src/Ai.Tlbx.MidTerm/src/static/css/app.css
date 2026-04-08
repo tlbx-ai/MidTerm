@@ -10463,6 +10463,16 @@ body.shared-session-mode .session-tab-bar {
   min-height: 112px;
 }
 
+:root:not([data-command-bay-ligatures='false']) .manager-action-prompt-input,
+:root:not([data-command-bay-ligatures='false']) .smart-input-textarea {
+  font-feature-settings: 'liga' 1, 'clig' 1, 'calt' 1;
+}
+
+:root[data-command-bay-ligatures='false'] .manager-action-prompt-input,
+:root[data-command-bay-ligatures='false'] .smart-input-textarea {
+  font-feature-settings: 'liga' 0, 'clig' 0, 'calt' 0;
+}
+
 .manager-action-context-note {
   color: var(--text-secondary);
   font-size: var(--fs-md);

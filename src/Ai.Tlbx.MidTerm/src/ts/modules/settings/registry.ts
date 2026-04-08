@@ -195,6 +195,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'bundled font name',
     applyMode: 'immediate',
   }),
+  controlEntry('terminalLigaturesEnabled', 'setting-terminal-ligatures-enabled', 'checkbox', true, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry('boxDrawingStyle', 'setting-box-drawing-style', 'select', 'classic', {
     editable: true,
     storage: 'settings.json',
@@ -508,6 +514,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'immediate',
   }),
+  controlEntry(
+    'commandBayLigaturesEnabled',
+    'setting-command-bay-ligatures-enabled',
+    'checkbox',
+    true,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   preserveEntry('devMode', false, {
     editable: true,
     storage: 'settings.json',

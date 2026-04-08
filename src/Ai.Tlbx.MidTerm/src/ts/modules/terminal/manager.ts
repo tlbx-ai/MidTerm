@@ -74,6 +74,7 @@ import {
 } from './rgbBackgroundTransparency';
 import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
 import { shouldUseWebglRenderer } from './webglSupport';
+import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 
 const log = createLogger('terminalManager');
@@ -571,6 +572,7 @@ export function refreshCursorBlink(terminal: Terminal): void {
 }
 
 function detachWebglAddon(sessionId: string, state: TerminalState): void {
+  detachTerminalLigatureState(state);
   const addon = state.webglAddon;
   state.webglAddon = null;
 
@@ -822,6 +824,7 @@ export function createTerminalForSession(
     opened: false,
     hasWebgl: false,
     webglAddon: null,
+    ligatureJoinerId: null,
     pendingVisualRefresh: false,
   };
 
@@ -914,6 +917,7 @@ export function createTerminalForSession(
     const settings = $currentSettings.get();
     syncWebglTerminalCellBackgroundAlpha(settings);
     syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+    syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
 
     // Load Web-Links addon for clickable URLs

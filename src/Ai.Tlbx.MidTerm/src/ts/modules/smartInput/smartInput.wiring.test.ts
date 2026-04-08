@@ -45,7 +45,9 @@ describe('smart input tab wiring', () => {
     expect(viewSource).toContain(
       'manager-bar-action-popover smart-input-lens-dropdown-menu hidden',
     );
-    expect(viewSource).toContain("wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);");
+    expect(viewSource).toContain(
+      "wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);",
+    );
     expect(viewSource).toContain("document.addEventListener('scroll', updateMenuPlacement, true);");
   });
 
@@ -85,12 +87,16 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
     expect(viewSource).toContain("sendBtn.addEventListener('dblclick', args.onSendDoubleClick);");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
-    expect(source).toContain("footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);");
+    expect(source).toContain(
+      "footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);",
+    );
     expect(css).toContain('.adaptive-footer-dock {');
     expect(css).toContain('.adaptive-footer-reserve {');
     expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(css).toContain('.smart-input-tools-surface {');
-    expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {");
+    expect(css).toContain(
+      ".adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {",
+    );
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
     expect(css).toContain('position: relative;');
@@ -99,10 +105,14 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-surface: color-mix(');
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
-    expect(viewSource).toContain("toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';");
+    expect(viewSource).toContain(
+      "toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';",
+    );
     expect(css).toContain('font-size: 16px;');
     expect(metricsSource).toContain('const MAX_TEXTAREA_OVERLAY_LINES = 7;');
-    expect(metricsSource).toContain('const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;');
+    expect(metricsSource).toContain(
+      'const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;',
+    );
   });
 
   it('keeps Lens attachment drafts as durable staged uploads in the composer', () => {
@@ -138,6 +148,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('.smart-input-editor {');
     expect(css).toContain('.smart-input-textarea {');
+    expect(css).toContain(":root:not([data-command-bay-ligatures='false']) .smart-input-textarea");
     expect(css).toContain('@supports (leading-trim: both) and (text-edge: cap alphabetic) {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.manager-btn-overflow-hidden {');
@@ -145,9 +156,11 @@ describe('smart input tab wiring', () => {
 
   it('renders the plus-menu tools as popover actions with icon and text labels', () => {
     expect(viewSource).toContain("toolsToggleBtn.setAttribute('aria-haspopup', 'menu');");
-    expect(viewSource).toContain("toolsToggleBtn.addEventListener('pointerdown', args.onToolsTogglePointerDown);");
+    expect(viewSource).toContain(
+      "toolsToggleBtn.addEventListener('pointerdown', args.onToolsTogglePointerDown);",
+    );
     expect(viewSource).toContain("button.classList.add('smart-input-tool-button');");
-    expect(viewSource).toContain("smart-input-tool-label");
+    expect(viewSource).toContain('smart-input-tool-label');
     expect(viewSource).not.toContain('describeTerminalStatus(');
     expect(css).toContain('.smart-input-tools-surface .smart-input-tool-button {');
     expect(css).toContain('.smart-input-tools-surface .smart-input-tool-label {');
@@ -172,7 +185,7 @@ describe('smart input tab wiring', () => {
   });
 
   it('submits from the command bay only on bare Enter', () => {
-    expect(source).toContain("import {");
+    expect(source).toContain('import {');
     expect(source).toContain("} from './enterBehavior';");
     expect(source).toContain('shouldInsertLineBreakOnEnter');
     expect(source).toContain('insertSmartInputLineBreak');
@@ -183,8 +196,8 @@ describe('smart input tab wiring', () => {
   });
 
   it('routes command-bay sends through the backend-owned queue instead of direct terminal submission', () => {
-    expect(source).toContain("await enqueueCommandBayTurn(sessionId, {");
-    expect(source).toContain("submitQueuedTurn: enqueueCommandBayTurn,");
+    expect(source).toContain('await enqueueCommandBayTurn(sessionId, {');
+    expect(source).toContain('submitQueuedTurn: enqueueCommandBayTurn,');
   });
 
   it('adds a bookmark-scoped provider resume action to the Lens Command Bay status rail', () => {

@@ -4971,6 +4971,7 @@
           "showUnknownAgentMessages",
           "fontSize",
           "fontFamily",
+          "terminalLigaturesEnabled",
           "lineHeight",
           "letterSpacing",
           "fontWeight",
@@ -5015,6 +5016,7 @@
           "showSidebarSessionFilter",
           "tmuxCompatibility",
           "managerBarEnabled",
+          "commandBayLigaturesEnabled",
           "devMode",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
@@ -5086,6 +5088,9 @@
           },
           "fontFamily": {
             "type": "string"
+          },
+          "terminalLigaturesEnabled": {
+            "type": "boolean"
           },
           "lineHeight": {
             "type": "number",
@@ -5241,6 +5246,9 @@
             "type": "boolean"
           },
           "managerBarEnabled": {
+            "type": "boolean"
+          },
+          "commandBayLigaturesEnabled": {
             "type": "boolean"
           },
           "devMode": {

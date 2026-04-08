@@ -295,6 +295,11 @@ public sealed class SettingsService
             settings.CustomGlyphs = true;
         }
 
+        if (!json.Contains("\"terminalLigaturesEnabled\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalLigaturesEnabled = true;
+        }
+
         if (!json.Contains("\"cursorBlink\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.CursorBlink = true;
@@ -313,6 +318,11 @@ public sealed class SettingsService
         if (!json.Contains("\"managerBarEnabled\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.ManagerBarEnabled = true;
+        }
+
+        if (!json.Contains("\"commandBayLigaturesEnabled\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.CommandBayLigaturesEnabled = true;
         }
 
         if (!json.Contains("\"tmuxCompatibility\"", StringComparison.OrdinalIgnoreCase))

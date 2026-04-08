@@ -60,6 +60,7 @@ public sealed partial class MidTermSettingsPublic
             ShowUnknownAgentMessages = settings.ShowUnknownAgentMessages,
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
+            TerminalLigaturesEnabled = settings.TerminalLigaturesEnabled,
             LineHeight = settings.LineHeight,
             LetterSpacing = NormalizeLetterSpacing(settings.LetterSpacing),
             FontWeight = NormalizeFontWeight(settings.FontWeight, NormalFontWeight),
@@ -106,6 +107,7 @@ public sealed partial class MidTermSettingsPublic
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
             TmuxCompatibility = settings.TmuxCompatibility,
             ManagerBarEnabled = settings.ManagerBarEnabled,
+            CommandBayLigaturesEnabled = settings.CommandBayLigaturesEnabled,
             ManagerBarButtons = ManagerBarButton.NormalizeList(settings.ManagerBarButtons),
             DevMode = settings.DevMode,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
@@ -152,6 +154,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ShowUnknownAgentMessages = ShowUnknownAgentMessages;
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
+        settings.TerminalLigaturesEnabled = TerminalLigaturesEnabled;
         settings.LineHeight = Math.Clamp(LineHeight, 0.8, 3.0);
         settings.LetterSpacing = NormalizeLetterSpacing(LetterSpacing);
         settings.FontWeight = NormalizeFontWeight(FontWeight, NormalFontWeight);
@@ -217,6 +220,7 @@ public sealed partial class MidTermSettingsPublic
         settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
         settings.TmuxCompatibility = TmuxCompatibility;
         settings.ManagerBarEnabled = ManagerBarEnabled;
+        settings.CommandBayLigaturesEnabled = CommandBayLigaturesEnabled;
         settings.ManagerBarButtons = ManagerBarButton.NormalizeList(ManagerBarButtons);
         settings.DevMode = DevMode;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;

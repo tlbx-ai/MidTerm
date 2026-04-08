@@ -300,6 +300,7 @@
   "settings.appearance.languageAuto": "Auto (browser default)",
   "settings.appearance.fontSize": "Font Size",
   "settings.appearance.font": "Font",
+  "settings.appearance.enableLigatures": "Enable Ligatures",
   "settings.appearance.boxDrawingMode": "Box Drawing",
   "settings.appearance.boxDrawingStyle": "Box Drawing Style",
   "settings.appearance.boxDrawingScale": "Box Stroke Scale",
@@ -333,6 +334,7 @@
 
   "settings.commandBay.title": "Command Bay",
   "settings.commandBay.commandBay": "Command Bay",
+  "settings.commandBay.enableLigatures": "Enable Ligatures",
   "settings.terminal.title": "Terminal",
   "settings.terminal.terminalSessions": "Terminal Sessions",
   "settings.terminal.env": "Terminal Environment Variables",

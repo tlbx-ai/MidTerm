@@ -50,6 +50,7 @@ public sealed class MidTermSettings
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code";
+    public bool TerminalLigaturesEnabled { get; set; } = true;
     public double LineHeight { get; set; } = 1;
     public double LetterSpacing { get; set; } = 0;
     public string FontWeight { get; set; } = "normal";
@@ -103,6 +104,7 @@ public sealed class MidTermSettings
 
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;
+    public bool CommandBayLigaturesEnabled { get; set; } = true;
     public List<ManagerBarButton> ManagerBarButtons { get; set; } =
     [
         new()
