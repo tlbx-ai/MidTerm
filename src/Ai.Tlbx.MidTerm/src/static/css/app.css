@@ -12190,7 +12190,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-diff-line[data-has-line-numbers='true'] {
   display: grid;
-  grid-template-columns: minmax(0, 10.5ch) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 13.5ch) minmax(0, 1fr);
 }
 
 .agent-history-diff-line-gutter {
@@ -12198,10 +12198,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: baseline;
   min-width: 0;
-  padding: 1px 6px 1px 10px;
-  column-gap: 6px;
+  padding: 1px 8px 1px 10px;
+  column-gap: 10px;
   border-right: 1px solid color-mix(in srgb, currentColor 10%, transparent);
-  margin-right: 10px;
+  margin-right: 12px;
 }
 
 .agent-history-diff-line-number {

@@ -272,6 +272,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Lens should trim non-essential unified-diff preamble noise where possible and prioritize the file header plus actual hunk content.
 - When unified diff hunks provide old/new coordinates, Lens should show a subtle old/new line-number gutter beside the diff text.
 - That diff line-number gutter should stay structurally consistent across context, removed, and added lines; do not switch between doubled columns, stretched single columns, or other per-row numbering layouts that make the gutter look accidental.
+- That gutter should leave clear visual separation between the old and new number lanes; context rows may show both coordinates, but the lanes must not feel visually crammed together.
 - Diff file headers should read like console work artifacts, preferring `Edited {full path}` above the hunk blocks rather than raw `diff --git` preamble.
 - Extremely large diff bodies should remain bounded in the timeline: render the first 200 visible diff lines, then end with an ellipsis marker instead of dumping the full tail.
 - File-oriented information should use monospace sparingly and preserve readability.
