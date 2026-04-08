@@ -109,7 +109,17 @@ describe('renderMarkdown', () => {
   it('keeps blank lines as actual paragraph breaks', () => {
     const html = renderMarkdown('First line\n\nSecond line');
 
-    expect(html).toBe('<p>First line</p>\n<p>Second line</p>');
+    expect(html).toBe(
+      '<p>First line</p>\n<div class="agent-markdown-gap" style="--agent-markdown-gap-lines:1" aria-hidden="true"></div>\n<p>Second line</p>',
+    );
+  });
+
+  it('scales compact gap markers for repeated blank lines', () => {
+    const html = renderMarkdown('First line\n\n\nSecond line');
+
+    expect(html).toBe(
+      '<p>First line</p>\n<div class="agent-markdown-gap" style="--agent-markdown-gap-lines:2" aria-hidden="true"></div>\n<p>Second line</p>',
+    );
   });
 
   it('unwraps a single paragraph for dense chat rendering', () => {

@@ -363,14 +363,25 @@ function isBlockLevelMarkdownLine(line: string): boolean {
   );
 }
 
+function createMarkdownGapMarker(blankLineCount: number): string {
+  const normalized = Math.max(1, blankLineCount);
+  return `<div class="agent-markdown-gap" style="--agent-markdown-gap-lines:${normalized}" aria-hidden="true"></div>`;
+}
+
 function wrapMarkdownParagraphs(text: string): string {
   const lines = text.split('\n');
   const rendered: string[] = [];
   const paragraphLines: string[] = [];
+  let pendingBlankLines = 0;
 
   const flushParagraph = () => {
     if (paragraphLines.length === 0) {
       return;
+    }
+
+    if (pendingBlankLines > 0 && rendered.length > 0) {
+      rendered.push(createMarkdownGapMarker(pendingBlankLines));
+      pendingBlankLines = 0;
     }
 
     rendered.push(`<p>${paragraphLines.join('<br>')}</p>`);
@@ -381,13 +392,23 @@ function wrapMarkdownParagraphs(text: string): string {
     const line = rawLine.trim();
     if (!line) {
       flushParagraph();
+      pendingBlankLines += 1;
       continue;
     }
 
     if (isBlockLevelMarkdownLine(line)) {
       flushParagraph();
+      if (pendingBlankLines > 0 && rendered.length > 0) {
+        rendered.push(createMarkdownGapMarker(pendingBlankLines));
+        pendingBlankLines = 0;
+      }
       rendered.push(line);
       continue;
+    }
+
+    if (pendingBlankLines > 0 && rendered.length > 0 && paragraphLines.length === 0) {
+      rendered.push(createMarkdownGapMarker(pendingBlankLines));
+      pendingBlankLines = 0;
     }
 
     paragraphLines.push(line);

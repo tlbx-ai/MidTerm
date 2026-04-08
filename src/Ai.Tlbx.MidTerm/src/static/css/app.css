@@ -11325,7 +11325,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--text-primary);
   font-family: var(--agent-history-assistant-font-family);
   font-size: 1rem;
-  line-height: 1.52;
+  line-height: 1.46;
 }
 
 .agent-history-busy-indicator {
@@ -11465,7 +11465,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown {
   overflow: hidden;
-  line-height: 1.45;
+  line-height: 1.38;
 }
 
 .agent-history-turn-duration {
@@ -11693,27 +11693,21 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   margin: 0;
 }
 
-.agent-history-markdown p + p,
-.agent-history-markdown p + ul,
-.agent-history-markdown p + ol,
-.agent-history-markdown ul + p,
-.agent-history-markdown ol + p,
-.agent-history-markdown ul + ul,
-.agent-history-markdown ol + ol,
-.agent-history-markdown ul + ol,
-.agent-history-markdown ol + ul {
-  margin-top: 0.34em;
+.agent-history-markdown .agent-markdown-gap {
+  display: block;
+  height: calc(0.5em * var(--agent-markdown-gap-lines, 1));
+  min-height: 0.5em;
 }
 
 .agent-history-markdown ul,
 .agent-history-markdown ol {
-  padding-left: 1.1rem;
+  padding-left: 1rem;
   margin-bottom: 0;
 }
 
 .agent-history-markdown li {
   margin: 0;
-  line-height: 1.38;
+  line-height: 1.28;
 }
 
 .agent-history-markdown li + li {
@@ -11725,7 +11719,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-markdown br {
-  line-height: 1.2;
+  line-height: 1.08;
 }
 
 .agent-history-markdown a {
@@ -12784,7 +12778,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
   .agent-history-assistant .agent-history-body {
     font-size: 0.95rem;
-    line-height: 1.48;
+    line-height: 1.42;
   }
 
   .agent-history-user {
