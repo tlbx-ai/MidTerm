@@ -9,8 +9,10 @@ export interface PersistedLensComposerDraftAttachment {
   uploadedPath: string;
   displayName: string;
   mimeType: string | null;
+  referenceCharCount: number | null;
   referenceKind: SmartInputComposerReferenceKind | null;
   referenceLabel: string | null;
+  referenceLineCount: number | null;
   referenceOrdinal: number | null;
   sizeBytes: number;
 }
@@ -22,8 +24,10 @@ export interface LensComposerDraftAttachment {
   uploadedPath: string | null;
   displayName: string;
   mimeType: string | null;
+  referenceCharCount: number | null;
   referenceKind: SmartInputComposerReferenceKind | null;
   referenceLabel: string | null;
+  referenceLineCount: number | null;
   referenceOrdinal: number | null;
   sizeBytes: number;
   previewUrl: string | null;
@@ -337,8 +341,12 @@ export async function extractLensComposerPasteImageFiles(
   return dedupeClipboardFiles(await getClipboardReadImageFiles(readClipboardItems));
 }
 
-export function buildLensComposerAttachmentPreviewUrl(sessionId: string, path: string): string {
+export function buildLensComposerAttachmentFileUrl(sessionId: string, path: string): string {
   return `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`;
+}
+
+export function buildLensComposerAttachmentPreviewUrl(sessionId: string, path: string): string {
+  return buildLensComposerAttachmentFileUrl(sessionId, path);
 }
 
 export function createLensComposerDraftAttachment(
@@ -355,11 +363,13 @@ export function createLensComposerDraftAttachment(
     uploadedPath,
     displayName: file.name || 'attachment',
     mimeType: file.type || null,
+    referenceCharCount: null,
     referenceKind: null,
     referenceLabel: null,
+    referenceLineCount: null,
     referenceOrdinal: null,
     sizeBytes: file.size,
-    previewUrl: image ? buildLensComposerAttachmentPreviewUrl(sessionId, uploadedPath) : null,
+    previewUrl: image ? buildLensComposerAttachmentFileUrl(sessionId, uploadedPath) : null,
   };
 }
 
@@ -372,7 +382,7 @@ export function hydrateLensComposerDraftAttachment(
     file: null,
     previewUrl:
       attachment.kind === 'image'
-        ? buildLensComposerAttachmentPreviewUrl(sessionId, attachment.uploadedPath)
+        ? buildLensComposerAttachmentFileUrl(sessionId, attachment.uploadedPath)
         : null,
   };
 }
@@ -396,8 +406,10 @@ export function toPersistedLensComposerDraftAttachment(
     uploadedPath: attachment.uploadedPath,
     displayName: attachment.displayName,
     mimeType: attachment.mimeType,
+    referenceCharCount: attachment.referenceCharCount,
     referenceKind: attachment.referenceKind,
     referenceLabel: attachment.referenceLabel,
+    referenceLineCount: attachment.referenceLineCount,
     referenceOrdinal: attachment.referenceOrdinal,
     sizeBytes: attachment.sizeBytes,
   };

@@ -1,12 +1,14 @@
 import type { LensTurnRequest } from '../../api/types';
 import type { LensComposerDraftAttachment } from './lensAttachments';
-import { toLensAttachmentReference } from './lensAttachments';
+import type { SmartInputComposerDraft } from './smartInputComposerDraft';
+import { prepareSmartInputOutboundPrompt } from './smartInputOutboundReferences';
 
 export interface SubmitLensComposerDraftArgs {
   sessionId: string;
-  text: string;
+  draft: SmartInputComposerDraft;
   attachments: readonly LensComposerDraftAttachment[];
   uploadFailureMessage: string;
+  attachmentReadFailureMessage: string;
   uploadFile: (sessionId: string, file: File) => Promise<string | null>;
   createTurnRequest: (
     text: string,
@@ -19,32 +21,17 @@ export interface SubmitLensComposerDraftArgs {
 export async function submitLensComposerDraft(
   args: SubmitLensComposerDraftArgs,
 ): Promise<{ request: LensTurnRequest; queuedTurn: Promise<void> }> {
-  const uploadedPaths = await Promise.all(
-    args.attachments.map(async (attachment) => {
-      if (attachment.uploadedPath) {
-        return attachment.uploadedPath;
-      }
+  const prepared = await prepareSmartInputOutboundPrompt({
+    sessionId: args.sessionId,
+    draft: args.draft,
+    attachments: args.attachments,
+    target: 'lens',
+    uploadFailureMessage: args.uploadFailureMessage,
+    attachmentReadFailureMessage: args.attachmentReadFailureMessage,
+    uploadFile: args.uploadFile,
+  });
 
-      if (!attachment.file) {
-        throw new Error(args.uploadFailureMessage);
-      }
-
-      const path = await args.uploadFile(args.sessionId, attachment.file);
-      if (!path) {
-        throw new Error(args.uploadFailureMessage);
-      }
-
-      return path;
-    }),
-  );
-
-  const request = args.createTurnRequest(
-    args.text,
-    args.attachments.map((attachment, index) =>
-      toLensAttachmentReference(attachment, uploadedPaths[index] ?? ''),
-    ),
-    args.sessionId,
-  );
+  const request = args.createTurnRequest(prepared.text, prepared.attachments, args.sessionId);
 
   return {
     request,

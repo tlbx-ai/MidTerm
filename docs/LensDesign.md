@@ -324,6 +324,7 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Clipboard paste inside the active Lens composer should capture browser-exposed files/images into those chips while leaving plain-text paste behavior intact.
 - Image attachments staged in the Lens composer should also insert stable inline reference tokens such as `[Image 1]` at the caret so the prompt text can refer to those attachments explicitly.
 - Those inline reference tokens must behave atomically: caret placement may land only before or after the token, partial selection should expand to the full token, and deleting a token must also remove its staged composer chip.
+- Large pasted text blocks that would overwhelm the composer should stage as text references instead of raw inline text, using tokens such as `[Text 1 - 37 lines - 594 chars]` plus removable chips that open the full staged text in the file viewer.
 - A subtle ready indication must show when the provider runtime is connected and can accept input.
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
@@ -437,6 +438,8 @@ Status in this branch/work item:
 - implemented: Lens Smart Input now stages file/image selections and clipboard files as removable composer chips, and the `+` / photo actions no longer auto-submit a Lens turn on selection
 - implemented: Lens composer attachments now upload as soon as they are staged so image chips render from server-backed file URLs and survive browser refresh; clicking a chip opens the standard file viewer, and Lens send reuses those staged upload paths for mixed or attachment-only turns
 - implemented: staged Lens image attachments now also insert stable atomic inline references such as `[Image 1]` into the composer text, and removing either the inline reference or the chip removes the other so prompt text can refer to specific images deterministically
+- implemented: Lens now converts large plain-text pastes into staged text-reference chips and atomic inline tokens such as `[Text 1 - 37 lines - 594 chars]`, so oversized pasted content stays inspectable through the file viewer without flooding the composer textarea
+- implemented: inline Lens composer references are UI-facing placeholders only; on send, Lens keeps semantic markers such as `[Image 1]` in the prompt, expands staged text references into appended full-text blocks, and preserves real non-text attachments separately so the runtime receives the actual content rather than only placeholder token text
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: provider-scoped remembered default Lens models are now persisted in MidTerm-owned settings and seed new Lens sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists

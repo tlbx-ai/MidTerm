@@ -1,6 +1,18 @@
 import { t } from '../i18n';
 import type { LensComposerDraftAttachment } from './lensAttachments';
 
+function formatAttachmentReferenceSummary(attachment: LensComposerDraftAttachment): string | null {
+  if (
+    attachment.referenceKind !== 'text' ||
+    attachment.referenceLineCount === null ||
+    attachment.referenceCharCount === null
+  ) {
+    return null;
+  }
+
+  return `${attachment.referenceLineCount.toString()} ${t('smartInput.referenceLinesLabel')} · ${attachment.referenceCharCount.toString()} ${t('smartInput.referenceCharsLabel')}`;
+}
+
 export function renderLensAttachmentDraftView(args: {
   host: HTMLDivElement | null;
   sessionId: string | null;
@@ -35,8 +47,11 @@ export function renderLensAttachmentDraftView(args: {
   }
 
   for (const attachment of attachments) {
+    const referenceSummary = formatAttachmentReferenceSummary(attachment);
     const chipLabel = attachment.referenceLabel
-      ? `${attachment.referenceLabel} · ${attachment.displayName}`
+      ? referenceSummary
+        ? `${attachment.referenceLabel} · ${referenceSummary}`
+        : `${attachment.referenceLabel} · ${attachment.displayName}`
       : attachment.displayName;
     const chip = document.createElement('div');
     chip.className = `smart-input-attachment-chip smart-input-attachment-chip-${attachment.kind}`;
@@ -62,7 +77,8 @@ export function renderLensAttachmentDraftView(args: {
     } else {
       const icon = document.createElement('span');
       icon.className = 'smart-input-attachment-icon';
-      icon.textContent = t('smartInput.fileBadge');
+      icon.textContent =
+        attachment.referenceKind === 'text' ? t('smartInput.textBadge') : t('smartInput.fileBadge');
       openButton.appendChild(icon);
     }
 

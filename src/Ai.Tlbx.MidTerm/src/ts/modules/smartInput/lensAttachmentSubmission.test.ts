@@ -16,7 +16,10 @@ describe('lensAttachmentSubmission', () => {
     const { submitLensComposerDraft } = await import('./lensAttachmentSubmission');
     const result = await submitLensComposerDraft({
       sessionId: 's1',
-      text: 'Inspect these files.',
+      draft: {
+        nextOrdinalByKind: {},
+        parts: [{ kind: 'text', text: 'Inspect these files.' }],
+      },
       attachments: [
         {
           id: 'a1',
@@ -25,8 +28,10 @@ describe('lensAttachmentSubmission', () => {
           uploadedPath: null,
           displayName: 'screen.png',
           mimeType: 'image/png',
+          referenceCharCount: null,
           referenceKind: 'image',
           referenceLabel: 'Image 1',
+          referenceLineCount: null,
           referenceOrdinal: 1,
           sizeBytes: 3,
           previewUrl: null,
@@ -38,14 +43,17 @@ describe('lensAttachmentSubmission', () => {
           uploadedPath: null,
           displayName: 'report.pdf',
           mimeType: 'application/pdf',
+          referenceCharCount: null,
           referenceKind: null,
           referenceLabel: null,
+          referenceLineCount: null,
           referenceOrdinal: null,
           sizeBytes: 3,
           previewUrl: null,
         },
       ],
       uploadFailureMessage: 'Attachment upload failed',
+      attachmentReadFailureMessage: 'Attachment read failed',
       uploadFile,
       createTurnRequest,
       submitQueuedTurn,
@@ -102,7 +110,10 @@ describe('lensAttachmentSubmission', () => {
     const { submitLensComposerDraft } = await import('./lensAttachmentSubmission');
     const result = await submitLensComposerDraft({
       sessionId: 's1',
-      text: 'Inspect this image.',
+      draft: {
+        nextOrdinalByKind: {},
+        parts: [{ kind: 'text', text: 'Inspect this image.' }],
+      },
       attachments: [
         {
           id: 'a1',
@@ -111,8 +122,10 @@ describe('lensAttachmentSubmission', () => {
           uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
           displayName: 'screen.png',
           mimeType: 'image/png',
+          referenceCharCount: null,
           referenceKind: 'image',
           referenceLabel: 'Image 1',
+          referenceLineCount: null,
           referenceOrdinal: 1,
           sizeBytes: 3,
           previewUrl:
@@ -120,6 +133,7 @@ describe('lensAttachmentSubmission', () => {
         },
       ],
       uploadFailureMessage: 'Attachment upload failed',
+      attachmentReadFailureMessage: 'Attachment read failed',
       uploadFile,
       createTurnRequest,
       submitQueuedTurn,
@@ -151,7 +165,10 @@ describe('lensAttachmentSubmission', () => {
     await expect(
       submitLensComposerDraft({
         sessionId: 's1',
-        text: 'Inspect this image.',
+        draft: {
+          nextOrdinalByKind: {},
+          parts: [{ kind: 'text', text: 'Inspect this image.' }],
+        },
         attachments: [
           {
             id: 'a1',
@@ -160,14 +177,17 @@ describe('lensAttachmentSubmission', () => {
             uploadedPath: null,
             displayName: 'screen.png',
             mimeType: 'image/png',
+            referenceCharCount: null,
             referenceKind: 'image',
             referenceLabel: 'Image 1',
+            referenceLineCount: null,
             referenceOrdinal: 1,
             sizeBytes: 3,
             previewUrl: null,
           },
         ],
         uploadFailureMessage: 'Attachment upload failed',
+        attachmentReadFailureMessage: 'Attachment read failed',
         uploadFile,
         createTurnRequest: vi.fn(),
         submitQueuedTurn: vi.fn(async () => {}),

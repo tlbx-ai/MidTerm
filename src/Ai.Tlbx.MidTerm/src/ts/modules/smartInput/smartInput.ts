@@ -43,6 +43,7 @@ import {
   releaseLensComposerDraftAttachmentPreviews,
 } from './lensAttachments';
 import { submitLensComposerDraft } from './lensAttachmentSubmission';
+import { prepareSmartInputOutboundPrompt } from './smartInputOutboundReferences';
 import { startTranscription, stopTranscription } from './transcription';
 import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
@@ -106,6 +107,11 @@ import {
   type SmartInputComposerResolvedReference,
   type SmartInputComposerSelection,
 } from './smartInputComposerDraft';
+import {
+  buildSmartInputTextReferenceFile,
+  getSmartInputTextReferenceStats,
+  shouldConvertPastedTextToSmartInputReference,
+} from './smartInputTextReferences';
 
 let footerDock: HTMLDivElement | null = null;
 let footerPrimaryHost: HTMLDivElement | null = null;
@@ -330,6 +336,28 @@ function buildSmartInputReferenceTokenText(label: string): string {
   return `[${label}]`;
 }
 
+function formatSmartInputReferenceCountLabel(
+  count: number,
+  singularKey: string,
+  pluralKey: string,
+): string {
+  return `${count.toString()} ${t(count === 1 ? singularKey : pluralKey)}`;
+}
+
+function formatTextReferenceDetail(args: { charCount: number; lineCount: number }): string {
+  const lineLabel = formatSmartInputReferenceCountLabel(
+    args.lineCount,
+    'smartInput.referenceLineLabelSingular',
+    'smartInput.referenceLineLabelPlural',
+  );
+  const charLabel = formatSmartInputReferenceCountLabel(
+    args.charCount,
+    'smartInput.referenceCharLabelSingular',
+    'smartInput.referenceCharLabelPlural',
+  );
+  return `${lineLabel} - ${charLabel}`;
+}
+
 function formatSmartInputReferenceLabel(
   kind: SmartInputComposerReferenceKind,
   ordinal: number,
@@ -354,11 +382,21 @@ function resolveComposerReference(
     return null;
   }
 
+  const tokenLabel =
+    attachment.referenceKind === 'text' &&
+    attachment.referenceLineCount !== null &&
+    attachment.referenceCharCount !== null
+      ? `${attachment.referenceLabel} - ${formatTextReferenceDetail({
+          lineCount: attachment.referenceLineCount,
+          charCount: attachment.referenceCharCount,
+        })}`
+      : attachment.referenceLabel;
+
   return {
     referenceId,
     kind: attachment.referenceKind,
-    label: attachment.referenceLabel,
-    tokenText: buildSmartInputReferenceTokenText(attachment.referenceLabel),
+    label: tokenLabel,
+    tokenText: buildSmartInputReferenceTokenText(tokenLabel),
   };
 }
 
@@ -479,6 +517,25 @@ function createImageDraftAttachmentWithReference(
   attachment.referenceKind = 'image';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('image', referenceOrdinal);
+  setSessionDraft(sessionId, draft);
+  return attachment;
+}
+
+function createTextDraftAttachmentWithReference(
+  sessionId: string,
+  file: File,
+  uploadedPath: string,
+  text: string,
+): LensComposerDraftAttachment {
+  const draft = getSessionDraft(sessionId);
+  const attachment = createLensComposerDraftAttachment(sessionId, file, uploadedPath, file);
+  const stats = getSmartInputTextReferenceStats(text);
+  const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'text');
+  attachment.referenceKind = 'text';
+  attachment.referenceOrdinal = referenceOrdinal;
+  attachment.referenceLabel = formatSmartInputReferenceLabel('text', referenceOrdinal);
+  attachment.referenceLineCount = stats.lineCount;
+  attachment.referenceCharCount = stats.charCount;
   setSessionDraft(sessionId, draft);
   return attachment;
 }
@@ -911,6 +968,16 @@ function createDockedDOM(): void {
         return;
       }
 
+      if (isLensActiveSession(sessionId)) {
+        const text = event.clipboardData?.getData('text/plain') ?? '';
+        if (text && shouldConvertPastedTextToSmartInputReference(text)) {
+          event.preventDefault();
+          const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
+          void addLensComposerTextReference(sessionId, text, selection);
+          return;
+        }
+      }
+
       if (draftHasInlineReferences(sessionId)) {
         const text = event.clipboardData?.getData('text/plain') ?? '';
         if (!text) {
@@ -1341,7 +1408,39 @@ function removeLensComposerFile(sessionId: string, attachmentId: string): void {
   removeAttachmentsByIds(sessionId, [attachmentId]);
 }
 
-// eslint-disable-next-line complexity -- this upload/stage path coordinates validation, staged uploads, inline token insertion, and attachment sync in one workflow.
+function finalizeInsertedComposerReferences(
+  sessionId: string,
+  selection: SmartInputComposerSelection,
+  insertedReferenceIds: readonly string[],
+): void {
+  if (insertedReferenceIds.length === 0) {
+    if ($activeSessionId.get() === sessionId) {
+      renderSessionDraftIntoTextarea(sessionId, activeTextarea);
+    }
+    return;
+  }
+
+  const draft = getSessionDraft(sessionId);
+  const removedReferenceIds = getSmartInputComposerReferenceIdsInSelection(
+    draft,
+    selection,
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  const insertResult = insertSmartInputComposerReferences(
+    draft,
+    selection,
+    insertedReferenceIds,
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  updateSessionDraftAndTextarea(
+    sessionId,
+    insertResult.draft,
+    activeTextarea,
+    $activeSessionId.get() === sessionId ? insertResult.selection : null,
+  );
+  removeAttachmentsByIds(sessionId, removedReferenceIds);
+}
+
 async function addLensComposerFiles(
   sessionId: string,
   files: readonly File[],
@@ -1379,34 +1478,48 @@ async function addLensComposerFiles(
   }
 
   setLensDraftAttachments(sessionId, nextAttachments);
-  if (insertedReferenceIds.length > 0) {
-    const draft = getSessionDraft(sessionId);
-    const removedReferenceIds = getSmartInputComposerReferenceIdsInSelection(
-      draft,
-      nextSelection,
-      (referenceId) => resolveComposerReference(sessionId, referenceId),
-    );
-    const insertResult = insertSmartInputComposerReferences(
-      draft,
-      nextSelection,
-      insertedReferenceIds,
-      (referenceId) => resolveComposerReference(sessionId, referenceId),
-    );
-    updateSessionDraftAndTextarea(
-      sessionId,
-      insertResult.draft,
-      activeTextarea,
-      $activeSessionId.get() === sessionId ? insertResult.selection : null,
-    );
-    removeAttachmentsByIds(sessionId, removedReferenceIds);
-  } else if ($activeSessionId.get() === sessionId) {
-    renderSessionDraftIntoTextarea(sessionId, activeTextarea);
-  }
+  finalizeInsertedComposerReferences(sessionId, nextSelection, insertedReferenceIds);
   renderLensAttachmentDrafts($activeSessionId.get());
 
   if (errorMessage) {
     showDropToast(errorMessage);
   }
+
+  if ($activeSessionId.get() === sessionId) {
+    activeTextarea?.focus({ preventScroll: true });
+  }
+}
+
+async function addLensComposerTextReference(
+  sessionId: string,
+  text: string,
+  selection: SmartInputComposerSelection | null = null,
+): Promise<void> {
+  const nextSelection =
+    selection ??
+    (() => {
+      const draftTextLength = getSessionDraftText(sessionId).length;
+      return { start: draftTextLength, end: draftTextLength };
+    })();
+  const textFile = buildSmartInputTextReferenceFile(text);
+  const uploadedPath = await uploadFile(sessionId, textFile);
+  if (!uploadedPath) {
+    showDropToast(`${t('smartInput.attachmentUploadFailed')}: ${textFile.name}`);
+    return;
+  }
+
+  const nextAttachments = [...getLensDraftAttachments(sessionId)];
+  const attachment = createTextDraftAttachmentWithReference(
+    sessionId,
+    textFile,
+    uploadedPath,
+    text,
+  );
+  nextAttachments.push(attachment);
+
+  setLensDraftAttachments(sessionId, nextAttachments);
+  finalizeInsertedComposerReferences(sessionId, nextSelection, [attachment.id]);
+  renderLensAttachmentDrafts($activeSessionId.get());
 
   if ($activeSessionId.get() === sessionId) {
     activeTextarea?.focus({ preventScroll: true });
@@ -1567,23 +1680,32 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
   const draft = getSessionDraft(sessionId);
-  const text = getSmartInputComposerText(draft, (referenceId) =>
+  const renderedText = getSmartInputComposerText(draft, (referenceId) =>
     resolveComposerReference(sessionId, referenceId),
   );
 
   const lensAttachments = getLensDraftAttachments(sessionId);
-  if (!text && lensAttachments.length === 0) {
+  if (!renderedText && lensAttachments.length === 0) {
     return;
   }
 
   if (!isLensActiveSession(sessionId)) {
-    if (!text) {
-      return;
-    }
-
     try {
+      const prepared = await prepareSmartInputOutboundPrompt({
+        sessionId,
+        draft,
+        attachments: lensAttachments,
+        target: 'terminal',
+        uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
+        attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
+        uploadFile,
+      });
+      if (!prepared.text) {
+        return;
+      }
+
       await enqueueCommandBayTurn(sessionId, {
-        text,
+        text: prepared.text,
         attachments: [],
       });
       clearSubmittedSmartInputState(sessionId, ta);
@@ -1600,9 +1722,10 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   try {
     const { queuedTurn } = await submitLensComposerDraft({
       sessionId,
-      text,
+      draft: draftSnapshot,
       attachments: attachmentDrafts,
       uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
+      attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
       uploadFile,
       createTurnRequest: createLensTurnRequest,
       submitQueuedTurn: enqueueCommandBayTurn,

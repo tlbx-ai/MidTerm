@@ -43,6 +43,7 @@ function clearPersistedLensDraftAttachmentsForSession(sessionId: string): void {
   localStorage.removeItem(getLensAttachmentStorageKey(sessionId));
 }
 
+// eslint-disable-next-line complexity -- persisted attachment hydration validates several optional reference metadata fields while keeping the storage schema explicit.
 function tryParsePersistedLensDraftAttachment(
   value: unknown,
 ): PersistedLensComposerDraftAttachment | null {
@@ -80,6 +81,10 @@ function tryParsePersistedLensDraftAttachment(
       attachment.referenceKind === 'text'
         ? attachment.referenceKind
         : null,
+    referenceLineCount:
+      typeof attachment.referenceLineCount === 'number' ? attachment.referenceLineCount : null,
+    referenceCharCount:
+      typeof attachment.referenceCharCount === 'number' ? attachment.referenceCharCount : null,
     referenceLabel:
       typeof attachment.referenceLabel === 'string' ? attachment.referenceLabel : null,
     referenceOrdinal:

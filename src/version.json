@@ -1,5 +1,5 @@
 {
-  "web": "9.1.20-dev",
+  "web": "9.1.21-dev",
   "pty": "9.1.16-dev",
   "protocol": 1,
   "minCompatiblePty": "2.0.0",

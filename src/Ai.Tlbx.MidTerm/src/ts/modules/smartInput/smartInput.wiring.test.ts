@@ -119,9 +119,12 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('lensAttachmentDrafts');
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
+    expect(source).toContain('shouldConvertPastedTextToSmartInputReference');
+    expect(source).toContain('addLensComposerTextReference');
+    expect(source).toContain("target: 'terminal'");
     expect(source).toContain('void openLensDraftAttachment(currentSessionId, attachment);');
     expect(source).toContain('enqueueCommandBayTurn');
-    expect(submissionSource).toContain('if (attachment.uploadedPath) {');
+    expect(submissionSource).toContain('prepareSmartInputOutboundPrompt');
     expect(submissionSource).toContain(
       'queuedTurn: args.submitQueuedTurn(args.sessionId, request)',
     );

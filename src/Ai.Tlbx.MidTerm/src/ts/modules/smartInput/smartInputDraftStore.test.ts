@@ -32,8 +32,10 @@ describe('smartInputDraftStore', () => {
         uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
         displayName: 'screen.png',
         mimeType: 'image/png',
+        referenceCharCount: null,
         referenceKind: 'image',
         referenceLabel: 'Image 1',
+        referenceLineCount: null,
         referenceOrdinal: 1,
         sizeBytes: 3,
         previewUrl:
@@ -49,8 +51,10 @@ describe('smartInputDraftStore', () => {
         uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
         displayName: 'screen.png',
         mimeType: 'image/png',
+        referenceCharCount: null,
         referenceKind: 'image',
         referenceLabel: 'Image 1',
+        referenceLineCount: null,
         referenceOrdinal: 1,
         sizeBytes: 3,
         previewUrl:
@@ -75,8 +79,10 @@ describe('smartInputDraftStore', () => {
         uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
         displayName: 'screen.png',
         mimeType: 'image/png',
+        referenceCharCount: null,
         referenceKind: 'image',
         referenceLabel: 'Image 1',
+        referenceLineCount: null,
         referenceOrdinal: 1,
         sizeBytes: 3,
         previewUrl:
@@ -87,5 +93,47 @@ describe('smartInputDraftStore', () => {
     clearLensDraftAttachmentsForSession(drafts, 's1', false);
 
     expect(loadLensDraftAttachmentsForSession('s1')).toEqual([]);
+  });
+
+  it('restores staged text-reference metadata for file-viewer chips after reload', async () => {
+    const { loadLensDraftAttachmentsForSession, setLensDraftAttachmentsForSession } =
+      await import('./smartInputDraftStore');
+
+    const drafts = new Map();
+    setLensDraftAttachmentsForSession(drafts, 's1', [
+      {
+        id: 't1',
+        kind: 'file',
+        file: null,
+        uploadedPath: 'Q:/repo/.midterm/uploads/pasted-text.txt',
+        displayName: 'pasted-text.txt',
+        mimeType: 'text/plain',
+        referenceCharCount: 594,
+        referenceKind: 'text',
+        referenceLabel: 'Text 1',
+        referenceLineCount: 37,
+        referenceOrdinal: 1,
+        sizeBytes: 594,
+        previewUrl: null,
+      },
+    ]);
+
+    expect(loadLensDraftAttachmentsForSession('s1')).toEqual([
+      {
+        id: 't1',
+        kind: 'file',
+        file: null,
+        uploadedPath: 'Q:/repo/.midterm/uploads/pasted-text.txt',
+        displayName: 'pasted-text.txt',
+        mimeType: 'text/plain',
+        referenceCharCount: 594,
+        referenceKind: 'text',
+        referenceLabel: 'Text 1',
+        referenceLineCount: 37,
+        referenceOrdinal: 1,
+        sizeBytes: 594,
+        previewUrl: null,
+      },
+    ]);
   });
 });
