@@ -26,6 +26,8 @@ public sealed class FileServiceTests : IDisposable
         {
         }
 
+        FileService.ResetFileInfoCacheForTests();
+
         GC.SuppressFinalize(this);
     }
 
@@ -251,5 +253,29 @@ public sealed class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "nope.txt", maxDepth: 5);
 
         Assert.Null(result);
+    }
+
+    // =======================================================================
+    // GetFileInfo
+    // =======================================================================
+
+    [Fact]
+    public void GetFileInfo_UsesProcessGlobalCacheAcrossCalls()
+    {
+        FileService.ResetFileInfoCacheForTests();
+        var filePath = Path.Combine(_tempDir, "cached.txt");
+        File.WriteAllText(filePath, "cached");
+
+        var initial = FileService.GetFileInfo(filePath);
+        File.Delete(filePath);
+        var cached = FileService.GetFileInfo(filePath);
+
+        Assert.True(initial.Exists);
+        Assert.True(cached.Exists);
+
+        FileService.ResetFileInfoCacheForTests();
+
+        var refreshed = FileService.GetFileInfo(filePath);
+        Assert.False(refreshed.Exists);
     }
 }

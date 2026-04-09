@@ -230,18 +230,51 @@ public sealed partial class SessionLensPulseService
 
     private List<FileMentionCandidate> CollectFileMentionCandidates(string text)
     {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
+
         var candidates = new List<FileMentionCandidate>();
-        CollectRegexMentionCandidates(candidates, text, QuotedAbsolutePathPattern, "absolute", shouldReject: static _ => false);
-        CollectRegexMentionCandidates(candidates, text, UncAbsolutePathPattern, "absolute", shouldReject: static _ => false);
-        CollectRegexMentionCandidates(candidates, text, WindowsAbsolutePathPattern, "absolute", shouldReject: static _ => false);
-        CollectRegexMentionCandidates(candidates, text, UnixAbsolutePathPattern, "absolute", shouldReject: static _ => false);
-        CollectRegexMentionCandidates(candidates, text, RelativePathPattern, "relative", ShouldRejectRelativeMatch);
-        CollectRegexMentionCandidates(candidates, text, FolderPathPattern, "relative", ShouldRejectFolderMatch);
-        CollectRegexMentionCandidates(candidates, text, KnownFilePattern, "relative", ShouldRejectKnownFileMatch);
-        return candidates
-            .OrderBy(static candidate => candidate.Start)
-            .ThenBy(static candidate => candidate.End)
-            .ToList();
+        var nextPriority = 0;
+        var hasSlash = text.Contains('/', StringComparison.Ordinal);
+        var hasBackslash = text.Contains('\\', StringComparison.Ordinal);
+        var hasColon = text.Contains(':', StringComparison.Ordinal);
+        var hasDot = text.Contains('.', StringComparison.Ordinal);
+        var hasQuote = text.IndexOfAny(['"', '\'', '`']) >= 0;
+
+        if (hasQuote && (hasSlash || hasBackslash))
+        {
+            CollectRegexMentionCandidates(candidates, text, QuotedAbsolutePathPattern, "absolute", shouldReject: static _ => false, ref nextPriority);
+        }
+
+        if (hasBackslash)
+        {
+            CollectRegexMentionCandidates(candidates, text, UncAbsolutePathPattern, "absolute", shouldReject: static _ => false, ref nextPriority);
+        }
+
+        if (hasColon && (hasSlash || hasBackslash))
+        {
+            CollectRegexMentionCandidates(candidates, text, WindowsAbsolutePathPattern, "absolute", shouldReject: static _ => false, ref nextPriority);
+        }
+
+        if (hasSlash)
+        {
+            CollectRegexMentionCandidates(candidates, text, UnixAbsolutePathPattern, "absolute", shouldReject: static _ => false, ref nextPriority);
+        }
+
+        if (hasDot)
+        {
+            CollectRegexMentionCandidates(candidates, text, RelativePathPattern, "relative", ShouldRejectRelativeMatch, ref nextPriority);
+        }
+
+        if (hasSlash || hasBackslash)
+        {
+            CollectRegexMentionCandidates(candidates, text, FolderPathPattern, "relative", ShouldRejectFolderMatch, ref nextPriority);
+        }
+
+        CollectRegexMentionCandidates(candidates, text, KnownFilePattern, "relative", ShouldRejectKnownFileMatch, ref nextPriority);
+        return FilterAndSortMentionCandidates(candidates);
     }
 
     private static void CollectRegexMentionCandidates(
@@ -249,7 +282,8 @@ public sealed partial class SessionLensPulseService
         string text,
         Regex pattern,
         string pathKind,
-        Func<string, bool> shouldReject)
+        Func<string, bool> shouldReject,
+        ref int nextPriority)
     {
         foreach (Match match in pattern.Matches(text))
         {
@@ -274,26 +308,45 @@ public sealed partial class SessionLensPulseService
             var end = group.Index + group.Length;
             var (suffix, line, column) = ParseLineInfoSuffix(text, end);
             var displayText = suffix.Length == 0 ? group.Value : group.Value + suffix;
-            AddMentionCandidate(candidates, new FileMentionCandidate(start, end + suffix.Length, displayText, normalizedPath, pathKind, line, column));
+            candidates.Add(new FileMentionCandidate(start, end + suffix.Length, displayText, normalizedPath, pathKind, line, column, nextPriority++));
         }
     }
 
-    private static void AddMentionCandidate(List<FileMentionCandidate> candidates, FileMentionCandidate candidate)
+    private static List<FileMentionCandidate> FilterAndSortMentionCandidates(List<FileMentionCandidate> candidates)
     {
-        if (candidate.Start >= candidate.End)
+        if (candidates.Count == 0)
         {
-            return;
+            return [];
         }
 
-        foreach (var existing in candidates)
+        var filtered = new List<FileMentionCandidate>(candidates.Count);
+        foreach (var candidate in candidates.OrderBy(static candidate => candidate.Priority))
         {
-            if (candidate.Start < existing.End && candidate.End > existing.Start)
+            if (candidate.Start >= candidate.End)
             {
-                return;
+                continue;
+            }
+
+            var overlapsExisting = false;
+            foreach (var existing in filtered)
+            {
+                if (candidate.Start < existing.End && candidate.End > existing.Start)
+                {
+                    overlapsExisting = true;
+                    break;
+                }
+            }
+
+            if (!overlapsExisting)
+            {
+                filtered.Add(candidate);
             }
         }
 
-        candidates.Add(candidate);
+        return filtered
+            .OrderBy(static candidate => candidate.Start)
+            .ThenBy(static candidate => candidate.End)
+            .ToList();
     }
 
     private bool TryResolveFileReference(
@@ -697,5 +750,6 @@ public sealed partial class SessionLensPulseService
         string Path,
         string PathKind,
         int? Line,
-        int? Column);
+        int? Column,
+        int Priority);
 }

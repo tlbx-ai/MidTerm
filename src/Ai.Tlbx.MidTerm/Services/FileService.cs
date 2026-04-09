@@ -6,7 +6,15 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class FileService
 {
+    private const int FileInfoCacheMaxEntries = 2048;
+    private const long FileInfoCachePositiveTtlTicks = TimeSpan.TicksPerSecond * 15;
+    private const long FileInfoCacheNegativeTtlTicks = TimeSpan.TicksPerSecond * 5;
     private static readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
+    private static readonly Lock _fileInfoCacheLock = new();
+    private static readonly Dictionary<string, FileInfoCacheEntry> _fileInfoCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly FileInfoCacheSlot[] _fileInfoCacheRing = new FileInfoCacheSlot[FileInfoCacheMaxEntries];
+    private static int _fileInfoCacheRingIndex;
+    private static long _fileInfoCacheGeneration;
 
     private static readonly HashSet<string> _skipDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -201,40 +209,38 @@ public sealed class FileService
 
     public static FilePathInfo GetFileInfo(string path)
     {
-        var info = new FilePathInfo { Exists = false };
-
         if (string.IsNullOrWhiteSpace(path) || path.Contains("..", StringComparison.Ordinal))
         {
-            return info;
+            return new FilePathInfo { Exists = false };
         }
 
         try
         {
             var fullPath = Path.GetFullPath(path);
+            if (TryGetCachedFileInfo(fullPath, out var cached))
+            {
+                return cached;
+            }
 
-            if (Directory.Exists(fullPath))
-            {
-                var dirInfo = new DirectoryInfo(fullPath);
-                info.Exists = true;
-                info.IsDirectory = true;
-                info.Modified = dirInfo.LastWriteTimeUtc;
-            }
-            else if (File.Exists(fullPath))
-            {
-                var fileInfo = new FileInfo(fullPath);
-                info.Exists = true;
-                info.IsDirectory = false;
-                info.Size = fileInfo.Length;
-                info.Modified = fileInfo.LastWriteTimeUtc;
-                info.MimeType = GetMimeType(fileInfo.Name);
-                info.IsText = CheckIsText(fullPath, fileInfo.Length);
-            }
+            var info = GetFileInfoUncached(fullPath);
+            SetCachedFileInfo(fullPath, info);
+            return info;
         }
         catch
         {
+            return new FilePathInfo { Exists = false };
         }
+    }
 
-        return info;
+    internal static void ResetFileInfoCacheForTests()
+    {
+        lock (_fileInfoCacheLock)
+        {
+            _fileInfoCache.Clear();
+            Array.Clear(_fileInfoCacheRing);
+            _fileInfoCacheRingIndex = 0;
+            _fileInfoCacheGeneration = 0;
+        }
     }
 
     public static bool? CheckIsText(string filePath, long fileSize)
@@ -279,4 +285,89 @@ public sealed class FileService
     }
 
     public static HashSet<string> SkipDirectories => _skipDirectories;
+
+    private static FilePathInfo GetFileInfoUncached(string fullPath)
+    {
+        var info = new FilePathInfo { Exists = false };
+
+        if (Directory.Exists(fullPath))
+        {
+            var dirInfo = new DirectoryInfo(fullPath);
+            info.Exists = true;
+            info.IsDirectory = true;
+            info.Modified = dirInfo.LastWriteTimeUtc;
+            return info;
+        }
+
+        if (File.Exists(fullPath))
+        {
+            var fileInfo = new FileInfo(fullPath);
+            info.Exists = true;
+            info.IsDirectory = false;
+            info.Size = fileInfo.Length;
+            info.Modified = fileInfo.LastWriteTimeUtc;
+            info.MimeType = GetMimeType(fileInfo.Name);
+            info.IsText = CheckIsText(fullPath, fileInfo.Length);
+        }
+
+        return info;
+    }
+
+    private static bool TryGetCachedFileInfo(string fullPath, out FilePathInfo info)
+    {
+        lock (_fileInfoCacheLock)
+        {
+            if (_fileInfoCache.TryGetValue(fullPath, out var cached))
+            {
+                if (cached.ExpiresAtUtcTicks > DateTime.UtcNow.Ticks)
+                {
+                    info = CloneFilePathInfo(cached.Info);
+                    return true;
+                }
+
+                _fileInfoCache.Remove(fullPath);
+            }
+        }
+
+        info = new FilePathInfo { Exists = false };
+        return false;
+    }
+
+    private static void SetCachedFileInfo(string fullPath, FilePathInfo info)
+    {
+        var expiresAtUtcTicks = DateTime.UtcNow.Ticks +
+                                (info.Exists ? FileInfoCachePositiveTtlTicks : FileInfoCacheNegativeTtlTicks);
+
+        lock (_fileInfoCacheLock)
+        {
+            var nextGeneration = ++_fileInfoCacheGeneration;
+            var evictedSlot = _fileInfoCacheRing[_fileInfoCacheRingIndex];
+            if (!string.IsNullOrWhiteSpace(evictedSlot.Key) &&
+                _fileInfoCache.TryGetValue(evictedSlot.Key, out var current) &&
+                current.Generation == evictedSlot.Generation)
+            {
+                _fileInfoCache.Remove(evictedSlot.Key);
+            }
+
+            _fileInfoCache[fullPath] = new FileInfoCacheEntry(CloneFilePathInfo(info), expiresAtUtcTicks, nextGeneration);
+            _fileInfoCacheRing[_fileInfoCacheRingIndex] = new FileInfoCacheSlot(fullPath, nextGeneration);
+            _fileInfoCacheRingIndex = (_fileInfoCacheRingIndex + 1) % _fileInfoCacheRing.Length;
+        }
+    }
+
+    private static FilePathInfo CloneFilePathInfo(FilePathInfo info)
+    {
+        return new FilePathInfo
+        {
+            Exists = info.Exists,
+            Size = info.Size,
+            IsDirectory = info.IsDirectory,
+            MimeType = info.MimeType,
+            Modified = info.Modified,
+            IsText = info.IsText
+        };
+    }
+
+    private readonly record struct FileInfoCacheSlot(string? Key, long Generation);
+    private readonly record struct FileInfoCacheEntry(FilePathInfo Info, long ExpiresAtUtcTicks, long Generation);
 }
