@@ -1,4 +1,6 @@
 import { escapeHtml } from '../../utils/dom';
+import { showTextPrompt } from '../../utils/dialog';
+import { JS_BUILD_VERSION } from '../../constants';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '../hub/runtime';
@@ -21,6 +23,7 @@ export interface HubSessionLauncherTarget {
   machineId: string;
   machineName: string;
   baseUrl: string;
+  currentVersion: string | null;
 }
 
 export type SessionLauncherTarget = LocalSessionLauncherTarget | HubSessionLauncherTarget;
@@ -31,10 +34,6 @@ export interface SessionLauncherSelection {
   workingDirectory: string | null;
   resumeThreadId?: string | null;
   target: SessionLauncherTarget;
-}
-
-interface VisibilityToggleTarget {
-  hidden: boolean;
 }
 
 let activeLauncherPromise: Promise<SessionLauncherSelection | null> | null = null;
@@ -57,6 +56,15 @@ interface LauncherPathResponse {
   startPath: string;
 }
 
+interface LauncherDirectoryAccessResponse {
+  path: string;
+  canWrite: boolean;
+}
+
+interface LauncherDirectoryMutationResponse {
+  path: string;
+}
+
 interface LauncherState {
   homePath: string;
   startPath: string;
@@ -67,11 +75,23 @@ interface LauncherState {
   roots: LauncherDirectoryEntry[];
   entries: LauncherDirectoryEntry[];
   loading: boolean;
+  loadingMessage: string | null;
   error: string | null;
   requestToken: number;
   targets: SessionLauncherTarget[];
   selectedTargetId: string;
-  remotePathDrafts: Record<string, string>;
+}
+
+interface LauncherLocalActionContext {
+  clearBusy(): void;
+  clearPendingPathFollow(): void;
+  closeWithTerminalPath(path: string): void;
+  getCurrentPath(): string;
+  getPathDraft(): string;
+  getTarget(): SessionLauncherTarget;
+  loadDirectory(path: string): Promise<boolean>;
+  setBusy(message: string): void;
+  setError(message: string | null): void;
 }
 
 export function buildSessionLauncherTargets(
@@ -88,6 +108,7 @@ export function buildSessionLauncherTargets(
       machineId: machine.machine.id,
       machineName: machine.machine.name,
       baseUrl: machine.machine.baseUrl,
+      currentVersion: machine.currentVersion ?? null,
     })),
   ];
 }
@@ -99,17 +120,348 @@ export function isProviderSupportedOnTarget(
   return target.kind === 'local' || provider === 'terminal';
 }
 
-export function syncLocationPickerVisibility(
-  target: SessionLauncherTarget,
-  sections: {
-    localBrowser: VisibilityToggleTarget;
-    remoteBrowser: VisibilityToggleTarget;
-  },
+async function promptForLauncherFolderName(): Promise<string | null> {
+  return showTextPrompt({
+    title: t('sessionLauncher.newFolderTitle'),
+    message: t('sessionLauncher.newFolderPrompt'),
+    placeholder: t('sessionLauncher.newFolderPlaceholder'),
+    confirmLabel: t('sessionLauncher.createFolder'),
+    validate: (value) => {
+      if (!value.trim()) {
+        return t('sessionLauncher.folderNameRequired');
+      }
+
+      if (/[\\/]/.test(value)) {
+        return t('sessionLauncher.folderNameInvalid');
+      }
+
+      return null;
+    },
+  });
+}
+
+async function promptForLauncherRepositoryUrl(): Promise<string | null> {
+  return showTextPrompt({
+    title: t('sessionLauncher.cloneRepoTitle'),
+    message: t('sessionLauncher.cloneRepoPrompt'),
+    placeholder: t('sessionLauncher.cloneRepoPlaceholder'),
+    confirmLabel: t('sessionLauncher.cloneRepoAction'),
+    validate: (value) => (value.trim() ? null : t('sessionLauncher.repoUrlRequired')),
+  });
+}
+
+async function ensureCommittedLauncherPath(
+  context: LauncherLocalActionContext,
+): Promise<string | null> {
+  const candidatePath = context.getPathDraft().trim();
+  if (!candidatePath) {
+    context.setError('Path is required');
+    return null;
+  }
+
+  if (candidatePath !== context.getCurrentPath()) {
+    const loaded = await context.loadDirectory(candidatePath);
+    if (!loaded) {
+      return null;
+    }
+  }
+
+  return context.getCurrentPath();
+}
+
+async function ensureWritableLauncherDirectory(
+  context: LauncherLocalActionContext,
+  path: string,
+): Promise<string | null> {
+  context.setBusy(t('sessionLauncher.checkingDirectory'));
+
+  try {
+    const response = await fetchWritableDirectory(context.getTarget(), path);
+    if (!response.canWrite) {
+      context.clearBusy();
+      context.setError(t('sessionLauncher.directoryNotWritable'));
+      return null;
+    }
+
+    context.clearBusy();
+    return response.path;
+  } catch (error) {
+    context.clearBusy();
+    context.setError(error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+async function runCreateFolderLauncherAction(context: LauncherLocalActionContext): Promise<void> {
+  context.clearPendingPathFollow();
+
+  const parentPath = await ensureCommittedLauncherPath(context);
+  if (!parentPath) {
+    return;
+  }
+
+  const writablePath = await ensureWritableLauncherDirectory(context, parentPath);
+  if (!writablePath) {
+    return;
+  }
+
+  const folderName = await promptForLauncherFolderName();
+  if (!folderName) {
+    return;
+  }
+
+  context.setBusy(t('sessionLauncher.creatingFolder'));
+
+  try {
+    const response = await createLauncherFolder(context.getTarget(), writablePath, folderName);
+    context.clearBusy();
+    await context.loadDirectory(response.path);
+  } catch (error) {
+    context.clearBusy();
+    context.setError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function runCloneRepositoryLauncherAction(
+  context: LauncherLocalActionContext,
+): Promise<void> {
+  context.clearPendingPathFollow();
+
+  const parentPath = await ensureCommittedLauncherPath(context);
+  if (!parentPath) {
+    return;
+  }
+
+  const writablePath = await ensureWritableLauncherDirectory(context, parentPath);
+  if (!writablePath) {
+    return;
+  }
+
+  const repositoryUrl = await promptForLauncherRepositoryUrl();
+  if (!repositoryUrl) {
+    return;
+  }
+
+  context.setBusy(t('sessionLauncher.cloningRepo'));
+
+  try {
+    const response = await cloneLauncherRepository(
+      context.getTarget(),
+      writablePath,
+      repositoryUrl,
+    );
+    context.closeWithTerminalPath(response.path);
+  } catch (error) {
+    context.clearBusy();
+    context.setError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function navigateLauncherBackInHistory(
+  state: LauncherState,
+  clearPendingPathFollow: () => void,
+  loadDirectory: (path: string, options?: { recordHistory?: boolean }) => Promise<boolean>,
+): Promise<boolean> {
+  clearPendingPathFollow();
+  while (state.pathHistory.length > 0) {
+    const previousPath = state.pathHistory.pop();
+    if (!previousPath || previousPath === state.currentPath) {
+      continue;
+    }
+
+    const loaded = await loadDirectory(previousPath, { recordHistory: false });
+    if (loaded) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function commitLauncherPathDraft(
+  state: LauncherState,
+  clearPendingPathFollow: () => void,
+  loadDirectory: (path: string) => Promise<boolean>,
+  render: () => void,
+): Promise<void> {
+  clearPendingPathFollow();
+
+  const candidatePath = state.pathDraft.trim();
+  if (!candidatePath) {
+    state.error = 'Path is required';
+    render();
+    return;
+  }
+
+  if (candidatePath === state.currentPath) {
+    state.error = null;
+    render();
+    return;
+  }
+
+  await loadDirectory(candidatePath);
+}
+
+function clearLauncherPendingPathFollow(
+  pathFollowTimer: number | null,
+  setPathFollowTimer: (timer: number | null) => void,
+): void {
+  if (pathFollowTimer !== null) {
+    window.clearTimeout(pathFollowTimer);
+    setPathFollowTimer(null);
+  }
+}
+
+function handleLauncherEscapeKey(event: KeyboardEvent, isBusy: boolean, close: () => void): void {
+  if (event.key !== 'Escape') {
+    return;
+  }
+
+  event.preventDefault();
+  if (!isBusy) {
+    close();
+  }
+}
+
+function queueLauncherPathFollow(
+  state: LauncherState,
+  clearPendingPathFollow: () => void,
+  setPathFollowTimer: (timer: number | null) => void,
+  loadDirectory: (
+    path: string,
+    options?: {
+      suppressErrors?: boolean;
+    },
+  ) => Promise<boolean>,
+): void {
+  clearPendingPathFollow();
+
+  const timer = window.setTimeout(() => {
+    setPathFollowTimer(null);
+    const candidatePath = state.pathDraft.trim();
+    if (!candidatePath || candidatePath === state.currentPath) {
+      return;
+    }
+
+    void loadDirectory(candidatePath, { suppressErrors: true });
+  }, 280);
+
+  setPathFollowTimer(timer);
+}
+
+function getSelectedTargetOrLocal(
+  targets: ReadonlyArray<SessionLauncherTarget>,
+  selectedTargetId: string,
+): SessionLauncherTarget {
+  return (
+    targets.find((target) => target.id === selectedTargetId) ?? {
+      id: LOCAL_TARGET_ID,
+      kind: 'local',
+    }
+  );
+}
+
+function resetLauncherBrowserState(
+  state: LauncherState,
+  pathResponse: LauncherPathResponse,
+  roots: LauncherDirectoryEntry[],
+): void {
+  const homePath = pathResponse.homePath || pathResponse.path;
+  const startPath = pathResponse.startPath || homePath;
+  state.homePath = homePath;
+  state.startPath = startPath;
+  state.currentPath = startPath;
+  state.pathDraft = startPath;
+  state.pathHistory = [];
+  state.parentPath = null;
+  state.roots = roots;
+  state.entries = [];
+}
+
+function getMajorMinorVersion(version: string | null | undefined): string | null {
+  const match = version?.trim().match(/^v?(\d+)\.(\d+)/i);
+  return match ? `${match[1]}.${match[2]}` : null;
+}
+
+export function hasMatchingMajorMinorVersion(
+  localVersion: string | null | undefined,
+  remoteVersion: string | null | undefined,
 ): boolean {
-  const isLocalTarget = target.kind === 'local';
-  sections.localBrowser.hidden = !isLocalTarget;
-  sections.remoteBrowser.hidden = isLocalTarget;
-  return isLocalTarget;
+  const localMajorMinor = getMajorMinorVersion(localVersion);
+  const remoteMajorMinor = getMajorMinorVersion(remoteVersion);
+  return !localMajorMinor || !remoteMajorMinor || localMajorMinor === remoteMajorMinor;
+}
+
+function getLauncherTargetWarning(target: SessionLauncherTarget): string | null {
+  if (target.kind !== 'hub') {
+    return null;
+  }
+
+  const messages = [t('sessionLauncher.remoteTerminalOnly')];
+  const localVersion = JS_BUILD_VERSION;
+  if (!hasMatchingMajorMinorVersion(localVersion, target.currentVersion)) {
+    messages.push(
+      `${t('sessionLauncher.remoteVersionWarning')} (${target.currentVersion ?? '?'} vs ${localVersion})`,
+    );
+  }
+
+  return messages.join('\n');
+}
+
+function isLauncherRequestStale(
+  state: LauncherState,
+  requestToken: number,
+  targetId: string,
+): boolean {
+  return requestToken !== state.requestToken || state.selectedTargetId !== targetId;
+}
+
+function beginLauncherDirectoryLoad(
+  state: LauncherState,
+  suppressErrors: boolean | undefined,
+  render: () => void,
+): number {
+  const requestToken = ++state.requestToken;
+  state.loading = true;
+  state.loadingMessage = t('sessionLauncher.loading');
+  if (!suppressErrors) {
+    state.error = null;
+  }
+  render();
+  return requestToken;
+}
+
+function finalizeLauncherDirectoryLoad(
+  state: LauncherState,
+  requestToken: number,
+  render: () => void,
+): void {
+  if (requestToken === state.requestToken) {
+    state.loading = false;
+    state.loadingMessage = null;
+    render();
+  }
+}
+
+function applyLauncherDirectoryResponse(
+  state: LauncherState,
+  response: LauncherDirectoryListResponse,
+  previousPath: string,
+  recordHistory: boolean | undefined,
+): void {
+  state.currentPath = response.path;
+  state.pathDraft = response.path;
+  state.parentPath = response.parentPath;
+  state.entries = response.entries;
+  if (
+    recordHistory !== false &&
+    previousPath &&
+    previousPath !== response.path &&
+    state.pathHistory[state.pathHistory.length - 1] !== previousPath
+  ) {
+    state.pathHistory.push(previousPath);
+  }
+  state.error = null;
 }
 
 export async function openSessionLauncher(): Promise<SessionLauncherSelection | null> {
@@ -126,10 +478,6 @@ export async function openSessionLauncher(): Promise<SessionLauncherSelection | 
 }
 
 async function openSessionLauncherInternal(): Promise<SessionLauncherSelection | null> {
-  const [home, roots] = await Promise.all([fetchHomePath(), fetchLauncherRoots()]);
-  const homePath = home.homePath || home.path;
-  const startPath = home.startPath || homePath;
-
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay session-launcher-overlay';
@@ -160,6 +508,14 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
                   <span class="session-launcher-nav-icon" aria-hidden="true">&#8593;</span>
                   <span>${escapeHtml(t('sessionLauncher.up'))}</span>
                 </button>
+                <button type="button" class="btn-secondary session-launcher-nav-btn" data-action="new-folder" title="${escapeHtml(t('sessionLauncher.newFolder'))}">
+                  <span class="session-launcher-nav-icon" aria-hidden="true">+</span>
+                  <span>${escapeHtml(t('sessionLauncher.newFolder'))}</span>
+                </button>
+                <button type="button" class="btn-secondary session-launcher-nav-btn" data-action="clone-repo" title="${escapeHtml(t('sessionLauncher.cloneRepo'))}">
+                  <span class="session-launcher-nav-icon" aria-hidden="true">&#9099;</span>
+                  <span>${escapeHtml(t('sessionLauncher.cloneRepo'))}</span>
+                </button>
                 <input
                   type="text"
                   class="session-launcher-path"
@@ -172,19 +528,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
               <div class="session-launcher-roots" data-role="roots"></div>
               <div class="session-launcher-status" data-role="status" hidden></div>
               <div class="session-launcher-list" data-role="list"></div>
-            </div>
-            <div class="session-launcher-remote" data-role="remote-browser" hidden>
-              <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.remoteWorkingDirectory'))}</div>
-              <input
-                type="text"
-                class="session-launcher-path"
-                data-role="remote-path"
-                title=""
-                spellcheck="false"
-                autocomplete="off"
-                placeholder="${escapeHtml(t('sessionLauncher.remoteWorkingDirectoryPlaceholder'))}"
-              />
-              <div class="session-launcher-status" data-role="remote-hint">${escapeHtml(t('sessionLauncher.remoteWorkingDirectoryHint'))}</div>
             </div>
             <div class="session-launcher-launch">
               <div class="session-launcher-launch-label">${escapeHtml(t('sessionLauncher.chooseProvider'))}</div>
@@ -200,28 +543,25 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     `;
 
     const state: LauncherState = {
-      homePath,
-      startPath,
-      currentPath: startPath,
-      pathDraft: startPath,
+      homePath: '',
+      startPath: '',
+      currentPath: '',
+      pathDraft: '',
       pathHistory: [],
       parentPath: null,
-      roots: roots.entries,
+      roots: [],
       entries: [],
       loading: false,
+      loadingMessage: null,
       error: null,
       requestToken: 0,
       targets: buildSessionLauncherTargets(getLaunchableHubMachines()),
       selectedTargetId: LOCAL_TARGET_ID,
-      remotePathDrafts: {},
     };
 
     const providersEl = overlay.querySelector<HTMLElement>('[data-role="providers"]');
     const targetsSectionEl = overlay.querySelector<HTMLElement>('[data-role="targets-section"]');
     const targetsEl = overlay.querySelector<HTMLElement>('[data-role="targets"]');
-    const browserEl = overlay.querySelector<HTMLElement>('[data-role="browser"]');
-    const remoteBrowserEl = overlay.querySelector<HTMLElement>('[data-role="remote-browser"]');
-    const remotePathEl = overlay.querySelector<HTMLInputElement>('[data-role="remote-path"]');
     const providerHintEl = overlay.querySelector<HTMLElement>('[data-role="provider-hint"]');
     const pathEl = overlay.querySelector<HTMLInputElement>('[data-role="path"]');
     const rootsEl = overlay.querySelector<HTMLElement>('[data-role="roots"]');
@@ -233,9 +573,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       !providersEl ||
       !targetsSectionEl ||
       !targetsEl ||
-      !browserEl ||
-      !remoteBrowserEl ||
-      !remotePathEl ||
       !providerHintEl ||
       !pathEl ||
       !rootsEl ||
@@ -250,9 +587,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     const safeProvidersEl = providersEl;
     const safeTargetsSectionEl = targetsSectionEl;
     const safeTargetsEl = targetsEl;
-    const safeBrowserEl = browserEl;
-    const safeRemoteBrowserEl = remoteBrowserEl;
-    const safeRemotePathEl = remotePathEl;
     const safeProviderHintEl = providerHintEl;
     const safePathEl = pathEl;
     const safeRootsEl = rootsEl;
@@ -266,10 +600,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     let skipNextPathCommit = false;
 
     function clearPendingPathFollow(): void {
-      if (pathFollowTimer !== null) {
-        window.clearTimeout(pathFollowTimer);
-        pathFollowTimer = null;
-      }
+      clearLauncherPendingPathFollow(pathFollowTimer, (timer) => {
+        pathFollowTimer = timer;
+      });
     }
 
     function close(result: SessionLauncherSelection | null): void {
@@ -283,19 +616,13 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     }
 
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        event.preventDefault();
+      handleLauncherEscapeKey(event, state.loading, () => {
         close(null);
-      }
+      });
     }
 
     function getSelectedTarget(): SessionLauncherTarget {
-      return (
-        state.targets.find((target) => target.id === state.selectedTargetId) ?? {
-          id: LOCAL_TARGET_ID,
-          kind: 'local',
-        }
-      );
+      return getSelectedTargetOrLocal(state.targets, state.selectedTargetId);
     }
 
     function refreshTargets(): void {
@@ -335,22 +662,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         .join('');
     }
 
-    function renderLocationMode(): void {
-      const target = getSelectedTarget();
-      const isLocalTarget = syncLocationPickerVisibility(target, {
-        localBrowser: safeBrowserEl,
-        remoteBrowser: safeRemoteBrowserEl,
-      });
-
-      if (!isLocalTarget) {
-        const currentDraft = state.remotePathDrafts[target.id] ?? '';
-        if (safeRemotePathEl.value !== currentDraft) {
-          safeRemotePathEl.value = currentDraft;
-        }
-        safeRemotePathEl.title = currentDraft;
-      }
-    }
-
     function renderProviders(): void {
       const target = getSelectedTarget();
       safeProvidersEl.innerHTML = getProviders()
@@ -359,8 +670,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           const badge = definition.beta
             ? `<span class="feature-beta-badge">${escapeHtml(t('common.beta'))}</span>`
             : '';
-          const disabled =
-            !supported || (target.kind === 'local' && (state.loading || !state.currentPath));
+          const disabled = !supported || state.loading || !state.currentPath;
           const actions =
             definition.provider === 'terminal'
               ? `
@@ -411,11 +721,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         })
         .join('');
 
-      const showProviderHint = target.kind === 'hub';
-      safeProviderHintEl.hidden = !showProviderHint;
-      safeProviderHintEl.textContent = showProviderHint
-        ? t('sessionLauncher.remoteTerminalOnly')
-        : '';
+      const targetWarning = getLauncherTargetWarning(target);
+      safeProviderHintEl.hidden = !targetWarning;
+      safeProviderHintEl.textContent = targetWarning ?? '';
     }
 
     function renderRoots(): void {
@@ -435,7 +743,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       const shouldShow = state.loading || Boolean(state.error);
       safeStatusEl.hidden = !shouldShow;
       safeStatusEl.classList.toggle('error', Boolean(state.error));
-      safeStatusEl.textContent = state.loading ? t('sessionLauncher.loading') : (state.error ?? '');
+      safeStatusEl.textContent = state.loading
+        ? (state.loadingMessage ?? t('sessionLauncher.loading'))
+        : (state.error ?? '');
     }
 
     function renderList(): void {
@@ -464,7 +774,6 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     function render(): void {
       refreshTargets();
       renderTargets();
-      renderLocationMode();
       renderProviders();
       renderRoots();
       renderStatus();
@@ -481,38 +790,24 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       options?: {
         recordHistory?: boolean;
         suppressErrors?: boolean;
+        target?: SessionLauncherTarget;
       },
     ): Promise<boolean> {
+      const target = options?.target ?? getSelectedTarget();
+      const targetId = target.id;
       const previousPath = state.currentPath;
-      const requestToken = ++state.requestToken;
-      state.loading = true;
-      if (!options?.suppressErrors) {
-        state.error = null;
-      }
-      render();
+      const requestToken = beginLauncherDirectoryLoad(state, options?.suppressErrors, render);
 
       try {
-        const response = await fetchDirectories(path);
-        if (requestToken !== state.requestToken) {
+        const response = await fetchDirectories(target, path);
+        if (isLauncherRequestStale(state, requestToken, targetId)) {
           return false;
         }
 
-        state.currentPath = response.path;
-        state.pathDraft = response.path;
-        state.parentPath = response.parentPath;
-        state.entries = response.entries;
-        if (
-          options?.recordHistory !== false &&
-          previousPath &&
-          previousPath !== response.path &&
-          state.pathHistory[state.pathHistory.length - 1] !== previousPath
-        ) {
-          state.pathHistory.push(previousPath);
-        }
-        state.error = null;
+        applyLauncherDirectoryResponse(state, response, previousPath, options?.recordHistory);
         return true;
       } catch (error) {
-        if (requestToken !== state.requestToken) {
+        if (isLauncherRequestStale(state, requestToken, targetId)) {
           return false;
         }
 
@@ -520,64 +815,80 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           state.error = error instanceof Error ? error.message : String(error);
         }
       } finally {
-        if (requestToken === state.requestToken) {
-          state.loading = false;
-          render();
-        }
+        finalizeLauncherDirectoryLoad(state, requestToken, render);
       }
 
       return false;
     }
 
-    async function navigateBackInHistory(): Promise<boolean> {
-      clearPendingPathFollow();
-      while (state.pathHistory.length > 0) {
-        const previousPath = state.pathHistory.pop();
-        if (!previousPath || previousPath === state.currentPath) {
-          continue;
-        }
+    async function loadSelectedTargetBrowser(
+      target: SessionLauncherTarget,
+      options?: { path?: string | null },
+    ): Promise<void> {
+      const requestToken = ++state.requestToken;
+      state.loading = true;
+      state.loadingMessage = t('sessionLauncher.loading');
+      state.error = null;
+      render();
 
-        const loaded = await loadDirectory(previousPath, { recordHistory: false });
-        if (loaded) {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    function queuePathFollow(): void {
-      clearPendingPathFollow();
-
-      pathFollowTimer = window.setTimeout(() => {
-        pathFollowTimer = null;
-        const candidatePath = state.pathDraft.trim();
-        if (!candidatePath || candidatePath === state.currentPath) {
+      try {
+        const [pathResponse, rootsResponse] = await Promise.all([
+          fetchHomePath(target),
+          fetchLauncherRoots(target),
+        ]);
+        if (requestToken !== state.requestToken || state.selectedTargetId !== target.id) {
           return;
         }
 
-        void loadDirectory(candidatePath, { suppressErrors: true });
-      }, 280);
+        resetLauncherBrowserState(state, pathResponse, rootsResponse.entries);
+        const initialPath = options?.path?.trim() || state.startPath;
+        await loadDirectory(initialPath, {
+          recordHistory: false,
+          target,
+        });
+      } catch (error) {
+        if (requestToken !== state.requestToken || state.selectedTargetId !== target.id) {
+          return;
+        }
+
+        state.loading = false;
+        state.loadingMessage = null;
+        state.error = error instanceof Error ? error.message : String(error);
+        render();
+      }
     }
 
-    async function commitPathDraft(): Promise<void> {
-      clearPendingPathFollow();
-
-      const candidatePath = state.pathDraft.trim();
-      if (!candidatePath) {
-        state.error = 'Path is required';
+    const localActionContext: LauncherLocalActionContext = {
+      clearBusy: () => {
+        state.loading = false;
+        state.loadingMessage = null;
         render();
-        return;
-      }
-
-      if (candidatePath === state.currentPath) {
+      },
+      clearPendingPathFollow,
+      closeWithTerminalPath: (path) => {
+        const target = getSelectedTarget();
+        close({
+          provider: 'terminal',
+          launchMode: 'new',
+          workingDirectory: path,
+          target,
+        });
+      },
+      getCurrentPath: () => state.currentPath,
+      getPathDraft: () => state.pathDraft,
+      getTarget: getSelectedTarget,
+      loadDirectory,
+      setBusy: (message) => {
+        state.loading = true;
+        state.loadingMessage = message;
         state.error = null;
         render();
-        return;
-      }
-
-      await loadDirectory(candidatePath);
-    }
+      },
+      setError: (message) => {
+        state.error = message;
+        render();
+      },
+    };
 
     render();
     document.body.appendChild(overlay);
@@ -588,13 +899,17 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       }
 
       void (async () => {
-        const navigated = await navigateBackInHistory();
+        const navigated = await navigateLauncherBackInHistory(
+          state,
+          clearPendingPathFollow,
+          loadDirectory,
+        );
         if (!navigated) {
           close(null);
         }
       })();
     });
-    void loadDirectory(state.startPath, { recordHistory: false });
+    void loadSelectedTargetBrowser(getSelectedTarget());
     void refreshHubState().catch(() => {});
 
     function launch(
@@ -607,17 +922,14 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         return;
       }
 
-      if (target.kind === 'local' && (state.loading || !state.currentPath)) {
+      if (state.loading || !state.currentPath) {
         return;
       }
 
       close({
         provider,
         launchMode,
-        workingDirectory:
-          target.kind === 'local'
-            ? state.currentPath
-            : state.remotePathDrafts[target.id]?.trim() || null,
+        workingDirectory: state.currentPath,
         resumeThreadId: resumeThreadId?.trim() || null,
         target,
       });
@@ -638,11 +950,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         return;
       }
 
-      const target = getSelectedTarget();
-      const workingDirectory =
-        target.kind === 'local'
-          ? state.currentPath
-          : state.remotePathDrafts[target.id]?.trim() || null;
+      const workingDirectory = state.currentPath;
       if (!workingDirectory) {
         return;
       }
@@ -671,7 +979,9 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
       clearPendingPathFollow();
       state.selectedTargetId = targetId;
+      state.pathHistory = [];
       render();
+      void loadSelectedTargetBrowser(getSelectedTarget());
     });
 
     safeRootsEl.addEventListener('click', (event) => {
@@ -696,18 +1006,20 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     safePathEl.addEventListener('input', () => {
       state.pathDraft = safePathEl.value;
-      queuePathFollow();
-    });
-
-    safeRemotePathEl.addEventListener('input', () => {
-      state.remotePathDrafts[state.selectedTargetId] = safeRemotePathEl.value;
-      safeRemotePathEl.title = safeRemotePathEl.value;
+      queueLauncherPathFollow(
+        state,
+        clearPendingPathFollow,
+        (timer) => {
+          pathFollowTimer = timer;
+        },
+        loadDirectory,
+      );
     });
 
     safePathEl.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        void commitPathDraft();
+        void commitLauncherPathDraft(state, clearPendingPathFollow, loadDirectory, render);
         return;
       }
 
@@ -725,7 +1037,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         return;
       }
 
-      void commitPathDraft();
+      void commitLauncherPathDraft(state, clearPendingPathFollow, loadDirectory, render);
     });
 
     overlay.addEventListener('pointerdown', (event) => {
@@ -743,11 +1055,19 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     overlay.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       if (target === overlay) {
+        if (state.loading) {
+          return;
+        }
+
         close(null);
         return;
       }
 
       if (target?.closest('[data-role="cancel"]')) {
+        if (state.loading) {
+          return;
+        }
+
         close(null);
         return;
       }
@@ -759,6 +1079,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       } else if (action === 'up' && state.parentPath) {
         clearPendingPathFollow();
         void loadDirectory(state.parentPath);
+      } else if (action === 'new-folder') {
+        void runCreateFolderLauncherAction(localActionContext);
+      } else if (action === 'clone-repo') {
+        void runCloneRepositoryLauncherAction(localActionContext);
       }
     });
 
@@ -768,8 +1092,14 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
   });
 }
 
-async function fetchHomePath(): Promise<LauncherPathResponse> {
-  const response = await fetch('/api/files/picker/home');
+function getLauncherApiBasePath(target: SessionLauncherTarget): string {
+  return target.kind === 'local'
+    ? '/api/files/picker'
+    : `/api/hub/machines/${encodeURIComponent(target.machineId)}/files/picker`;
+}
+
+async function fetchHomePath(target: SessionLauncherTarget): Promise<LauncherPathResponse> {
+  const response = await fetch(`${getLauncherApiBasePath(target)}/home`);
   if (!response.ok) {
     throw new Error(t('sessionLauncher.loadFailed'));
   }
@@ -808,8 +1138,10 @@ function getProviders(): ReadonlyArray<{
   ];
 }
 
-async function fetchLauncherRoots(): Promise<LauncherDirectoryListResponse> {
-  const response = await fetch('/api/files/picker/roots');
+async function fetchLauncherRoots(
+  target: SessionLauncherTarget,
+): Promise<LauncherDirectoryListResponse> {
+  const response = await fetch(`${getLauncherApiBasePath(target)}/roots`);
   if (!response.ok) {
     throw new Error(t('sessionLauncher.loadFailed'));
   }
@@ -817,11 +1149,74 @@ async function fetchLauncherRoots(): Promise<LauncherDirectoryListResponse> {
   return (await response.json()) as LauncherDirectoryListResponse;
 }
 
-async function fetchDirectories(path: string): Promise<LauncherDirectoryListResponse> {
-  const response = await fetch(`/api/files/picker/directories?path=${encodeURIComponent(path)}`);
+async function fetchDirectories(
+  target: SessionLauncherTarget,
+  path: string,
+): Promise<LauncherDirectoryListResponse> {
+  const response = await fetch(
+    `${getLauncherApiBasePath(target)}/directories?path=${encodeURIComponent(path)}`,
+  );
   if (!response.ok) {
     throw new Error(await response.text());
   }
 
   return (await response.json()) as LauncherDirectoryListResponse;
+}
+
+async function fetchWritableDirectory(
+  target: SessionLauncherTarget,
+  path: string,
+): Promise<LauncherDirectoryAccessResponse> {
+  const response = await fetch(
+    `${getLauncherApiBasePath(target)}/writable?path=${encodeURIComponent(path)}`,
+  );
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as LauncherDirectoryAccessResponse;
+}
+
+async function createLauncherFolder(
+  target: SessionLauncherTarget,
+  parentPath: string,
+  name: string,
+): Promise<LauncherDirectoryMutationResponse> {
+  const response = await fetch(`${getLauncherApiBasePath(target)}/folders`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      parentPath,
+      name,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as LauncherDirectoryMutationResponse;
+}
+
+async function cloneLauncherRepository(
+  target: SessionLauncherTarget,
+  parentPath: string,
+  repositoryUrl: string,
+): Promise<LauncherDirectoryMutationResponse> {
+  const response = await fetch(`${getLauncherApiBasePath(target)}/clone`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      parentPath,
+      repositoryUrl,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as LauncherDirectoryMutationResponse;
 }

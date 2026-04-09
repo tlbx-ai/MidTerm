@@ -123,3 +123,26 @@ public sealed class LauncherDirectoryListResponse
     public string? ParentPath { get; set; }
     public LauncherDirectoryEntry[] Entries { get; set; } = [];
 }
+
+public sealed class LauncherDirectoryAccessResponse
+{
+    public string Path { get; set; } = string.Empty;
+    public bool CanWrite { get; set; }
+}
+
+public sealed class LauncherCreateDirectoryRequest
+{
+    public string ParentPath { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class LauncherCloneRepositoryRequest
+{
+    public string ParentPath { get; set; } = string.Empty;
+    public string RepositoryUrl { get; set; } = string.Empty;
+}
+
+public sealed class LauncherDirectoryMutationResponse
+{
+    public string Path { get; set; } = string.Empty;
+}

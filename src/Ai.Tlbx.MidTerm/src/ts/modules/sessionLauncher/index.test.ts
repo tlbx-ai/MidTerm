@@ -40,6 +40,7 @@ describe('session launcher target selection', () => {
         machineId: 'm1',
         machineName: 'Build Box',
         baseUrl: 'https://build-box:2000',
+        currentVersion: '1.0.0',
       },
     ]);
   });
@@ -53,6 +54,7 @@ describe('session launcher target selection', () => {
       machineId: 'm1',
       machineName: 'Build Box',
       baseUrl: 'https://build-box:2000',
+      currentVersion: '1.0.0',
     };
 
     expect(isProviderSupportedOnTarget('terminal', { id: 'local', kind: 'local' })).toBe(true);
@@ -64,36 +66,12 @@ describe('session launcher target selection', () => {
     expect(isProviderSupportedOnTarget('claude', remoteTarget)).toBe(false);
   });
 
-  it('swaps the local picker and remote path field visibility by target type', async () => {
-    const { syncLocationPickerVisibility } = await import('./index');
+  it('only warns when the remote target differs on major and minor version', async () => {
+    const { hasMatchingMajorMinorVersion } = await import('./index');
 
-    const localBrowser = { hidden: true };
-    const remoteBrowser = { hidden: false };
-
-    const isLocal = syncLocationPickerVisibility(
-      { id: 'local', kind: 'local' },
-      { localBrowser, remoteBrowser },
-    );
-
-    expect(isLocal).toBe(true);
-    expect(localBrowser.hidden).toBe(false);
-    expect(remoteBrowser.hidden).toBe(true);
-
-    const remoteTarget: HubSessionLauncherTarget = {
-      id: 'hub:m1',
-      kind: 'hub',
-      machineId: 'm1',
-      machineName: 'Build Box',
-      baseUrl: 'https://build-box:2000',
-    };
-
-    const isRemote = syncLocationPickerVisibility(remoteTarget, {
-      localBrowser,
-      remoteBrowser,
-    });
-
-    expect(isRemote).toBe(false);
-    expect(localBrowser.hidden).toBe(true);
-    expect(remoteBrowser.hidden).toBe(false);
+    expect(hasMatchingMajorMinorVersion('9.1.23-dev', '9.1.0')).toBe(true);
+    expect(hasMatchingMajorMinorVersion('9.1.23-dev', '9.2.0')).toBe(false);
+    expect(hasMatchingMajorMinorVersion('9.1.23-dev', '10.1.0')).toBe(false);
+    expect(hasMatchingMajorMinorVersion('9.1.23-dev', null)).toBe(true);
   });
 });

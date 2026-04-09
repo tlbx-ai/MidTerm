@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Models.Hub;
+using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Hub;
 
@@ -76,6 +77,42 @@ public static class HubEndpoints
         {
             await hubService.RenameSessionAsync(id, sessionId, request, ct);
             return Results.Ok();
+        });
+
+        app.MapGet("/api/hub/machines/{id}/files/picker/home", async (string id, CancellationToken ct) =>
+        {
+            var response = await hubService.GetLauncherHomeAsync(id, ct);
+            return Results.Json(response, AppJsonContext.Default.LauncherPathResponse);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/files/picker/roots", async (string id, CancellationToken ct) =>
+        {
+            var response = await hubService.GetLauncherRootsAsync(id, ct);
+            return Results.Json(response, AppJsonContext.Default.LauncherDirectoryListResponse);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/files/picker/directories", async (string id, string path, CancellationToken ct) =>
+        {
+            var response = await hubService.GetLauncherDirectoriesAsync(id, path, ct);
+            return Results.Json(response, AppJsonContext.Default.LauncherDirectoryListResponse);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/files/picker/writable", async (string id, string path, CancellationToken ct) =>
+        {
+            var response = await hubService.GetLauncherWritableAsync(id, path, ct);
+            return Results.Json(response, AppJsonContext.Default.LauncherDirectoryAccessResponse);
+        });
+
+        app.MapPost("/api/hub/machines/{id}/files/picker/folders", async (string id, LauncherCreateDirectoryRequest request, CancellationToken ct) =>
+        {
+            var response = await hubService.CreateLauncherFolderAsync(id, request, ct);
+            return Results.Json(response, AppJsonContext.Default.LauncherDirectoryMutationResponse);
+        });
+
+        app.MapPost("/api/hub/machines/{id}/files/picker/clone", async (string id, LauncherCloneRepositoryRequest request, CancellationToken ct) =>
+        {
+            var response = await hubService.CloneLauncherRepositoryAsync(id, request, ct);
+            return Results.Json(response, AppJsonContext.Default.LauncherDirectoryMutationResponse);
         });
 
         app.MapPost("/api/hub/updates/apply", async (HubUpdateRolloutRequest request, CancellationToken ct) =>

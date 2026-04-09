@@ -88,6 +88,137 @@ public static class FileEndpoints
             }
         });
 
+        app.MapGet("/api/files/picker/writable", (string path) =>
+        {
+            if (!TryNormalizeExistingDirectory(path, out var fullPath, out var errorResult))
+            {
+                return errorResult!;
+            }
+
+            return Results.Json(
+                new LauncherDirectoryAccessResponse
+                {
+                    Path = fullPath,
+                    CanWrite = IsLauncherDirectoryWritable(fullPath)
+                },
+                AppJsonContext.Default.LauncherDirectoryAccessResponse);
+        });
+
+        app.MapPost("/api/files/picker/folders", (LauncherCreateDirectoryRequest request) =>
+        {
+            if (!TryNormalizeExistingDirectory(request.ParentPath, out var parentPath, out var errorResult))
+            {
+                return errorResult!;
+            }
+
+            if (!IsLauncherDirectoryWritable(parentPath))
+            {
+                return Results.Text("Directory is not writable", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            if (!TryValidateLauncherDirectoryName(request.Name, out var directoryName, out var validationError))
+            {
+                return Results.Text(validationError, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var targetPath = Path.GetFullPath(Path.Combine(parentPath, directoryName));
+            if (!FileService.IsWithinDirectory(targetPath, parentPath))
+            {
+                return Results.Text(
+                    "Folder name must stay within the selected directory",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (Directory.Exists(targetPath) || File.Exists(targetPath))
+            {
+                return Results.Text(
+                    "A file or folder with that name already exists",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            try
+            {
+                Directory.CreateDirectory(targetPath);
+                return Results.Json(
+                    new LauncherDirectoryMutationResponse
+                    {
+                        Path = targetPath
+                    },
+                    AppJsonContext.Default.LauncherDirectoryMutationResponse);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+            catch (IOException ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        });
+
+        app.MapPost("/api/files/picker/clone", async (LauncherCloneRepositoryRequest request, CancellationToken ct) =>
+        {
+            if (!TryNormalizeExistingDirectory(request.ParentPath, out var parentPath, out var errorResult))
+            {
+                return errorResult!;
+            }
+
+            if (!IsLauncherDirectoryWritable(parentPath))
+            {
+                return Results.Text("Directory is not writable", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            if (!TryResolveCloneDirectoryName(request.RepositoryUrl, out var directoryName))
+            {
+                return Results.Text("Repository URL is invalid", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var repositoryUrl = request.RepositoryUrl.Trim();
+            var targetPath = Path.GetFullPath(Path.Combine(parentPath, directoryName));
+            if (!FileService.IsWithinDirectory(targetPath, parentPath))
+            {
+                return Results.Text(
+                    "Repository destination must stay within the selected directory",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (Directory.Exists(targetPath) || File.Exists(targetPath))
+            {
+                return Results.Text(
+                    "A file or folder with that name already exists",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                var (exitCode, stdout, stderr) = await GitCommandRunner.CloneAsync(
+                    parentPath,
+                    repositoryUrl,
+                    directoryName);
+                if (exitCode != 0)
+                {
+                    var failureText = string.IsNullOrWhiteSpace(stderr)
+                        ? (string.IsNullOrWhiteSpace(stdout) ? "Git clone failed" : stdout.Trim())
+                        : stderr.Trim();
+                    return Results.Text(
+                        failureText,
+                        statusCode: exitCode < 0 ? StatusCodes.Status500InternalServerError : StatusCodes.Status400BadRequest);
+                }
+
+                return Results.Json(
+                    new LauncherDirectoryMutationResponse
+                    {
+                        Path = targetPath
+                    },
+                    AppJsonContext.Default.LauncherDirectoryMutationResponse);
+            }
+            catch (OperationCanceledException)
+            {
+                return Results.Text("Git clone was cancelled", statusCode: 499);
+            }
+        });
+
         app.MapPost("/api/files/register", (FileRegisterRequest request) =>
         {
             if (string.IsNullOrEmpty(request.SessionId))
@@ -546,6 +677,103 @@ public static class FileEndpoints
         }
 
         return true;
+    }
+
+    internal static bool IsLauncherDirectoryWritable(string path)
+    {
+        try
+        {
+            var probePath = Path.Combine(path, $".midterm-write-test-{Guid.NewGuid():N}.tmp");
+            using (var stream = new FileStream(
+                       probePath,
+                       new FileStreamOptions
+                       {
+                           Mode = FileMode.CreateNew,
+                           Access = FileAccess.Write,
+                           Share = FileShare.None,
+                           Options = FileOptions.DeleteOnClose
+                       }))
+            {
+                stream.WriteByte(0);
+            }
+
+            if (File.Exists(probePath))
+            {
+                File.Delete(probePath);
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static bool TryValidateLauncherDirectoryName(
+        string? name,
+        out string normalizedName,
+        out string error)
+    {
+        normalizedName = (name ?? string.Empty).Trim();
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(normalizedName))
+        {
+            error = "Folder name is required";
+            return false;
+        }
+
+        if (normalizedName is "." or ".." ||
+            Path.IsPathRooted(normalizedName) ||
+            normalizedName.Contains(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
+            normalizedName.Contains(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+        {
+            error = "Use a single folder name without path separators";
+            return false;
+        }
+
+        if (normalizedName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            error = "Folder name contains invalid characters";
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static bool TryResolveCloneDirectoryName(string? repositoryUrl, out string directoryName)
+    {
+        directoryName = string.Empty;
+        var trimmed = (repositoryUrl ?? string.Empty).Trim().TrimEnd('/', '\\');
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return false;
+        }
+
+        string candidate;
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            candidate = Path.GetFileName(uri.AbsolutePath.TrimEnd('/'));
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            var separatorIndex = Math.Max(
+                trimmed.LastIndexOf('/'),
+                trimmed.LastIndexOf(':'));
+            candidate = separatorIndex >= 0 ? trimmed[(separatorIndex + 1)..] : trimmed;
+        }
+
+        if (candidate.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = candidate[..^4];
+        }
+
+        return TryValidateLauncherDirectoryName(candidate, out directoryName, out _);
     }
 
     private static string NormalizeLauncherPath(string path)

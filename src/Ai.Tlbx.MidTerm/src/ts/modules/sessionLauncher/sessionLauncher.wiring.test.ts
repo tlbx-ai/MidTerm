@@ -9,11 +9,6 @@ const source = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 
 describe('session launcher visibility wiring', () => {
-  it('switches between the local browser and remote path field based on target type', () => {
-    expect(source).toContain('sections.localBrowser.hidden = !isLocalTarget;');
-    expect(source).toContain('sections.remoteBrowser.hidden = isLocalTarget;');
-  });
-
   it('keeps hidden launcher sections out of layout even when their classes set display', () => {
     expect(css).toContain('.session-launcher-launch[hidden],');
     expect(css).toContain('.session-launcher-browser[hidden],');
@@ -21,13 +16,13 @@ describe('session launcher visibility wiring', () => {
     expect(css).toContain('display: none !important;');
   });
 
-  it('uses the configured start path for initial load while keeping home as a separate target', () => {
-    expect(source).toContain('const homePath = home.homePath || home.path;');
-    expect(source).toContain('const startPath = home.startPath || homePath;');
-    expect(source).toContain('startPath,');
-    expect(source).toContain('currentPath: startPath,');
-    expect(source).toContain('pathDraft: startPath,');
-    expect(source).toContain('void loadDirectory(state.startPath, { recordHistory: false });');
+  it('loads per-target picker roots and start paths before browsing directories', () => {
+    expect(source).toContain(
+      'resetLauncherBrowserState(state, pathResponse, rootsResponse.entries);',
+    );
+    expect(source).toContain('fetchHomePath(target),');
+    expect(source).toContain('fetchLauncherRoots(target),');
+    expect(source).toContain('const initialPath = options?.path?.trim() || state.startPath;');
   });
 
   it('splits Codex and Claude launch cards into new and resume actions', () => {
@@ -37,5 +32,15 @@ describe('session launcher visibility wiring', () => {
     expect(source).toContain('Resume Conversation');
     expect(source).toContain('openProviderResumePicker');
     expect(css).toContain('.session-launcher-provider-actions {');
+  });
+
+  it('adds folder and clone actions while moving the directory field onto its own row', () => {
+    expect(source).toContain('data-action="new-folder"');
+    expect(source).toContain('data-action="clone-repo"');
+    expect(source).toContain('showTextPrompt');
+    expect(source).toContain('getLauncherApiBasePath(target)');
+    expect(css).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(css).toContain('.session-launcher-path {');
+    expect(css).toContain('grid-column: 1 / -1;');
   });
 });

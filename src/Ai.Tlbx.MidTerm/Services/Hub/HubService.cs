@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
@@ -273,6 +274,92 @@ public sealed class HubService
             AppJsonContext.Default.RenameSessionRequest,
             ct);
         await EnsureSuccessAsync(response, ct);
+    }
+
+    public async Task<LauncherPathResponse> GetLauncherHomeAsync(string machineId, CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync("/api/files/picker/home", ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherPathResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker home response was empty.");
+    }
+
+    public async Task<LauncherDirectoryListResponse> GetLauncherRootsAsync(
+        string machineId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync("/api/files/picker/roots", ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryListResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker roots response was empty.");
+    }
+
+    public async Task<LauncherDirectoryListResponse> GetLauncherDirectoriesAsync(
+        string machineId,
+        string path,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync(
+            $"/api/files/picker/directories?path={Uri.EscapeDataString(path)}",
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryListResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker directories response was empty.");
+    }
+
+    public async Task<LauncherDirectoryAccessResponse> GetLauncherWritableAsync(
+        string machineId,
+        string path,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync(
+            $"/api/files/picker/writable?path={Uri.EscapeDataString(path)}",
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryAccessResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker writable response was empty.");
+    }
+
+    public async Task<LauncherDirectoryMutationResponse> CreateLauncherFolderAsync(
+        string machineId,
+        LauncherCreateDirectoryRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/files/picker/folders",
+            request,
+            AppJsonContext.Default.LauncherCreateDirectoryRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryMutationResponse, ct)
+            ?? throw new InvalidOperationException("Remote create-folder response was empty.");
+    }
+
+    public async Task<LauncherDirectoryMutationResponse> CloneLauncherRepositoryAsync(
+        string machineId,
+        LauncherCloneRepositoryRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/files/picker/clone",
+            request,
+            AppJsonContext.Default.LauncherCloneRepositoryRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryMutationResponse, ct)
+            ?? throw new InvalidOperationException("Remote clone response was empty.");
     }
 
     public async Task<HubUpdateRolloutResponse> ApplyUpdatesAsync(

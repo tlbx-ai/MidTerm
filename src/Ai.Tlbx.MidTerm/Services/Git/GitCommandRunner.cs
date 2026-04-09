@@ -10,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 internal static class GitCommandRunner
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CloneTimeout = TimeSpan.FromMinutes(10);
     private const int MaxPatchOutputChars = 160_000;
     private static string? _runAsUser;
     private static bool _isServiceMode;
@@ -175,6 +176,17 @@ internal static class GitCommandRunner
         if (exitCode != 0) return 0;
         var trimmed = stdout.Trim();
         return string.IsNullOrEmpty(trimmed) ? 0 : trimmed.Split('\n').Length;
+    }
+
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> CloneAsync(
+        string workingDir,
+        string repositoryUrl,
+        string destinationDirectoryName)
+    {
+        return RunGitAsync(
+            workingDir,
+            ["clone", "--", repositoryUrl, destinationDirectoryName],
+            CloneTimeout);
     }
 
     internal static async Task<string[]> GetTrackedAndUntrackedPathsAsync(string repoRoot)
@@ -378,13 +390,26 @@ internal static class GitCommandRunner
         _ => c.ToString()
     };
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
+    private static Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(
+        string workingDir,
+        params string[] args)
     {
-        var fullArgs = new string[args.Length + 1];
-        fullArgs[0] = "--no-optional-locks";
-        args.CopyTo(fullArgs, 1);
+        return RunGitAsync(workingDir, args, CommandTimeout);
+    }
 
-        using var cts = new CancellationTokenSource(CommandTimeout);
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(
+        string workingDir,
+        IReadOnlyList<string> args,
+        TimeSpan timeout)
+    {
+        var fullArgs = new string[args.Count + 1];
+        fullArgs[0] = "--no-optional-locks";
+        for (var i = 0; i < args.Count; i++)
+        {
+            fullArgs[i + 1] = args[i];
+        }
+
+        using var cts = new CancellationTokenSource(timeout);
 
         try
         {

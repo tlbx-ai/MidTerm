@@ -5878,6 +5878,30 @@ body.has-app-background::after {
   font-family: var(--font-mono);
 }
 
+.dialog-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-dialog-muted, var(--text-input-background, var(--bg-input)));
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.dialog-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--border-color));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 28%, transparent);
+}
+
+.dialog-input-error {
+  margin-top: 10px;
+  color: var(--accent-red);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
 .share-dialog-modal {
   width: min(680px, 92vw);
   max-height: min(82vh, 760px);
@@ -6053,6 +6077,7 @@ body.has-app-background::after {
 .session-launcher-provider-hint {
   color: var(--text-secondary);
   font-size: var(--fs-sm);
+  white-space: pre-line;
 }
 
 .session-launcher-launch[hidden],
@@ -6091,7 +6116,7 @@ body.has-app-background::after {
 
 .session-launcher-toolbar {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   align-items: center;
 }
@@ -6100,6 +6125,8 @@ body.has-app-background::after {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  justify-content: center;
+  width: 100%;
 }
 
 .session-launcher-nav-icon {
@@ -6116,6 +6143,7 @@ body.has-app-background::after {
   width: 100%;
   display: flex;
   align-items: center;
+  grid-column: 1 / -1;
   padding: 0 12px;
   border: 1px solid var(--border-color);
   border-radius: 12px;

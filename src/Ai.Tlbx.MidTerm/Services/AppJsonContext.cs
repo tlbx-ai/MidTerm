@@ -174,6 +174,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LauncherDirectoryEntry))]
 [JsonSerializable(typeof(LauncherDirectoryEntry[]))]
 [JsonSerializable(typeof(LauncherDirectoryListResponse))]
+[JsonSerializable(typeof(LauncherDirectoryAccessResponse))]
+[JsonSerializable(typeof(LauncherCreateDirectoryRequest))]
+[JsonSerializable(typeof(LauncherCloneRepositoryRequest))]
+[JsonSerializable(typeof(LauncherDirectoryMutationResponse))]
 
 // --- History ---
 [JsonSerializable(typeof(HistoryPatchRequest))]
