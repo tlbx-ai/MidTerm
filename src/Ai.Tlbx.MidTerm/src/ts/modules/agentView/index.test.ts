@@ -6156,4 +6156,112 @@ describe('agentView dev errors', () => {
     const hiddenHistory = buildLensHistoryEntries(snapshot, []);
     expect(hiddenHistory).toHaveLength(0);
   });
+
+  it('labels canonical agent state and agent error runtime rows distinctly', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-agent-runtime',
+      provider: 'codex',
+      generatedAt: '2026-04-09T08:00:00Z',
+      latestSequence: 2,
+      totalHistoryCount: 2,
+      estimatedTotalHistoryHeightPx: 120,
+      historyWindowStart: 0,
+      historyWindowEnd: 2,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-09T08:00:01Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: null,
+        state: 'idle',
+        stateLabel: 'Idle',
+        model: null,
+        effort: null,
+        startedAt: null,
+        completedAt: null,
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      transcript: [
+        {
+          entryId: 'runtime-agent-state',
+          order: 1,
+          estimatedHeightPx: 52,
+          kind: 'system',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'info',
+          itemType: 'agent_state',
+          title: 'Agent state',
+          body: 'codex_apps starting.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:00Z',
+          updatedAt: '2026-04-09T08:00:00Z',
+        },
+        {
+          entryId: 'runtime-agent-error',
+          order: 2,
+          estimatedHeightPx: 68,
+          kind: 'notice',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'agent.error',
+          itemType: 'agent_error',
+          title: 'Agent error',
+          body: '[features].collab is deprecated. Use [features].multi_agent instead.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:01Z',
+          updatedAt: '2026-04-09T08:00:01Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot, []);
+
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
+      kind: 'system',
+      label: 'Agent State',
+      sourceItemType: 'agent_state',
+      tone: 'info',
+    });
+    expect(history[1]).toMatchObject({
+      kind: 'notice',
+      label: 'Agent Error',
+      sourceItemType: 'agent_error',
+      tone: 'attention',
+    });
+  });
 });

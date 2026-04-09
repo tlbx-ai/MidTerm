@@ -1741,6 +1741,7 @@ public sealed partial class SessionLensPulseService
             RuntimeTranscriptKindFromEventType(lensEvent.Type),
             lensEvent.CreatedAt);
         entry.Status = RuntimeTranscriptStatusFromEventType(lensEvent.Type);
+        entry.ItemType = RuntimeTranscriptItemTypeFromEventType(lensEvent.Type);
         entry.Title = RuntimeTranscriptTitleFromEventType(lensEvent.Type);
         entry.Body = LensHistoryTextSanitizer.JoinDistinctSections(message, detail);
         entry.Streaming = false;
@@ -2481,6 +2482,8 @@ public sealed partial class SessionLensPulseService
     {
         return eventType switch
         {
+            "agent.error" => "notice",
+            "agent.state" => "system",
             "runtime.error" => "notice",
             "runtime.warning" => "system",
             "config.warning" => "notice",
@@ -2493,6 +2496,8 @@ public sealed partial class SessionLensPulseService
     {
         return eventType switch
         {
+            "agent.error" => "agent.error",
+            "agent.state" => "info",
             "runtime.error" => "runtime.error",
             "runtime.warning" => "runtime.warning",
             "config.warning" => "warning",
@@ -2502,10 +2507,22 @@ public sealed partial class SessionLensPulseService
         };
     }
 
+    private static string RuntimeTranscriptItemTypeFromEventType(string? eventType)
+    {
+        return eventType switch
+        {
+            "agent.error" => "agent_error",
+            "agent.state" => "agent_state",
+            _ => string.Empty
+        };
+    }
+
     private static string RuntimeTranscriptTitleFromEventType(string? eventType)
     {
         return eventType switch
         {
+            "agent.error" => "Agent error",
+            "agent.state" => "Agent state",
             "runtime.error" => "Error",
             "runtime.warning" => "Runtime",
             "thread.metadata.updated" => "Thread updated",

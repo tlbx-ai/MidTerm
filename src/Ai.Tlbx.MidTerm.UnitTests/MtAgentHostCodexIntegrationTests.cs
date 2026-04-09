@@ -698,11 +698,14 @@ public sealed class MtAgentHostCodexIntegrationTests
             });
 
             _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-unknown");
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnEvents = await LensHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 20);
+                envelope => envelope.Event.Type == "item.updated" &&
+                            envelope.Event.TurnId == "turn-remote-1" &&
+                            envelope.Event.Item?.ItemType == "unknown_agent_message",
+                maxEvents: 20,
+                timeout: TimeSpan.FromSeconds(10));
 
             Assert.Contains(
                 turnEvents,
@@ -715,6 +718,135 @@ public sealed class MtAgentHostCodexIntegrationTests
         }
         finally
         {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_MapsCodexMcpStartupStatusIntoCanonicalAgentStateRuntimeEvents()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-agent-state-1",
+            assistantReply: "Agent state handled.",
+            emitMcpStartupStatus: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            _ = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-agent-state",
+                SessionId = "session-agent-state",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-agent-state",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-agent-state-1"
+                    },
+                    ResumeThreadId = "thread-remote-agent-state-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-agent-state");
+            var attachEvents = await LensHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "agent.state",
+                maxEvents: 8,
+                timeout: TimeSpan.FromSeconds(10));
+
+            Assert.Contains(
+                attachEvents,
+                envelope => envelope.Event.Type == "agent.state" &&
+                            envelope.Event.RuntimeMessage?.Message == "codex_apps starting.");
+            Assert.Contains(
+                attachEvents,
+                envelope => envelope.Event.Type == "session.ready");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_GroupsStartupStderrBlocksIntoCanonicalAgentErrorRuntimeEvents()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var previousBlock = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_STARTUP_STDERR");
+        Environment.SetEnvironmentVariable(
+            "MIDTERM_FAKE_CODEX_STARTUP_STDERR",
+            "ERROR\n[features].collab is deprecated. Use [features].multi_agent instead.\n\nEnable it with `--enable multi_agent` or `[features].multi_agent` in config.toml.");
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingEvents = new Queue<LensHostEventEnvelope>();
+
+        try
+        {
+            _ = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-agent-error",
+                SessionId = "session-agent-error",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-agent-error",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-agent-error");
+            var attachEvents = await LensHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingEvents,
+                envelope => envelope.Event.Type == "agent.error",
+                maxEvents: 8,
+                timeout: TimeSpan.FromSeconds(10));
+
+            Assert.Contains(
+                attachEvents,
+                envelope => envelope.Event.Type == "agent.error" &&
+                            envelope.Event.RuntimeMessage?.Message.Contains(
+                                "[features].collab is deprecated. Use [features].multi_agent instead.",
+                                StringComparison.Ordinal) == true &&
+                            envelope.Event.RuntimeMessage?.Message.Contains(
+                                "Enable it with `--enable multi_agent`",
+                                StringComparison.Ordinal) == true);
+            Assert.Contains(
+                attachEvents,
+                envelope => envelope.Event.Type == "session.ready");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIDTERM_FAKE_CODEX_STARTUP_STDERR", previousBlock);
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);

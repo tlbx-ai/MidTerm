@@ -82,6 +82,17 @@ describe('agent view Lens wiring', () => {
     );
   });
 
+  it('documents quiet agent-state rows and stronger red agent-error rows', () => {
+    expect(css).toContain('.agent-history-notice.agent-history-attention {');
+    expect(css).toContain('.agent-history-notice.agent-history-attention .agent-history-badge-notice {');
+    expect(css).toContain('.agent-history-notice.agent-history-attention .agent-history-body {');
+    expect(lensDesign).toContain('quiet canonical `Agent State` system rows');
+    expect(lensDesign).toContain('canonical `Agent Error` notice rows with stronger red emphasis');
+    expect(historyDomSource).toContain(
+      "if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {",
+    );
+  });
+
   it('binds the Lens pane background to terminal transparency tokens', () => {
     expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
     expect(lensDesign).toContain(

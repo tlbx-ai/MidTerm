@@ -2074,6 +2074,59 @@ public sealed class SessionLensPulseServiceTests
         Assert.False(service.HasHistory("s2"));
     }
 
+    [Fact]
+    public void GetSnapshot_PreservesCanonicalAgentStateAndAgentErrorRuntimeItemTypes()
+    {
+        var service = new SessionLensPulseService();
+
+        service.Append(new LensPulseEvent
+        {
+            EventId = "agent-state",
+            SessionId = "s-agent-runtime",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = ParseUtc("2026-04-09T08:10:00Z"),
+            Type = "agent.state",
+            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            {
+                Message = "codex_apps starting."
+            }
+        });
+        service.Append(new LensPulseEvent
+        {
+            EventId = "agent-error",
+            SessionId = "s-agent-runtime",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            CreatedAt = ParseUtc("2026-04-09T08:10:01Z"),
+            Type = "agent.error",
+            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            {
+                Message = "[features].collab is deprecated. Use [features].multi_agent instead."
+            }
+        });
+
+        var snapshot = service.GetSnapshot("s-agent-runtime");
+
+        Assert.NotNull(snapshot);
+        Assert.Collection(
+            snapshot!.Transcript.OrderBy(entry => entry.Order),
+            entry =>
+            {
+                Assert.Equal("system", entry.Kind);
+                Assert.Equal("agent_state", entry.ItemType);
+                Assert.Equal("Agent state", entry.Title);
+                Assert.Equal("codex_apps starting.", entry.Body);
+            },
+            entry =>
+            {
+                Assert.Equal("notice", entry.Kind);
+                Assert.Equal("agent_error", entry.ItemType);
+                Assert.Equal("Agent error", entry.Title);
+                Assert.Equal("[features].collab is deprecated. Use [features].multi_agent instead.", entry.Body);
+            });
+    }
+
     private static bool WaitForCondition(Func<bool> predicate, int attempts = 80, int delayMilliseconds = 25)
     {
         for (var i = 0; i < attempts; i += 1)

@@ -24,7 +24,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitTurnIds,
         bool emitLateDiffAfterCompletion,
         bool emitMcpToolProgress,
-        bool emitUnknownAgentNotification)
+        bool emitUnknownAgentNotification,
+        bool emitMcpStartupStatus)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
@@ -34,6 +35,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitLateDiffAfterCompletion = emitLateDiffAfterCompletion;
         EmitMcpToolProgress = emitMcpToolProgress;
         EmitUnknownAgentNotification = emitUnknownAgentNotification;
+        EmitMcpStartupStatus = emitMcpStartupStatus;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
@@ -55,6 +57,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitUnknownAgentNotification { get; }
 
+    public bool EmitMcpStartupStatus { get; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -62,7 +66,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitTurnIds = false,
         bool emitLateDiffAfterCompletion = false,
         bool emitMcpToolProgress = false,
-        bool emitUnknownAgentNotification = false)
+        bool emitUnknownAgentNotification = false,
+        bool emitMcpStartupStatus = false)
     {
         var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
         return new FakeCodexWebSocketServer(
@@ -73,7 +78,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
             emitTurnIds,
             emitLateDiffAfterCompletion,
             emitMcpToolProgress,
-            emitUnknownAgentNotification);
+            emitUnknownAgentNotification,
+            emitMcpStartupStatus);
     }
 
     public async ValueTask DisposeAsync()
@@ -207,6 +213,19 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitMcpStartupStatus)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "mcpServer/startupStatus/updated",
+                                @params = new
+                                {
+                                    name = "codex_apps",
+                                    status = "starting",
+                                    error = (string?)null
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "thread/start" when id is not null:
@@ -221,6 +240,19 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitMcpStartupStatus)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "mcpServer/startupStatus/updated",
+                                @params = new
+                                {
+                                    name = "codex_apps",
+                                    status = "starting",
+                                    error = (string?)null
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "turn/start" when id is not null:

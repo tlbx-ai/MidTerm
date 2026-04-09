@@ -11140,6 +11140,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border-top-color: color-mix(in srgb, var(--accent-red) 28%, transparent);
 }
 
+.agent-history-notice.agent-history-attention {
+  border-top-color: color-mix(in srgb, var(--accent-red) 42%, transparent);
+}
+
 .agent-history-system {
   border-top-color: color-mix(in srgb, var(--agent-lens-rail) 24%, transparent);
 }
@@ -11193,6 +11197,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-badge-system,
 .agent-history-badge-notice {
   color: var(--text-muted);
+}
+
+.agent-history-notice.agent-history-attention .agent-history-badge-notice {
+  color: color-mix(in srgb, var(--accent-red) 78%, white 12%);
 }
 
 .agent-history-badge-reasoning,
@@ -11279,6 +11287,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-system .agent-history-meta {
   font-size: 9px;
   color: color-mix(in srgb, var(--text-muted) 72%, transparent);
+}
+
+.agent-history-notice.agent-history-attention .agent-history-meta {
+  color: color-mix(in srgb, var(--accent-red) 56%, var(--text-muted));
 }
 
 .agent-history-meta {
@@ -12340,6 +12352,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-notice .agent-history-body {
   font-size: 0.88rem;
   line-height: 1.56;
+}
+
+.agent-history-notice.agent-history-attention .agent-history-body {
+  color: color-mix(in srgb, var(--accent-red) 74%, var(--text-primary));
 }
 
 .agent-history-system .agent-history-body {

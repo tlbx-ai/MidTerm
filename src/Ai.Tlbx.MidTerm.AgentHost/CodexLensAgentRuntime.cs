@@ -12,6 +12,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
+    private const int CodexStderrBlockFlushDelayMs = 175;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {
@@ -441,19 +442,72 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
+            var stderrBlockLines = new List<string>();
+            var pendingBlankLine = false;
             while (!ct.IsCancellationRequested && _process is { HasExited: false })
             {
-                var line = await _error!.ReadLineAsync(ct).ConfigureAwait(false);
+                var readTask = _error!.ReadLineAsync(ct).AsTask();
+                if (stderrBlockLines.Count > 0)
+                {
+                    var completed = await Task.WhenAny(
+                        readTask,
+                        Task.Delay(CodexStderrBlockFlushDelayMs, ct)).ConfigureAwait(false);
+                    if (!ReferenceEquals(completed, readTask))
+                    {
+                        FlushCodexErrorBlock(stderrBlockLines);
+                        pendingBlankLine = false;
+                        continue;
+                    }
+                }
+
+                var line = await readTask.ConfigureAwait(false);
                 if (line is null)
                 {
                     break;
                 }
 
-                if (!string.IsNullOrWhiteSpace(line))
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0)
                 {
-                    EmitRuntimeMessage("runtime.warning", line.Trim(), line.Trim());
+                    if (stderrBlockLines.Count > 0)
+                    {
+                        pendingBlankLine = true;
+                    }
+
+                    continue;
                 }
+
+                if (stderrBlockLines.Count == 0)
+                {
+                    if (IsCodexStderrSeverityHeader(trimmed))
+                    {
+                        stderrBlockLines.Add(trimmed);
+                        pendingBlankLine = false;
+                        continue;
+                    }
+
+                    EmitRuntimeMessage("runtime.warning", trimmed, trimmed);
+                    continue;
+                }
+
+                if (pendingBlankLine)
+                {
+                    if (IsCodexStderrSeverityHeader(trimmed))
+                    {
+                        FlushCodexErrorBlock(stderrBlockLines);
+                        stderrBlockLines.Add(trimmed);
+                        pendingBlankLine = false;
+                        continue;
+                    }
+
+                    stderrBlockLines.Add(string.Empty);
+                    pendingBlankLine = false;
+                }
+
+                stderrBlockLines.Add(trimmed);
             }
+
+            FlushCodexErrorBlock(stderrBlockLines);
         }
         catch (OperationCanceledException)
         {
@@ -1133,6 +1187,32 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 break;
             }
 
+            case "mcpServer/startupStatus/updated":
+            {
+                var serverName = GetString(payload, "name") ?? "MCP server";
+                var status = GetString(payload, "status");
+                var error = GetScalarString(payload, "error")
+                            ?? GetString(payload, "error", "message");
+                var hasError = !string.IsNullOrWhiteSpace(error);
+                _emit(CreateEvent(
+                    hasError ? "agent.error" : "agent.state",
+                    ResolveTurnId(payload),
+                    null,
+                    null,
+                    "codex.app-server.notification",
+                    method,
+                    payload,
+                    lensEvent =>
+                    {
+                        lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                        {
+                            Message = BuildCodexMcpStartupStatusMessage(serverName, status, error),
+                            Detail = hasError ? error : null
+                        };
+                    }));
+                break;
+            }
+
             case "thread/realtime/started":
             case "thread/realtime/itemAdded":
             case "thread/realtime/outputAudio/delta":
@@ -1267,6 +1347,108 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 Detail = detail
             };
         }));
+    }
+
+    private void FlushCodexErrorBlock(List<string> blockLines)
+    {
+        if (blockLines.Count == 0)
+        {
+            return;
+        }
+
+        var eventType = ClassifyCodexStderrEventType(blockLines);
+        var message = BuildCodexStderrBlockMessage(blockLines);
+        blockLines.Clear();
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        EmitRuntimeMessage(eventType, message, null);
+    }
+
+    private static bool IsCodexStderrSeverityHeader(string line)
+    {
+        return line.Trim() switch
+        {
+            "ERROR" or "WARNING" or "WARN" or "INFO" => true,
+            _ => false
+        };
+    }
+
+    private static string ClassifyCodexStderrEventType(IReadOnlyList<string> blockLines)
+    {
+        foreach (var line in blockLines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            return trimmed switch
+            {
+                "ERROR" => "agent.error",
+                "WARN" or "WARNING" => "runtime.warning",
+                _ when trimmed.Contains("error", StringComparison.OrdinalIgnoreCase) => "agent.error",
+                _ => "runtime.warning"
+            };
+        }
+
+        return "runtime.warning";
+    }
+
+    private static string BuildCodexStderrBlockMessage(IReadOnlyList<string> blockLines)
+    {
+        var normalized = blockLines.ToList();
+        while (normalized.Count > 0 && string.IsNullOrWhiteSpace(normalized[0]))
+        {
+            normalized.RemoveAt(0);
+        }
+
+        while (normalized.Count > 0 && string.IsNullOrWhiteSpace(normalized[^1]))
+        {
+            normalized.RemoveAt(normalized.Count - 1);
+        }
+
+        if (normalized.Count > 0 && IsCodexStderrSeverityHeader(normalized[0]))
+        {
+            normalized.RemoveAt(0);
+            while (normalized.Count > 0 && string.IsNullOrWhiteSpace(normalized[0]))
+            {
+                normalized.RemoveAt(0);
+            }
+        }
+
+        if (normalized.Count == 0)
+        {
+            normalized = blockLines
+                .Where(static line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+        }
+
+        return string.Join("\n", normalized);
+    }
+
+    private static string BuildCodexMcpStartupStatusMessage(
+        string serverName,
+        string? status,
+        string? error)
+    {
+        var name = string.IsNullOrWhiteSpace(serverName) ? "MCP server" : serverName.Trim();
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            return string.IsNullOrWhiteSpace(status)
+                ? string.Create(CultureInfo.InvariantCulture, $"{name} reported a startup error.")
+                : string.Create(CultureInfo.InvariantCulture, $"{name} {status.Trim()}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{name} updated its startup status.");
+        }
+
+        return string.Create(CultureInfo.InvariantCulture, $"{name} {status.Trim()}.");
     }
 
     private LensHostEventEnvelope CreateEvent(
@@ -2607,6 +2789,24 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return current is { ValueKind: JsonValueKind.String } value
             ? value.GetString()
             : null;
+    }
+
+    private static string? GetScalarString(JsonElement element, params string[] path)
+    {
+        var current = Traverse(element, path);
+        if (current is not JsonElement value)
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => bool.TrueString,
+            JsonValueKind.False => bool.FalseString,
+            _ => null
+        };
     }
 
     private static bool GetBoolean(JsonElement element, params string[] path)

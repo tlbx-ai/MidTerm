@@ -128,7 +128,7 @@ export function buildLensHistoryEntries(
         order: entry.order,
         kind,
         tone: toneFromState(entry.status),
-        label: historyLabel(kind),
+        label: resolveHistoryEntryLabel(kind, entry.itemType),
         title: entry.title || '',
         body: entry.body || '',
         commandText: entry.commandText ?? null,
@@ -166,6 +166,17 @@ export function buildLensHistoryEntries(
         entry.kind === 'system' ||
         entry.kind === 'notice',
     );
+}
+
+function resolveHistoryEntryLabel(kind: HistoryKind, itemType: string | null | undefined): string {
+  switch (normalizeHistoryItemType(itemType)) {
+    case 'agentstate':
+      return lensText('lens.label.agentState', 'Agent State');
+    case 'agenterror':
+      return lensText('lens.label.agentError', 'Agent Error');
+    default:
+      return historyLabel(kind);
+  }
 }
 
 export function preservePersistentCommandEntries(

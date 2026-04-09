@@ -266,10 +266,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const badge = document.createElement('span');
     badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
-    badge.textContent = resolveHistoryBadgeLabel(
-      entry.kind,
-      deps.getState(sessionId)?.snapshot?.provider,
-    );
+    badge.textContent = resolveHistoryBadgeText(entry, sessionId);
     header.appendChild(badge);
 
     if (entry.meta.trim()) {
@@ -280,6 +277,14 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
 
     return header;
+  }
+
+  function resolveHistoryBadgeText(entry: LensHistoryEntry, sessionId: string): string {
+    if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
+      return entry.label.trim();
+    }
+
+    return resolveHistoryBadgeLabel(entry.kind, deps.getState(sessionId)?.snapshot?.provider);
   }
 
   function appendHistoryTitle(
