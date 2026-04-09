@@ -258,7 +258,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Bullet and numbered lists should stack compactly, with minimal vertical slack between adjacent items and between the surrounding text and the list block.
 - List markers must stay fully visible inside the rendered assistant markdown block. Overflow containment in Lens must not crop bullet or number markers.
 - Current Codex Lens markdown gap markers should stay very tight, roughly a quarter-em pause per blank line rather than the older taller half-em spacing.
-- Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
+- Streaming assistant text should render through the same markdown surface as settled assistant output so lists, headings, and dense paragraph spacing stay stable while the row grows in place.
+- If settlement later adds higher-confidence file-link or image-preview enrichment, that refinement must preserve the same markdown-rendered body instead of downgrading the row to raw plain text.
 - That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
 - Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
 - Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
@@ -415,7 +416,8 @@ Status in this branch/work item:
 - implemented: when off-window canonical history changes arrive while the user is browsing older history, Lens now refreshes that window instead of silently leaving remote spacer geometry stale
 - implemented: when a hidden Lens session returns to view while its cached browser window is still off the live edge, Lens now refreshes the latest window and rerenders immediately when hidden-history compaction finishes so the viewport does not strand the user inside spacer-only voids
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
-- implemented: finalized Lens transcript rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass, while streaming assistant text stays raw until settlement
+- implemented: assistant rows now stay markdown-rendered while streaming and remain markdown-rendered after later turns begin, so settled replies do not visually fall back to plain text
+- implemented: finalized Lens transcript rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Lens file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
 - implemented: assistant markdown blank-line gap markers now use a tighter quarter-em pause per blank line instead of the older taller half-em spacing
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Lens body

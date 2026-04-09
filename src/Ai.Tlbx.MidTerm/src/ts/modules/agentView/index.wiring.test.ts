@@ -166,7 +166,7 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('Bullet and numbered lists should stack compactly');
   });
 
-  it('documents finalized assistant enrichment without leaking into streaming or artifact rows', () => {
+  it('documents live assistant markdown rendering without degrading into raw text', () => {
     expect(css).toContain('.agent-history-inline-link {');
     expect(css).toContain('text-decoration:');
     expect(css).toContain('    dotted');
@@ -174,11 +174,13 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-inline-preview-frame {');
     expect(css).toContain('.agent-history-attachment-image-frame {');
     expect(css).toContain('object-fit: contain;');
-    expect(historyDomSource).toContain(
-      'Keep streamed assistant text raw until settlement so FileRadar enrichment',
+    expect(historyDomSource).toContain("case 'streaming':");
+    expect(historyDomSource).toContain("case 'markdown':");
+    expect(lensDesign).toContain(
+      'Streaming assistant text should render through the same markdown surface as settled assistant output',
     );
     expect(lensDesign).toContain(
-      'Finalized assistant messages may receive a post-settlement enrichment pass',
+      'must preserve the same markdown-rendered body instead of downgrading the row to raw plain text',
     );
     expect(lensDesign).toContain('Assistant-only semantic tinting should remain subtle.');
     expect(lensDesign).toContain(

@@ -772,14 +772,25 @@ export function withLiveAssistantState(
     return entries;
   }
 
+  const activeTurnId = snapshot.currentTurn.turnId?.trim() ?? '';
+  if (!activeTurnId) {
+    return entries;
+  }
+
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
-    if (!entry || entry.kind !== 'assistant') {
+    if (!entry || entry.kind !== 'assistant' || entry.sourceTurnId !== activeTurnId) {
       continue;
     }
 
     return entries.map((candidate, candidateIndex) =>
-      candidateIndex === index ? { ...candidate, live: true } : candidate,
+      candidate.kind === 'assistant'
+        ? candidateIndex === index
+          ? { ...candidate, live: true }
+          : candidate.live
+            ? { ...candidate, live: false }
+            : candidate
+        : candidate,
     );
   }
 

@@ -5098,11 +5098,12 @@ describe('agentView dev errors', () => {
     expect(mobileEstimate).toBeGreaterThan(desktopEstimate);
   });
 
-  it('marks the newest assistant row as live while the current turn is still running', async () => {
+  it('marks only the current turn assistant row as live while the current turn is still running', async () => {
     const { withLiveAssistantState } = await import('./index');
 
     const snapshot = {
       currentTurn: {
+        turnId: 'turn-2',
         state: 'running',
       },
     } as any;
@@ -5125,14 +5126,77 @@ describe('agentView dev errors', () => {
         tone: 'info',
         label: 'Assistant',
         title: '',
+        body: 'Settled answer',
+        meta: 'now',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant-2',
+        order: 3,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
         body: 'Partial answer',
         meta: 'now',
+        sourceTurnId: 'turn-2',
       },
     ] as any;
 
     const marked = withLiveAssistantState(snapshot, entries);
     expect(marked[0]?.live).toBeUndefined();
-    expect(marked[1]?.live).toBe(true);
+    expect(marked[1]?.live).toBeUndefined();
+    expect(marked[2]?.live).toBe(true);
+  });
+
+  it('keeps the previous turn assistant row settled when a new turn starts before the next answer arrives', async () => {
+    const { withLiveAssistantState } = await import('./index');
+
+    const snapshot = {
+      currentTurn: {
+        turnId: 'turn-2',
+        state: 'running',
+      },
+    } as any;
+
+    const entries = [
+      {
+        id: 'user-1',
+        order: 1,
+        kind: 'user',
+        tone: 'positive',
+        label: 'You',
+        title: '',
+        body: 'First question',
+        meta: 'now',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant-1',
+        order: 2,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: '# Final answer',
+        meta: 'now',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'user-2',
+        order: 3,
+        kind: 'user',
+        tone: 'positive',
+        label: 'You',
+        title: '',
+        body: 'Follow-up question',
+        meta: 'now',
+        sourceTurnId: 'turn-2',
+      },
+    ] as any;
+
+    const marked = withLiveAssistantState(snapshot, entries);
+    expect(marked.some((entry: any) => entry.kind === 'assistant' && entry.live)).toBe(false);
   });
 
   it('adds a single trailing busy bubble only while the turn is actively running', async () => {
@@ -5299,6 +5363,27 @@ describe('agentView dev errors', () => {
     expect(presentation.collapsedByDefault).toBe(true);
     expect(presentation.lineCount).toBe(10);
     expect(presentation.preview).toBe('line 1: tool output');
+  });
+
+  it('keeps live assistant rows on markdown presentation while they stream', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'assistant-live-1',
+      order: 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: '# Streaming\n\n- item',
+      meta: 'now',
+      live: true,
+    });
+
+    expect(presentation.mode).toBe('markdown');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(3);
+    expect(presentation.preview).toBe('');
   });
 
   it('renders command-execution rows with a dedicated command presentation', async () => {
@@ -5772,6 +5857,48 @@ describe('agentView dev errors', () => {
     expect(addRow.children[0].className).toContain('agent-history-diff-line-gutter');
     expect(deleteRow.children[0].children).toHaveLength(2);
     expect(addRow.children[0].children).toHaveLength(2);
+  });
+
+  it('renders live assistant rows through the markdown body instead of raw streaming text', async () => {
+    const { createAgentHistoryDom } = await import('./historyDom');
+
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshLensSnapshot: async () => {},
+      renderCurrentAgentView: () => {},
+      retryLensActivation: async () => {},
+      logWarn: () => {},
+    });
+
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'assistant-live-markdown',
+        order: 1,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: 'Heading\n\n- streamed bullet',
+        meta: '',
+        live: true,
+      },
+      's1',
+    );
+
+    const body = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-markdown'),
+    );
+    const content = body?.children.find((child: any) =>
+      String(child.className).includes('agent-history-markdown-content'),
+    );
+
+    expect(
+      article.children.some((child: any) =>
+        String(child.className).includes('agent-history-streaming-body'),
+      ),
+    ).toBe(false);
+    expect(content).toBeDefined();
+    expect(content.innerHTML).toContain('<ul>');
   });
 
   it('resolves diff file headers against the session working directory when available', async () => {

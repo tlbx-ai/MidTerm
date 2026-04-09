@@ -249,7 +249,7 @@ export function tokenizeCommandText(commandText: string): CommandToken[] {
 export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): HistoryBodyPresentation {
   if (entry.kind === 'assistant') {
     return {
-      mode: entry.live ? 'streaming' : 'markdown',
+      mode: 'markdown',
       collapsedByDefault: false,
       lineCount: countHistoryBodyLines(entry.body),
       preview: '',

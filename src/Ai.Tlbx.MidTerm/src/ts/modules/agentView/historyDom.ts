@@ -343,14 +343,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       }
       case 'command':
         return createCommandHistoryBody(entry, sessionId);
-      case 'streaming': {
-        const body = document.createElement('div');
-        body.className = 'agent-history-body agent-history-streaming-body';
-        body.textContent = entry.body;
-        // Keep streamed assistant text raw until settlement so FileRadar enrichment
-        // and inline image previews do not churn on every incoming delta.
-        return body;
-      }
+      case 'streaming':
       case 'markdown': {
         const body = document.createElement('div');
         body.className = 'agent-history-body agent-history-markdown';
