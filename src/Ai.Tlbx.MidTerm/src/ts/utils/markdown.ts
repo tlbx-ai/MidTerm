@@ -112,6 +112,32 @@ function looksNumericMarkdownTableCell(cell: string): boolean {
   return /^[<>~]?[+-]?\d[\d.,]*(?:\s?(?:ms|s|%|x|kb|mb|gb|tb|bps|ops|q|px))?$/i.test(trimmed);
 }
 
+function parseMarkdownTableNumericValue(cell: string): number | null {
+  const trimmed = cell.trim();
+  if (!trimmed) {
+    return 0;
+  }
+
+  const match = trimmed.match(/[+-]?\d[\d.,]*/);
+  if (!match) {
+    return null;
+  }
+
+  let numeric = match[0];
+  if (numeric.includes(',') && !numeric.includes('.')) {
+    const parts = numeric.split(',');
+    numeric =
+      parts.length === 2 && parts[1]?.length && parts[1].length <= 2
+        ? `${parts[0]}.${parts[1]}`
+        : parts.join('');
+  } else {
+    numeric = numeric.replace(/,/g, '');
+  }
+
+  const value = Number.parseFloat(numeric);
+  return Number.isFinite(value) ? value : null;
+}
+
 function inferMarkdownTableColumnKinds(
   headers: readonly string[],
   rows: readonly string[][],
@@ -277,6 +303,269 @@ function renderMarkdownTableCellContent(
 
   const tone = inferMarkdownTableCellTone(kind, header, value);
   return `<span class="agent-markdown-cell-pill" data-cell-tone="${tone}" data-cell-kind="${kind}">${value}</span>`;
+}
+
+type MarkdownTableSortDirection = 'none' | 'ascending' | 'descending';
+
+export type MarkdownTableUiLabels = {
+  clearSort: (column: string) => string;
+  filterByColumn: (column: string) => string;
+  filterPlaceholder: string;
+  sortAscending: (column: string) => string;
+  sortDescending: (column: string) => string;
+};
+
+const defaultMarkdownTableUiLabels: MarkdownTableUiLabels = {
+  clearSort: (column) => `Clear sorting for ${column}`,
+  filterByColumn: (column) => `Filter ${column}`,
+  filterPlaceholder: 'Filter',
+  sortAscending: (column) => `Sort ${column} ascending`,
+  sortDescending: (column) => `Sort ${column} descending`,
+};
+
+function compareMarkdownTableCellValues(
+  left: string,
+  right: string,
+  kind: MarkdownTableColumnKind,
+): number {
+  if (
+    kind === 'numeric' ||
+    (looksNumericMarkdownTableCell(left) && looksNumericMarkdownTableCell(right))
+  ) {
+    const leftValue = parseMarkdownTableNumericValue(left);
+    const rightValue = parseMarkdownTableNumericValue(right);
+    if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+      return leftValue - rightValue;
+    }
+  }
+
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function getMarkdownTableCellText(row: HTMLTableRowElement, columnIndex: number): string {
+  const cell = row.cells.item(columnIndex);
+  return cell ? cell.textContent.trim() : '';
+}
+
+function updateMarkdownTableSortButtonState(
+  header: HTMLTableCellElement,
+  button: HTMLButtonElement | null,
+  labels: MarkdownTableUiLabels,
+): void {
+  const column =
+    (header.getAttribute('aria-label') ?? '').trim() || header.textContent.trim() || 'Column';
+  const direction =
+    (header.dataset.sortDirection as MarkdownTableSortDirection | undefined) ?? 'none';
+  const indicator = button?.querySelector<HTMLElement>('.agent-markdown-table-sort-indicator');
+
+  header.setAttribute(
+    'aria-sort',
+    direction === 'ascending' ? 'ascending' : direction === 'descending' ? 'descending' : 'none',
+  );
+
+  if (button) {
+    if (direction === 'ascending') {
+      button.title = labels.sortDescending(column);
+      button.setAttribute('aria-label', labels.sortDescending(column));
+    } else if (direction === 'descending') {
+      button.title = labels.clearSort(column);
+      button.setAttribute('aria-label', labels.clearSort(column));
+    } else {
+      button.title = labels.sortAscending(column);
+      button.setAttribute('aria-label', labels.sortAscending(column));
+    }
+  }
+
+  if (indicator) {
+    indicator.textContent =
+      direction === 'ascending' ? '↑' : direction === 'descending' ? '↓' : '↕';
+  }
+}
+
+function applyMarkdownTableState(table: HTMLTableElement, labels: MarkdownTableUiLabels): void {
+  const headerRow = table.tHead?.rows.item(0);
+  const body = table.tBodies.item(0);
+  if (!headerRow || !body) {
+    return;
+  }
+
+  const headers = Array.from(headerRow.cells);
+  const filters = headers.map((header) =>
+    (header.dataset.filterValue ?? '').trim().toLocaleLowerCase(),
+  );
+  const sortColumn = Number.parseInt(table.dataset.sortColumn ?? '-1', 10);
+  const sortDirection =
+    (table.dataset.sortDirection as MarkdownTableSortDirection | undefined) ?? 'none';
+  const rows = Array.from(body.rows);
+  const sortedRows =
+    sortColumn >= 0 && sortDirection !== 'none'
+      ? [...rows].sort((left, right) => {
+          const header = headers[sortColumn];
+          const kind = (header?.dataset.colKind as MarkdownTableColumnKind | undefined) ?? 'text';
+          const direction = sortDirection === 'descending' ? -1 : 1;
+          const comparison = compareMarkdownTableCellValues(
+            getMarkdownTableCellText(left, sortColumn),
+            getMarkdownTableCellText(right, sortColumn),
+            kind,
+          );
+          if (comparison !== 0) {
+            return comparison * direction;
+          }
+
+          return (
+            Number.parseInt(left.dataset.markdownTableOriginalIndex ?? '0', 10) -
+            Number.parseInt(right.dataset.markdownTableOriginalIndex ?? '0', 10)
+          );
+        })
+      : [...rows].sort(
+          (left, right) =>
+            Number.parseInt(left.dataset.markdownTableOriginalIndex ?? '0', 10) -
+            Number.parseInt(right.dataset.markdownTableOriginalIndex ?? '0', 10),
+        );
+
+  body.append(...sortedRows);
+
+  for (const row of sortedRows) {
+    const visible = filters.every((query, columnIndex) => {
+      if (!query) {
+        return true;
+      }
+
+      return getMarkdownTableCellText(row, columnIndex).toLocaleLowerCase().includes(query);
+    });
+    row.hidden = !visible;
+  }
+
+  headers.forEach((header, columnIndex) => {
+    header.dataset.sortDirection =
+      columnIndex === sortColumn && sortDirection !== 'none' ? sortDirection : 'none';
+    updateMarkdownTableSortButtonState(
+      header,
+      header.querySelector<HTMLButtonElement>('.agent-markdown-table-sort'),
+      labels,
+    );
+  });
+}
+
+function cycleMarkdownTableSortDirection(
+  current: MarkdownTableSortDirection,
+): MarkdownTableSortDirection {
+  if (current === 'none') {
+    return 'ascending';
+  }
+
+  if (current === 'ascending') {
+    return 'descending';
+  }
+
+  return 'none';
+}
+
+export function wireMarkdownTables(
+  container: ParentNode,
+  labels: Partial<MarkdownTableUiLabels> = {},
+): void {
+  const isElementContainer = typeof Element !== 'undefined' && container instanceof Element;
+  const isDocumentContainer = typeof Document !== 'undefined' && container instanceof Document;
+  const isFragmentContainer =
+    typeof DocumentFragment !== 'undefined' && container instanceof DocumentFragment;
+  if (!(isElementContainer || isDocumentContainer || isFragmentContainer)) {
+    return;
+  }
+
+  const resolvedLabels: MarkdownTableUiLabels = {
+    ...defaultMarkdownTableUiLabels,
+    ...labels,
+  };
+
+  const wraps = Array.from(container.querySelectorAll<HTMLElement>('.agent-markdown-table-wrap'));
+  wraps.forEach((wrap) => {
+    if (wrap.dataset.tableEnhanced === 'true') {
+      return;
+    }
+
+    const table = wrap.querySelector<HTMLTableElement>('table.agent-markdown-table');
+    const headerRow = table?.tHead?.rows.item(0);
+    const body = table?.tBodies.item(0);
+    if (!table || !headerRow || !body) {
+      return;
+    }
+
+    wrap.dataset.tableEnhanced = 'true';
+    table.dataset.sortColumn = '-1';
+    table.dataset.sortDirection = 'none';
+
+    Array.from(body.rows).forEach((row, rowIndex) => {
+      row.dataset.markdownTableOriginalIndex = String(rowIndex);
+    });
+
+    Array.from(headerRow.cells).forEach((header, columnIndex) => {
+      const headerText =
+        (header.getAttribute('aria-label') ?? '').trim() ||
+        header.textContent.trim() ||
+        `Column ${columnIndex + 1}`;
+      const existingContent = header.innerHTML;
+      header.dataset.filterValue = '';
+      header.dataset.sortDirection = 'none';
+      header.dataset.colIndex = String(columnIndex);
+
+      const shell = document.createElement('div');
+      shell.className = 'agent-markdown-table-header-shell';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'agent-markdown-table-sort';
+      button.dataset.columnIndex = String(columnIndex);
+
+      const label = document.createElement('span');
+      label.className = 'agent-markdown-table-header-label';
+      label.innerHTML = existingContent;
+      button.appendChild(label);
+
+      const indicator = document.createElement('span');
+      indicator.className = 'agent-markdown-table-sort-indicator';
+      indicator.setAttribute('aria-hidden', 'true');
+      button.appendChild(indicator);
+
+      const filter = document.createElement('input');
+      filter.type = 'search';
+      filter.className = 'agent-markdown-table-filter';
+      filter.placeholder = resolvedLabels.filterPlaceholder;
+      filter.autocomplete = 'off';
+      filter.spellcheck = false;
+      filter.dataset.columnIndex = String(columnIndex);
+      filter.setAttribute('aria-label', resolvedLabels.filterByColumn(headerText));
+      filter.title = resolvedLabels.filterByColumn(headerText);
+
+      button.addEventListener('click', () => {
+        const currentColumn = Number.parseInt(table.dataset.sortColumn ?? '-1', 10);
+        const currentDirection =
+          (table.dataset.sortDirection as MarkdownTableSortDirection | undefined) ?? 'none';
+        const nextDirection =
+          currentColumn === columnIndex
+            ? cycleMarkdownTableSortDirection(currentDirection)
+            : ('ascending' as MarkdownTableSortDirection);
+
+        table.dataset.sortColumn = nextDirection === 'none' ? '-1' : String(columnIndex);
+        table.dataset.sortDirection = nextDirection;
+        applyMarkdownTableState(table, resolvedLabels);
+      });
+
+      filter.addEventListener('input', () => {
+        header.dataset.filterValue = filter.value.trim();
+        applyMarkdownTableState(table, resolvedLabels);
+      });
+
+      shell.append(button, filter);
+      header.replaceChildren(shell);
+      updateMarkdownTableSortButtonState(header, button, resolvedLabels);
+    });
+
+    applyMarkdownTableState(table, resolvedLabels);
+  });
 }
 
 function renderMarkdownTables(text: string): string {

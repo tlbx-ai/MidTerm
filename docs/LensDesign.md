@@ -260,6 +260,9 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Current Codex Lens markdown gap markers should stay very tight, roughly a quarter-em pause per blank line rather than the older taller half-em spacing.
 - Streaming assistant text should render through the same markdown surface as settled assistant output so lists, headings, and dense paragraph spacing stay stable while the row grows in place.
 - If settlement later adds higher-confidence file-link or image-preview enrichment, that refinement must preserve the same markdown-rendered body instead of downgrading the row to raw plain text.
+- Markdown tables should stay left-anchored and use intrinsic width when their content is narrow, rather than stretching across the whole history lane by default.
+- Assistant markdown tables should expose compact per-column sort and filter controls in the header row so dense comparison output can be reorganized in place.
+- Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
 - That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
 - Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
 - Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
@@ -421,6 +424,8 @@ Status in this branch/work item:
 - implemented: clickable Lens file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
 - implemented: assistant markdown blank-line gap markers now use a tighter quarter-em pause per blank line instead of the older taller half-em spacing
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Lens body
+- implemented: assistant markdown tables now stay left-anchored at intrinsic width when narrow instead of always stretching across the full history lane
+- implemented: assistant markdown tables now add compact per-column sort and filter controls directly in the header row
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows

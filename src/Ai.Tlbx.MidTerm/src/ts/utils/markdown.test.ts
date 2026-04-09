@@ -92,6 +92,14 @@ describe('renderMarkdown', () => {
     );
   });
 
+  it('keeps markdown tables ready for interactive header wiring', () => {
+    const html = renderMarkdown('| Name | Score |\n| :--- | ---: |\n| Alpha | 42 |');
+
+    expect(html).toContain('<div class="agent-markdown-table-wrap"><table class="agent-markdown-table">');
+    expect(html).toContain('<thead><tr>');
+    expect(html).toContain('<th data-align="left" data-col-kind="text" title="Name" aria-label="Name">Name</th>');
+  });
+
   it('does not treat underscores inside plain tokens as emphasis', () => {
     const html = renderMarkdown('HELLO_FROM_CODEX\n\nTOOL_DONE');
 

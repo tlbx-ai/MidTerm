@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { getSession } from '../../stores';
-import { renderMarkdownFragment } from '../../utils/markdown';
+import { renderMarkdownFragment, wireMarkdownTables } from '../../utils/markdown';
 import {
   buildAssistantEnrichedHtml,
   createAssistantImagePreviewBlock,
@@ -353,6 +353,19 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);
         wireAssistantInteractiveContent(content, sessionId);
+        wireMarkdownTables(content, {
+          clearSort: (column) =>
+            lensFormat('lens.markdownTable.clearSort', 'Clear sorting for {column}', { column }),
+          filterByColumn: (column) =>
+            lensFormat('lens.markdownTable.filterByColumn', 'Filter {column}', { column }),
+          filterPlaceholder: lensText('lens.markdownTable.filterPlaceholder', 'Filter'),
+          sortAscending: (column) =>
+            lensFormat('lens.markdownTable.sortAscending', 'Sort {column} ascending', { column }),
+          sortDescending: (column) =>
+            lensFormat('lens.markdownTable.sortDescending', 'Sort {column} descending', {
+              column,
+            }),
+        });
         body.appendChild(content);
         appendEntryImagePreviews(body, entry, sessionId);
         return body;

@@ -164,6 +164,17 @@ describe('agent view Lens wiring', () => {
     expect(lensDesign).toContain('Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults');
     expect(lensDesign).toContain('Assistant markdown should model those blank-line pauses explicitly as compact gap markers');
     expect(lensDesign).toContain('Bullet and numbered lists should stack compactly');
+    expect(css).toContain('.agent-history-markdown .agent-markdown-table-wrap {');
+    expect(css).toContain('inline-size: fit-content;');
+    expect(css).toContain('.agent-history-markdown .agent-markdown-table-sort {');
+    expect(css).toContain('.agent-history-markdown .agent-markdown-table-filter {');
+    expect(historyDomSource).toContain('wireMarkdownTables(content, {');
+    expect(lensDesign).toContain(
+      'Markdown tables should stay left-anchored and use intrinsic width when their content is narrow',
+    );
+    expect(lensDesign).toContain(
+      'Assistant markdown tables should expose compact per-column sort and filter controls in the header row',
+    );
   });
 
   it('documents live assistant markdown rendering without degrading into raw text', () => {

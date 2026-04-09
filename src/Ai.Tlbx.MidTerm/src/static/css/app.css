@@ -11893,6 +11893,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown .agent-markdown-table-wrap {
   margin: 0 0 10px;
+  display: block;
+  inline-size: fit-content;
+  max-inline-size: 100%;
   overflow: auto hidden;
   border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: 10px;
@@ -11923,8 +11926,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown table {
   display: table;
-  width: 100%;
-  min-width: max-content;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   margin: 0;
@@ -11977,7 +11980,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown th,
 .agent-history-markdown td {
-  min-width: 120px;
+  min-width: 0;
   padding: 8px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
@@ -11999,12 +12002,72 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   position: sticky;
   top: 0;
   z-index: 1;
+  padding: 0;
   background: color-mix(in srgb, var(--bg-dialog-chrome) 88%, var(--accent-blue-08));
   color: var(--text-primary);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   white-space: nowrap;
+}
+
+.agent-history-markdown .agent-markdown-table-header-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 8px 10px;
+}
+
+.agent-history-markdown .agent-markdown-table-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.agent-history-markdown .agent-markdown-table-header-label {
+  min-inline-size: 0;
+}
+
+.agent-history-markdown .agent-markdown-table-sort-indicator {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--text-secondary) 82%, transparent);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.agent-history-markdown .agent-markdown-table-filter {
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: 0.28rem 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-dialog-chrome) 78%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.agent-history-markdown .agent-markdown-table-filter::placeholder {
+  color: color-mix(in srgb, var(--text-secondary) 82%, transparent);
+}
+
+.agent-history-markdown .agent-markdown-table-filter:focus,
+.agent-history-markdown .agent-markdown-table-sort:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 56%, transparent);
+  outline-offset: 1px;
 }
 
 .agent-history-markdown td {
@@ -12049,7 +12112,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown th[data-col-kind='key'],
 .agent-history-markdown td[data-col-kind='key'] {
-  min-width: 7.5rem;
+  min-width: 6rem;
 }
 
 .agent-history-markdown td[data-col-kind='key'] {
@@ -12059,7 +12122,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown th[data-col-kind='tag'],
 .agent-history-markdown td[data-col-kind='tag'] {
-  min-width: 6.75rem;
+  min-width: 5.25rem;
 }
 
 .agent-history-markdown td[data-col-kind='tag'] {
@@ -12145,7 +12208,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown th[data-col-kind='numeric'],
 .agent-history-markdown td[data-col-kind='numeric'] {
-  min-width: 5.25rem;
+  min-width: 4.25rem;
   text-align: right;
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
   font-variant-numeric: tabular-nums;
@@ -12153,14 +12216,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-markdown th[data-col-kind='notes'],
 .agent-history-markdown td[data-col-kind='notes'] {
-  min-width: 22rem;
+  min-width: 12rem;
   max-width: 30rem;
   white-space: normal;
 }
 
 .agent-history-markdown table[data-table-density='dense'] th[data-col-kind='notes'],
 .agent-history-markdown table[data-table-density='dense'] td[data-col-kind='notes'] {
-  min-width: 18rem;
+  min-width: 10rem;
   max-width: 24rem;
 }
 
