@@ -760,7 +760,7 @@
   "settings.options.resumeModeQuickResume": "Quick Resume（より多くの session 向け）",
   "smartInput.autoSendOnHint": "文字起こし入力では自動送信が有効です",
   "smartInput.mic": "押して話す",
-  "smartInput.placeholder": "ここに入力...",
+  "smartInput.placeholder": "ここに入力...（上矢印キーで直前のプロンプトを復元）",
   "smartInput.send": "送信",
   "smartInput.sendGestureHint": "送信。ダブルクリックまたは長押しで自動送信を切り替え",
   "smartInput.resume": "再開",

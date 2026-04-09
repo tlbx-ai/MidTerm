@@ -760,7 +760,7 @@
   "settings.options.resumeModeQuickResume": "Quick Resume (besser für mehr Sessions)",
   "smartInput.autoSendOnHint": "Automatisches Senden ist für transkribierte Eingabe aktiviert",
   "smartInput.mic": "Zum Sprechen gedrückt halten",
-  "smartInput.placeholder": "Hier tippen...",
+  "smartInput.placeholder": "Hier tippen... (oder Pfeil nach oben drücken, um letzte Prompts wiederherzustellen)",
   "smartInput.send": "Senden",
   "smartInput.sendGestureHint": "Senden. Doppelklick oder langes Drücken schaltet Auto-Send um",
   "smartInput.resume": "Fortsetzen",

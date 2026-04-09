@@ -190,12 +190,22 @@ describe('smart input tab wiring', () => {
   it('submits from the command bay only on bare Enter', () => {
     expect(source).toContain('import {');
     expect(source).toContain("} from './enterBehavior';");
+    expect(source).toContain("event.key === 'ArrowUp'");
+    expect(source).toContain("event.key === 'ArrowDown'");
+    expect(source).toContain("navigatePromptHistory(sessionId, 'older', textarea)");
+    expect(source).toContain("navigatePromptHistory(sessionId, 'newer', textarea)");
     expect(source).toContain('shouldInsertLineBreakOnEnter');
     expect(source).toContain('insertSmartInputLineBreak');
     expect(source).toContain('if (shouldInsertLineBreakOnEnter(event)) {');
     expect(source).toContain('insertSmartInputLineBreak(textarea);');
     expect(source).toContain('if (shouldSubmitSmartInputOnEnter(event)) {');
     expect(source).not.toContain("if (event.key === 'Enter' && !event.shiftKey) {");
+  });
+
+  it('advertises prompt history restoration from the empty Automation Bar composer', () => {
+    expect(viewSource).toContain("textarea.placeholder = t('smartInput.placeholder');");
+    expect(source).toContain('pushCurrentPromptToHistory(sessionId);');
+    expect(source).toContain('sessionPromptHistoryNavigation');
   });
 
   it('routes command-bay sends through the backend-owned queue instead of direct terminal submission', () => {

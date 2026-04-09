@@ -760,7 +760,7 @@
   "settings.options.resumeModeQuickResume": "Quick Resume (лучше для большего числа сессий)",
   "smartInput.autoSendOnHint": "Для транскрибированного ввода включена автоотправка",
   "smartInput.mic": "Нажмите и говорите",
-  "smartInput.placeholder": "Печатайте здесь...",
+  "smartInput.placeholder": "Печатайте здесь... (или нажмите стрелку вверх, чтобы восстановить последние запросы)",
   "smartInput.send": "Отправить",
   "smartInput.sendGestureHint": "Отправить. Двойной клик или долгое нажатие переключают автоотправку",
   "smartInput.resume": "Продолжить",

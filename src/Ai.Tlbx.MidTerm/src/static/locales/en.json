@@ -907,7 +907,7 @@
   "smartInput.attachmentUploadFailed": "Attachment upload failed",
   "smartInput.attachmentSendFailed": "Lens send failed",
   "smartInput.mic": "Push to talk",
-  "smartInput.placeholder": "Type here...",
+  "smartInput.placeholder": "Type here... (or press up to restore your last prompts)",
   "smartInput.referenceFile": "File",
   "smartInput.referenceImage": "Image",
   "smartInput.referenceCharLabelPlural": "chars",

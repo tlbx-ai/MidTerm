@@ -38,6 +38,7 @@ import {
   extractLensComposerPasteImageFiles,
   type LensComposerDraftAttachment,
   MAX_LENS_IMAGE_BYTES,
+  cloneLensComposerDraftAttachments,
   createLensComposerDraftAttachment,
   isLensComposerImageFile,
   releaseLensComposerDraftAttachmentPreviews,
@@ -60,10 +61,15 @@ import {
 } from './smartInputView';
 import {
   clearLensDraftAttachmentsForSession,
+  cloneSmartInputPromptHistoryEntry,
   detachLensDraftAttachmentsForSession,
   getLensDraftAttachmentsForSession,
+  getSmartInputPromptHistoryForSession,
   loadLensDraftAttachmentsForSession,
+  loadSmartInputPromptHistoryForSession,
+  pushSmartInputPromptHistoryEntryForSession,
   setLensDraftAttachmentsForSession,
+  type SmartInputPromptHistoryEntry,
 } from './smartInputDraftStore';
 import {
   isMobileViewport,
@@ -152,6 +158,8 @@ let lastReservedFooterHeightPx = Number.NaN;
 const AUTO_SEND_LONG_PRESS_MS = 520;
 const sessionDrafts = new Map<string, SmartInputComposerDraft>();
 const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
+const sessionPromptHistories = new Map<string, SmartInputPromptHistoryEntry[]>();
+const sessionPromptHistoryNavigation = new Map<string, SmartInputPromptHistoryNavigationState>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 let lensResumeConversationHandler:
   | ((args: {
@@ -160,6 +168,11 @@ let lensResumeConversationHandler:
       workingDirectory: string;
     }) => void | Promise<void>)
   | null = null;
+
+interface SmartInputPromptHistoryNavigationState {
+  baseline: SmartInputPromptHistoryEntry;
+  index: number;
+}
 
 interface AdaptiveFooterLayoutState {
   activeSessionId: string | null | undefined;
@@ -332,6 +345,52 @@ function detachLensDraftAttachments(sessionId: string): LensComposerDraftAttachm
   return detachLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
 }
 
+function getSessionPromptHistory(sessionId: string | null): SmartInputPromptHistoryEntry[] {
+  if (sessionId && !sessionPromptHistories.has(sessionId)) {
+    const persistedHistory = loadSmartInputPromptHistoryForSession(sessionId);
+    if (persistedHistory.length > 0) {
+      sessionPromptHistories.set(sessionId, persistedHistory);
+    }
+  }
+
+  return getSmartInputPromptHistoryForSession(sessionPromptHistories, sessionId);
+}
+
+function resetPromptHistoryNavigation(sessionId: string | null): void {
+  if (!sessionId) {
+    return;
+  }
+
+  sessionPromptHistoryNavigation.delete(sessionId);
+}
+
+function getPromptHistoryQuickSettingsSnapshot(
+  sessionId: string,
+): SmartInputPromptHistoryEntry['quickSettings'] {
+  if (!isLensActiveSession(sessionId)) {
+    return null;
+  }
+
+  return getLensQuickSettingsDraft(sessionId);
+}
+
+function createCurrentPromptHistoryEntry(sessionId: string): SmartInputPromptHistoryEntry {
+  return {
+    composerDraft: cloneSmartInputComposerDraft(getSessionDraft(sessionId)),
+    attachments: cloneLensComposerDraftAttachments(getLensDraftAttachments(sessionId)),
+    quickSettings: getPromptHistoryQuickSettingsSnapshot(sessionId),
+  };
+}
+
+function pushCurrentPromptToHistory(sessionId: string): void {
+  pushSmartInputPromptHistoryEntryForSession(
+    sessionPromptHistories,
+    sessionId,
+    createCurrentPromptHistoryEntry(sessionId),
+  );
+  resetPromptHistoryNavigation(sessionId);
+}
+
 function buildSmartInputReferenceTokenText(label: string): string {
   return `[${label}]`;
 }
@@ -433,6 +492,108 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
 
 function setSessionDraftText(sessionId: string, text: string): void {
   setSessionDraft(sessionId, replaceSmartInputComposerText(getSessionDraft(sessionId), text));
+}
+
+function isPromptHistoryNavigationStartable(sessionId: string): boolean {
+  return (
+    getSessionDraftText(sessionId).length === 0 && getLensDraftAttachments(sessionId).length === 0
+  );
+}
+
+function applyPromptHistoryEntry(
+  sessionId: string,
+  entry: SmartInputPromptHistoryEntry,
+  textarea: HTMLTextAreaElement | null = activeTextarea,
+): void {
+  setLensDraftAttachments(sessionId, entry.attachments);
+  setSessionDraft(sessionId, entry.composerDraft);
+  if (isLensActiveSession(sessionId) && entry.quickSettings) {
+    setLensQuickSettingsDraft(sessionId, entry.quickSettings);
+  }
+
+  if ($activeSessionId.get() !== sessionId) {
+    return;
+  }
+
+  const nextSelection = {
+    start: getSessionDraftText(sessionId).length,
+    end: getSessionDraftText(sessionId).length,
+  };
+  renderSessionDraftIntoTextarea(sessionId, textarea, nextSelection);
+  renderLensAttachmentDrafts(sessionId);
+  syncLensQuickSettingsControls();
+}
+
+function navigatePromptHistory(
+  sessionId: string,
+  direction: 'older' | 'newer',
+  textarea: HTMLTextAreaElement,
+): boolean {
+  const history = getSessionPromptHistory(sessionId);
+  if (history.length === 0) {
+    return false;
+  }
+
+  let navigation = sessionPromptHistoryNavigation.get(sessionId) ?? null;
+  if (!navigation) {
+    if (!isPromptHistoryNavigationStartable(sessionId)) {
+      return false;
+    }
+
+    navigation = {
+      baseline: createCurrentPromptHistoryEntry(sessionId),
+      index: -1,
+    };
+    sessionPromptHistoryNavigation.set(sessionId, navigation);
+  }
+
+  if (direction === 'older') {
+    if (navigation.index >= history.length - 1) {
+      return false;
+    }
+    navigation.index += 1;
+  } else {
+    if (navigation.index < 0) {
+      return false;
+    }
+    navigation.index -= 1;
+  }
+
+  const historyEntry = navigation.index >= 0 ? history[navigation.index] : navigation.baseline;
+  if (!historyEntry) {
+    return false;
+  }
+
+  const entry = cloneSmartInputPromptHistoryEntry(historyEntry);
+  applyPromptHistoryEntry(sessionId, entry, textarea);
+  textarea.focus({ preventScroll: true });
+  return true;
+}
+
+function handlePromptHistoryKeydown(event: KeyboardEvent, textarea: HTMLTextAreaElement): boolean {
+  const sessionId = $activeSessionId.get();
+  if (
+    !sessionId ||
+    event.shiftKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey ||
+    event.isComposing
+  ) {
+    return false;
+  }
+
+  if (event.key === 'ArrowUp' && navigatePromptHistory(sessionId, 'older', textarea)) {
+    event.preventDefault();
+    return true;
+  }
+
+  if (event.key === 'ArrowDown' && navigatePromptHistory(sessionId, 'newer', textarea)) {
+    event.preventDefault();
+    return true;
+  }
+
+  return false;
 }
 
 function draftHasInlineReferences(sessionId: string | null): boolean {
@@ -545,6 +706,7 @@ function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly strin
     return;
   }
 
+  resetPromptHistoryNavigation(sessionId);
   const toRemove = new Set(attachmentIds);
   const attachments = getLensDraftAttachments(sessionId);
   const nextAttachments: LensComposerDraftAttachment[] = [];
@@ -894,6 +1056,7 @@ function createDockedDOM(): void {
     onTextareaInput: (textarea) => {
       const sessionId = $activeSessionId.get();
       if (sessionId) {
+        resetPromptHistoryNavigation(sessionId);
         if (draftHasInlineReferences(sessionId)) {
           renderSessionDraftIntoTextarea(
             sessionId,
@@ -914,6 +1077,11 @@ function createDockedDOM(): void {
       }
     },
     onTextareaKeydown: (event, textarea) => {
+      if (handlePromptHistoryKeydown(event, textarea)) {
+        return;
+      }
+
+      const sessionId = $activeSessionId.get();
       if (
         event.key === 'Escape' &&
         !event.shiftKey &&
@@ -921,7 +1089,6 @@ function createDockedDOM(): void {
         !event.altKey &&
         !event.metaKey
       ) {
-        const sessionId = $activeSessionId.get();
         if (sessionId && isLensActiveSession(sessionId)) {
           event.preventDefault();
           void handleLensEscape(sessionId);
@@ -1446,6 +1613,7 @@ async function addLensComposerFiles(
   files: readonly File[],
   selection: SmartInputComposerSelection | null = null,
 ): Promise<void> {
+  resetPromptHistoryNavigation(sessionId);
   const nextAttachments = [...getLensDraftAttachments(sessionId)];
   const nextSelection =
     selection ??
@@ -1531,6 +1699,7 @@ function insertComposerTextAtSelection(
   textarea: HTMLTextAreaElement | null,
   text: string,
 ): void {
+  resetPromptHistoryNavigation(sessionId);
   const targetTextarea = textarea ?? activeTextarea;
   if (!targetTextarea) {
     setSessionDraftText(sessionId, `${getSessionDraftText(sessionId)}${text}`);
@@ -1561,6 +1730,7 @@ function deleteComposerRangeFromSelection(
   textarea: HTMLTextAreaElement,
   direction: 'backward' | 'forward',
 ): void {
+  resetPromptHistoryNavigation(sessionId);
   const deleteResult =
     direction === 'backward'
       ? deleteSmartInputComposerBackward(
@@ -1663,6 +1833,7 @@ async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
 }
 
 function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElement): void {
+  resetPromptHistoryNavigation(sessionId);
   sessionDrafts.delete(sessionId);
   ta.value = '';
   clearLensDraftAttachments(sessionId);
@@ -1708,6 +1879,7 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
         text: prepared.text,
         attachments: [],
       });
+      pushCurrentPromptToHistory(sessionId);
       clearSubmittedSmartInputState(sessionId, ta);
     } catch (error) {
       showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
@@ -1732,6 +1904,7 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     });
 
     await queuedTurn;
+    pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, ta);
     releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
   } catch (error) {
@@ -1790,6 +1963,8 @@ function syncDraftForActiveSession(): void {
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
   clearLensDraftAttachments(sessionId);
+  sessionPromptHistories.delete(sessionId);
+  resetPromptHistoryNavigation(sessionId);
   sessionPinnedTools.delete(sessionId);
   if ($activeSessionId.get() === sessionId) {
     syncDraftForActiveSession();
@@ -1823,6 +1998,7 @@ function beginRecording(pinOnUse: boolean = false): void {
           return;
         }
 
+        resetPromptHistoryNavigation(sessionId);
         setSessionDraftText(sessionId, completed);
         renderSessionDraftIntoTextarea(sessionId, ta);
       }

@@ -760,7 +760,7 @@
   "settings.options.resumeModeQuickResume": "Quick Resume（更适合更多会话）",
   "smartInput.autoSendOnHint": "转写输入已启用自动发送",
   "smartInput.mic": "按住说话",
-  "smartInput.placeholder": "在这里输入...",
+  "smartInput.placeholder": "在这里输入...（或按向上键恢复你最近的提示词）",
   "smartInput.send": "发送",
   "smartInput.sendGestureHint": "发送。双击或长按可切换自动发送",
   "smartInput.resume": "继续",
