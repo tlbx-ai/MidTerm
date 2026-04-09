@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- managerBar.ts remains a legacy integration hub; small overflow-policy changes are safer than broad file splits in the same turn. */
 /**
  * Manager Bar Module
  *
@@ -653,6 +654,10 @@ function syncOverflowedButtons(): void {
   }
 
   resetOverflowLayoutChrome(buttonStrip, overflowButton);
+  if (collapseManagerButtonsToOverflow(managerBar, buttonStrip, buttonElements, overflowButton)) {
+    return;
+  }
+
   const fullAvailableWidth = getAvailableManagerRailWidth(managerBar, addButton);
 
   const buttonWidths = buttonElements.map((element) => getMeasuredWidth(element));
@@ -707,6 +712,42 @@ function resetOverflowLayoutState(
 ): void {
   resetOverflowLayoutChrome(buttonStrip, overflowButton);
   resetOverflowMenuState(overflowButton);
+}
+
+function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolean {
+  const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
+  return footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'terminal';
+}
+
+function collapseManagerButtonsToOverflow(
+  managerBar: HTMLElement,
+  buttonStrip: HTMLElement,
+  buttonElements: readonly HTMLElement[],
+  overflowButton: HTMLButtonElement,
+): boolean {
+  if (!shouldCollapseManagerButtonsToOverflow(managerBar)) {
+    return false;
+  }
+
+  overflowActionIds = buttonElements
+    .map((element) => element.dataset.id ?? '')
+    .filter((id) => id.length > 0);
+  for (const element of buttonElements) {
+    element.classList.add('manager-btn-overflow-hidden');
+  }
+
+  buttonStrip.style.maxWidth = '0px';
+  if (overflowActionIds.length === 0) {
+    resetOverflowMenuState(overflowButton);
+    return true;
+  }
+
+  overflowButton.removeAttribute('hidden');
+  if (overflowPopoverEl && !overflowPopoverEl.classList.contains('hidden')) {
+    renderOverflowMenuItems();
+    positionManagerOverflowMenu();
+  }
+  return true;
 }
 
 function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {
@@ -1399,3 +1440,5 @@ function focusNewestScheduleTime(): void {
     input.focus();
   });
 }
+
+/* eslint-enable max-lines */

@@ -65,10 +65,11 @@ interface CreateToolButtonsStripArgs {
 interface RenderTerminalStatusRowArgs {
   autoSendEnabled: boolean;
   footerStatusHost: HTMLDivElement;
-  isMobile: boolean;
-  keysExpanded: boolean;
-  onToggleKeys: () => void;
-  touchControlsAvailable: boolean;
+}
+
+interface CreateTerminalTouchToggleButtonArgs {
+  expanded: boolean;
+  onToggle: () => void;
 }
 
 export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDomRefs {
@@ -340,20 +341,20 @@ export function renderTerminalStatusRow(args: RenderTerminalStatusRowArgs): bool
     renderedAny = true;
   }
 
-  if (args.isMobile && args.touchControlsAvailable) {
-    const keysToggle = document.createElement('button');
-    keysToggle.type = 'button';
-    keysToggle.className = 'adaptive-footer-status-toggle';
-    keysToggle.textContent = args.keysExpanded
-      ? t('smartInput.keysHide')
-      : t('smartInput.keysShow');
-    keysToggle.setAttribute('aria-pressed', args.keysExpanded ? 'true' : 'false');
-    keysToggle.addEventListener('click', args.onToggleKeys);
-    args.footerStatusHost.appendChild(keysToggle);
-    renderedAny = true;
-  }
-
   return renderedAny;
+}
+
+export function createTerminalTouchToggleButton(
+  args: CreateTerminalTouchToggleButtonArgs,
+): HTMLButtonElement {
+  const keysToggle = document.createElement('button');
+  keysToggle.type = 'button';
+  keysToggle.className = 'adaptive-footer-context-toggle adaptive-footer-status-toggle';
+  keysToggle.textContent = args.expanded ? t('smartInput.keysHide') : t('smartInput.keysShow');
+  keysToggle.setAttribute('aria-pressed', args.expanded ? 'true' : 'false');
+  keysToggle.dataset.expanded = args.expanded ? 'true' : 'false';
+  keysToggle.addEventListener('click', args.onToggle);
+  return keysToggle;
 }
 
 export function formatLensQuickSettingsSummary(draft: {

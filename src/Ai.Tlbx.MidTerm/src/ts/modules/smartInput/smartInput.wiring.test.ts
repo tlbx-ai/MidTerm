@@ -90,6 +90,10 @@ describe('smart input tab wiring', () => {
     expect(source).toContain(
       "footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);",
     );
+    expect(source).toContain('createTerminalTouchToggleButton({');
+    expect(viewSource).toContain(
+      "keysToggle.className = 'adaptive-footer-context-toggle adaptive-footer-status-toggle';",
+    );
     expect(css).toContain('.adaptive-footer-dock {');
     expect(css).toContain('.adaptive-footer-reserve {');
     expect(css).toContain('height: var(--adaptive-footer-reserved-height);');
@@ -98,6 +102,7 @@ describe('smart input tab wiring', () => {
       ".adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {",
     );
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
+    expect(css).toContain('.adaptive-footer-context-toggle {');
     expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
     expect(css).toContain('position: relative;');
     expect(css).toContain('z-index: 3;');
@@ -137,6 +142,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain(
       "footerStatusHost.classList.add('adaptive-footer-status-sheet-open');",
     );
+    expect(source).toContain('return args.lensActive ? args.isMobile : args.touchControlsAvailable;');
     expect(source).toContain('shouldUseCompactLensStatusRail(layoutState)');
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
     expect(source).toContain('let toolsPanelOpen = false;');

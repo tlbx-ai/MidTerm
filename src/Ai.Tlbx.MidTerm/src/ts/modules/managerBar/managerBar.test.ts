@@ -54,7 +54,13 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain(
       'function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {',
     );
+    expect(managerBarSource).toContain(
+      'function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolean {',
+    );
+    expect(managerBarSource).toContain("footerDock?.dataset.device === 'mobile'");
+    expect(managerBarSource).toContain("footerDock.dataset.surface === 'terminal'");
     expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '';");
+    expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '0px';");
     expect(managerBarSource).toContain("overflowButton.setAttribute('hidden', '');");
     expect(managerBarSource).toContain(
       "const actionButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item');",

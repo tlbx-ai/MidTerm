@@ -197,12 +197,12 @@ The Command Bay is the shared active-session footer system beneath Terminal and 
 It is the superset that now contains the old Smart Input composer, the old automation bar (formerly the middle manager bar), the old Lens quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
 It exists because MidTerm no longer treats those pieces as unrelated bars stacked under the pane.
 - the primary rail hosts Smart Input / the composer when input is visible
-- the automation rail hosts the old automation bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands
+- the automation rail hosts the old automation bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands; on cramped mobile Terminal layouts it may collapse visible action chips into overflow-first chrome rather than spending a full inline row on them
 - the Command Bay queue is backend-owned and persists queued work per session so follow-up prompts and Automation Bar items survive browser disconnects or reconnects
 - Terminal queue draining is heat-gated: one queued item may dispatch when heat falls below 25%, then the session must rearm above that threshold before the next queued item can drain
 - explicit Lens queue draining is turn-gated: one queued item may dispatch only after the current provider turn has settled back to the user
-- the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal
-- the status rail hosts Lens model / effort / plan / permission awareness or terminal input-mode and keys-toggle status
+- the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal, including the collapsed special-keys toggle when the full key row is hidden
+- the status rail hosts Lens model / effort / plan / permission awareness or other compact terminal state pills without forcing a dedicated extra row just to reopen special keys
 - Lens always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode
 - Lens keeps model / effort / plan awareness visible at all times even when the editable controls collapse on mobile
 - desktop Terminal assumes a hardware keyboard and therefore does not surface cursor-key buttons in the Command Bay

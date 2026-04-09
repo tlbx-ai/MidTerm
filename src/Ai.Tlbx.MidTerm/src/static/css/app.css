@@ -2704,7 +2704,7 @@ body.has-app-background::after {
     left: 0;
     width: 280px;
     z-index: 1000;
-    padding-top: var(--mobile-safe-top);
+    padding-top: 0;
     transform: translateX(-100%);
     visibility: hidden;
     transition:
@@ -2735,12 +2735,18 @@ body.has-app-background::after {
     pointer-events: auto;
   }
 
+  .sidebar-header {
+    height: auto;
+    min-height: calc(var(--bar-height) + var(--mobile-safe-top));
+    padding-top: var(--mobile-safe-top);
+  }
+
   /* Mobile topbar - always visible on mobile */
   .mobile-topbar {
     display: flex;
     align-items: center;
     padding: 0;
-    padding-top: calc(4px + var(--mobile-safe-top));
+    padding-top: var(--mobile-safe-top);
     padding-left: env(safe-area-inset-left, 0);
     padding-right: env(safe-area-inset-right, 0);
     background: var(--bg-terminal);
@@ -3432,7 +3438,7 @@ body.has-app-background::after {
 @media (max-width: 480px) {
   .mobile-topbar {
     padding: 0;
-    padding-top: calc(3px + var(--mobile-safe-top));
+    padding-top: var(--mobile-safe-top);
     gap: 0;
   }
 
@@ -8825,13 +8831,13 @@ body.shared-session-mode .session-tab-bar {
 
 @media (max-width: 768px) {
   /* Keep critical controls reachable while keyboard is open, but compact them. */
-  body.keyboard-visible .mobile-topbar {
-    display: flex;
-    padding: 0;
-    padding-top: calc(2px + var(--mobile-safe-top));
-    gap: 0;
-    min-height: calc(38px + var(--mobile-safe-top));
-  }
+body.keyboard-visible .mobile-topbar {
+  display: flex;
+  padding: 0;
+  padding-top: var(--mobile-safe-top);
+  gap: 0;
+  min-height: calc(34px + var(--mobile-safe-top));
+}
 
   body.keyboard-visible .topbar-btn {
     min-width: 34px;
@@ -15748,6 +15754,11 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {
   align-items: flex-start;
 }
 
+.adaptive-footer-context-toggle {
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {
   position: static;
   flex: 0 0 100%;
@@ -15819,10 +15830,10 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
 @media (max-width: 768px) {
   .adaptive-footer-dock {
     --command-bay-control-height: var(--command-bay-control-height-mobile);
-    padding: 6px;
-    padding-left: calc(6px + env(safe-area-inset-left, 0px));
-    padding-right: calc(6px + env(safe-area-inset-right, 0px));
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    padding: 4px;
+    padding-left: calc(4px + env(safe-area-inset-left, 0px));
+    padding-right: calc(4px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
     background:
       linear-gradient(
         180deg,
@@ -15884,12 +15895,21 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
   .adaptive-footer-dock .manager-bar {
     align-self: stretch;
     width: 100%;
-    justify-content: flex-start;
+    justify-content: flex-end;
     padding-top: 0;
   }
 
   .adaptive-footer-dock .manager-bar:not(.hidden) {
     display: flex !important;
+  }
+
+  .adaptive-footer-dock[data-device='mobile'][data-surface='terminal'] .manager-bar {
+    gap: 4px;
+  }
+
+  .adaptive-footer-dock[data-device='mobile'][data-surface='terminal'] .manager-bar-buttons {
+    max-width: 0 !important;
+    gap: 0;
   }
 
   .adaptive-footer-dock .manager-btn {

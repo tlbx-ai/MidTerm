@@ -51,6 +51,7 @@ import { captureImageFromWebcam } from './cameraCapture';
 import { openLensDraftAttachment } from './attachmentDraftOpen';
 import { renderLensAttachmentDraftView } from './attachmentDraftView';
 import {
+  createTerminalTouchToggleButton,
   createSmartInputDom,
   createToolButton,
   createToolButtonsStrip,
@@ -294,7 +295,7 @@ function resolveShowContext(args: {
   lensActive: boolean;
   touchControlsAvailable: boolean;
 }): boolean {
-  return args.lensActive ? args.isMobile : args.touchControlsAvailable && keysExpanded;
+  return args.lensActive ? args.isMobile : args.touchControlsAvailable;
 }
 
 function resolveShowStatus(args: {
@@ -1313,12 +1314,24 @@ function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   if (layoutState.showContext && layoutState.touchControlsAvailable) {
-    if (touchControllerEl) {
+    if (keysExpanded && touchControllerEl) {
       touchControllerEl.classList.add('embedded', 'visible');
       footerContextHost.appendChild(touchControllerEl);
       footerContextHost.hidden = false;
       return;
     }
+
+    const keysToggle = createTerminalTouchToggleButton({
+      expanded: keysExpanded,
+      onToggle: () => {
+        keysExpanded = !keysExpanded;
+        localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
+        syncSmartInputVisibility();
+      },
+    });
+    footerContextHost.appendChild(keysToggle);
+    footerContextHost.hidden = false;
+    return;
   }
 
   touchControllerEl?.classList.remove('visible');
@@ -1371,14 +1384,6 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   const renderedTerminalStatus = renderTerminalStatusRow({
     autoSendEnabled: canUseSmartInputVoiceSupport() && autoSendEnabled,
     footerStatusHost,
-    isMobile: layoutState.isMobile,
-    keysExpanded,
-    onToggleKeys: () => {
-      keysExpanded = !keysExpanded;
-      localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
-      syncSmartInputVisibility();
-    },
-    touchControlsAvailable: layoutState.touchControlsAvailable,
   });
   footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);
 }
