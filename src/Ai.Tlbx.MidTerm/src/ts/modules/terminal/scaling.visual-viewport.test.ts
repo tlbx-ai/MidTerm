@@ -300,4 +300,44 @@ describe('setupVisualViewport', () => {
     expect(bodyClasses.has('keyboard-visible')).toBe(true);
     expect(host.scrollTo).toHaveBeenCalledWith(0, 0);
   });
+
+  it('does not force a page scroll while an editable composer already has focus', () => {
+    const bodyClasses = new Set<string>();
+    const focusedTextarea = { tagName: 'TEXTAREA', isContentEditable: false };
+    const body = {
+      style: createStyleObject(),
+      classList: {
+        contains: (name: string) => bodyClasses.has(name),
+        toggle: vi.fn((name: string, force?: boolean) => {
+          if (force) {
+            bodyClasses.add(name);
+          } else {
+            bodyClasses.delete(name);
+          }
+        }),
+      },
+    };
+
+    globalThis.document = {
+      querySelector: () => null,
+      documentElement: { style: createStyleObject() } as unknown as Document['documentElement'],
+      body: body as unknown as Document['body'],
+      activeElement: focusedTextarea,
+      getElementById: () => null,
+    } as unknown as Document;
+
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: {
+        height: 500,
+        offsetTop: 12,
+        addEventListener: vi.fn(),
+      },
+    });
+
+    setupVisualViewport();
+
+    expect(bodyClasses.has('keyboard-visible')).toBe(true);
+    expect(host.scrollTo).not.toHaveBeenCalled();
+  });
 });

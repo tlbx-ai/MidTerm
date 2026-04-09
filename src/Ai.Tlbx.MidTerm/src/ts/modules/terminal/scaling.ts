@@ -674,6 +674,28 @@ function resizeTerminalToFit(
   }
 }
 
+function hasEditableElementFocus(): boolean {
+  const activeElement = document.activeElement as {
+    tagName?: string | null;
+    isContentEditable?: boolean | null;
+  } | null;
+  if (!activeElement || typeof activeElement.tagName !== 'string') {
+    return false;
+  }
+
+  const tagName = activeElement.tagName.toUpperCase();
+  return (
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    activeElement.isContentEditable === true
+  );
+}
+
+function isSoftKeyboardVisible(): boolean {
+  return document.body.classList.contains('keyboard-visible');
+}
+
 function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
@@ -728,7 +750,9 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     rows,
     state,
   );
-  focusActiveTerminal();
+  if (!isSoftKeyboardVisible()) {
+    focusActiveTerminal();
+  }
 }
 
 /**
@@ -1434,7 +1458,7 @@ export function setupVisualViewport(): void {
     document.body.style.height = `${vh}px`;
     document.body.style.maxHeight = `${vh}px`;
 
-    if (vv.offsetTop !== 0) {
+    if (vv.offsetTop !== 0 && !hasEditableElementFocus()) {
       window.scrollTo(0, 0);
     }
 

@@ -4,6 +4,7 @@ import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '.
 import { dom, sessionTerminals } from '../../state';
 import { applyTerminalScaling, fitSessionToScreen, scheduleForegroundResizeRecovery } from './scaling';
 import { sendResize } from '../comms';
+import { focusActiveTerminal } from './manager';
 
 const mocks = vi.hoisted(() => ({
   remeasureTerminalCells: vi.fn((state: any) => {
@@ -149,11 +150,13 @@ describe('fitSessionToScreen', () => {
   const originalDocument = globalThis.document;
   const originalLocalStorage = globalThis.localStorage;
   const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  let bodyClasses: ReturnType<typeof createClassList>;
 
   beforeEach(() => {
     sessionTerminals.clear();
     mocks.remeasureTerminalCells.mockClear();
     vi.mocked(sendResize).mockReset();
+    vi.mocked(focusActiveTerminal).mockReset();
     $isMainBrowser.set(true);
     $currentSettings.set({
       fontSize: 14,
@@ -164,8 +167,12 @@ describe('fitSessionToScreen', () => {
     dom.terminalsArea = {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
+    bodyClasses = createClassList();
     globalThis.document = {
       getElementById: () => null,
+      body: {
+        classList: bodyClasses,
+      },
     } as Document;
     globalThis.localStorage = {
       getItem: () => null,
@@ -201,6 +208,19 @@ describe('fitSessionToScreen', () => {
     expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+    expect(focusActiveTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reclaim terminal focus while the soft keyboard is visible', () => {
+    const harness = createFitHarness();
+    sessionTerminals.set('s1', harness.state as never);
+    bodyClasses.add('keyboard-visible');
+
+    fitSessionToScreen('s1');
+
+    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+    expect(focusActiveTerminal).not.toHaveBeenCalled();
   });
 
   it('retries a transiently tiny viewport instead of collapsing to minimum dimensions', () => {
