@@ -1,4 +1,5 @@
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
+import { icon } from '../../constants';
 import { t } from '../i18n';
 import { dom } from '../../state';
 import { $activeSessionId, $currentSettings, $sessionList, $settingsOpen } from '../../stores';
@@ -635,7 +636,33 @@ function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
   info.appendChild(processInfo);
 
   item.appendChild(info);
+  item.appendChild(createSidebarSessionActions(entry));
   return item;
+}
+
+function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
+  const actions = document.createElement('div');
+  actions.className = 'session-actions';
+  actions.id = `session-actions-${entry.id}`;
+  actions.setAttribute('role', 'menu');
+
+  const closeButton = document.createElement('button');
+  closeButton.className = 'session-close';
+  closeButton.setAttribute('role', 'menuitem');
+  closeButton.title = t('session.close');
+  closeButton.setAttribute('aria-label', t('session.close'));
+  closeButton.innerHTML = `
+    <span class="session-action-icon">${icon('close')}</span>
+    <span class="session-action-label">${escapeHtml(t('session.close'))}</span>
+  `;
+  closeButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks?.onDelete(entry.id);
+  });
+
+  actions.appendChild(closeButton);
+  return actions;
 }
 
 function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
