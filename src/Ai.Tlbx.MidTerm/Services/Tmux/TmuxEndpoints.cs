@@ -90,14 +90,14 @@ public static class TmuxEndpoints
             return Results.Ok();
         });
 
-        app.MapGet("/api/sessions/{id}/buffer", async (string id, CancellationToken ct = default) =>
+        app.MapGet("/api/sessions/{id}/buffer", async Task<IResult> (string id, HttpContext ctx) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ctx.RequestAborted);
             if (snapshot is null)
             {
                 return Results.NotFound();
