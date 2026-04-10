@@ -1,32 +1,31 @@
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
 import { t } from '../i18n';
 import { dom } from '../../state';
-import { $activeSessionId, $sessionList, $settingsOpen } from '../../stores';
+import { $activeSessionId, $currentSettings, $sessionList, $settingsOpen } from '../../stores';
 import { getLaunchableHubMachines, getHubSidebarSections } from '../hub/runtime';
 import { showAlert, showConfirm, showTextPrompt } from '../../utils/dialog';
 import {
   createHubWorktree,
   createLocalWorktree,
   deleteHubSpace,
-  deleteHubWorktree,
   deleteLocalSpace,
-  deleteLocalWorktree,
-  fetchHubRecents,
   fetchHubSpaces,
-  fetchLocalRecents,
   fetchLocalSpaces,
   importHubSpace,
   importLocalSpace,
   initHubGit,
   initLocalGit,
   updateHubSpace,
-  updateHubWorkspace,
   updateLocalSpace,
-  updateLocalWorkspace,
 } from '../spaces/spacesApi';
 import { showCreateWorktreeDialog, showImportSpaceDialog } from '../spaces/spacesDialogs';
-import { launchRecentEntry, launchSpaceWorkspace, type SpaceSurface } from '../spaces/runtime';
-import { getSessionDisplayName as getLegacySessionDisplayName } from './sessionList';
+import { launchSpaceWorkspace, type SpaceSurface } from '../spaces/runtime';
+import { addProcessStateListener, getForegroundInfo } from '../process';
+import {
+  getSessionDisplayInfo,
+  getSessionDisplayName as getLegacySessionDisplayName,
+} from './sessionList';
+import { createSessionFilterController } from './sessionFilterController';
 
 export interface SessionListCallbacks {
   onSelect: (sessionId: string) => void;
@@ -48,7 +47,6 @@ interface SidebarSpaceSection {
   label: string;
   machineId: string | null;
   spaces: SpaceSummaryDto[];
-  recents: LaunchEntry[];
 }
 
 interface SidebarSessionRef {
@@ -62,14 +60,56 @@ let cachedSections: SidebarSpaceSection[] = [];
 let loadPromise: Promise<void> | null = null;
 let lastLoadedAt = 0;
 let loadToken = 0;
-let searchValue = '';
-let searchBound = false;
+let queuedRenderFrameId: number | null = null;
 
-const SPACE_COLLAPSE_PREFIX = 'midterm.sidebar.spaceCollapsed.';
+const SPACE_MANAGE_PREFIX = 'midterm.sidebar.spaceManage.';
+const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
 const TREE_TTL_MS = 15_000;
 
+function loadStoredSessionFilter(): string {
+  try {
+    return (localStorage.getItem(SESSION_FILTER_STORAGE_KEY) ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function persistSessionFilter(value: string): void {
+  try {
+    if (value === '') {
+      localStorage.removeItem(SESSION_FILTER_STORAGE_KEY);
+    } else {
+      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, value);
+    }
+  } catch {
+    // Ignore localStorage failures and keep the filter in memory.
+  }
+}
+
+function isSidebarSessionFilterEnabled(): boolean {
+  return $currentSettings.get()?.showSidebarSessionFilter === true;
+}
+
+const sessionFilterController = createSessionFilterController({
+  getElements: () => ({
+    filterBar: dom.sessionFilterBar,
+    filterInput: dom.sessionFilterInput,
+    filterClear: dom.sessionFilterClear,
+  }),
+  isEnabled: isSidebarSessionFilterEnabled,
+  areSettingsLoaded: () => $currentSettings.get() !== null,
+  loadStoredFilter: loadStoredSessionFilter,
+  persistFilter: persistSessionFilter,
+  render: () => {
+    renderSessionList();
+    updateEmptyState();
+  },
+  translate: t,
+});
+
 export function initializeSessionList(): void {
-  initializeSearchControls();
+  addProcessStateListener(queueSidebarTreeRender);
+  sessionFilterController.initialize();
   syncSearchControls();
   void refreshSidebarSpacesTree(true);
 }
@@ -84,6 +124,7 @@ export function invalidateSidebarSpacesTree(): void {
 }
 
 export function applySessionFilterSettingChange(): void {
+  sessionFilterController.applySettingChange();
   syncSearchControls();
 }
 
@@ -112,8 +153,7 @@ export function updateEmptyState(): void {
   const visibleSections = getVisibleSpaceSections();
   const hasSessions = getAllSidebarSessions().length > 0;
   const hasSpaces = visibleSections.some((section) => section.spaces.length > 0);
-  const hasRecents = visibleSections.some((section) => section.recents.length > 0);
-  if (hasSessions || hasSpaces || hasRecents) {
+  if (hasSessions || hasSpaces) {
     dom.emptyState.classList.add('hidden');
     return;
   }
@@ -174,16 +214,14 @@ function shouldRefreshSidebarTree(): boolean {
 
 async function loadSidebarTreeData(token: number): Promise<void> {
   const machines = getLaunchableHubMachines();
-  const [localSpaces, localRecents, remoteSections] = await Promise.all([
+  const [localSpaces, remoteSections] = await Promise.all([
     fetchLocalSpaces().catch(() => []),
-    fetchLocalRecents().catch(() => []),
     Promise.all(
       machines.map(async (machine) => ({
         id: machine.machine.id,
         label: machine.machine.name,
         machineId: machine.machine.id,
         spaces: await fetchHubSpaces(machine.machine.id).catch(() => []),
-        recents: await fetchHubRecents(machine.machine.id).catch(() => []),
       })),
     ),
   ]);
@@ -198,7 +236,6 @@ async function loadSidebarTreeData(token: number): Promise<void> {
       label: t('sessionLauncher.localTargetTitle'),
       machineId: null,
       spaces: localSpaces,
-      recents: localRecents,
     },
     ...remoteSections,
   ];
@@ -230,7 +267,7 @@ function renderSidebarTree(): void {
   if (host.childElementCount === 0) {
     const empty = document.createElement('div');
     empty.className = 'spaces-sidebar-empty';
-    empty.textContent = searchValue ? t('spaces.noSearchMatches') : t('spaces.sidebarEmpty');
+    empty.textContent = getSearchValue() ? t('spaces.noSearchMatches') : t('spaces.sidebarEmpty');
     host.appendChild(empty);
   }
 }
@@ -238,28 +275,26 @@ function renderSidebarTree(): void {
 function getVisibleSpaceSections(): SidebarSpaceSection[] {
   return cachedSections
     .map((section) => filterSection(section))
-    .filter((section) => section.spaces.length > 0 || section.recents.length > 0);
+    .filter((section) => section.spaces.length > 0);
 }
 
 function filterSection(section: SidebarSpaceSection): SidebarSpaceSection {
   const filteredSpaces = section.spaces
     .map((space) => filterSpace(section.machineId, space))
     .filter((space): space is SpaceSummaryDto => space !== null);
-  const filteredRecents = section.recents.filter((recent) => matchesRecentSearch(recent));
   return {
     ...section,
     spaces: filteredSpaces,
-    recents: filteredRecents.slice(0, 6),
   };
 }
 
 function filterSpace(machineId: string | null, space: SpaceSummaryDto): SpaceSummaryDto | null {
-  const hasSession = hasActiveSpaceSession(machineId, space);
-  const textMatch = matchesSpaceSearch(space);
-  if (!textMatch && !searchValue && !space.isPinned && !hasSession) {
+  if (!space.isPinned) {
     return null;
   }
 
+  const searchValue = getSearchValue();
+  const textMatch = matchesSpaceSearch(space);
   if (!searchValue || textMatch) {
     return space;
   }
@@ -267,6 +302,7 @@ function filterSpace(machineId: string | null, space: SpaceSummaryDto): SpaceSum
   const matchingWorkspaces = space.workspaces.filter((workspace) =>
     matchesWorkspaceSearch(workspace),
   );
+  const hasSession = hasMatchingSpaceSession(machineId, space);
   return matchingWorkspaces.length > 0 || hasSession
     ? {
         ...space,
@@ -275,8 +311,10 @@ function filterSpace(machineId: string | null, space: SpaceSummaryDto): SpaceSum
     : null;
 }
 
-function hasActiveSpaceSession(machineId: string | null, space: SpaceSummaryDto): boolean {
-  return getAllSidebarSessions().some((entry) => sessionBelongsToSpace(entry, machineId, space));
+function hasMatchingSpaceSession(machineId: string | null, space: SpaceSummaryDto): boolean {
+  return getAllSidebarSessions().some(
+    (entry) => sessionBelongsToSpace(entry, machineId, space) && matchesSidebarSessionSearch(entry),
+  );
 }
 
 function getAllSidebarSessions(): SidebarSessionRef[] {
@@ -305,7 +343,10 @@ function isSessionAdoptedBySpace(entry: SidebarSessionRef): boolean {
   return cachedSections.some(
     (section) =>
       section.machineId === entry.machineId &&
-      section.spaces.some((space) => sessionBelongsToSpace(entry, section.machineId, space)),
+      section.spaces.some((space) => {
+        const visibleSpace = filterSpace(section.machineId, space);
+        return visibleSpace ? sessionBelongsToSpace(entry, section.machineId, visibleSpace) : false;
+      }),
   );
 }
 
@@ -343,24 +384,6 @@ function createSpaceTargetSection(section: SidebarSpaceSection): HTMLElement {
     wrapper.appendChild(list);
   }
 
-  if (section.recents.length > 0) {
-    const recents = document.createElement('div');
-    recents.className = 'spaces-tree-recents-block';
-
-    const recentsHeader = document.createElement('div');
-    recentsHeader.className = 'spaces-tree-subheader';
-    recentsHeader.textContent = t('spaces.recents');
-    recents.appendChild(recentsHeader);
-
-    const list = document.createElement('div');
-    list.className = 'spaces-tree-recent-list';
-    for (const recent of section.recents) {
-      list.appendChild(createRecentNode(section.machineId, recent));
-    }
-    recents.appendChild(list);
-    wrapper.appendChild(recents);
-  }
-
   return wrapper;
 }
 
@@ -368,24 +391,128 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
   const normalizedKey = `${machineId ?? 'local'}:${space.id}`;
   const node = document.createElement('article');
   node.className = 'spaces-tree-space';
-  if (isSpaceCollapsed(normalizedKey)) {
-    node.classList.add('collapsed');
+  if (isSpaceManageOpen(normalizedKey)) {
+    node.classList.add('manage-open');
   }
 
-  const activeSessionCount = getSpaceSessions(machineId, space).length;
-  const header = document.createElement('button');
-  header.type = 'button';
+  const sessions = getVisibleSpaceSessions(machineId, space);
+  const showWorkspaceList =
+    isSpaceManageOpen(normalizedKey) || shouldShowWorkspacesForSearch(space);
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'spaces-tree-space-header-row';
+
+  const header = document.createElement('div');
   header.className = 'spaces-tree-space-header';
-  header.innerHTML = `
-    <span class="spaces-tree-caret">▾</span>
-    <span class="spaces-tree-space-title">${escapeHtml(space.label)}</span>
-    <span class="spaces-tree-space-meta">${escapeHtml(space.kind.toUpperCase())}</span>
-    ${!space.isPinned ? `<span class="spaces-tree-space-badge">${escapeHtml(t('spaces.unpinned'))}</span>` : ''}
-    ${activeSessionCount > 0 ? `<span class="spaces-tree-space-count">${activeSessionCount}</span>` : ''}
-  `;
-  header.addEventListener('click', () => {
-    toggleSpaceCollapsed(node, normalizedKey);
-  });
+
+  const identity = document.createElement('div');
+  identity.className = 'spaces-tree-space-identity';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'spaces-tree-space-title-row';
+  titleRow.appendChild(createTextSpan('spaces-tree-space-title', space.label));
+  if (sessions.length > 0) {
+    titleRow.appendChild(createTextSpan('spaces-tree-space-count', String(sessions.length)));
+  }
+  identity.appendChild(titleRow);
+
+  const path = document.createElement('div');
+  path.className = 'spaces-tree-space-path';
+  path.textContent = space.rootPath;
+  path.title = space.rootPath;
+  identity.appendChild(path);
+
+  header.appendChild(identity);
+  header.appendChild(createSpaceHeaderActions(machineId, space, normalizedKey, node));
+  node.appendChild(headerRow);
+  headerRow.appendChild(header);
+
+  if (sessions.length === 0 && !showWorkspaceList) {
+    return node;
+  }
+
+  const body = document.createElement('div');
+  body.className = 'spaces-tree-space-body';
+  if (sessions.length > 0) {
+    const sessionList = document.createElement('div');
+    sessionList.className = 'spaces-tree-space-session-list';
+    for (const entry of sessions) {
+      sessionList.appendChild(createSidebarSessionNode(entry));
+    }
+    body.appendChild(sessionList);
+  }
+
+  if (showWorkspaceList) {
+    const workspaceList = document.createElement('div');
+    workspaceList.className = 'spaces-tree-workspace-list';
+    for (const workspace of getVisibleSpaceWorkspaces(space)) {
+      workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
+    }
+    body.appendChild(workspaceList);
+  }
+
+  node.appendChild(body);
+  return node;
+}
+
+function createSpaceHeaderActions(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  normalizedKey: string,
+  node: HTMLElement,
+): HTMLElement {
+  const actions = document.createElement('div');
+  actions.className = 'spaces-tree-space-actions';
+
+  if (space.kind === 'git') {
+    actions.appendChild(
+      createActionButton(
+        t('spaces.newWorktree'),
+        () => {
+          void promptAndCreateWorktree(machineId, space.id);
+        },
+        'secondary',
+      ),
+    );
+    actions.appendChild(
+      createActionButton(
+        t('spaces.worktrees'),
+        () => {
+          toggleSpaceManage(node, normalizedKey);
+        },
+        'secondary',
+      ),
+    );
+  } else {
+    actions.appendChild(
+      createActionButton(
+        t('spaces.initGit'),
+        () => {
+          void initGit(machineId, space.id);
+        },
+        'secondary',
+      ),
+    );
+  }
+
+  actions.appendChild(
+    createActionButton(
+      t('sidebar.rename'),
+      () => {
+        void promptAndRenameSpace(machineId, space);
+      },
+      'secondary',
+    ),
+  );
+  actions.appendChild(
+    createActionButton(
+      t('spaces.deleteSpace'),
+      () => {
+        void promptAndDeleteSpace(machineId, space);
+      },
+      'danger',
+    ),
+  );
 
   const pin = document.createElement('button');
   pin.type = 'button';
@@ -396,61 +523,9 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
     event.stopPropagation();
     void toggleSpacePinned(machineId, space);
   });
+  actions.appendChild(pin);
 
-  const headerRow = document.createElement('div');
-  headerRow.className = 'spaces-tree-space-header-row';
-  headerRow.append(header, pin);
-  node.appendChild(headerRow);
-
-  const body = document.createElement('div');
-  body.className = 'spaces-tree-space-body';
-
-  const path = document.createElement('div');
-  path.className = 'spaces-tree-space-path';
-  path.textContent = space.rootPath;
-  path.title = space.rootPath;
-  body.appendChild(path);
-
-  const tools = document.createElement('div');
-  tools.className = 'spaces-tree-space-tools';
-  tools.appendChild(
-    createActionButton(
-      space.kind === 'git' ? t('spaces.newWorktree') : t('spaces.initGit'),
-      () => {
-        if (space.kind === 'git') {
-          void promptAndCreateWorktree(machineId, space);
-        } else {
-          void initGit(machineId, space.id);
-        }
-      },
-      'secondary',
-    ),
-  );
-  tools.appendChild(
-    createActionButton(t('spaces.renameSpace'), () => {
-      void promptAndRenameSpace(machineId, space);
-    }),
-  );
-  tools.appendChild(
-    createActionButton(
-      t('spaces.deleteSpace'),
-      () => {
-        void promptAndDeleteSpace(machineId, space);
-      },
-      'danger',
-    ),
-  );
-  body.appendChild(tools);
-
-  const workspaceList = document.createElement('div');
-  workspaceList.className = 'spaces-tree-workspace-list';
-  for (const workspace of space.workspaces) {
-    workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
-  }
-  body.appendChild(workspaceList);
-
-  node.appendChild(body);
-  return node;
+  return actions;
 }
 
 function createWorkspaceNode(
@@ -462,6 +537,21 @@ function createWorkspaceNode(
   node.className = 'spaces-tree-workspace';
 
   const sessions = getWorkspaceSessions(machineId, space, workspace);
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'spaces-tree-workspace-open';
+  openButton.addEventListener('click', () => {
+    const activeSession =
+      sessions.find((session) => session.id === $activeSessionId.get()) ?? sessions[0];
+    if (activeSession) {
+      callbacks?.onSelect(activeSession.id);
+      callbacks?.onCloseSidebar();
+      return;
+    }
+
+    void openWorkspace(machineId, space.id, workspace, 'terminal');
+  });
+
   const line = document.createElement('div');
   line.className = 'spaces-tree-workspace-line';
   line.appendChild(createTextSpan('spaces-tree-workspace-name', workspace.displayName));
@@ -491,93 +581,61 @@ function createWorkspaceNode(
   if (sessions.length > 0) {
     line.appendChild(createTextSpan('spaces-tree-workspace-badge', String(sessions.length)));
   }
-  node.appendChild(line);
+  openButton.appendChild(line);
 
   const path = document.createElement('div');
   path.className = 'spaces-tree-workspace-path';
   path.textContent = workspace.path;
   path.title = workspace.path;
-  node.appendChild(path);
-
-  const actions = document.createElement('div');
-  actions.className = 'spaces-tree-workspace-actions';
-  actions.appendChild(createLaunchActionButton(space.id, machineId, workspace, 'terminal'));
-  actions.appendChild(createLaunchActionButton(space.id, machineId, workspace, 'codex'));
-  actions.appendChild(createLaunchActionButton(space.id, machineId, workspace, 'claude'));
-  if (workspace.kind === 'worktree' && !workspace.isMain) {
-    actions.appendChild(
-      createActionButton(t('spaces.renameWorktreeShort'), () => {
-        void promptAndRenameWorktree(machineId, space.id, workspace);
-      }),
-    );
-    actions.appendChild(
-      createActionButton(
-        t('spaces.deleteWorktreeShort'),
-        () => {
-          void promptAndDeleteWorktree(machineId, space.id, workspace);
-        },
-        'danger',
-      ),
-    );
-  }
-  node.appendChild(actions);
+  openButton.appendChild(path);
+  node.appendChild(openButton);
 
   if (sessions.length > 0) {
-    const pills = document.createElement('div');
-    pills.className = 'spaces-tree-session-pills';
-    for (const session of sessions) {
-      const pill = document.createElement('button');
-      pill.type = 'button';
-      pill.className = `spaces-tree-session-pill${session.id === $activeSessionId.get() ? ' active' : ''}`;
-      pill.textContent = getSessionDisplayName(session.session);
-      pill.title = getSessionDisplayName(session.session);
-      pill.addEventListener('click', () => {
-        callbacks?.onSelect(session.id);
-        callbacks?.onCloseSidebar();
-      });
-      pills.appendChild(pill);
-    }
-    node.appendChild(pills);
+    const badge = document.createElement('div');
+    badge.className = 'spaces-tree-workspace-session-count';
+    badge.textContent = `${sessions.length}`;
+    node.appendChild(badge);
   }
 
   return node;
 }
 
-function createLaunchActionButton(
-  spaceId: string,
-  machineId: string | null,
-  workspace: SpaceWorkspaceDto,
-  surface: SpaceSurface,
-): HTMLButtonElement {
-  const label =
-    surface === 'terminal'
-      ? t('session.terminal')
-      : surface === 'codex'
-        ? t('sessionLauncher.codexTitle')
-        : t('sessionLauncher.claudeTitle');
-
-  return createActionButton(
-    label,
-    () => {
-      void openWorkspace(machineId, spaceId, workspace, surface);
-    },
-    'launch',
-  );
-}
-
-function createRecentNode(machineId: string | null, recent: LaunchEntry): HTMLElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'spaces-tree-recent';
-  button.innerHTML = `
-    <span class="spaces-tree-recent-label">${escapeHtml(recent.label || recent.executable || recent.workingDirectory || t('session.terminal'))}</span>
-    <span class="spaces-tree-recent-path">${escapeHtml(recent.workingDirectory || '')}</span>
-  `;
-  button.addEventListener('click', () => {
-    void launchRecentEntry(machineId, recent);
+function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
+  const item = document.createElement('div');
+  item.className = `session-item two-line spaces-tree-session-item${entry.id === $activeSessionId.get() ? ' active' : ''}`;
+  item.addEventListener('click', () => {
+    callbacks?.onSelect(entry.id);
     callbacks?.onCloseSidebar();
   });
-  return button;
+
+  const info = document.createElement('div');
+  info.className = 'session-info';
+  const displayInfo = getSessionDisplayInfo(entry.session);
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'session-title-row';
+
+  const title = document.createElement('div');
+  title.className = 'session-title';
+  title.textContent = displayInfo.primary;
+  titleRow.appendChild(title);
+
+  if (displayInfo.secondary) {
+    const subtitle = document.createElement('div');
+    subtitle.className = 'session-subtitle';
+    subtitle.textContent = displayInfo.secondary;
+    titleRow.appendChild(subtitle);
+  }
+
+  info.appendChild(titleRow);
+
+  const processInfo = document.createElement('div');
+  processInfo.className = 'session-process-info';
+  processInfo.appendChild(createForegroundIndicator(entry));
+  info.appendChild(processInfo);
+
+  item.appendChild(info);
+  return item;
 }
 
 function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
@@ -595,27 +653,10 @@ function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
   const list = document.createElement('div');
   list.className = 'spaces-tree-adhoc-list';
   for (const entry of sessions) {
+    const location = entry.session.workspacePath || entry.session.currentDirectory;
     const item = document.createElement('div');
-    item.className = `spaces-tree-adhoc-item${entry.id === $activeSessionId.get() ? ' active' : ''}`;
-
-    const openButton = document.createElement('button');
-    openButton.type = 'button';
-    openButton.className = 'spaces-tree-adhoc-open';
-    const label = entry.machineId
-      ? `${getMachineLabel(entry.machineId)} · ${getSessionDisplayName(entry.session)}`
-      : getSessionDisplayName(entry.session);
-    const location =
-      entry.session.currentDirectory || entry.session.workspacePath || entry.session.shellType;
-    openButton.innerHTML = `
-      <span class="spaces-tree-adhoc-title">${escapeHtml(label)}</span>
-      <span class="spaces-tree-adhoc-path">${escapeHtml(location || '')}</span>
-    `;
-    openButton.addEventListener('click', () => {
-      callbacks?.onSelect(entry.id);
-      callbacks?.onCloseSidebar();
-    });
-    item.appendChild(openButton);
-
+    item.className = 'spaces-tree-adhoc-item';
+    item.appendChild(createSidebarSessionNode(entry));
     if (location) {
       const tools = document.createElement('div');
       tools.className = 'spaces-tree-adhoc-actions';
@@ -631,6 +672,68 @@ function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
   }
   section.appendChild(list);
   return section;
+}
+
+function getForegroundProcessLabel(entry: SidebarSessionRef): string {
+  const foreground = getForegroundInfo(entry.id);
+  return (
+    foreground.displayName?.trim() ||
+    foreground.commandLine?.trim() ||
+    foreground.name?.trim() ||
+    entry.session.shellType ||
+    t('session.terminal')
+  );
+}
+
+function createForegroundIndicator(entry: SidebarSessionRef): HTMLElement {
+  const foreground = getForegroundInfo(entry.id);
+  const cwd = foreground.cwd || entry.session.currentDirectory || entry.session.workspacePath || '';
+  const process = getForegroundProcessLabel(entry);
+
+  const container = document.createElement('span');
+  container.className = 'session-foreground';
+  container.title = cwd ? `${cwd}\n${process}` : process;
+
+  if (cwd) {
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'fg-cwd';
+    cwdSpan.textContent = cwd;
+    container.appendChild(cwdSpan);
+
+    const separator = document.createElement('span');
+    separator.className = 'fg-separator';
+    separator.textContent = '>';
+    container.appendChild(separator);
+  }
+
+  const processSpan = document.createElement('span');
+  processSpan.className = 'fg-process';
+  processSpan.textContent = process;
+  container.appendChild(processSpan);
+  return container;
+}
+
+function getVisibleSpaceSessions(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+): SidebarSessionRef[] {
+  return getSpaceSessions(machineId, space)
+    .filter((entry) => matchesSidebarSessionSearch(entry))
+    .sort((left, right) =>
+      getSessionDisplayName(left.session).localeCompare(getSessionDisplayName(right.session)),
+    );
+}
+
+function getVisibleSpaceWorkspaces(space: SpaceSummaryDto): SpaceWorkspaceDto[] {
+  if (!getSearchValue()) {
+    return space.workspaces;
+  }
+
+  return space.workspaces.filter((workspace) => matchesWorkspaceSearch(workspace));
+}
+
+function shouldShowWorkspacesForSearch(space: SpaceSummaryDto): boolean {
+  return getSearchValue().length > 0 && getVisibleSpaceWorkspaces(space).length > 0;
 }
 
 function getWorkspaceSessions(
@@ -700,34 +803,29 @@ function matchesWorkspaceSearch(workspace: SpaceWorkspaceDto): boolean {
   ]);
 }
 
-function matchesRecentSearch(recent: LaunchEntry): boolean {
-  if (!searchValue) {
-    return true;
-  }
-
-  return matchesSearchTokens([
-    recent.label,
-    recent.executable,
-    recent.workingDirectory,
-    recent.commandLine,
-  ]);
+function matchesAdHocSearch(entry: SidebarSessionRef): boolean {
+  return matchesSidebarSessionSearch(entry);
 }
 
-function matchesAdHocSearch(entry: SidebarSessionRef): boolean {
-  if (!searchValue) {
-    return true;
-  }
-
+function matchesSidebarSessionSearch(entry: SidebarSessionRef): boolean {
+  const foreground = getForegroundInfo(entry.id);
   return matchesSearchTokens([
     getSessionDisplayName(entry.session),
+    entry.session.name,
+    entry.session.terminalTitle,
     entry.session.currentDirectory,
     entry.session.workspacePath,
     entry.session.shellType,
+    foreground.cwd,
+    foreground.name,
+    foreground.displayName,
+    foreground.commandLine,
     entry.machineId ? getMachineLabel(entry.machineId) : '',
   ]);
 }
 
 function matchesSearchTokens(values: Array<string | null | undefined>): boolean {
+  const searchValue = getSearchValue();
   if (!searchValue) {
     return true;
   }
@@ -735,65 +833,17 @@ function matchesSearchTokens(values: Array<string | null | undefined>): boolean 
   return values.some((value) => value?.toLowerCase().includes(searchValue));
 }
 
-function initializeSearchControls(): void {
-  if (searchBound) {
-    return;
-  }
-
-  const filterInput = dom.sessionFilterInput;
-  const filterClear = dom.sessionFilterClear;
-  if (!filterInput || !filterClear) {
-    return;
-  }
-
-  filterInput.addEventListener('input', () => {
-    searchValue = normalizeSearchValue(filterInput.value);
-    syncSearchControls();
-    renderSidebarTree();
-    updateEmptyState();
-  });
-
-  filterInput.addEventListener('keydown', (event) => {
-    event.stopPropagation();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      if (searchValue) {
-        searchValue = '';
-        syncSearchControls();
-        renderSidebarTree();
-        updateEmptyState();
-      } else {
-        filterInput.blur();
-      }
-    }
-  });
-
-  filterClear.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    searchValue = '';
-    syncSearchControls();
-    renderSidebarTree();
-    updateEmptyState();
-    filterInput.focus();
-  });
-
-  searchBound = true;
+function getSearchValue(): string {
+  return normalizeSearchValue(sessionFilterController.getFilterValue());
 }
 
 function syncSearchControls(): void {
-  if (dom.sessionFilterBar) {
-    dom.sessionFilterBar.hidden = false;
-  }
-
   if (dom.sessionFilterInput) {
-    dom.sessionFilterInput.value = searchValue;
     dom.sessionFilterInput.placeholder = t('spaces.searchPlaceholder');
     dom.sessionFilterInput.setAttribute('aria-label', t('spaces.searchPlaceholder'));
   }
 
   if (dom.sessionFilterClear) {
-    dom.sessionFilterClear.hidden = searchValue.length === 0;
     dom.sessionFilterClear.title = t('spaces.clearSearch');
     dom.sessionFilterClear.setAttribute('aria-label', t('spaces.clearSearch'));
   }
@@ -842,10 +892,14 @@ async function initGit(machineId: string | null, spaceId: string): Promise<void>
   }
 }
 
-async function promptAndCreateWorktree(
-  machineId: string | null,
-  space: SpaceSummaryDto,
-): Promise<void> {
+async function promptAndCreateWorktree(machineId: string | null, spaceId: string): Promise<void> {
+  const space = cachedSections
+    .find((section) => section.machineId === machineId)
+    ?.spaces.find((candidate) => candidate.id === spaceId);
+  if (!space) {
+    return;
+  }
+
   const request = await showCreateWorktreeDialog({ machineId, space });
   if (!request) {
     return;
@@ -853,9 +907,9 @@ async function promptAndCreateWorktree(
 
   try {
     if (machineId) {
-      await createHubWorktree(machineId, space.id, request);
+      await createHubWorktree(machineId, spaceId, request);
     } else {
-      await createLocalWorktree(space.id, request);
+      await createLocalWorktree(spaceId, request);
     }
     invalidateSidebarSpacesTree();
   } catch (error) {
@@ -871,12 +925,10 @@ async function promptAndRenameSpace(
 ): Promise<void> {
   const nextName = await showTextPrompt({
     title: t('spaces.renameSpaceTitle'),
-    confirmLabel: t('spaces.renameSpace'),
-    placeholder: t('spaces.spaceNamePlaceholder'),
     initialValue: space.label,
-    validate: (value) => (value.trim() ? null : t('spaces.spaceNameRequired')),
+    validate: (value) => (value.trim().length === 0 ? t('spaces.spaceNameRequired') : null),
   });
-  if (!nextName) {
+  if (nextName === null) {
     return;
   }
 
@@ -898,16 +950,17 @@ async function promptAndDeleteSpace(
   machineId: string | null,
   space: SpaceSummaryDto,
 ): Promise<void> {
-  const activeSessionCount = getSpaceSessions(machineId, space).length;
-  const message =
-    activeSessionCount > 0
-      ? t('spaces.deleteSpaceActiveSessions').replace('{name}', space.label)
-      : t('spaces.deleteSpaceConfirm').replace('{name}', space.label);
-  const confirmed = await showConfirm(message, {
-    title: t('spaces.deleteSpaceTitle'),
-    danger: true,
-    confirmLabel: t('spaces.deleteSpace'),
-  });
+  const hasActiveSessions = getSpaceSessions(machineId, space).length > 0;
+  const confirmed = await showConfirm(
+    (hasActiveSessions
+      ? t('spaces.deleteSpaceActiveSessions')
+      : t('spaces.deleteSpaceConfirm')
+    ).replace('{name}', space.label),
+    {
+      title: t('spaces.deleteSpaceTitle'),
+      danger: true,
+    },
+  );
   if (!confirmed) {
     return;
   }
@@ -922,99 +975,6 @@ async function promptAndDeleteSpace(
   } catch (error) {
     await showAlert(error instanceof Error ? error.message : String(error), {
       title: t('spaces.deleteSpaceFailed'),
-    });
-  }
-}
-
-async function promptAndRenameWorktree(
-  machineId: string | null,
-  spaceId: string,
-  workspace: SpaceWorkspaceDto,
-): Promise<void> {
-  const nextName = await showTextPrompt({
-    title: t('spaces.renameWorktree'),
-    confirmLabel: t('spaces.renameWorktreeShort'),
-    initialValue: workspace.displayName,
-    validate: (value) => (value.trim() ? null : t('spaces.worktreeNameRequired')),
-  });
-  if (!nextName) {
-    return;
-  }
-
-  try {
-    if (machineId) {
-      await updateHubWorkspace(machineId, spaceId, workspace.key, { label: nextName.trim() });
-    } else {
-      await updateLocalWorkspace(spaceId, workspace.key, { label: nextName.trim() });
-    }
-    invalidateSidebarSpacesTree();
-  } catch (error) {
-    await showAlert(error instanceof Error ? error.message : String(error), {
-      title: t('spaces.renameWorktreeFailed'),
-    });
-  }
-}
-
-async function promptAndDeleteWorktree(
-  machineId: string | null,
-  spaceId: string,
-  workspace: SpaceWorkspaceDto,
-): Promise<void> {
-  if (workspace.activeSessions.length > 0) {
-    await showAlert(t('spaces.deleteWorktreeActiveSessions'), {
-      title: t('spaces.deleteWorktreeBlockedTitle'),
-    });
-    return;
-  }
-
-  const confirmed = await showConfirm(
-    t('spaces.deleteWorktreeConfirm').replace('{name}', workspace.displayName),
-    {
-      title: t('spaces.deleteWorktreeTitle'),
-      danger: true,
-    },
-  );
-  if (!confirmed) {
-    return;
-  }
-
-  let force = false;
-  if (workspace.hasChanges) {
-    const dirtyConfirmed = await showConfirm(
-      t('spaces.deleteWorktreeDirtyConfirm').replace('{name}', workspace.displayName),
-      {
-        title: t('spaces.deleteWorktreeDirtyTitle'),
-        danger: true,
-      },
-    );
-    if (!dirtyConfirmed) {
-      return;
-    }
-
-    const finalConfirmed = await showConfirm(
-      t('spaces.deleteWorktreeDirtyFinalConfirm').replace('{name}', workspace.displayName),
-      {
-        title: t('spaces.deleteWorktreeDirtyFinalTitle'),
-        danger: true,
-      },
-    );
-    if (!finalConfirmed) {
-      return;
-    }
-
-    force = true;
-  }
-
-  try {
-    if (machineId) {
-      await deleteHubWorktree(machineId, spaceId, workspace.key, { force });
-    } else {
-      await deleteLocalWorktree(spaceId, workspace.key, { force });
-    }
-    invalidateSidebarSpacesTree();
-  } catch (error) {
-    await showAlert(error instanceof Error ? error.message : String(error), {
-      title: t('spaces.deleteWorktreeFailed'),
     });
   }
 }
@@ -1066,13 +1026,26 @@ function createTextSpan(className: string, value: string): HTMLSpanElement {
   return span;
 }
 
-function isSpaceCollapsed(key: string): boolean {
-  return localStorage.getItem(`${SPACE_COLLAPSE_PREFIX}${key}`) === 'true';
+function queueSidebarTreeRender(): void {
+  if (queuedRenderFrameId !== null) {
+    return;
+  }
+
+  queuedRenderFrameId = window.requestAnimationFrame(() => {
+    queuedRenderFrameId = null;
+    renderSessionList();
+    updateMobileTitle();
+  });
 }
 
-function toggleSpaceCollapsed(node: HTMLElement, key: string): void {
-  const collapsed = node.classList.toggle('collapsed');
-  localStorage.setItem(`${SPACE_COLLAPSE_PREFIX}${key}`, String(collapsed));
+function isSpaceManageOpen(key: string): boolean {
+  return localStorage.getItem(`${SPACE_MANAGE_PREFIX}${key}`) === 'true';
+}
+
+function toggleSpaceManage(node: HTMLElement, key: string): void {
+  const next = !node.classList.contains('manage-open');
+  node.classList.toggle('manage-open', next);
+  localStorage.setItem(`${SPACE_MANAGE_PREFIX}${key}`, String(next));
 }
 
 async function toggleSpacePinned(machineId: string | null, space: SpaceSummaryDto): Promise<void> {
