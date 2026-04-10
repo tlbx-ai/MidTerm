@@ -1738,35 +1738,21 @@ if ($asService)
         # Elevate with UAC and stream output via a temp log file.
         # We intentionally use RunAs only; the built-in Windows path is more
         # predictable than optional "sudo" support across different machines.
+        $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
+        if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
+
+        $runAsArguments = $baseArguments + @("-LogFile", $tempLogFile)
+
+        try
         {
-            $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
-            if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
+            $elevatedProcess = Start-Process $psExe -ArgumentList $runAsArguments -Verb RunAs -WindowStyle Minimized -PassThru
+            $elevated = $true
 
-            $runAsArguments = $baseArguments + @("-LogFile", $tempLogFile)
-
-            try
+            # Stream output from log file to original terminal
+            $linesRead = 0
+            while (-not $elevatedProcess.HasExited)
             {
-                $elevatedProcess = Start-Process $psExe -ArgumentList $runAsArguments -Verb RunAs -WindowStyle Minimized -PassThru
-                $elevated = $true
-
-                # Stream output from log file to original terminal
-                $linesRead = 0
-                while (-not $elevatedProcess.HasExited)
-                {
-                    Start-Sleep -Milliseconds 200
-                    if (Test-Path $tempLogFile)
-                    {
-                        $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
-                        if ($lines -and $lines.Count -gt $linesRead)
-                        {
-                            $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
-                            $linesRead = $lines.Count
-                        }
-                    }
-                }
-
-                # Final read to catch any remaining output
-                Start-Sleep -Milliseconds 300
+                Start-Sleep -Milliseconds 200
                 if (Test-Path $tempLogFile)
                 {
                     $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
@@ -1775,36 +1761,47 @@ if ($asService)
                         $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
                     }
                 }
-
-                $elevatedProcess.WaitForExit()
-                if ($elevatedProcess.ExitCode -ne 0)
-                {
-                    Write-Host ""
-                    Write-Host "  Elevated installer exited with code $($elevatedProcess.ExitCode)." -ForegroundColor Red
-                    Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
-                    Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
-                    exit $elevatedProcess.ExitCode
-                }
-
-                Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
             }
-            catch
+
+            # Final read to catch any remaining output
+            Start-Sleep -Milliseconds 300
+            if (Test-Path $tempLogFile)
+            {
+                $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
+                if ($lines -and $lines.Count -gt $linesRead)
+                {
+                    $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                }
+            }
+
+            $elevatedProcess.WaitForExit()
+            if ($elevatedProcess.ExitCode -ne 0)
             {
                 Write-Host ""
-                Write-Host "  ERROR: Could not obtain administrator privileges." -ForegroundColor Red
-                Write-Host ""
-                Write-Host "  This can happen when:" -ForegroundColor Yellow
-                Write-Host "    - UAC is disabled and you're not an administrator" -ForegroundColor Gray
-                Write-Host "    - Running in a non-interactive session (SSH, container)" -ForegroundColor Gray
-                Write-Host "    - The UAC prompt was cancelled" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "  Options:" -ForegroundColor White
-                Write-Host "    1. Run this script from an elevated (Admin) terminal" -ForegroundColor White
-                Write-Host "    2. Re-run the installer and choose [2] (user install, no admin needed)" -ForegroundColor White
-                Write-Host ""
+                Write-Host "  Elevated installer exited with code $($elevatedProcess.ExitCode)." -ForegroundColor Red
+                Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
                 Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
-                exit 1
+                exit $elevatedProcess.ExitCode
             }
+
+            Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
+        }
+        catch
+        {
+            Write-Host ""
+            Write-Host "  ERROR: Could not obtain administrator privileges." -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  This can happen when:" -ForegroundColor Yellow
+            Write-Host "    - UAC is disabled and you're not an administrator" -ForegroundColor Gray
+            Write-Host "    - Running in a non-interactive session (SSH, container)" -ForegroundColor Gray
+            Write-Host "    - The UAC prompt was cancelled" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "  Options:" -ForegroundColor White
+            Write-Host "    1. Run this script from an elevated (Admin) terminal" -ForegroundColor White
+            Write-Host "    2. Re-run the installer and choose [2] (user install, no admin needed)" -ForegroundColor White
+            Write-Host ""
+            Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+            exit 1
         }
 
         # Cleanup
