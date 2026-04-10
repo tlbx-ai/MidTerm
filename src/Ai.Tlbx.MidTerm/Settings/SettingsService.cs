@@ -23,6 +23,11 @@ public sealed class SettingsService
     public bool IsRunningAsService { get; }
     public ISecretStorage SecretStorage => _secretStorage;
 
+    public string GetEffectiveWorktreeRootDirectory()
+    {
+        return ResolveEffectiveWorktreeRootDirectory(Load(), ensureExists: true);
+    }
+
     public SettingsService()
     {
         var overrideDirectory = GetSettingsDirectoryOverride();
@@ -88,6 +93,29 @@ public sealed class SettingsService
         return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideDirectory.Trim()));
     }
 
+    public static string ResolveEffectiveWorktreeRootDirectory(
+        MidTermSettings settings,
+        bool ensureExists = false)
+    {
+        var effective = !string.IsNullOrWhiteSpace(settings.WorktreeRootDirectory)
+            ? NormalizeDirectoryPath(settings.WorktreeRootDirectory)
+            : ResolveDefaultWorktreeRootDirectory(settings);
+
+        if (ensureExists)
+        {
+            try
+            {
+                Directory.CreateDirectory(effective);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Failed to ensure worktree root exists at '{effective}': {ex.Message}");
+            }
+        }
+
+        return effective;
+    }
+
     private static bool DetectServiceMode()
     {
         if (OperatingSystem.IsWindows())
@@ -136,6 +164,42 @@ public sealed class SettingsService
         {
             return false;
         }
+    }
+
+    private static string ResolveDefaultWorktreeRootDirectory(MidTermSettings settings)
+    {
+        var overrideDirectory = GetSettingsDirectoryOverride();
+        if (!string.IsNullOrWhiteSpace(overrideDirectory))
+        {
+            return Path.Combine(
+                overrideDirectory,
+                OperatingSystem.IsWindows() ? "Worktrees" : "worktrees");
+        }
+
+        if (settings.IsServiceInstall)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                return Path.Combine(programData, "MidTerm", "Worktrees");
+            }
+
+            return "/usr/local/etc/midterm/worktrees";
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (OperatingSystem.IsWindows())
+        {
+            return Path.Combine(home, ".midTerm", "Worktrees");
+        }
+
+        return Path.Combine(home, ".midterm", "worktrees");
+    }
+
+    private static string NormalizeDirectoryPath(string path)
+    {
+        var fullPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(path.Trim()));
+        return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 
 

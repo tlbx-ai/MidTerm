@@ -442,6 +442,8 @@
   "settings.behavior.defaultShell": "Default Shell",
   "settings.behavior.defaultWorkingDir": "New Session Start Location",
   "settings.behavior.defaultWorkingDirHint": "Leave empty for the run-as home directory",
+  "settings.behavior.worktreeRootDirectory": "Worktree Root Directory",
+  "settings.behavior.worktreeRootDirectoryHint": "Leave empty to use MidTerm's default worktree folder",
   "settings.behavior.terminalBehavior": "Terminal Behavior",
   "settings.behavior.scrollbackLines": "Scrollback Lines",
   "settings.behavior.scrollbackBytes": "Scrollback Bytes",

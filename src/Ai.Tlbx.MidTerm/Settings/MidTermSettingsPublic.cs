@@ -74,6 +74,7 @@ public sealed partial class MidTermSettingsPublic
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
     public bool ShowSidebarSessionFilter { get; set; } = false;
+    public string WorktreeRootDirectory { get; set; } = "";
     public bool TmuxCompatibility { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public bool CommandBayLigaturesEnabled { get; set; } = true;

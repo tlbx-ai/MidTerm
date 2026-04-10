@@ -105,6 +105,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'string path, empty allowed',
     applyMode: 'new-session',
   }),
+  controlEntry('worktreeRootDirectory', 'setting-worktree-root-dir', 'text', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'string path, empty allowed',
+    applyMode: 'new-session',
+  }),
   controlEntry('terminalEnvironmentVariables', 'setting-terminal-env', 'textarea', '', {
     editable: true,
     storage: 'settings.json',

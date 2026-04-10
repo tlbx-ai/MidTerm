@@ -102,6 +102,9 @@ public sealed class MidTermSettings
     // Sidebar session filter - Shows the sidebar filter input for narrowing visible sessions
     public bool ShowSidebarSessionFilter { get; set; } = false;
 
+    // Linked worktree root - when empty, MidTerm falls back to an OS-specific managed default directory
+    public string WorktreeRootDirectory { get; set; } = "";
+
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;
     public bool CommandBayLigaturesEnabled { get; set; } = true;

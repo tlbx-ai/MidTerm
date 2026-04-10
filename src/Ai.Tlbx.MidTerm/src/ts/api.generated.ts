@@ -4139,6 +4139,7 @@ export interface components {
       inputMode: string;
       fileRadar: boolean;
       showSidebarSessionFilter: boolean;
+      worktreeRootDirectory: string;
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
       commandBayLigaturesEnabled: boolean;

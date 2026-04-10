@@ -3,6 +3,7 @@ import type {
   SpaceImportRequest,
   SpaceSummaryDto,
 } from '../../api/types';
+import { $currentSettings } from '../../stores';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getLaunchableHubMachines } from '../hub/runtime';
@@ -245,7 +246,8 @@ export async function showCreateWorktreeDialog(args: {
     overlay.className = 'modal-overlay';
     let releaseBackButtonLayer: (() => void) | null = null;
 
-    const initialParentPath = getParentDirectory(args.space.rootPath);
+    const initialParentPath =
+      getConfiguredWorktreeRootDirectory(args.machineId) ?? getParentDirectory(args.space.rootPath);
     overlay.innerHTML = `
       <div class="modal session-launcher-modal space-dialog-modal" role="dialog" aria-modal="true" aria-labelledby="space-worktree-title">
         <div class="modal-content session-launcher-content space-dialog-content">
@@ -976,4 +978,13 @@ function getPathTail(path: string): string {
   const normalized = path.replace(/[\\/]+$/, '');
   const separatorIndex = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
   return separatorIndex >= 0 ? normalized.slice(separatorIndex + 1) : normalized;
+}
+
+function getConfiguredWorktreeRootDirectory(machineId: string | null): string | null {
+  if (machineId) {
+    return null;
+  }
+
+  const value = $currentSettings.get()?.worktreeRootDirectory.trim();
+  return value ? value : null;
 }

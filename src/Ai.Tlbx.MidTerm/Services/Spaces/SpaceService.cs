@@ -13,11 +13,13 @@ public sealed class SpaceService
 {
     private readonly string _spacesPath;
     private readonly Lock _lock = new();
+    private readonly SettingsService _settingsService;
     private readonly HistoryService _historyService;
     private SpaceStore _store = new();
 
     public SpaceService(SettingsService settingsService, HistoryService historyService)
     {
+        _settingsService = settingsService;
         _spacesPath = Path.Combine(settingsService.SettingsDirectory, "spaces.json");
         _historyService = historyService;
         Load();
@@ -136,9 +138,11 @@ public sealed class SpaceService
                 : null;
         }
 
+        var configuredWorktreeRoot = GetConfiguredWorktreeRootDirectory();
         var worktrees = await GitCommandRunner.ListWorktreesAsync(record.RootPath).ConfigureAwait(false);
         return worktrees
             .Select(worktree => NormalizePath(worktree.Path))
+            .Where(path => ShouldDisplayWorktree(record.RootPath, path, configuredWorktreeRoot))
             .FirstOrDefault(path => string.Equals(BuildWorkspaceKey(path), workspaceKey, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -273,6 +277,14 @@ public sealed class SpaceService
         }
 
         var normalizedTargetPath = NormalizePath(targetPath);
+        var configuredWorktreeRoot = GetConfiguredWorktreeRootDirectory();
+        if (!string.IsNullOrWhiteSpace(configuredWorktreeRoot) &&
+            !IsPathWithinRoot(normalizedTargetPath, configuredWorktreeRoot))
+        {
+            throw new InvalidOperationException(
+                $"Worktrees must be created under the configured worktree root: {configuredWorktreeRoot}");
+        }
+
         if (Directory.Exists(normalizedTargetPath) && Directory.EnumerateFileSystemEntries(normalizedTargetPath).Any())
         {
             throw new InvalidOperationException("The target worktree path already exists and is not empty.");
@@ -460,7 +472,10 @@ public sealed class SpaceService
             return [BuildPlainWorkspace(record, sessionManager)];
         }
 
-        var worktrees = await GitCommandRunner.ListWorktreesAsync(record.RootPath).ConfigureAwait(false);
+        var configuredWorktreeRoot = GetConfiguredWorktreeRootDirectory();
+        var worktrees = (await GitCommandRunner.ListWorktreesAsync(record.RootPath).ConfigureAwait(false))
+            .Where(worktree => ShouldDisplayWorktree(record.RootPath, worktree.Path, configuredWorktreeRoot))
+            .ToList();
         if (worktrees.Count == 0)
         {
             return [BuildPlainWorkspace(record, sessionManager)];
@@ -581,6 +596,42 @@ public sealed class SpaceService
         return NormalizePath(path)
             .Replace('\\', '/')
             .ToLowerInvariant();
+    }
+
+    private string GetConfiguredWorktreeRootDirectory()
+    {
+        return NormalizePath(_settingsService.GetEffectiveWorktreeRootDirectory());
+    }
+
+    private static bool ShouldDisplayWorktree(string rootPath, string worktreePath, string configuredWorktreeRoot)
+    {
+        var normalizedRoot = NormalizePath(rootPath);
+        var normalizedWorktree = NormalizePath(worktreePath);
+        if (string.Equals(normalizedRoot, normalizedWorktree, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuredWorktreeRoot))
+        {
+            return IsPathWithinRoot(normalizedWorktree, configuredWorktreeRoot);
+        }
+
+        return false;
+    }
+
+    private static bool IsPathWithinRoot(string path, string root)
+    {
+        var normalizedPath = NormalizePath(path);
+        var normalizedRoot = NormalizePath(root);
+        if (string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return normalizedPath.StartsWith(
+            normalizedRoot + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? NormalizeOptionalPath(string? path)

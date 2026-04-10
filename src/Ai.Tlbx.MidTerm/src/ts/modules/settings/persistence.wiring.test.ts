@@ -237,7 +237,7 @@ describe('settings persistence wiring', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
     ];
-    expect(inlineSaveButtons).toHaveLength(7);
+    expect(inlineSaveButtons).toHaveLength(8);
   });
 
   it('keeps the background upload preview clean when an image exists', () => {

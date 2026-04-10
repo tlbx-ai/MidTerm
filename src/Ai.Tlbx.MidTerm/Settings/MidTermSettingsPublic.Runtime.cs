@@ -105,6 +105,7 @@ public sealed partial class MidTermSettingsPublic
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
+            WorktreeRootDirectory = SettingsService.ResolveEffectiveWorktreeRootDirectory(settings, ensureExists: true),
             TmuxCompatibility = settings.TmuxCompatibility,
             ManagerBarEnabled = settings.ManagerBarEnabled,
             CommandBayLigaturesEnabled = settings.CommandBayLigaturesEnabled,
@@ -218,6 +219,7 @@ public sealed partial class MidTermSettingsPublic
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
         settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
+        settings.WorktreeRootDirectory = NormalizeOptionalDirectorySetting(WorktreeRootDirectory);
         settings.TmuxCompatibility = TmuxCompatibility;
         settings.ManagerBarEnabled = ManagerBarEnabled;
         settings.CommandBayLigaturesEnabled = CommandBayLigaturesEnabled;
@@ -245,6 +247,23 @@ public sealed partial class MidTermSettingsPublic
         // Background image metadata is managed by the background image endpoints
         // Hub machine configuration is managed by the hub endpoints so credentials are not lost
         // These fields are read-only in the GET response and ignored on PUT.
+    }
+
+    private static string NormalizeOptionalDirectorySetting(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(value.Trim()));
+        }
+        catch
+        {
+            return value.Trim();
+        }
     }
 
     private static string NormalizeTerminalColorSchemeName(string? value)

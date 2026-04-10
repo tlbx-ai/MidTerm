@@ -5032,6 +5032,7 @@
           "inputMode",
           "fileRadar",
           "showSidebarSessionFilter",
+          "worktreeRootDirectory",
           "tmuxCompatibility",
           "managerBarEnabled",
           "commandBayLigaturesEnabled",
@@ -5259,6 +5260,9 @@
           },
           "showSidebarSessionFilter": {
             "type": "boolean"
+          },
+          "worktreeRootDirectory": {
+            "type": "string"
           },
           "tmuxCompatibility": {
             "type": "boolean"
