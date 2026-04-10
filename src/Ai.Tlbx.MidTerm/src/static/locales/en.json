@@ -4,6 +4,7 @@
   "sidebar.loadBookmarked": "Bookmarks",
   "spaces.title": "Spaces",
   "spaces.add": "Add",
+  "spaces.addNew": "Add new",
   "spaces.empty": "No spaces yet.",
   "spaces.addTitle": "Add Space",
   "spaces.addHint": "Choose a working directory to keep in the sidebar. If the folder belongs to a Git repo, MidTerm will rediscover its worktrees automatically.",

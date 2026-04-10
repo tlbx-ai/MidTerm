@@ -148,8 +148,8 @@ function createDropdownElement(): void {
   dropdownEl.innerHTML = `
     <div class="history-dropdown-header spaces-dropdown-header">
       <span>${escapeHtml(t('spaces.title'))}</span>
-      <button type="button" class="spaces-dropdown-add btn-secondary" data-action="add-space">
-        ${escapeHtml(t('spaces.add'))}
+      <button type="button" class="spaces-add-btn" data-action="add-space">
+        ${escapeHtml(t('spaces.addNew'))}
       </button>
     </div>
     <div class="history-dropdown-content"></div>
@@ -312,14 +312,6 @@ function renderDropdownContent(): void {
     sectionEl.innerHTML = `
       <div class="history-section-header spaces-section-header">
         <span>${escapeHtml(section.label)}</span>
-        <button
-          type="button"
-          class="spaces-add-btn btn-secondary"
-          data-action="add-space"
-          data-machine-id="${escapeHtml(section.machineId ?? '')}"
-        >
-          ${escapeHtml(t('spaces.add'))}
-        </button>
       </div>
     `;
 
@@ -344,7 +336,20 @@ function renderDropdownContent(): void {
 
 function createSpaceRow(space: SpaceSummaryDto, machineId: string | null): HTMLElement {
   const row = document.createElement('div');
-  row.className = `spaces-space-row${space.isPinned ? ' pinned' : ''}`;
+  row.className = `history-item spaces-space-row${space.isPinned ? ' pinned' : ''}`;
+  row.title = buildSpaceRowTitle(space);
+
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = `history-item-star${space.isPinned ? ' starred' : ''}`;
+  pinButton.dataset.action = 'toggle-pin';
+  pinButton.dataset.spaceId = space.id;
+  pinButton.dataset.machineId = machineId ?? '';
+  pinButton.title = space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace');
+  pinButton.setAttribute('aria-label', pinButton.title);
+  pinButton.setAttribute('aria-pressed', space.isPinned ? 'true' : 'false');
+  pinButton.textContent = space.isPinned ? '★' : '☆';
+  row.appendChild(pinButton);
 
   const launchButton = document.createElement('button');
   launchButton.type = 'button';
@@ -354,23 +359,16 @@ function createSpaceRow(space: SpaceSummaryDto, machineId: string | null): HTMLE
   launchButton.dataset.machineId = machineId ?? '';
   launchButton.title = buildSpaceRowTitle(space);
 
-  const path = document.createElement('span');
-  path.className = 'spaces-space-path';
-  path.textContent = space.rootPath;
-  launchButton.appendChild(path);
-  row.appendChild(launchButton);
+  const info = document.createElement('div');
+  info.className = 'history-item-info spaces-space-info';
 
-  const pinButton = document.createElement('button');
-  pinButton.type = 'button';
-  pinButton.className = `spaces-space-pin-btn${space.isPinned ? ' pinned' : ''}`;
-  pinButton.dataset.action = 'toggle-pin';
-  pinButton.dataset.spaceId = space.id;
-  pinButton.dataset.machineId = machineId ?? '';
-  pinButton.title = space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace');
-  pinButton.setAttribute('aria-label', pinButton.title);
-  pinButton.setAttribute('aria-pressed', space.isPinned ? 'true' : 'false');
-  pinButton.textContent = space.isPinned ? '★' : '☆';
-  row.appendChild(pinButton);
+  const path = document.createElement('span');
+  path.className = 'history-item-text spaces-space-path';
+  path.textContent = space.rootPath;
+  info.appendChild(path);
+
+  launchButton.appendChild(info);
+  row.appendChild(launchButton);
 
   return row;
 }
