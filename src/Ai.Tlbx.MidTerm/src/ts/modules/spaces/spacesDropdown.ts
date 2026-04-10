@@ -4,6 +4,7 @@ import { getLaunchableHubMachines } from '../hub/runtime';
 import { invalidateSidebarSpacesTree } from '../sidebar/spacesTreeSidebar';
 import { showAlert } from '../../utils/dialog';
 import { showImportSpaceDialog } from './spacesDialogs';
+import { launchSpaceWorkspace } from './runtime';
 import {
   fetchHubSpaces,
   fetchLocalSpaces,
@@ -145,8 +146,11 @@ function createDropdownElement(): void {
   dropdownEl = document.createElement('div');
   dropdownEl.className = 'history-dropdown spaces-dropdown';
   dropdownEl.innerHTML = `
-    <div class="history-dropdown-header">
+    <div class="history-dropdown-header spaces-dropdown-header">
       <span>${escapeHtml(t('spaces.title'))}</span>
+      <button type="button" class="spaces-dropdown-add btn-secondary" data-action="add-space">
+        ${escapeHtml(t('spaces.add'))}
+      </button>
     </div>
     <div class="history-dropdown-content"></div>
     <div class="history-dropdown-empty hidden">${escapeHtml(t('spaces.empty'))}</div>
@@ -185,6 +189,11 @@ async function handleAction(args: {
   spaceId: string | null;
 }): Promise<void> {
   switch (args.action) {
+    case 'open-space':
+      if (args.spaceId) {
+        await openSpace(args.machineId, args.spaceId);
+      }
+      return;
     case 'add-space':
       await promptAndImportSpace(args.machineId);
       return;
@@ -240,6 +249,24 @@ async function toggleSpacePinned(machineId: string | null, spaceId: string): Pro
   }
 }
 
+async function openSpace(machineId: string | null, spaceId: string): Promise<void> {
+  const space = findSpace(machineId, spaceId);
+  if (!space) {
+    return;
+  }
+
+  const workspace = resolvePrimaryWorkspace(space);
+  if (!workspace) {
+    return;
+  }
+
+  const launched = await launchSpaceWorkspace(machineId, space.id, workspace, 'terminal');
+  if (launched) {
+    closeSpacesDropdown();
+    invalidateSidebarSpacesTree();
+  }
+}
+
 function positionDropdown(): void {
   if (!dropdownEl) {
     return;
@@ -287,7 +314,7 @@ function renderDropdownContent(): void {
         <span>${escapeHtml(section.label)}</span>
         <button
           type="button"
-          class="history-item-rename spaces-add-btn"
+          class="spaces-add-btn btn-secondary"
           data-action="add-space"
           data-machine-id="${escapeHtml(section.machineId ?? '')}"
         >
@@ -316,25 +343,34 @@ function renderDropdownContent(): void {
 }
 
 function createSpaceRow(space: SpaceSummaryDto, machineId: string | null): HTMLElement {
-  const row = document.createElement('button');
-  row.type = 'button';
+  const row = document.createElement('div');
   row.className = `spaces-space-row${space.isPinned ? ' pinned' : ''}`;
-  row.dataset.action = 'toggle-pin';
-  row.dataset.spaceId = space.id;
-  row.dataset.machineId = machineId ?? '';
-  row.setAttribute('aria-pressed', space.isPinned ? 'true' : 'false');
-  row.title = buildSpaceRowTitle(space);
 
-  const pin = document.createElement('span');
-  pin.className = 'spaces-space-pin';
-  pin.setAttribute('aria-hidden', 'true');
-  pin.textContent = space.isPinned ? '★' : '☆';
-  row.appendChild(pin);
+  const launchButton = document.createElement('button');
+  launchButton.type = 'button';
+  launchButton.className = 'spaces-space-launch';
+  launchButton.dataset.action = 'open-space';
+  launchButton.dataset.spaceId = space.id;
+  launchButton.dataset.machineId = machineId ?? '';
+  launchButton.title = buildSpaceRowTitle(space);
 
   const path = document.createElement('span');
   path.className = 'spaces-space-path';
   path.textContent = space.rootPath;
-  row.appendChild(path);
+  launchButton.appendChild(path);
+  row.appendChild(launchButton);
+
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = `spaces-space-pin-btn${space.isPinned ? ' pinned' : ''}`;
+  pinButton.dataset.action = 'toggle-pin';
+  pinButton.dataset.spaceId = space.id;
+  pinButton.dataset.machineId = machineId ?? '';
+  pinButton.title = space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace');
+  pinButton.setAttribute('aria-label', pinButton.title);
+  pinButton.setAttribute('aria-pressed', space.isPinned ? 'true' : 'false');
+  pinButton.textContent = space.isPinned ? '★' : '☆';
+  row.appendChild(pinButton);
 
   return row;
 }
@@ -361,6 +397,14 @@ function buildSpaceRowTitle(space: SpaceSummaryDto): string {
   }
 
   return space.rootPath;
+}
+
+function resolvePrimaryWorkspace(space: SpaceSummaryDto) {
+  return (
+    space.workspaces.find((workspace) => workspace.path === space.rootPath) ??
+    space.workspaces.find((workspace) => workspace.isMain) ??
+    space.workspaces[0]
+  );
 }
 
 function handleOutsideClick(event: MouseEvent): void {
