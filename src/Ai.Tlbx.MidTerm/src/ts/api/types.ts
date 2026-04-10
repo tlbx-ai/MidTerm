@@ -519,12 +519,16 @@ export interface SpaceWorkspaceDto {
 
 export interface SpaceSummaryDto {
   id: string;
+  displayName: string;
   label: string;
   kind: 'plain' | 'git';
   rootPath: string;
   importedPath: string;
   commonRepoId?: string | null;
   isPinned: boolean;
+  canInitGit: boolean;
+  canCreateWorktree: boolean;
+  primaryWorkspaceKey?: string | null;
   createdAtUtc: string;
   updatedAtUtc: string;
   workspaces: SpaceWorkspaceDto[];

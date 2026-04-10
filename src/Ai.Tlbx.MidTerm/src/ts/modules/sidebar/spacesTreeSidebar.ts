@@ -1,15 +1,17 @@
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
 import { icon } from '../../constants';
-import { t } from '../i18n';
 import { dom } from '../../state';
 import { $activeSessionId, $currentSettings, $sessionList, $settingsOpen } from '../../stores';
 import { getLaunchableHubMachines, getHubSidebarSections } from '../hub/runtime';
-import { showAlert, showConfirm, showTextPrompt } from '../../utils/dialog';
+import { t } from '../i18n';
+import { addProcessStateListener, getForegroundInfo } from '../process';
 import {
   createHubWorktree,
   createLocalWorktree,
   deleteHubSpace,
+  deleteHubWorktree,
   deleteLocalSpace,
+  deleteLocalWorktree,
   fetchHubSpaces,
   fetchLocalSpaces,
   importHubSpace,
@@ -17,16 +19,21 @@ import {
   initHubGit,
   initLocalGit,
   updateHubSpace,
+  updateHubWorkspace,
   updateLocalSpace,
+  updateLocalWorkspace,
 } from '../spaces/spacesApi';
 import { showCreateWorktreeDialog, showImportSpaceDialog } from '../spaces/spacesDialogs';
 import { launchSpaceWorkspace, type SpaceSurface } from '../spaces/runtime';
-import { addProcessStateListener, getForegroundInfo } from '../process';
+import { showAlert, showConfirm, showTextPrompt } from '../../utils/dialog';
+import {
+  createSessionFilterController,
+  type SessionFilterControllerElements,
+} from './sessionFilterController';
 import {
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
 } from './sessionList';
-import { createSessionFilterController } from './sessionFilterController';
 
 export interface SessionListCallbacks {
   onSelect: (sessionId: string) => void;
@@ -37,10 +44,6 @@ export interface SessionListCallbacks {
   onEnableMidtermFeatures?: (sessionId: string) => void;
   onCloseSidebar: () => void;
   onLaunchRecent?: (machineId: string | null, entry: LaunchEntry) => void;
-}
-
-export function getSessionDisplayName(session: Session): string {
-  return getLegacySessionDisplayName(session);
 }
 
 interface SidebarSpaceSection {
@@ -56,16 +59,28 @@ interface SidebarSessionRef {
   session: Session;
 }
 
+interface PopoverAction {
+  label: string;
+  tone?: 'default' | 'danger';
+  run: () => void | Promise<void>;
+}
+
 let callbacks: SessionListCallbacks | null = null;
 let cachedSections: SidebarSpaceSection[] = [];
 let loadPromise: Promise<void> | null = null;
 let lastLoadedAt = 0;
 let loadToken = 0;
 let queuedRenderFrameId: number | null = null;
+let actionPopoverEl: HTMLDivElement | null = null;
+let chooserPopoverEl: HTMLDivElement | null = null;
 
-const SPACE_MANAGE_PREFIX = 'midterm.sidebar.spaceManage.';
 const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
+const SPACE_EXPANDED_PREFIX = 'midterm.sidebar.spaceExpanded.';
 const TREE_TTL_MS = 15_000;
+
+export function getSessionDisplayName(session: Session): string {
+  return getLegacySessionDisplayName(session);
+}
 
 function loadStoredSessionFilter(): string {
   try {
@@ -83,7 +98,7 @@ function persistSessionFilter(value: string): void {
       localStorage.setItem(SESSION_FILTER_STORAGE_KEY, value);
     }
   } catch {
-    // Ignore localStorage failures and keep the filter in memory.
+    // Ignore localStorage failures.
   }
 }
 
@@ -92,11 +107,12 @@ function isSidebarSessionFilterEnabled(): boolean {
 }
 
 const sessionFilterController = createSessionFilterController({
-  getElements: () => ({
-    filterBar: dom.sessionFilterBar,
-    filterInput: dom.sessionFilterInput,
-    filterClear: dom.sessionFilterClear,
-  }),
+  getElements: () =>
+    ({
+      filterBar: dom.sessionFilterBar,
+      filterInput: dom.sessionFilterInput,
+      filterClear: dom.sessionFilterClear,
+    }) satisfies SessionFilterControllerElements,
   isEnabled: isSidebarSessionFilterEnabled,
   areSettingsLoaded: () => $currentSettings.get() !== null,
   loadStoredFilter: loadStoredSessionFilter,
@@ -109,9 +125,13 @@ const sessionFilterController = createSessionFilterController({
 });
 
 export function initializeSessionList(): void {
+  ensurePopovers();
   addProcessStateListener(queueSidebarTreeRender);
   sessionFilterController.initialize();
   syncSearchControls();
+  document.addEventListener('click', handleGlobalPopoverClick);
+  window.addEventListener('resize', closePopovers);
+  window.addEventListener('orientationchange', closePopovers);
   void refreshSidebarSpacesTree(true);
 }
 
@@ -138,6 +158,7 @@ export function renderSessionList(): void {
     void refreshSidebarSpacesTree();
   }
 
+  closePopovers();
   renderSidebarTree();
 }
 
@@ -151,15 +172,9 @@ export function updateEmptyState(): void {
     return;
   }
 
-  const visibleSections = getVisibleSpaceSections();
+  const hasSpaces = getVisibleSpaceSections().some((section) => section.spaces.length > 0);
   const hasSessions = getAllSidebarSessions().length > 0;
-  const hasSpaces = visibleSections.some((section) => section.spaces.length > 0);
-  if (hasSessions || hasSpaces) {
-    dom.emptyState.classList.add('hidden');
-    return;
-  }
-
-  dom.emptyState.classList.remove('hidden');
+  dom.emptyState.classList.toggle('hidden', hasSpaces || hasSessions);
 }
 
 export function updateMobileTitle(): void {
@@ -255,8 +270,7 @@ function renderSidebarTree(): void {
   host.className = 'session-list spaces-sidebar-tree';
   host.replaceChildren();
 
-  const visibleSections = getVisibleSpaceSections();
-  for (const section of visibleSections) {
+  for (const section of getVisibleSpaceSections()) {
     host.appendChild(createSpaceTargetSection(section));
   }
 
@@ -280,12 +294,11 @@ function getVisibleSpaceSections(): SidebarSpaceSection[] {
 }
 
 function filterSection(section: SidebarSpaceSection): SidebarSpaceSection {
-  const filteredSpaces = section.spaces
-    .map((space) => filterSpace(section.machineId, space))
-    .filter((space): space is SpaceSummaryDto => space !== null);
   return {
     ...section,
-    spaces: filteredSpaces,
+    spaces: section.spaces
+      .map((space) => filterSpace(section.machineId, space))
+      .filter((space): space is SpaceSummaryDto => space !== null),
   };
 }
 
@@ -295,27 +308,22 @@ function filterSpace(machineId: string | null, space: SpaceSummaryDto): SpaceSum
   }
 
   const searchValue = getSearchValue();
-  const textMatch = matchesSpaceSearch(space);
-  if (!searchValue || textMatch) {
+  if (!searchValue || matchesSpaceSearch(space)) {
     return space;
   }
 
   const matchingWorkspaces = space.workspaces.filter((workspace) =>
-    matchesWorkspaceSearch(workspace),
+    matchesWorkspaceSearch(machineId, space, workspace),
   );
-  const hasSession = hasMatchingSpaceSession(machineId, space);
-  return matchingWorkspaces.length > 0 || hasSession
-    ? {
-        ...space,
-        workspaces: matchingWorkspaces.length > 0 ? matchingWorkspaces : space.workspaces,
-      }
-    : null;
-}
+  const matchingSessions = getSpaceSessions(machineId, space).some(matchesSidebarSessionSearch);
+  if (!matchingSessions && matchingWorkspaces.length === 0) {
+    return null;
+  }
 
-function hasMatchingSpaceSession(machineId: string | null, space: SpaceSummaryDto): boolean {
-  return getAllSidebarSessions().some(
-    (entry) => sessionBelongsToSpace(entry, machineId, space) && matchesSidebarSessionSearch(entry),
-  );
+  return {
+    ...space,
+    workspaces: matchingWorkspaces.length > 0 ? matchingWorkspaces : space.workspaces,
+  };
 }
 
 function getAllSidebarSessions(): SidebarSessionRef[] {
@@ -337,17 +345,14 @@ function getAllSidebarSessions(): SidebarSessionRef[] {
 function getAdHocSessions(): SidebarSessionRef[] {
   return getAllSidebarSessions()
     .filter((entry) => !isSessionAdoptedBySpace(entry))
-    .filter((entry) => matchesAdHocSearch(entry));
+    .filter(matchesSidebarSessionSearch);
 }
 
 function isSessionAdoptedBySpace(entry: SidebarSessionRef): boolean {
   return cachedSections.some(
     (section) =>
       section.machineId === entry.machineId &&
-      section.spaces.some((space) => {
-        const visibleSpace = filterSpace(section.machineId, space);
-        return visibleSpace ? sessionBelongsToSpace(entry, section.machineId, visibleSpace) : false;
-      }),
+      section.spaces.some((space) => sessionBelongsToSpace(entry, section.machineId, space)),
   );
 }
 
@@ -357,176 +362,93 @@ function createSpaceTargetSection(section: SidebarSpaceSection): HTMLElement {
 
   const header = document.createElement('div');
   header.className = 'spaces-tree-target-header';
-  header.innerHTML = `
-    <span class="spaces-tree-target-label">${escapeHtml(section.label)}</span>
-    <span class="spaces-tree-target-count">${section.spaces.length}</span>
-  `;
-
-  const addButton = document.createElement('button');
-  addButton.type = 'button';
-  addButton.className = 'spaces-tree-target-action';
-  addButton.textContent = t('spaces.add');
-  addButton.addEventListener('click', () => {
-    void promptAndImportSpace(section.machineId);
-  });
-
-  const headerActions = document.createElement('div');
-  headerActions.className = 'spaces-tree-target-actions';
-  headerActions.appendChild(addButton);
-  header.appendChild(headerActions);
+  header.innerHTML = `<span class="spaces-tree-target-label">${escapeHtml(section.label)}</span>`;
   wrapper.appendChild(header);
 
-  if (section.spaces.length > 0) {
-    const list = document.createElement('div');
-    list.className = 'spaces-tree-space-list';
-    for (const space of section.spaces) {
-      list.appendChild(createSpaceNode(section.machineId, space));
-    }
-    wrapper.appendChild(list);
+  const list = document.createElement('div');
+  list.className = 'spaces-tree-space-list';
+  for (const space of section.spaces) {
+    list.appendChild(createSpaceNode(section.machineId, space));
   }
+  wrapper.appendChild(list);
 
   return wrapper;
 }
 
 function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTMLElement {
-  const normalizedKey = `${machineId ?? 'local'}:${space.id}`;
-  const node = document.createElement('article');
-  node.className = 'spaces-tree-space';
-  if (isSpaceManageOpen(normalizedKey)) {
-    node.classList.add('manage-open');
-  }
-
   const sessions = getVisibleSpaceSessions(machineId, space);
-  const showWorkspaceList =
-    isSpaceManageOpen(normalizedKey) || shouldShowWorkspacesForSearch(space);
+  const expanded = isSpaceExpanded(machineId, space, sessions.length > 0);
 
-  const headerRow = document.createElement('div');
-  headerRow.className = 'spaces-tree-space-header-row';
+  const node = document.createElement('article');
+  node.className = `spaces-tree-space${expanded ? ' expanded' : ''}`;
 
-  const header = document.createElement('div');
+  const header = document.createElement('button');
+  header.type = 'button';
   header.className = 'spaces-tree-space-header';
+  header.addEventListener('click', () => {
+    toggleSpaceExpanded(machineId, space.id, expanded);
+  });
 
   const identity = document.createElement('div');
   identity.className = 'spaces-tree-space-identity';
-
-  const titleRow = document.createElement('div');
-  titleRow.className = 'spaces-tree-space-title-row';
-  titleRow.appendChild(createTextSpan('spaces-tree-space-title', space.label));
-  if (sessions.length > 0) {
-    titleRow.appendChild(createTextSpan('spaces-tree-space-count', String(sessions.length)));
-  }
-  identity.appendChild(titleRow);
+  identity.appendChild(createTextSpan('spaces-tree-space-title', space.displayName));
 
   const path = document.createElement('div');
   path.className = 'spaces-tree-space-path';
   path.textContent = space.rootPath;
   path.title = space.rootPath;
   identity.appendChild(path);
-
   header.appendChild(identity);
-  header.appendChild(createSpaceHeaderActions(machineId, space, normalizedKey, node));
-  node.appendChild(headerRow);
-  headerRow.appendChild(header);
 
-  if (sessions.length === 0 && !showWorkspaceList) {
-    return node;
-  }
-
-  const body = document.createElement('div');
-  body.className = 'spaces-tree-space-body';
+  const meta = document.createElement('div');
+  meta.className = 'spaces-tree-space-meta';
   if (sessions.length > 0) {
-    const sessionList = document.createElement('div');
-    sessionList.className = 'spaces-tree-space-session-list';
-    for (const entry of sessions) {
-      sessionList.appendChild(createSidebarSessionNode(entry));
-    }
-    body.appendChild(sessionList);
+    meta.appendChild(createTextSpan('spaces-tree-space-count', String(sessions.length)));
   }
+  meta.appendChild(createChevron(expanded));
+  header.appendChild(meta);
 
-  if (showWorkspaceList) {
-    const workspaceList = document.createElement('div');
-    workspaceList.className = 'spaces-tree-workspace-list';
-    for (const workspace of getVisibleSpaceWorkspaces(space)) {
-      workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
-    }
-    body.appendChild(workspaceList);
-  }
-
-  node.appendChild(body);
-  return node;
-}
-
-function createSpaceHeaderActions(
-  machineId: string | null,
-  space: SpaceSummaryDto,
-  normalizedKey: string,
-  node: HTMLElement,
-): HTMLElement {
   const actions = document.createElement('div');
   actions.className = 'spaces-tree-space-actions';
 
-  if (space.kind === 'git') {
-    actions.appendChild(
-      createActionButton(
-        t('spaces.newWorktree'),
-        () => {
-          void promptAndCreateWorktree(machineId, space.id);
-        },
-        'secondary',
-      ),
-    );
-    actions.appendChild(
-      createActionButton(
-        t('spaces.worktrees'),
-        () => {
-          toggleSpaceManage(node, normalizedKey);
-        },
-        'secondary',
-      ),
-    );
-  } else {
-    actions.appendChild(
-      createActionButton(
-        t('spaces.initGit'),
-        () => {
-          void initGit(machineId, space.id);
-        },
-        'secondary',
-      ),
-    );
-  }
-
-  actions.appendChild(
-    createActionButton(
-      t('sidebar.rename'),
-      () => {
-        void promptAndRenameSpace(machineId, space);
-      },
-      'secondary',
-    ),
-  );
-  actions.appendChild(
-    createActionButton(
-      t('spaces.deleteSpace'),
-      () => {
-        void promptAndDeleteSpace(machineId, space);
-      },
-      'danger',
-    ),
-  );
-
-  const pin = document.createElement('button');
-  pin.type = 'button';
-  pin.className = `spaces-tree-pin${space.isPinned ? ' pinned' : ''}`;
-  pin.title = space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace');
-  pin.textContent = space.isPinned ? '★' : '☆';
-  pin.addEventListener('click', (event) => {
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = `spaces-tree-pin spaces-tree-inline-action${space.isPinned ? ' pinned' : ''}`;
+  pinButton.title = space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace');
+  pinButton.setAttribute('aria-label', pinButton.title);
+  pinButton.textContent = space.isPinned ? '★' : '☆';
+  pinButton.addEventListener('click', (event) => {
     event.stopPropagation();
     void toggleSpacePinned(machineId, space);
   });
-  actions.appendChild(pin);
+  actions.appendChild(pinButton);
 
-  return actions;
+  const menuButton = document.createElement('button');
+  menuButton.type = 'button';
+  menuButton.className = 'spaces-tree-overflow spaces-tree-inline-action';
+  menuButton.title = t('session.actions');
+  menuButton.setAttribute('aria-label', t('session.actions'));
+  menuButton.textContent = '⋯';
+  menuButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openActionPopover(menuButton, buildSpaceActions(machineId, space));
+  });
+  actions.appendChild(menuButton);
+  header.appendChild(actions);
+
+  node.appendChild(header);
+
+  if (!expanded) {
+    return node;
+  }
+
+  const workspaceList = document.createElement('div');
+  workspaceList.className = 'spaces-tree-workspace-list';
+  for (const workspace of getVisibleSpaceWorkspaces(machineId, space)) {
+    workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
+  }
+  node.appendChild(workspaceList);
+  return node;
 }
 
 function createWorkspaceNode(
@@ -534,33 +456,36 @@ function createWorkspaceNode(
   space: SpaceSummaryDto,
   workspace: SpaceWorkspaceDto,
 ): HTMLElement {
-  const node = document.createElement('div');
-  node.className = 'spaces-tree-workspace';
+  const sessions = getWorkspaceSessions(machineId, space, workspace).filter(
+    matchesSidebarSessionSearch,
+  );
+  const block = document.createElement('section');
+  block.className = 'spaces-tree-workspace-block';
 
-  const sessions = getWorkspaceSessions(machineId, space, workspace);
-  const openButton = document.createElement('button');
-  openButton.type = 'button';
-  openButton.className = 'spaces-tree-workspace-open';
-  openButton.addEventListener('click', () => {
-    const activeSession =
-      sessions.find((session) => session.id === $activeSessionId.get()) ?? sessions[0];
-    if (activeSession) {
+  const row = document.createElement('div');
+  row.className = 'spaces-tree-workspace';
+
+  const mainButton = document.createElement('button');
+  mainButton.type = 'button';
+  mainButton.className = 'spaces-tree-workspace-open';
+  mainButton.disabled = sessions.length === 0;
+  if (sessions.length > 0) {
+    mainButton.addEventListener('click', () => {
+      const activeSession =
+        sessions.find((session) => session.id === $activeSessionId.get()) ?? sessions[0];
+      if (!activeSession) {
+        return;
+      }
       callbacks?.onSelect(activeSession.id);
       callbacks?.onCloseSidebar();
-      return;
-    }
-
-    void openWorkspace(machineId, space.id, workspace, 'terminal');
-  });
+    });
+  }
 
   const line = document.createElement('div');
   line.className = 'spaces-tree-workspace-line';
   line.appendChild(createTextSpan('spaces-tree-workspace-name', workspace.displayName));
   if (workspace.branch) {
     line.appendChild(createTextSpan('spaces-tree-workspace-branch', workspace.branch));
-  }
-  if (workspace.isMain) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.mainWorkspace')));
   }
   if (workspace.isDetached) {
     line.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.detached')));
@@ -571,34 +496,65 @@ function createWorkspaceNode(
   if (workspace.prunable) {
     line.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.prunable')));
   }
-  if (workspace.hasActiveAiSession) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge warn', t('spaces.aiBusy')));
-  }
   if (workspace.hasChanges) {
     line.appendChild(
       createTextSpan('spaces-tree-workspace-badge warn', String(workspace.changeCount)),
     );
   }
-  if (sessions.length > 0) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge', String(sessions.length)));
+  if (workspace.hasActiveAiSession) {
+    line.appendChild(createTextSpan('spaces-tree-workspace-badge warn', t('spaces.aiBusy')));
   }
-  openButton.appendChild(line);
+  mainButton.appendChild(line);
 
   const path = document.createElement('div');
   path.className = 'spaces-tree-workspace-path';
   path.textContent = workspace.path;
   path.title = workspace.path;
-  openButton.appendChild(path);
-  node.appendChild(openButton);
+  mainButton.appendChild(path);
+  row.appendChild(mainButton);
 
-  if (sessions.length > 0) {
-    const badge = document.createElement('div');
-    badge.className = 'spaces-tree-workspace-session-count';
-    badge.textContent = `${sessions.length}`;
-    node.appendChild(badge);
+  const actions = document.createElement('div');
+  actions.className = 'spaces-tree-workspace-actions';
+
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'spaces-tree-add spaces-tree-inline-action';
+  addButton.title = t('spaces.newSession');
+  addButton.setAttribute('aria-label', t('spaces.newSession'));
+  addButton.textContent = '+';
+  addButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openSurfaceChooser(addButton, machineId, space, workspace);
+  });
+  actions.appendChild(addButton);
+
+  if (canManageWorkspace(space, workspace)) {
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'spaces-tree-overflow spaces-tree-inline-action';
+    menuButton.title = t('session.actions');
+    menuButton.setAttribute('aria-label', t('session.actions'));
+    menuButton.textContent = '⋯';
+    menuButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openActionPopover(menuButton, buildWorkspaceActions(machineId, space, workspace, sessions));
+    });
+    actions.appendChild(menuButton);
   }
 
-  return node;
+  row.appendChild(actions);
+  block.appendChild(row);
+
+  if (sessions.length > 0) {
+    const sessionList = document.createElement('div');
+    sessionList.className = 'spaces-tree-workspace-session-list';
+    for (const entry of sessions) {
+      sessionList.appendChild(createSidebarSessionNode(entry));
+    }
+    block.appendChild(sessionList);
+  }
+
+  return block;
 }
 
 function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
@@ -671,32 +627,38 @@ function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
 
   const header = document.createElement('div');
   header.className = 'spaces-tree-target-header';
-  header.innerHTML = `
-    <span class="spaces-tree-target-label">${escapeHtml(t('spaces.adHocSessions'))}</span>
-    <span class="spaces-tree-target-count">${sessions.length}</span>
-  `;
+  header.innerHTML = `<span class="spaces-tree-target-label">${escapeHtml(t('spaces.adHocSessions'))}</span>`;
   section.appendChild(header);
 
   const list = document.createElement('div');
   list.className = 'spaces-tree-adhoc-list';
   for (const entry of sessions) {
-    const location = entry.session.workspacePath || entry.session.currentDirectory;
     const item = document.createElement('div');
     item.className = 'spaces-tree-adhoc-item';
     item.appendChild(createSidebarSessionNode(entry));
-    if (location) {
+
+    const path = entry.session.workspacePath || entry.session.currentDirectory;
+    if (path) {
       const tools = document.createElement('div');
       tools.className = 'spaces-tree-adhoc-actions';
-      tools.appendChild(
-        createActionButton(t('spaces.saveSessionAsSpace'), () => {
-          void saveSessionAsSpace(entry);
-        }),
-      );
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'spaces-tree-add spaces-tree-inline-action';
+      button.textContent = '+';
+      button.title = t('spaces.saveSessionAsSpace');
+      button.setAttribute('aria-label', t('spaces.saveSessionAsSpace'));
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void saveSessionAsSpace(entry);
+      });
+      tools.appendChild(button);
       item.appendChild(tools);
     }
 
     list.appendChild(item);
   }
+
   section.appendChild(list);
   return section;
 }
@@ -745,22 +707,23 @@ function getVisibleSpaceSessions(
   space: SpaceSummaryDto,
 ): SidebarSessionRef[] {
   return getSpaceSessions(machineId, space)
-    .filter((entry) => matchesSidebarSessionSearch(entry))
+    .filter(matchesSidebarSessionSearch)
     .sort((left, right) =>
       getSessionDisplayName(left.session).localeCompare(getSessionDisplayName(right.session)),
     );
 }
 
-function getVisibleSpaceWorkspaces(space: SpaceSummaryDto): SpaceWorkspaceDto[] {
+function getVisibleSpaceWorkspaces(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+): SpaceWorkspaceDto[] {
   if (!getSearchValue()) {
     return space.workspaces;
   }
 
-  return space.workspaces.filter((workspace) => matchesWorkspaceSearch(workspace));
-}
-
-function shouldShowWorkspacesForSearch(space: SpaceSummaryDto): boolean {
-  return getSearchValue().length > 0 && getVisibleSpaceWorkspaces(space).length > 0;
+  return space.workspaces.filter((workspace) =>
+    matchesWorkspaceSearch(machineId, space, workspace),
+  );
 }
 
 function getWorkspaceSessions(
@@ -816,10 +779,22 @@ function getMachineLabel(machineId: string): string {
 }
 
 function matchesSpaceSearch(space: SpaceSummaryDto): boolean {
-  return matchesSearchTokens([space.label, space.rootPath, space.importedPath, space.kind]);
+  return matchesSearchTokens([space.displayName, space.rootPath, space.importedPath, space.kind]);
 }
 
-function matchesWorkspaceSearch(workspace: SpaceWorkspaceDto): boolean {
+function matchesWorkspaceSearch(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  workspace: SpaceWorkspaceDto,
+): boolean {
+  if (
+    getWorkspaceSessions(machineId, space, workspace).some((entry) =>
+      matchesSidebarSessionSearch(entry),
+    )
+  ) {
+    return true;
+  }
+
   return matchesSearchTokens([
     workspace.displayName,
     workspace.path,
@@ -828,10 +803,6 @@ function matchesWorkspaceSearch(workspace: SpaceWorkspaceDto): boolean {
     workspace.locked ? t('spaces.locked') : '',
     workspace.prunable ? t('spaces.prunable') : '',
   ]);
-}
-
-function matchesAdHocSearch(entry: SidebarSessionRef): boolean {
-  return matchesSidebarSessionSearch(entry);
 }
 
 function matchesSidebarSessionSearch(entry: SidebarSessionRef): boolean {
@@ -879,12 +850,10 @@ function syncSearchControls(): void {
 async function promptAndImportSpace(
   machineId: string | null,
   initialPath?: string | null,
-  initialLabel?: string | null,
 ): Promise<void> {
   const request = await showImportSpaceDialog({
     machineId,
     ...(initialPath !== undefined ? { initialPath } : {}),
-    ...(initialLabel !== undefined ? { initialLabel } : {}),
   });
   if (!request) {
     return;
@@ -946,29 +915,95 @@ async function promptAndCreateWorktree(machineId: string | null, spaceId: string
   }
 }
 
-async function promptAndRenameSpace(
+async function promptAndRenameWorktree(
   machineId: string | null,
-  space: SpaceSummaryDto,
+  spaceId: string,
+  workspace: SpaceWorkspaceDto,
 ): Promise<void> {
   const nextName = await showTextPrompt({
-    title: t('spaces.renameSpaceTitle'),
-    initialValue: space.label,
-    validate: (value) => (value.trim().length === 0 ? t('spaces.spaceNameRequired') : null),
+    title: t('spaces.renameWorktree'),
+    initialValue: workspace.isMain ? '' : workspace.displayName,
   });
   if (nextName === null) {
     return;
   }
 
   try {
+    const request = { label: nextName.trim() || null };
     if (machineId) {
-      await updateHubSpace(machineId, space.id, { label: nextName.trim() });
+      await updateHubWorkspace(machineId, spaceId, workspace.key, request);
     } else {
-      await updateLocalSpace(space.id, { label: nextName.trim() });
+      await updateLocalWorkspace(spaceId, workspace.key, request);
     }
     invalidateSidebarSpacesTree();
   } catch (error) {
     await showAlert(error instanceof Error ? error.message : String(error), {
-      title: t('spaces.renameSpaceFailed'),
+      title: t('spaces.renameWorktreeFailed'),
+    });
+  }
+}
+
+async function promptAndDeleteWorktree(
+  machineId: string | null,
+  spaceId: string,
+  workspace: SpaceWorkspaceDto,
+  sessions: SidebarSessionRef[],
+): Promise<void> {
+  if (sessions.length > 0) {
+    await showAlert(t('spaces.deleteWorktreeActiveSessions'), {
+      title: t('spaces.deleteWorktreeBlockedTitle'),
+    });
+    return;
+  }
+
+  let force = false;
+  if (workspace.hasChanges) {
+    const dirtyConfirmed = await showConfirm(
+      t('spaces.deleteWorktreeDirtyConfirm').replace('{name}', workspace.displayName),
+      {
+        title: t('spaces.deleteWorktreeDirtyTitle'),
+        danger: true,
+      },
+    );
+    if (!dirtyConfirmed) {
+      return;
+    }
+
+    const finalConfirmed = await showConfirm(
+      t('spaces.deleteWorktreeDirtyFinalConfirm').replace('{name}', workspace.displayName),
+      {
+        title: t('spaces.deleteWorktreeDirtyFinalTitle'),
+        danger: true,
+      },
+    );
+    if (!finalConfirmed) {
+      return;
+    }
+
+    force = true;
+  } else {
+    const confirmed = await showConfirm(
+      t('spaces.deleteWorktreeConfirm').replace('{name}', workspace.displayName),
+      {
+        title: t('spaces.deleteWorktreeTitle'),
+        danger: true,
+      },
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+
+  try {
+    if (machineId) {
+      await deleteHubWorktree(machineId, spaceId, workspace.key, { force });
+    } else {
+      await deleteLocalWorktree(spaceId, workspace.key, { force });
+    }
+    invalidateSidebarSpacesTree();
+  } catch (error) {
+    await showAlert(error instanceof Error ? error.message : String(error), {
+      title: t('spaces.deleteWorktreeFailed'),
     });
   }
 }
@@ -982,7 +1017,7 @@ async function promptAndDeleteSpace(
     (hasActiveSessions
       ? t('spaces.deleteSpaceActiveSessions')
       : t('spaces.deleteSpaceConfirm')
-    ).replace('{name}', space.label),
+    ).replace('{name}', space.displayName),
     {
       title: t('spaces.deleteSpaceTitle'),
       danger: true,
@@ -1012,6 +1047,7 @@ async function openWorkspace(
   workspace: SpaceWorkspaceDto,
   surface: SpaceSurface,
 ): Promise<void> {
+  closePopovers();
   const launched = await launchSpaceWorkspace(machineId, spaceId, workspace, surface);
   if (launched) {
     callbacks?.onCloseSidebar();
@@ -1027,23 +1063,223 @@ async function saveSessionAsSpace(entry: SidebarSessionRef): Promise<void> {
     return;
   }
 
-  await promptAndImportSpace(entry.machineId, path, getSessionDisplayName(entry.session));
+  await promptAndImportSpace(entry.machineId, path);
 }
 
-function createActionButton(
-  label: string,
-  handler: () => void,
-  tone: 'default' | 'secondary' | 'danger' | 'launch' = 'default',
-): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = `spaces-tree-action spaces-tree-action-${tone}`;
-  button.textContent = label;
-  button.addEventListener('click', (event) => {
-    event.stopPropagation();
-    handler();
+function buildSpaceActions(machineId: string | null, space: SpaceSummaryDto): PopoverAction[] {
+  const actions: PopoverAction[] = [];
+
+  if (space.canCreateWorktree) {
+    actions.push({
+      label: t('spaces.newWorktree'),
+      run: () => {
+        void promptAndCreateWorktree(machineId, space.id);
+      },
+    });
+  } else if (space.canInitGit) {
+    actions.push({
+      label: t('spaces.initGit'),
+      run: () => {
+        void initGit(machineId, space.id);
+      },
+    });
+  }
+
+  actions.push({
+    label: t('spaces.deleteSpace'),
+    tone: 'danger',
+    run: () => {
+      void promptAndDeleteSpace(machineId, space);
+    },
   });
-  return button;
+
+  return actions;
+}
+
+function buildWorkspaceActions(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  workspace: SpaceWorkspaceDto,
+  sessions: SidebarSessionRef[],
+): PopoverAction[] {
+  return [
+    {
+      label: t('spaces.renameWorktreeShort'),
+      run: () => {
+        void promptAndRenameWorktree(machineId, space.id, workspace);
+      },
+    },
+    {
+      label: t('spaces.deleteWorktreeShort'),
+      tone: 'danger',
+      run: () => {
+        void promptAndDeleteWorktree(machineId, space.id, workspace, sessions);
+      },
+    },
+  ];
+}
+
+function canManageWorkspace(space: SpaceSummaryDto, workspace: SpaceWorkspaceDto): boolean {
+  return space.kind === 'git' && !workspace.isMain;
+}
+
+function ensurePopovers(): void {
+  if (!actionPopoverEl) {
+    actionPopoverEl = document.createElement('div');
+    actionPopoverEl.className = 'manager-bar-action-popover spaces-tree-popover hidden';
+    document.body.appendChild(actionPopoverEl);
+  }
+
+  if (!chooserPopoverEl) {
+    chooserPopoverEl = document.createElement('div');
+    chooserPopoverEl.className = 'manager-bar-action-popover spaces-tree-popover hidden';
+    document.body.appendChild(chooserPopoverEl);
+  }
+}
+
+function openActionPopover(trigger: HTMLElement, actions: PopoverAction[]): void {
+  if (!actionPopoverEl) {
+    return;
+  }
+
+  chooserPopoverEl?.classList.add('hidden');
+  actionPopoverEl.replaceChildren();
+  for (const action of actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `manager-bar-action-popover-btn${action.tone === 'danger' ? ' manager-bar-action-popover-delete' : ' manager-bar-action-popover-edit'}`;
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      closePopovers();
+      void action.run();
+    });
+    actionPopoverEl.appendChild(button);
+  }
+
+  positionPopover(actionPopoverEl, trigger);
+}
+
+function openSurfaceChooser(
+  trigger: HTMLElement,
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  workspace: SpaceWorkspaceDto,
+): void {
+  if (!chooserPopoverEl) {
+    return;
+  }
+
+  actionPopoverEl?.classList.add('hidden');
+  chooserPopoverEl.replaceChildren();
+
+  for (const surface of ['terminal', 'codex', 'claude'] as const) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'manager-bar-action-popover-btn manager-bar-action-popover-edit';
+    button.textContent = t(
+      surface === 'terminal'
+        ? 'sessionLauncher.startTerminal'
+        : surface === 'codex'
+          ? 'sessionLauncher.startCodex'
+          : 'sessionLauncher.startClaude',
+    );
+    button.addEventListener('click', () => {
+      void openWorkspace(machineId, space.id, workspace, surface);
+    });
+    chooserPopoverEl.appendChild(button);
+  }
+
+  positionPopover(chooserPopoverEl, trigger);
+}
+
+function positionPopover(popover: HTMLElement, trigger: HTMLElement): void {
+  popover.classList.remove('hidden');
+  const triggerRect = trigger.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  const gap = 6;
+  const viewportPadding = 8;
+  const openUp =
+    window.innerHeight - triggerRect.bottom < popoverRect.height &&
+    triggerRect.top > popoverRect.height;
+  const top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
+  const left = Math.min(
+    Math.max(viewportPadding, triggerRect.right - popoverRect.width),
+    window.innerWidth - viewportPadding - popoverRect.width,
+  );
+
+  popover.style.top = `${Math.round(Math.max(viewportPadding, top))}px`;
+  popover.style.left = `${Math.round(left)}px`;
+}
+
+function closePopovers(): void {
+  actionPopoverEl?.classList.add('hidden');
+  chooserPopoverEl?.classList.add('hidden');
+}
+
+function handleGlobalPopoverClick(event: MouseEvent): void {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('.spaces-tree-popover') || target?.closest('.spaces-tree-inline-action')) {
+    return;
+  }
+
+  closePopovers();
+}
+
+function isSpaceExpanded(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  hasSessions: boolean,
+): boolean {
+  if (getSearchValue()) {
+    return true;
+  }
+
+  const stored = localStorage.getItem(
+    `${SPACE_EXPANDED_PREFIX}${getSpaceStorageKey(machineId, space.id)}`,
+  );
+  if (stored === 'true') {
+    return true;
+  }
+
+  if (stored === 'false') {
+    return false;
+  }
+
+  return hasSessions;
+}
+
+function toggleSpaceExpanded(machineId: string | null, spaceId: string, isExpanded: boolean): void {
+  localStorage.setItem(
+    `${SPACE_EXPANDED_PREFIX}${getSpaceStorageKey(machineId, spaceId)}`,
+    String(!isExpanded),
+  );
+  renderSessionList();
+}
+
+function getSpaceStorageKey(machineId: string | null, spaceId: string): string {
+  return `${machineId ?? 'local'}:${spaceId}`;
+}
+
+async function toggleSpacePinned(machineId: string | null, space: SpaceSummaryDto): Promise<void> {
+  try {
+    if (machineId) {
+      await updateHubSpace(machineId, space.id, { isPinned: !space.isPinned });
+    } else {
+      await updateLocalSpace(space.id, { isPinned: !space.isPinned });
+    }
+    invalidateSidebarSpacesTree();
+  } catch (error) {
+    await showAlert(error instanceof Error ? error.message : String(error), {
+      title: space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace'),
+    });
+  }
+}
+
+function createChevron(expanded: boolean): HTMLSpanElement {
+  const chevron = document.createElement('span');
+  chevron.className = `spaces-tree-chevron${expanded ? ' expanded' : ''}`;
+  chevron.textContent = '⌄';
+  return chevron;
 }
 
 function createTextSpan(className: string, value: string): HTMLSpanElement {
@@ -1063,31 +1299,6 @@ function queueSidebarTreeRender(): void {
     renderSessionList();
     updateMobileTitle();
   });
-}
-
-function isSpaceManageOpen(key: string): boolean {
-  return localStorage.getItem(`${SPACE_MANAGE_PREFIX}${key}`) === 'true';
-}
-
-function toggleSpaceManage(node: HTMLElement, key: string): void {
-  const next = !node.classList.contains('manage-open');
-  node.classList.toggle('manage-open', next);
-  localStorage.setItem(`${SPACE_MANAGE_PREFIX}${key}`, String(next));
-}
-
-async function toggleSpacePinned(machineId: string | null, space: SpaceSummaryDto): Promise<void> {
-  try {
-    if (machineId) {
-      await updateHubSpace(machineId, space.id, { isPinned: !space.isPinned });
-    } else {
-      await updateLocalSpace(space.id, { isPinned: !space.isPinned });
-    }
-    invalidateSidebarSpacesTree();
-  } catch (error) {
-    await showAlert(error instanceof Error ? error.message : String(error), {
-      title: space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace'),
-    });
-  }
 }
 
 function normalizeSearchValue(value: string): string {

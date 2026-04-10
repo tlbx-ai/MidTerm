@@ -77,19 +77,7 @@ export async function showImportSpaceDialog(args: {
             <button class="modal-close" type="button" data-role="cancel" aria-label="${escapeHtml(t('dialog.cancel'))}">&times;</button>
           </div>
           <div class="modal-body space-dialog-body">
-            <div class="space-dialog-form">
-              <label class="space-dialog-field">
-                <span class="space-dialog-label">${escapeHtml(t('spaces.spaceNameLabel'))}</span>
-                <input
-                  type="text"
-                  class="dialog-input space-dialog-input"
-                  data-role="label"
-                  spellcheck="false"
-                  autocomplete="off"
-                  placeholder="${escapeHtml(t('spaces.spaceNamePlaceholder'))}"
-                  value="${escapeHtml(args.initialLabel?.trim() ?? '')}"
-                />
-              </label>
+            <div class="space-dialog-form space-dialog-form-compact">
               <p class="space-dialog-hint">${escapeHtml(t('spaces.addHint'))}</p>
             </div>
             ${renderBrowserMarkup({ includeClone: true })}
@@ -103,8 +91,7 @@ export async function showImportSpaceDialog(args: {
     `;
 
     const browser = getBrowserElements(overlay);
-    const labelInput = overlay.querySelector<HTMLInputElement>('[data-role="label"]');
-    if (!browser || !labelInput) {
+    if (!browser) {
       overlay.remove();
       resolve(null);
       return;
@@ -205,7 +192,7 @@ export async function showImportSpaceDialog(args: {
 
       close({
         path: state.currentPath.trim(),
-        label: labelInput.value.trim() || null,
+        label: null,
       });
     };
 
@@ -245,7 +232,7 @@ export async function showImportSpaceDialog(args: {
     });
     render();
     void loadInitial();
-    labelInput.focus();
+    browser.pathInput.focus();
   });
 }
 
@@ -262,11 +249,11 @@ export async function showCreateWorktreeDialog(args: {
     overlay.innerHTML = `
       <div class="modal session-launcher-modal space-dialog-modal" role="dialog" aria-modal="true" aria-labelledby="space-worktree-title">
         <div class="modal-content session-launcher-content space-dialog-content">
-          <div class="modal-header">
-            <div>
-              <div class="space-dialog-kicker">${escapeHtml(args.space.label)}</div>
+            <div class="modal-header">
+              <div>
+              <div class="space-dialog-kicker">${escapeHtml(args.space.displayName)}</div>
               <h3 id="space-worktree-title">${escapeHtml(t('spaces.newWorktreeTitle'))}</h3>
-            </div>
+              </div>
             <button class="modal-close" type="button" data-role="cancel" aria-label="${escapeHtml(t('dialog.cancel'))}">&times;</button>
           </div>
           <div class="modal-body space-dialog-body">

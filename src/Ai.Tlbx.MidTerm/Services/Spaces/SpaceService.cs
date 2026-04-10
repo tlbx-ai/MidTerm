@@ -26,12 +26,14 @@ public sealed class SpaceService
 
     public async Task<List<SpaceSummaryDto>> GetSpacesAsync(TtyHostSessionManager sessionManager, CancellationToken ct = default)
     {
+        await NormalizeStoreAsync(ct).ConfigureAwait(false);
+
         List<SpaceRecord> snapshot;
         lock (_lock)
         {
             snapshot = _store.Spaces
                 .Select(Clone)
-                .OrderBy(space => space.Label, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(space => DeriveVisibleSpaceName(space), StringComparer.OrdinalIgnoreCase)
                 .ThenBy(space => space.RootPath, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -43,16 +45,22 @@ public sealed class SpaceService
             spaces.Add(new SpaceSummaryDto
             {
                 Id = record.Id,
+                DisplayName = DeriveVisibleSpaceName(record),
                 Label = record.Label,
                 Kind = record.Kind,
                 RootPath = record.RootPath,
                 ImportedPath = record.ImportedPath,
                 CommonRepoId = record.CommonRepoId,
                 IsPinned = record.IsPinned,
+                CanInitGit = CanInitGit(record),
+                CanCreateWorktree = CanCreateWorktree(record),
                 CreatedAtUtc = record.CreatedAtUtc,
                 UpdatedAtUtc = record.UpdatedAtUtc,
                 Workspaces = (await BuildWorkspacesAsync(record, sessionManager, ct).ConfigureAwait(false)).ToArray()
             });
+            spaces[^1].PrimaryWorkspaceKey = spaces[^1].Workspaces
+                .FirstOrDefault(workspace => workspace.IsMain)?.Key
+                ?? spaces[^1].Workspaces.FirstOrDefault()?.Key;
         }
 
         return spaces;
@@ -90,6 +98,8 @@ public sealed class SpaceService
         TtyHostSessionManager sessionManager,
         CancellationToken ct = default)
     {
+        await NormalizeStoreAsync(ct).ConfigureAwait(false);
+
         SpaceRecord? record;
         lock (_lock)
         {
@@ -104,6 +114,8 @@ public sealed class SpaceService
 
     public async Task<string?> ResolveWorkspacePathAsync(string spaceId, string workspaceKey, CancellationToken ct = default)
     {
+        await NormalizeStoreAsync(ct).ConfigureAwait(false);
+
         SpaceRecord? record;
         lock (_lock)
         {
@@ -417,18 +429,24 @@ public sealed class SpaceService
         TtyHostSessionManager sessionManager,
         CancellationToken ct)
     {
+        var workspaces = (await BuildWorkspacesAsync(record, sessionManager, ct).ConfigureAwait(false)).ToArray();
         return new SpaceSummaryDto
         {
             Id = record.Id,
+            DisplayName = DeriveVisibleSpaceName(record),
             Label = record.Label,
             Kind = record.Kind,
             RootPath = record.RootPath,
             ImportedPath = record.ImportedPath,
             CommonRepoId = record.CommonRepoId,
             IsPinned = record.IsPinned,
+            CanInitGit = CanInitGit(record),
+            CanCreateWorktree = CanCreateWorktree(record),
+            PrimaryWorkspaceKey = workspaces.FirstOrDefault(workspace => workspace.IsMain)?.Key
+                ?? workspaces.FirstOrDefault()?.Key,
             CreatedAtUtc = record.CreatedAtUtc,
             UpdatedAtUtc = record.UpdatedAtUtc,
-            Workspaces = (await BuildWorkspacesAsync(record, sessionManager, ct).ConfigureAwait(false)).ToArray()
+            Workspaces = workspaces
         };
     }
 
@@ -549,7 +567,7 @@ public sealed class SpaceService
         return new SpaceWorkspaceDto
         {
             Key = BuildWorkspaceKey(record.RootPath),
-            DisplayName = DeriveDefaultWorkspaceDisplayName(normalizedRoot),
+            DisplayName = "Main",
             Path = normalizedRoot,
             Kind = SpaceWorkspaceKinds.Plain,
             IsMain = true,
@@ -619,6 +637,197 @@ public sealed class SpaceService
             _store.MigratedFromHistory = true;
             PersistLocked();
         }
+    }
+
+    private async Task NormalizeStoreAsync(CancellationToken ct)
+    {
+        List<SpaceRecord> snapshot;
+        lock (_lock)
+        {
+            snapshot = _store.Spaces.Select(Clone).ToList();
+        }
+
+        if (snapshot.Count == 0)
+        {
+            return;
+        }
+
+        var normalizedStore = new SpaceStore
+        {
+            MigratedFromHistory = true,
+            Spaces = []
+        };
+
+        foreach (var candidate in snapshot)
+        {
+            ct.ThrowIfCancellationRequested();
+            var normalized = await NormalizeRecordAsync(candidate).ConfigureAwait(false);
+            MergeResolvedRecord(normalizedStore.Spaces, normalized);
+        }
+
+        lock (_lock)
+        {
+            var currentJson = JsonSerializer.Serialize(_store, SpaceJsonContext.Default.SpaceStore);
+            var normalizedJson = JsonSerializer.Serialize(normalizedStore, SpaceJsonContext.Default.SpaceStore);
+            if (string.Equals(currentJson, normalizedJson, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _store = normalizedStore;
+            PersistLocked();
+        }
+    }
+
+    private static async Task<SpaceRecord> NormalizeRecordAsync(SpaceRecord record)
+    {
+        var importedPath = !string.IsNullOrWhiteSpace(record.ImportedPath)
+            ? NormalizePath(record.ImportedPath)
+            : NormalizePath(record.RootPath);
+        var probePath = Directory.Exists(importedPath)
+            ? importedPath
+            : NormalizePath(record.RootPath);
+        var repoInfo = Directory.Exists(probePath)
+            ? await GitCommandRunner.GetRepositoryInfoAsync(probePath).ConfigureAwait(false)
+            : null;
+
+        var normalized = Clone(record);
+        normalized.ImportedPath = importedPath;
+        normalized.Label = string.IsNullOrWhiteSpace(normalized.Label)
+            ? DeriveDefaultLabel(importedPath)
+            : normalized.Label.Trim();
+
+        if (repoInfo is null)
+        {
+            normalized.Kind = SpaceKinds.Plain;
+            normalized.RootPath = probePath;
+            normalized.CommonRepoId = null;
+            return normalized;
+        }
+
+        normalized.Kind = SpaceKinds.Git;
+        normalized.RootPath = NormalizePath(repoInfo.RepoRoot);
+        normalized.CommonRepoId = NormalizePath(repoInfo.CommonGitDir);
+        normalized.Label = DeriveDefaultLabel(normalized.RootPath);
+        return normalized;
+    }
+
+    private static void MergeResolvedRecord(List<SpaceRecord> spaces, SpaceRecord candidate)
+    {
+        var match = spaces.FirstOrDefault(existing => SpaceIdentityComparer(existing, candidate));
+        if (match is null)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.Label))
+            {
+                candidate.Label = DeriveDefaultLabel(candidate.RootPath);
+            }
+
+            spaces.Add(candidate);
+            return;
+        }
+
+        match.IsPinned |= candidate.IsPinned;
+        match.RootPath = candidate.RootPath;
+        match.ImportedPath = ChooseImportedPath(match.ImportedPath, candidate.ImportedPath);
+        match.Kind = candidate.Kind;
+        match.CommonRepoId = candidate.CommonRepoId;
+        match.Label = DeriveDefaultLabel(candidate.RootPath);
+        match.CreatedAtUtc = MinTimestamp(match.CreatedAtUtc, candidate.CreatedAtUtc);
+        match.UpdatedAtUtc = MaxTimestamp(match.UpdatedAtUtc, candidate.UpdatedAtUtc);
+        match.Worktrees = MergeWorktreeMetadata(match.Worktrees, candidate.Worktrees);
+    }
+
+    private static bool SpaceIdentityComparer(SpaceRecord left, SpaceRecord right)
+    {
+        if (string.Equals(left.Kind, SpaceKinds.Git, StringComparison.Ordinal) &&
+            string.Equals(right.Kind, SpaceKinds.Git, StringComparison.Ordinal))
+        {
+            return string.Equals(left.CommonRepoId, right.CommonRepoId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(left.RootPath, right.RootPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<SpaceWorktreeRecord> MergeWorktreeMetadata(
+        List<SpaceWorktreeRecord>? left,
+        List<SpaceWorktreeRecord>? right)
+    {
+        var merged = new Dictionary<string, SpaceWorktreeRecord>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var worktree in left ?? [])
+        {
+            var normalizedPath = NormalizePath(worktree.Path);
+            merged[normalizedPath] = new SpaceWorktreeRecord
+            {
+                Path = normalizedPath,
+                Label = worktree.Label,
+                UpdatedAtUtc = worktree.UpdatedAtUtc
+            };
+        }
+
+        foreach (var worktree in right ?? [])
+        {
+            var normalizedPath = NormalizePath(worktree.Path);
+            if (!merged.TryGetValue(normalizedPath, out var existing) ||
+                worktree.UpdatedAtUtc >= existing.UpdatedAtUtc)
+            {
+                merged[normalizedPath] = new SpaceWorktreeRecord
+                {
+                    Path = normalizedPath,
+                    Label = worktree.Label,
+                    UpdatedAtUtc = worktree.UpdatedAtUtc
+                };
+            }
+        }
+
+        return merged.Values
+            .OrderBy(worktree => worktree.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string ChooseImportedPath(string left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left))
+        {
+            return right;
+        }
+
+        if (string.IsNullOrWhiteSpace(right))
+        {
+            return left;
+        }
+
+        return left.Length <= right.Length ? left : right;
+    }
+
+    private static DateTime MinTimestamp(DateTime left, DateTime right)
+    {
+        if (left == default) return right;
+        if (right == default) return left;
+        return left <= right ? left : right;
+    }
+
+    private static DateTime MaxTimestamp(DateTime left, DateTime right)
+    {
+        return left >= right ? left : right;
+    }
+
+    private static string DeriveVisibleSpaceName(SpaceRecord record)
+    {
+        var path = string.IsNullOrWhiteSpace(record.RootPath) ? record.ImportedPath : record.RootPath;
+        return DeriveDefaultLabel(path);
+    }
+
+    private static bool CanInitGit(SpaceRecord record)
+    {
+        return string.Equals(record.Kind, SpaceKinds.Plain, StringComparison.Ordinal) &&
+               Directory.Exists(record.RootPath);
+    }
+
+    private static bool CanCreateWorktree(SpaceRecord record)
+    {
+        return string.Equals(record.Kind, SpaceKinds.Git, StringComparison.Ordinal) &&
+               Directory.Exists(record.RootPath);
     }
 
     private SpaceRecord ImportPlainLocked(string normalizedPath, string? label)

@@ -39,6 +39,7 @@ interface SpacesDropdownOptions {
 }
 
 let dropdownEl: HTMLElement | null = null;
+let targetPickerEl: HTMLElement | null = null;
 let isOpen = false;
 let activeLoadToken = 0;
 let sections: SpaceTargetSection[] = [];
@@ -61,6 +62,7 @@ export function closeSpacesDropdown(): void {
   }
 
   dropdownEl.classList.remove('visible');
+  closeTargetPicker();
   isOpen = false;
   document.removeEventListener('click', handleOutsideClick);
 }
@@ -174,19 +176,37 @@ function createDropdownElement(): void {
 
     const machineId = normalizeMachineId(actionEl.dataset.machineId);
     const spaceId = actionEl.dataset.spaceId ?? null;
-    void handleAction({ action, machineId, spaceId });
+    void handleAction({
+      action,
+      machineId,
+      spaceId,
+      trigger: actionEl,
+    });
   });
 
   const sidebar = document.getElementById('sidebar');
   if (sidebar) {
     sidebar.appendChild(dropdownEl);
   }
+
+  targetPickerEl = document.createElement('div');
+  targetPickerEl.className = 'manager-bar-action-popover spaces-target-picker hidden';
+  targetPickerEl.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const machineId = normalizeMachineId(
+      target?.closest<HTMLElement>('[data-machine-id]')?.dataset.machineId,
+    );
+    closeTargetPicker();
+    void promptAndImportSpace(machineId);
+  });
+  document.body.appendChild(targetPickerEl);
 }
 
 async function handleAction(args: {
   action: string;
   machineId: string | null;
   spaceId: string | null;
+  trigger: HTMLElement;
 }): Promise<void> {
   switch (args.action) {
     case 'open-space':
@@ -195,7 +215,7 @@ async function handleAction(args: {
       }
       return;
     case 'add-space':
-      await promptAndImportSpace(args.machineId);
+      await openAddTargetPicker(args.trigger);
       return;
     case 'toggle-pin':
       if (args.spaceId) {
@@ -302,13 +322,13 @@ function renderDropdownContent(): void {
 
   content.innerHTML = '';
 
-  const totalSpaces = sections.reduce((count, section) => count + section.spaces.length, 0);
+  const visibleSections = sections.filter((section) => section.spaces.length > 0);
+  const totalSpaces = visibleSections.reduce((count, section) => count + section.spaces.length, 0);
   empty.classList.toggle('hidden', totalSpaces > 0);
 
-  for (const section of sections) {
+  for (const section of visibleSections) {
     const sectionEl = document.createElement('section');
     sectionEl.className = 'spaces-section';
-
     sectionEl.innerHTML = `
       <div class="history-section-header spaces-section-header">
         <span>${escapeHtml(section.label)}</span>
@@ -317,16 +337,8 @@ function renderDropdownContent(): void {
 
     const list = document.createElement('div');
     list.className = 'spaces-section-list';
-
-    if (section.spaces.length === 0) {
-      const emptyRow = document.createElement('div');
-      emptyRow.className = 'spaces-empty-row';
-      emptyRow.textContent = t('spaces.empty');
-      list.appendChild(emptyRow);
-    } else {
-      for (const space of section.spaces) {
-        list.appendChild(createSpaceRow(space, section.machineId));
-      }
+    for (const space of section.spaces) {
+      list.appendChild(createSpaceRow(space, section.machineId));
     }
 
     sectionEl.appendChild(list);
@@ -369,7 +381,6 @@ function createSpaceRow(space: SpaceSummaryDto, machineId: string | null): HTMLE
 
   launchButton.appendChild(info);
   row.appendChild(launchButton);
-
   return row;
 }
 
@@ -395,8 +406,8 @@ function normalizeMachineId(value: string | null | undefined): string | null {
 }
 
 function buildSpaceRowTitle(space: SpaceSummaryDto): string {
-  if (space.label.trim() && space.label.trim() !== space.rootPath.trim()) {
-    return `${space.label}\n${space.rootPath}`;
+  if (space.displayName.trim() && space.displayName.trim() !== space.rootPath.trim()) {
+    return `${space.displayName}\n${space.rootPath}`;
   }
 
   return space.rootPath;
@@ -404,10 +415,63 @@ function buildSpaceRowTitle(space: SpaceSummaryDto): string {
 
 function resolvePrimaryWorkspace(space: SpaceSummaryDto) {
   return (
+    space.workspaces.find((workspace) => workspace.key === space.primaryWorkspaceKey) ??
     space.workspaces.find((workspace) => workspace.path === space.rootPath) ??
     space.workspaces.find((workspace) => workspace.isMain) ??
     space.workspaces[0]
   );
+}
+
+async function openAddTargetPicker(trigger: HTMLElement): Promise<void> {
+  if (!targetPickerEl) {
+    await promptAndImportSpace(null);
+    return;
+  }
+
+  const machines = getLaunchableHubMachines();
+  if (machines.length === 0) {
+    await promptAndImportSpace(null);
+    return;
+  }
+
+  targetPickerEl.replaceChildren();
+
+  const localButton = document.createElement('button');
+  localButton.type = 'button';
+  localButton.className = 'manager-bar-action-popover-btn';
+  localButton.dataset.machineId = '';
+  localButton.textContent = t('sessionLauncher.localTargetTitle');
+  targetPickerEl.appendChild(localButton);
+
+  for (const machine of machines) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'manager-bar-action-popover-btn';
+    button.dataset.machineId = machine.machine.id;
+    button.textContent = machine.machine.name;
+    targetPickerEl.appendChild(button);
+  }
+
+  targetPickerEl.classList.remove('hidden');
+
+  const triggerRect = trigger.getBoundingClientRect();
+  const popoverRect = targetPickerEl.getBoundingClientRect();
+  const gap = 6;
+  const viewportPadding = 8;
+  const top = Math.min(
+    Math.max(viewportPadding, triggerRect.bottom + gap),
+    window.innerHeight - viewportPadding - popoverRect.height,
+  );
+  const left = Math.min(
+    Math.max(viewportPadding, triggerRect.right - popoverRect.width),
+    window.innerWidth - viewportPadding - popoverRect.width,
+  );
+  targetPickerEl.style.top = `${Math.round(top)}px`;
+  targetPickerEl.style.left = `${Math.round(left)}px`;
+}
+
+function closeTargetPicker(): void {
+  targetPickerEl?.classList.add('hidden');
 }
 
 function handleOutsideClick(event: MouseEvent): void {
@@ -420,7 +484,11 @@ function handleOutsideClick(event: MouseEvent): void {
     return;
   }
 
-  if (!dropdownEl.contains(target) && !target.closest('.btn-history')) {
+  if (
+    !dropdownEl.contains(target) &&
+    !target.closest('.btn-history') &&
+    !target.closest('.spaces-target-picker')
+  ) {
     closeSpacesDropdown();
   }
 }

@@ -51,12 +51,16 @@ public sealed class SpaceStore
 public sealed class SpaceSummaryDto
 {
     public string Id { get; set; } = "";
+    public string DisplayName { get; set; } = "";
     public string Label { get; set; } = "";
     public string Kind { get; set; } = SpaceKinds.Plain;
     public string RootPath { get; set; } = "";
     public string ImportedPath { get; set; } = "";
     public string? CommonRepoId { get; set; }
     public bool IsPinned { get; set; }
+    public bool CanInitGit { get; set; }
+    public bool CanCreateWorktree { get; set; }
+    public string? PrimaryWorkspaceKey { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public SpaceWorkspaceDto[] Workspaces { get; set; } = [];
