@@ -16,6 +16,7 @@ using Ai.Tlbx.MidTerm.Models.Share;
 using Ai.Tlbx.MidTerm.Models.Security;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Models.Hub;
+using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -187,6 +188,20 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(CreateHistoryRequest))]
 [JsonSerializable(typeof(CreateHistoryResponse))]
 [JsonSerializable(typeof(SetBookmarkRequest))]
+[JsonSerializable(typeof(SpaceSummaryDto))]
+[JsonSerializable(typeof(List<SpaceSummaryDto>))]
+[JsonSerializable(typeof(SpaceWorkspaceDto))]
+[JsonSerializable(typeof(List<SpaceWorkspaceDto>))]
+[JsonSerializable(typeof(SpaceWorkspaceSessionDto))]
+[JsonSerializable(typeof(List<SpaceWorkspaceSessionDto>))]
+[JsonSerializable(typeof(SpaceWorktreeRecord))]
+[JsonSerializable(typeof(List<SpaceWorktreeRecord>))]
+[JsonSerializable(typeof(SpaceImportRequest))]
+[JsonSerializable(typeof(SpaceUpdateRequest))]
+[JsonSerializable(typeof(SpaceCreateWorktreeRequest))]
+[JsonSerializable(typeof(SpaceUpdateWorkspaceRequest))]
+[JsonSerializable(typeof(SpaceDeleteWorktreeRequest))]
+[JsonSerializable(typeof(SpaceLaunchRequest))]
 
 // --- Commands ---
 [JsonSerializable(typeof(ScriptDefinition))]

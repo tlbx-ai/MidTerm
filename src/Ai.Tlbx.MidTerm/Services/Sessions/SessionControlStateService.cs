@@ -13,6 +13,9 @@ public sealed class SessionControlStateService
     private HashSet<string> _lensOnlySessionIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _profileHints = new(StringComparer.Ordinal);
     private Dictionary<string, string> _lensResumeThreadIds = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _spaceIds = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _workspacePaths = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _surfaces = new(StringComparer.Ordinal);
 
     public SessionControlStateService(SettingsService settingsService)
         : this(settingsService.SettingsDirectory)
@@ -74,6 +77,45 @@ public sealed class SessionControlStateService
         lock (_lock)
         {
             return _lensResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId) ? resumeThreadId : null;
+        }
+    }
+
+    public string? GetSpaceId(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        lock (_lock)
+        {
+            return _spaceIds.TryGetValue(sessionId, out var spaceId) ? spaceId : null;
+        }
+    }
+
+    public string? GetWorkspacePath(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        lock (_lock)
+        {
+            return _workspacePaths.TryGetValue(sessionId, out var workspacePath) ? workspacePath : null;
+        }
+    }
+
+    public string? GetSurface(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        lock (_lock)
+        {
+            return _surfaces.TryGetValue(sessionId, out var surface) ? surface : null;
         }
     }
 
@@ -183,6 +225,93 @@ public sealed class SessionControlStateService
         }
     }
 
+    public void SetSpaceId(string sessionId, string? spaceId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var normalized = spaceId?.Trim();
+            var changed = false;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                changed = _spaceIds.Remove(sessionId);
+            }
+            else if (!_spaceIds.TryGetValue(sessionId, out var existing) ||
+                     !string.Equals(existing, normalized, StringComparison.Ordinal))
+            {
+                _spaceIds[sessionId] = normalized;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                PersistLocked();
+            }
+        }
+    }
+
+    public void SetWorkspacePath(string sessionId, string? workspacePath)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var normalized = workspacePath?.Trim();
+            var changed = false;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                changed = _workspacePaths.Remove(sessionId);
+            }
+            else if (!_workspacePaths.TryGetValue(sessionId, out var existing) ||
+                     !string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                _workspacePaths[sessionId] = normalized;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                PersistLocked();
+            }
+        }
+    }
+
+    public void SetSurface(string sessionId, string? surface)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var normalized = surface?.Trim();
+            var changed = false;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                changed = _surfaces.Remove(sessionId);
+            }
+            else if (!_surfaces.TryGetValue(sessionId, out var existing) ||
+                     !string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                _surfaces[sessionId] = normalized;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                PersistLocked();
+            }
+        }
+    }
+
     public void RemoveSession(string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -196,6 +325,9 @@ public sealed class SessionControlStateService
             changed |= _lensOnlySessionIds.Remove(sessionId);
             changed |= _profileHints.Remove(sessionId);
             changed |= _lensResumeThreadIds.Remove(sessionId);
+            changed |= _spaceIds.Remove(sessionId);
+            changed |= _workspacePaths.Remove(sessionId);
+            changed |= _surfaces.Remove(sessionId);
             if (!changed)
             {
                 return;
@@ -232,6 +364,15 @@ public sealed class SessionControlStateService
                 _lensResumeThreadIds = state.LensResumeThreadIds
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+                _spaceIds = state.SpaceIds
+                    .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+                _workspacePaths = state.WorkspacePaths
+                    .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+                _surfaces = state.Surfaces
+                    .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
             }
             catch (Exception ex)
             {
@@ -240,6 +381,9 @@ public sealed class SessionControlStateService
                 _lensOnlySessionIds = new HashSet<string>(StringComparer.Ordinal);
                 _profileHints = new Dictionary<string, string>(StringComparer.Ordinal);
                 _lensResumeThreadIds = new Dictionary<string, string>(StringComparer.Ordinal);
+                _spaceIds = new Dictionary<string, string>(StringComparer.Ordinal);
+                _workspacePaths = new Dictionary<string, string>(StringComparer.Ordinal);
+                _surfaces = new Dictionary<string, string>(StringComparer.Ordinal);
             }
         }
     }
@@ -266,6 +410,15 @@ public sealed class SessionControlStateService
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
                 LensResumeThreadIds = _lensResumeThreadIds
+                    .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                SpaceIds = _spaceIds
+                    .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                WorkspacePaths = _workspacePaths
+                    .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                Surfaces = _surfaces
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
             };

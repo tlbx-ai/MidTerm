@@ -11,7 +11,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.Hub;
+using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Models.Certificates;
@@ -360,6 +362,150 @@ public sealed class HubService
         await EnsureSuccessAsync(response, ct);
         return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryMutationResponse, ct)
             ?? throw new InvalidOperationException("Remote clone response was empty.");
+    }
+
+    public async Task<List<SpaceSummaryDto>> GetSpacesAsync(string machineId, CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync("/api/spaces", ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.ListSpaceSummaryDto, ct)
+            ?? [];
+    }
+
+    public async Task<SpaceSummaryDto> ImportSpaceAsync(
+        string machineId,
+        SpaceImportRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/spaces/import",
+            request,
+            AppJsonContext.Default.SpaceImportRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote space import response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> UpdateSpaceAsync(
+        string machineId,
+        string spaceId,
+        SpaceUpdateRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PatchAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}",
+            request,
+            AppJsonContext.Default.SpaceUpdateRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote space update response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> InitGitSpaceAsync(
+        string machineId,
+        string spaceId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/git/init",
+            content: null,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote space init response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> CreateWorktreeAsync(
+        string machineId,
+        string spaceId,
+        SpaceCreateWorktreeRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/worktrees",
+            request,
+            AppJsonContext.Default.SpaceCreateWorktreeRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote worktree response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> UpdateWorkspaceAsync(
+        string machineId,
+        string spaceId,
+        string workspaceKey,
+        SpaceUpdateWorkspaceRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PatchAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/workspaces/{Uri.EscapeDataString(workspaceKey)}",
+            request,
+            AppJsonContext.Default.SpaceUpdateWorkspaceRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote workspace update response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> DeleteWorktreeAsync(
+        string machineId,
+        string spaceId,
+        string workspaceKey,
+        bool force,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.DeleteAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/workspaces/{Uri.EscapeDataString(workspaceKey)}?force={(force ? "true" : "false")}",
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote worktree delete response was empty.");
+    }
+
+    public async Task<SessionInfoDto> LaunchSpaceAsync(
+        string machineId,
+        string spaceId,
+        string workspaceKey,
+        SpaceLaunchRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/workspaces/{Uri.EscapeDataString(workspaceKey)}/launch",
+            request,
+            AppJsonContext.Default.SpaceLaunchRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SessionInfoDto, ct)
+            ?? throw new InvalidOperationException("Remote space launch response was empty.");
+    }
+
+    public async Task<List<LaunchEntry>> GetRecentsAsync(string machineId, int count = 6, CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync($"/api/recents?count={count}", ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.ListLaunchEntry, ct)
+            ?? [];
     }
 
     public async Task<HubUpdateRolloutResponse> ApplyUpdatesAsync(
@@ -1004,6 +1150,9 @@ public sealed class HubService
 
         public Task<HttpResponseMessage> PutAsJsonAsync<T>(string uri, T? value, JsonTypeInfo<T> jsonTypeInfo, CancellationToken ct) =>
             SendJsonAsync(HttpMethod.Put, uri, value, jsonTypeInfo, ct);
+
+        public Task<HttpResponseMessage> PatchAsJsonAsync<T>(string uri, T? value, JsonTypeInfo<T> jsonTypeInfo, CancellationToken ct) =>
+            SendJsonAsync(HttpMethod.Patch, uri, value, jsonTypeInfo, ct);
 
         private async Task<HttpResponseMessage> SendJsonAsync<T>(
             HttpMethod method,

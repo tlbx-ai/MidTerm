@@ -20,6 +20,7 @@ using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Services.Power;
 using Ai.Tlbx.MidTerm.Services.Hub;
+using Ai.Tlbx.MidTerm.Services.Spaces;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -167,6 +168,7 @@ public static class ServerSetup
                 settingsService: _.GetRequiredService<SettingsService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
+        builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();
         builder.Services.AddSingleton<CommandService>();

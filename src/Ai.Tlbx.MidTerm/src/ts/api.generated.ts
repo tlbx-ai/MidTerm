@@ -3826,6 +3826,9 @@ export interface components {
       rows: number;
       shell?: null | string;
       workingDirectory?: null | string;
+      spaceId?: null | string;
+      workspacePath?: null | string;
+      surface?: null | string;
     };
     CreateShareLinkRequest: {
       sessionId: string;
@@ -4282,6 +4285,10 @@ export interface components {
       order: number;
       parentSessionId: null | string;
       bookmarkId: null | string;
+      spaceId: null | string;
+      workspacePath: null | string;
+      surface: null | string;
+      isAdHoc: boolean;
       agentControlled: boolean;
       lensOnly: boolean;
       profileHint: null | string;
@@ -4648,6 +4655,9 @@ export interface components {
       profile?: null | string;
       lensOnly: boolean;
       launchCommand?: null | string;
+      spaceId?: null | string;
+      workspacePath?: null | string;
+      surface?: null | string;
       /** Format: int32 */
       launchDelayMs: number;
       slashCommands: string[];

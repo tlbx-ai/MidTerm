@@ -1,0 +1,84 @@
+import type { LaunchEntry, Session, ShellType, SpaceWorkspaceDto } from '../../api/types';
+import { t } from '../i18n';
+import { showAlert, showConfirm } from '../../utils/dialog';
+import { launchHubSpaceWorkspace, launchLocalSpaceWorkspace } from './spacesApi';
+
+export type SpaceSurface = 'terminal' | 'codex' | 'claude';
+
+export interface SpacesRuntimeOptions {
+  resolveLaunchDimensions: () => Promise<{ cols: number; rows: number }>;
+  resolveShell: () => ShellType | null;
+  onOpenLocalSession: (session: Session, surface: SpaceSurface) => void | Promise<void>;
+  onOpenRemoteSession: (
+    machineId: string,
+    sessionId: string,
+    surface: SpaceSurface,
+  ) => void | Promise<void>;
+  onLaunchRecent: (machineId: string | null, entry: LaunchEntry) => void | Promise<void>;
+}
+
+let runtimeOptions: SpacesRuntimeOptions | null = null;
+
+export function initSpacesRuntime(options: SpacesRuntimeOptions): void {
+  runtimeOptions = options;
+}
+
+export async function launchSpaceWorkspace(
+  machineId: string | null,
+  spaceId: string,
+  workspace: SpaceWorkspaceDto,
+  surface: SpaceSurface,
+): Promise<boolean> {
+  if (!runtimeOptions) {
+    return false;
+  }
+
+  if (surface !== 'terminal' && workspace.hasActiveAiSession) {
+    const confirmed = await showConfirm(t('spaces.aiCollisionWarning'), {
+      title: t('spaces.aiCollisionTitle'),
+    });
+    if (!confirmed) {
+      return false;
+    }
+  }
+
+  try {
+    const { cols, rows } = await runtimeOptions.resolveLaunchDimensions();
+    const shell = runtimeOptions.resolveShell();
+    if (machineId) {
+      const session = await launchHubSpaceWorkspace(machineId, spaceId, workspace.key, {
+        surface,
+        cols,
+        rows,
+        shell,
+      });
+      await runtimeOptions.onOpenRemoteSession(machineId, session.id, surface);
+      return true;
+    }
+
+    const session = await launchLocalSpaceWorkspace(spaceId, workspace.key, {
+      surface,
+      cols,
+      rows,
+      shell,
+    });
+    await runtimeOptions.onOpenLocalSession(session as Session, surface);
+    return true;
+  } catch (error) {
+    await showAlert(error instanceof Error ? error.message : String(error), {
+      title: t('spaces.launchFailed'),
+    });
+    return false;
+  }
+}
+
+export async function launchRecentEntry(
+  machineId: string | null,
+  entry: LaunchEntry,
+): Promise<void> {
+  if (!runtimeOptions) {
+    return;
+  }
+
+  await runtimeOptions.onLaunchRecent(machineId, entry);
+}

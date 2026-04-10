@@ -18,6 +18,7 @@ using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Services.Power;
 using Ai.Tlbx.MidTerm.Services.Hub;
 using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.Spaces;
 namespace Ai.Tlbx.MidTerm;
 
 public class Program
@@ -202,6 +203,7 @@ public class Program
         var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
         var workerSessionRegistry = app.Services.GetRequiredService<WorkerSessionRegistryService>();
         var historyService = app.Services.GetRequiredService<HistoryService>();
+        var spaceService = app.Services.GetRequiredService<SpaceService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
@@ -352,6 +354,14 @@ public class Program
             providerResumeCatalog,
             agentVibe,
             aiCliProfileService,
+            workerSessionRegistry);
+        SpaceEndpoints.MapSpaceEndpoints(
+            app,
+            spaceService,
+            sessionManager,
+            agentFeed,
+            sessionSupervisor,
+            lensPulse,
             workerSessionRegistry);
         SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)

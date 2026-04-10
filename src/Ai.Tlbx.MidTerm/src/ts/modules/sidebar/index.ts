@@ -5,7 +5,7 @@
  * rendering and sidebar collapse/expand behavior.
  */
 
-export * from './sessionList';
+export * from './spacesTreeSidebar';
 export * from './collapse';
 export * from './shareAccess';
 export * from './networkSection';

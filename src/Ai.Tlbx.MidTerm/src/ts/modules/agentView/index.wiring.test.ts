@@ -40,14 +40,13 @@ describe('agent view Lens wiring', () => {
       ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {",
     );
     expect(css).toContain('display: none;');
-    expect(css).toContain(
-      ":root:not([data-agent-show-message-timestamps='true']) .agent-history-assistant .agent-history-meta {",
+    expect(css).toMatch(
+      /:root:not\(\[data-agent-show-message-timestamps='true'\]\)\s+\.agent-history-assistant\s+\.agent-history-meta\s*\{/,
     );
   });
 
   it('lets agent message typography follow the configurable agent UI font while machine rows stay on terminal monospace', () => {
-    expect(css).toContain('--agent-history-message-font-family:');
-    expect(css).toContain('var(--agent-ui-font-family,');
+    expect(css).toMatch(/--agent-history-message-font-family:\s*var\(\s*--agent-ui-font-family,/);
     expect(css).toContain(
       '--agent-history-mono-font-family: var(--terminal-font-family, var(--font-mono));',
     );
@@ -179,8 +178,7 @@ describe('agent view Lens wiring', () => {
 
   it('documents live assistant markdown rendering without degrading into raw text', () => {
     expect(css).toContain('.agent-history-inline-link {');
-    expect(css).toContain('text-decoration:');
-    expect(css).toContain('    dotted');
+    expect(css).toMatch(/text-decoration:\s*underline\s+dotted/);
     expect(css).toContain('.agent-history-inline-previews {');
     expect(css).toContain('.agent-history-inline-preview-frame {');
     expect(css).toContain('.agent-history-attachment-image-frame {');
@@ -274,8 +272,8 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-busy-label-letter {');
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('animation: agent-history-busy-sweep 1.45s linear infinite alternate;');
-    expect(css).toContain(
-      'animation-delay: calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms));',
+    expect(css).toMatch(
+      /animation-delay:\s*calc\(\s*\(var\(--agent-busy-letter-index,\s*0\)\s*\*\s*90ms\)\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\);/,
     );
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration-body {');

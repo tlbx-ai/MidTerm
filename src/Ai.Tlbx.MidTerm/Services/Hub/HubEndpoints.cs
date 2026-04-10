@@ -1,6 +1,7 @@
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Services.Hub;
 
 namespace Ai.Tlbx.MidTerm.Services.Hub;
@@ -113,6 +114,60 @@ public static class HubEndpoints
         {
             var response = await hubService.CloneLauncherRepositoryAsync(id, request, ct);
             return Results.Json(response, AppJsonContext.Default.LauncherDirectoryMutationResponse);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/spaces", async (string id, CancellationToken ct) =>
+        {
+            var spaces = await hubService.GetSpacesAsync(id, ct);
+            return Results.Json(spaces, AppJsonContext.Default.ListSpaceSummaryDto);
+        });
+
+        app.MapPost("/api/hub/machines/{id}/spaces/import", async (string id, SpaceImportRequest request, CancellationToken ct) =>
+        {
+            var space = await hubService.ImportSpaceAsync(id, request, ct);
+            return Results.Json(space, AppJsonContext.Default.SpaceSummaryDto);
+        });
+
+        app.MapPatch("/api/hub/machines/{id}/spaces/{spaceId}", async (string id, string spaceId, SpaceUpdateRequest request, CancellationToken ct) =>
+        {
+            var space = await hubService.UpdateSpaceAsync(id, spaceId, request, ct);
+            return Results.Json(space, AppJsonContext.Default.SpaceSummaryDto);
+        });
+
+        app.MapPost("/api/hub/machines/{id}/spaces/{spaceId}/git/init", async (string id, string spaceId, CancellationToken ct) =>
+        {
+            var space = await hubService.InitGitSpaceAsync(id, spaceId, ct);
+            return Results.Json(space, AppJsonContext.Default.SpaceSummaryDto);
+        });
+
+        app.MapPost("/api/hub/machines/{id}/spaces/{spaceId}/worktrees", async (string id, string spaceId, SpaceCreateWorktreeRequest request, CancellationToken ct) =>
+        {
+            var space = await hubService.CreateWorktreeAsync(id, spaceId, request, ct);
+            return Results.Json(space, AppJsonContext.Default.SpaceSummaryDto);
+        });
+
+        app.MapPatch("/api/hub/machines/{id}/spaces/{spaceId}/workspaces/{key}", async (string id, string spaceId, string key, SpaceUpdateWorkspaceRequest request, CancellationToken ct) =>
+        {
+            var space = await hubService.UpdateWorkspaceAsync(id, spaceId, key, request, ct);
+            return Results.Json(space, AppJsonContext.Default.SpaceSummaryDto);
+        });
+
+        app.MapDelete("/api/hub/machines/{id}/spaces/{spaceId}/workspaces/{key}", async (string id, string spaceId, string key, bool? force, CancellationToken ct) =>
+        {
+            var space = await hubService.DeleteWorktreeAsync(id, spaceId, key, force == true, ct);
+            return Results.Json(space, AppJsonContext.Default.SpaceSummaryDto);
+        });
+
+        app.MapPost("/api/hub/machines/{id}/spaces/{spaceId}/workspaces/{key}/launch", async (string id, string spaceId, string key, SpaceLaunchRequest request, CancellationToken ct) =>
+        {
+            var session = await hubService.LaunchSpaceAsync(id, spaceId, key, request, ct);
+            return Results.Json(session, AppJsonContext.Default.SessionInfoDto);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/recents", async (string id, int? count, CancellationToken ct) =>
+        {
+            var recents = await hubService.GetRecentsAsync(id, count ?? 6, ct);
+            return Results.Json(recents, AppJsonContext.Default.ListLaunchEntry);
         });
 
         app.MapPost("/api/hub/updates/apply", async (HubUpdateRolloutRequest request, CancellationToken ct) =>

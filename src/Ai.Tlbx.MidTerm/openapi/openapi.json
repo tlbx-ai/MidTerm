@@ -3951,6 +3951,24 @@
               "null",
               "string"
             ]
+          },
+          "spaceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspacePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surface": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -5680,6 +5698,10 @@
           "order",
           "parentSessionId",
           "bookmarkId",
+          "spaceId",
+          "workspacePath",
+          "surface",
+          "isAdHoc",
           "agentControlled",
           "lensOnly",
           "profileHint",
@@ -5798,6 +5820,27 @@
               "null",
               "string"
             ]
+          },
+          "spaceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspacePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surface": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isAdHoc": {
+            "type": "boolean"
           },
           "agentControlled": {
             "type": "boolean"
@@ -7300,6 +7343,24 @@
             "type": "boolean"
           },
           "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "spaceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspacePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surface": {
             "type": [
               "null",
               "string"

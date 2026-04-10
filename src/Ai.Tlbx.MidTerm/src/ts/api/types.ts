@@ -35,6 +35,10 @@ export type SessionInfoDto = Schemas['SessionInfoDto'] & {
   lensOnly?: boolean;
   profileHint?: string | null;
   lensResumeThreadId?: string | null;
+  spaceId?: string | null;
+  workspacePath?: string | null;
+  surface?: string | null;
+  isAdHoc?: boolean;
 };
 export type SessionListDto = Schemas['SessionListDto'];
 export type CreateSessionRequest = Schemas['CreateSessionRequest'];
@@ -486,6 +490,76 @@ export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
   foregroundProcessIdentity?: string | null;
 };
 export type HistoryPatchRequest = Schemas['HistoryPatchRequest'];
+
+// Spaces
+export interface SpaceWorkspaceSessionDto {
+  sessionId: string;
+  title: string;
+  surface: 'terminal' | 'codex' | 'claude';
+  lensOnly: boolean;
+  profileHint?: string | null;
+}
+
+export interface SpaceWorkspaceDto {
+  key: string;
+  displayName: string;
+  path: string;
+  kind: 'plain' | 'worktree';
+  branch?: string | null;
+  head?: string | null;
+  isMain: boolean;
+  isDetached: boolean;
+  locked: boolean;
+  prunable: boolean;
+  changeCount: number;
+  hasChanges: boolean;
+  hasActiveAiSession: boolean;
+  activeSessions: SpaceWorkspaceSessionDto[];
+}
+
+export interface SpaceSummaryDto {
+  id: string;
+  label: string;
+  kind: 'plain' | 'git';
+  rootPath: string;
+  importedPath: string;
+  commonRepoId?: string | null;
+  isPinned: boolean;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  workspaces: SpaceWorkspaceDto[];
+}
+
+export interface SpaceImportRequest {
+  path: string;
+  label?: string | null;
+}
+
+export interface SpaceUpdateRequest {
+  label?: string | null;
+  isPinned?: boolean | null;
+}
+
+export interface SpaceCreateWorktreeRequest {
+  path: string;
+  branchName: string;
+  name?: string | null;
+}
+
+export interface SpaceUpdateWorkspaceRequest {
+  label?: string | null;
+}
+
+export interface SpaceDeleteWorktreeRequest {
+  force?: boolean;
+}
+
+export interface SpaceLaunchRequest {
+  surface: 'terminal' | 'codex' | 'claude';
+  cols?: number;
+  rows?: number;
+  shell?: string | null;
+}
 
 // Shells & Users
 export type ShellInfoDto = Schemas['ShellInfoDto'];

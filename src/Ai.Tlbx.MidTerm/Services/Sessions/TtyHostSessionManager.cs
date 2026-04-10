@@ -837,6 +837,21 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetLensResumeThreadId(sessionId, resumeThreadId);
     }
 
+    public bool SetSpaceId(string sessionId, string? spaceId)
+    {
+        return _registry.SetSpaceId(sessionId, spaceId);
+    }
+
+    public bool SetWorkspacePath(string sessionId, string? workspacePath)
+    {
+        return _registry.SetWorkspacePath(sessionId, workspacePath);
+    }
+
+    public bool SetSurface(string sessionId, string? surface)
+    {
+        return _registry.SetSurface(sessionId, surface);
+    }
+
     public int ClearBookmarksByHistoryId(string bookmarkId)
     {
         return _registry.ClearBookmarksByHistoryId(bookmarkId);
@@ -1097,6 +1112,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
+            info.ForegroundDisplayName = payload.DisplayName;
+            info.ForegroundProcessIdentity = payload.ProcessIdentity;
             info.AgentAttachPoint = payload.AgentAttachPoint;
             if (!string.IsNullOrEmpty(payload.Cwd))
             {
@@ -1207,6 +1224,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             !string.IsNullOrWhiteSpace(existing.ForegroundCommandLine))
         {
             refreshed.ForegroundCommandLine = existing.ForegroundCommandLine;
+        }
+
+        if (string.IsNullOrWhiteSpace(refreshed.ForegroundDisplayName) &&
+            !string.IsNullOrWhiteSpace(existing.ForegroundDisplayName))
+        {
+            refreshed.ForegroundDisplayName = existing.ForegroundDisplayName;
+        }
+
+        if (string.IsNullOrWhiteSpace(refreshed.ForegroundProcessIdentity) &&
+            !string.IsNullOrWhiteSpace(existing.ForegroundProcessIdentity))
+        {
+            refreshed.ForegroundProcessIdentity = existing.ForegroundProcessIdentity;
         }
 
         if (refreshed.AgentAttachPoint is null && existing.AgentAttachPoint is not null)

@@ -184,6 +184,7 @@ public static partial class SessionApiEndpoints
             }
 
             var sessionInfo = creation.Session!;
+            ApplySessionSpaceMetadata(sessionManager, sessionInfo.Id, request?.SpaceId, request?.WorkspacePath, request?.Surface);
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -204,6 +205,7 @@ public static partial class SessionApiEndpoints
 
             var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
+            ApplySessionSpaceMetadata(sessionManager, sessionId, request.SpaceId, request.WorkspacePath, request.Surface);
 
             if (request.AgentControlled)
             {
@@ -1164,6 +1166,18 @@ public static partial class SessionApiEndpoints
         }
 
         return response;
+    }
+
+    private static void ApplySessionSpaceMetadata(
+        TtyHostSessionManager sessionManager,
+        string sessionId,
+        string? spaceId,
+        string? workspacePath,
+        string? surface)
+    {
+        sessionManager.SetSpaceId(sessionId, spaceId);
+        sessionManager.SetWorkspacePath(sessionId, workspacePath);
+        sessionManager.SetSurface(sessionId, surface);
     }
 
     private static TerminalTransportDiagnosticsDto BuildTerminalTransportDiagnostics(

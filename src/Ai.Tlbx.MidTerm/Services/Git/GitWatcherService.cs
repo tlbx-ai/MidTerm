@@ -38,7 +38,7 @@ public sealed class GitWatcherService : IDisposable
             }
         }
 
-        private FileSystemWatcher? _indexWatcher;
+        private readonly List<FileSystemWatcher> _indexWatchers = [];
         public int RefCount;
         private readonly OwnedCancellationSource _debounce = new();
         public GitStatusResponse? CachedStatus;
@@ -49,27 +49,36 @@ public sealed class GitWatcherService : IDisposable
         public int SubscriberCount;
         private readonly OwnedCancellationSource _poll = new();
 
-        public void StartIndexWatcher(string gitDir, FileSystemEventHandler onIndexChange)
+        public void StartIndexWatcher(IEnumerable<string> gitDirs, FileSystemEventHandler onIndexChange)
         {
-            var watcher = new FileSystemWatcher(gitDir)
+            foreach (var existing in _indexWatchers)
             {
-                IncludeSubdirectories = false,
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
-            };
+                existing.EnableRaisingEvents = false;
+                existing.Dispose();
+            }
+            _indexWatchers.Clear();
 
-            watcher.Filters.Add("index");
-            watcher.Filters.Add("HEAD");
-            watcher.Filters.Add("FETCH_HEAD");
-            watcher.Changed += onIndexChange;
-            watcher.Created += onIndexChange;
-            watcher.Renamed += (s, e) => onIndexChange(s, e);
-            watcher.EnableRaisingEvents = true;
-            var previous = _indexWatcher;
-            _indexWatcher = watcher;
-            if (previous is not null)
+            foreach (var gitDir in gitDirs.Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                previous.EnableRaisingEvents = false;
-                previous.Dispose();
+                if (!Directory.Exists(gitDir))
+                {
+                    continue;
+                }
+
+                var watcher = new FileSystemWatcher(gitDir)
+                {
+                    IncludeSubdirectories = false,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
+                };
+
+                watcher.Filters.Add("index");
+                watcher.Filters.Add("HEAD");
+                watcher.Filters.Add("FETCH_HEAD");
+                watcher.Changed += onIndexChange;
+                watcher.Created += onIndexChange;
+                watcher.Renamed += (s, e) => onIndexChange(s, e);
+                watcher.EnableRaisingEvents = true;
+                _indexWatchers.Add(watcher);
             }
         }
 
@@ -95,9 +104,13 @@ public sealed class GitWatcherService : IDisposable
         {
             IsDisposed = true;
             _poll.Dispose();
-            if (_indexWatcher is not null) _indexWatcher.EnableRaisingEvents = false;
             _debounce.Dispose();
-            _indexWatcher?.Dispose();
+            foreach (var watcher in _indexWatchers)
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
+            _indexWatchers.Clear();
             RefreshGate.Dispose();
         }
     }
@@ -134,7 +147,7 @@ public sealed class GitWatcherService : IDisposable
         UnregisterSession(sessionId);
 
         _sessionToRepo[sessionId] = repoRoot;
-        var watcher = _watchers.GetOrAdd(repoRoot, root => CreateWatcher(root));
+        var watcher = _watchers.GetOrAdd(repoRoot, root => CreateWatcher(root, workingDir));
         Interlocked.Increment(ref watcher.RefCount);
 
         await RefreshStatusAsync(repoRoot);
@@ -226,19 +239,27 @@ public sealed class GitWatcherService : IDisposable
         status.TotalDeletions = totalDel;
     }
 
-    private RepoWatcher CreateWatcher(string repoRoot)
+    private RepoWatcher CreateWatcher(string repoRoot, string workingDir)
     {
         var watcher = new RepoWatcher();
-        var gitDir = Path.Combine(repoRoot, ".git");
-
-        if (Directory.Exists(gitDir))
+        try
         {
-            void OnIndexChange(object? s, FileSystemEventArgs e)
+            var repoInfo = GitCommandRunner.GetRepositoryInfoAsync(workingDir).GetAwaiter().GetResult();
+            if (repoInfo is not null)
             {
-                DebouncedRefresh(repoRoot, watcher);
-            }
+                void OnIndexChange(object? s, FileSystemEventArgs e)
+                {
+                    DebouncedRefresh(repoRoot, watcher);
+                }
 
-            watcher.StartIndexWatcher(gitDir, OnIndexChange);
+                watcher.StartIndexWatcher(
+                    [repoInfo.GitDir, repoInfo.CommonGitDir],
+                    OnIndexChange);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"[Git] Watcher setup failed for {repoRoot}: {ex.Message}");
         }
 
         return watcher;

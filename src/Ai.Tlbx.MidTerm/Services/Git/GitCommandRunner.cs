@@ -9,6 +9,15 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 
 internal static class GitCommandRunner
 {
+    internal sealed record GitRepositoryInfo(string RepoRoot, string GitDir, string CommonGitDir);
+    internal sealed record GitWorktreeInfo(
+        string Path,
+        string? Head,
+        string? Branch,
+        bool IsDetached,
+        bool IsLocked,
+        bool IsPrunable);
+
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan CloneTimeout = TimeSpan.FromMinutes(10);
     private const int MaxPatchOutputChars = 160_000;
@@ -86,6 +95,131 @@ internal static class GitCommandRunner
         if (exitCode != 0) return null;
         var root = stdout.Trim();
         return string.IsNullOrEmpty(root) ? null : root;
+    }
+
+    internal static async Task<GitRepositoryInfo?> GetRepositoryInfoAsync(string workingDir)
+    {
+        var repoRoot = await GetRepoRootAsync(workingDir).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return null;
+        }
+
+        var gitDir = await GetResolvedGitPathAsync(workingDir, "rev-parse", "--git-dir").ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(gitDir))
+        {
+            return null;
+        }
+
+        var commonGitDir = await GetResolvedGitPathAsync(workingDir, "rev-parse", "--git-common-dir").ConfigureAwait(false)
+            ?? gitDir;
+
+        return new GitRepositoryInfo(
+            Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(gitDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(commonGitDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    internal static async Task<IReadOnlyList<GitWorktreeInfo>> ListWorktreesAsync(string workingDir)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(workingDir, "worktree", "list", "--porcelain");
+        if (exitCode != 0)
+        {
+            return [];
+        }
+
+        var result = new List<GitWorktreeInfo>();
+        string? path = null;
+        string? head = null;
+        string? branch = null;
+        var detached = false;
+        var locked = false;
+        var prunable = false;
+
+        void Flush()
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            result.Add(new GitWorktreeInfo(
+                Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                head,
+                branch,
+                detached,
+                locked,
+                prunable));
+            path = null;
+            head = null;
+            branch = null;
+            detached = false;
+            locked = false;
+            prunable = false;
+        }
+
+        foreach (var rawLine in stdout.Split('\n'))
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                Flush();
+                continue;
+            }
+
+            if (line.StartsWith("worktree ", StringComparison.Ordinal))
+            {
+                Flush();
+                path = line["worktree ".Length..];
+                continue;
+            }
+
+            if (line.StartsWith("HEAD ", StringComparison.Ordinal))
+            {
+                head = line["HEAD ".Length..];
+                continue;
+            }
+
+            if (line.StartsWith("branch ", StringComparison.Ordinal))
+            {
+                var fullRef = line["branch ".Length..];
+                branch = fullRef.StartsWith("refs/heads/", StringComparison.Ordinal)
+                    ? fullRef["refs/heads/".Length..]
+                    : fullRef;
+                continue;
+            }
+
+            if (string.Equals(line, "detached", StringComparison.Ordinal))
+            {
+                detached = true;
+                continue;
+            }
+
+            if (line.StartsWith("locked", StringComparison.Ordinal))
+            {
+                locked = true;
+                continue;
+            }
+
+            if (line.StartsWith("prunable", StringComparison.Ordinal))
+            {
+                prunable = true;
+            }
+        }
+
+        Flush();
+        return result;
+    }
+
+    internal static async Task<int> GetWorktreeChangeCountAsync(string workingDir)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(workingDir, "status", "--porcelain");
+        if (exitCode != 0)
+        {
+            return 0;
+        }
+
+        return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
     }
 
     internal static async Task<GitStatusResponse> GetStatusAsync(string repoRoot)
@@ -313,6 +447,11 @@ internal static class GitCommandRunner
         return TrimOutput(stdout, MaxPatchOutputChars);
     }
 
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> RunGitInDirectoryAsync(string workingDir, params string[] args)
+    {
+        return RunGitAsync(workingDir, args);
+    }
+
     private static void ParseChangedEntry(string line, List<GitFileEntry> staged, List<GitFileEntry> modified)
     {
         var parts = line.Split(' ');
@@ -390,9 +529,26 @@ internal static class GitCommandRunner
         _ => c.ToString()
     };
 
-    private static Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(
-        string workingDir,
-        params string[] args)
+    private static async Task<string?> GetResolvedGitPathAsync(string workingDir, params string[] args)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(workingDir, args).ConfigureAwait(false);
+        if (exitCode != 0)
+        {
+            return null;
+        }
+
+        var rawPath = stdout.Trim();
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            return null;
+        }
+
+        return Path.IsPathRooted(rawPath)
+            ? rawPath
+            : Path.GetFullPath(Path.Combine(workingDir, rawPath));
+    }
+
+    private static Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
     {
         return RunGitAsync(workingDir, args, CommandTimeout);
     }

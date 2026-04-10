@@ -9,4 +9,7 @@ public sealed class CreateSessionRequest
     public int Rows { get; set; } = 30;
     public string? Shell { get; set; }
     public string? WorkingDirectory { get; set; }
+    public string? SpaceId { get; set; }
+    public string? WorkspacePath { get; set; }
+    public string? Surface { get; set; }
 }

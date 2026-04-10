@@ -219,7 +219,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('submitQueuedTurn: enqueueCommandBayTurn,');
   });
 
-  it('adds a bookmark-scoped provider resume action to the Lens Command Bay status rail', () => {
+  it('adds a space-scoped provider resume action to the Lens Command Bay status rail', () => {
     expect(source).toContain('setLensResumeConversationHandler');
     expect(source).toContain('createLensResumeButton');
     expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
@@ -228,7 +228,7 @@ describe('smart input tab wiring', () => {
     expect(lensResumeButtonSource).toContain(
       "button.className = 'smart-input-lens-action smart-input-lens-resume';",
     );
-    expect(lensResumeButtonSource).toContain('session?.bookmarkId');
+    expect(lensResumeButtonSource).toContain('session?.spaceId');
     expect(css).toContain('.smart-input-lens-actions {');
     expect(css).toContain('.smart-input-lens-action {');
   });

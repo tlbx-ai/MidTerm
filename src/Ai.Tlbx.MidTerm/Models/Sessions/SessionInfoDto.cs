@@ -28,6 +28,10 @@ public sealed class SessionInfoDto
     public int Order { get; set; }
     public string? ParentSessionId { get; set; }
     public string? BookmarkId { get; set; }
+    public string? SpaceId { get; set; }
+    public string? WorkspacePath { get; set; }
+    public string? Surface { get; set; }
+    public bool IsAdHoc { get; set; }
     public bool AgentControlled { get; set; }
     public bool LensOnly { get; set; }
     public string? ProfileHint { get; set; }

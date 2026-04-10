@@ -803,7 +803,6 @@ function appendSessionActionButton(
 
 function appendSessionActions(
   actions: HTMLDivElement,
-  session: Session,
   sessionId: string,
   isPending: boolean,
   isRemoteSession: boolean,
@@ -828,17 +827,6 @@ function appendSessionActions(
   }
 
   if (!isRemoteSession) {
-    const pinBtn = document.createElement('button');
-    pinBtn.className = 'session-pin';
-    applyPinButtonState(pinBtn, !!session.bookmarkId);
-    pinBtn.setAttribute('role', 'menuitem');
-    pinBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      callbacks?.onPinToHistory(sessionId);
-    });
-    actions.appendChild(pinBtn);
-
     appendSessionActionButton(
       actions,
       'session-inject',
@@ -1010,7 +998,7 @@ function createSessionItem(
   actions.id = `session-actions-${sessionId}`;
   actions.setAttribute('role', 'menu');
 
-  appendSessionActions(actions, session, sessionId, isPending, isRemoteSession, controlMode);
+  appendSessionActions(actions, sessionId, isPending, isRemoteSession, controlMode);
 
   // Heat indicator strip (left edge, driven by server-side session telemetry)
   const heatIndicator = document.createElement('div');

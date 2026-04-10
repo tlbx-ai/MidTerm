@@ -80,7 +80,7 @@ import {
   initUpdateUi,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
-import { initHistoryDropdown, toggleHistoryDropdown, type LaunchEntry } from './modules/history';
+import type { LaunchEntry } from './modules/history';
 import { isLensHistoryEntry, normalizeHistoryLensProfile } from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
@@ -141,6 +141,8 @@ import {
 import { initDockState } from './modules/dockState';
 import { initSmartInput, setLensResumeConversationHandler } from './modules/smartInput';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
+import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
+import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -156,7 +158,6 @@ import {
   $muxWsConnected,
   $activeSessionId,
   $settingsOpen,
-  $sessionList,
   $currentSettings,
   $layout,
   setSession,
@@ -169,11 +170,7 @@ import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
 import { createSessionActionHandlers } from './sessionActions';
 import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
-import {
-  createSession as apiCreateSession,
-  bootstrapWorker,
-  setSessionBookmark,
-} from './api/client';
+import { createSession as apiCreateSession, bootstrapWorker } from './api/client';
 import type { ShellType } from './api/types';
 
 // Create logger for main module
@@ -207,35 +204,6 @@ function animateBookmarkSaveSuccess(sessionId: string): void {
       pinButton.classList.remove('save-success');
     }, PIN_SUCCESS_ANIMATION_MS);
   }
-}
-
-function attachBookmarkToSession(
-  sessionId: string,
-  bookmarkId: string | null,
-  label: string | null,
-): void {
-  if (!bookmarkId && !label) {
-    return;
-  }
-
-  const applyBookmark = (): void => {
-    const session = getSession(sessionId);
-    if (!session) {
-      setTimeout(applyBookmark, 100);
-      return;
-    }
-
-    if (bookmarkId) {
-      setSession({ ...session, bookmarkId });
-      setSessionBookmark(sessionId, bookmarkId).catch(() => {});
-    }
-
-    if (label) {
-      renameSession(sessionId, label);
-    }
-  };
-
-  applyBookmark();
 }
 
 // Debug export for console access (typed in types/xterm-extensions.d.ts)
@@ -330,15 +298,46 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
-  initHistoryDropdown(
-    (entry) => {
-      void spawnFromHistory(entry);
+  const spacesRuntimeOptions = {
+    resolveLaunchDimensions: resolveNewSessionDimensions,
+    resolveShell: resolveLauncherShell,
+    onOpenLocalSession: (session: Session, surface: SpaceSurface) => {
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      if (surface !== 'terminal') {
+        setSessionLensAvailability(session.id, true);
+      }
+
+      selectSession(session.id);
+      if (surface !== 'terminal') {
+        requestAnimationFrame(() => {
+          switchTab(session.id, 'agent');
+        });
+      }
     },
-    (entryId, newLabel) => {
-      const session = $sessionList.get().find((s) => s.bookmarkId === entryId);
-      if (session) renameSession(session.id, newLabel || null);
+    onOpenRemoteSession: async (machineId: string, sessionId: string, surface: SpaceSurface) => {
+      await refreshHubState();
+      const compositeId = toHubCompositeId(machineId, sessionId);
+      newlyCreatedSessions.add(compositeId);
+      selectSession(compositeId);
+      if (surface !== 'terminal') {
+        requestAnimationFrame(() => {
+          switchTab(compositeId, 'agent');
+        });
+      }
     },
-  );
+    onSelectLocalSession: (sessionId: string) => {
+      selectSession(sessionId);
+    },
+    onSelectRemoteSession: (machineId: string, sessionId: string) => {
+      selectSession(toHubCompositeId(machineId, sessionId));
+    },
+    onLaunchRecent: (machineId: string | null, entry: LaunchEntry) => {
+      void spawnFromHistory(entry, machineId);
+    },
+  };
+  initSpacesRuntime(spacesRuntimeOptions);
+  initSpacesDropdown(spacesRuntimeOptions);
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -541,6 +540,9 @@ function registerCallbacks(): void {
     onEnableMidtermFeatures: (sessionId: string) => {
       void enableMidtermFeatures(sessionId);
     },
+    onLaunchRecent: (machineId, entry) => {
+      void spawnFromHistory(entry, machineId);
+    },
     onCloseSidebar: closeSidebar,
   });
 }
@@ -658,6 +660,10 @@ function createPendingSession(cols: number, rows: number): string {
     order: Date.now(),
     parentSessionId: null,
     bookmarkId: null,
+    spaceId: null,
+    workspacePath: null,
+    surface: null,
+    isAdHoc: true,
     agentControlled: false,
     lensOnly: false,
     profileHint: null,
@@ -826,10 +832,42 @@ async function createSession(): Promise<void> {
     });
 }
 
-async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
+async function spawnFromHistory(
+  entry: LaunchEntry,
+  machineId: string | null = null,
+): Promise<void> {
   const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
 
   closeSidebar();
+
+  if (machineId) {
+    if (isLensHistoryEntry(entry)) {
+      void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
+        title: t('sessionLauncher.createFailed'),
+      });
+      return;
+    }
+
+    createRemoteSession(machineId, {
+      cols,
+      rows,
+      shell: entry.shellType || null,
+      workingDirectory: entry.workingDirectory || null,
+    })
+      .then(async (session) => {
+        await refreshHubState();
+        const compositeId = toHubCompositeId(machineId, session.id);
+        newlyCreatedSessions.add(compositeId);
+        selectSession(compositeId);
+      })
+      .catch((e: unknown) => {
+        log.error(() => `Failed to spawn remote recent: ${String(e)}`);
+        void showAlert(getSessionLaunchErrorMessage(e), {
+          title: t('sessionLauncher.createFailed'),
+        });
+      });
+    return;
+  }
 
   if (isLensHistoryEntry(entry)) {
     const profile = normalizeHistoryLensProfile(entry.profile);
@@ -860,7 +898,9 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
           requestAnimationFrame(() => {
             switchTab(session.id, 'agent');
           });
-          attachBookmarkToSession(session.id, entry.id, entry.label ?? null);
+          if (entry.label) {
+            renameSession(session.id, entry.label);
+          }
         })
         .catch((e: unknown) => {
           log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
@@ -881,7 +921,9 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-      attachBookmarkToSession(data.id, entry.id, entry.label ?? null);
+      if (entry.label) {
+        renameSession(data.id, entry.label);
+      }
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
@@ -927,6 +969,9 @@ async function resumeLensConversationFromCommandBay(args: {
     injectGuidance: true,
     profile: args.provider,
     resumeThreadId: candidate.sessionId,
+    spaceId: sourceSession.spaceId ?? null,
+    workspacePath: sourceSession.workspacePath ?? args.workingDirectory,
+    surface: args.provider,
     lensOnly: true,
     launchDelayMs: 0,
     slashCommands: [],
@@ -946,7 +991,6 @@ async function resumeLensConversationFromCommandBay(args: {
       requestAnimationFrame(() => {
         switchTab(session.id, 'agent');
       });
-      attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
     })
     .catch((e: unknown) => {
       clearPendingSession(tempId);
@@ -1282,7 +1326,7 @@ function bindEvents(): void {
     changelogBackdrop.addEventListener('click', closeChangelog);
   }
 
-  bindClick('btn-history', toggleHistoryDropdown);
+  bindClick('btn-history', toggleSpacesDropdown);
 
   // Global keyboard shortcut: Alt+T to create new terminal
   document.addEventListener('keydown', (e) => {

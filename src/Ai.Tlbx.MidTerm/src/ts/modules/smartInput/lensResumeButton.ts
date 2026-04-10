@@ -14,9 +14,9 @@ export function createLensResumeButton(
 ): HTMLButtonElement | null {
   const session = getSession(sessionId);
   const provider = normalizeResumeProvider(session?.profileHint);
-  const workingDirectory = session?.currentDirectory?.trim();
+  const workingDirectory = session?.workspacePath?.trim() || session?.currentDirectory?.trim();
   if (
-    !session?.bookmarkId ||
+    !session?.spaceId ||
     !provider ||
     !workingDirectory ||
     !session.lensOnly ||
