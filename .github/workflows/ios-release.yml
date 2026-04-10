@@ -7,6 +7,10 @@ on:
         description: 'Version (e.g. 1.0.0)'
         required: true
 
+concurrency:
+  group: mobile-app-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -32,7 +36,9 @@ jobs:
           echo "BUILD_NUMBER=$NEXT" >> "$GITHUB_ENV"
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+        run: |
+          xcode-select -p
+          xcodebuild -version
 
       - name: Import certificate
         env:
