@@ -962,10 +962,10 @@ body.has-app-background::after {
   flex-direction: column;
   gap: 4px;
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -977,7 +977,7 @@ body.has-app-background::after {
 
 .spaces-tree-workspace-open:not(:disabled):hover,
 .spaces-tree-workspace-open:not(:disabled):focus-visible {
-  background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-panel));
+  background: transparent;
 }
 
 .spaces-tree-workspace-line {
@@ -1021,22 +1021,6 @@ body.has-app-background::after {
 
 .spaces-tree-session-item {
   cursor: pointer;
-  border-left: none;
-  border-radius: 10px;
-  padding: 8px 8px 8px 10px;
-  background: transparent;
-}
-
-.spaces-tree-session-item .session-info {
-  padding-left: 0;
-}
-
-.spaces-tree-session-item .session-title {
-  font-size: var(--fs-base);
-}
-
-.spaces-tree-session-item .session-subtitle {
-  color: var(--text-secondary);
 }
 
 .spaces-sidebar-empty {

@@ -30,6 +30,7 @@ import {
   createSessionFilterController,
   type SessionFilterControllerElements,
 } from './sessionFilterController';
+import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
 import {
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
@@ -268,6 +269,13 @@ function renderSidebarTree(): void {
 
   const host = dom.sessionList;
   host.className = 'session-list spaces-sidebar-tree';
+  pruneHeatSessions(getAllSidebarSessions().map((entry) => entry.id));
+  host.querySelectorAll<HTMLElement>('.session-item[data-session-id]').forEach((item) => {
+    const sessionId = item.dataset.sessionId;
+    if (sessionId) {
+      unregisterHeatCanvas(sessionId);
+    }
+  });
   host.replaceChildren();
 
   for (const section of getVisibleSpaceSections()) {
@@ -560,10 +568,17 @@ function createWorkspaceNode(
 function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
   const item = document.createElement('div');
   item.className = `session-item two-line spaces-tree-session-item${entry.id === $activeSessionId.get() ? ' active' : ''}`;
+  item.dataset.sessionId = entry.id;
+  item.setAttribute('aria-current', entry.id === $activeSessionId.get() ? 'true' : 'false');
   item.addEventListener('click', () => {
     callbacks?.onSelect(entry.id);
     callbacks?.onCloseSidebar();
   });
+
+  const heatIndicator = document.createElement('div');
+  heatIndicator.className = 'heat-canvas';
+  registerHeatCanvas(entry.id, heatIndicator);
+  item.appendChild(heatIndicator);
 
   const info = document.createElement('div');
   info.className = 'session-info';
