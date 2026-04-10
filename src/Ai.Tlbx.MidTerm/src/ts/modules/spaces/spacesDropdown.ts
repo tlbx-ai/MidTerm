@@ -172,7 +172,7 @@ function createDropdownElement(): void {
       return;
     }
 
-    const machineId = actionEl.dataset.machineId ?? null;
+    const machineId = normalizeMachineId(actionEl.dataset.machineId);
     const spaceId = actionEl.dataset.spaceId ?? null;
     void handleAction({ action, machineId, spaceId });
   });
@@ -387,6 +387,11 @@ function findSpace(machineId: string | null, spaceId: string): SpaceSummaryDto |
   return sections
     .find((section) => section.machineId === machineId)
     ?.spaces.find((space) => space.id === spaceId);
+}
+
+function normalizeMachineId(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function buildSpaceRowTitle(space: SpaceSummaryDto): string {

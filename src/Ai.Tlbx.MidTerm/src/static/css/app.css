@@ -1925,7 +1925,9 @@ body.has-app-background::after {
 }
 
 .spaces-dropdown {
-  min-width: min(540px, calc(100vw - 32px));
+  width: auto;
+  min-width: 0;
+  max-width: calc(100% - 16px);
 }
 
 .spaces-section {
@@ -2027,7 +2029,9 @@ body.has-app-background::after {
 
 @media (max-width: 780px) {
   .spaces-dropdown {
+    width: auto;
     min-width: 0;
+    max-width: calc(100% - 16px);
   }
 }
 
