@@ -1,71 +1,38 @@
 import Foundation
-import Security
 
 final class ServerStore: ObservableObject {
-    @Published var servers: [Server] = []
+    @Published var server: Server?
 
-    private let service = "ai.tlbx.midterm.servers"
-    private let account = "server_list"
+    private let defaultsKey = "ai.tlbx.midterm.server"
 
     init() {
-        servers = load()
+        server = load()
     }
 
-    func save() {
-        guard let data = try? JSONEncoder().encode(servers) else { return }
-        deleteKeychainItem()
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
-        SecItemAdd(query as CFDictionary, nil)
+    func save(url: String) {
+        let normalizedUrl = Server.normalizeUrl(url)
+        let lastConnected = server?.lastConnected ?? .distantPast
+        server = Server(url: normalizedUrl, lastConnected: lastConnected)
+        persist()
     }
 
-    func add(_ server: Server) {
-        servers.append(server)
-        save()
+    func markConnected() {
+        guard var current = server else { return }
+        current.lastConnected = Date()
+        server = current
+        persist()
     }
 
-    func update(_ server: Server) {
-        guard let idx = servers.firstIndex(where: { $0.id == server.id }) else { return }
-        servers[idx] = server
-        save()
+    private func load() -> Server? {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return nil }
+        return try? JSONDecoder().decode(Server.self, from: data)
     }
 
-    func delete(_ server: Server) {
-        servers.removeAll { $0.id == server.id }
-        save()
-    }
-
-    func updateFingerprint(serverId: String, fingerprint: String) {
-        guard let idx = servers.firstIndex(where: { $0.id == serverId }) else { return }
-        servers[idx].certFingerprint = fingerprint
-        save()
-    }
-
-    private func load() -> [Server] {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else { return [] }
-        return (try? JSONDecoder().decode([Server].self, from: data)) ?? []
-    }
-
-    private func deleteKeychainItem() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(query as CFDictionary)
+    private func persist() {
+        guard let server, let data = try? JSONEncoder().encode(server) else {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            return
+        }
+        UserDefaults.standard.set(data, forKey: defaultsKey)
     }
 }

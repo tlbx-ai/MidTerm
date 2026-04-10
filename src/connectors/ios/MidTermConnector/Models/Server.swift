@@ -1,20 +1,12 @@
 import Foundation
 
-struct Server: Identifiable, Codable {
-    var id: String
-    var name: String
+struct Server: Codable {
     var url: String
-    var password: String
-    var certFingerprint: String
     var lastConnected: Date
 
-    init(name: String, url: String, password: String = "", certFingerprint: String = "") {
-        self.id = UUID().uuidString
-        self.name = name
+    init(url: String, lastConnected: Date = .distantPast) {
         self.url = Server.normalizeUrl(url)
-        self.password = password
-        self.certFingerprint = certFingerprint
-        self.lastConnected = .distantPast
+        self.lastConnected = lastConnected
     }
 
     static func normalizeUrl(_ url: String) -> String {

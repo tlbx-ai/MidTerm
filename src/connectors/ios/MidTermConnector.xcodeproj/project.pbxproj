@@ -10,7 +10,6 @@
 		A1000001 /* MidTermConnectorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001; };
 		A1000002 /* Server.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002; };
 		A1000003 /* ServerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003; };
-		A1000004 /* CertificateTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004; };
 		A1000005 /* ServerListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005; };
 		A1000006 /* AddEditServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
 		A1000007 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
@@ -21,7 +20,6 @@
 		A2000001 /* MidTermConnectorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MidTermConnectorApp.swift; sourceTree = "<group>"; };
 		A2000002 /* Server.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Server.swift; sourceTree = "<group>"; };
 		A2000003 /* ServerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerStore.swift; sourceTree = "<group>"; };
-		A2000004 /* CertificateTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateTrust.swift; sourceTree = "<group>"; };
 		A2000005 /* ServerListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerListView.swift; sourceTree = "<group>"; };
 		A2000006 /* AddEditServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEditServerView.swift; sourceTree = "<group>"; };
 		A2000007 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
@@ -74,7 +72,6 @@
 			isa = PBXGroup;
 			children = (
 				A2000003 /* ServerStore.swift */,
-				A2000004 /* CertificateTrust.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -169,7 +166,6 @@
 				A1000001 /* MidTermConnectorApp.swift in Sources */,
 				A1000002 /* Server.swift in Sources */,
 				A1000003 /* ServerStore.swift in Sources */,
-				A1000004 /* CertificateTrust.swift in Sources */,
 				A1000005 /* ServerListView.swift in Sources */,
 				A1000006 /* AddEditServerView.swift in Sources */,
 				A1000007 /* TerminalView.swift in Sources */,
