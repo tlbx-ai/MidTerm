@@ -998,12 +998,6 @@ body.has-app-background::after {
   width: 100%;
 }
 
-.spaces-tree-adhoc-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-left: 12px;
-}
-
 .spaces-tree-session-item {
   cursor: pointer;
 }

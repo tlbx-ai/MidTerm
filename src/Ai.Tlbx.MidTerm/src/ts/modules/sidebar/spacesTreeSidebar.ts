@@ -14,8 +14,6 @@ import {
   deleteLocalWorktree,
   fetchHubSpaces,
   fetchLocalSpaces,
-  importHubSpace,
-  importLocalSpace,
   initHubGit,
   initLocalGit,
   updateHubSpace,
@@ -23,7 +21,7 @@ import {
   updateLocalSpace,
   updateLocalWorkspace,
 } from '../spaces/spacesApi';
-import { showCreateWorktreeDialog, showImportSpaceDialog } from '../spaces/spacesDialogs';
+import { showCreateWorktreeDialog } from '../spaces/spacesDialogs';
 import { launchSpaceWorkspace, type SpaceSurface } from '../spaces/runtime';
 import { showAlert, showConfirm, showTextPrompt } from '../../utils/dialog';
 import {
@@ -681,25 +679,6 @@ function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
     item.className = 'spaces-tree-adhoc-item';
     item.appendChild(createSidebarSessionNode(entry));
 
-    const path = entry.session.workspacePath || entry.session.currentDirectory;
-    if (path) {
-      const tools = document.createElement('div');
-      tools.className = 'spaces-tree-adhoc-actions';
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'spaces-tree-add spaces-tree-inline-action';
-      button.textContent = '+';
-      button.title = t('spaces.saveSessionAsSpace');
-      button.setAttribute('aria-label', t('spaces.saveSessionAsSpace'));
-      button.addEventListener('click', (event) => {
-        event.stopPropagation();
-        void saveSessionAsSpace(entry);
-      });
-      tools.appendChild(button);
-      item.appendChild(tools);
-    }
-
     list.appendChild(item);
   }
 
@@ -858,32 +837,6 @@ function syncSearchControls(): void {
   if (dom.sessionFilterClear) {
     dom.sessionFilterClear.title = t('spaces.clearSearch');
     dom.sessionFilterClear.setAttribute('aria-label', t('spaces.clearSearch'));
-  }
-}
-
-async function promptAndImportSpace(
-  machineId: string | null,
-  initialPath?: string | null,
-): Promise<void> {
-  const request = await showImportSpaceDialog({
-    machineId,
-    ...(initialPath !== undefined ? { initialPath } : {}),
-  });
-  if (!request) {
-    return;
-  }
-
-  try {
-    if (machineId) {
-      await importHubSpace(machineId, request);
-    } else {
-      await importLocalSpace(request);
-    }
-    invalidateSidebarSpacesTree();
-  } catch (error) {
-    await showAlert(error instanceof Error ? error.message : String(error), {
-      title: t('spaces.importFailed'),
-    });
   }
 }
 
@@ -1066,18 +1019,6 @@ async function openWorkspace(
   if (launched) {
     callbacks?.onCloseSidebar();
   }
-}
-
-async function saveSessionAsSpace(entry: SidebarSessionRef): Promise<void> {
-  const path = entry.session.workspacePath || entry.session.currentDirectory;
-  if (!path) {
-    await showAlert(t('spaces.noPathForSession'), {
-      title: t('spaces.saveSessionAsSpaceTitle'),
-    });
-    return;
-  }
-
-  await promptAndImportSpace(entry.machineId, path);
 }
 
 function buildSpaceActions(machineId: string | null, space: SpaceSummaryDto): PopoverAction[] {
