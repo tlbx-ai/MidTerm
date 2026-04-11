@@ -16193,12 +16193,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .adaptive-footer-context .touch-controller.embedded {
   display: flex !important;
+  flex: 1 1 100%;
   width: 100%;
   max-height: none;
   padding: 0;
   background: none;
   border: 0;
   margin: 0;
+}
+
+.adaptive-footer-context .touch-controller.embedded .touch-dismiss {
+  display: none;
 }
 
 .adaptive-footer-context .touch-controller.embedded .touch-bar-main {

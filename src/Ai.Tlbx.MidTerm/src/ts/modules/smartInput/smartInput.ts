@@ -32,6 +32,7 @@ import { onTabActivated } from '../sessionTabs';
 import { onDevModeChanged } from '../sidebar/voiceSection';
 import { handleFileDrop, showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
+import { closePopup as closeTouchControllerPopup } from '../touchController/popups';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
   clipboardDataMayContainLensComposerImage,
@@ -169,6 +170,16 @@ let lensResumeConversationHandler:
       workingDirectory: string;
     }) => void | Promise<void>)
   | null = null;
+
+function setTouchKeysExpanded(expanded: boolean): void {
+  keysExpanded = expanded;
+  localStorage.setItem('smartinput-keys-expanded', String(expanded));
+  if (!expanded) {
+    closeTouchControllerPopup();
+    touchControllerEl?.classList.remove('visible');
+  }
+  syncSmartInputVisibility();
+}
 
 interface SmartInputPromptHistoryNavigationState {
   baseline: SmartInputPromptHistoryEntry;
@@ -1314,21 +1325,21 @@ function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   if (layoutState.showContext && layoutState.touchControlsAvailable) {
+    const keysToggle = createTerminalTouchToggleButton({
+      expanded: keysExpanded,
+      onToggle: () => {
+        setTouchKeysExpanded(!keysExpanded);
+      },
+    });
+
     if (keysExpanded && touchControllerEl) {
       touchControllerEl.classList.add('embedded', 'visible');
+      footerContextHost.appendChild(keysToggle);
       footerContextHost.appendChild(touchControllerEl);
       footerContextHost.hidden = false;
       return;
     }
 
-    const keysToggle = createTerminalTouchToggleButton({
-      expanded: keysExpanded,
-      onToggle: () => {
-        keysExpanded = !keysExpanded;
-        localStorage.setItem('smartinput-keys-expanded', String(keysExpanded));
-        syncSmartInputVisibility();
-      },
-    });
     footerContextHost.appendChild(keysToggle);
     footerContextHost.hidden = false;
     return;

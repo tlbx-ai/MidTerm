@@ -43,6 +43,7 @@ describe('mobile responsive chrome wiring', () => {
     expect(html).toContain('id="adaptive-footer-dock"');
     expect(css).toContain('.adaptive-footer-dock .manager-bar:not(.hidden) {');
     expect(css).toContain('.adaptive-footer-context .touch-controller.embedded {');
+    expect(css).toContain('.adaptive-footer-context .touch-controller.embedded .touch-dismiss {');
     expect(css).toContain(
       ".adaptive-footer-dock[data-device='mobile'][data-surface='terminal'] .manager-bar-buttons {",
     );

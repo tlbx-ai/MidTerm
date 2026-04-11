@@ -91,6 +91,9 @@ describe('smart input tab wiring', () => {
       "footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);",
     );
     expect(source).toContain('createTerminalTouchToggleButton({');
+    expect(source).toContain('function setTouchKeysExpanded(expanded: boolean): void {');
+    expect(source).toContain('closeTouchControllerPopup();');
+    expect(source).toContain('footerContextHost.appendChild(keysToggle);');
     expect(viewSource).toContain(
       "keysToggle.className = 'adaptive-footer-context-toggle adaptive-footer-status-toggle';",
     );
