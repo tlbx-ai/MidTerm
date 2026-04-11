@@ -31,7 +31,7 @@ import {
   type SessionFilterControllerElements,
 } from './sessionFilterController';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
-import { isAdHocSession } from './spacesTreeSidebarLogic';
+import { getChildWorkspaces, getRootWorkspace, isAdHocSession } from './spacesTreeSidebarLogic';
 import {
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
@@ -329,10 +329,7 @@ function filterSpace(machineId: string | null, space: SpaceSummaryDto): SpaceSum
     return null;
   }
 
-  return {
-    ...space,
-    workspaces: matchingWorkspaces.length > 0 ? matchingWorkspaces : space.workspaces,
-  };
+  return space;
 }
 
 function getAllSidebarSessions(): SidebarSessionRef[] {
@@ -377,8 +374,10 @@ function createSpaceTargetSection(section: SidebarSpaceSection): HTMLElement {
 }
 
 function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTMLElement {
-  const sessions = getVisibleSpaceSessions(machineId, space);
-  const expanded = isSpaceExpanded(machineId, space, sessions.length > 0);
+  const rootWorkspace = getRootWorkspace(space);
+  const rootSessions = getVisibleRootSessions(machineId, space, rootWorkspace);
+  const childWorkspaces = getVisibleChildWorkspaces(machineId, space);
+  const expanded = isSpaceExpanded(machineId, space, getSpaceSessions(machineId, space).length > 0);
 
   const node = document.createElement('article');
   node.className = `spaces-tree-space${expanded ? ' expanded' : ''}`;
@@ -393,24 +392,33 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
   const identity = document.createElement('div');
   identity.className = 'spaces-tree-space-identity';
   identity.appendChild(createTextSpan('spaces-tree-space-title', space.displayName));
-
-  const path = document.createElement('div');
-  path.className = 'spaces-tree-space-path';
-  path.textContent = space.rootPath;
-  path.title = space.rootPath;
-  identity.appendChild(path);
   header.appendChild(identity);
+  header.title = space.rootPath;
 
   const meta = document.createElement('div');
   meta.className = 'spaces-tree-space-meta';
-  if (sessions.length > 0) {
-    meta.appendChild(createTextSpan('spaces-tree-space-count', String(sessions.length)));
+  if (rootWorkspace) {
+    appendWorkspaceBadges(meta, rootWorkspace);
   }
-  meta.appendChild(createChevron(expanded));
+  meta.appendChild(createSpaceChevron());
   header.appendChild(meta);
 
   const actions = document.createElement('div');
   actions.className = 'spaces-tree-space-actions';
+
+  if (rootWorkspace) {
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'spaces-tree-add spaces-tree-inline-action';
+    addButton.title = t('spaces.newSession');
+    addButton.setAttribute('aria-label', t('spaces.newSession'));
+    addButton.textContent = '+';
+    addButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openSurfaceChooser(addButton, machineId, space, rootWorkspace);
+    });
+    actions.appendChild(addButton);
+  }
 
   const pinButton = document.createElement('button');
   pinButton.type = 'button';
@@ -443,12 +451,24 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
     return node;
   }
 
-  const workspaceList = document.createElement('div');
-  workspaceList.className = 'spaces-tree-workspace-list';
-  for (const workspace of getVisibleSpaceWorkspaces(machineId, space)) {
-    workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
+  if (rootSessions.length > 0) {
+    const rootSessionList = document.createElement('div');
+    rootSessionList.className = 'spaces-tree-space-session-list';
+    for (const entry of rootSessions) {
+      rootSessionList.appendChild(createSidebarSessionNode(entry));
+    }
+    node.appendChild(rootSessionList);
   }
-  node.appendChild(workspaceList);
+
+  if (childWorkspaces.length > 0) {
+    const workspaceList = document.createElement('div');
+    workspaceList.className = 'spaces-tree-workspace-list';
+    for (const workspace of childWorkspaces) {
+      workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
+    }
+    node.appendChild(workspaceList);
+  }
+
   return node;
 }
 
@@ -470,6 +490,7 @@ function createWorkspaceNode(
   mainButton.type = 'button';
   mainButton.className = 'spaces-tree-workspace-open';
   mainButton.disabled = sessions.length === 0;
+  mainButton.title = workspace.path;
   if (sessions.length > 0) {
     mainButton.addEventListener('click', () => {
       const activeSession =
@@ -485,33 +506,8 @@ function createWorkspaceNode(
   const line = document.createElement('div');
   line.className = 'spaces-tree-workspace-line';
   line.appendChild(createTextSpan('spaces-tree-workspace-name', workspace.displayName));
-  if (workspace.branch) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-branch', workspace.branch));
-  }
-  if (workspace.isDetached) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.detached')));
-  }
-  if (workspace.locked) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.locked')));
-  }
-  if (workspace.prunable) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.prunable')));
-  }
-  if (workspace.hasChanges) {
-    line.appendChild(
-      createTextSpan('spaces-tree-workspace-badge warn', String(workspace.changeCount)),
-    );
-  }
-  if (workspace.hasActiveAiSession) {
-    line.appendChild(createTextSpan('spaces-tree-workspace-badge warn', t('spaces.aiBusy')));
-  }
+  appendWorkspaceBadges(line, workspace);
   mainButton.appendChild(line);
-
-  const path = document.createElement('div');
-  path.className = 'spaces-tree-workspace-path';
-  path.textContent = workspace.path;
-  path.title = workspace.path;
-  mainButton.appendChild(path);
   row.appendChild(mainButton);
 
   const actions = document.createElement('div');
@@ -710,28 +706,33 @@ function createForegroundIndicator(entry: SidebarSessionRef): HTMLElement {
   return container;
 }
 
-function getVisibleSpaceSessions(
+function getVisibleRootSessions(
   machineId: string | null,
   space: SpaceSummaryDto,
+  rootWorkspace: SpaceWorkspaceDto | null,
 ): SidebarSessionRef[] {
-  return getSpaceSessions(machineId, space)
-    .filter(matchesSidebarSessionSearch)
-    .sort((left, right) =>
-      getSessionDisplayName(left.session).localeCompare(getSessionDisplayName(right.session)),
-    );
+  if (!rootWorkspace) {
+    return [];
+  }
+
+  const sessions = getWorkspaceSessions(machineId, space, rootWorkspace);
+  if (!getSearchValue() || matchesSpaceSearch(space)) {
+    return sessions;
+  }
+
+  return sessions.filter(matchesSidebarSessionSearch);
 }
 
-function getVisibleSpaceWorkspaces(
+function getVisibleChildWorkspaces(
   machineId: string | null,
   space: SpaceSummaryDto,
 ): SpaceWorkspaceDto[] {
-  if (!getSearchValue()) {
-    return space.workspaces;
+  const childWorkspaces = getChildWorkspaces(space);
+  if (!getSearchValue() || matchesSpaceSearch(space)) {
+    return childWorkspaces;
   }
 
-  return space.workspaces.filter((workspace) =>
-    matchesWorkspaceSearch(machineId, space, workspace),
-  );
+  return childWorkspaces.filter((workspace) => matchesWorkspaceSearch(machineId, space, workspace));
 }
 
 function getWorkspaceSessions(
@@ -1287,11 +1288,35 @@ async function toggleSpacePinned(machineId: string | null, space: SpaceSummaryDt
   }
 }
 
-function createChevron(expanded: boolean): HTMLSpanElement {
+function createSpaceChevron(): HTMLSpanElement {
   const chevron = document.createElement('span');
-  chevron.className = `spaces-tree-chevron${expanded ? ' expanded' : ''}`;
-  chevron.textContent = '⌄';
+  chevron.className = 'network-section-chevron icon spaces-tree-section-chevron';
+  chevron.innerHTML = '&#xe910;';
+  chevron.setAttribute('aria-hidden', 'true');
   return chevron;
+}
+
+function appendWorkspaceBadges(container: HTMLElement, workspace: SpaceWorkspaceDto): void {
+  if (workspace.branch) {
+    container.appendChild(createTextSpan('spaces-tree-workspace-branch', workspace.branch));
+  }
+  if (workspace.isDetached) {
+    container.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.detached')));
+  }
+  if (workspace.locked) {
+    container.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.locked')));
+  }
+  if (workspace.prunable) {
+    container.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.prunable')));
+  }
+  if (workspace.hasChanges) {
+    container.appendChild(
+      createTextSpan('spaces-tree-workspace-badge warn', String(workspace.changeCount)),
+    );
+  }
+  if (workspace.hasActiveAiSession) {
+    container.appendChild(createTextSpan('spaces-tree-workspace-badge warn', t('spaces.aiBusy')));
+  }
 }
 
 function createTextSpan(className: string, value: string): HTMLSpanElement {

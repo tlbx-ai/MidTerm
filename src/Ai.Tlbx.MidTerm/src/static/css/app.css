@@ -799,6 +799,7 @@ body.has-app-background::after {
 
 .spaces-tree-space-list,
 .spaces-tree-adhoc-list,
+.spaces-tree-space-session-list,
 .spaces-tree-workspace-list,
 .spaces-tree-workspace-session-list {
   display: flex;
@@ -809,7 +810,7 @@ body.has-app-background::after {
 .spaces-tree-space {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .spaces-tree-space-header {
@@ -818,19 +819,21 @@ body.has-app-background::after {
   gap: 8px;
   align-items: center;
   width: 100%;
-  padding: 4px 4px 4px 6px;
+  padding: 6px 4px;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--text-secondary);
   text-align: left;
   cursor: pointer;
+}
+
+.spaces-tree-space-header:hover {
+  color: var(--text-primary);
 }
 
 .spaces-tree-space-identity {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .spaces-tree-space-title {
@@ -838,21 +841,9 @@ body.has-app-background::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.spaces-tree-space-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  opacity: 0.78;
+  color: currentColor;
+  font-size: var(--fs-sm);
+  font-weight: 600;
 }
 
 .spaces-tree-space-meta {
@@ -860,9 +851,9 @@ body.has-app-background::after {
   align-items: center;
   gap: 6px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
-.spaces-tree-space-count,
 .spaces-tree-workspace-branch,
 .spaces-tree-workspace-badge {
   display: inline-flex;
@@ -874,7 +865,6 @@ body.has-app-background::after {
   font-weight: 700;
 }
 
-.spaces-tree-space-count,
 .spaces-tree-workspace-badge {
   color: var(--text-muted);
   background: color-mix(in srgb, var(--bg-panel) 76%, transparent);
@@ -885,16 +875,12 @@ body.has-app-background::after {
   background: color-mix(in srgb, var(--accent-orange) 14%, transparent);
 }
 
-.spaces-tree-chevron {
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1;
-  transform: rotate(-90deg);
-  transition: transform 0.12s ease;
+.spaces-tree-section-chevron {
+  margin-left: 2px;
 }
 
-.spaces-tree-chevron.expanded {
-  transform: rotate(0deg);
+.spaces-tree-space:not(.expanded) .spaces-tree-section-chevron {
+  transform: rotate(180deg);
 }
 
 .spaces-tree-space-actions,
@@ -947,7 +933,11 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding-left: 12px;
+  padding-left: 16px;
+}
+
+.spaces-tree-space-session-list {
+  padding-left: 16px;
 }
 
 .spaces-tree-workspace {
@@ -959,10 +949,9 @@ body.has-app-background::after {
 
 .spaces-tree-workspace-open {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
   width: 100%;
-  padding: 2px 0;
+  padding: 1px 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -989,21 +978,13 @@ body.has-app-background::after {
 
 .spaces-tree-workspace-name {
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
 }
 
 .spaces-tree-workspace-branch {
   color: color-mix(in srgb, var(--accent-blue) 88%, var(--text-primary));
   background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
-}
-
-.spaces-tree-workspace-path {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .spaces-tree-adhoc-item {

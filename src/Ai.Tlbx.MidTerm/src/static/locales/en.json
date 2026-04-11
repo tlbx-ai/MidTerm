@@ -65,7 +65,6 @@
   "spaces.deleteWorktreeBlockedTitle": "Cannot delete worktree",
   "spaces.deleteWorktreeActiveSessions": "Close active sessions in this worktree before deleting it.",
   "spaces.aiBusy": "AI active",
-  "spaces.mainWorkspace": "Main",
   "spaces.detached": "Detached",
   "spaces.locked": "Locked",
   "spaces.prunable": "Prunable",
