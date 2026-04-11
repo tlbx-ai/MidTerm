@@ -28,6 +28,7 @@ public sealed class LaunchEntry
     public int Order { get; set; }
     public string LaunchMode { get; set; } = LaunchEntryLaunchModes.Terminal;
     public string? Profile { get; set; }
+    public string? LaunchOrigin { get; set; }
     public string SurfaceType { get; set; } = HistorySurfaceTypes.Terminal;
     public string? ForegroundProcessName { get; set; }
     public string? ForegroundProcessCommandLine { get; set; }

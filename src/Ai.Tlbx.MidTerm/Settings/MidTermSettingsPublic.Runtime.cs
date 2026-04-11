@@ -104,6 +104,8 @@ public sealed partial class MidTermSettingsPublic
             ResumeMode = settings.ResumeMode,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
+            ShowBookmarks = settings.ShowBookmarks,
+            AllowAdHocSessionBookmarks = settings.AllowAdHocSessionBookmarks,
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
             WorktreeRootDirectory = SettingsService.ResolveEffectiveWorktreeRootDirectory(settings, ensureExists: true),
             TmuxCompatibility = settings.TmuxCompatibility,
@@ -218,6 +220,8 @@ public sealed partial class MidTermSettingsPublic
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
+        settings.ShowBookmarks = ShowBookmarks;
+        settings.AllowAdHocSessionBookmarks = AllowAdHocSessionBookmarks;
         settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
         settings.WorktreeRootDirectory = NormalizeOptionalDirectorySetting(WorktreeRootDirectory);
         settings.TmuxCompatibility = TmuxCompatibility;

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.History;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services;
 using Xunit;
@@ -112,5 +113,30 @@ public sealed class HistoryServiceTests : IDisposable
         Assert.Equal("dotnet test", entry.ForegroundProcessCommandLine);
         Assert.Equal("dotnet test", entry.ForegroundProcessDisplayName);
         Assert.Equal("dotnet", entry.ForegroundProcessIdentity);
+    }
+
+    [Fact]
+    public void RecordEntry_NormalizesAndPersistsLaunchOrigin()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var service = new HistoryService(new SettingsService(_tempDir));
+
+        var id = service.RecordEntry(
+            "Pwsh",
+            "codex",
+            null,
+            @"Q:\repo",
+            launchMode: LaunchEntryLaunchModes.Lens,
+            profile: "codex",
+            launchOrigin: "Ad-Hoc",
+            surfaceType: HistorySurfaceTypes.Codex);
+
+        Assert.NotNull(id);
+
+        var entry = service.GetEntry(id!);
+        Assert.NotNull(entry);
+        Assert.Equal(SessionLaunchOrigins.AdHoc, entry!.LaunchOrigin);
+        Assert.Equal(HistorySurfaceTypes.Codex, entry.SurfaceType);
     }
 }

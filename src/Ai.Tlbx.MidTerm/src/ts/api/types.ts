@@ -475,6 +475,7 @@ export type DirectoryListResponse = Schemas['DirectoryListResponse'];
 
 // History
 export type LaunchEntry = Schemas['LaunchEntry'] & {
+  launchOrigin?: string | null;
   surfaceType?: string | null;
   foregroundProcessName?: string | null;
   foregroundProcessCommandLine?: string | null;
@@ -483,6 +484,7 @@ export type LaunchEntry = Schemas['LaunchEntry'] & {
 };
 export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
   dedupeKey?: string | null;
+  launchOrigin?: string | null;
   surfaceType?: 'trm' | 'cdx' | 'cld';
   foregroundProcessName?: string | null;
   foregroundProcessCommandLine?: string | null;

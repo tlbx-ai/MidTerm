@@ -135,7 +135,7 @@ function createDropdownElement(): void {
 function positionDropdown(): void {
   if (!dropdownEl) return;
 
-  const trigger = document.getElementById('btn-history');
+  const trigger = document.getElementById('btn-bookmarks');
   const sidebar = document.getElementById('sidebar');
   if (!(trigger instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
     return;
@@ -159,8 +159,11 @@ function renderDropdownContent(): void {
   const empty = dropdownEl.querySelector('.history-dropdown-empty');
   if (!content || !empty) return;
 
-  const pinnedEntries = cachedEntries.filter((e) => e.isStarred);
-  const recentEntries = cachedEntries.filter((e) => !e.isStarred).slice(0, 5);
+  const adHocEntries = cachedEntries.filter(
+    (entry) => (entry.launchOrigin ?? '').toLowerCase() !== 'space',
+  );
+  const pinnedEntries = adHocEntries.filter((e) => e.isStarred);
+  const recentEntries = adHocEntries.filter((e) => !e.isStarred).slice(0, 5);
 
   if (pinnedEntries.length === 0 && recentEntries.length === 0) {
     content.classList.add('hidden');
@@ -629,7 +632,7 @@ function handleOutsideClick(e: MouseEvent): void {
   if (!dropdownEl) return;
 
   const target = e.target as Element;
-  if (!dropdownEl.contains(target) && !target.closest('.btn-history')) {
+  if (!dropdownEl.contains(target) && !target.closest('#btn-bookmarks')) {
     closeHistoryDropdown();
   }
 }

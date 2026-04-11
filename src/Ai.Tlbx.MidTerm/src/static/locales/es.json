@@ -162,6 +162,8 @@
   "settings.behavior.keepAwake": "Mantener la computadora activa mientras existan sesiones",
   "settings.behavior.keepAwakeHint": "Evita la suspensión o el modo de espera mientras MidTerm tenga al menos una sesión activa. La pantalla aún puede apagarse. En los portátiles Mac, cerrar la tapa sigue poniendo el equipo en suspensión.",
   "settings.behavior.fileRadar": "Radar de Archivos",
+  "settings.behavior.showBookmarks": "Mostrar marcadores",
+  "settings.behavior.adHocSessionBookmarks": "Permitir marcadores de sesiones ad hoc",
   "settings.behavior.sidebarTerminalFilter": "Filtro de terminales en la barra lateral",
   "settings.behavior.managerBar": "Barra de Automatización",
   "settings.behavior.changelogAfterUpdate": "Mostrar registro de cambios después de actualizar",

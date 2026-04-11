@@ -31,8 +31,14 @@ import {
   type SessionFilterControllerElements,
 } from './sessionFilterController';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
-import { getChildWorkspaces, getRootWorkspace, isAdHocSession } from './spacesTreeSidebarLogic';
 import {
+  getChildWorkspaces,
+  getRootWorkspace,
+  isAdHocSession,
+  shouldShowAdHocBookmarkAction,
+} from './spacesTreeSidebarLogic';
+import {
+  createForegroundIndicator as createSessionForegroundIndicator,
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
 } from './sessionList';
@@ -592,7 +598,15 @@ function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
 
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
-  processInfo.appendChild(createForegroundIndicator(entry));
+  const foreground = getForegroundInfo(entry.id);
+  processInfo.appendChild(
+    createSessionForegroundIndicator(
+      foreground.cwd || entry.session.currentDirectory || entry.session.workspacePath || null,
+      foreground.commandLine,
+      foreground.name?.trim() || entry.session.shellType || t('session.terminal'),
+      foreground.displayName,
+    ),
+  );
   info.appendChild(processInfo);
 
   item.appendChild(info);
@@ -605,6 +619,32 @@ function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
   actions.className = 'session-actions';
   actions.id = `session-actions-${entry.id}`;
   actions.setAttribute('role', 'menu');
+
+  if (
+    shouldShowAdHocBookmarkAction(
+      entry.session,
+      entry.machineId,
+      $currentSettings.get()?.showBookmarks !== false,
+      $currentSettings.get()?.allowAdHocSessionBookmarks === true,
+    )
+  ) {
+    const pinButton = document.createElement('button');
+    pinButton.className = `session-pin${entry.session.bookmarkId ? ' pinned' : ''}`;
+    pinButton.setAttribute('role', 'menuitem');
+    pinButton.setAttribute('aria-pressed', entry.session.bookmarkId ? 'true' : 'false');
+    pinButton.title = t('session.pinToQuickLaunch');
+    pinButton.setAttribute('aria-label', t('session.pinToQuickLaunch'));
+    pinButton.innerHTML = `
+      <span class="session-action-icon">${entry.session.bookmarkId ? '★' : '☆'}</span>
+      <span class="session-action-label">${escapeHtml(t('session.pinToQuickLaunch'))}</span>
+    `;
+    pinButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      callbacks?.onPinToHistory(entry.id);
+    });
+    actions.appendChild(pinButton);
+  }
 
   const closeButton = document.createElement('button');
   closeButton.className = 'session-close';
@@ -665,45 +705,6 @@ function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
 
   section.appendChild(list);
   return section;
-}
-
-function getForegroundProcessLabel(entry: SidebarSessionRef): string {
-  const foreground = getForegroundInfo(entry.id);
-  return (
-    foreground.displayName?.trim() ||
-    foreground.commandLine?.trim() ||
-    foreground.name?.trim() ||
-    entry.session.shellType ||
-    t('session.terminal')
-  );
-}
-
-function createForegroundIndicator(entry: SidebarSessionRef): HTMLElement {
-  const foreground = getForegroundInfo(entry.id);
-  const cwd = foreground.cwd || entry.session.currentDirectory || entry.session.workspacePath || '';
-  const process = getForegroundProcessLabel(entry);
-
-  const container = document.createElement('span');
-  container.className = 'session-foreground';
-  container.title = cwd ? `${cwd}\n${process}` : process;
-
-  if (cwd) {
-    const cwdSpan = document.createElement('span');
-    cwdSpan.className = 'fg-cwd';
-    cwdSpan.textContent = cwd;
-    container.appendChild(cwdSpan);
-
-    const separator = document.createElement('span');
-    separator.className = 'fg-separator';
-    separator.textContent = '>';
-    container.appendChild(separator);
-  }
-
-  const processSpan = document.createElement('span');
-  processSpan.className = 'fg-process';
-  processSpan.textContent = process;
-  container.appendChild(processSpan);
-  return container;
 }
 
 function getVisibleRootSessions(

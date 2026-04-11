@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getChildWorkspaces, getRootWorkspace, isAdHocSession } from './spacesTreeSidebarLogic';
+import {
+  getChildWorkspaces,
+  getRootWorkspace,
+  isAdHocSession,
+  resolveSessionLaunchOrigin,
+  shouldShowAdHocBookmarkAction,
+} from './spacesTreeSidebarLogic';
 
 describe('spacesTreeSidebar session classification', () => {
   it('keeps generic new-session entries ad hoc even when they have a workspace path', () => {
@@ -22,6 +28,102 @@ describe('spacesTreeSidebar session classification', () => {
       isAdHocSession({
         spaceId: 'space-1',
       } as any),
+    ).toBe(false);
+  });
+
+  it('resolves launch origins for ad hoc and space sessions', () => {
+    expect(
+      resolveSessionLaunchOrigin({
+        isAdHoc: true,
+        spaceId: null,
+      } as any),
+    ).toBe('adhoc');
+
+    expect(
+      resolveSessionLaunchOrigin({
+        isAdHoc: false,
+        spaceId: 'space-1',
+      } as any),
+    ).toBe('space');
+  });
+
+  it('only shows bookmark actions for local ad hoc sessions when enabled or already linked', () => {
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: true,
+          spaceId: null,
+          bookmarkId: null,
+        } as any,
+        null,
+        true,
+        true,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: true,
+          spaceId: null,
+          bookmarkId: null,
+        } as any,
+        null,
+        true,
+        false,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: true,
+          spaceId: null,
+          bookmarkId: 'bookmark-1',
+        } as any,
+        null,
+        true,
+        false,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: false,
+          spaceId: 'space-1',
+          bookmarkId: null,
+        } as any,
+        null,
+        true,
+        true,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: true,
+          spaceId: null,
+          bookmarkId: 'bookmark-1',
+        } as any,
+        'remote-1',
+        true,
+        true,
+      ),
+    ).toBe(false);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: true,
+          spaceId: null,
+          bookmarkId: 'bookmark-1',
+        } as any,
+        null,
+        false,
+        true,
+      ),
     ).toBe(false);
   });
 });

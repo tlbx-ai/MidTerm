@@ -15,3 +15,4 @@ export {
 } from './historyDropdown';
 
 export { fetchHistory, toggleStar, removeHistoryEntry, createHistoryEntry } from './historyApi';
+export { animateBookmarkSaveSuccess, getBookmarkSurfaceType } from './bookmarkSession';

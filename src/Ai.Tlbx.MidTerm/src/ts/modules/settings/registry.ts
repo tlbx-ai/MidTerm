@@ -496,6 +496,24 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry('showBookmarks', 'setting-show-bookmarks', 'checkbox', true, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
+  controlEntry(
+    'allowAdHocSessionBookmarks',
+    'setting-allow-adhoc-session-bookmarks',
+    'checkbox',
+    true,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry(
     'showSidebarSessionFilter',
     'setting-show-sidebar-session-filter',

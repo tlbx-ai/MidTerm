@@ -73,6 +73,8 @@ public sealed partial class MidTermSettingsPublic
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
+    public bool ShowBookmarks { get; set; } = true;
+    public bool AllowAdHocSessionBookmarks { get; set; } = true;
     public bool ShowSidebarSessionFilter { get; set; } = false;
     public string WorktreeRootDirectory { get; set; } = "";
     public bool TmuxCompatibility { get; set; } = true;

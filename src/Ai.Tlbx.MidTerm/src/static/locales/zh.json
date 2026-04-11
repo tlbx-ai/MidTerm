@@ -165,6 +165,8 @@
   "settings.behavior.keepAwake": "只要存在会话就保持电脑唤醒",
   "settings.behavior.keepAwakeHint": "只要 MidTerm 至少有一个活动会话，就阻止系统进入睡眠或待机。显示器仍然可以关闭。在 Mac 笔记本上，合上盖子仍然会让电脑进入睡眠。",
   "settings.behavior.fileRadar": "文件雷达",
+  "settings.behavior.showBookmarks": "显示书签",
+  "settings.behavior.adHocSessionBookmarks": "允许临时会话书签",
   "settings.behavior.sidebarTerminalFilter": "侧边栏终端筛选器",
   "settings.behavior.managerBar": "自动化栏",
   "settings.behavior.changelogAfterUpdate": "更新后显示更新日志",

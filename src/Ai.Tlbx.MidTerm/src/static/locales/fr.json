@@ -162,6 +162,8 @@
   "settings.behavior.keepAwake": "Garder l’ordinateur éveillé tant qu’il existe des sessions",
   "settings.behavior.keepAwakeHint": "Empêche la veille ou la mise en veille prolongée tant que MidTerm a au moins une session active. L’écran peut quand même s’éteindre. Sur les portables Mac, fermer le capot met quand même l’ordinateur en veille.",
   "settings.behavior.fileRadar": "Radar de Fichiers",
+  "settings.behavior.showBookmarks": "Afficher les favoris",
+  "settings.behavior.adHocSessionBookmarks": "Autoriser les favoris de session ad hoc",
   "settings.behavior.sidebarTerminalFilter": "Filtre des terminaux dans la barre latérale",
   "settings.behavior.managerBar": "Barre d'automatisation",
   "settings.behavior.changelogAfterUpdate": "Afficher le journal des modifications après la mise à jour",

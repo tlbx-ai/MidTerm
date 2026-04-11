@@ -283,7 +283,7 @@ function getProcessTitleFallback(sessionId: string): string {
  * - Directory ellipsis from left (end of path is most important)
  * - Process ellipsis from right (process name is most important)
  */
-function createForegroundIndicator(
+export function createForegroundIndicator(
   cwd: string | null | undefined,
   commandLine: string | null | undefined,
   processName: string,

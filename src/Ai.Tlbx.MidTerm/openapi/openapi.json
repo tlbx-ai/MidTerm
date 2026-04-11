@@ -3896,6 +3896,12 @@
               "string"
             ]
           },
+          "launchOrigin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "surfaceType": {
             "type": "string"
           },
@@ -4482,6 +4488,7 @@
           "order",
           "launchMode",
           "profile",
+          "launchOrigin",
           "surfaceType",
           "foregroundProcessName",
           "foregroundProcessCommandLine",
@@ -4529,6 +4536,12 @@
             "type": "string"
           },
           "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "launchOrigin": {
             "type": [
               "null",
               "string"
@@ -5031,6 +5044,8 @@
           "resumeMode",
           "inputMode",
           "fileRadar",
+          "showBookmarks",
+          "allowAdHocSessionBookmarks",
           "showSidebarSessionFilter",
           "worktreeRootDirectory",
           "tmuxCompatibility",
@@ -5256,6 +5271,12 @@
             "type": "string"
           },
           "fileRadar": {
+            "type": "boolean"
+          },
+          "showBookmarks": {
+            "type": "boolean"
+          },
+          "allowAdHocSessionBookmarks": {
             "type": "boolean"
           },
           "showSidebarSessionFilter": {

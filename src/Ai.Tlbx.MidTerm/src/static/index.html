@@ -149,7 +149,25 @@
           <button class="sidebar-nav-btn" id="btn-settings">
             <span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span>
           </button>
-          <button class="sidebar-nav-btn btn-history" id="btn-history">
+          <button class="sidebar-nav-btn btn-spaces" id="btn-spaces">
+            <span class="icon icon-svg"
+              ><svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" /></svg></span
+            ><span data-i18n="spaces.title">Spaces</span>
+          </button>
+          <button class="sidebar-nav-btn btn-history btn-bookmarks" id="btn-bookmarks">
             <span class="icon icon-svg"
               ><svg
                 viewBox="0 0 24 24"
@@ -164,7 +182,7 @@
                 <polygon
                   points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
                 /></svg></span
-            ><span data-i18n="spaces.title">Spaces</span>
+            ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
           </button>
         </div>
         <div id="session-filter-bar" class="session-filter-bar" hidden>
@@ -2059,6 +2077,22 @@
                         >File Radar</label
                       >
                       <input type="checkbox" id="setting-file-radar" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-show-bookmarks"
+                        data-i18n="settings.behavior.showBookmarks"
+                        >Show Bookmarks</label
+                      >
+                      <input type="checkbox" id="setting-show-bookmarks" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-allow-adhoc-session-bookmarks"
+                        data-i18n="settings.behavior.adHocSessionBookmarks"
+                        >Ad-hoc Session Bookmarks</label
+                      >
+                      <input type="checkbox" id="setting-allow-adhoc-session-bookmarks" />
                     </div>
                     <div class="setting-row">
                       <label

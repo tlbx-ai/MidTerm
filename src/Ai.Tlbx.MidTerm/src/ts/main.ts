@@ -55,6 +55,7 @@ import {
   initHeatIndicator,
   suppressAllHeat,
   renderSessionList,
+  syncSidebarNavButtons,
   updateEmptyState,
   updateMobileTitle,
 } from './modules/sidebar';
@@ -80,7 +81,14 @@ import {
   initUpdateUi,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
-import type { LaunchEntry } from './modules/history';
+import {
+  animateBookmarkSaveSuccess,
+  closeHistoryDropdown,
+  getBookmarkSurfaceType,
+  initHistoryDropdown,
+  toggleHistoryDropdown,
+  type LaunchEntry,
+} from './modules/history';
 import { isLensHistoryEntry, normalizeHistoryLensProfile } from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
@@ -141,7 +149,7 @@ import {
 import { initDockState } from './modules/dockState';
 import { initSmartInput, setLensResumeConversationHandler } from './modules/smartInput';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
-import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
+import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
 import {
   cacheDOMElements,
@@ -158,6 +166,7 @@ import {
   $muxWsConnected,
   $activeSessionId,
   $settingsOpen,
+  $sessionList,
   $currentSettings,
   $layout,
   setSession,
@@ -170,40 +179,43 @@ import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
 import { createSessionActionHandlers } from './sessionActions';
 import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
-import { createSession as apiCreateSession, bootstrapWorker } from './api/client';
+import {
+  createSession as apiCreateSession,
+  bootstrapWorker,
+  setSessionBookmark,
+} from './api/client';
 import type { ShellType } from './api/types';
 
 // Create logger for main module
 const log = createLogger('main');
-const PIN_SUCCESS_ANIMATION_MS = 560;
 
-function getBookmarkSurfaceType(
-  session: Session,
-  profile: 'codex' | 'claude' | null,
-): 'trm' | 'cdx' | 'cld' {
-  if (session.lensOnly && profile === 'claude') {
-    return 'cld';
+function attachBookmarkToSession(
+  sessionId: string,
+  bookmarkId: string | null,
+  label: string | null,
+): void {
+  if (!bookmarkId && !label) {
+    return;
   }
 
-  if (session.lensOnly && profile === 'codex') {
-    return 'cdx';
-  }
+  const applyBookmark = (): void => {
+    const session = getSession(sessionId);
+    if (!session) {
+      window.setTimeout(applyBookmark, 100);
+      return;
+    }
 
-  return 'trm';
-}
+    if (bookmarkId) {
+      setSession({ ...session, bookmarkId });
+      setSessionBookmark(sessionId, bookmarkId).catch(() => {});
+    }
 
-function animateBookmarkSaveSuccess(sessionId: string): void {
-  const pinButtons = document.querySelectorAll<HTMLButtonElement>(
-    `.session-item[data-session-id="${sessionId}"] .session-pin`,
-  );
-  for (const pinButton of pinButtons) {
-    pinButton.classList.remove('save-success');
-    void pinButton.offsetWidth;
-    pinButton.classList.add('save-success');
-    window.setTimeout(() => {
-      pinButton.classList.remove('save-success');
-    }, PIN_SUCCESS_ANIMATION_MS);
-  }
+    if (label) {
+      renameSession(sessionId, label);
+    }
+  };
+
+  applyBookmark();
 }
 
 // Debug export for console access (typed in types/xterm-extensions.d.ts)
@@ -298,6 +310,18 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
+  syncSidebarNavButtons($currentSettings.get());
+  initHistoryDropdown(
+    (entry) => {
+      void spawnFromHistory(entry);
+    },
+    (entryId, newLabel) => {
+      const session = $sessionList.get().find((candidate) => candidate.bookmarkId === entryId);
+      if (session) {
+        renameSession(session.id, newLabel || null);
+      }
+    },
+  );
   const spacesRuntimeOptions = {
     resolveLaunchDimensions: resolveNewSessionDimensions,
     resolveShell: resolveLauncherShell,
@@ -338,6 +362,9 @@ async function init(): Promise<void> {
   };
   initSpacesRuntime(spacesRuntimeOptions);
   initSpacesDropdown(spacesRuntimeOptions);
+  $currentSettings.subscribe((settings) => {
+    syncSidebarNavButtons(settings);
+  });
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -898,9 +925,7 @@ async function spawnFromHistory(
           requestAnimationFrame(() => {
             switchTab(session.id, 'agent');
           });
-          if (entry.label) {
-            renameSession(session.id, entry.label);
-          }
+          attachBookmarkToSession(session.id, entry.id, entry.label ?? null);
         })
         .catch((e: unknown) => {
           log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
@@ -921,9 +946,7 @@ async function spawnFromHistory(
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-      if (entry.label) {
-        renameSession(data.id, entry.label);
-      }
+      attachBookmarkToSession(data.id, entry.id, entry.label ?? null);
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
@@ -991,6 +1014,7 @@ async function resumeLensConversationFromCommandBay(args: {
       requestAnimationFrame(() => {
         switchTab(session.id, 'agent');
       });
+      attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
     })
     .catch((e: unknown) => {
       clearPendingSession(tempId);
@@ -1326,7 +1350,14 @@ function bindEvents(): void {
     changelogBackdrop.addEventListener('click', closeChangelog);
   }
 
-  bindClick('btn-history', toggleSpacesDropdown);
+  bindClick('btn-spaces', () => {
+    closeHistoryDropdown();
+    toggleSpacesDropdown();
+  });
+  bindClick('btn-bookmarks', () => {
+    closeSpacesDropdown();
+    toggleHistoryDropdown();
+  });
 
   // Global keyboard shortcut: Alt+T to create new terminal
   document.addEventListener('keydown', (e) => {

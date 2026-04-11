@@ -29,6 +29,7 @@ public static class HistoryEndpoints
                 request.DedupeKey,
                 request.LaunchMode,
                 request.Profile,
+                request.LaunchOrigin,
                 request.SurfaceType,
                 request.ForegroundProcessName,
                 request.ForegroundProcessCommandLine,

@@ -8,6 +8,33 @@ export function isAdHocSession(session: Pick<Session, 'isAdHoc' | 'spaceId'>): b
   return !session.spaceId?.trim();
 }
 
+export function resolveSessionLaunchOrigin(
+  session: Pick<Session, 'isAdHoc' | 'spaceId'>,
+): 'adhoc' | 'space' {
+  return isAdHocSession(session) ? 'adhoc' : 'space';
+}
+
+export function shouldShowAdHocBookmarkAction(
+  session: Pick<Session, 'isAdHoc' | 'spaceId' | 'bookmarkId'>,
+  machineId: string | null,
+  showBookmarks: boolean,
+  allowAdHocSessionBookmarks: boolean,
+): boolean {
+  if (machineId) {
+    return false;
+  }
+
+  if (!showBookmarks) {
+    return false;
+  }
+
+  if (!isAdHocSession(session)) {
+    return false;
+  }
+
+  return allowAdHocSessionBookmarks || !!session.bookmarkId?.trim();
+}
+
 export function getRootWorkspace(
   space: Pick<SpaceSummaryDto, 'rootPath' | 'workspaces'>,
 ): SpaceWorkspaceDto | null {

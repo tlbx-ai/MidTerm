@@ -99,6 +99,12 @@ public sealed class MidTermSettings
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
 
+    // Controls whether the bookmarks UI is visible in the sidebar
+    public bool ShowBookmarks { get; set; } = true;
+
+    // Restores bookmark pinning for local ad-hoc sessions only
+    public bool AllowAdHocSessionBookmarks { get; set; } = true;
+
     // Sidebar session filter - Shows the sidebar filter input for narrowing visible sessions
     public bool ShowSidebarSessionFilter { get; set; } = false;
 

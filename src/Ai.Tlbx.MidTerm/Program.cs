@@ -268,7 +268,12 @@ public class Program
             var session = sessionManager.GetSession(sessionId);
             if (session is not null && !string.IsNullOrEmpty(payload.Name) && !string.IsNullOrEmpty(payload.Cwd))
             {
-                historyService.RecordEntry(session.ShellType, payload.Name, payload.CommandLine, payload.Cwd);
+                historyService.RecordEntry(
+                    session.ShellType,
+                    payload.Name,
+                    payload.CommandLine,
+                    payload.Cwd,
+                    launchOrigin: sessionManager.GetLaunchOrigin(session.Id));
             }
         };
 

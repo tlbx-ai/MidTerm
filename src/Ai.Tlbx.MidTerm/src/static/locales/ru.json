@@ -162,6 +162,8 @@
   "settings.behavior.keepAwake": "Не давать компьютеру спать, пока есть сеансы",
   "settings.behavior.keepAwakeHint": "Предотвращает сон или режим ожидания, пока в MidTerm есть хотя бы один активный сеанс. Экран при этом может отключаться. На ноутбуках Mac закрытие крышки все равно переводит компьютер в режим сна.",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.showBookmarks": "Показывать закладки",
+  "settings.behavior.adHocSessionBookmarks": "Разрешить закладки для ad hoc сессий",
   "settings.behavior.sidebarTerminalFilter": "Фильтр терминалов в боковой панели",
   "settings.behavior.managerBar": "Панель автоматизации",
   "settings.behavior.changelogAfterUpdate": "Показывать список изменений после обновления",

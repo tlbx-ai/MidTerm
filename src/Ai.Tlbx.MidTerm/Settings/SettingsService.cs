@@ -379,6 +379,16 @@ public sealed class SettingsService
             settings.FileRadar = true;
         }
 
+        if (!json.Contains("\"showBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.ShowBookmarks = true;
+        }
+
+        if (!json.Contains("\"allowAdHocSessionBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.AllowAdHocSessionBookmarks = true;
+        }
+
         if (!json.Contains("\"managerBarEnabled\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.ManagerBarEnabled = true;
@@ -577,6 +587,16 @@ public sealed class SettingsService
         current.ShowUpdateNotification = old.ShowUpdateNotification;
         current.UpdateChannel = old.UpdateChannel;
         current.Language = old.Language;
+
+        if (oldJson.Contains("\"showBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            current.ShowBookmarks = old.ShowBookmarks;
+        }
+
+        if (oldJson.Contains("\"allowAdHocSessionBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            current.AllowAdHocSessionBookmarks = old.AllowAdHocSessionBookmarks;
+        }
 
         // Restore security/installer fields (these come from the installer, not the user)
         current.RunAsUser = runAsUser;

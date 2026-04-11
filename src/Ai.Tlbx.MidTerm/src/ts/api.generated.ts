@@ -3813,6 +3813,7 @@ export interface components {
       label?: null | string;
       launchMode: string;
       profile?: null | string;
+      launchOrigin?: null | string;
       surfaceType: string;
       foregroundProcessName?: null | string;
       foregroundProcessCommandLine?: null | string;
@@ -3964,6 +3965,7 @@ export interface components {
       order: number;
       launchMode: string;
       profile: null | string;
+      launchOrigin: null | string;
       surfaceType: string;
       foregroundProcessName: null | string;
       foregroundProcessCommandLine: null | string;
@@ -4138,6 +4140,8 @@ export interface components {
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
       inputMode: string;
       fileRadar: boolean;
+      showBookmarks: boolean;
+      allowAdHocSessionBookmarks: boolean;
       showSidebarSessionFilter: boolean;
       worktreeRootDirectory: string;
       tmuxCompatibility: boolean;

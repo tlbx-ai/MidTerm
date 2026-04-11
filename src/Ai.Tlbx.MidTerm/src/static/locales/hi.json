@@ -162,6 +162,8 @@
   "settings.behavior.keepAwake": "जब तक सत्र मौजूद हों, कंप्यूटर को जागृत रखें",
   "settings.behavior.keepAwakeHint": "जब तक MidTerm में कम से कम एक सक्रिय सत्र है, स्लीप या स्टैंडबाय को रोकता है। स्क्रीन फिर भी बंद हो सकती है। Mac लैपटॉप पर ढक्कन बंद करने से कंप्यूटर फिर भी स्लीप में चला जाता है।",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.showBookmarks": "बुकमार्क दिखाएँ",
+  "settings.behavior.adHocSessionBookmarks": "एड-हॉक सत्र बुकमार्क की अनुमति दें",
   "settings.behavior.sidebarTerminalFilter": "साइडबार टर्मिनल फ़िल्टर",
   "settings.behavior.managerBar": "Automation Bar",
   "settings.behavior.changelogAfterUpdate": "अपडेट के बाद बदलाव सूची दिखाएं",

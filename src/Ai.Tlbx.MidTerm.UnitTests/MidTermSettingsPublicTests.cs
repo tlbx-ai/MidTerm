@@ -126,6 +126,42 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripAllowAdHocSessionBookmarks()
+    {
+        var settings = new MidTermSettings
+        {
+            AllowAdHocSessionBookmarks = false
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.False(publicSettings.AllowAdHocSessionBookmarks);
+
+        settings.AllowAdHocSessionBookmarks = true;
+        publicSettings.ApplyTo(settings);
+
+        Assert.False(settings.AllowAdHocSessionBookmarks);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripShowBookmarks()
+    {
+        var settings = new MidTermSettings
+        {
+            ShowBookmarks = false
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.False(publicSettings.ShowBookmarks);
+
+        settings.ShowBookmarks = true;
+        publicSettings.ApplyTo(settings);
+
+        Assert.False(settings.ShowBookmarks);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripTerminalEnvironmentVariables()
     {
         var settings = new MidTermSettings

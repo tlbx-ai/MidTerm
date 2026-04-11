@@ -130,6 +130,7 @@ public sealed class HistoryService : IDisposable
             Order = entry.Order,
             LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
             Profile = NormalizeProfile(entry.Profile),
+            LaunchOrigin = NormalizeLaunchOrigin(entry.LaunchOrigin),
             SurfaceType = NormalizeSurfaceType(entry.SurfaceType, entry.LaunchMode, entry.Profile),
             ForegroundProcessName = entry.ForegroundProcessName,
             ForegroundProcessCommandLine = entry.ForegroundProcessCommandLine,
@@ -147,6 +148,7 @@ public sealed class HistoryService : IDisposable
         string? dedupeKey = null,
         string? launchMode = null,
         string? profile = null,
+        string? launchOrigin = null,
         string? surfaceType = null,
         string? foregroundProcessName = null,
         string? foregroundProcessCommandLine = null,
@@ -155,8 +157,9 @@ public sealed class HistoryService : IDisposable
     {
         var normalizedLaunchMode = NormalizeLaunchMode(launchMode);
         var normalizedProfile = NormalizeProfile(profile);
+        var normalizedLaunchOrigin = NormalizeLaunchOrigin(launchOrigin);
         var normalizedSurfaceType = NormalizeSurfaceType(surfaceType, normalizedLaunchMode, normalizedProfile);
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}, surfaceType={normalizedSurfaceType}");
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}, launchOrigin={normalizedLaunchOrigin}, surfaceType={normalizedSurfaceType}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -192,6 +195,7 @@ public sealed class HistoryService : IDisposable
                 existing.LastUsed = DateTime.UtcNow;
                 existing.LaunchMode = normalizedLaunchMode;
                 existing.Profile = normalizedProfile;
+                existing.LaunchOrigin = normalizedLaunchOrigin;
                 existing.SurfaceType = normalizedSurfaceType;
                 existing.ForegroundProcessName = foregroundProcessName;
                 existing.ForegroundProcessCommandLine = foregroundProcessCommandLine;
@@ -216,6 +220,7 @@ public sealed class HistoryService : IDisposable
                     LastUsed = DateTime.UtcNow,
                     LaunchMode = normalizedLaunchMode,
                     Profile = normalizedProfile,
+                    LaunchOrigin = normalizedLaunchOrigin,
                     SurfaceType = normalizedSurfaceType,
                     ForegroundProcessName = foregroundProcessName,
                     ForegroundProcessCommandLine = foregroundProcessCommandLine,
@@ -275,6 +280,7 @@ public sealed class HistoryService : IDisposable
                 Order = entry.Order,
                 LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
                 Profile = NormalizeProfile(entry.Profile),
+                LaunchOrigin = NormalizeLaunchOrigin(entry.LaunchOrigin),
                 SurfaceType = NormalizeSurfaceType(entry.SurfaceType, entry.LaunchMode, entry.Profile),
                 ForegroundProcessName = entry.ForegroundProcessName,
                 ForegroundProcessCommandLine = entry.ForegroundProcessCommandLine,
@@ -470,6 +476,11 @@ public sealed class HistoryService : IDisposable
             "claude" => "claude",
             _ => null
         };
+    }
+
+    private static string? NormalizeLaunchOrigin(string? launchOrigin)
+    {
+        return SessionLaunchOrigins.Normalize(launchOrigin);
     }
 
     private static string NormalizeSurfaceType(string? surfaceType, string? launchMode, string? profile)

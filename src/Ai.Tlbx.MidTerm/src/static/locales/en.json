@@ -463,6 +463,8 @@
   "settings.behavior.resumeMode": "Session Resume Mode",
   "settings.behavior.resumeModeHint": "Quick Resume keeps hidden sessions lighter by catching them up with a smaller replay burst when you revisit them. Visible sessions remain live, and the heat indicator still reflects real terminal activity.",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.showBookmarks": "Show Bookmarks",
+  "settings.behavior.adHocSessionBookmarks": "Allow Ad-hoc Session Bookmarks",
   "settings.behavior.sidebarTerminalFilter": "Sidebar Terminal Filter",
   "settings.behavior.managerBar": "Automation Bar",
   "settings.behavior.changelogAfterUpdate": "Show changelog after update",

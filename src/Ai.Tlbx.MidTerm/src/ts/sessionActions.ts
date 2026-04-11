@@ -44,6 +44,10 @@ import {
   type LaunchEntry,
   createHistoryEntry,
 } from './modules/history';
+import {
+  isAdHocSession,
+  resolveSessionLaunchOrigin,
+} from './modules/sidebar/spacesTreeSidebarLogic';
 import { resolveSessionHistoryMode } from './modules/history/launchMode';
 import { getForegroundInfo } from './modules/process';
 import { removeSessionDockState } from './modules/dockState';
@@ -57,6 +61,7 @@ import { dom, newlyCreatedSessions, sessionTerminals } from './state';
 import {
   $activeSessionId,
   $isMainBrowser,
+  $currentSettings,
   $sessionList,
   clearPendingRename,
   getSession,
@@ -594,12 +599,27 @@ export function createSessionActionHandlers({
       dedupeKey: target.dedupeKey,
       launchMode: target.historyMode.launchMode,
       profile: target.historyMode.profile,
+      launchOrigin: resolveSessionLaunchOrigin(session),
       surfaceType: target.surfaceType,
       foregroundProcessName: target.foregroundProcessName,
       foregroundProcessCommandLine: target.foregroundProcessCommandLine,
       foregroundProcessDisplayName: target.foregroundProcessDisplayName,
       foregroundProcessIdentity: target.foregroundProcessIdentity,
     };
+  }
+
+  function canManageAdHocBookmarks(session: Session): boolean {
+    if (!isAdHocSession(session)) {
+      return false;
+    }
+
+    if ($currentSettings.get()?.showBookmarks === false) {
+      return false;
+    }
+
+    return (
+      $currentSettings.get()?.allowAdHocSessionBookmarks === true || !!session.bookmarkId?.trim()
+    );
   }
 
   async function ensurePinnedSessionBookmark(
@@ -643,6 +663,11 @@ export function createSessionActionHandlers({
     const session = getSession(sessionId);
     if (!session) {
       log.warn(() => `pinSessionToHistory: session ${sessionId} not found`);
+      return;
+    }
+
+    if (!canManageAdHocBookmarks(session)) {
+      log.info(() => `pinSessionToHistory: skipping ineligible session ${sessionId}`);
       return;
     }
 

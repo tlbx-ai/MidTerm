@@ -296,7 +296,7 @@ function positionDropdown(): void {
     return;
   }
 
-  const trigger = document.getElementById('btn-history');
+  const trigger = document.getElementById('btn-spaces');
   const sidebar = document.getElementById('sidebar');
   if (!(trigger instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
     return;
@@ -521,7 +521,7 @@ function handleOutsideClick(event: MouseEvent): void {
 
   if (
     !dropdownEl.contains(target) &&
-    !target.closest('.btn-history') &&
+    !target.closest('#btn-spaces') &&
     !target.closest('.spaces-target-picker')
   ) {
     closeSpacesDropdown();
