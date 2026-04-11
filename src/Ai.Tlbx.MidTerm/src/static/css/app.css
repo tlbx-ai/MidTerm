@@ -915,11 +915,6 @@ body.has-app-background::after {
   background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
   color: var(--text-muted);
   cursor: pointer;
-}
-
-.spaces-tree-overflow,
-.spaces-tree-add,
-.spaces-tree-forget {
   display: inline-flex;
   align-items: center;
   justify-content: center;
