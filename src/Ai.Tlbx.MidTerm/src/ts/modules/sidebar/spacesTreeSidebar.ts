@@ -31,6 +31,7 @@ import {
   type SessionFilterControllerElements,
 } from './sessionFilterController';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
+import { isAdHocSession } from './spacesTreeSidebarLogic';
 import {
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
@@ -278,13 +279,13 @@ function renderSidebarTree(): void {
   });
   host.replaceChildren();
 
-  for (const section of getVisibleSpaceSections()) {
-    host.appendChild(createSpaceTargetSection(section));
-  }
-
   const adHocSessions = getAdHocSessions();
   if (adHocSessions.length > 0) {
     host.appendChild(createAdHocSection(adHocSessions));
+  }
+
+  for (const section of getVisibleSpaceSections()) {
+    host.appendChild(createSpaceTargetSection(section));
   }
 
   if (host.childElementCount === 0) {
@@ -352,16 +353,8 @@ function getAllSidebarSessions(): SidebarSessionRef[] {
 
 function getAdHocSessions(): SidebarSessionRef[] {
   return getAllSidebarSessions()
-    .filter((entry) => !isSessionAdoptedBySpace(entry))
+    .filter((entry) => isAdHocSession(entry.session))
     .filter(matchesSidebarSessionSearch);
-}
-
-function isSessionAdoptedBySpace(entry: SidebarSessionRef): boolean {
-  return cachedSections.some(
-    (section) =>
-      section.machineId === entry.machineId &&
-      section.spaces.some((space) => sessionBelongsToSpace(entry, section.machineId, space)),
-  );
 }
 
 function createSpaceTargetSection(section: SidebarSpaceSection): HTMLElement {
@@ -770,6 +763,10 @@ function sessionBelongsToSpace(
   space: SpaceSummaryDto,
 ): boolean {
   if (entry.machineId !== machineId) {
+    return false;
+  }
+
+  if (isAdHocSession(entry.session)) {
     return false;
   }
 
