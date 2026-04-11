@@ -79,6 +79,39 @@ public sealed class SpaceServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetSpaceAsync_UsesRouteSafePrimaryWorkspaceKey()
+    {
+        var stateDir = CreateTempDirectory();
+        var workspaceDir = CreateWorkspaceDirectory(stateDir, "repo-root");
+
+        try
+        {
+            var settingsService = new SettingsService(stateDir);
+            using var historyService = new HistoryService(settingsService);
+            var spaceService = new SpaceService(settingsService, historyService);
+            await using var manager = CreateManager(new SessionControlStateService(stateDir));
+
+            var importedSpace = await spaceService.ImportAsync(workspaceDir, null, manager);
+            Assert.NotNull(importedSpace);
+
+            var space = await spaceService.GetSpaceAsync(importedSpace!.Id, manager);
+            Assert.NotNull(space);
+            Assert.False(string.IsNullOrWhiteSpace(space!.PrimaryWorkspaceKey));
+            Assert.DoesNotContain("/", space.PrimaryWorkspaceKey!, StringComparison.Ordinal);
+            Assert.DoesNotContain(":", space.PrimaryWorkspaceKey!, StringComparison.Ordinal);
+
+            var resolved = await spaceService.ResolveWorkspacePathAsync(
+                importedSpace.Id,
+                space.PrimaryWorkspaceKey!);
+            Assert.Equal(workspaceDir, resolved, ignoreCase: OperatingSystem.IsWindows());
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
     private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
         return new TtyHostSessionManager(

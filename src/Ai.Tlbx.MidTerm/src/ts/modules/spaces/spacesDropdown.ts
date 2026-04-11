@@ -447,7 +447,14 @@ function buildFallbackWorkspace(space: SpaceSummaryDto): SpaceWorkspaceDto {
 }
 
 function buildWorkspaceKey(path: string): string {
-  return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const normalized = path.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const bytes = new TextEncoder().encode(normalized);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return `ws_${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
 }
 
 async function openAddTargetPicker(trigger: HTMLElement): Promise<void> {

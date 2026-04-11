@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.History;
@@ -712,9 +713,14 @@ public sealed class SpaceService
 
     private static string BuildWorkspaceKey(string path)
     {
-        return NormalizePath(path)
+        var normalized = NormalizePath(path)
             .Replace('\\', '/')
             .ToLowerInvariant();
+        var bytes = Encoding.UTF8.GetBytes(normalized);
+        return "ws_" + Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 
     private string GetConfiguredWorktreeRootDirectory()

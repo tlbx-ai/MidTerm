@@ -66,7 +66,7 @@ export async function launchSpaceWorkspace(
     return true;
   } catch (error) {
     await showAlert(error instanceof Error ? error.message : String(error), {
-      title: t('spaces.launchFailed'),
+      title: t('spaces.sessionStartFailed'),
     });
     return false;
   }

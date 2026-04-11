@@ -45,7 +45,7 @@
   "spaces.renameWorktreeFailed": "Worktree rename failed",
   "spaces.aiCollisionTitle": "AI workspace already active",
   "spaces.aiCollisionWarning": "This workspace already has an active AI session. Launch another one anyway?",
-  "spaces.launchFailed": "Space launch failed",
+  "spaces.sessionStartFailed": "Session start failed",
   "spaces.newSession": "New session",
   "spaces.recents": "Recents",
   "spaces.worktrees": "Worktrees",

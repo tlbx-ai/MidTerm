@@ -252,7 +252,7 @@ public static class SpaceEndpoints
 
         return Results.Problem(new ProblemDetails
         {
-            Title = "Space launch failed",
+            Title = "Session start failed",
             Status = statusCode,
             Detail = failure?.Message ?? "Failed to launch the requested space surface."
         });
