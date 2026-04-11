@@ -44,6 +44,8 @@ internal sealed class SessionRegistry
 
     public ConcurrentDictionary<string, byte> LensOnlySessions { get; } = new(StringComparer.Ordinal);
 
+    public ConcurrentDictionary<string, string> LaunchOrigins { get; } = new(StringComparer.Ordinal);
+
     public ConcurrentDictionary<string, string> ProfileHints { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, string> LensResumeThreadIds { get; } = new(StringComparer.Ordinal);
@@ -144,37 +146,42 @@ internal sealed class SessionRegistry
         {
             Sessions = SessionCache.Values
                 .Where(s => !HiddenSessions.ContainsKey(s.Id))
-                .Select(s => new SessionInfoDto
+                .Select(s =>
                 {
-                    Id = s.Id,
-                    Pid = s.Pid,
-                    CreatedAt = s.CreatedAt,
-                    IsRunning = s.IsRunning,
-                    ExitCode = s.ExitCode,
-                    Cols = s.Cols,
-                    Rows = s.Rows,
-                    ShellType = s.ShellType,
-                    Name = s.Name,
-                    TerminalTitle = s.TerminalTitle,
-                    ManuallyNamed = s.ManuallyNamed,
-                    CurrentDirectory = s.CurrentDirectory,
-                    ForegroundPid = s.ForegroundPid,
-                    ForegroundName = s.ForegroundName,
-                    ForegroundCommandLine = s.ForegroundCommandLine,
-                    AgentAttachPoint = s.AgentAttachPoint,
-                    Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
-                    ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
-                    BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
-                    SpaceId = GetSpaceId(s.Id),
-                    WorkspacePath = GetWorkspacePath(s.Id),
-                    Surface = GetSurface(s.Id),
-                    IsAdHoc = string.IsNullOrWhiteSpace(GetSpaceId(s.Id)),
-                    AgentControlled = IsAgentControlled(s.Id),
-                    LensOnly = IsLensOnly(s.Id),
-                    ProfileHint = GetProfileHint(s.Id),
-                    LensResumeThreadId = GetLensResumeThreadId(s.Id),
-                    ForegroundDisplayName = s.ForegroundDisplayName,
-                    ForegroundProcessIdentity = s.ForegroundProcessIdentity
+                    var spaceId = GetSpaceId(s.Id);
+                    var launchOrigin = ResolveLaunchOrigin(s.Id, spaceId);
+                    return new SessionInfoDto
+                    {
+                        Id = s.Id,
+                        Pid = s.Pid,
+                        CreatedAt = s.CreatedAt,
+                        IsRunning = s.IsRunning,
+                        ExitCode = s.ExitCode,
+                        Cols = s.Cols,
+                        Rows = s.Rows,
+                        ShellType = s.ShellType,
+                        Name = s.Name,
+                        TerminalTitle = s.TerminalTitle,
+                        ManuallyNamed = s.ManuallyNamed,
+                        CurrentDirectory = s.CurrentDirectory,
+                        ForegroundPid = s.ForegroundPid,
+                        ForegroundName = s.ForegroundName,
+                        ForegroundCommandLine = s.ForegroundCommandLine,
+                        AgentAttachPoint = s.AgentAttachPoint,
+                        Order = SessionOrder.TryGetValue(s.Id, out var order) ? order : int.MaxValue,
+                        ParentSessionId = TmuxParentSessions.TryGetValue(s.Id, out var parentId) ? parentId : null,
+                        BookmarkId = BookmarkLinks.TryGetValue(s.Id, out var bookmarkId) ? bookmarkId : null,
+                        SpaceId = spaceId,
+                        WorkspacePath = GetWorkspacePath(s.Id),
+                        Surface = GetSurface(s.Id),
+                        IsAdHoc = IsAdHoc(launchOrigin),
+                        AgentControlled = IsAgentControlled(s.Id),
+                        LensOnly = IsLensOnly(s.Id),
+                        ProfileHint = GetProfileHint(s.Id),
+                        LensResumeThreadId = GetLensResumeThreadId(s.Id),
+                        ForegroundDisplayName = s.ForegroundDisplayName,
+                        ForegroundProcessIdentity = s.ForegroundProcessIdentity
+                    };
                 })
                 .OrderBy(s => s.Order)
                 .ToList()
@@ -192,6 +199,7 @@ internal sealed class SessionRegistry
         BookmarkLinks.TryRemove(sessionId, out _);
         AgentControlledSessions.TryRemove(sessionId, out _);
         LensOnlySessions.TryRemove(sessionId, out _);
+        LaunchOrigins.TryRemove(sessionId, out _);
         ProfileHints.TryRemove(sessionId, out _);
         LensResumeThreadIds.TryRemove(sessionId, out _);
         SpaceIds.TryRemove(sessionId, out _);
@@ -294,6 +302,34 @@ internal sealed class SessionRegistry
         _sessionControlStateService?.SetProfileHint(sessionId, profile);
         NotifyStateChange();
         return true;
+    }
+
+    public bool SetLaunchOrigin(string sessionId, string? launchOrigin)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        var normalized = SessionLaunchOrigins.Normalize(launchOrigin);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            LaunchOrigins.TryRemove(sessionId, out _);
+        }
+        else
+        {
+            LaunchOrigins[sessionId] = normalized;
+        }
+
+        _sessionControlStateService?.SetLaunchOrigin(sessionId, normalized);
+        NotifyStateChange();
+        return true;
+    }
+
+    public string? GetLaunchOrigin(string sessionId)
+    {
+        var spaceId = GetSpaceId(sessionId);
+        return ResolveLaunchOrigin(sessionId, spaceId);
     }
 
     public bool SetLensResumeThreadId(string sessionId, string? resumeThreadId)
@@ -468,6 +504,7 @@ internal sealed class SessionRegistry
         TmuxParentSessions.Clear();
         BookmarkLinks.Clear();
         AgentControlledSessions.Clear();
+        LaunchOrigins.Clear();
         LensResumeThreadIds.Clear();
         SpaceIds.Clear();
         WorkspacePaths.Clear();
@@ -496,6 +533,13 @@ internal sealed class SessionRegistry
             : _sessionControlStateService?.GetLensResumeThreadId(sessionId);
     }
 
+    private string? GetStoredLaunchOrigin(string sessionId)
+    {
+        return LaunchOrigins.TryGetValue(sessionId, out var launchOrigin)
+            ? launchOrigin
+            : _sessionControlStateService?.GetLaunchOrigin(sessionId);
+    }
+
     private string? GetSpaceId(string sessionId)
     {
         return SpaceIds.TryGetValue(sessionId, out var spaceId)
@@ -515,6 +559,22 @@ internal sealed class SessionRegistry
         return Surfaces.TryGetValue(sessionId, out var surface)
             ? surface
             : _sessionControlStateService?.GetSurface(sessionId);
+    }
+
+    private string? ResolveLaunchOrigin(string sessionId, string? spaceId)
+    {
+        return SessionLaunchOrigins.Normalize(GetStoredLaunchOrigin(sessionId)) ??
+               (string.IsNullOrWhiteSpace(spaceId)
+                   ? SessionLaunchOrigins.AdHoc
+                   : SessionLaunchOrigins.Space);
+    }
+
+    private static bool IsAdHoc(string? launchOrigin)
+    {
+        return string.Equals(
+            SessionLaunchOrigins.Normalize(launchOrigin),
+            SessionLaunchOrigins.AdHoc,
+            StringComparison.Ordinal);
     }
 
     private IReadOnlyList<string> GetTmuxFamilySessionIds(string sessionId)

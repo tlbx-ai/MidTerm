@@ -222,6 +222,7 @@ public static class SpaceEndpoints
         string? workspacePath,
         string? surface)
     {
+        sessionManager.SetLaunchOrigin(sessionId, SessionLaunchOrigins.Space);
         sessionManager.SetSpaceId(sessionId, spaceId);
         sessionManager.SetWorkspacePath(sessionId, workspacePath);
         sessionManager.SetSurface(sessionId, surface);

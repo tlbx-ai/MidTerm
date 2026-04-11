@@ -104,6 +104,81 @@ public sealed class SpaceService
             : await BuildSpaceSummaryAsync(record, sessionManager, ct).ConfigureAwait(false);
     }
 
+    public async Task ReconcileSessionBindingsAsync(
+        TtyHostSessionManager sessionManager,
+        CancellationToken ct = default)
+    {
+        await NormalizeStoreAsync(static _ => true, ct).ConfigureAwait(false);
+
+        List<SpaceRecord> snapshot;
+        lock (_lock)
+        {
+            snapshot = _store.Spaces.Select(Clone).ToList();
+        }
+
+        if (snapshot.Count == 0)
+        {
+            return;
+        }
+
+        var workspaceBindings = await BuildWorkspaceBindingIndexAsync(snapshot, ct).ConfigureAwait(false);
+        if (workspaceBindings.PathLookup.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var session in sessionManager.GetSessionList().Sessions)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var launchOrigin = sessionManager.GetLaunchOrigin(session.Id);
+            if (string.IsNullOrWhiteSpace(launchOrigin))
+            {
+                launchOrigin = string.IsNullOrWhiteSpace(session.SpaceId)
+                    ? SessionLaunchOrigins.AdHoc
+                    : SessionLaunchOrigins.Space;
+                sessionManager.SetLaunchOrigin(session.Id, launchOrigin);
+            }
+
+            if (!string.Equals(
+                    SessionLaunchOrigins.Normalize(launchOrigin),
+                    SessionLaunchOrigins.Space,
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var normalizedWorkspacePath = NormalizeOptionalPath(session.WorkspacePath)
+                ?? NormalizeOptionalPath(session.CurrentDirectory);
+            if (string.IsNullOrWhiteSpace(normalizedWorkspacePath))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(session.SpaceId) &&
+                workspaceBindings.SpaceWorkspacePaths.TryGetValue(session.SpaceId, out var boundPaths) &&
+                boundPaths.Contains(normalizedWorkspacePath))
+            {
+                if (!string.Equals(session.WorkspacePath, normalizedWorkspacePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    sessionManager.SetWorkspacePath(session.Id, normalizedWorkspacePath);
+                }
+
+                continue;
+            }
+
+            if (!workspaceBindings.PathLookup.TryGetValue(normalizedWorkspacePath, out var matches) ||
+                matches.Count != 1)
+            {
+                continue;
+            }
+
+            var match = matches[0];
+            sessionManager.SetSpaceId(session.Id, match.SpaceId);
+            sessionManager.SetWorkspacePath(session.Id, match.WorkspacePath);
+        }
+    }
+
     public async Task<string?> ResolveWorkspacePathAsync(string spaceId, string workspaceKey, CancellationToken ct = default)
     {
         var record = await GetNormalizedSpaceRecordAsync(spaceId, ct).ConfigureAwait(false);
@@ -543,6 +618,58 @@ public sealed class SpaceService
             .OrderByDescending(workspace => workspace.IsMain)
             .ThenBy(workspace => workspace.Path, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private async Task<WorkspaceBindingIndex> BuildWorkspaceBindingIndexAsync(
+        IReadOnlyCollection<SpaceRecord> spaces,
+        CancellationToken ct)
+    {
+        var configuredWorktreeRoot = GetConfiguredWorktreeRootDirectory();
+        var pathLookup = new Dictionary<string, List<SpaceWorkspaceBinding>>(StringComparer.OrdinalIgnoreCase);
+        var spaceWorkspacePaths = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        foreach (var record in spaces)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var bindings = new List<SpaceWorkspaceBinding>();
+            if (!string.Equals(record.Kind, SpaceKinds.Git, StringComparison.Ordinal))
+            {
+                bindings.Add(new SpaceWorkspaceBinding(record.Id, NormalizePath(record.RootPath)));
+            }
+            else
+            {
+                var worktrees = await GitCommandRunner.ListWorktreesAsync(record.RootPath).ConfigureAwait(false);
+                foreach (var worktreePath in worktrees
+                    .Select(worktree => NormalizePath(worktree.Path))
+                    .Where(path => ShouldDisplayWorktree(record.RootPath, path, configuredWorktreeRoot)))
+                {
+                    bindings.Add(new SpaceWorkspaceBinding(record.Id, worktreePath));
+                }
+            }
+
+            if (bindings.Count == 0)
+            {
+                continue;
+            }
+
+            var uniquePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var binding in bindings)
+            {
+                uniquePaths.Add(binding.WorkspacePath);
+                if (!pathLookup.TryGetValue(binding.WorkspacePath, out var existingBindings))
+                {
+                    existingBindings = [];
+                    pathLookup[binding.WorkspacePath] = existingBindings;
+                }
+
+                existingBindings.Add(binding);
+            }
+
+            spaceWorkspacePaths[record.Id] = uniquePaths;
+        }
+
+        return new WorkspaceBindingIndex(pathLookup, spaceWorkspacePaths);
     }
 
     private static bool IsAgentSession(SpaceWorkspaceSessionDto session)
@@ -1139,4 +1266,10 @@ public sealed class SpaceService
         var fullPath = Path.GetFullPath(path.Trim());
         return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
+
+    private sealed record SpaceWorkspaceBinding(string SpaceId, string WorkspacePath);
+
+    private sealed record WorkspaceBindingIndex(
+        Dictionary<string, List<SpaceWorkspaceBinding>> PathLookup,
+        Dictionary<string, HashSet<string>> SpaceWorkspacePaths);
 }

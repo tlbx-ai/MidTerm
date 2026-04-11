@@ -184,7 +184,15 @@ public static partial class SessionApiEndpoints
             }
 
             var sessionInfo = creation.Session!;
-            ApplySessionSpaceMetadata(sessionManager, sessionInfo.Id, request?.SpaceId, request?.WorkspacePath, request?.Surface);
+            ApplySessionSpaceMetadata(
+                sessionManager,
+                sessionInfo.Id,
+                request?.SpaceId,
+                request?.WorkspacePath,
+                request?.Surface,
+                string.IsNullOrWhiteSpace(request?.SpaceId)
+                    ? SessionLaunchOrigins.AdHoc
+                    : SessionLaunchOrigins.Space);
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -205,7 +213,15 @@ public static partial class SessionApiEndpoints
 
             var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
-            ApplySessionSpaceMetadata(sessionManager, sessionId, request.SpaceId, request.WorkspacePath, request.Surface);
+            ApplySessionSpaceMetadata(
+                sessionManager,
+                sessionId,
+                request.SpaceId,
+                request.WorkspacePath,
+                request.Surface,
+                string.IsNullOrWhiteSpace(request.SpaceId)
+                    ? SessionLaunchOrigins.AdHoc
+                    : SessionLaunchOrigins.Space);
 
             if (request.AgentControlled)
             {
@@ -1173,8 +1189,10 @@ public static partial class SessionApiEndpoints
         string sessionId,
         string? spaceId,
         string? workspacePath,
-        string? surface)
+        string? surface,
+        string? launchOrigin)
     {
+        sessionManager.SetLaunchOrigin(sessionId, launchOrigin);
         sessionManager.SetSpaceId(sessionId, spaceId);
         sessionManager.SetWorkspacePath(sessionId, workspacePath);
         sessionManager.SetSurface(sessionId, surface);

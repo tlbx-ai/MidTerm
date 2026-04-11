@@ -11,6 +11,7 @@ public sealed class SessionControlStateService
     private readonly Lock _lock = new();
     private HashSet<string> _agentControlledSessionIds = new(StringComparer.Ordinal);
     private HashSet<string> _lensOnlySessionIds = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _launchOrigins = new(StringComparer.Ordinal);
     private Dictionary<string, string> _profileHints = new(StringComparer.Ordinal);
     private Dictionary<string, string> _lensResumeThreadIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _spaceIds = new(StringComparer.Ordinal);
@@ -64,6 +65,19 @@ public sealed class SessionControlStateService
         lock (_lock)
         {
             return _profileHints.TryGetValue(sessionId, out var profileHint) ? profileHint : null;
+        }
+    }
+
+    public string? GetLaunchOrigin(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        lock (_lock)
+        {
+            return _launchOrigins.TryGetValue(sessionId, out var launchOrigin) ? launchOrigin : null;
         }
     }
 
@@ -182,6 +196,37 @@ public sealed class SessionControlStateService
                      !string.Equals(existing, normalized, StringComparison.Ordinal))
             {
                 _profileHints[sessionId] = normalized;
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            PersistLocked();
+        }
+    }
+
+    public void SetLaunchOrigin(string sessionId, string? launchOrigin)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var normalized = SessionLaunchOrigins.Normalize(launchOrigin);
+            var changed = false;
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                changed = _launchOrigins.Remove(sessionId);
+            }
+            else if (!_launchOrigins.TryGetValue(sessionId, out var existing) ||
+                     !string.Equals(existing, normalized, StringComparison.Ordinal))
+            {
+                _launchOrigins[sessionId] = normalized;
                 changed = true;
             }
 
@@ -323,6 +368,7 @@ public sealed class SessionControlStateService
         {
             var changed = _agentControlledSessionIds.Remove(sessionId);
             changed |= _lensOnlySessionIds.Remove(sessionId);
+            changed |= _launchOrigins.Remove(sessionId);
             changed |= _profileHints.Remove(sessionId);
             changed |= _lensResumeThreadIds.Remove(sessionId);
             changed |= _spaceIds.Remove(sessionId);
@@ -358,6 +404,10 @@ public sealed class SessionControlStateService
                 _lensOnlySessionIds = new HashSet<string>(
                     state.LensOnlySessionIds.Where(id => !string.IsNullOrWhiteSpace(id)),
                     StringComparer.Ordinal);
+                _launchOrigins = state.LaunchOrigins
+                    .Select(kvp => new KeyValuePair<string, string?>(kvp.Key, SessionLaunchOrigins.Normalize(kvp.Value)))
+                    .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value!, StringComparer.Ordinal);
                 _profileHints = state.ProfileHints
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
@@ -379,6 +429,7 @@ public sealed class SessionControlStateService
                 Log.Warn(() => $"Failed to load session control state: {ex.Message}");
                 _agentControlledSessionIds = new HashSet<string>(StringComparer.Ordinal);
                 _lensOnlySessionIds = new HashSet<string>(StringComparer.Ordinal);
+                _launchOrigins = new Dictionary<string, string>(StringComparer.Ordinal);
                 _profileHints = new Dictionary<string, string>(StringComparer.Ordinal);
                 _lensResumeThreadIds = new Dictionary<string, string>(StringComparer.Ordinal);
                 _spaceIds = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -406,6 +457,9 @@ public sealed class SessionControlStateService
                 LensOnlySessionIds = _lensOnlySessionIds
                     .OrderBy(id => id, StringComparer.Ordinal)
                     .ToList(),
+                LaunchOrigins = _launchOrigins
+                    .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
                 ProfileHints = _profileHints
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),

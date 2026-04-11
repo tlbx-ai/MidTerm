@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
 
@@ -256,6 +257,58 @@ public sealed class TtyHostSessionManagerStateTests
         {
             Directory.Delete(stateDir, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task SetLaunchOrigin_PersistsAcrossManagerRestart()
+    {
+        var stateDir = CreateTempDirectory();
+        try
+        {
+            await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
+            {
+                AddCachedSession(manager, "s1");
+                Assert.True(manager.SetLaunchOrigin("s1", SessionLaunchOrigins.Space));
+            }
+
+            await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
+            AddCachedSession(restartedManager, "s1");
+
+            Assert.Equal(SessionLaunchOrigins.Space, restartedManager.GetLaunchOrigin("s1"));
+            var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+            Assert.False(dto.IsAdHoc);
+        }
+        finally
+        {
+            Directory.Delete(stateDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GetSessionList_SpaceLaunchOriginWithoutSpaceId_IsNotAdHoc()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        Assert.True(manager.SetLaunchOrigin("s1", SessionLaunchOrigins.Space));
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.False(dto.IsAdHoc);
+    }
+
+    [Fact]
+    public async Task GetSessionList_AdHocLaunchOriginWithWorkspacePath_RemainsAdHoc()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        Assert.True(manager.SetLaunchOrigin("s1", SessionLaunchOrigins.AdHoc));
+        Assert.True(manager.SetWorkspacePath("s1", @"Q:\repos\MidTerm"));
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.True(dto.IsAdHoc);
+        Assert.Null(dto.SpaceId);
+        Assert.Equal(@"Q:\repos\MidTerm", dto.WorkspacePath);
     }
 
     [Fact]

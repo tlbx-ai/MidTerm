@@ -832,6 +832,16 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetProfileHint(sessionId, profile);
     }
 
+    public bool SetLaunchOrigin(string sessionId, string? launchOrigin)
+    {
+        return _registry.SetLaunchOrigin(sessionId, launchOrigin);
+    }
+
+    public string? GetLaunchOrigin(string sessionId)
+    {
+        return _registry.GetLaunchOrigin(sessionId);
+    }
+
     public bool SetLensResumeThreadId(string sessionId, string? resumeThreadId)
     {
         return _registry.SetLensResumeThreadId(sessionId, resumeThreadId);

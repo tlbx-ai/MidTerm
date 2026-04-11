@@ -566,6 +566,7 @@ public sealed class StateWebSocketHandler
         }
 
         var session = creation.Session!;
+        _sessionManager.SetLaunchOrigin(session.Id, SessionLaunchOrigins.AdHoc);
         var data = new WsSessionCreatedData
         {
             Id = session.Id,
