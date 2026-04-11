@@ -26,14 +26,26 @@ public sealed class SpaceService
         EnsureMigratedFromHistory();
     }
 
-    public async Task<List<SpaceSummaryDto>> GetSpacesAsync(TtyHostSessionManager sessionManager, CancellationToken ct = default)
+    public async Task<List<SpaceSummaryDto>> GetSpacesAsync(
+        TtyHostSessionManager sessionManager,
+        bool includeWorkspaces = true,
+        bool pinnedOnly = false,
+        CancellationToken ct = default)
     {
-        await NormalizeStoreAsync(ct).ConfigureAwait(false);
+        if (includeWorkspaces)
+        {
+            await NormalizeStoreAsync(
+                pinnedOnly
+                    ? static space => space.IsPinned
+                    : static _ => true,
+                ct).ConfigureAwait(false);
+        }
 
         List<SpaceRecord> snapshot;
         lock (_lock)
         {
             snapshot = _store.Spaces
+                .Where(space => !pinnedOnly || space.IsPinned)
                 .Select(Clone)
                 .OrderBy(space => DeriveVisibleSpaceName(space), StringComparer.OrdinalIgnoreCase)
                 .ThenBy(space => space.RootPath, StringComparer.OrdinalIgnoreCase)
@@ -44,25 +56,10 @@ public sealed class SpaceService
         foreach (var record in snapshot)
         {
             ct.ThrowIfCancellationRequested();
-            spaces.Add(new SpaceSummaryDto
-            {
-                Id = record.Id,
-                DisplayName = DeriveVisibleSpaceName(record),
-                Label = record.Label,
-                Kind = record.Kind,
-                RootPath = record.RootPath,
-                ImportedPath = record.ImportedPath,
-                CommonRepoId = record.CommonRepoId,
-                IsPinned = record.IsPinned,
-                CanInitGit = CanInitGit(record),
-                CanCreateWorktree = CanCreateWorktree(record),
-                CreatedAtUtc = record.CreatedAtUtc,
-                UpdatedAtUtc = record.UpdatedAtUtc,
-                Workspaces = (await BuildWorkspacesAsync(record, sessionManager, ct).ConfigureAwait(false)).ToArray()
-            });
-            spaces[^1].PrimaryWorkspaceKey = spaces[^1].Workspaces
-                .FirstOrDefault(workspace => workspace.IsMain)?.Key
-                ?? spaces[^1].Workspaces.FirstOrDefault()?.Key;
+            var workspaces = includeWorkspaces
+                ? (await BuildWorkspacesAsync(record, sessionManager, ct).ConfigureAwait(false)).ToArray()
+                : [];
+            spaces.Add(BuildSpaceSummary(record, workspaces));
         }
 
         return spaces;
@@ -100,14 +97,7 @@ public sealed class SpaceService
         TtyHostSessionManager sessionManager,
         CancellationToken ct = default)
     {
-        await NormalizeStoreAsync(ct).ConfigureAwait(false);
-
-        SpaceRecord? record;
-        lock (_lock)
-        {
-            record = _store.Spaces.FirstOrDefault(space => string.Equals(space.Id, spaceId, StringComparison.Ordinal));
-            record = record is null ? null : Clone(record);
-        }
+        var record = await GetNormalizedSpaceRecordAsync(spaceId, ct).ConfigureAwait(false);
 
         return record is null
             ? null
@@ -116,14 +106,7 @@ public sealed class SpaceService
 
     public async Task<string?> ResolveWorkspacePathAsync(string spaceId, string workspaceKey, CancellationToken ct = default)
     {
-        await NormalizeStoreAsync(ct).ConfigureAwait(false);
-
-        SpaceRecord? record;
-        lock (_lock)
-        {
-            record = _store.Spaces.FirstOrDefault(space => string.Equals(space.Id, spaceId, StringComparison.Ordinal));
-            record = record is null ? null : Clone(record);
-        }
+        var record = await GetNormalizedSpaceRecordAsync(spaceId, ct).ConfigureAwait(false);
 
         if (record is null || string.IsNullOrWhiteSpace(workspaceKey))
         {
@@ -442,6 +425,14 @@ public sealed class SpaceService
         CancellationToken ct)
     {
         var workspaces = (await BuildWorkspacesAsync(record, sessionManager, ct).ConfigureAwait(false)).ToArray();
+        return BuildSpaceSummary(record, workspaces);
+    }
+
+    private static SpaceSummaryDto BuildSpaceSummary(
+        SpaceRecord record,
+        IReadOnlyCollection<SpaceWorkspaceDto>? workspaces)
+    {
+        var workspaceArray = workspaces?.ToArray() ?? [];
         return new SpaceSummaryDto
         {
             Id = record.Id,
@@ -454,11 +445,12 @@ public sealed class SpaceService
             IsPinned = record.IsPinned,
             CanInitGit = CanInitGit(record),
             CanCreateWorktree = CanCreateWorktree(record),
-            PrimaryWorkspaceKey = workspaces.FirstOrDefault(workspace => workspace.IsMain)?.Key
-                ?? workspaces.FirstOrDefault()?.Key,
+            PrimaryWorkspaceKey = workspaceArray.FirstOrDefault(workspace => workspace.IsMain)?.Key
+                ?? workspaceArray.FirstOrDefault()?.Key
+                ?? BuildWorkspaceKey(record.RootPath),
             CreatedAtUtc = record.CreatedAtUtc,
             UpdatedAtUtc = record.UpdatedAtUtc,
-            Workspaces = workspaces
+            Workspaces = workspaceArray
         };
     }
 
@@ -690,7 +682,7 @@ public sealed class SpaceService
         }
     }
 
-    private async Task NormalizeStoreAsync(CancellationToken ct)
+    private async Task NormalizeStoreAsync(Func<SpaceRecord, bool> shouldNormalize, CancellationToken ct)
     {
         List<SpaceRecord> snapshot;
         lock (_lock)
@@ -712,7 +704,9 @@ public sealed class SpaceService
         foreach (var candidate in snapshot)
         {
             ct.ThrowIfCancellationRequested();
-            var normalized = await NormalizeRecordAsync(candidate).ConfigureAwait(false);
+            var normalized = shouldNormalize(candidate)
+                ? await NormalizeRecordAsync(candidate).ConfigureAwait(false)
+                : Clone(candidate);
             MergeResolvedRecord(normalizedStore.Spaces, normalized);
         }
 
@@ -761,6 +755,63 @@ public sealed class SpaceService
         normalized.CommonRepoId = NormalizePath(repoInfo.CommonGitDir);
         normalized.Label = DeriveDefaultLabel(normalized.RootPath);
         return normalized;
+    }
+
+    private async Task<SpaceRecord?> GetNormalizedSpaceRecordAsync(string spaceId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(spaceId))
+        {
+            return null;
+        }
+
+        SpaceRecord? snapshot;
+        lock (_lock)
+        {
+            snapshot = _store.Spaces.FirstOrDefault(space => string.Equals(space.Id, spaceId, StringComparison.Ordinal));
+            snapshot = snapshot is null ? null : Clone(snapshot);
+        }
+
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var normalized = await NormalizeRecordAsync(snapshot).ConfigureAwait(false);
+        normalized.Id = snapshot.Id;
+        normalized.IsPinned = snapshot.IsPinned;
+        normalized.CreatedAtUtc = snapshot.CreatedAtUtc;
+        normalized.UpdatedAtUtc = snapshot.UpdatedAtUtc;
+        normalized.Worktrees = MergeWorktreeMetadata(snapshot.Worktrees, normalized.Worktrees);
+
+        lock (_lock)
+        {
+            var stored = _store.Spaces.FirstOrDefault(space => string.Equals(space.Id, spaceId, StringComparison.Ordinal));
+            if (stored is null)
+            {
+                return normalized;
+            }
+
+            if (string.Equals(
+                    JsonSerializer.Serialize(stored, SpaceJsonContext.Default.SpaceRecord),
+                    JsonSerializer.Serialize(normalized, SpaceJsonContext.Default.SpaceRecord),
+                    StringComparison.Ordinal))
+            {
+                return Clone(stored);
+            }
+
+            stored.Label = normalized.Label;
+            stored.Kind = normalized.Kind;
+            stored.RootPath = normalized.RootPath;
+            stored.ImportedPath = normalized.ImportedPath;
+            stored.CommonRepoId = normalized.CommonRepoId;
+            stored.IsPinned = normalized.IsPinned;
+            stored.Worktrees = MergeWorktreeMetadata(stored.Worktrees, normalized.Worktrees);
+            stored.CreatedAtUtc = normalized.CreatedAtUtc;
+            stored.UpdatedAtUtc = DateTime.UtcNow;
+            PersistLocked();
+            return Clone(stored);
+        }
     }
 
     private static void MergeResolvedRecord(List<SpaceRecord> spaces, SpaceRecord candidate)

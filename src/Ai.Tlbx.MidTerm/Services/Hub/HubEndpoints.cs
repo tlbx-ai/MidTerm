@@ -116,9 +116,13 @@ public static class HubEndpoints
             return Results.Json(response, AppJsonContext.Default.LauncherDirectoryMutationResponse);
         });
 
-        app.MapGet("/api/hub/machines/{id}/spaces", async (string id, CancellationToken ct) =>
+        app.MapGet("/api/hub/machines/{id}/spaces", async (string id, bool? includeWorkspaces, bool? pinnedOnly, CancellationToken ct) =>
         {
-            var spaces = await hubService.GetSpacesAsync(id, ct);
+            var spaces = await hubService.GetSpacesAsync(
+                id,
+                includeWorkspaces ?? true,
+                pinnedOnly ?? false,
+                ct);
             return Results.Json(spaces, AppJsonContext.Default.ListSpaceSummaryDto);
         });
 

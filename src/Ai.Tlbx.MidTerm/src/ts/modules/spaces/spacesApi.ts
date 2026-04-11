@@ -10,6 +10,11 @@ import type {
   LaunchEntry,
 } from '../../api/types';
 
+interface FetchSpacesOptions {
+  includeWorkspaces?: boolean;
+  pinnedOnly?: boolean;
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error((await response.text()) || `Request failed (${response.status})`);
@@ -18,8 +23,21 @@ async function parseJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function fetchLocalSpaces(): Promise<SpaceSummaryDto[]> {
-  return parseJson<SpaceSummaryDto[]>(await fetch('/api/spaces'));
+function buildSpacesQuery(options?: FetchSpacesOptions): string {
+  const params = new URLSearchParams();
+  if (options?.includeWorkspaces === false) {
+    params.set('includeWorkspaces', 'false');
+  }
+  if (options?.pinnedOnly === true) {
+    params.set('pinnedOnly', 'true');
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+export async function fetchLocalSpaces(options?: FetchSpacesOptions): Promise<SpaceSummaryDto[]> {
+  return parseJson<SpaceSummaryDto[]>(await fetch(`/api/spaces${buildSpacesQuery(options)}`));
 }
 
 export async function importLocalSpace(request: SpaceImportRequest): Promise<SpaceSummaryDto> {
@@ -125,9 +143,14 @@ export async function deleteLocalWorktree(
   );
 }
 
-export async function fetchHubSpaces(machineId: string): Promise<SpaceSummaryDto[]> {
+export async function fetchHubSpaces(
+  machineId: string,
+  options?: FetchSpacesOptions,
+): Promise<SpaceSummaryDto[]> {
   return parseJson<SpaceSummaryDto[]>(
-    await fetch(`/api/hub/machines/${encodeURIComponent(machineId)}/spaces`),
+    await fetch(
+      `/api/hub/machines/${encodeURIComponent(machineId)}/spaces${buildSpacesQuery(options)}`,
+    ),
   );
 }
 

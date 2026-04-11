@@ -232,13 +232,13 @@ function shouldRefreshSidebarTree(): boolean {
 async function loadSidebarTreeData(token: number): Promise<void> {
   const machines = getLaunchableHubMachines();
   const [localSpaces, remoteSections] = await Promise.all([
-    fetchLocalSpaces().catch(() => []),
+    fetchLocalSpaces({ pinnedOnly: true }).catch(() => []),
     Promise.all(
       machines.map(async (machine) => ({
         id: machine.machine.id,
         label: machine.machine.name,
         machineId: machine.machine.id,
-        spaces: await fetchHubSpaces(machine.machine.id).catch(() => []),
+        spaces: await fetchHubSpaces(machine.machine.id, { pinnedOnly: true }).catch(() => []),
       })),
     ),
   ]);

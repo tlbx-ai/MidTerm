@@ -364,11 +364,16 @@ public sealed class HubService
             ?? throw new InvalidOperationException("Remote clone response was empty.");
     }
 
-    public async Task<List<SpaceSummaryDto>> GetSpacesAsync(string machineId, CancellationToken ct = default)
+    public async Task<List<SpaceSummaryDto>> GetSpacesAsync(
+        string machineId,
+        bool includeWorkspaces = true,
+        bool pinnedOnly = false,
+        CancellationToken ct = default)
     {
         var machine = GetRequiredMachine(machineId);
         await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
-        using var response = await remote.Client.GetAsync("/api/spaces", ct);
+        var query = $"/api/spaces?includeWorkspaces={(includeWorkspaces ? "true" : "false")}&pinnedOnly={(pinnedOnly ? "true" : "false")}";
+        using var response = await remote.Client.GetAsync(query, ct);
         await EnsureSuccessAsync(response, ct);
         return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.ListSpaceSummaryDto, ct)
             ?? [];

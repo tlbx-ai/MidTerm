@@ -1,4 +1,10 @@
-import type { LaunchEntry, ShellType, Session, SpaceSummaryDto } from '../../api/types';
+import type {
+  LaunchEntry,
+  ShellType,
+  Session,
+  SpaceSummaryDto,
+  SpaceWorkspaceDto,
+} from '../../api/types';
 import { t } from '../i18n';
 import { getLaunchableHubMachines } from '../hub/runtime';
 import { invalidateSidebarSpacesTree } from '../sidebar/spacesTreeSidebar';
@@ -110,7 +116,7 @@ async function loadSections(): Promise<SpaceTargetSection[]> {
       id: 'local',
       label: t('sessionLauncher.localTargetTitle'),
       machineId: null,
-      spaces: sortSpaces(await fetchLocalSpaces()),
+      spaces: sortSpaces(await fetchLocalSpaces({ includeWorkspaces: false })),
     });
   } catch {
     results.push({
@@ -128,7 +134,9 @@ async function loadSections(): Promise<SpaceTargetSection[]> {
           id: machine.machine.id,
           label: machine.machine.name,
           machineId: machine.machine.id,
-          spaces: sortSpaces(await fetchHubSpaces(machine.machine.id)),
+          spaces: sortSpaces(
+            await fetchHubSpaces(machine.machine.id, { includeWorkspaces: false }),
+          ),
         } satisfies SpaceTargetSection;
       } catch {
         return {
@@ -276,10 +284,6 @@ async function openSpace(machineId: string | null, spaceId: string): Promise<voi
   }
 
   const workspace = resolvePrimaryWorkspace(space);
-  if (!workspace) {
-    return;
-  }
-
   const launched = await launchSpaceWorkspace(machineId, space.id, workspace, 'terminal');
   if (launched) {
     closeSpacesDropdown();
@@ -418,8 +422,32 @@ function resolvePrimaryWorkspace(space: SpaceSummaryDto) {
     space.workspaces.find((workspace) => workspace.key === space.primaryWorkspaceKey) ??
     space.workspaces.find((workspace) => workspace.path === space.rootPath) ??
     space.workspaces.find((workspace) => workspace.isMain) ??
-    space.workspaces[0]
+    space.workspaces[0] ??
+    buildFallbackWorkspace(space)
   );
+}
+
+function buildFallbackWorkspace(space: SpaceSummaryDto): SpaceWorkspaceDto {
+  return {
+    key: space.primaryWorkspaceKey ?? buildWorkspaceKey(space.rootPath),
+    displayName: 'Main',
+    path: space.rootPath,
+    kind: space.kind === 'git' ? 'worktree' : 'plain',
+    branch: null,
+    head: null,
+    isMain: true,
+    isDetached: false,
+    locked: false,
+    prunable: false,
+    changeCount: 0,
+    hasChanges: false,
+    hasActiveAiSession: false,
+    activeSessions: [],
+  };
+}
+
+function buildWorkspaceKey(path: string): string {
+  return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
 
 async function openAddTargetPicker(trigger: HTMLElement): Promise<void> {

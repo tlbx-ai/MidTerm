@@ -16,9 +16,15 @@ public static class SpaceEndpoints
         SessionLensPulseService lensPulse,
         WorkerSessionRegistryService workerSessionRegistry)
     {
-        app.MapGet("/api/spaces", async (CancellationToken ct) =>
+        app.MapGet("/api/spaces", async (bool? includeWorkspaces, bool? pinnedOnly, CancellationToken ct) =>
         {
-            var spaces = await spaceService.GetSpacesAsync(sessionManager, ct).ConfigureAwait(false);
+            var spaces = await spaceService
+                .GetSpacesAsync(
+                    sessionManager,
+                    includeWorkspaces ?? true,
+                    pinnedOnly ?? false,
+                    ct)
+                .ConfigureAwait(false);
             return Results.Json(spaces, AppJsonContext.Default.ListSpaceSummaryDto);
         });
 
