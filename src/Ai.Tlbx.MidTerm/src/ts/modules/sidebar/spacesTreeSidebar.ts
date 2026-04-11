@@ -420,17 +420,17 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
     actions.appendChild(addButton);
   }
 
-  const pinButton = document.createElement('button');
-  pinButton.type = 'button';
-  pinButton.className = `spaces-tree-pin spaces-tree-inline-action${space.isPinned ? ' pinned' : ''}`;
-  pinButton.title = space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace');
-  pinButton.setAttribute('aria-label', pinButton.title);
-  pinButton.textContent = space.isPinned ? '★' : '☆';
-  pinButton.addEventListener('click', (event) => {
+  const forgetButton = document.createElement('button');
+  forgetButton.type = 'button';
+  forgetButton.className = 'spaces-tree-forget spaces-tree-inline-action';
+  forgetButton.title = t('spaces.deleteSpace');
+  forgetButton.setAttribute('aria-label', forgetButton.title);
+  forgetButton.innerHTML = icon('close');
+  forgetButton.addEventListener('click', (event) => {
     event.stopPropagation();
-    void toggleSpacePinned(machineId, space);
+    void promptAndForgetSpace(machineId, space);
   });
-  actions.appendChild(pinButton);
+  actions.appendChild(forgetButton);
 
   const menuButton = document.createElement('button');
   menuButton.type = 'button';
@@ -1021,7 +1021,7 @@ async function promptAndDeleteWorktree(
   }
 }
 
-async function promptAndDeleteSpace(
+async function promptAndForgetSpace(
   machineId: string | null,
   space: SpaceSummaryDto,
 ): Promise<void> {
@@ -1099,10 +1099,9 @@ function buildSpaceActions(machineId: string | null, space: SpaceSummaryDto): Po
   }
 
   actions.push({
-    label: t('spaces.deleteSpace'),
-    tone: 'danger',
+    label: space.isPinned ? t('spaces.unpinSpace') : t('spaces.pinSpace'),
     run: () => {
-      void promptAndDeleteSpace(machineId, space);
+      void toggleSpacePinned(machineId, space);
     },
   });
 
@@ -1313,9 +1312,6 @@ function appendWorkspaceBadges(container: HTMLElement, workspace: SpaceWorkspace
     container.appendChild(
       createTextSpan('spaces-tree-workspace-badge warn', String(workspace.changeCount)),
     );
-  }
-  if (workspace.hasActiveAiSession) {
-    container.appendChild(createTextSpan('spaces-tree-workspace-badge warn', t('spaces.aiBusy')));
   }
 }
 
