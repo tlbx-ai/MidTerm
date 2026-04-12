@@ -22,20 +22,17 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionHeatService _sessionHeat;
     private readonly SessionTelemetryService _sessionTelemetry;
-    private readonly SessionLensPulseService _lensPulse;
     private readonly SessionLensRuntimeService _lensRuntime;
 
     public ManagerBarQueueRuntime(
         TtyHostSessionManager sessionManager,
         SessionHeatService sessionHeat,
         SessionTelemetryService sessionTelemetry,
-        SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime)
     {
         _sessionManager = sessionManager;
         _sessionHeat = sessionHeat;
         _sessionTelemetry = sessionTelemetry;
-        _lensPulse = lensPulse;
         _lensRuntime = lensRuntime;
     }
 
@@ -70,19 +67,18 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             return false;
         }
 
-        var snapshot = _lensPulse.GetSnapshot(sessionId);
-        if (snapshot is null)
+        if (!_lensRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
         {
             return true;
         }
 
-        if (snapshot.Requests.Any(static request =>
+        if (historyWindow.Requests.Any(static request =>
                 string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
 
-        var turnState = snapshot.CurrentTurn.State?.Trim().ToLowerInvariant();
+        var turnState = historyWindow.CurrentTurn.State?.Trim().ToLowerInvariant();
         if (turnState is "running" or "in_progress" or "started" or "submitted")
         {
             return false;
@@ -93,7 +89,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             return true;
         }
 
-        var sessionState = snapshot.Session.State?.Trim().ToLowerInvariant();
+        var sessionState = historyWindow.Session.State?.Trim().ToLowerInvariant();
         return sessionState is not "starting" and not "running";
     }
 

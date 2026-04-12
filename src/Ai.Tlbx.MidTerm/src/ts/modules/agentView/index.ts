@@ -6,8 +6,6 @@ import {
   describeError,
   ensureLensActivationIsCurrent,
   isStaleLensActivationError,
-  normalizeLensProvider,
-  resolveLensLayoutMode,
   setActivationState,
   shouldShowLensDevErrorDialog,
 } from './activationHelpers';
@@ -33,7 +31,7 @@ import {
 } from './historyProcessing';
 import {
   applyCanonicalLensDelta,
-  applyLensSnapshotWindowState,
+  applyLensHistoryWindowState,
   collapseSnapshotToLatestWindow,
 } from './snapshotState';
 import {
@@ -43,6 +41,9 @@ import {
 } from './historyViewport';
 import { createAgentHistoryDom } from './historyDom';
 import { createAgentHistoryRender } from './historyRender';
+import { applyFetchedLensHistoryWindow, hasRenderableLensHistory } from './historyWindowState';
+import { resolveViewportDrivenHistoryWindowCount } from './historyWindowSizing';
+import { prepareLensForForeground, syncAgentViewPresentation } from './viewPresentation';
 import {
   ensureAgentViewSkeleton,
   LENS_DEBUG_SCENARIO_NAMES,
@@ -76,10 +77,9 @@ import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
   attachSessionLens,
   detachSessionLens,
-  getLensSnapshot,
-  openLensEventStream,
-  type LensPulseEvent,
-  type LensPulseSnapshotResponse,
+  getLensHistoryWindow,
+  openLensHistoryStream,
+  type LensHistorySnapshot,
 } from '../../api/client';
 import { t } from '../i18n';
 import { $activeSessionId } from '../../stores';
@@ -87,8 +87,9 @@ import { $activeSessionId } from '../../stores';
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
 const LENS_HISTORY_WINDOW_SIZE = 80;
-const LENS_HISTORY_PAGE_SIZE = 40;
 const LENS_HISTORY_FETCH_THRESHOLD_PX = 240;
+const LENS_HISTORY_RETENTION_MIN_MARGIN = 30;
+const LENS_HISTORY_RETENTION_MAX_MARGIN = 70;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
@@ -188,6 +189,7 @@ export function destroyAgentView(sessionId: string): void {
     window.clearTimeout(state.busyIndicatorTickHandle);
   }
   state?.historyRenderedNodes.clear();
+  state?.historyObservedHeights.clear();
   if (state) {
     state.historyTopSpacer = null;
     state.historyBottomSpacer = null;
@@ -254,7 +256,6 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
     window.location.origin,
   );
   state.snapshot = debugScenario.snapshot;
-  state.events = debugScenario.events;
   state.debugScenarioActive = true;
   state.activationRunId += 1;
   state.streamConnected = true;
@@ -294,14 +295,13 @@ async function activateAgentView(sessionId: string): Promise<void> {
   state.activationRunId += 1;
   const activationRunId = state.activationRunId;
 
-  const hasExistingHistory = state.snapshot !== null || state.events.length > 0;
+  const hasExistingHistory = state.snapshot !== null;
   if (hasExistingHistory) {
     await resumeLensFromHistory(sessionId, state, activationRunId);
     return;
   }
 
   state.snapshot = null;
-  state.events = [];
   state.streamConnected = false;
   state.activationTrace = [];
   state.activationError = null;
@@ -347,7 +347,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
     ensureLensActivationIsCurrent(state, activationRunId);
     setActivationState(
       state,
-      'waiting-snapshot',
+      'waiting-history-window',
       lensText(
         'lens.activation.waitingSnapshot.detail',
         'Lens runtime accepted the attach request.',
@@ -355,7 +355,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
       lensText('lens.activation.waitingSnapshot.summary', 'Lens runtime attached.'),
       lensText(
         'lens.activation.waitingSnapshot.body',
-        'Waiting for the first canonical Lens snapshot from MidTerm.',
+        'Waiting for the first canonical Lens history window from MidTerm.',
       ),
     );
     renderCurrentAgentView(sessionId);
@@ -368,9 +368,9 @@ async function activateAgentView(sessionId: string): Promise<void> {
       'connecting-stream',
       lensText(
         'lens.activation.connectingStream.detail',
-        'Lens snapshot is ready. Connecting the live stream.',
+        'Lens history window is ready. Connecting the live stream.',
       ),
-      lensText('lens.activation.connectingStream.summary', 'Lens snapshot ready.'),
+      lensText('lens.activation.connectingStream.summary', 'Lens history window ready.'),
       lensText(
         'lens.activation.connectingStream.body',
         'Opening the live Lens stream so the history updates in real time.',
@@ -378,7 +378,6 @@ async function activateAgentView(sessionId: string): Promise<void> {
     );
     renderCurrentAgentView(sessionId);
     state.snapshot = snapshot;
-    state.events = [];
     state.streamConnected = false;
     openLiveLensStream(sessionId, snapshot.latestSequence);
   } catch (error) {
@@ -416,7 +415,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
       'failed',
       lensText(
         'lens.activation.startupFailed.detail',
-        'Lens startup failed before the first stable snapshot became available.',
+        'Lens startup failed before the first stable history window became available.',
       ),
       lensText('lens.activation.startupFailed.summary', 'Lens startup failed.'),
       state.activationError,
@@ -466,43 +465,30 @@ async function tryLoadReadonlyLensHistory(
   activationRunId: number,
 ): Promise<boolean> {
   try {
-    const snapshot = await getLensSnapshot(sessionId);
-    applyLensSnapshotWindowState(state, snapshot);
+    const snapshot = await getLensHistoryWindow(
+      sessionId,
+      undefined,
+      resolveViewportDrivenHistoryWindowCount(
+        state.historyViewport,
+        LENS_HISTORY_RETENTION_MIN_MARGIN,
+        LENS_HISTORY_RETENTION_MAX_MARGIN,
+        LENS_HISTORY_WINDOW_SIZE,
+      ),
+    );
     ensureLensActivationIsCurrent(state, activationRunId);
     const hasSnapshotHistory = hasRenderableLensHistory(snapshot);
     if (!hasSnapshotHistory) {
       return false;
     }
 
-    state.snapshot = snapshot;
-    state.events = [];
+    applyFetchedLensHistoryWindow(sessionId, state, snapshot);
     state.streamConnected = false;
     state.activationTrace = [];
     return true;
   } catch (error) {
-    log.warn(() => `Failed to load Lens snapshot fallback for ${sessionId}: ${String(error)}`);
+    log.warn(() => `Failed to load Lens history fallback for ${sessionId}: ${String(error)}`);
     return false;
   }
-}
-
-function hasRenderableLensHistory(snapshot: LensPulseSnapshotResponse | null | undefined): boolean {
-  if (!snapshot) {
-    return false;
-  }
-
-  return (
-    snapshot.latestSequence > 0 ||
-    buildLensHistoryEntries(snapshot, []).length > 0 ||
-    snapshot.items.length > 0 ||
-    snapshot.requests.length > 0 ||
-    Boolean(snapshot.streams.assistantText.trim()) ||
-    Boolean(snapshot.streams.reasoningText.trim()) ||
-    Boolean(snapshot.streams.reasoningSummaryText.trim()) ||
-    Boolean(snapshot.streams.planText.trim()) ||
-    Boolean(snapshot.streams.commandOutput.trim()) ||
-    Boolean(snapshot.streams.fileChangeOutput.trim()) ||
-    Boolean(snapshot.streams.unifiedDiff.trim())
-  );
 }
 
 function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): SessionLensViewState {
@@ -514,13 +500,17 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
   const created: SessionLensViewState = {
     panel,
     snapshot: null,
-    events: [],
     debugScenarioActive: false,
     activationRunId: 0,
     historyViewport: null,
     historyEntries: [],
     historyWindowStart: 0,
-    historyWindowCount: LENS_HISTORY_WINDOW_SIZE,
+    historyWindowCount: resolveViewportDrivenHistoryWindowCount(
+      panel.querySelector<HTMLDivElement>('[data-agent-field="history"]'),
+      LENS_HISTORY_RETENTION_MIN_MARGIN,
+      LENS_HISTORY_RETENTION_MAX_MARGIN,
+      LENS_HISTORY_WINDOW_SIZE,
+    ),
     disconnectStream: null,
     streamConnected: false,
     refreshInFlight: false,
@@ -542,6 +532,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     assistantMarkdownCache: new Map<string, AssistantMarkdownCacheEntry>(),
     historyRenderedNodes: new Map<string, HistoryRenderedNode>(),
     historyMeasuredHeights: new Map<string, number>(),
+    historyObservedHeights: new Map<string, number>(),
     historyMeasuredWidthBucket: 0,
     historyTopSpacer: null,
     historyBottomSpacer: null,
@@ -556,25 +547,6 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
 
   viewStates.set(sessionId, created);
   return created;
-}
-
-function syncAgentViewPresentation(
-  panel: HTMLDivElement,
-  provider: string | null | undefined = null,
-): void {
-  panel.dataset.lensProvider = normalizeLensProvider(provider);
-  panel.dataset.lensLayout = resolveLensLayoutMode(provider);
-}
-
-function prepareLensForForeground(state: SessionLensViewState): void {
-  state.historyAutoScrollPinned = true;
-  state.historyLastScrollMetrics = null;
-  state.historyLastUserScrollIntentAt = 0;
-  state.pendingHistoryPrependAnchor = null;
-
-  if (state.historyViewport) {
-    state.historyViewport.scrollTop = 0;
-  }
 }
 
 function bindHistoryViewport(sessionId: string, state: SessionLensViewState): void {
@@ -618,13 +590,17 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       LENS_HISTORY_FETCH_THRESHOLD_PX,
       Math.round(currentViewport.clientHeight * 0.8),
     );
+    const distanceFromBottom =
+      currentViewport.scrollHeight - currentViewport.clientHeight - currentViewport.scrollTop;
 
-    if (current.snapshot?.hasOlderHistory && currentViewport.scrollTop <= fetchThresholdPx) {
-      void loadOlderLensHistoryWindow(sessionId, current);
-    }
-
-    if (current.snapshot?.hasNewerHistory && current.historyAutoScrollPinned) {
-      void loadLatestLensHistoryWindow(sessionId, current);
+    if (current.snapshot?.hasNewerHistory && distanceFromBottom <= fetchThresholdPx) {
+      if (current.historyAutoScrollPinned) {
+        void loadLatestLensHistoryWindow(sessionId, current);
+      } else {
+        void syncHistoryWindowToViewport(sessionId, current);
+      }
+    } else if (!current.historyAutoScrollPinned) {
+      void syncHistoryWindowToViewport(sessionId, current);
     }
 
     if (historyRender.shouldRenderForViewportScroll(current)) {
@@ -708,7 +684,7 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
   }
 
   closeLensStream(sessionId);
-  state.disconnectStream = openLensEventStream(
+  state.disconnectStream = openLensHistoryStream(
     sessionId,
     afterSequence,
     state.historyWindowStart,
@@ -730,23 +706,23 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
           lensText('lens.activation.ready.summary', 'Live Lens stream connected.'),
           lensText(
             'lens.activation.ready.body',
-            'Realtime canonical Lens events are now flowing into the history.',
+            'Realtime canonical Lens history patches are now flowing into the timeline.',
           ),
           'positive',
         );
         renderCurrentAgentView(sessionId);
       },
-      onSnapshot: (snapshot) => {
+      onHistoryWindow: (snapshot) => {
         const current = viewStates.get(sessionId);
         if (!current) {
           return;
         }
 
-        applyLensSnapshotWindowState(current, snapshot);
-        current.snapshot = snapshot;
-        scheduleHistoryRender(sessionId);
+        if (applyFetchedLensHistoryWindow(sessionId, current, snapshot)) {
+          scheduleHistoryRender(sessionId);
+        }
       },
-      onDelta: (delta) => {
+      onPatch: (delta) => {
         const current = viewStates.get(sessionId);
         if (!current || !current.snapshot) {
           return;
@@ -786,6 +762,7 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.historyEntries = [];
   state.historyRenderedNodes.clear();
   state.assistantMarkdownCache.clear();
+  state.historyObservedHeights.clear();
   state.historyTopSpacer = null;
   state.historyBottomSpacer = null;
   state.historyEmptyState = null;
@@ -814,20 +791,29 @@ async function compactHiddenLensSessionHistory(
     snapshot.hasNewerHistory ||
     snapshot.historyWindowStart > 0 ||
     state.historyWindowCount > LENS_HISTORY_WINDOW_SIZE ||
-    snapshot.transcript.length > LENS_HISTORY_WINDOW_SIZE;
+    snapshot.history.length > LENS_HISTORY_WINDOW_SIZE;
 
   if (shouldRefreshLatestWindow) {
     try {
-      const latestSnapshot = await getLensSnapshot(sessionId, undefined, LENS_HISTORY_WINDOW_SIZE);
+      const latestSnapshot = await getLensHistoryWindow(
+        sessionId,
+        undefined,
+        resolveViewportDrivenHistoryWindowCount(
+          state.historyViewport,
+          LENS_HISTORY_RETENTION_MIN_MARGIN,
+          LENS_HISTORY_RETENTION_MAX_MARGIN,
+          LENS_HISTORY_WINDOW_SIZE,
+        ),
+      );
       const current = viewStates.get(sessionId);
       if (!current || current !== state) {
         return;
       }
 
-      applyLensSnapshotWindowState(current, latestSnapshot);
-      current.snapshot = latestSnapshot;
-      if (isLensViewVisible(sessionId, current)) {
-        renderCurrentAgentView(sessionId, { immediate: true });
+      if (applyFetchedLensHistoryWindow(sessionId, current, latestSnapshot)) {
+        if (isLensViewVisible(sessionId, current)) {
+          renderCurrentAgentView(sessionId, { immediate: true });
+        }
       }
       return;
     } catch (error) {
@@ -849,72 +835,45 @@ async function refreshLensSnapshot(
 
   state.refreshInFlight = true;
   try {
+    const desiredLatestWindowCount = resolveViewportDrivenHistoryWindowCount(
+      state.historyViewport,
+      LENS_HISTORY_RETENTION_MIN_MARGIN,
+      LENS_HISTORY_RETENTION_MAX_MARGIN,
+      Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+    );
     const nextSnapshot = options.latestWindow
-      ? await getLensSnapshot(
-          sessionId,
-          undefined,
-          Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
-        )
-      : await getLensSnapshot(sessionId, state.historyWindowStart, state.historyWindowCount);
-    applyLensSnapshotWindowState(state, nextSnapshot);
-    state.snapshot = nextSnapshot;
-    if (state.activationState !== 'ready') {
-      setActivationState(
-        state,
-        'ready',
-        'Lens snapshot refreshed.',
-        'Lens snapshot refreshed.',
-        'The Lens read model is available and the history is rendering live data.',
-        'positive',
-      );
+      ? await getLensHistoryWindow(sessionId, undefined, desiredLatestWindowCount)
+      : await getLensHistoryWindow(sessionId, state.historyWindowStart, state.historyWindowCount);
+    if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
+      if (state.activationState !== 'ready') {
+        setActivationState(
+          state,
+          'ready',
+          'Lens history window refreshed.',
+          'Lens history window refreshed.',
+          'The Lens read model is available and the history is rendering live data.',
+          'positive',
+        );
+      }
+      renderCurrentAgentView(sessionId);
     }
-    renderCurrentAgentView(sessionId);
   } catch (error) {
-    log.warn(() => `Failed to refresh Lens snapshot for ${sessionId}: ${String(error)}`);
+    log.warn(() => `Failed to refresh Lens history window for ${sessionId}: ${String(error)}`);
     state.activationError = describeError(error);
     setActivationState(
       state,
       'failed',
-      'Lens snapshot refresh failed.',
+      'Lens history window refresh failed.',
       'Lens refresh failed.',
       state.activationError,
       'attention',
     );
     showDevErrorDialog({
       title: lensText('lens.error.refreshTitle', 'Lens refresh failed'),
-      context: `Lens snapshot refresh failed for session ${sessionId}`,
+      context: `Lens history window refresh failed for session ${sessionId}`,
       error,
     });
     renderCurrentAgentView(sessionId);
-  } finally {
-    state.refreshInFlight = false;
-  }
-}
-
-async function loadOlderLensHistoryWindow(
-  sessionId: string,
-  state: SessionLensViewState,
-): Promise<void> {
-  if (state.refreshInFlight || !state.snapshot?.hasOlderHistory) {
-    return;
-  }
-
-  const nextStart = Math.max(0, state.historyWindowStart - LENS_HISTORY_PAGE_SIZE);
-  const existingWindowStart = state.historyWindowStart;
-  if (nextStart === existingWindowStart) {
-    return;
-  }
-
-  state.refreshInFlight = true;
-  try {
-    historyRender.captureHistoryViewportAnchor(state);
-    const nextWindowCount = state.historyWindowCount + (existingWindowStart - nextStart);
-    const nextSnapshot = await getLensSnapshot(sessionId, nextStart, nextWindowCount);
-    applyLensSnapshotWindowState(state, nextSnapshot);
-    state.snapshot = nextSnapshot;
-    renderCurrentAgentView(sessionId);
-  } catch (error) {
-    log.warn(() => `Failed to load older Lens history for ${sessionId}: ${String(error)}`);
   } finally {
     state.refreshInFlight = false;
   }
@@ -930,12 +889,59 @@ async function loadLatestLensHistoryWindow(
 
   state.refreshInFlight = true;
   try {
-    const nextSnapshot = await getLensSnapshot(sessionId, undefined, state.historyWindowCount);
-    applyLensSnapshotWindowState(state, nextSnapshot);
-    state.snapshot = nextSnapshot;
-    renderCurrentAgentView(sessionId);
+    const nextSnapshot = await getLensHistoryWindow(
+      sessionId,
+      undefined,
+      resolveViewportDrivenHistoryWindowCount(
+        state.historyViewport,
+        LENS_HISTORY_RETENTION_MIN_MARGIN,
+        LENS_HISTORY_RETENTION_MAX_MARGIN,
+        Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+      ),
+    );
+    if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
+      renderCurrentAgentView(sessionId);
+    }
   } catch (error) {
     log.warn(() => `Failed to load latest Lens history for ${sessionId}: ${String(error)}`);
+  } finally {
+    state.refreshInFlight = false;
+  }
+}
+
+async function syncHistoryWindowToViewport(
+  sessionId: string,
+  state: SessionLensViewState,
+): Promise<void> {
+  if (state.refreshInFlight || !state.snapshot) {
+    return;
+  }
+
+  const requestedWindow = historyRender.getViewportCenteredHistoryWindowRequest(state, {
+    minimumMarginItems: LENS_HISTORY_RETENTION_MIN_MARGIN,
+    maximumMarginItems: LENS_HISTORY_RETENTION_MAX_MARGIN,
+  });
+  if (!requestedWindow) {
+    return;
+  }
+
+  const isBackwardShift = requestedWindow.startIndex < state.historyWindowStart;
+  state.refreshInFlight = true;
+  try {
+    historyRender.captureHistoryViewportAnchor(state);
+    const nextSnapshot = await getLensHistoryWindow(
+      sessionId,
+      requestedWindow.startIndex,
+      requestedWindow.count,
+    );
+    if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
+      renderCurrentAgentView(sessionId);
+    }
+  } catch (error) {
+    log.warn(
+      () =>
+        `Failed to sync viewport-centered Lens history for ${sessionId} (${isBackwardShift ? 'backward' : 'forward'}): ${String(error)}`,
+    );
   } finally {
     state.refreshInFlight = false;
   }
@@ -1008,7 +1014,7 @@ function commitAgentViewRender(sessionId: string, force = false): void {
     return;
   }
 
-  renderAgentView(state.panel, state.snapshot, state.events, state.streamConnected, state);
+  renderAgentView(state.panel, state.snapshot, state.streamConnected, state);
 }
 
 function bindActiveLensSessionRendering(): void {
@@ -1071,8 +1077,7 @@ function isLensViewVisible(sessionId: string, state: SessionLensViewState): bool
 
 function renderAgentView(
   panel: HTMLDivElement,
-  snapshot: LensPulseSnapshotResponse,
-  events: LensPulseEvent[],
+  snapshot: LensHistorySnapshot,
   streamConnected: boolean,
   state: SessionLensViewState,
 ): void {
@@ -1082,7 +1087,7 @@ function renderAgentView(
   syncLensTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   historyRender.syncRequestInteractionState(state, snapshot.requests);
   const historyEntries = preservePersistentCommandEntries(
-    buildLensHistoryEntries(snapshot, events),
+    buildLensHistoryEntries(snapshot),
     state.historyEntries,
     snapshot,
   );
@@ -1230,25 +1235,34 @@ async function waitForInitialLensSnapshot(
   sessionId: string,
   state: SessionLensViewState,
   activationRunId: number,
-): Promise<LensPulseSnapshotResponse> {
+): Promise<LensHistorySnapshot> {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 12; attempt += 1) {
     ensureLensActivationIsCurrent(state, activationRunId);
     try {
+      const desiredWindowCount = resolveViewportDrivenHistoryWindowCount(
+        state.historyViewport,
+        LENS_HISTORY_RETENTION_MIN_MARGIN,
+        LENS_HISTORY_RETENTION_MAX_MARGIN,
+        state.historyWindowCount,
+      );
       const snapshot = state.snapshot
-        ? await getLensSnapshot(sessionId, state.historyWindowStart, state.historyWindowCount)
-        : await getLensSnapshot(sessionId);
-      applyLensSnapshotWindowState(state, snapshot);
+        ? await getLensHistoryWindow(sessionId, state.historyWindowStart, state.historyWindowCount)
+        : await getLensHistoryWindow(sessionId, undefined, desiredWindowCount);
+      applyLensHistoryWindowState(state, snapshot);
       ensureLensActivationIsCurrent(state, activationRunId);
       if (attempt > 1) {
         appendActivationTrace(
           state,
           'positive',
-          `snapshot retry ${attempt}`,
-          lensText('lens.activation.snapshotReady.summary', 'Lens snapshot became available.'),
+          `history window retry ${attempt}`,
+          lensText(
+            'lens.activation.snapshotReady.summary',
+            'Lens history window became available.',
+          ),
           lensFormat(
             'lens.activation.snapshotReady.body',
-            'MidTerm produced the first canonical Lens snapshot on retry {attempt}.',
+            'MidTerm produced the first canonical Lens history window on retry {attempt}.',
             { attempt },
           ),
         );
@@ -1262,8 +1276,8 @@ async function waitForInitialLensSnapshot(
       appendActivationTrace(
         state,
         attempt === 12 ? 'attention' : 'warning',
-        `snapshot retry ${attempt}`,
-        lensText('lens.activation.snapshotPending', 'Lens snapshot not ready yet.'),
+        `history window retry ${attempt}`,
+        lensText('lens.activation.snapshotPending', 'Lens history window not ready yet.'),
         describeError(error),
       );
       renderCurrentAgentView(sessionId);
@@ -1298,7 +1312,7 @@ async function retryLensActivation(sessionId: string): Promise<void> {
   renderCurrentAgentView(sessionId);
 
   try {
-    if (state.snapshot || state.events.length > 0) {
+    if (state.snapshot) {
       state.activationRunId += 1;
       await resumeLensFromHistory(sessionId, state, state.activationRunId);
     } else {

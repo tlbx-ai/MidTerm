@@ -107,67 +107,12 @@ export interface LensInterruptRequest {
   turnId?: string | null;
 }
 
-export interface LensPulseAnsweredQuestion {
+export interface LensAnsweredQuestion {
   questionId: string;
   answers: string[];
 }
 
-export interface LensPulseContentDeltaPayload {
-  streamKind: string;
-  delta: string;
-}
-
-export interface LensPulseDiffUpdatedPayload {
-  unifiedDiff: string;
-}
-
-export interface LensPulseEventRaw {
-  source: string;
-  method?: string | null;
-  payloadJson?: string | null;
-}
-
-export interface LensPulseSessionStatePayload {
-  state: string;
-  stateLabel: string;
-  reason?: string | null;
-}
-
-export interface LensPulseThreadStatePayload {
-  state: string;
-  stateLabel: string;
-  providerThreadId?: string | null;
-}
-
-export interface LensPulseTurnStartedPayload {
-  model?: string | null;
-  effort?: string | null;
-}
-
-export interface LensPulseTurnCompletedPayload {
-  state: string;
-  stateLabel: string;
-  stopReason?: string | null;
-  errorMessage?: string | null;
-}
-
-export interface LensPulsePlanDeltaPayload {
-  delta: string;
-}
-
-export interface LensPulsePlanCompletedPayload {
-  planMarkdown: string;
-}
-
-export interface LensPulseItemPayload {
-  itemType: string;
-  status: string;
-  title?: string | null;
-  detail?: string | null;
-  attachments: LensAttachmentReference[];
-}
-
-export interface LensPulseQuickSettingsPayload {
+export interface LensQuickSettingsPayload {
   model?: string | null;
   effort?: string | null;
   planMode: string;
@@ -181,100 +126,42 @@ export interface LensQuickSettingsSummary {
   permissionMode: string;
 }
 
-export interface LensPulseRequestOpenedPayload {
-  requestType: string;
-  requestTypeLabel: string;
-  detail?: string | null;
-}
-
-export interface LensPulseRequestResolvedPayload {
-  requestType: string;
-  decision?: string | null;
-}
-
-export interface LensPulseQuestionOption {
+export interface LensQuestionOption {
   label: string;
   description: string;
 }
 
-export interface LensPulseQuestion {
+export interface LensQuestion {
   id: string;
   header: string;
   question: string;
   multiSelect: boolean;
-  options: LensPulseQuestionOption[];
+  options: LensQuestionOption[];
 }
 
-export interface LensPulseUserInputRequestedPayload {
-  questions: LensPulseQuestion[];
-}
-
-export interface LensPulseUserInputResolvedPayload {
-  answers: LensPulseAnsweredQuestion[];
-}
-
-export interface LensPulseRuntimeMessagePayload {
-  message: string;
-  detail?: string | null;
-}
-
-export interface LensPulseEvent {
-  sequence: number;
-  eventId: string;
-  sessionId: string;
-  provider: string;
-  threadId: string;
-  turnId?: string | null;
-  itemId?: string | null;
-  requestId?: string | null;
-  createdAt: string;
-  type: string;
-  raw?: LensPulseEventRaw | null;
-  sessionState?: LensPulseSessionStatePayload | null;
-  threadState?: LensPulseThreadStatePayload | null;
-  turnStarted?: LensPulseTurnStartedPayload | null;
-  turnCompleted?: LensPulseTurnCompletedPayload | null;
-  contentDelta?: LensPulseContentDeltaPayload | null;
-  planDelta?: LensPulsePlanDeltaPayload | null;
-  planCompleted?: LensPulsePlanCompletedPayload | null;
-  diffUpdated?: LensPulseDiffUpdatedPayload | null;
-  item?: LensPulseItemPayload | null;
-  quickSettingsUpdated?: LensPulseQuickSettingsPayload | null;
-  requestOpened?: LensPulseRequestOpenedPayload | null;
-  requestResolved?: LensPulseRequestResolvedPayload | null;
-  userInputRequested?: LensPulseUserInputRequestedPayload | null;
-  userInputResolved?: LensPulseUserInputResolvedPayload | null;
-  runtimeMessage?: LensPulseRuntimeMessagePayload | null;
-}
-
-export interface LensPulseEventListResponse {
-  sessionId: string;
-  latestSequence: number;
-  events: LensPulseEvent[];
-}
-
-export interface LensPulseDeltaResponse {
+export interface LensHistoryPatch {
   sessionId: string;
   provider: string;
   generatedAt: string;
   latestSequence: number;
-  totalHistoryCount: number;
-  estimatedTotalHistoryHeightPx?: number;
-  session: LensPulseSessionSummary;
-  thread: LensPulseThreadSummary;
-  currentTurn: LensPulseTurnSummary;
+  historyCount: number;
+  session: LensSessionSummary;
+  thread: LensThreadSummary;
+  currentTurn: LensTurnSummary;
   quickSettings: LensQuickSettingsSummary;
-  streams: LensPulseStreamsSummary;
-  historyUpserts: LensPulseHistoryEntry[];
+  streams: LensStreamsSummary;
+  historyUpserts: LensHistoryItem[];
   historyRemovals: string[];
-  itemUpserts: LensPulseItemSummary[];
+  itemUpserts: LensItemSummary[];
   itemRemovals: string[];
-  requestUpserts: LensPulseRequestSummary[];
+  requestUpserts: LensRequestSummary[];
   requestRemovals: string[];
-  noticeUpserts: LensPulseRuntimeNotice[];
+  noticeUpserts: LensRuntimeNotice[];
 }
 
-export interface LensPulseSessionSummary {
+export type LensHistoryDelta = LensHistoryPatch;
+
+export interface LensSessionSummary {
   state: string;
   stateLabel: string;
   reason?: string | null;
@@ -282,13 +169,13 @@ export interface LensPulseSessionSummary {
   lastEventAt?: string | null;
 }
 
-export interface LensPulseThreadSummary {
+export interface LensThreadSummary {
   threadId: string;
   state: string;
   stateLabel: string;
 }
 
-export interface LensPulseTurnSummary {
+export interface LensTurnSummary {
   turnId?: string | null;
   state: string;
   stateLabel: string;
@@ -298,7 +185,7 @@ export interface LensPulseTurnSummary {
   completedAt?: string | null;
 }
 
-export interface LensPulseStreamsSummary {
+export interface LensStreamsSummary {
   assistantText: string;
   reasoningText: string;
   reasoningSummaryText: string;
@@ -308,7 +195,7 @@ export interface LensPulseStreamsSummary {
   unifiedDiff: string;
 }
 
-export interface LensPulseHistoryEntry {
+export interface LensHistoryItem {
   entryId: string;
   order: number;
   estimatedHeightPx?: number;
@@ -329,10 +216,7 @@ export interface LensPulseHistoryEntry {
   updatedAt: string;
 }
 
-/** @deprecated Prefer LensPulseHistoryEntry in application code. */
-export type LensPulseTranscriptEntry = LensPulseHistoryEntry;
-
-export interface LensPulseItemSummary {
+export interface LensItemSummary {
   itemId: string;
   turnId?: string | null;
   itemType: string;
@@ -343,7 +227,7 @@ export interface LensPulseItemSummary {
   updatedAt: string;
 }
 
-export interface LensPulseRequestSummary {
+export interface LensRequestSummary {
   requestId: string;
   turnId?: string | null;
   kind: string;
@@ -351,12 +235,12 @@ export interface LensPulseRequestSummary {
   state: string;
   detail?: string | null;
   decision?: string | null;
-  questions: LensPulseQuestion[];
-  answers: LensPulseAnsweredQuestion[];
+  questions: LensQuestion[];
+  answers: LensAnsweredQuestion[];
   updatedAt: string;
 }
 
-export interface LensPulseRuntimeNotice {
+export interface LensRuntimeNotice {
   eventId: string;
   type: string;
   message: string;
@@ -364,29 +248,35 @@ export interface LensPulseRuntimeNotice {
   createdAt: string;
 }
 
-export interface LensPulseSnapshotResponse {
+export interface LensHistoryWindowResponse {
   sessionId: string;
   provider: string;
   generatedAt: string;
   latestSequence: number;
-  totalHistoryCount: number;
-  estimatedTotalHistoryHeightPx?: number;
-  estimatedHistoryBeforeWindowPx?: number;
-  estimatedHistoryAfterWindowPx?: number;
+  historyCount: number;
   historyWindowStart: number;
   historyWindowEnd: number;
   hasOlderHistory: boolean;
   hasNewerHistory: boolean;
-  session: LensPulseSessionSummary;
-  thread: LensPulseThreadSummary;
-  currentTurn: LensPulseTurnSummary;
+  session: LensSessionSummary;
+  thread: LensThreadSummary;
+  currentTurn: LensTurnSummary;
   quickSettings: LensQuickSettingsSummary;
-  streams: LensPulseStreamsSummary;
-  transcript: LensPulseHistoryEntry[];
-  items: LensPulseItemSummary[];
-  requests: LensPulseRequestSummary[];
-  notices: LensPulseRuntimeNotice[];
+  streams: LensStreamsSummary;
+  history: LensHistoryItem[];
+  items: LensItemSummary[];
+  requests: LensRequestSummary[];
+  notices: LensRuntimeNotice[];
 }
+
+export type LensHistoryWindow = LensHistoryWindowResponse;
+export type LensHistorySnapshot = LensHistoryWindowResponse;
+export type LensHistoryRequestSummary = LensRequestSummary;
+export type LensHistorySessionSummary = LensSessionSummary;
+export type LensHistoryThreadSummary = LensThreadSummary;
+export type LensHistoryTurnSummary = LensTurnSummary;
+export type LensHistoryStreamsSummary = LensStreamsSummary;
+export type LensHistoryRuntimeNotice = LensRuntimeNotice;
 
 export interface LensRequestDecisionRequest {
   decision: string;
@@ -411,7 +301,7 @@ export interface LensTurnStartResponse {
 }
 
 export interface LensUserInputAnswerRequest {
-  answers: LensPulseAnsweredQuestion[];
+  answers: LensAnsweredQuestion[];
 }
 
 // Settings

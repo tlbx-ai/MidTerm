@@ -25,6 +25,9 @@
         "requested": "[10.0.5, )",
         "resolved": "10.0.5",
         "contentHash": "A+5ZuQ0f449tM+MQrhf6R9ZX7lYpjk/ODEwLYKrnF6111rtARx8fVsm4YznUnQiKnnXfaXNBqgxmil6RW3L3SA=="
+      },
+      "ai.tlbx.midterm.common": {
+        "type": "Project"
       }
     },
     "net10.0/win-x64": {

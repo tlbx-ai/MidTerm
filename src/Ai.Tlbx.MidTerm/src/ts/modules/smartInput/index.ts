@@ -15,4 +15,4 @@ export {
   removeSmartInputSessionState,
   setLensResumeConversationHandler,
 } from './smartInput';
-export { startTranscription, stopTranscription } from './transcription';
+export { startHistoryion, stopHistoryion } from './transcription';

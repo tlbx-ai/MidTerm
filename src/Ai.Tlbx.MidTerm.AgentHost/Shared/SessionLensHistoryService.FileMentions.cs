@@ -4,7 +4,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed partial class SessionLensPulseService
+public sealed partial class SessionLensHistoryService
 {
     private const int MaxInlineMentionsPerField = 24;
     private const int MaxInlineImagePreviewsPerEntry = 6;
@@ -94,14 +94,14 @@ public sealed partial class SessionLensPulseService
     private readonly TtyHostSessionManager? _sessionManager;
     private readonly SessionPathAllowlistService? _allowlistService;
 
-    private LensPulseTranscriptEntry CloneTranscriptEntry(string sessionId, LensPulseTranscriptEntry source)
+    private LensHistoryItem CloneHistoryEntry(string sessionId, LensHistoryItem source)
     {
-        var enriched = EnrichTranscriptEntry(sessionId, source);
-        return new LensPulseTranscriptEntry
+        var enriched = EnrichHistoryEntry(sessionId, source);
+        return new LensHistoryItem
         {
             EntryId = enriched.EntryId,
             Order = enriched.Order,
-            EstimatedHeightPx = EstimateTranscriptEntryHeightPx(enriched),
+            EstimatedHeightPx = EstimateHistoryEntryHeightPx(enriched),
             Kind = enriched.Kind,
             TurnId = enriched.TurnId,
             ItemId = enriched.ItemId,
@@ -120,7 +120,7 @@ public sealed partial class SessionLensPulseService
         };
     }
 
-    private LensPulseTranscriptEntry EnrichTranscriptEntry(string sessionId, LensPulseTranscriptEntry entry)
+    private LensHistoryItem EnrichHistoryEntry(string sessionId, LensHistoryItem entry)
     {
         var nextSignature = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
@@ -753,3 +753,5 @@ public sealed partial class SessionLensPulseService
         int? Column,
         int Priority);
 }
+
+

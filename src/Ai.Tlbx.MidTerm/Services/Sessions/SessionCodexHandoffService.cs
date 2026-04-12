@@ -17,7 +17,6 @@ public sealed class SessionCodexHandoffService
     private readonly WorkerSessionRegistryService _workerRegistry;
     private readonly AiCliProfileService _profileService;
     private readonly SessionForegroundProcessService _foregroundProcessService;
-    private readonly SessionLensPulseService _lensPulse;
     private readonly SessionLensRuntimeService _lensRuntime;
     private readonly string _codexHome;
 
@@ -26,7 +25,6 @@ public sealed class SessionCodexHandoffService
         WorkerSessionRegistryService workerRegistry,
         AiCliProfileService profileService,
         SessionForegroundProcessService foregroundProcessService,
-        SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
         string? codexHome = null)
     {
@@ -34,7 +32,6 @@ public sealed class SessionCodexHandoffService
         _workerRegistry = workerRegistry;
         _profileService = profileService;
         _foregroundProcessService = foregroundProcessService;
-        _lensPulse = lensPulse;
         _lensRuntime = lensRuntime;
         _codexHome = string.IsNullOrWhiteSpace(codexHome)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
@@ -87,18 +84,18 @@ public sealed class SessionCodexHandoffService
             return;
         }
 
-        var snapshot = _lensPulse.GetSnapshot(session.Id);
-        if (snapshot?.CurrentTurn?.State is "running")
+        _lensRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow);
+        if (historyWindow?.CurrentTurn?.State is "running")
         {
             throw new InvalidOperationException("Finish the Lens turn before returning control to the terminal.");
         }
 
-        if (snapshot?.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)) == true)
+        if (historyWindow?.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)) == true)
         {
             throw new InvalidOperationException("Resolve the open Lens request before returning control to the terminal.");
         }
 
-        var resumeThreadId = snapshot?.Thread.ThreadId;
+        var resumeThreadId = historyWindow?.Thread.ThreadId;
         if (string.IsNullOrWhiteSpace(resumeThreadId) && !TryGetKnownResumeThreadId(session.Id, out resumeThreadId))
         {
             resumeThreadId = await ResolveResumeThreadIdAsync(session, ct).ConfigureAwait(false);
@@ -197,7 +194,8 @@ public sealed class SessionCodexHandoffService
             return session.AgentAttachPoint.PreferredThreadId!;
         }
 
-        var lensSnapshotThreadId = _lensPulse.GetSnapshot(session.Id)?.Thread.ThreadId;
+        _lensRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow);
+        var lensSnapshotThreadId = historyWindow?.Thread.ThreadId;
         if (!string.IsNullOrWhiteSpace(lensSnapshotThreadId))
         {
             RememberResumeThreadId(session.Id, lensSnapshotThreadId);

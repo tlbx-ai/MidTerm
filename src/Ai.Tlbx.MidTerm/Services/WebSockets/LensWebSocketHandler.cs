@@ -14,7 +14,6 @@ public sealed class LensWebSocketHandler
 {
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionSupervisorService _sessionSupervisor;
-    private readonly SessionLensPulseService _lensPulse;
     private readonly SessionLensRuntimeService _lensRuntime;
     private readonly SessionCodexHandoffService _codexHandoff;
     private readonly AiCliProfileService _aiCliProfileService;
@@ -24,7 +23,6 @@ public sealed class LensWebSocketHandler
     public LensWebSocketHandler(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
         SessionCodexHandoffService codexHandoff,
         AiCliProfileService aiCliProfileService,
@@ -33,7 +31,6 @@ public sealed class LensWebSocketHandler
     {
         _sessionManager = sessionManager;
         _sessionSupervisor = sessionSupervisor;
-        _lensPulse = lensPulse;
         _lensRuntime = lensRuntime;
         _codexHandoff = codexHandoff;
         _aiCliProfileService = aiCliProfileService;
@@ -117,19 +114,28 @@ public sealed class LensWebSocketHandler
         async Task ReplaceSubscriptionAsync(
             string sessionId,
             long afterSequence,
-            LensSnapshotWindowRequest? snapshotWindow)
+            LensHistoryWindowRequest? historyWindow)
         {
             if (subscriptions.Remove(sessionId, out var existing))
             {
                 existing.Dispose();
             }
 
-            var currentSnapshot = _lensPulse.GetSnapshotWindow(
-                sessionId,
-                snapshotWindow?.StartIndex,
-                snapshotWindow?.Count);
+            var requestedWindow = historyWindow is null
+                ? null
+                : new LensHistoryWindowRequest
+                {
+                    StartIndex = historyWindow.StartIndex,
+                    Count = historyWindow.Count
+                };
 
-            var state = LensSocketSubscription.Create(_lensPulse, sessionId, shutdownToken);
+            var currentHistoryWindow = await _lensRuntime.GetHistoryWindowAsync(
+                sessionId,
+                requestedWindow?.StartIndex,
+                requestedWindow?.Count,
+                shutdownToken).ConfigureAwait(false);
+
+            var state = LensSocketSubscription.Create(_lensRuntime, sessionId, shutdownToken);
             var cancellation = state.Cancellation;
             var subscription = state.Subscription;
             subscriptions[sessionId] = state;
@@ -137,15 +143,15 @@ public sealed class LensWebSocketHandler
             {
                 try
                 {
-                    await foreach (var delta in subscription.Reader.ReadAllAsync(cancellation.Token).ConfigureAwait(false))
+                    await foreach (var patch in subscription.Reader.ReadAllAsync(cancellation.Token).ConfigureAwait(false))
                     {
                         await SendJsonAsync(
-                            new LensWsDeltaMessage
+                            new LensWsHistoryPatchMessage
                             {
                                 SessionId = sessionId,
-                                Delta = delta
+                                Patch = patch
                             },
-                            AppJsonContext.Default.LensWsDeltaMessage).ConfigureAwait(false);
+                            AppJsonContext.Default.LensWsHistoryPatchMessage).ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException) { }
@@ -155,16 +161,16 @@ public sealed class LensWebSocketHandler
                 }
             }, CancellationToken.None);
 
-            if (currentSnapshot is not null)
+            if (currentHistoryWindow is not null)
             {
-                afterSequence = Math.Max(afterSequence, currentSnapshot.LatestSequence);
+                afterSequence = Math.Max(afterSequence, currentHistoryWindow.LatestSequence);
                 await SendJsonAsync(
-                    new LensWsSnapshotMessage
+                    new LensWsHistoryWindowMessage
                     {
                         SessionId = sessionId,
-                        Snapshot = currentSnapshot
+                        HistoryWindow = currentHistoryWindow
                     },
-                    AppJsonContext.Default.LensWsSnapshotMessage).ConfigureAwait(false);
+                    AppJsonContext.Default.LensWsHistoryWindowMessage).ConfigureAwait(false);
             }
 
             await SendJsonAsync(
@@ -238,7 +244,7 @@ public sealed class LensWebSocketHandler
                             await ReplaceSubscriptionAsync(
                                 message.SessionId,
                                 Math.Max(0, message.AfterSequence),
-                                message.SnapshotWindow).ConfigureAwait(false);
+                                message.HistoryWindow).ConfigureAwait(false);
                             continue;
                         }
                         case "unsubscribe":
@@ -262,7 +268,6 @@ public sealed class LensWebSocketHandler
 
                             await HandleRequestAsync(
                                 request,
-                                SendJsonAsync,
                                 SendJsonAsync,
                                 SendJsonAsync,
                                 SendJsonAsync,
@@ -308,8 +313,7 @@ public sealed class LensWebSocketHandler
     private async Task HandleRequestAsync(
         LensWsRequestMessage request,
         Func<LensWsAckMessage, JsonTypeInfo<LensWsAckMessage>, Task> sendAck,
-        Func<LensWsSnapshotMessage, JsonTypeInfo<LensWsSnapshotMessage>, Task> sendSnapshot,
-        Func<LensWsEventsMessage, JsonTypeInfo<LensWsEventsMessage>, Task> sendEvents,
+        Func<LensWsHistoryWindowMessage, JsonTypeInfo<LensWsHistoryWindowMessage>, Task> sendHistoryWindow,
         Func<LensWsTurnStartedMessage, JsonTypeInfo<LensWsTurnStartedMessage>, Task> sendTurnStarted,
         Func<LensWsCommandAcceptedMessage, JsonTypeInfo<LensWsCommandAcceptedMessage>, Task> sendCommandAccepted,
         Func<string?, string?, string?, string, Task> sendError)
@@ -348,40 +352,27 @@ public sealed class LensWebSocketHandler
                         AppJsonContext.Default.LensWsAckMessage).ConfigureAwait(false);
                     break;
 
-                case "snapshot.get":
+                case "history.window.get":
                 {
-                    var snapshot = _lensPulse.GetSnapshotWindow(
+                    var historyWindow = await _lensRuntime.GetHistoryWindowAsync(
                         request.SessionId,
-                        request.SnapshotWindow?.StartIndex,
-                        request.SnapshotWindow?.Count);
-                    if (snapshot is null)
+                        request.HistoryWindow?.StartIndex,
+                        request.HistoryWindow?.Count,
+                        CancellationToken.None).ConfigureAwait(false);
+                    if (historyWindow is null)
                     {
-                        await sendError(request.Id, request.Action, request.SessionId, "Lens snapshot is not available.").ConfigureAwait(false);
+                        await sendError(request.Id, request.Action, request.SessionId, "Lens history window is not available.").ConfigureAwait(false);
                         return;
                     }
 
-                    await sendSnapshot(
-                        new LensWsSnapshotMessage
+                    await sendHistoryWindow(
+                        new LensWsHistoryWindowMessage
                         {
                             Id = request.Id,
                             SessionId = request.SessionId,
-                            Snapshot = snapshot
+                            HistoryWindow = historyWindow
                         },
-                        AppJsonContext.Default.LensWsSnapshotMessage).ConfigureAwait(false);
-                    break;
-                }
-
-                case "events.get":
-                {
-                    var events = _lensPulse.GetEvents(request.SessionId, request.AfterSequence ?? 0);
-                    await sendEvents(
-                        new LensWsEventsMessage
-                        {
-                            Id = request.Id,
-                            SessionId = request.SessionId,
-                            Events = events
-                        },
-                        AppJsonContext.Default.LensWsEventsMessage).ConfigureAwait(false);
+                        AppJsonContext.Default.LensWsHistoryWindowMessage).ConfigureAwait(false);
                     break;
                 }
 
@@ -511,7 +502,7 @@ public sealed class LensWebSocketHandler
         }
 
         var attached = await _lensRuntime.EnsureAttachedAsync(sessionId, session, resumeThreadId, ct).ConfigureAwait(false);
-        if (!attached && !_lensPulse.HasHistory(sessionId))
+        if (!attached && !_lensRuntime.HasHistory(sessionId))
         {
             throw new InvalidOperationException("Lens native runtime is not available for this session.");
         }
@@ -537,29 +528,29 @@ public sealed class LensWebSocketHandler
         var session = _sessionManager.GetSessionList().Sessions.FirstOrDefault(s => string.Equals(s.Id, sessionId, StringComparison.Ordinal))
                       ?? throw new InvalidOperationException("Lens session was not found.");
         session.Supervisor = _sessionSupervisor.Describe(session);
-        session.HasLensHistory = _lensPulse.HasHistory(session.Id);
+        session.HasLensHistory = _lensRuntime.HasHistory(session.Id);
         return session;
     }
 
     private sealed class LensSocketSubscription : IDisposable
     {
-        private LensSocketSubscription(LensPulseDeltaSubscription subscription, CancellationTokenSource cancellation)
+        private LensSocketSubscription(LensHistoryPatchSubscription subscription, CancellationTokenSource cancellation)
         {
             Subscription = subscription;
             Cancellation = cancellation;
         }
 
         public static LensSocketSubscription Create(
-            SessionLensPulseService lensPulse,
+            SessionLensRuntimeService lensRuntime,
             string sessionId,
             CancellationToken shutdownToken)
         {
             var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
-            var subscription = lensPulse.SubscribeDeltas(sessionId, cancellation.Token);
+            var subscription = lensRuntime.SubscribeHistoryPatches(sessionId, cancellation.Token);
             return new LensSocketSubscription(subscription, cancellation);
         }
 
-        public LensPulseDeltaSubscription Subscription { get; }
+        public LensHistoryPatchSubscription Subscription { get; }
         public CancellationTokenSource Cancellation { get; }
         public Task? ReaderTask { get; set; }
 

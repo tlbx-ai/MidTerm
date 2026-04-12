@@ -40,10 +40,10 @@ describe('transcription push-to-talk lifecycle', () => {
     window.startRecording = vi.fn(async () => true);
     window.stopRecording = vi.fn(async () => {});
 
-    const { startTranscription, stopTranscription } = await import('./transcription');
+    const { startHistoryion, stopHistoryion } = await import('./transcription');
 
-    startTranscription(() => {}, () => {});
-    await stopTranscription();
+    startHistoryion(() => {}, () => {});
+    await stopHistoryion();
 
     resolveInit?.(true);
     await flushMicrotasks();
@@ -64,11 +64,11 @@ describe('transcription push-to-talk lifecycle', () => {
     );
     window.stopRecording = vi.fn(async () => {});
 
-    const { startTranscription, stopTranscription } = await import('./transcription');
+    const { startHistoryion, stopHistoryion } = await import('./transcription');
 
-    startTranscription(() => {}, () => {});
+    startHistoryion(() => {}, () => {});
     await flushMicrotasks();
-    await stopTranscription();
+    await stopHistoryion();
 
     resolveStart?.(true);
     await flushMicrotasks();
@@ -78,3 +78,4 @@ describe('transcription push-to-talk lifecycle', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+

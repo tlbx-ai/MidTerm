@@ -11,9 +11,10 @@ const getSessionState = vi.fn();
 const getSessionBufferTail = vi.fn();
 const attachSessionLens = vi.fn();
 const detachSessionLens = vi.fn(() => Promise.resolve());
-const getLensSnapshot = vi.fn();
+const getLensHistoryWindow = vi.fn();
 const getLensEvents = vi.fn();
-const openLensEventStream = vi.fn(() => vi.fn());
+const openLensHistoryStream = vi.fn(() => vi.fn());
+const updateLensHistoryStreamWindow = vi.fn();
 const interruptLensTurn = vi.fn();
 const approveLensRequest = vi.fn();
 const declineLensRequest = vi.fn();
@@ -164,9 +165,12 @@ vi.mock('../../api/client', () => ({
   getSessionBufferTail,
   attachSessionLens,
   detachSessionLens,
-  getLensSnapshot,
+  getLensHistoryWindow,
+  getLensHistoryWindow,
   getLensEvents,
-  openLensEventStream,
+  openLensHistoryStream,
+  openLensHistoryStream,
+  updateLensHistoryStreamWindow,
   interruptLensTurn,
   approveLensRequest,
   declineLensRequest,
@@ -239,10 +243,11 @@ describe('agentView dev errors', () => {
     attachSessionLens.mockReset();
     detachSessionLens.mockReset();
     detachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockReset();
+    getLensHistoryWindow.mockReset();
     getLensEvents.mockReset();
-    openLensEventStream.mockReset();
-    openLensEventStream.mockReturnValue(vi.fn());
+    openLensHistoryStream.mockReset();
+    openLensHistoryStream.mockReturnValue(vi.fn());
+    updateLensHistoryStreamWindow.mockReset();
     interruptLensTurn.mockReset();
     approveLensRequest.mockReset();
     declineLensRequest.mockReset();
@@ -288,7 +293,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-29T10:00:00Z',
       latestSequence: 1,
-      totalHistoryCount: 0,
+      historyCount: 0,
       historyWindowStart: 0,
       historyWindowEnd: 0,
       hasOlderHistory: false,
@@ -323,7 +328,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [],
+      history: [],
       items: [],
       requests: [],
       notices: [],
@@ -333,7 +338,7 @@ describe('agentView dev errors', () => {
 
   it('shows a dev error modal when Lens activation fails', async () => {
     attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
-    getLensSnapshot.mockRejectedValue(new Error('Lens snapshot unavailable'));
+    getLensHistoryWindow.mockRejectedValue(new Error('Lens snapshot unavailable'));
     getLensEvents.mockRejectedValue(new Error('Lens events unavailable'));
 
     const { initAgentView } = await import('./index');
@@ -376,11 +381,11 @@ describe('agentView dev errors', () => {
   });
 
   it('renders Codex Lens as a full-width left layout', async () => {
-    getLensSnapshot.mockResolvedValue(
+    getLensHistoryWindow.mockResolvedValue(
       createSnapshot({
-        totalHistoryCount: 2,
+        historyCount: 2,
         historyWindowEnd: 2,
-        transcript: [
+        history: [
           {
             entryId: 'user:turn-1',
             order: 1,
@@ -466,7 +471,7 @@ describe('agentView dev errors', () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
-      transcript: [
+      history: [
         {
           entryId: 'tool-1',
           order: 1,
@@ -496,7 +501,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
     expect(history[0]?.meta).toBe('');
     expect(history[1]?.meta).toBe('');
   });
@@ -581,12 +586,12 @@ describe('agentView dev errors', () => {
 
     expect(attachSessionLens).not.toHaveBeenCalled();
     expect(getLensEvents).not.toHaveBeenCalled();
-    expect(getLensSnapshot).not.toHaveBeenCalled();
+    expect(getLensHistoryWindow).not.toHaveBeenCalled();
   });
 
   it('restores canonical Lens history when attach fails but a snapshot already exists', async () => {
     attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-22T01:45:00Z',
@@ -658,7 +663,7 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(getLensSnapshot).toHaveBeenCalledWith('s1');
+    expect(getLensHistoryWindow).toHaveBeenCalledWith('s1', undefined, expect.any(Number));
     expect(getLensEvents.mock.calls.length).toBeLessThanOrEqual(1);
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
@@ -666,7 +671,7 @@ describe('agentView dev errors', () => {
   it('retries live Lens resume automatically after restoring canonical history', async () => {
     attachSessionLens.mockRejectedValueOnce(new Error('Lens attach failed'));
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot
+    getLensHistoryWindow
       .mockRejectedValueOnce(new Error('Lens snapshot unavailable'))
       .mockResolvedValue({
         sessionId: 's1',
@@ -751,7 +756,7 @@ describe('agentView dev errors', () => {
     attachSessionLens.mockRejectedValue(
       new Error('HTTP 400: MidTerm could not determine the Codex resume id for this session.'),
     );
-    getLensSnapshot
+    getLensHistoryWindow
       .mockResolvedValueOnce({
         sessionId: 's1',
         provider: 'codex',
@@ -878,7 +883,7 @@ describe('agentView dev errors', () => {
     } as Event);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledWith(
+      expect(openLensHistoryStream).toHaveBeenCalledWith(
         's1',
         expect.any(Number),
         expect.any(Number),
@@ -892,7 +897,7 @@ describe('agentView dev errors', () => {
     attachSessionLens.mockRejectedValue(
       new Error('HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.'),
     );
-    getLensSnapshot.mockRejectedValue(new Error('Lens snapshot unavailable'));
+    getLensHistoryWindow.mockRejectedValue(new Error('Lens snapshot unavailable'));
     getLensEvents.mockRejectedValue(new Error('Lens events unavailable'));
     getSessionState.mockResolvedValue({
       session: {
@@ -927,9 +932,9 @@ describe('agentView dev errors', () => {
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
-  it('renders the composer interruption UI for open user-input requests', async () => {
+  it('renders interview requests inline in history instead of the composer interruption UI', async () => {
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-23T11:00:00Z',
@@ -969,7 +974,7 @@ describe('agentView dev errors', () => {
         {
           requestId: 'req-1',
           turnId: 'turn-1',
-          kind: 'tool_user_input',
+          kind: 'interview',
           kindLabel: 'Question',
           state: 'open',
           detail: 'Please choose a mode.',
@@ -1009,7 +1014,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot).toHaveBeenCalledWith('s1');
+      expect(getLensHistoryWindow).toHaveBeenCalledWith('s1', undefined, expect.any(Number));
       expect(getLensEvents.mock.calls.length).toBeLessThanOrEqual(1);
     });
 
@@ -1017,6 +1022,7 @@ describe('agentView dev errors', () => {
       '[data-agent-field="composer-interruption"]',
     ) as any;
     expect(interruptionHost).toBeTruthy();
+    expect(interruptionHost.hidden).toBe(true);
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
@@ -1037,9 +1043,9 @@ describe('agentView dev errors', () => {
 
   it('does not close the live Lens stream when the agent tab is deactivated', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:00Z',
@@ -1077,7 +1083,7 @@ describe('agentView dev errors', () => {
       items: [],
       requests: [],
       notices: [],
-      transcript: [],
+      history: [],
     });
     getLensEvents.mockResolvedValue({
       sessionId: 's1',
@@ -1102,7 +1108,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', createPanel());
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     deactivate?.('s1');
@@ -1113,15 +1119,15 @@ describe('agentView dev errors', () => {
 
   it('releases hidden history DOM and collapses background history back to a latest window', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot
+    getLensHistoryWindow
       .mockResolvedValueOnce({
         sessionId: 's1',
         provider: 'codex',
         generatedAt: '2026-03-28T11:00:00Z',
         latestSequence: 40,
-        totalHistoryCount: 400,
+        historyCount: 400,
         historyWindowStart: 160,
         historyWindowEnd: 240,
         hasOlderHistory: true,
@@ -1159,7 +1165,7 @@ describe('agentView dev errors', () => {
         items: [],
         requests: [],
         notices: [],
-        transcript: Array.from({ length: 80 }, (_value, index) => ({
+        history: Array.from({ length: 80 }, (_value, index) => ({
           entryId: `assistant:${index + 161}`,
           turnId: 'turn-1',
           itemId: `assistant-${index + 161}`,
@@ -1180,7 +1186,7 @@ describe('agentView dev errors', () => {
         provider: 'codex',
         generatedAt: '2026-03-28T11:00:05Z',
         latestSequence: 45,
-        totalHistoryCount: 405,
+        historyCount: 405,
         historyWindowStart: 325,
         historyWindowEnd: 405,
         hasOlderHistory: true,
@@ -1218,7 +1224,7 @@ describe('agentView dev errors', () => {
         items: [],
         requests: [],
         notices: [],
-        transcript: Array.from({ length: 80 }, (_value, index) => ({
+        history: Array.from({ length: 80 }, (_value, index) => ({
           entryId: `assistant:${index + 326}`,
           turnId: 'turn-1',
           itemId: `assistant-${index + 326}`,
@@ -1258,7 +1264,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
@@ -1267,7 +1273,7 @@ describe('agentView dev errors', () => {
     deactivate?.('s1');
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot.mock.calls).toContainEqual(['s1', undefined, 80]);
+      expect(getLensHistoryWindow.mock.calls).toContainEqual(['s1', undefined, 80]);
     });
 
     expect(disconnectStream).not.toHaveBeenCalled();
@@ -1276,18 +1282,18 @@ describe('agentView dev errors', () => {
 
   it('re-entering a Lens tab resets follow mode and refreshes the latest history window', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot
+    getLensHistoryWindow
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 40,
-          totalHistoryCount: 400,
+          historyCount: 400,
           historyWindowStart: 160,
           historyWindowEnd: 240,
           hasOlderHistory: true,
           hasNewerHistory: true,
-          transcript: Array.from({ length: 80 }, (_value, index) => ({
+          history: Array.from({ length: 80 }, (_value, index) => ({
             entryId: `assistant:${index + 161}`,
             turnId: 'turn-1',
             itemId: `assistant-${index + 161}`,
@@ -1307,12 +1313,12 @@ describe('agentView dev errors', () => {
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 45,
-          totalHistoryCount: 405,
+          historyCount: 405,
           historyWindowStart: 325,
           historyWindowEnd: 405,
           hasOlderHistory: true,
           hasNewerHistory: false,
-          transcript: Array.from({ length: 80 }, (_value, index) => ({
+          history: Array.from({ length: 80 }, (_value, index) => ({
             entryId: `assistant:${index + 326}`,
             turnId: 'turn-1',
             itemId: `assistant-${index + 326}`,
@@ -1352,8 +1358,13 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot).toHaveBeenNthCalledWith(1, 's1');
-      expect(getLensSnapshot).toHaveBeenNthCalledWith(2, 's1', undefined, 80);
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(1, 's1', undefined, expect.any(Number));
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        2,
+        's1',
+        undefined,
+        expect.any(Number),
+      );
     });
 
     expect(historyHost.scrollTop).toBe(0);
@@ -1361,21 +1372,21 @@ describe('agentView dev errors', () => {
 
   it('re-entering a still-connected Lens tab refreshes the latest history window when the cached window is stale', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockImplementation((...args: any[]) => {
+    openLensHistoryStream.mockImplementation((...args: any[]) => {
       const handlers = args[4];
       handlers?.onOpen?.();
       return disconnectStream;
     });
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue(
+    getLensHistoryWindow.mockResolvedValue(
       createSnapshot({
         latestSequence: 40,
-        totalHistoryCount: 400,
+        historyCount: 400,
         historyWindowStart: 160,
         historyWindowEnd: 240,
         hasOlderHistory: true,
         hasNewerHistory: true,
-        transcript: Array.from({ length: 80 }, (_value, index) => ({
+        history: Array.from({ length: 80 }, (_value, index) => ({
           entryId: `assistant:${index + 161}`,
           turnId: 'turn-1',
           itemId: `assistant-${index + 161}`,
@@ -1407,27 +1418,27 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
-    getLensSnapshot.mockClear();
+    getLensHistoryWindow.mockClear();
 
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot).toHaveBeenCalledWith('s1', undefined, 80);
+      expect(getLensHistoryWindow).toHaveBeenCalledWith('s1', undefined, expect.any(Number));
     });
   });
 
   it('returning from browser background snaps the active Lens session back to the live edge', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot
+    getLensHistoryWindow
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 40,
-          totalHistoryCount: 400,
+          historyCount: 400,
           historyWindowStart: 160,
           historyWindowEnd: 240,
           hasOlderHistory: true,
@@ -1437,7 +1448,7 @@ describe('agentView dev errors', () => {
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 45,
-          totalHistoryCount: 405,
+          historyCount: 405,
           historyWindowStart: 325,
           historyWindowEnd: 405,
           hasOlderHistory: true,
@@ -1467,7 +1478,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot).toHaveBeenNthCalledWith(1, 's1');
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(1, 's1', undefined, expect.any(Number));
     });
 
     historyHost.scrollTop = 987;
@@ -1480,7 +1491,7 @@ describe('agentView dev errors', () => {
     triggerDocumentEvent('visibilitychange');
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot).toHaveBeenNthCalledWith(2, 's1', undefined, 80);
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(2, 's1', undefined, 80);
     });
 
     expect(historyHost.scrollTop).toBe(0);
@@ -1488,9 +1499,9 @@ describe('agentView dev errors', () => {
 
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:00Z',
@@ -1528,7 +1539,7 @@ describe('agentView dev errors', () => {
       items: [],
       requests: [],
       notices: [],
-      transcript: [
+      history: [
         {
           entryId: 'assistant:turn-1',
           turnId: 'turn-1',
@@ -1565,7 +1576,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
@@ -1573,17 +1584,17 @@ describe('agentView dev errors', () => {
 
     setActiveLensSession('s2');
 
-    const streamCallbacks = openLensEventStream.mock.calls[0]?.[4] as
-      | { onDelta(delta: unknown): void }
+    const streamCallbacks = openLensHistoryStream.mock.calls[0]?.[4] as
+      | { onPatch(delta: unknown): void }
       | undefined;
     expect(streamCallbacks).toBeTruthy();
 
-    streamCallbacks?.onDelta({
+    streamCallbacks?.onPatch({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:01Z',
       latestSequence: 2,
-      totalHistoryCount: 1,
+      historyCount: 1,
       session: {
         state: 'running',
         stateLabel: 'Running',
@@ -2231,7 +2242,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
     const marked = withLiveAssistantState(snapshot, history);
 
     expect(
@@ -2284,7 +2295,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-1',
           order: 1,
@@ -2407,7 +2418,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-1',
           order: 1,
@@ -2439,7 +2450,7 @@ describe('agentView dev errors', () => {
           itemId: null,
           requestId: 'req-1',
           status: 'open',
-          itemType: 'tool_user_input',
+          itemType: 'interview',
           title: 'User input',
           body: 'Choose SAFE or FAST.',
           attachments: [],
@@ -2453,7 +2464,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -2505,7 +2516,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-2',
           order: 1,
@@ -2560,7 +2571,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history.map((entry) => entry.id)).toEqual([
       'user:turn-2',
@@ -3091,7 +3102,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -3149,7 +3160,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
@@ -3212,7 +3223,7 @@ describe('agentView dev errors', () => {
         {
           requestId: 'req-1',
           turnId: 'turn-1',
-          kind: 'tool_user_input',
+          kind: 'interview',
           kindLabel: 'Question',
           state: 'open',
           detail: 'The agent needs an operator choice.',
@@ -3235,7 +3246,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ kind: 'user' });
@@ -3283,7 +3294,7 @@ describe('agentView dev errors', () => {
       {
         requestId: 'req-1',
         state: 'open',
-        kind: 'tool_user_input',
+        kind: 'approval',
         updatedAt: '2026-03-23T11:59:58Z',
       },
     ] as any;
@@ -3646,7 +3657,7 @@ describe('agentView dev errors', () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
-      transcript: [
+      history: [
         {
           entryId: 'tool-command',
           order: 1,
@@ -3676,18 +3687,18 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
     expect(history).toHaveLength(1);
     expect(history[0]?.commandOutputTail).toEqual(
       Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
     );
   });
 
-  it('renders direct command-output transcript rows as persistent Ran rows with folded tail output', async () => {
+  it('renders direct command-output history rows as persistent Ran rows with folded tail output', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
-      transcript: [
+      history: [
         {
           entryId: 'tool:cmd-1',
           order: 1,
@@ -3705,7 +3716,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.body).toBe('');
@@ -3717,7 +3728,7 @@ describe('agentView dev errors', () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
-      transcript: [
+      history: [
         {
           entryId: 'tool:cmd-omitted',
           order: 1,
@@ -3736,7 +3747,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.commandText).toBe('codex -m gpt-5.4');
@@ -3751,7 +3762,7 @@ describe('agentView dev errors', () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
-      transcript: [
+      history: [
         {
           entryId: 'tool:cmd-omitted-raw',
           order: 1,
@@ -3769,7 +3780,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.commandText ?? '').toBe('');
@@ -4774,7 +4785,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-2',
           order: 1,
@@ -4802,7 +4813,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
     const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
@@ -5434,7 +5445,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-04-04T20:00:00Z',
       latestSequence: 8,
-      totalHistoryCount: 4,
+      historyCount: 4,
       historyWindowStart: 0,
       historyWindowEnd: 4,
       hasOlderHistory: false,
@@ -5475,7 +5486,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'system-context',
           order: 1,
@@ -5556,7 +5567,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
     const stats = buildLensRuntimeStats(snapshot);
 
     expect(history).toHaveLength(1);
@@ -5572,7 +5583,7 @@ describe('agentView dev errors', () => {
   });
 
   it('renders runtime stats as percent of context limit plus session in/out totals', async () => {
-    getLensSnapshot.mockResolvedValue(
+    getLensHistoryWindow.mockResolvedValue(
       createSnapshot({
         notices: [
           {
@@ -5617,7 +5628,7 @@ describe('agentView dev errors', () => {
   });
 
   it('falls back to a plain window-limit summary when the provider notice reports cumulative totals instead of current context occupancy', async () => {
-    getLensSnapshot.mockResolvedValue(
+    getLensHistoryWindow.mockResolvedValue(
       createSnapshot({
         notices: [
           {
@@ -5930,7 +5941,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:00Z',
       latestSequence: 1,
-      totalHistoryCount: 1,
+      historyCount: 1,
       estimatedTotalHistoryHeightPx: 52,
       estimatedHistoryBeforeWindowPx: 0,
       estimatedHistoryAfterWindowPx: 0,
@@ -5968,7 +5979,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'assistant:assistant-1',
           order: 1,
@@ -6003,7 +6014,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:01Z',
       latestSequence: 2,
-      totalHistoryCount: 1,
+      historyCount: 1,
       estimatedTotalHistoryHeightPx: 68,
       session: {
         state: 'running',
@@ -6066,10 +6077,10 @@ describe('agentView dev errors', () => {
     expect(snapshot.latestSequence).toBe(2);
     expect(snapshot.generatedAt).toBe('2026-03-28T10:00:01Z');
     expect(snapshot.streams.assistantText).toBe('Hello');
-    expect(snapshot.transcript).toHaveLength(1);
-    expect(snapshot.transcript[0]?.body).toBe('Hello');
+    expect(snapshot.history).toHaveLength(1);
+    expect(snapshot.history[0]?.body).toBe('Hello');
     expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(0);
-    expect(snapshot.transcript[0]?.streaming).toBe(true);
+    expect(snapshot.history[0]?.streaming).toBe(true);
     expect(snapshot.historyWindowStart).toBe(0);
     expect(snapshot.historyWindowEnd).toBe(1);
     expect(snapshot.hasNewerHistory).toBe(false);
@@ -6083,7 +6094,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:00Z',
       latestSequence: 5,
-      totalHistoryCount: 120,
+      historyCount: 120,
       estimatedTotalHistoryHeightPx: 9600,
       estimatedHistoryBeforeWindowPx: 4200,
       estimatedHistoryAfterWindowPx: 3000,
@@ -6127,7 +6138,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'assistant:window-1',
           order: 41,
@@ -6162,7 +6173,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:02Z',
       latestSequence: 6,
-      totalHistoryCount: 121,
+      historyCount: 121,
       estimatedTotalHistoryHeightPx: 9684,
       session: snapshot.session,
       thread: snapshot.thread,
@@ -6208,7 +6219,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-04-08T16:40:00Z',
       latestSequence: 1,
-      totalHistoryCount: 1,
+      historyCount: 1,
       estimatedTotalHistoryHeightPx: 84,
       historyWindowStart: 0,
       historyWindowEnd: 1,
@@ -6250,7 +6261,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'tool:item-unknown-1',
           order: 1,
@@ -6275,12 +6286,12 @@ describe('agentView dev errors', () => {
     } as any;
 
     currentSettings = { showUnknownAgentMessages: true };
-    const visibleHistory = buildLensHistoryEntries(snapshot, []);
+    const visibleHistory = buildLensHistoryEntries(snapshot);
     expect(visibleHistory).toHaveLength(1);
     expect(visibleHistory[0]?.sourceItemType).toBe('unknown_agent_message');
 
     currentSettings = { showUnknownAgentMessages: false };
-    const hiddenHistory = buildLensHistoryEntries(snapshot, []);
+    const hiddenHistory = buildLensHistoryEntries(snapshot);
     expect(hiddenHistory).toHaveLength(0);
   });
 
@@ -6292,7 +6303,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-04-09T08:00:00Z',
       latestSequence: 2,
-      totalHistoryCount: 2,
+      historyCount: 2,
       estimatedTotalHistoryHeightPx: 120,
       historyWindowStart: 0,
       historyWindowEnd: 2,
@@ -6334,7 +6345,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'runtime-agent-state',
           order: 1,
@@ -6375,7 +6386,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -6392,3 +6403,4 @@ describe('agentView dev errors', () => {
     });
   });
 });
+

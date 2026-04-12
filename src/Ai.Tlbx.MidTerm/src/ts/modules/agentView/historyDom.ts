@@ -7,7 +7,7 @@ import {
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
-import type { LensPulseRequestSummary } from '../../api/client';
+import type { LensHistoryRequestSummary } from '../../api/client';
 import type { LensAttachmentReference } from '../../api/types';
 import {
   buildLensAttachmentUrl,
@@ -48,6 +48,30 @@ function lensFormat(
   );
 }
 
+function resolveHistoryBadgeTextForEntry(
+  entry: LensHistoryEntry,
+  provider: string | null | undefined,
+): string {
+  if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
+    return entry.label.trim();
+  }
+
+  return resolveHistoryBadgeLabel(entry.kind, provider);
+}
+
+function normalizeHistoryTitle(entry: LensHistoryEntry): string {
+  const title = entry.title.trim();
+  if (!title || entry.commandText) {
+    return '';
+  }
+
+  if ((entry.kind === 'user' || entry.kind === 'assistant') && title === entry.label) {
+    return '';
+  }
+
+  return title;
+}
+
 type AgentHistoryDomDeps = {
   getState: (sessionId: string) => SessionLensViewState | undefined;
   refreshLensSnapshot: (sessionId: string) => Promise<void>;
@@ -55,6 +79,45 @@ type AgentHistoryDomDeps = {
   retryLensActivation: (sessionId: string) => Promise<void>;
   logWarn: (message: () => string) => void;
 };
+
+function appendInlineRequestWidgetToArticle(args: {
+  article: HTMLElement;
+  createRequestActionBlock: (
+    sessionId: string,
+    request: LensHistoryRequestSummary,
+    busy: boolean,
+    state: SessionLensViewState,
+    surface: 'composer' | 'history',
+  ) => HTMLElement;
+  deps: AgentHistoryDomDeps;
+  entry: LensHistoryEntry;
+  sessionId: string;
+}): boolean {
+  const { article, createRequestActionBlock, deps, entry, sessionId } = args;
+  if (entry.kind !== 'request' || !entry.requestId) {
+    return false;
+  }
+
+  const state = deps.getState(sessionId);
+  const request = state?.snapshot?.requests.find(
+    (candidate) => candidate.requestId === entry.requestId,
+  );
+  if (!state || !request) {
+    return false;
+  }
+
+  article.classList.add('agent-history-request-inline');
+  article.appendChild(
+    createRequestActionBlock(
+      sessionId,
+      request,
+      state.requestBusyIds.has(request.requestId),
+      state,
+      'history',
+    ),
+  );
+  return true;
+}
 
 function createTurnDurationNoteBody(entry: LensHistoryEntry): HTMLElement {
   const body = document.createElement('div');
@@ -266,7 +329,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const badge = document.createElement('span');
     badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
-    badge.textContent = resolveHistoryBadgeText(entry, sessionId);
+    badge.textContent = resolveHistoryBadgeTextForEntry(
+      entry,
+      deps.getState(sessionId)?.snapshot?.provider,
+    );
     header.appendChild(badge);
 
     if (entry.meta.trim()) {
@@ -277,14 +343,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
 
     return header;
-  }
-
-  function resolveHistoryBadgeText(entry: LensHistoryEntry, sessionId: string): string {
-    if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
-      return entry.label.trim();
-    }
-
-    return resolveHistoryBadgeLabel(entry.kind, deps.getState(sessionId)?.snapshot?.provider);
   }
 
   function appendHistoryTitle(
@@ -310,6 +368,18 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     entry: LensHistoryEntry,
     sessionId: string,
   ): void {
+    if (
+      appendInlineRequestWidgetToArticle({
+        article,
+        createRequestActionBlock,
+        deps,
+        entry,
+        sessionId,
+      })
+    ) {
+      return;
+    }
+
     if (!shouldRenderHistoryBody(entry)) {
       return;
     }
@@ -673,19 +743,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     );
   }
 
-  function normalizeHistoryTitle(entry: LensHistoryEntry): string {
-    const title = entry.title.trim();
-    if (!title || entry.commandText) {
-      return '';
-    }
-
-    if ((entry.kind === 'user' || entry.kind === 'assistant') && title === entry.label) {
-      return '';
-    }
-
-    return title;
-  }
-
   function createHistoryAttachmentBlock(
     sessionId: string,
     attachments: readonly LensAttachmentReference[] | undefined,
@@ -731,9 +788,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createRequestActionBlock(
     sessionId: string,
-    request: LensPulseRequestSummary,
+    request: LensHistoryRequestSummary,
     busy: boolean,
     state: SessionLensViewState,
+    surface: 'composer' | 'history',
   ): HTMLElement {
     return createRequestActionBlockInternal({
       busy,
@@ -742,6 +800,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       lensText,
       request,
       sessionId,
+      surface,
       state,
     });
   }

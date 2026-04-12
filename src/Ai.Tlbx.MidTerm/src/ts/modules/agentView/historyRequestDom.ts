@@ -3,7 +3,7 @@ import {
   approveLensRequest,
   declineLensRequest,
   resolveLensUserInput,
-  type LensPulseRequestSummary,
+  type LensHistoryRequestSummary,
 } from '../../api/client';
 import type { SessionLensViewState } from './types';
 
@@ -26,19 +26,26 @@ export function createRequestActionBlock(args: {
   deps: AgentHistoryRequestDomDeps;
   lensFormat: LensFormat;
   lensText: LensText;
-  request: LensPulseRequestSummary;
+  request: LensHistoryRequestSummary;
   sessionId: string;
+  surface: 'composer' | 'history';
   state: SessionLensViewState;
 }): HTMLElement {
-  const { busy, deps, lensFormat, lensText, request, sessionId, state } = args;
+  const { busy, deps, lensFormat, lensText, request, sessionId, state, surface } = args;
   const actions = document.createElement('div');
-  const isUserInputRequest = request.kind === 'tool_user_input' && request.questions.length > 0;
-  actions.className = `agent-request-actions agent-request-actions-composer ${isUserInputRequest ? 'agent-request-actions-user-input' : 'agent-request-actions-approval'}`;
+  const isInterviewRequest = request.kind === 'interview' && request.questions.length > 0;
+  actions.className = `agent-request-actions agent-request-actions-${surface} ${isInterviewRequest ? 'agent-request-actions-user-input' : 'agent-request-actions-approval'}`;
   const panel = document.createElement('section');
-  panel.className = `agent-request-panel ${isUserInputRequest ? 'agent-request-panel-user-input' : 'agent-request-panel-approval'}`;
-  panel.appendChild(createRequestPanelHeader(request, lensText, lensFormat));
+  panel.className = `agent-request-panel agent-request-panel-${surface} ${isInterviewRequest ? 'agent-request-panel-user-input' : 'agent-request-panel-approval'} ${request.state === 'open' ? 'agent-request-panel-open' : 'agent-request-panel-resolved'}`;
+  panel.appendChild(createRequestPanelHeader(request, lensText, lensFormat, surface));
 
-  if (isUserInputRequest) {
+  if (request.state !== 'open') {
+    panel.appendChild(createResolvedRequestSummary(request, lensText));
+    actions.appendChild(panel);
+    return actions;
+  }
+
+  if (isInterviewRequest) {
     panel.appendChild(
       createUserInputRequestForm({
         busy,
@@ -62,7 +69,7 @@ function createUserInputRequestForm(args: {
   busy: boolean;
   deps: AgentHistoryRequestDomDeps;
   lensText: LensText;
-  request: LensPulseRequestSummary;
+  request: LensHistoryRequestSummary;
   sessionId: string;
   state: SessionLensViewState;
 }): HTMLElement {
@@ -122,9 +129,9 @@ function createUserInputControls(
   busy: boolean,
   deps: AgentHistoryRequestDomDeps,
   lensText: LensText,
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
   sessionId: string,
-  activeQuestion: LensPulseRequestSummary['questions'][number],
+  activeQuestion: LensHistoryRequestSummary['questions'][number],
   activeQuestionIndex: number,
   draftAnswers: Record<string, string[]>,
 ): HTMLElement {
@@ -162,7 +169,7 @@ function createApprovalButtonRow(
   busy: boolean,
   deps: AgentHistoryRequestDomDeps,
   lensText: LensText,
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
   sessionId: string,
 ): HTMLElement {
   const buttonRow = document.createElement('div');
@@ -197,9 +204,10 @@ function createApprovalButtonRow(
 }
 
 function createRequestPanelHeader(
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
   lensText: LensText,
   lensFormat: LensFormat,
+  surface: 'composer' | 'history',
 ): HTMLElement {
   const header = document.createElement('div');
   header.className = 'agent-request-panel-header';
@@ -208,10 +216,7 @@ function createRequestPanelHeader(
 
   const eyebrow = document.createElement('span');
   eyebrow.className = 'agent-request-eyebrow';
-  eyebrow.textContent =
-    request.kind === 'tool_user_input'
-      ? lensText('lens.request.pendingUserInput', 'Pending user input')
-      : lensText('lens.request.pendingApproval', 'Pending approval');
+  eyebrow.textContent = summarizeRequestEyebrow(request, lensText, surface);
   topRow.appendChild(eyebrow);
 
   const summary = document.createElement('span');
@@ -230,12 +235,43 @@ function createRequestPanelHeader(
   return header;
 }
 
+function summarizeRequestEyebrow(
+  request: LensHistoryRequestSummary,
+  lensText: LensText,
+  surface: 'composer' | 'history',
+): string {
+  const prefix =
+    surface === 'history'
+      ? lensText('lens.request.historyPrefix', 'History item')
+      : lensText('lens.request.interruptionPrefix', 'Needs action');
+
+  if (request.kind === 'interview') {
+    return request.state === 'open'
+      ? `${prefix} · ${lensText('lens.request.pendingInterview', 'Pending interview')}`
+      : `${prefix} · ${lensText('lens.request.completedInterview', 'Interview answered')}`;
+  }
+
+  return request.state === 'open'
+    ? `${prefix} · ${lensText('lens.request.pendingApproval', 'Pending approval')}`
+    : `${prefix} · ${lensText('lens.request.completedApproval', 'Approval resolved')}`;
+}
+
 function summarizeRequestInterruption(
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
   lensText: LensText,
   lensFormat: LensFormat,
 ): string {
-  if (request.kind === 'tool_user_input') {
+  if (request.state !== 'open') {
+    const resolvedDecision =
+      request.decision?.trim() || lensText('lens.request.resolved', 'resolved');
+    return request.kind === 'interview'
+      ? lensText('lens.request.interviewResolved', 'The requested answers were submitted.')
+      : lensFormat('lens.request.approvalResolved', 'Request resolved as {decision}.', {
+          decision: resolvedDecision,
+        });
+  }
+
+  if (request.kind === 'interview') {
     const activeQuestion = request.questions[0];
     if (request.questions.length === 1 && activeQuestion?.options.length) {
       return activeQuestion.multiSelect
@@ -268,13 +304,86 @@ function summarizeRequestInterruption(
   );
 }
 
+function createResolvedRequestSummary(
+  request: LensHistoryRequestSummary,
+  lensText: LensText,
+): HTMLElement {
+  return request.kind === 'interview'
+    ? createResolvedInterviewSummary(request, lensText)
+    : createResolvedApprovalSummary(request, lensText);
+}
+
+function createResolvedInterviewSummary(
+  request: LensHistoryRequestSummary,
+  lensText: LensText,
+): HTMLElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'agent-request-answer-list';
+
+  if (request.answers.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'agent-request-answer-empty';
+    empty.textContent = lensText('lens.request.noAnswersRecorded', 'No answers were recorded.');
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  for (const question of request.questions) {
+    const answer = request.answers.find((candidate) => candidate.questionId === question.id);
+    const item = document.createElement('section');
+    item.className = 'agent-request-answer-item';
+
+    const label = document.createElement('div');
+    label.className = 'agent-request-answer-label';
+    label.textContent = question.header.trim() || question.question;
+    item.appendChild(label);
+
+    const value = document.createElement('div');
+    value.className = 'agent-request-answer-value';
+    const answers = answer?.answers.filter((entry) => entry.trim().length > 0) ?? [];
+    value.textContent =
+      answers.length > 0
+        ? answers.join(', ')
+        : lensText('lens.request.answerSkipped', 'No answer submitted');
+    item.appendChild(value);
+
+    wrapper.appendChild(item);
+  }
+
+  return wrapper;
+}
+
+function createResolvedApprovalSummary(
+  request: LensHistoryRequestSummary,
+  lensText: LensText,
+): HTMLElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'agent-request-answer-list';
+
+  const item = document.createElement('section');
+  item.className = 'agent-request-answer-item';
+
+  const label = document.createElement('div');
+  label.className = 'agent-request-answer-label';
+  label.textContent = lensText('lens.request.decisionLabel', 'Decision');
+  item.appendChild(label);
+
+  const value = document.createElement('div');
+  value.className = 'agent-request-answer-value';
+  value.textContent = request.decision?.trim() || lensText('lens.request.resolved', 'Resolved');
+  item.appendChild(value);
+
+  wrapper.appendChild(item);
+  return wrapper;
+}
+
 function createQuestionField(args: {
   deps: AgentHistoryRequestDomDeps;
   draftAnswers: Record<string, string[]>;
   index: number;
   lensText: LensText;
-  question: LensPulseRequestSummary['questions'][number];
-  request: LensPulseRequestSummary;
+  question: LensHistoryRequestSummary['questions'][number];
+  request: LensHistoryRequestSummary;
   sessionId: string;
   totalQuestions: number;
 }): HTMLElement {
@@ -348,8 +457,8 @@ function createQuestionChoiceList(args: {
   autoAdvance: boolean;
   deps: AgentHistoryRequestDomDeps;
   inputType: 'checkbox' | 'radio';
-  question: LensPulseRequestSummary['questions'][number];
-  request: LensPulseRequestSummary;
+  question: LensHistoryRequestSummary['questions'][number];
+  request: LensHistoryRequestSummary;
   selectedAnswers: readonly string[];
   sessionId: string;
 }): HTMLElement {
@@ -425,7 +534,7 @@ function createQuestionChoiceList(args: {
 
 function collectQuestionAnswers(
   state: SessionLensViewState,
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
 ): Array<{ questionId: string; answers: string[] }> {
   const draftAnswers = ensureRequestDraftAnswers(state, request);
   return request.questions.map((question) => ({
@@ -436,7 +545,7 @@ function collectQuestionAnswers(
 
 function resolveActiveRequestQuestionIndex(
   state: SessionLensViewState,
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
 ): number {
   const maxIndex = Math.max(0, request.questions.length - 1);
   const currentIndex = state.requestQuestionIndexById[request.requestId] ?? 0;
@@ -460,7 +569,7 @@ function setActiveRequestQuestionIndex(
 
 function ensureRequestDraftAnswers(
   state: SessionLensViewState,
-  request: LensPulseRequestSummary,
+  request: LensHistoryRequestSummary,
 ): Record<string, string[]> {
   const existing = state.requestDraftAnswersById[request.requestId];
   if (existing) {
@@ -502,7 +611,7 @@ function updateRequestDraftAnswers(
 
 function hasDraftAnswerForQuestion(
   draftAnswers: Record<string, string[]>,
-  question: LensPulseRequestSummary['questions'][number],
+  question: LensHistoryRequestSummary['questions'][number],
 ): boolean {
   return (draftAnswers[question.id] ?? []).some((answer) => answer.trim().length > 0);
 }

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Ai.Tlbx.MidTerm.Common.Protocol;
 
-public static class LensEventCompaction
+public static class LensProviderEventCompaction
 {
     private const int MaxAssistantDeltaChars = 16384;
     private const int MaxReasoningDeltaChars = 1024;
@@ -15,11 +15,11 @@ public static class LensEventCompaction
     private const int MaxRuntimeDetailChars = 4096;
     private const int MaxPlanMarkdownChars = 16384;
 
-    public static LensPulseEvent CloneForRetention(LensPulseEvent source)
+    public static LensProviderEvent CloneForRetention(LensProviderEvent source)
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        return new LensPulseEvent
+        return new LensProviderEvent
         {
             Sequence = source.Sequence,
             EventId = source.EventId,
@@ -32,48 +32,48 @@ public static class LensEventCompaction
             CreatedAt = source.CreatedAt,
             Type = source.Type,
             Raw = CloneRawMetadata(source.Raw),
-            SessionState = source.SessionState is null ? null : new LensPulseSessionStatePayload
+            SessionState = source.SessionState is null ? null : new LensProviderSessionStatePayload
             {
                 State = source.SessionState.State,
                 StateLabel = source.SessionState.StateLabel,
                 Reason = source.SessionState.Reason
             },
-            ThreadState = source.ThreadState is null ? null : new LensPulseThreadStatePayload
+            ThreadState = source.ThreadState is null ? null : new LensProviderThreadStatePayload
             {
                 State = source.ThreadState.State,
                 StateLabel = source.ThreadState.StateLabel,
                 ProviderThreadId = source.ThreadState.ProviderThreadId
             },
-            TurnStarted = source.TurnStarted is null ? null : new LensPulseTurnStartedPayload
+            TurnStarted = source.TurnStarted is null ? null : new LensProviderTurnStartedPayload
             {
                 Model = source.TurnStarted.Model,
                 Effort = source.TurnStarted.Effort
             },
-            TurnCompleted = source.TurnCompleted is null ? null : new LensPulseTurnCompletedPayload
+            TurnCompleted = source.TurnCompleted is null ? null : new LensProviderTurnCompletedPayload
             {
                 State = source.TurnCompleted.State,
                 StateLabel = source.TurnCompleted.StateLabel,
                 StopReason = source.TurnCompleted.StopReason,
                 ErrorMessage = CompactTextMiddle(source.TurnCompleted.ErrorMessage, MaxRuntimeDetailChars)
             },
-            ContentDelta = source.ContentDelta is null ? null : new LensPulseContentDeltaPayload
+            ContentDelta = source.ContentDelta is null ? null : new LensProviderContentDeltaPayload
             {
                 StreamKind = source.ContentDelta.StreamKind,
                 Delta = CompactContentDelta(source.ContentDelta.StreamKind, source.ContentDelta.Delta)
             },
-            PlanDelta = source.PlanDelta is null ? null : new LensPulsePlanDeltaPayload
+            PlanDelta = source.PlanDelta is null ? null : new LensProviderPlanDeltaPayload
             {
                 Delta = CompactTextMiddle(source.PlanDelta.Delta, MaxPlanDeltaChars) ?? string.Empty
             },
-            PlanCompleted = source.PlanCompleted is null ? null : new LensPulsePlanCompletedPayload
+            PlanCompleted = source.PlanCompleted is null ? null : new LensProviderPlanCompletedPayload
             {
                 PlanMarkdown = CompactTextMiddle(source.PlanCompleted.PlanMarkdown, MaxPlanMarkdownChars) ?? string.Empty
             },
-            DiffUpdated = source.DiffUpdated is null ? null : new LensPulseDiffUpdatedPayload
+            DiffUpdated = source.DiffUpdated is null ? null : new LensProviderDiffUpdatedPayload
             {
                 UnifiedDiff = CompactTextMiddle(source.DiffUpdated.UnifiedDiff, MaxDiffChars) ?? string.Empty
             },
-            Item = source.Item is null ? null : new LensPulseItemPayload
+            Item = source.Item is null ? null : new LensProviderItemPayload
             {
                 ItemType = source.Item.ItemType,
                 Status = source.Item.Status,
@@ -81,33 +81,33 @@ public static class LensEventCompaction
                 Detail = CompactItemDetail(source.Item.ItemType, source.Item.Detail),
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
-            QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensPulseQuickSettingsPayload
+            QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensQuickSettingsPayload
             {
                 Model = source.QuickSettingsUpdated.Model,
                 Effort = source.QuickSettingsUpdated.Effort,
                 PlanMode = LensQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
                 PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode)
             },
-            RequestOpened = source.RequestOpened is null ? null : new LensPulseRequestOpenedPayload
+            RequestOpened = source.RequestOpened is null ? null : new LensProviderRequestOpenedPayload
             {
                 RequestType = source.RequestOpened.RequestType,
                 RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
                 Detail = CompactTextMiddle(source.RequestOpened.Detail, MaxRequestDetailChars)
             },
-            RequestResolved = source.RequestResolved is null ? null : new LensPulseRequestResolvedPayload
+            RequestResolved = source.RequestResolved is null ? null : new LensProviderRequestResolvedPayload
             {
                 RequestType = source.RequestResolved.RequestType,
                 Decision = source.RequestResolved.Decision
             },
-            UserInputRequested = source.UserInputRequested is null ? null : new LensPulseUserInputRequestedPayload
+            UserInputRequested = source.UserInputRequested is null ? null : new LensProviderUserInputRequestedPayload
             {
                 Questions = source.UserInputRequested.Questions.Select(CloneQuestion).ToList()
             },
-            UserInputResolved = source.UserInputResolved is null ? null : new LensPulseUserInputResolvedPayload
+            UserInputResolved = source.UserInputResolved is null ? null : new LensProviderUserInputResolvedPayload
             {
                 Answers = source.UserInputResolved.Answers.Select(CloneAnsweredQuestion).ToList()
             },
-            RuntimeMessage = source.RuntimeMessage is null ? null : new LensPulseRuntimeMessagePayload
+            RuntimeMessage = source.RuntimeMessage is null ? null : new LensProviderRuntimeMessagePayload
             {
                 Message = source.RuntimeMessage.Message,
                 Detail = CompactTextMiddle(source.RuntimeMessage.Detail, MaxRuntimeDetailChars)
@@ -131,19 +131,17 @@ public static class LensEventCompaction
         };
     }
 
-    private static LensPulseEventRaw? CloneRawMetadata(LensPulseEventRaw? source)
+    private static LensProviderEventRaw? CloneRawMetadata(LensProviderEventRaw? source)
     {
         if (source is null)
         {
             return null;
         }
 
-        var raw = new LensPulseEventRaw
+        var raw = new LensProviderEventRaw
         {
             Source = source.Source,
             Method = source.Method,
-            // PayloadJson is intentionally not retained. Lens keeps canonical reduced history,
-            // not hidden raw provider bodies.
             PayloadJson = null
         };
 
@@ -202,15 +200,15 @@ public static class LensEventCompaction
         }).ToList();
     }
 
-    private static LensPulseQuestion CloneQuestion(LensPulseQuestion source)
+    private static LensQuestion CloneQuestion(LensQuestion source)
     {
-        return new LensPulseQuestion
+        return new LensQuestion
         {
             Id = source.Id,
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
-            Options = source.Options.Select(static option => new LensPulseQuestionOption
+            Options = source.Options.Select(static option => new LensQuestionOption
             {
                 Label = option.Label,
                 Description = option.Description
@@ -218,9 +216,9 @@ public static class LensEventCompaction
         };
     }
 
-    private static LensPulseAnsweredQuestion CloneAnsweredQuestion(LensPulseAnsweredQuestion source)
+    private static LensAnsweredQuestion CloneAnsweredQuestion(LensAnsweredQuestion source)
     {
-        return new LensPulseAnsweredQuestion
+        return new LensAnsweredQuestion
         {
             QuestionId = source.QuestionId,
             Answers = [.. source.Answers]

@@ -46,7 +46,7 @@ import {
 } from './lensAttachments';
 import { submitLensComposerDraft } from './lensAttachmentSubmission';
 import { prepareSmartInputOutboundPrompt } from './smartInputOutboundReferences';
-import { startTranscription, stopTranscription } from './transcription';
+import { startHistoryion, stopHistoryion } from './transcription';
 import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
 import { openLensDraftAttachment } from './attachmentDraftOpen';
@@ -1997,7 +1997,7 @@ function beginRecording(pinOnUse: boolean = false): void {
   });
 
   const ta = activeTextarea;
-  startTranscription(
+  startHistoryion(
     (delta) => {
       const sessionId = $activeSessionId.get();
       if (ta && sessionId && !autoSendEnabled) {
@@ -2039,7 +2039,7 @@ function endRecording(): void {
   if (sessionIdToPin) {
     pinToolForSession(sessionIdToPin, 'mic');
   }
-  void stopTranscription();
+  void stopHistoryion();
 }
 
 function syncVoiceInputAvailability(): void {

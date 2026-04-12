@@ -6,14 +6,14 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public sealed class SessionLensPulseServiceTests
+public sealed class SessionLensHistoryServiceTests
 {
     [Fact]
     public void GetSnapshot_ReducesCanonicalLensEventsIntoRenderState()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e1",
             SessionId = "s1",
@@ -21,14 +21,14 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:00Z"),
             Type = "session.started",
-            SessionState = new LensPulseSessionStatePayload
+            SessionState = new LensProviderSessionStatePayload
             {
                 State = "starting",
                 StateLabel = "Starting",
                 Reason = "Booting"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e2",
             SessionId = "s1",
@@ -37,13 +37,13 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:01Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload
+            TurnStarted = new LensProviderTurnStartedPayload
             {
                 Model = "gpt-5.3-codex",
                 Effort = "medium"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e3",
             SessionId = "s1",
@@ -53,7 +53,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "local-user:turn-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:01.5000000Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "user_message",
                 Status = "completed",
@@ -71,7 +71,7 @@ public sealed class SessionLensPulseServiceTests
                 ]
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e4",
             SessionId = "s1",
@@ -80,13 +80,13 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "item-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "hello"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e5",
             SessionId = "s1",
@@ -95,21 +95,21 @@ public sealed class SessionLensPulseServiceTests
             RequestId = "req-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "user-input.requested",
-            UserInputRequested = new LensPulseUserInputRequestedPayload
+            UserInputRequested = new LensProviderUserInputRequestedPayload
             {
                 Questions =
                 [
-                    new LensPulseQuestion
+                    new LensQuestion
                     {
                         Id = "q1",
                         Header = "Mode",
                         Question = "Pick mode",
-                        Options = [new LensPulseQuestionOption { Label = "A", Description = "alpha" }]
+                        Options = [new LensQuestionOption { Label = "A", Description = "alpha" }]
                     }
                 ]
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e6",
             SessionId = "s1",
@@ -118,13 +118,13 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "item-2",
             CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "reasoning_text",
                 Delta = "thinking"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e7",
             SessionId = "s1",
@@ -133,13 +133,13 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "item-3",
             CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = "npm test"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e8",
             SessionId = "s1",
@@ -148,14 +148,14 @@ public sealed class SessionLensPulseServiceTests
             RequestId = "approval-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:03Z"),
             Type = "request.opened",
-            RequestOpened = new LensPulseRequestOpenedPayload
+            RequestOpened = new LensProviderRequestOpenedPayload
             {
                 RequestType = "command_execution_approval",
                 RequestTypeLabel = "Command approval",
                 Detail = "npm test"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e9",
             SessionId = "s1",
@@ -164,13 +164,13 @@ public sealed class SessionLensPulseServiceTests
             RequestId = "approval-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:04Z"),
             Type = "request.resolved",
-            RequestResolved = new LensPulseRequestResolvedPayload
+            RequestResolved = new LensProviderRequestResolvedPayload
             {
                 RequestType = "command_execution_approval",
                 Decision = "accept"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e10",
             SessionId = "s1",
@@ -178,7 +178,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             CreatedAt = ParseUtc("2026-03-20T14:00:05Z"),
             Type = "diff.updated",
-            DiffUpdated = new LensPulseDiffUpdatedPayload
+            DiffUpdated = new LensProviderDiffUpdatedPayload
             {
                 UnifiedDiff = "--- a\n+++ b"
             }
@@ -201,16 +201,16 @@ public sealed class SessionLensPulseServiceTests
                     item.Attachments.Count == 1 &&
                     item.Attachments[0].DisplayName == "screenshot.png");
         Assert.Equal(2, snapshot.Requests.Count);
-        Assert.Contains(snapshot.Requests, request => request.Kind == "tool_user_input" && request.Questions.Count == 1);
+        Assert.Contains(snapshot.Requests, request => request.Kind == "interview" && request.Questions.Count == 1);
         Assert.Contains(snapshot.Requests, request => request.Kind == "command_execution_approval" && request.Decision == "accept");
     }
 
     [Fact]
     public void GetEvents_FiltersBySequence()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e1",
             SessionId = "s1",
@@ -219,7 +219,7 @@ public sealed class SessionLensPulseServiceTests
             CreatedAt = DateTimeOffset.UtcNow,
             Type = "session.started"
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e2",
             SessionId = "s1",
@@ -229,8 +229,8 @@ public sealed class SessionLensPulseServiceTests
             Type = "session.ready"
         });
 
-        var all = service.GetEvents("s1");
-        var afterFirst = service.GetEvents("s1", 1);
+        var all = service.GetProviderEvents("s1");
+        var afterFirst = service.GetProviderEvents("s1", 1);
 
         Assert.Equal(2, all.LatestSequence);
         Assert.Equal(2, all.Events.Count);
@@ -241,11 +241,11 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshotWindow_ReturnsTailWindowMetadata()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
         for (var i = 0; i < 12; i += 1)
         {
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = string.Create(CultureInfo.InvariantCulture, $"e{i}"),
                 SessionId = "s-window",
@@ -254,7 +254,7 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = string.Create(CultureInfo.InvariantCulture, $"item-{i}"),
                 CreatedAt = ParseUtc("2026-03-20T14:00:00Z").AddSeconds(i),
                 Type = "item.completed",
-                Item = new LensPulseItemPayload
+                Item = new LensProviderItemPayload
                 {
                     ItemType = i % 2 == 0 ? "user_message" : "assistant_message",
                     Status = "completed",
@@ -267,26 +267,23 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshotWindow("s-window", count: 5);
 
         Assert.NotNull(snapshot);
-        Assert.Equal(12, snapshot!.TotalHistoryCount);
+        Assert.Equal(12, snapshot!.HistoryCount);
         Assert.Equal(7, snapshot.HistoryWindowStart);
         Assert.Equal(12, snapshot.HistoryWindowEnd);
         Assert.True(snapshot.HasOlderHistory);
         Assert.False(snapshot.HasNewerHistory);
-        Assert.True(snapshot.EstimatedTotalHistoryHeightPx > 0);
-        Assert.True(snapshot.EstimatedHistoryBeforeWindowPx > 0);
-        Assert.Equal(0, snapshot.EstimatedHistoryAfterWindowPx);
-        Assert.Equal(5, snapshot.Transcript.Count);
-        Assert.All(snapshot.Transcript, entry => Assert.True(entry.EstimatedHeightPx > 0));
-        Assert.Equal("entry-7", snapshot.Transcript[0].Body);
-        Assert.Equal("entry-11", snapshot.Transcript[^1].Body);
+        Assert.Equal(5, snapshot.History.Count);
+        Assert.All(snapshot.History, entry => Assert.True(entry.EstimatedHeightPx > 0));
+        Assert.Equal("entry-7", snapshot.History[0].Body);
+        Assert.Equal("entry-11", snapshot.History[^1].Body);
     }
 
     [Fact]
     public void GetEvents_DropsRawPayloadBodiesDuringRetention()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "raw-1",
             SessionId = "s-raw",
@@ -294,7 +291,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-raw",
             CreatedAt = ParseUtc("2026-04-07T08:00:00Z"),
             Type = "session.started",
-            Raw = new LensPulseEventRaw
+            Raw = new LensProviderEventRaw
             {
                 Source = "codex",
                 Method = "session.started",
@@ -302,7 +299,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        var retained = Assert.Single(service.GetEvents("s-raw").Events);
+        var retained = Assert.Single(service.GetProviderEvents("s-raw").Events);
 
         Assert.NotNull(retained.Raw);
         Assert.Equal("codex", retained.Raw!.Source);
@@ -313,9 +310,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_TracksQuickSettingsUpdates()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "settings-1",
             SessionId = "s-settings",
@@ -323,7 +320,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-settings",
             CreatedAt = ParseUtc("2026-03-30T08:00:00Z"),
             Type = "quick-settings.updated",
-            QuickSettingsUpdated = new LensPulseQuickSettingsPayload
+            QuickSettingsUpdated = new LensQuickSettingsPayload
             {
                 Model = "gpt-5.4",
                 Effort = "high",
@@ -331,7 +328,7 @@ public sealed class SessionLensPulseServiceTests
                 PermissionMode = "auto"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-settings-1",
             SessionId = "s-settings",
@@ -340,7 +337,7 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-30T08:00:01Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload
+            TurnStarted = new LensProviderTurnStartedPayload
             {
                 Model = "gpt-5.4",
                 Effort = "high"
@@ -348,7 +345,7 @@ public sealed class SessionLensPulseServiceTests
         });
 
         var snapshot = service.GetSnapshot("s-settings");
-        var events = service.GetEvents("s-settings");
+        var events = service.GetProviderEvents("s-settings");
 
         Assert.NotNull(snapshot);
         Assert.Equal("gpt-5.4", snapshot!.QuickSettings.Model);
@@ -366,9 +363,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_ResetsStreamingBuffersWhenANewTurnStarts()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "t1-start",
             SessionId = "s1",
@@ -377,9 +374,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-22T01:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "t1-delta",
             SessionId = "s1",
@@ -388,13 +385,13 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-22T01:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "first turn"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "t1-complete",
             SessionId = "s1",
@@ -403,13 +400,13 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-22T01:00:02Z"),
             Type = "turn.completed",
-            TurnCompleted = new LensPulseTurnCompletedPayload
+            TurnCompleted = new LensProviderTurnCompletedPayload
             {
                 State = "completed",
                 StateLabel = "Completed"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "t2-start",
             SessionId = "s1",
@@ -418,9 +415,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-03-22T01:00:03Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "t2-delta",
             SessionId = "s1",
@@ -429,7 +426,7 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-03-22T01:00:04Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "second turn"
@@ -446,9 +443,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_ReconcilesProviderUserMessageWithSubmittedLocalUserTurn()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "local-user",
             SessionId = "s1",
@@ -458,7 +455,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "local-user:turn-1",
             CreatedAt = ParseUtc("2026-03-22T02:00:00Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "user_message",
                 Status = "completed",
@@ -466,7 +463,7 @@ public sealed class SessionLensPulseServiceTests
                 Detail = "which working dir are you in"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "provider-user",
             SessionId = "s1",
@@ -476,7 +473,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "provider-item-1",
             CreatedAt = ParseUtc("2026-03-22T02:00:01Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "usermessage",
                 Status = "in_progress",
@@ -499,9 +496,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_PreservesEarlierTurnsWhenALaterTurnCompletes()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-start",
             SessionId = "s1",
@@ -510,9 +507,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-27T10:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-user",
             SessionId = "s1",
@@ -522,14 +519,14 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "local-user:turn-1",
             CreatedAt = ParseUtc("2026-03-27T10:00:01Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "user_message",
                 Status = "completed",
                 Detail = "first question"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-assistant",
             SessionId = "s1",
@@ -538,13 +535,13 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-27T10:00:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "first answer"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-complete",
             SessionId = "s1",
@@ -553,14 +550,14 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-27T10:00:03Z"),
             Type = "turn.completed",
-            TurnCompleted = new LensPulseTurnCompletedPayload
+            TurnCompleted = new LensProviderTurnCompletedPayload
             {
                 State = "completed",
                 StateLabel = "Completed"
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-start",
             SessionId = "s1",
@@ -569,9 +566,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-03-27T10:01:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-user",
             SessionId = "s1",
@@ -581,14 +578,14 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "local-user:turn-2",
             CreatedAt = ParseUtc("2026-03-27T10:01:01Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "user_message",
                 Status = "completed",
                 Detail = "second question"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-assistant-delta",
             SessionId = "s1",
@@ -597,13 +594,13 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-03-27T10:01:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "second answer"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-assistant-final",
             SessionId = "s1",
@@ -613,14 +610,14 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "assistant-item-2",
             CreatedAt = ParseUtc("2026-03-27T10:01:03Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "assistant_message",
                 Status = "completed",
                 Detail = "second answer final"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-complete",
             SessionId = "s1",
@@ -629,7 +626,7 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-03-27T10:01:04Z"),
             Type = "turn.completed",
-            TurnCompleted = new LensPulseTurnCompletedPayload
+            TurnCompleted = new LensProviderTurnCompletedPayload
             {
                 State = "completed",
                 StateLabel = "Completed"
@@ -639,7 +636,7 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s1");
 
         Assert.NotNull(snapshot);
-        var transcript = snapshot!.Transcript;
+        var transcript = snapshot!.History;
         Assert.Equal(4, transcript.Count);
         Assert.Collection(
             transcript,
@@ -675,9 +672,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_PromotesLateUserRowsToTheStartOfTheirTurn()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-start",
             SessionId = "s-order",
@@ -686,9 +683,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-06T10:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-assistant",
             SessionId = "s-order",
@@ -697,14 +694,14 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-06T10:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "first answer"
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-start",
             SessionId = "s-order",
@@ -713,9 +710,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-04-06T10:01:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-user",
             SessionId = "s-order",
@@ -725,14 +722,14 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "local-user:turn-2",
             CreatedAt = ParseUtc("2026-04-06T10:01:01Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "user_message",
                 Status = "completed",
                 Detail = "second question"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-2-assistant",
             SessionId = "s-order",
@@ -741,14 +738,14 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-2",
             CreatedAt = ParseUtc("2026-04-06T10:01:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "second answer"
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-1-user-late",
             SessionId = "s-order",
@@ -758,7 +755,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "provider-user-1",
             CreatedAt = ParseUtc("2026-04-06T10:01:03Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "user_message",
                 Status = "completed",
@@ -770,7 +767,7 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.NotNull(snapshot);
         Assert.Collection(
-            snapshot!.Transcript,
+            snapshot!.History,
             entry =>
             {
                 Assert.Equal("user", entry.Kind);
@@ -800,9 +797,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_PreservesAssistantChronologyWhenFinalItemArrivesAfterToolWork()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-start",
             SessionId = "s1",
@@ -811,9 +808,9 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-27T11:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "assistant-delta-1",
             SessionId = "s1",
@@ -822,13 +819,13 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-27T11:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "I will inspect the directory first."
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "tool-start",
             SessionId = "s1",
@@ -838,7 +835,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "tool-1",
             CreatedAt = ParseUtc("2026-03-27T11:00:02Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command",
                 Status = "in_progress",
@@ -846,7 +843,7 @@ public sealed class SessionLensPulseServiceTests
                 Detail = "Get-ChildItem"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "assistant-final",
             SessionId = "s1",
@@ -856,7 +853,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "assistant-item-1",
             CreatedAt = ParseUtc("2026-03-27T11:00:03Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "assistant_message",
                 Status = "completed",
@@ -867,10 +864,10 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s1");
 
         Assert.NotNull(snapshot);
-        var assistantEntries = snapshot!.Transcript.Where(entry => entry.Kind == "assistant").ToList();
+        var assistantEntries = snapshot!.History.Where(entry => entry.Kind == "assistant").ToList();
         Assert.Single(assistantEntries);
         Assert.Collection(
-            snapshot.Transcript.Where(entry => entry.Kind is "assistant" or "tool"),
+            snapshot.History.Where(entry => entry.Kind is "assistant" or "tool"),
             entry =>
             {
                 Assert.Equal("assistant", entry.Kind);
@@ -887,11 +884,11 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
-    public void GetSnapshot_MergesToolLifecycleIntoSingleTranscriptRow()
+    public void GetSnapshot_MergesToolLifecycleIntoSingleHistoryRow()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "tool-start",
             SessionId = "s1",
@@ -901,7 +898,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "tool-1",
             CreatedAt = ParseUtc("2026-03-27T12:00:00Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command",
                 Status = "in_progress",
@@ -909,7 +906,7 @@ public sealed class SessionLensPulseServiceTests
                 Detail = "npm test"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "tool-output",
             SessionId = "s1",
@@ -919,13 +916,13 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "tool-1",
             CreatedAt = ParseUtc("2026-03-27T12:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = "All green"
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "tool-complete",
             SessionId = "s1",
@@ -935,7 +932,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "tool-1",
             CreatedAt = ParseUtc("2026-03-27T12:00:02Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command",
                 Status = "completed",
@@ -947,7 +944,7 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s1");
 
         Assert.NotNull(snapshot);
-        var toolEntries = snapshot!.Transcript.Where(entry => entry.Kind == "tool").ToList();
+        var toolEntries = snapshot!.History.Where(entry => entry.Kind == "tool").ToList();
         var tool = Assert.Single(toolEntries);
         Assert.Equal("tool:tool-1", tool.EntryId);
         Assert.Equal("Run tests", tool.Title);
@@ -959,8 +956,8 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public async Task Subscribe_ReplaysBacklogAndStreamsFutureEvents()
     {
-        var service = new SessionLensPulseService();
-        service.Append(new LensPulseEvent
+        var service = new SessionLensHistoryService();
+        service.Append(new LensProviderEvent
         {
             EventId = "e1",
             SessionId = "s1",
@@ -970,12 +967,12 @@ public sealed class SessionLensPulseServiceTests
             Type = "session.started"
         });
 
-        using var subscription = service.Subscribe("s1", afterSequence: 0);
+        using var subscription = service.SubscribeProviderEvents("s1", afterSequence: 0);
         Assert.True(await subscription.Reader.WaitToReadAsync());
         Assert.True(subscription.Reader.TryRead(out var backlogEvent));
         Assert.Equal("e1", backlogEvent!.EventId);
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e2",
             SessionId = "s1",
@@ -994,11 +991,11 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public async Task SubscribeDeltas_StreamsCanonicalAssistantUpdates()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        using var subscription = service.SubscribeDeltas("s-delta");
+        using var subscription = service.SubscribeHistoryPatches("s-delta");
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-start",
             SessionId = "s-delta",
@@ -1007,7 +1004,7 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-28T10:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload
+            TurnStarted = new LensProviderTurnStartedPayload
             {
                 Model = "gpt-5.4",
                 Effort = "high"
@@ -1017,7 +1014,7 @@ public sealed class SessionLensPulseServiceTests
         Assert.True(await subscription.Reader.WaitToReadAsync());
         Assert.True(subscription.Reader.TryRead(out _));
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "assistant-delta",
             SessionId = "s-delta",
@@ -1027,7 +1024,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "assistant-1",
             CreatedAt = ParseUtc("2026-03-28T10:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "assistant_text",
                 Delta = "Hello"
@@ -1041,7 +1038,7 @@ public sealed class SessionLensPulseServiceTests
         Assert.Equal(2, delta.LatestSequence);
         Assert.Equal("running", delta.CurrentTurn.State);
         Assert.Equal("Hello", delta.Streams.AssistantText);
-        Assert.Equal(1, delta.TotalHistoryCount);
+        Assert.Equal(1, delta.HistoryCount);
         var historyEntry = Assert.Single(delta.HistoryUpserts);
         Assert.Equal("assistant:assistant-1", historyEntry.EntryId);
         Assert.Equal("assistant", historyEntry.Kind);
@@ -1052,9 +1049,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_SummarizesCommandAndFileReadOutputForScreenUse()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-start",
             SessionId = "s-screen",
@@ -1063,10 +1060,10 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-03-29T09:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-start",
             SessionId = "s-screen",
@@ -1076,7 +1073,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-03-29T09:00:01Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "in_progress",
@@ -1085,7 +1082,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-out",
             SessionId = "s-screen",
@@ -1095,7 +1092,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-03-29T09:00:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = string.Join(
@@ -1106,7 +1103,7 @@ public sealed class SessionLensPulseServiceTests
 
         var snapshot = service.GetSnapshot("s-screen");
         Assert.NotNull(snapshot);
-        var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
+        var toolEntry = Assert.Single(snapshot!.History, entry => entry.Kind == "tool");
         Assert.Equal("Read file", toolEntry.Title);
         Assert.Equal("command_output", toolEntry.ItemType);
         Assert.Contains(".midterm/AGENTS.md", toolEntry.Body, StringComparison.Ordinal);
@@ -1120,9 +1117,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_PreservesCommandTextWhenCommandOutputTailOmitsEarlierContent()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-start",
             SessionId = "s-command-tail",
@@ -1132,7 +1129,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-08T18:00:00Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "in_progress",
@@ -1141,7 +1138,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-out",
             SessionId = "s-command-tail",
@@ -1151,7 +1148,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-08T18:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = string.Join(
@@ -1163,7 +1160,7 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s-command-tail");
 
         Assert.NotNull(snapshot);
-        var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
+        var toolEntry = Assert.Single(snapshot!.History, entry => entry.Kind == "tool");
         Assert.Equal("command_output", toolEntry.ItemType);
         Assert.Equal("codex -m gpt-5.4", toolEntry.CommandText);
         Assert.Contains('\n', toolEntry.Body);
@@ -1173,9 +1170,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_KeepsSeparateCommandOutputHistoryPerCommandWhenStreamsLackItemIds()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-start",
             SessionId = "s-multi-command",
@@ -1184,10 +1181,10 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-05T00:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-1-start",
             SessionId = "s-multi-command",
@@ -1197,7 +1194,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-05T00:00:01Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "in_progress",
@@ -1206,7 +1203,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-1-out",
             SessionId = "s-multi-command",
@@ -1215,14 +1212,14 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-05T00:00:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = "v9.0.15-dev"
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-2-start",
             SessionId = "s-multi-command",
@@ -1232,7 +1229,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-2",
             CreatedAt = ParseUtc("2026-04-05T00:00:03Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "in_progress",
@@ -1241,7 +1238,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-2-out",
             SessionId = "s-multi-command",
@@ -1250,7 +1247,7 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-05T00:00:04Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = "commit f1b5a5d5"
@@ -1260,7 +1257,7 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s-multi-command");
         Assert.NotNull(snapshot);
 
-        var toolEntries = snapshot!.Transcript
+        var toolEntries = snapshot!.History
             .Where(entry => entry.Kind == "tool")
             .OrderBy(entry => entry.Order)
             .ToList();
@@ -1277,9 +1274,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_KeepsCommandOutputTailAfterCommandExecutionCompletesAndLaterCommandsStart()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-start",
             SessionId = "s-command-tail",
@@ -1288,10 +1285,10 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-06T09:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-1-start",
             SessionId = "s-command-tail",
@@ -1301,7 +1298,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-06T09:00:01Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "in_progress",
@@ -1310,7 +1307,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-1-out",
             SessionId = "s-command-tail",
@@ -1320,14 +1317,14 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-06T09:00:02Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = "v9.0.16-dev"
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-1-complete",
             SessionId = "s-command-tail",
@@ -1337,7 +1334,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-06T09:00:03Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "completed",
@@ -1346,7 +1343,7 @@ public sealed class SessionLensPulseServiceTests
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-2-start",
             SessionId = "s-command-tail",
@@ -1356,7 +1353,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-2",
             CreatedAt = ParseUtc("2026-04-06T09:00:04Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "in_progress",
@@ -1368,7 +1365,7 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s-command-tail");
         Assert.NotNull(snapshot);
 
-        var toolEntries = snapshot!.Transcript
+        var toolEntries = snapshot!.History
             .Where(entry => entry.Kind == "tool")
             .OrderBy(entry => entry.Order)
             .ToList();
@@ -1386,9 +1383,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_AdoptsProvisionalCommandOutputEntryWhenCompletionArrivesAfterOutput()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "turn-start",
             SessionId = "s-command-adopt",
@@ -1397,10 +1394,10 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-06T10:00:00Z"),
             Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload()
+            TurnStarted = new LensProviderTurnStartedPayload()
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-out",
             SessionId = "s-command-adopt",
@@ -1409,14 +1406,14 @@ public sealed class SessionLensPulseServiceTests
             TurnId = "turn-1",
             CreatedAt = ParseUtc("2026-04-06T10:00:01Z"),
             Type = "content.delta",
-            ContentDelta = new LensPulseContentDeltaPayload
+            ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = "command_output",
                 Delta = "## dev...origin/dev"
             }
         });
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "cmd-complete",
             SessionId = "s-command-adopt",
@@ -1426,7 +1423,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "cmd-1",
             CreatedAt = ParseUtc("2026-04-06T10:00:02Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "command_execution",
                 Status = "completed",
@@ -1438,13 +1435,13 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s-command-adopt");
         Assert.NotNull(snapshot);
 
-        var toolEntry = Assert.Single(snapshot!.Transcript, entry => entry.Kind == "tool");
+        var toolEntry = Assert.Single(snapshot!.History, entry => entry.Kind == "tool");
         Assert.Equal("tool:cmd-1", toolEntry.EntryId);
         Assert.Equal("cmd-1", toolEntry.ItemId);
         Assert.Equal("command_output", toolEntry.ItemType);
         Assert.Contains("git status --short --branch", toolEntry.Body, StringComparison.Ordinal);
         Assert.Contains("## dev...origin/dev", toolEntry.Body, StringComparison.Ordinal);
-        Assert.DoesNotContain("tool:command_output", snapshot.Transcript.Select(entry => entry.EntryId));
+        Assert.DoesNotContain("tool:command_output", snapshot.History.Select(entry => entry.EntryId));
     }
 
     [Fact]
@@ -1457,12 +1454,12 @@ public sealed class SessionLensPulseServiceTests
 
         try
         {
-            var service = new SessionLensPulseService(
+            var service = new SessionLensHistoryService(
                 storeDirectory: storeDirectory,
                 enableScreenLogging: true,
                 screenLogDirectory: screenLogDirectory);
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "turn-start",
                 SessionId = "s-log",
@@ -1471,14 +1468,14 @@ public sealed class SessionLensPulseServiceTests
                 TurnId = "turn-1",
                 CreatedAt = ParseUtc("2026-03-28T11:00:00Z"),
                 Type = "turn.started",
-                TurnStarted = new LensPulseTurnStartedPayload
+                TurnStarted = new LensProviderTurnStartedPayload
                 {
                     Model = "gpt-5.4",
                     Effort = "high"
                 }
             });
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "tool-output",
                 SessionId = "s-log",
@@ -1488,7 +1485,7 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = "tool-1",
                 CreatedAt = ParseUtc("2026-03-28T11:00:01Z"),
                 Type = "item.completed",
-                Item = new LensPulseItemPayload
+                Item = new LensProviderItemPayload
                 {
                     ItemType = "command_output",
                     Status = "completed",
@@ -1547,9 +1544,9 @@ public sealed class SessionLensPulseServiceTests
 
         try
         {
-            var service = new SessionLensPulseService(storeDirectory: storeDirectory);
+            var service = new SessionLensHistoryService(storeDirectory: storeDirectory);
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "persist-session",
                 SessionId = "s-persist",
@@ -1557,14 +1554,14 @@ public sealed class SessionLensPulseServiceTests
                 ThreadId = "thread-persist",
                 CreatedAt = ParseUtc("2026-04-07T08:10:00Z"),
                 Type = "session.started",
-                SessionState = new LensPulseSessionStatePayload
+                SessionState = new LensProviderSessionStatePayload
                 {
                     State = "starting",
                     StateLabel = "Starting",
                     Reason = "Booting"
                 }
             });
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "persist-user",
                 SessionId = "s-persist",
@@ -1574,7 +1571,7 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = "user:turn-persist",
                 CreatedAt = ParseUtc("2026-04-07T08:10:01Z"),
                 Type = "item.completed",
-                Item = new LensPulseItemPayload
+                Item = new LensProviderItemPayload
                 {
                     ItemType = "user_message",
                     Status = "completed",
@@ -1588,14 +1585,14 @@ public sealed class SessionLensPulseServiceTests
                 WaitForCondition(() => File.Exists(storePath) && new FileInfo(storePath).Length > 0),
                 "Expected canonical Lens state store to be written.");
 
-            var reloaded = new SessionLensPulseService(storeDirectory: storeDirectory);
+            var reloaded = new SessionLensHistoryService(storeDirectory: storeDirectory);
             var snapshot = reloaded.GetSnapshot("s-persist");
-            var events = reloaded.GetEvents("s-persist");
+            var events = reloaded.GetProviderEvents("s-persist");
 
             Assert.NotNull(snapshot);
             Assert.Equal(2, snapshot!.LatestSequence);
             Assert.Contains(
-                snapshot.Transcript,
+                snapshot.History,
                 entry => entry.Kind == "user" &&
                          entry.Body.Contains("Persist this canonical Lens history.", StringComparison.Ordinal));
             Assert.Equal(2, events.LatestSequence);
@@ -1622,12 +1619,12 @@ public sealed class SessionLensPulseServiceTests
 
         try
         {
-            var service = new SessionLensPulseService(
+            var service = new SessionLensHistoryService(
                 storeDirectory: storeDirectory,
                 enableScreenLogging: true,
                 screenLogDirectory: screenLogDirectory);
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "diff-updated",
                 SessionId = "s-diff-log",
@@ -1636,7 +1633,7 @@ public sealed class SessionLensPulseServiceTests
                 TurnId = "turn-1",
                 CreatedAt = ParseUtc("2026-04-01T00:43:33Z"),
                 Type = "diff.updated",
-                DiffUpdated = new LensPulseDiffUpdatedPayload
+                DiffUpdated = new LensProviderDiffUpdatedPayload
                 {
                     UnifiedDiff = string.Join(
                         '\n',
@@ -1693,12 +1690,12 @@ public sealed class SessionLensPulseServiceTests
 
         try
         {
-            var service = new SessionLensPulseService(
+            var service = new SessionLensHistoryService(
                 storeDirectory: storeDirectory,
                 enableScreenLogging: true,
                 screenLogDirectory: screenLogDirectory);
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "cmd-start",
                 SessionId = "s-huge",
@@ -1708,7 +1705,7 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = "cmd-1",
                 CreatedAt = ParseUtc("2026-03-29T11:00:00Z"),
                 Type = "item.started",
-                Item = new LensPulseItemPayload
+                Item = new LensProviderItemPayload
                 {
                     ItemType = "command_execution",
                     Status = "in_progress",
@@ -1718,7 +1715,7 @@ public sealed class SessionLensPulseServiceTests
             });
 
             var giantLine = new string('x', 120_000);
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "cmd-output",
                 SessionId = "s-huge",
@@ -1728,14 +1725,14 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = "cmd-1",
                 CreatedAt = ParseUtc("2026-03-29T11:00:01Z"),
                 Type = "content.delta",
-                ContentDelta = new LensPulseContentDeltaPayload
+                ContentDelta = new LensProviderContentDeltaPayload
                 {
                     StreamKind = "command_output",
                     Delta = giantLine
                 }
             });
 
-            var events = service.GetEvents("s-huge");
+            var events = service.GetProviderEvents("s-huge");
             var retainedOutputEvent = Assert.Single(events.Events, evt => evt.ContentDelta?.StreamKind == "command_output");
             Assert.True(retainedOutputEvent.ContentDelta!.Delta.Length < 4_000);
 
@@ -1743,7 +1740,7 @@ public sealed class SessionLensPulseServiceTests
             Assert.NotNull(snapshot);
             Assert.True(snapshot!.Streams.CommandOutput.Length < 20_000);
 
-            var toolEntry = Assert.Single(snapshot.Transcript, entry => entry.Kind == "tool");
+            var toolEntry = Assert.Single(snapshot.History, entry => entry.Kind == "tool");
             Assert.True(toolEntry.Body.Length <= 4_096);
             Assert.Contains("Read file", toolEntry.Title, StringComparison.Ordinal);
             Assert.Contains("output truncated", toolEntry.Body, StringComparison.OrdinalIgnoreCase);
@@ -1767,11 +1764,11 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
-    public void GetSnapshot_ProjectsInformationalRuntimeNoticesIntoTranscriptHistory()
+    public void GetSnapshot_ProjectsInformationalRuntimeNoticesIntoHistoryHistory()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e-runtime-info",
             SessionId = "s-runtime-info",
@@ -1779,7 +1776,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             CreatedAt = ParseUtc("2026-04-04T10:00:00Z"),
             Type = "model.rerouted",
-            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = "Codex rerouted the model from gpt-5.4 to gpt-5.4-mini.",
                 Detail = "Service tier fallback"
@@ -1792,7 +1789,7 @@ public sealed class SessionLensPulseServiceTests
         var notice = Assert.Single(snapshot!.Notices);
         Assert.Equal("model.rerouted", notice.Type);
 
-        var transcriptEntry = Assert.Single(snapshot.Transcript);
+        var transcriptEntry = Assert.Single(snapshot.History);
         Assert.Equal("system", transcriptEntry.Kind);
         Assert.Equal("Model rerouted", transcriptEntry.Title);
         Assert.Contains("rerouted the model", transcriptEntry.Body, StringComparison.Ordinal);
@@ -1802,9 +1799,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_SanitizesAndDeduplicatesRuntimeNoticeHistoryBody()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e-runtime-sanitize",
             SessionId = "s-runtime-sanitize",
@@ -1812,7 +1809,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             CreatedAt = ParseUtc("2026-04-08T10:05:57Z"),
             Type = "runtime.warning",
-            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = "\u001b[2m2026-04-08T10:05:57.503361Z ERROR codex_core::tools::router: error=apply_patch verification failed\u001b[0m",
                 Detail = "\u001b[2m2026-04-08T10:05:57.503361Z ERROR codex_core::tools::router: error=apply_patch verification failed\u001b[0m"
@@ -1822,7 +1819,7 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s-runtime-sanitize");
 
         Assert.NotNull(snapshot);
-        var transcriptEntry = Assert.Single(snapshot!.Transcript);
+        var transcriptEntry = Assert.Single(snapshot!.History);
         Assert.Equal("system", transcriptEntry.Kind);
         Assert.DoesNotContain('\u001b', transcriptEntry.Body);
         Assert.DoesNotContain("[0m", transcriptEntry.Body, StringComparison.Ordinal);
@@ -1836,11 +1833,11 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
-    public void GetSnapshot_RendersReasoningAndPlanItemsUsingDedicatedTranscriptKinds()
+    public void GetSnapshot_RendersReasoningAndPlanItemsUsingDedicatedHistoryKinds()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "task-start",
             SessionId = "s-task",
@@ -1850,7 +1847,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "task-1",
             CreatedAt = ParseUtc("2026-04-04T10:10:00Z"),
             Type = "item.started",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "reasoning",
                 Status = "in_progress",
@@ -1858,7 +1855,7 @@ public sealed class SessionLensPulseServiceTests
                 Detail = "Inspecting the workspace."
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "task-complete",
             SessionId = "s-task",
@@ -1868,7 +1865,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "task-1",
             CreatedAt = ParseUtc("2026-04-04T10:10:02Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "reasoning",
                 Status = "completed",
@@ -1876,7 +1873,7 @@ public sealed class SessionLensPulseServiceTests
                 Detail = "Workspace inspection complete."
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "plan-item",
             SessionId = "s-task",
@@ -1886,7 +1883,7 @@ public sealed class SessionLensPulseServiceTests
             ItemId = "plan-1",
             CreatedAt = ParseUtc("2026-04-04T10:10:03Z"),
             Type = "item.completed",
-            Item = new LensPulseItemPayload
+            Item = new LensProviderItemPayload
             {
                 ItemType = "plan",
                 Status = "completed",
@@ -1898,14 +1895,14 @@ public sealed class SessionLensPulseServiceTests
         var snapshot = service.GetSnapshot("s-task");
 
         Assert.NotNull(snapshot);
-        Assert.Contains(snapshot!.Transcript, entry => entry.Kind == "reasoning" && entry.ItemId == "task-1");
-        Assert.Contains(snapshot.Transcript, entry => entry.Kind == "plan" && entry.ItemId == "plan-1");
+        Assert.Contains(snapshot!.History, entry => entry.Kind == "reasoning" && entry.ItemId == "task-1");
+        Assert.Contains(snapshot.History, entry => entry.Kind == "plan" && entry.ItemId == "plan-1");
     }
 
     [Fact]
-    public void GetSnapshot_EnrichesTranscriptEntriesWithClickableFileMentionsAndImagePreviews()
+    public void GetSnapshot_EnrichesHistoryEntriesWithClickableFileMentionsAndImagePreviews()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
         var tempRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-inline-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
@@ -1917,7 +1914,7 @@ public sealed class SessionLensPulseServiceTests
             var folderPath = Path.Combine(tempRoot, "docs");
             Directory.CreateDirectory(folderPath);
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "e-inline-file",
                 SessionId = "s-inline-file",
@@ -1927,7 +1924,7 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = "assistant-1",
                 CreatedAt = ParseUtc("2026-04-08T12:00:00Z"),
                 Type = "item.completed",
-                Item = new LensPulseItemPayload
+                Item = new LensProviderItemPayload
                 {
                     ItemType = "assistant_message",
                     Status = "completed",
@@ -1939,7 +1936,7 @@ public sealed class SessionLensPulseServiceTests
             var snapshot = service.GetSnapshot("s-inline-file");
 
             Assert.NotNull(snapshot);
-            var transcriptEntry = Assert.Single(snapshot!.Transcript);
+            var transcriptEntry = Assert.Single(snapshot!.History);
             Assert.Contains(
                 transcriptEntry.FileMentions,
                 mention => mention.Field == "body" &&
@@ -1966,9 +1963,9 @@ public sealed class SessionLensPulseServiceTests
     }
 
     [Fact]
-    public void GetSnapshot_DefersFileMentionEnrichmentForStreamingTranscriptEntriesUntilTheySettle()
+    public void GetSnapshot_DefersFileMentionEnrichmentForStreamingHistoryEntriesUntilTheySettle()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
         var tempRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-inline-streaming-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
@@ -1978,7 +1975,7 @@ public sealed class SessionLensPulseServiceTests
             File.WriteAllText(imagePath, "preview");
             var detail = $"Inspect {imagePath}";
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "turn-start",
                 SessionId = "s-inline-streaming",
@@ -1987,9 +1984,9 @@ public sealed class SessionLensPulseServiceTests
                 TurnId = "turn-1",
                 CreatedAt = ParseUtc("2026-04-09T00:58:12Z"),
                 Type = "turn.started",
-                TurnStarted = new LensPulseTurnStartedPayload()
+                TurnStarted = new LensProviderTurnStartedPayload()
             });
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "assistant-delta",
                 SessionId = "s-inline-streaming",
@@ -1998,7 +1995,7 @@ public sealed class SessionLensPulseServiceTests
                 TurnId = "turn-1",
                 CreatedAt = ParseUtc("2026-04-09T00:58:13Z"),
                 Type = "content.delta",
-                ContentDelta = new LensPulseContentDeltaPayload
+                ContentDelta = new LensProviderContentDeltaPayload
                 {
                     StreamKind = "assistant_text",
                     Delta = detail
@@ -2008,12 +2005,12 @@ public sealed class SessionLensPulseServiceTests
             var streamingSnapshot = service.GetSnapshot("s-inline-streaming");
 
             Assert.NotNull(streamingSnapshot);
-            var streamingEntry = Assert.Single(streamingSnapshot!.Transcript);
+            var streamingEntry = Assert.Single(streamingSnapshot!.History);
             Assert.True(streamingEntry.Streaming);
             Assert.Empty(streamingEntry.FileMentions);
             Assert.Empty(streamingEntry.ImagePreviews);
 
-            service.Append(new LensPulseEvent
+            service.Append(new LensProviderEvent
             {
                 EventId = "assistant-final",
                 SessionId = "s-inline-streaming",
@@ -2023,7 +2020,7 @@ public sealed class SessionLensPulseServiceTests
                 ItemId = "assistant-1",
                 CreatedAt = ParseUtc("2026-04-09T00:58:14Z"),
                 Type = "item.completed",
-                Item = new LensPulseItemPayload
+                Item = new LensProviderItemPayload
                 {
                     ItemType = "assistant_message",
                     Status = "completed",
@@ -2034,7 +2031,7 @@ public sealed class SessionLensPulseServiceTests
             var settledSnapshot = service.GetSnapshot("s-inline-streaming");
 
             Assert.NotNull(settledSnapshot);
-            var settledEntry = Assert.Single(settledSnapshot!.Transcript);
+            var settledEntry = Assert.Single(settledSnapshot!.History);
             Assert.False(settledEntry.Streaming);
             Assert.Contains(
                 settledEntry.FileMentions,
@@ -2056,11 +2053,11 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void HasHistory_TracksWhetherCanonicalLensEventsExist()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
         Assert.False(service.HasHistory("s1"));
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "e1",
             SessionId = "s1",
@@ -2077,9 +2074,9 @@ public sealed class SessionLensPulseServiceTests
     [Fact]
     public void GetSnapshot_PreservesCanonicalAgentStateAndAgentErrorRuntimeItemTypes()
     {
-        var service = new SessionLensPulseService();
+        var service = new SessionLensHistoryService();
 
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "agent-state",
             SessionId = "s-agent-runtime",
@@ -2087,12 +2084,12 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             CreatedAt = ParseUtc("2026-04-09T08:10:00Z"),
             Type = "agent.state",
-            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = "codex_apps starting."
             }
         });
-        service.Append(new LensPulseEvent
+        service.Append(new LensProviderEvent
         {
             EventId = "agent-error",
             SessionId = "s-agent-runtime",
@@ -2100,7 +2097,7 @@ public sealed class SessionLensPulseServiceTests
             ThreadId = "thread-1",
             CreatedAt = ParseUtc("2026-04-09T08:10:01Z"),
             Type = "agent.error",
-            RuntimeMessage = new LensPulseRuntimeMessagePayload
+            RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = "[features].collab is deprecated. Use [features].multi_agent instead."
             }
@@ -2110,7 +2107,7 @@ public sealed class SessionLensPulseServiceTests
 
         Assert.NotNull(snapshot);
         Assert.Collection(
-            snapshot!.Transcript.OrderBy(entry => entry.Order),
+            snapshot!.History.OrderBy(entry => entry.Order),
             entry =>
             {
                 Assert.Equal("system", entry.Kind);
@@ -2144,3 +2141,19 @@ public sealed class SessionLensPulseServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

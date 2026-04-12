@@ -337,7 +337,6 @@ public class Program
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        var lensPulse = app.Services.GetRequiredService<SessionLensPulseService>();
         var lensRuntime = app.Services.GetRequiredService<SessionLensRuntimeService>();
         var codexHandoff = app.Services.GetRequiredService<SessionCodexHandoffService>();
         var providerResumeCatalog = app.Services.GetRequiredService<ProviderResumeCatalogService>();
@@ -353,7 +352,6 @@ public class Program
             sessionTelemetry,
             agentFeed,
             sessionSupervisor,
-            lensPulse,
             lensRuntime,
             codexHandoff,
             providerResumeCatalog,
@@ -366,7 +364,7 @@ public class Program
             sessionManager,
             agentFeed,
             sessionSupervisor,
-            lensPulse,
+            lensRuntime,
             workerSessionRegistry);
         SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
@@ -400,7 +398,7 @@ public class Program
             sessionManager,
             muxManager,
             sessionSupervisor,
-            lensPulse,
+            lensRuntime,
             updateService,
             settingsService,
             authService,

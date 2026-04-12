@@ -1,5 +1,4 @@
 using System.Text;
-using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -108,24 +107,12 @@ public sealed class SessionSupervisorServiceTests
     [Fact]
     public void Describe_ReturnsBusyTurnForRunningLensTurnWithoutTerminalBytes()
     {
-        var lensPulse = new SessionLensPulseService();
-        lensPulse.Append(new LensPulseEvent
-        {
-            EventId = "lens-turn-1",
-            SessionId = "lens1",
-            Provider = "codex",
-            ThreadId = "thread-1",
-            TurnId = "turn-1",
-            CreatedAt = DateTimeOffset.UtcNow.AddSeconds(-30),
-            Type = "turn.started",
-            TurnStarted = new LensPulseTurnStartedPayload
+        var service = CreateService(
+            lensHeatSource: new FakeLensHeatSource(new SessionLensHeatSnapshot
             {
-                Model = "gpt-5.4",
-                Effort = "medium"
-            }
-        });
-
-        var service = CreateService(lensPulse: lensPulse);
+                CurrentHeat = 1,
+                LastActivityAt = DateTimeOffset.UtcNow.AddSeconds(-30)
+            }));
         var session = new SessionInfoDto
         {
             Id = "lens1",
@@ -143,14 +130,21 @@ public sealed class SessionSupervisorServiceTests
 
     private static SessionSupervisorService CreateService(
         SessionTelemetryService? telemetry = null,
-        SessionLensPulseService? lensPulse = null)
+        ISessionLensHeatSource? lensHeatSource = null)
     {
         var heatService = new SessionHeatService(
             telemetry ?? new SessionTelemetryService(),
-            lensPulse ?? new SessionLensPulseService());
+            lensHeatSource ?? new FakeLensHeatSource(SessionLensHeatSnapshot.Cold));
 
         return new SessionSupervisorService(
             heatService,
             new AiCliProfileService());
     }
+
+    private sealed class FakeLensHeatSource(SessionLensHeatSnapshot snapshot) : ISessionLensHeatSource
+    {
+        public SessionLensHeatSnapshot GetHeatSnapshot(string sessionId) => snapshot;
+    }
 }
+
+

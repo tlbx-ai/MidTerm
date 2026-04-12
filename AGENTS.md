@@ -63,6 +63,10 @@ Rules:
 - Keep provider-specific plumbing deep in the C# runtime/host layer. Codex and Claude may expose completely different transports, event schemas, and lifecycle details, but the TypeScript Lens UI should consume a mostly provider-neutral canonical event model rather than branching on provider quirks.
 - When expanding Lens capabilities, prefer adapting provider events into MidTerm-owned canonical concepts such as turns, streams, items, requests, diffs, and task/tool progress instead of leaking raw provider event shapes into the frontend.
 - Preserve the surface boundary while improving Lens: making Codex or Claude work better in Lens must never break, hijack, or reclassify ordinary terminal sessions.
+- MidTerm is in production. Do not invent, fake, or hand-wave Codex or Claude Lens behavior when the exact provider/runtime contract is not known.
+- Before implementing or extending a Codex or Claude Lens capability, verify the exact request, event, and response shape from provider documentation, trusted reference implementations, direct observation of provider/runtime logs and message traces, or exploratory experiments and integration tests before assuming capability shape.
+- When documentation is incomplete or ambiguous, use trial-and-error, exploratory experiments, exploratory integration tests, and concrete inspection of logs/message logs as required sources of truth before declaring the capability unsupported.
+- If the exact Lens/provider contract cannot be verified, say so clearly and leave the capability unsupported or stubbed with an honest note. Do not ship guessed protocol bridges, fake success paths, or speculative code in Lens or elsewhere.
 
 ## Lens Design Documentation
 

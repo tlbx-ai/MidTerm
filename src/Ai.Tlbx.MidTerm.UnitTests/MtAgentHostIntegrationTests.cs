@@ -27,7 +27,7 @@ public sealed class MtAgentHostIntegrationTests
         };
 
         process.Start();
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
 
         try
         {
@@ -48,16 +48,27 @@ public sealed class MtAgentHostIntegrationTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach");
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
             Assert.Equal("cmd-attach", attachResult.CommandId);
             Assert.Equal("accepted", attachResult.Status);
 
-            var attachEvents = await LensHostTestClient.ReadEventsAsync(process.StandardOutput, pendingEvents, 3);
-            Assert.Collection(
-                attachEvents,
-                first => Assert.Equal("session.started", first.Event.Type),
-                second => Assert.Equal("session.ready", second.Event.Type),
-                third => Assert.Equal("thread.started", third.Event.Type));
+            _ = await LensHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingPatches,
+                patch => string.Equals(patch.Patch.Session.State, "ready", StringComparison.Ordinal) &&
+                         !string.IsNullOrWhiteSpace(patch.Patch.Thread.ThreadId),
+                maxPatches: 4,
+                timeout: TimeSpan.FromSeconds(10));
+
+            var attachWindow = await LensHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-1",
+                count: 16);
+            Assert.Equal("ready", attachWindow.Session.State);
+            Assert.Equal("active", attachWindow.Thread.State);
+            Assert.False(string.IsNullOrWhiteSpace(attachWindow.Thread.ThreadId));
 
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
@@ -71,17 +82,31 @@ public sealed class MtAgentHostIntegrationTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn");
+            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn");
             Assert.NotNull(turnResult.TurnStarted);
             Assert.Equal("accepted", turnResult.TurnStarted!.Status);
 
-            var turnEvents = await LensHostTestClient.ReadEventsAsync(process.StandardOutput, pendingEvents, 9);
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "item.completed" && envelope.Event.Item?.ItemType == "user_message");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "content.delta" && envelope.Event.ContentDelta?.StreamKind == "assistant_text");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "content.delta" && envelope.Event.ContentDelta?.StreamKind == "reasoning_text");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "plan.completed");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "diff.updated");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "request.opened");
+            _ = await LensHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingPatches,
+                patch => patch.Patch.RequestUpserts.Count > 0,
+                maxPatches: 12,
+                timeout: TimeSpan.FromSeconds(10));
+
+            var turnWindow = await LensHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-1",
+                count: 64);
+            Assert.Contains(turnWindow.History, item => item.ItemType == "user_message");
+            Assert.Contains("Synthetic codex reply", turnWindow.Streams.AssistantText, StringComparison.Ordinal);
+            Assert.Contains("Inspecting workspace", turnWindow.Streams.ReasoningText, StringComparison.Ordinal);
+            Assert.Contains("1. Read the repo.", turnWindow.Streams.PlanText, StringComparison.Ordinal);
+            Assert.Contains("--- a/file.txt", turnWindow.Streams.UnifiedDiff, StringComparison.Ordinal);
+            var request = Assert.Single(turnWindow.Requests);
+            Assert.Equal("approval", request.Kind);
+            Assert.Equal("open", request.State);
 
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
@@ -90,17 +115,22 @@ public sealed class MtAgentHostIntegrationTests
                 Type = "request.resolve",
                 ResolveRequest = new LensRequestResolutionCommand
                 {
-                    RequestId = "req-approval-1",
+                    RequestId = request.RequestId,
                     Decision = "accept"
                 }
             });
 
-            var resolveResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-resolve");
+            var resolveResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-resolve");
             Assert.Equal("accepted", resolveResult.Status);
 
-            var resolveEvent = await LensHostTestClient.ReadEventAsync(process.StandardOutput, pendingEvents);
-            Assert.Equal("request.resolved", resolveEvent.Event.Type);
-            Assert.Equal("accept", resolveEvent.Event.RequestResolved?.Decision);
+            var resolveWindow = await LensHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-1",
+                count: 64);
+            Assert.Equal("running", resolveWindow.CurrentTurn.State);
+            Assert.Contains(resolveWindow.Requests, entry => entry.RequestId == request.RequestId && entry.Decision == "accept");
         }
         finally
         {

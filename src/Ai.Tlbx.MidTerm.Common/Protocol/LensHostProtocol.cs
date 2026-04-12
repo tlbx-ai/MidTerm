@@ -7,102 +7,7 @@ public static class LensHostProtocol
     public const string CurrentVersion = "lens-host-v1";
 }
 
-public sealed class LensPulseEvent
-{
-    public long Sequence { get; set; }
-    public string EventId { get; set; } = string.Empty;
-    public string SessionId { get; set; } = string.Empty;
-    public string Provider { get; set; } = string.Empty;
-    public string ThreadId { get; set; } = string.Empty;
-    public string? TurnId { get; set; }
-    public string? ItemId { get; set; }
-    public string? RequestId { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public string Type { get; set; } = string.Empty;
-    public LensPulseEventRaw? Raw { get; set; }
-    public LensPulseSessionStatePayload? SessionState { get; set; }
-    public LensPulseThreadStatePayload? ThreadState { get; set; }
-    public LensPulseTurnStartedPayload? TurnStarted { get; set; }
-    public LensPulseTurnCompletedPayload? TurnCompleted { get; set; }
-    public LensPulseContentDeltaPayload? ContentDelta { get; set; }
-    public LensPulsePlanDeltaPayload? PlanDelta { get; set; }
-    public LensPulsePlanCompletedPayload? PlanCompleted { get; set; }
-    public LensPulseDiffUpdatedPayload? DiffUpdated { get; set; }
-    public LensPulseItemPayload? Item { get; set; }
-    public LensPulseQuickSettingsPayload? QuickSettingsUpdated { get; set; }
-    public LensPulseRequestOpenedPayload? RequestOpened { get; set; }
-    public LensPulseRequestResolvedPayload? RequestResolved { get; set; }
-    public LensPulseUserInputRequestedPayload? UserInputRequested { get; set; }
-    public LensPulseUserInputResolvedPayload? UserInputResolved { get; set; }
-    public LensPulseRuntimeMessagePayload? RuntimeMessage { get; set; }
-}
-
-public sealed class LensPulseEventRaw
-{
-    public string Source { get; set; } = string.Empty;
-    public string? Method { get; set; }
-    public string? PayloadJson { get; set; }
-}
-
-public sealed class LensPulseSessionStatePayload
-{
-    public string State { get; set; } = string.Empty;
-    public string StateLabel { get; set; } = string.Empty;
-    public string? Reason { get; set; }
-}
-
-public sealed class LensPulseThreadStatePayload
-{
-    public string State { get; set; } = string.Empty;
-    public string StateLabel { get; set; } = string.Empty;
-    public string? ProviderThreadId { get; set; }
-}
-
-public sealed class LensPulseTurnStartedPayload
-{
-    public string? Model { get; set; }
-    public string? Effort { get; set; }
-}
-
-public sealed class LensPulseTurnCompletedPayload
-{
-    public string State { get; set; } = string.Empty;
-    public string StateLabel { get; set; } = string.Empty;
-    public string? StopReason { get; set; }
-    public string? ErrorMessage { get; set; }
-}
-
-public sealed class LensPulseContentDeltaPayload
-{
-    public string StreamKind { get; set; } = string.Empty;
-    public string Delta { get; set; } = string.Empty;
-}
-
-public sealed class LensPulsePlanDeltaPayload
-{
-    public string Delta { get; set; } = string.Empty;
-}
-
-public sealed class LensPulsePlanCompletedPayload
-{
-    public string PlanMarkdown { get; set; } = string.Empty;
-}
-
-public sealed class LensPulseDiffUpdatedPayload
-{
-    public string UnifiedDiff { get; set; } = string.Empty;
-}
-
-public sealed class LensPulseItemPayload
-{
-    public string ItemType { get; set; } = string.Empty;
-    public string Status { get; set; } = string.Empty;
-    public string? Title { get; set; }
-    public string? Detail { get; set; }
-    public List<LensAttachmentReference> Attachments { get; set; } = [];
-}
-
-public sealed class LensPulseQuickSettingsPayload
+public sealed class LensQuickSettingsPayload
 {
     public string? Model { get; set; }
     public string? Effort { get; set; }
@@ -110,111 +15,71 @@ public sealed class LensPulseQuickSettingsPayload
     public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
 }
 
-public sealed class LensPulseRequestOpenedPayload
-{
-    public string RequestType { get; set; } = string.Empty;
-    public string RequestTypeLabel { get; set; } = string.Empty;
-    public string? Detail { get; set; }
-}
-
-public sealed class LensPulseRequestResolvedPayload
-{
-    public string RequestType { get; set; } = string.Empty;
-    public string? Decision { get; set; }
-}
-
-public sealed class LensPulseUserInputRequestedPayload
-{
-    public List<LensPulseQuestion> Questions { get; set; } = [];
-}
-
-public sealed class LensPulseUserInputResolvedPayload
-{
-    public List<LensPulseAnsweredQuestion> Answers { get; set; } = [];
-}
-
-public sealed class LensPulseRuntimeMessagePayload
-{
-    public string Message { get; set; } = string.Empty;
-    public string? Detail { get; set; }
-}
-
-public sealed class LensPulseQuestion
+public sealed class LensQuestion
 {
     public string Id { get; set; } = string.Empty;
     public string Header { get; set; } = string.Empty;
     public string Question { get; set; } = string.Empty;
     public bool MultiSelect { get; set; }
-    public List<LensPulseQuestionOption> Options { get; set; } = [];
+    public List<LensQuestionOption> Options { get; set; } = [];
 }
 
-public sealed class LensPulseQuestionOption
+public sealed class LensQuestionOption
 {
     public string Label { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 }
 
-public sealed class LensPulseAnsweredQuestion
+public sealed class LensAnsweredQuestion
 {
     public string QuestionId { get; set; } = string.Empty;
     public List<string> Answers { get; set; } = [];
 }
 
-public sealed class LensPulseEventListResponse
-{
-    public string SessionId { get; set; } = string.Empty;
-    public long LatestSequence { get; set; }
-    public List<LensPulseEvent> Events { get; set; } = [];
-}
-
-public sealed class LensPulseDeltaResponse
+public sealed class LensHistoryWindowResponse
 {
     public string SessionId { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public DateTimeOffset GeneratedAt { get; set; }
     public long LatestSequence { get; set; }
-    public int TotalHistoryCount { get; set; }
-    public int EstimatedTotalHistoryHeightPx { get; set; }
-    public LensPulseSessionSummary Session { get; set; } = new();
-    public LensPulseThreadSummary Thread { get; set; } = new();
-    public LensPulseTurnSummary CurrentTurn { get; set; } = new();
-    public LensQuickSettingsSummary QuickSettings { get; set; } = new();
-    public LensPulseStreamsSummary Streams { get; set; } = new();
-    public List<LensPulseTranscriptEntry> HistoryUpserts { get; set; } = [];
-    public List<string> HistoryRemovals { get; set; } = [];
-    public List<LensPulseItemSummary> ItemUpserts { get; set; } = [];
-    public List<string> ItemRemovals { get; set; } = [];
-    public List<LensPulseRequestSummary> RequestUpserts { get; set; } = [];
-    public List<string> RequestRemovals { get; set; } = [];
-    public List<LensPulseRuntimeNotice> NoticeUpserts { get; set; } = [];
-}
-
-public sealed class LensPulseSnapshotResponse
-{
-    public string SessionId { get; set; } = string.Empty;
-    public string Provider { get; set; } = string.Empty;
-    public DateTimeOffset GeneratedAt { get; set; }
-    public long LatestSequence { get; set; }
-    public int TotalHistoryCount { get; set; }
-    public int EstimatedTotalHistoryHeightPx { get; set; }
-    public int EstimatedHistoryBeforeWindowPx { get; set; }
-    public int EstimatedHistoryAfterWindowPx { get; set; }
+    public int HistoryCount { get; set; }
     public int HistoryWindowStart { get; set; }
     public int HistoryWindowEnd { get; set; }
     public bool HasOlderHistory { get; set; }
     public bool HasNewerHistory { get; set; }
-    public LensPulseSessionSummary Session { get; set; } = new();
-    public LensPulseThreadSummary Thread { get; set; } = new();
-    public LensPulseTurnSummary CurrentTurn { get; set; } = new();
+    public LensSessionSummary Session { get; set; } = new();
+    public LensThreadSummary Thread { get; set; } = new();
+    public LensTurnSummary CurrentTurn { get; set; } = new();
     public LensQuickSettingsSummary QuickSettings { get; set; } = new();
-    public LensPulseStreamsSummary Streams { get; set; } = new();
-    public List<LensPulseTranscriptEntry> Transcript { get; set; } = [];
-    public List<LensPulseItemSummary> Items { get; set; } = [];
-    public List<LensPulseRequestSummary> Requests { get; set; } = [];
-    public List<LensPulseRuntimeNotice> Notices { get; set; } = [];
+    public LensStreamsSummary Streams { get; set; } = new();
+    public List<LensHistoryItem> History { get; set; } = [];
+    public List<LensItemSummary> Items { get; set; } = [];
+    public List<LensRequestSummary> Requests { get; set; } = [];
+    public List<LensRuntimeNotice> Notices { get; set; } = [];
 }
 
-public sealed class LensPulseSessionSummary
+public sealed class LensHistoryPatch
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+    public DateTimeOffset GeneratedAt { get; set; }
+    public long LatestSequence { get; set; }
+    public int HistoryCount { get; set; }
+    public LensSessionSummary Session { get; set; } = new();
+    public LensThreadSummary Thread { get; set; } = new();
+    public LensTurnSummary CurrentTurn { get; set; } = new();
+    public LensQuickSettingsSummary QuickSettings { get; set; } = new();
+    public LensStreamsSummary Streams { get; set; } = new();
+    public List<LensHistoryItem> HistoryUpserts { get; set; } = [];
+    public List<string> HistoryRemovals { get; set; } = [];
+    public List<LensItemSummary> ItemUpserts { get; set; } = [];
+    public List<string> ItemRemovals { get; set; } = [];
+    public List<LensRequestSummary> RequestUpserts { get; set; } = [];
+    public List<string> RequestRemovals { get; set; } = [];
+    public List<LensRuntimeNotice> NoticeUpserts { get; set; } = [];
+}
+
+public sealed class LensSessionSummary
 {
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
@@ -223,14 +88,14 @@ public sealed class LensPulseSessionSummary
     public DateTimeOffset? LastEventAt { get; set; }
 }
 
-public sealed class LensPulseThreadSummary
+public sealed class LensThreadSummary
 {
     public string ThreadId { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
 }
 
-public sealed class LensPulseTurnSummary
+public sealed class LensTurnSummary
 {
     public string? TurnId { get; set; }
     public string State { get; set; } = string.Empty;
@@ -284,11 +149,11 @@ public static class LensQuickSettings
         };
     }
 
-    public static LensPulseQuickSettingsPayload ToPayload(LensQuickSettingsSummary summary)
+    public static LensQuickSettingsPayload ToPayload(LensQuickSettingsSummary summary)
     {
         ArgumentNullException.ThrowIfNull(summary);
 
-        return new LensPulseQuickSettingsPayload
+        return new LensQuickSettingsPayload
         {
             Model = NormalizeOptionalValue(summary.Model),
             Effort = NormalizeOptionalValue(summary.Effort),
@@ -322,7 +187,7 @@ public sealed class LensQuickSettingsSummary
     public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
 }
 
-public sealed class LensPulseStreamsSummary
+public sealed class LensStreamsSummary
 {
     public string AssistantText { get; set; } = string.Empty;
     public string ReasoningText { get; set; } = string.Empty;
@@ -333,7 +198,7 @@ public sealed class LensPulseStreamsSummary
     public string UnifiedDiff { get; set; } = string.Empty;
 }
 
-public sealed class LensPulseTranscriptEntry
+public sealed class LensHistoryItem
 {
     public string EntryId { get; set; } = string.Empty;
     public long Order { get; set; }
@@ -379,7 +244,7 @@ public sealed class LensInlineImagePreview
     public string? MimeType { get; set; }
 }
 
-public sealed class LensPulseItemSummary
+public sealed class LensItemSummary
 {
     public string ItemId { get; set; } = string.Empty;
     public string? TurnId { get; set; }
@@ -391,7 +256,7 @@ public sealed class LensPulseItemSummary
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-public sealed class LensPulseRequestSummary
+public sealed class LensRequestSummary
 {
     public string RequestId { get; set; } = string.Empty;
     public string? TurnId { get; set; }
@@ -400,12 +265,12 @@ public sealed class LensPulseRequestSummary
     public string State { get; set; } = string.Empty;
     public string? Detail { get; set; }
     public string? Decision { get; set; }
-    public List<LensPulseQuestion> Questions { get; set; } = [];
-    public List<LensPulseAnsweredQuestion> Answers { get; set; } = [];
+    public List<LensQuestion> Questions { get; set; } = [];
+    public List<LensAnsweredQuestion> Answers { get; set; } = [];
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-public sealed class LensPulseRuntimeNotice
+public sealed class LensRuntimeNotice
 {
     public string EventId { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
@@ -454,7 +319,7 @@ public sealed class LensRequestDecisionRequest
 
 public sealed class LensUserInputAnswerRequest
 {
-    public List<LensPulseAnsweredQuestion> Answers { get; set; } = [];
+    public List<LensAnsweredQuestion> Answers { get; set; } = [];
 }
 
 public sealed class LensCommandAcceptedResponse
@@ -465,15 +330,10 @@ public sealed class LensCommandAcceptedResponse
     public string? TurnId { get; set; }
 }
 
-public sealed class LensSnapshotWindowRequest
+public sealed class LensHistoryWindowRequest
 {
     public int? StartIndex { get; set; }
     public int? Count { get; set; }
-}
-
-public sealed class LensEventsRequest
-{
-    public long AfterSequence { get; set; }
 }
 
 public sealed class LensWsRequestMessage
@@ -484,7 +344,7 @@ public sealed class LensWsRequestMessage
     public string SessionId { get; set; } = string.Empty;
     public long? AfterSequence { get; set; }
     public string? RequestId { get; set; }
-    public LensSnapshotWindowRequest? SnapshotWindow { get; set; }
+    public LensHistoryWindowRequest? HistoryWindow { get; set; }
     public LensTurnRequest? Turn { get; set; }
     public LensInterruptRequest? Interrupt { get; set; }
     public LensRequestDecisionRequest? RequestDecision { get; set; }
@@ -496,7 +356,7 @@ public sealed class LensWsSubscriptionMessage
     public string Type { get; set; } = "subscribe";
     public string SessionId { get; set; } = string.Empty;
     public long AfterSequence { get; set; }
-    public LensSnapshotWindowRequest? SnapshotWindow { get; set; }
+    public LensHistoryWindowRequest? HistoryWindow { get; set; }
 }
 
 public sealed class LensWsAckMessage
@@ -516,34 +376,19 @@ public sealed class LensWsErrorMessage
     public string Message { get; set; } = string.Empty;
 }
 
-public sealed class LensWsSnapshotMessage
+public sealed class LensWsHistoryWindowMessage
 {
-    public string Type { get; set; } = "snapshot";
+    public string Type { get; set; } = "history.window";
     public string? Id { get; set; }
     public string SessionId { get; set; } = string.Empty;
-    public LensPulseSnapshotResponse Snapshot { get; set; } = new();
+    public LensHistoryWindowResponse HistoryWindow { get; set; } = new();
 }
 
-public sealed class LensWsEventsMessage
+public sealed class LensWsHistoryPatchMessage
 {
-    public string Type { get; set; } = "events";
-    public string? Id { get; set; }
+    public string Type { get; set; } = "history.patch";
     public string SessionId { get; set; } = string.Empty;
-    public LensPulseEventListResponse Events { get; set; } = new();
-}
-
-public sealed class LensWsEventMessage
-{
-    public string Type { get; set; } = "event";
-    public string SessionId { get; set; } = string.Empty;
-    public LensPulseEvent Event { get; set; } = new();
-}
-
-public sealed class LensWsDeltaMessage
-{
-    public string Type { get; set; } = "delta";
-    public string SessionId { get; set; } = string.Empty;
-    public LensPulseDeltaResponse Delta { get; set; } = new();
+    public LensHistoryPatch Patch { get; set; } = new();
 }
 
 public sealed class LensWsTurnStartedMessage
@@ -584,9 +429,10 @@ public sealed class LensAttachRuntimeRequest
     public string? ResumeThreadId { get; set; }
 }
 
-public sealed class LensHostEventsRequest
+public sealed class LensHostHistoryWindowRequest
 {
-    public long AfterSequence { get; set; }
+    public int? StartIndex { get; set; }
+    public int? Count { get; set; }
 }
 
 public sealed class LensHostCommandEnvelope
@@ -600,7 +446,7 @@ public sealed class LensHostCommandEnvelope
     public LensInterruptRequest? InterruptTurn { get; set; }
     public LensRequestResolutionCommand? ResolveRequest { get; set; }
     public LensUserInputResolutionCommand? ResolveUserInput { get; set; }
-    public LensHostEventsRequest? EventsRequest { get; set; }
+    public LensHostHistoryWindowRequest? HistoryWindow { get; set; }
 }
 
 public sealed class LensRequestResolutionCommand
@@ -612,7 +458,7 @@ public sealed class LensRequestResolutionCommand
 public sealed class LensUserInputResolutionCommand
 {
     public string RequestId { get; set; } = string.Empty;
-    public List<LensPulseAnsweredQuestion> Answers { get; set; } = [];
+    public List<LensAnsweredQuestion> Answers { get; set; } = [];
 }
 
 public sealed class LensHostCommandResultEnvelope
@@ -624,23 +470,22 @@ public sealed class LensHostCommandResultEnvelope
     public string? Message { get; set; }
     public LensTurnStartResponse? TurnStarted { get; set; }
     public LensCommandAcceptedResponse? Accepted { get; set; }
-    public LensPulseEventListResponse? Events { get; set; }
+    public LensHistoryWindowResponse? HistoryWindow { get; set; }
 }
 
-public sealed class LensHostEventEnvelope
+public sealed class LensHostHistoryPatchEnvelope
 {
     public string ProtocolVersion { get; set; } = LensHostProtocol.CurrentVersion;
     public string SessionId { get; set; } = string.Empty;
-    public LensPulseEvent Event { get; set; } = new();
+    public LensHistoryPatch Patch { get; set; } = new();
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LensHostHello))]
 [JsonSerializable(typeof(LensHostCommandEnvelope))]
 [JsonSerializable(typeof(LensHostCommandResultEnvelope))]
-[JsonSerializable(typeof(LensHostEventEnvelope))]
 [JsonSerializable(typeof(LensAttachRuntimeRequest))]
-[JsonSerializable(typeof(LensHostEventsRequest))]
+[JsonSerializable(typeof(LensHostHistoryWindowRequest))]
 [JsonSerializable(typeof(SessionAgentAttachPoint))]
 [JsonSerializable(typeof(LensRequestResolutionCommand))]
 [JsonSerializable(typeof(LensUserInputResolutionCommand))]
@@ -651,62 +496,73 @@ public sealed class LensHostEventEnvelope
 [JsonSerializable(typeof(LensRequestDecisionRequest))]
 [JsonSerializable(typeof(LensUserInputAnswerRequest))]
 [JsonSerializable(typeof(LensCommandAcceptedResponse))]
-[JsonSerializable(typeof(LensSnapshotWindowRequest))]
-[JsonSerializable(typeof(LensEventsRequest))]
+[JsonSerializable(typeof(LensHistoryWindowRequest))]
 [JsonSerializable(typeof(LensWsRequestMessage))]
 [JsonSerializable(typeof(LensWsSubscriptionMessage))]
 [JsonSerializable(typeof(LensWsAckMessage))]
 [JsonSerializable(typeof(LensWsErrorMessage))]
-[JsonSerializable(typeof(LensWsSnapshotMessage))]
-[JsonSerializable(typeof(LensWsEventsMessage))]
-[JsonSerializable(typeof(LensWsEventMessage))]
-[JsonSerializable(typeof(LensWsDeltaMessage))]
+[JsonSerializable(typeof(LensWsHistoryWindowMessage))]
+[JsonSerializable(typeof(LensWsHistoryPatchMessage))]
 [JsonSerializable(typeof(LensWsTurnStartedMessage))]
 [JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
-[JsonSerializable(typeof(LensPulseEvent))]
-[JsonSerializable(typeof(List<LensPulseEvent>))]
-[JsonSerializable(typeof(LensPulseDeltaResponse))]
-[JsonSerializable(typeof(LensPulseEventRaw))]
-[JsonSerializable(typeof(LensPulseSessionStatePayload))]
-[JsonSerializable(typeof(LensPulseThreadStatePayload))]
-[JsonSerializable(typeof(LensPulseTurnStartedPayload))]
-[JsonSerializable(typeof(LensPulseTurnCompletedPayload))]
-[JsonSerializable(typeof(LensPulseContentDeltaPayload))]
-[JsonSerializable(typeof(LensPulsePlanDeltaPayload))]
-[JsonSerializable(typeof(LensPulsePlanCompletedPayload))]
-[JsonSerializable(typeof(LensPulseDiffUpdatedPayload))]
-[JsonSerializable(typeof(LensPulseItemPayload))]
-[JsonSerializable(typeof(LensPulseQuickSettingsPayload))]
-[JsonSerializable(typeof(LensPulseRequestOpenedPayload))]
-[JsonSerializable(typeof(LensPulseRequestResolvedPayload))]
-[JsonSerializable(typeof(LensPulseUserInputRequestedPayload))]
-[JsonSerializable(typeof(LensPulseUserInputResolvedPayload))]
-[JsonSerializable(typeof(LensPulseRuntimeMessagePayload))]
+[JsonSerializable(typeof(LensQuickSettingsPayload))]
 [JsonSerializable(typeof(LensQuickSettingsSummary))]
-[JsonSerializable(typeof(LensPulseQuestion))]
-[JsonSerializable(typeof(List<LensPulseQuestion>))]
-[JsonSerializable(typeof(LensPulseQuestionOption))]
-[JsonSerializable(typeof(List<LensPulseQuestionOption>))]
-[JsonSerializable(typeof(LensPulseAnsweredQuestion))]
-[JsonSerializable(typeof(List<LensPulseAnsweredQuestion>))]
-[JsonSerializable(typeof(LensPulseEventListResponse))]
-[JsonSerializable(typeof(LensPulseSnapshotResponse))]
-[JsonSerializable(typeof(LensPulseSessionSummary))]
-[JsonSerializable(typeof(LensPulseThreadSummary))]
-[JsonSerializable(typeof(LensPulseTurnSummary))]
-[JsonSerializable(typeof(LensPulseStreamsSummary))]
-[JsonSerializable(typeof(LensPulseTranscriptEntry))]
-[JsonSerializable(typeof(List<LensPulseTranscriptEntry>))]
+[JsonSerializable(typeof(LensQuestion))]
+[JsonSerializable(typeof(List<LensQuestion>))]
+[JsonSerializable(typeof(LensQuestionOption))]
+[JsonSerializable(typeof(List<LensQuestionOption>))]
+[JsonSerializable(typeof(LensAnsweredQuestion))]
+[JsonSerializable(typeof(List<LensAnsweredQuestion>))]
+[JsonSerializable(typeof(LensHistoryWindowResponse))]
+[JsonSerializable(typeof(LensHistoryPatch))]
+[JsonSerializable(typeof(LensSessionSummary))]
+[JsonSerializable(typeof(LensThreadSummary))]
+[JsonSerializable(typeof(LensTurnSummary))]
+[JsonSerializable(typeof(LensStreamsSummary))]
+[JsonSerializable(typeof(LensHistoryItem))]
+[JsonSerializable(typeof(List<LensHistoryItem>))]
 [JsonSerializable(typeof(LensInlineFileReference))]
 [JsonSerializable(typeof(List<LensInlineFileReference>))]
 [JsonSerializable(typeof(LensInlineImagePreview))]
 [JsonSerializable(typeof(List<LensInlineImagePreview>))]
-[JsonSerializable(typeof(LensPulseItemSummary))]
-[JsonSerializable(typeof(List<LensPulseItemSummary>))]
-[JsonSerializable(typeof(LensPulseRequestSummary))]
-[JsonSerializable(typeof(List<LensPulseRequestSummary>))]
-[JsonSerializable(typeof(LensPulseRuntimeNotice))]
-[JsonSerializable(typeof(List<LensPulseRuntimeNotice>))]
+[JsonSerializable(typeof(LensItemSummary))]
+[JsonSerializable(typeof(List<LensItemSummary>))]
+[JsonSerializable(typeof(LensRequestSummary))]
+[JsonSerializable(typeof(List<LensRequestSummary>))]
+[JsonSerializable(typeof(LensRuntimeNotice))]
+[JsonSerializable(typeof(List<LensRuntimeNotice>))]
+[JsonSerializable(typeof(LensHostHistoryPatchEnvelope))]
 public partial class LensHostJsonContext : JsonSerializerContext
 {
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

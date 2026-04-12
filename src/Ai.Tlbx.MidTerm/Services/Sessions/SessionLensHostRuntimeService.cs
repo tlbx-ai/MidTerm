@@ -6,6 +6,7 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -36,8 +37,6 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(10);
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
-    private readonly SessionLensHostIngressService _ingress;
-    private readonly SessionLensPulseService _pulse;
     private readonly SettingsService _settingsService;
     private readonly MidTermInstanceIdentity _instanceIdentity;
     private readonly LensHostOwnershipRegistry _ownershipRegistry;
@@ -46,25 +45,19 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
     private readonly RedirectedProcessLauncher _launcher;
 
     public SessionLensHostRuntimeService(
-        SessionLensHostIngressService ingress,
-        SessionLensPulseService pulse,
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null)
-        : this(ingress, pulse, settingsService, instanceIdentity, mode, null)
+        : this(settingsService, instanceIdentity, mode, null)
     {
     }
 
     internal SessionLensHostRuntimeService(
-        SessionLensHostIngressService ingress,
-        SessionLensPulseService pulse,
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity,
         string? mode,
         RedirectedProcessLauncher? launcher)
     {
-        _ingress = ingress;
-        _pulse = pulse;
         _settingsService = settingsService;
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
@@ -166,7 +159,6 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         {
             state.Profile = profile;
             state.WorkingDirectory = workingDirectory;
-            EnsurePulseSessionSeeded(sessionId, profile);
             var attachPoint = SelectAttachPoint(profile, session);
 
             if (state.Input is not null && state.Output is not null)
@@ -281,9 +273,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                 state.TransportKey = attachPoint?.TransportKind ?? "mtagenthost-ipc";
                 state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
                 _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
-                await SyncPulseFromHostAsync(state, ct).ConfigureAwait(false);
-                EnsurePulseSessionSeeded(sessionId, profile);
-                await WaitForPulseSnapshotAsync(sessionId, ct).ConfigureAwait(false);
+                await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
             }
             return attachResult.Status == "accepted";
         }
@@ -494,9 +484,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
-    public bool TryGetSnapshot(string sessionId, out LensRuntimeSnapshot snapshot)
+    public bool TryGetRuntimeSummary(string sessionId, out LensRuntimeSummary summary)
     {
-        snapshot = default!;
+        summary = default!;
         if (!_states.TryGetValue(sessionId, out var state) ||
             state.Status == HostRuntimeStatus.None ||
             state.Status == HostRuntimeStatus.Stopped ||
@@ -506,8 +496,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             return false;
         }
 
-        var pulseSnapshot = _pulse.GetSnapshot(sessionId);
-        snapshot = new LensRuntimeSnapshot
+        var cachedHistory = state.CachedHistoryWindow;
+        summary = new LensRuntimeSummary
         {
             SessionId = sessionId,
             Profile = state.Profile ?? AiCliProfileService.UnknownProfile,
@@ -515,14 +505,121 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             TransportLabel = state.TransportLabel,
             Status = ToStatusValue(state.Status),
             StatusLabel = ToStatusLabel(state.Status),
-            LastError = state.LastError ?? pulseSnapshot?.Session.LastError,
-            LastEventAt = pulseSnapshot?.Session.LastEventAt,
-            AssistantText = pulseSnapshot?.Streams.AssistantText,
-            UnifiedDiff = pulseSnapshot?.Streams.UnifiedDiff,
-            PendingQuestion = pulseSnapshot?.Requests.FirstOrDefault(static request => request.Kind == "tool_user_input" && request.State == "open")?.Detail,
+            LastError = state.LastError ?? cachedHistory?.Session.LastError,
+            LastEventAt = cachedHistory?.Session.LastEventAt,
+            AssistantText = cachedHistory?.Streams.AssistantText,
+            UnifiedDiff = cachedHistory?.Streams.UnifiedDiff,
+            PendingQuestion = cachedHistory?.Requests.FirstOrDefault(static request => request.Kind == "interview" && request.State == "open")?.Detail,
             Activities = []
         };
         return true;
+    }
+
+    public bool HasHistory(string sessionId)
+    {
+        if (_states.TryGetValue(sessionId, out var state))
+        {
+            return state.CachedHistoryWindow?.HistoryCount > 0 || OwnsSession(sessionId);
+        }
+
+        return _ownershipRegistry.GetSessions().Any(record => string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)) ||
+               LensHostEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId).HasValue;
+    }
+
+    public bool TryGetCachedHistoryWindow(string sessionId, out LensHistoryWindowResponse historyWindow)
+    {
+        historyWindow = default!;
+        if (!_states.TryGetValue(sessionId, out var state) || state.CachedHistoryWindow is null)
+        {
+            return false;
+        }
+
+        historyWindow = CloneHistoryWindow(state.CachedHistoryWindow);
+        return true;
+    }
+
+    public async Task<LensHistoryWindowResponse?> GetHistoryWindowAsync(
+        string sessionId,
+        int? startIndex = null,
+        int? count = null,
+        CancellationToken ct = default)
+    {
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new LensHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "history.window.get",
+                    HistoryWindow = new LensHostHistoryWindowRequest
+                    {
+                        StartIndex = startIndex,
+                        Count = count
+                    }
+                },
+                ct).ConfigureAwait(false);
+
+            if (result.HistoryWindow is null)
+            {
+                return null;
+            }
+
+            UpdateCachedHistoryWindow(state, result.HistoryWindow, replaceHistory: true);
+            return CloneHistoryWindow(result.HistoryWindow);
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    public LensHistoryPatchSubscription SubscribeHistoryPatches(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var state = GetRequiredState(sessionId);
+        var channel = Channel.CreateUnbounded<LensHistoryPatch>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+        var subscriber = new LensHistoryPatchSubscriber(channel.Writer);
+
+        lock (state.HistorySubscribersSync)
+        {
+            state.HistoryPatchSubscribers.Add(subscriber);
+        }
+
+        var subscriptionState = new SubscriptionState(
+            () =>
+            {
+                lock (state.HistorySubscribersSync)
+                {
+                    state.HistoryPatchSubscribers.Remove(subscriber);
+                }
+
+                channel.Writer.TryComplete();
+            });
+        var subscription = new LensHistoryPatchSubscription(channel.Reader, subscriptionState);
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            cancellationToken.Register(
+                static stateObject =>
+                {
+                    if (stateObject is SubscriptionState stateToClose)
+                    {
+                        stateToClose.Close();
+                    }
+                },
+                subscriptionState);
+        }
+
+        return subscription;
     }
 
     public void Forget(string sessionId)
@@ -623,16 +720,15 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
                 using var json = JsonDocument.Parse(line);
                 var root = json.RootElement;
-                if (root.TryGetProperty("event", out _))
+                if (root.TryGetProperty("patch", out _))
                 {
-                    var envelope = JsonSerializer.Deserialize(line, LensHostJsonContext.Default.LensHostEventEnvelope);
-                    if (envelope is null)
+                    var patchEnvelope = JsonSerializer.Deserialize(line, LensHostJsonContext.Default.LensHostHistoryPatchEnvelope);
+                    if (patchEnvelope is null)
                     {
                         continue;
                     }
 
-                    UpdateStateFromEvent(state, envelope.Event);
-                    _ingress.ApplyEvent(envelope);
+                    ApplyHistoryPatchToState(state, patchEnvelope.Patch);
                     continue;
                 }
 
@@ -818,7 +914,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             var helloLine = await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false);
             var hello = JsonSerializer.Deserialize(helloLine, LensHostJsonContext.Default.LensHostHello)
                         ?? throw new InvalidOperationException("Lens host hello payload was empty.");
-            _ingress.ValidateHello(hello);
+            ValidateHello(hello);
 
             state.AttachOwnedConnection(connection);
             attached = true;
@@ -849,39 +945,13 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
-    private async Task SyncPulseFromHostAsync(HostRuntimeState state, CancellationToken ct)
+    private static void ValidateHello(LensHostHello hello)
     {
-        var fullHistory = await GetHostEventsAsync(state, 0, ct).ConfigureAwait(false);
-        _pulse.Forget(state.SessionId);
-        foreach (var lensEvent in fullHistory.Events)
-        {
-            _pulse.Append(lensEvent);
-        }
+        ArgumentNullException.ThrowIfNull(hello);
+        EnsureProtocolVersion(hello.ProtocolVersion);
     }
 
-    private async Task WaitForPulseSnapshotAsync(string sessionId, CancellationToken ct)
-    {
-        if (_pulse.GetSnapshot(sessionId) is not null)
-        {
-            return;
-        }
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(250);
-        while (DateTime.UtcNow < deadline)
-        {
-            ct.ThrowIfCancellationRequested();
-            await Task.Delay(15, ct).ConfigureAwait(false);
-            if (_pulse.GetSnapshot(sessionId) is not null)
-            {
-                return;
-            }
-        }
-    }
-
-    private async Task<LensPulseEventListResponse> GetHostEventsAsync(
-        HostRuntimeState state,
-        long afterSequence,
-        CancellationToken ct)
+    private async Task RefreshCachedHistoryWindowAsync(HostRuntimeState state, CancellationToken ct)
     {
         var result = await SendCommandAsync(
             state,
@@ -889,35 +959,485 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             {
                 CommandId = commandId,
                 SessionId = state.SessionId,
-                Type = "events.get",
-                EventsRequest = new LensHostEventsRequest
-                {
-                    AfterSequence = afterSequence
-                }
+                Type = "history.window.get",
+                HistoryWindow = new LensHostHistoryWindowRequest()
             },
             ct).ConfigureAwait(false);
 
-        return result.Events ?? new LensPulseEventListResponse
+        if (result.HistoryWindow is not null)
         {
-            SessionId = state.SessionId
+            UpdateCachedHistoryWindow(state, result.HistoryWindow, replaceHistory: true);
+            return;
+        }
+
+        if (state.CachedHistoryWindow is null)
+        {
+            var placeholder = BuildPlaceholderHistoryWindow(state);
+            state.CachedHistoryWindow = placeholder;
+        }
+
+        RefreshRuntimeStatusFromHistory(state);
+    }
+
+    private static void ApplyHistoryPatchToState(HostRuntimeState state, LensHistoryPatch patch)
+    {
+        state.LastError = patch.Session.LastError ?? state.LastError;
+
+        if (state.CachedHistoryWindow is not null &&
+            patch.LatestSequence < state.CachedHistoryWindow.LatestSequence)
+        {
+            return;
+        }
+
+        if (state.CachedHistoryWindow is null)
+        {
+            state.CachedHistoryWindow = new LensHistoryWindowResponse
+            {
+                SessionId = patch.SessionId,
+                Provider = patch.Provider,
+                GeneratedAt = patch.GeneratedAt,
+                LatestSequence = patch.LatestSequence,
+                HistoryCount = patch.HistoryCount,
+                Session = CloneSessionSummary(patch.Session),
+                Thread = CloneThreadSummary(patch.Thread),
+                CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
+                QuickSettings = CloneQuickSettings(patch.QuickSettings),
+                Streams = CloneStreams(patch.Streams),
+                Requests = patch.RequestUpserts.Select(CloneRequestSummary).ToList(),
+                Items = patch.ItemUpserts.Select(CloneItemSummary).ToList(),
+                Notices = patch.NoticeUpserts.Select(CloneNotice).ToList(),
+            };
+        }
+        else
+        {
+            var cached = state.CachedHistoryWindow;
+            cached.Provider = string.IsNullOrWhiteSpace(patch.Provider) ? cached.Provider : patch.Provider;
+            cached.GeneratedAt = patch.GeneratedAt;
+            cached.LatestSequence = Math.Max(cached.LatestSequence, patch.LatestSequence);
+            cached.HistoryCount = Math.Max(cached.HistoryCount, patch.HistoryCount);
+            cached.Session = CloneSessionSummary(patch.Session);
+            cached.Thread = CloneThreadSummary(patch.Thread);
+            cached.CurrentTurn = CloneTurnSummary(patch.CurrentTurn);
+            cached.QuickSettings = CloneQuickSettings(patch.QuickSettings);
+            cached.Streams = CloneStreams(patch.Streams);
+            cached.Items = MergeItemSummaries(cached.Items, patch.ItemUpserts, patch.ItemRemovals);
+            cached.Requests = MergeRequestSummaries(cached.Requests, patch.RequestUpserts, patch.RequestRemovals);
+            cached.Notices = MergeNotices(cached.Notices, patch.NoticeUpserts);
+        }
+
+        RefreshRuntimeStatusFromHistory(state);
+        FanOutHistoryPatch(state, patch);
+    }
+
+    private static void UpdateCachedHistoryWindow(HostRuntimeState state, LensHistoryWindowResponse historyWindow, bool replaceHistory)
+    {
+        var next = CloneHistoryWindow(historyWindow);
+        if (!replaceHistory && state.CachedHistoryWindow is not null)
+        {
+            next.History = state.CachedHistoryWindow.History;
+        }
+
+        state.CachedHistoryWindow = next;
+        RefreshRuntimeStatusFromHistory(state);
+    }
+
+    private static LensHistoryWindowResponse BuildPlaceholderHistoryWindow(HostRuntimeState state)
+    {
+        return new LensHistoryWindowResponse
+        {
+            SessionId = state.SessionId,
+            Provider = state.Profile ?? AiCliProfileService.UnknownProfile,
+            GeneratedAt = DateTimeOffset.UtcNow,
+            LatestSequence = 1,
+            HistoryCount = 0,
+            HistoryWindowStart = 0,
+            HistoryWindowEnd = 0,
+            HasOlderHistory = false,
+            HasNewerHistory = false,
+            Session = new LensSessionSummary
+            {
+                State = ToStatusValue(state.Status),
+                StateLabel = ToStatusLabel(state.Status),
+                LastError = state.LastError,
+            },
+            Thread = new LensThreadSummary(),
+            CurrentTurn = new LensTurnSummary(),
+            QuickSettings = new LensQuickSettingsSummary(),
+            Streams = new LensStreamsSummary(),
         };
     }
 
-    private static void UpdateStateFromEvent(HostRuntimeState state, LensPulseEvent lensEvent)
+    private static void RefreshRuntimeStatusFromHistory(HostRuntimeState state)
     {
-        state.LastError = lensEvent.RuntimeMessage?.Message is not null && lensEvent.Type == "runtime.error"
-            ? LensHistoryTextSanitizer.Sanitize(lensEvent.RuntimeMessage.Message)
-            : state.LastError;
-
-        state.Status = lensEvent.Type switch
+        var cachedHistory = state.CachedHistoryWindow;
+        if (cachedHistory is null)
         {
-            "session.started" => HostRuntimeStatus.Starting,
-            "session.ready" => HostRuntimeStatus.Ready,
-            "turn.started" => HostRuntimeStatus.Running,
-            "turn.completed" or "turn.aborted" => HostRuntimeStatus.Ready,
-            "runtime.error" => HostRuntimeStatus.Error,
-            _ => state.Status
+            return;
+        }
+
+        state.LastError = cachedHistory.Session.LastError ?? state.LastError;
+        state.Status = ResolveRuntimeStatus(cachedHistory);
+    }
+
+    private static HostRuntimeStatus ResolveRuntimeStatus(LensHistoryWindowResponse historyWindow)
+    {
+        if (!string.IsNullOrWhiteSpace(historyWindow.Session.LastError))
+        {
+            return HostRuntimeStatus.Error;
+        }
+
+        var turnState = historyWindow.CurrentTurn.State?.Trim().ToLowerInvariant();
+        if (turnState is "running" or "in_progress" or "started" or "submitted")
+        {
+            return HostRuntimeStatus.Running;
+        }
+
+        var sessionState = historyWindow.Session.State?.Trim().ToLowerInvariant();
+        return sessionState switch
+        {
+            "starting" => HostRuntimeStatus.Starting,
+            "ready" or "completed" or "idle" => HostRuntimeStatus.Ready,
+            "error" => HostRuntimeStatus.Error,
+            "stopped" => HostRuntimeStatus.Stopped,
+            _ => stateFromThreadOrFallback(sessionState)
         };
+
+        static HostRuntimeStatus stateFromThreadOrFallback(string? value)
+        {
+            return value switch
+            {
+                "running" => HostRuntimeStatus.Running,
+                _ => HostRuntimeStatus.Ready
+            };
+        }
+    }
+
+    private static void EnsureProtocolVersion(string? protocolVersion)
+    {
+        if (!string.Equals(protocolVersion, LensHostProtocol.CurrentVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Unsupported Lens host protocol version '{protocolVersion ?? "(null)"}'. Expected '{LensHostProtocol.CurrentVersion}'.");
+        }
+    }
+
+    private static void FanOutHistoryPatch(HostRuntimeState state, LensHistoryPatch patch)
+    {
+        List<LensHistoryPatchSubscriber>? stale = null;
+        lock (state.HistorySubscribersSync)
+        {
+            foreach (var subscriber in state.HistoryPatchSubscribers)
+            {
+                if (subscriber.Writer.TryWrite(CloneHistoryPatch(patch)))
+                {
+                    continue;
+                }
+
+                stale ??= [];
+                stale.Add(subscriber);
+            }
+
+            if (stale is not null)
+            {
+                foreach (var subscriber in stale)
+                {
+                    state.HistoryPatchSubscribers.Remove(subscriber);
+                }
+            }
+        }
+    }
+
+    private static LensHistoryWindowResponse CloneHistoryWindow(LensHistoryWindowResponse source)
+    {
+        return new LensHistoryWindowResponse
+        {
+            SessionId = source.SessionId,
+            Provider = source.Provider,
+            GeneratedAt = source.GeneratedAt,
+            LatestSequence = source.LatestSequence,
+            HistoryCount = source.HistoryCount,
+            HistoryWindowStart = source.HistoryWindowStart,
+            HistoryWindowEnd = source.HistoryWindowEnd,
+            HasOlderHistory = source.HasOlderHistory,
+            HasNewerHistory = source.HasNewerHistory,
+            Session = CloneSessionSummary(source.Session),
+            Thread = CloneThreadSummary(source.Thread),
+            CurrentTurn = CloneTurnSummary(source.CurrentTurn),
+            QuickSettings = CloneQuickSettings(source.QuickSettings),
+            Streams = CloneStreams(source.Streams),
+            History = source.History.Select(CloneHistoryEntry).ToList(),
+            Items = source.Items.Select(CloneItemSummary).ToList(),
+            Requests = source.Requests.Select(CloneRequestSummary).ToList(),
+            Notices = source.Notices.Select(CloneNotice).ToList()
+        };
+    }
+
+    private static LensHistoryPatch CloneHistoryPatch(LensHistoryPatch source)
+    {
+        return new LensHistoryPatch
+        {
+            SessionId = source.SessionId,
+            Provider = source.Provider,
+            GeneratedAt = source.GeneratedAt,
+            LatestSequence = source.LatestSequence,
+            HistoryCount = source.HistoryCount,
+            Session = CloneSessionSummary(source.Session),
+            Thread = CloneThreadSummary(source.Thread),
+            CurrentTurn = CloneTurnSummary(source.CurrentTurn),
+            QuickSettings = CloneQuickSettings(source.QuickSettings),
+            Streams = CloneStreams(source.Streams),
+            HistoryUpserts = source.HistoryUpserts.Select(CloneHistoryEntry).ToList(),
+            HistoryRemovals = [.. source.HistoryRemovals],
+            ItemUpserts = source.ItemUpserts.Select(CloneItemSummary).ToList(),
+            ItemRemovals = [.. source.ItemRemovals],
+            RequestUpserts = source.RequestUpserts.Select(CloneRequestSummary).ToList(),
+            RequestRemovals = [.. source.RequestRemovals],
+            NoticeUpserts = source.NoticeUpserts.Select(CloneNotice).ToList()
+        };
+    }
+
+    private static LensHistoryItem CloneHistoryEntry(LensHistoryItem source)
+    {
+        return new LensHistoryItem
+        {
+            EntryId = source.EntryId,
+            Order = source.Order,
+            EstimatedHeightPx = source.EstimatedHeightPx,
+            Kind = source.Kind,
+            TurnId = source.TurnId,
+            ItemId = source.ItemId,
+            RequestId = source.RequestId,
+            Status = source.Status,
+            ItemType = source.ItemType,
+            Title = source.Title,
+            CommandText = source.CommandText,
+            Body = source.Body,
+            Attachments = source.Attachments.Select(CloneAttachment).ToList(),
+            FileMentions = source.FileMentions.Select(CloneInlineFileReference).ToList(),
+            ImagePreviews = source.ImagePreviews.Select(CloneInlineImagePreview).ToList(),
+            Streaming = source.Streaming,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt
+        };
+    }
+
+    private static LensItemSummary CloneItemSummary(LensItemSummary source)
+    {
+        return new LensItemSummary
+        {
+            ItemId = source.ItemId,
+            TurnId = source.TurnId,
+            ItemType = source.ItemType,
+            Status = source.Status,
+            Title = source.Title,
+            Detail = source.Detail,
+            Attachments = source.Attachments.Select(CloneAttachment).ToList(),
+            UpdatedAt = source.UpdatedAt
+        };
+    }
+
+    private static LensRequestSummary CloneRequestSummary(LensRequestSummary source)
+    {
+        return new LensRequestSummary
+        {
+            RequestId = source.RequestId,
+            TurnId = source.TurnId,
+            Kind = source.Kind,
+            KindLabel = source.KindLabel,
+            State = source.State,
+            Detail = source.Detail,
+            Decision = source.Decision,
+            Questions = source.Questions.Select(CloneQuestion).ToList(),
+            Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),
+            UpdatedAt = source.UpdatedAt
+        };
+    }
+
+    private static LensRuntimeNotice CloneNotice(LensRuntimeNotice source)
+    {
+        return new LensRuntimeNotice
+        {
+            EventId = source.EventId,
+            Type = source.Type,
+            Message = source.Message,
+            Detail = source.Detail,
+            CreatedAt = source.CreatedAt
+        };
+    }
+
+    private static LensSessionSummary CloneSessionSummary(LensSessionSummary source)
+    {
+        return new LensSessionSummary
+        {
+            State = source.State,
+            StateLabel = source.StateLabel,
+            Reason = source.Reason,
+            LastError = source.LastError,
+            LastEventAt = source.LastEventAt
+        };
+    }
+
+    private static LensThreadSummary CloneThreadSummary(LensThreadSummary source)
+    {
+        return new LensThreadSummary
+        {
+            ThreadId = source.ThreadId,
+            State = source.State,
+            StateLabel = source.StateLabel
+        };
+    }
+
+    private static LensTurnSummary CloneTurnSummary(LensTurnSummary source)
+    {
+        return new LensTurnSummary
+        {
+            TurnId = source.TurnId,
+            State = source.State,
+            StateLabel = source.StateLabel,
+            Model = source.Model,
+            Effort = source.Effort,
+            StartedAt = source.StartedAt,
+            CompletedAt = source.CompletedAt
+        };
+    }
+
+    private static LensQuickSettingsSummary CloneQuickSettings(LensQuickSettingsSummary source)
+    {
+        return new LensQuickSettingsSummary
+        {
+            Model = source.Model,
+            Effort = source.Effort,
+            PlanMode = source.PlanMode,
+            PermissionMode = source.PermissionMode
+        };
+    }
+
+    private static LensStreamsSummary CloneStreams(LensStreamsSummary source)
+    {
+        return new LensStreamsSummary
+        {
+            AssistantText = source.AssistantText,
+            ReasoningText = source.ReasoningText,
+            ReasoningSummaryText = source.ReasoningSummaryText,
+            PlanText = source.PlanText,
+            CommandOutput = source.CommandOutput,
+            FileChangeOutput = source.FileChangeOutput,
+            UnifiedDiff = source.UnifiedDiff
+        };
+    }
+
+    private static LensAttachmentReference CloneAttachment(LensAttachmentReference source)
+    {
+        return new LensAttachmentReference
+        {
+            Kind = source.Kind,
+            Path = source.Path,
+            MimeType = source.MimeType,
+            DisplayName = source.DisplayName
+        };
+    }
+
+    private static LensInlineFileReference CloneInlineFileReference(LensInlineFileReference source)
+    {
+        return new LensInlineFileReference
+        {
+            Field = source.Field,
+            DisplayText = source.DisplayText,
+            Path = source.Path,
+            PathKind = source.PathKind,
+            ResolvedPath = source.ResolvedPath,
+            Exists = source.Exists,
+            IsDirectory = source.IsDirectory,
+            MimeType = source.MimeType,
+            Line = source.Line,
+            Column = source.Column
+        };
+    }
+
+    private static LensInlineImagePreview CloneInlineImagePreview(LensInlineImagePreview source)
+    {
+        return new LensInlineImagePreview
+        {
+            DisplayPath = source.DisplayPath,
+            ResolvedPath = source.ResolvedPath,
+            MimeType = source.MimeType
+        };
+    }
+
+    private static LensQuestion CloneQuestion(LensQuestion source)
+    {
+        return new LensQuestion
+        {
+            Id = source.Id,
+            Header = source.Header,
+            Question = source.Question,
+            MultiSelect = source.MultiSelect,
+            Options = source.Options.Select(option => new LensQuestionOption
+            {
+                Label = option.Label,
+                Description = option.Description
+            }).ToList()
+        };
+    }
+
+    private static LensAnsweredQuestion CloneAnsweredQuestion(LensAnsweredQuestion source)
+    {
+        return new LensAnsweredQuestion
+        {
+            QuestionId = source.QuestionId,
+            Answers = [.. source.Answers]
+        };
+    }
+
+    private static List<LensItemSummary> MergeItemSummaries(
+        IReadOnlyList<LensItemSummary> current,
+        IReadOnlyList<LensItemSummary> upserts,
+        IReadOnlyList<string> removals)
+    {
+        var next = current.ToDictionary(item => item.ItemId, CloneItemSummary, StringComparer.Ordinal);
+        foreach (var removal in removals)
+        {
+            next.Remove(removal);
+        }
+
+        foreach (var upsert in upserts)
+        {
+            next[upsert.ItemId] = CloneItemSummary(upsert);
+        }
+
+        return next.Values.OrderByDescending(item => item.UpdatedAt).ToList();
+    }
+
+    private static List<LensRequestSummary> MergeRequestSummaries(
+        IReadOnlyList<LensRequestSummary> current,
+        IReadOnlyList<LensRequestSummary> upserts,
+        IReadOnlyList<string> removals)
+    {
+        var next = current.ToDictionary(request => request.RequestId, CloneRequestSummary, StringComparer.Ordinal);
+        foreach (var removal in removals)
+        {
+            next.Remove(removal);
+        }
+
+        foreach (var upsert in upserts)
+        {
+            next[upsert.RequestId] = CloneRequestSummary(upsert);
+        }
+
+        return next.Values.OrderByDescending(request => request.UpdatedAt).ToList();
+    }
+
+    private static List<LensRuntimeNotice> MergeNotices(
+        IReadOnlyList<LensRuntimeNotice> current,
+        IReadOnlyList<LensRuntimeNotice> upserts)
+    {
+        var next = current.ToDictionary(notice => notice.EventId, CloneNotice, StringComparer.Ordinal);
+        foreach (var upsert in upserts)
+        {
+            next[upsert.EventId] = CloneNotice(upsert);
+        }
+
+        return next.Values.OrderByDescending(notice => notice.CreatedAt).ToList();
     }
 
     private static string NormalizeMode(string? mode)
@@ -928,29 +1448,6 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             CodexMode => CodexMode,
             _ => OffMode
         };
-    }
-
-    private void EnsurePulseSessionSeeded(string sessionId, string profile)
-    {
-        if (_pulse.GetSnapshot(sessionId) is not null)
-        {
-            return;
-        }
-
-        _pulse.Append(new LensPulseEvent
-        {
-            EventId = $"seed-{Guid.NewGuid():N}",
-            SessionId = sessionId,
-            Provider = profile,
-            CreatedAt = DateTimeOffset.UtcNow,
-            Type = "session.started",
-            SessionState = new LensPulseSessionStatePayload
-            {
-                State = "starting",
-                StateLabel = "Starting",
-                Reason = "Lens runtime attached and waiting for provider events."
-            }
-        });
     }
 
     private static string ToStatusValue(HostRuntimeStatus status)
@@ -1249,6 +1746,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         state.PendingCommands.Clear();
         state.DisposeConnection();
+        CompleteHistorySubscribers(state);
 
         if (state.ReaderTask is not null)
         {
@@ -1299,6 +1797,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
 
         state.PendingCommands.Clear();
+        CompleteHistorySubscribers(state);
+        state.CachedHistoryWindow = null;
 
         try
         {
@@ -1326,6 +1826,19 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         state.Status = HostRuntimeStatus.Stopped;
         state.HostPid = 0;
+    }
+
+    private static void CompleteHistorySubscribers(HostRuntimeState state)
+    {
+        lock (state.HistorySubscribersSync)
+        {
+            foreach (var subscriber in state.HistoryPatchSubscribers)
+            {
+                subscriber.Writer.TryComplete();
+            }
+
+            state.HistoryPatchSubscribers.Clear();
+        }
     }
 
     private static async Task TerminateHostProcessAsync(Process? launchedProcess, int hostPid)
@@ -1385,6 +1898,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         public StreamReader? Error { get; private set; }
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
+        public LensHistoryWindowResponse? CachedHistoryWindow { get; set; }
+        public Lock HistorySubscribersSync { get; } = new();
+        public List<LensHistoryPatchSubscriber> HistoryPatchSubscribers { get; } = [];
 
         public void AttachOwnedConnection(HostTransportConnection connection)
         {
@@ -1419,6 +1935,11 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             try { error?.Dispose(); } catch { }
             try { process?.Dispose(); } catch { }
         }
+    }
+
+    private sealed class LensHistoryPatchSubscriber(ChannelWriter<LensHistoryPatch> writer)
+    {
+        public ChannelWriter<LensHistoryPatch> Writer { get; } = writer;
     }
 
     private sealed class HostTransportConnection : IDisposable
@@ -1510,3 +2031,58 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         Stopped
     }
 }
+
+public sealed class LensHistoryPatchSubscription : IDisposable
+{
+    private readonly SubscriptionState _state;
+    private int _disposed;
+
+    internal LensHistoryPatchSubscription(ChannelReader<LensHistoryPatch> reader, SubscriptionState state)
+    {
+        Reader = reader;
+        _state = state;
+    }
+
+    public ChannelReader<LensHistoryPatch> Reader { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _state.Close();
+    }
+}
+
+internal sealed class SubscriptionState
+{
+    private readonly Action _dispose;
+    private int _disposed;
+
+    public SubscriptionState(Action dispose)
+    {
+        _dispose = dispose;
+    }
+
+    public void Close()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _dispose();
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+

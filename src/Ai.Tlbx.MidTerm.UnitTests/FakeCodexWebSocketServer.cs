@@ -20,7 +20,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         string endpoint,
         string loadedThreadId,
         string assistantReply,
-        bool emitRichTranscriptItems,
+        bool emitRichHistoryItems,
         bool emitTurnIds,
         bool emitLateDiffAfterCompletion,
         bool emitMcpToolProgress,
@@ -30,7 +30,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
         AssistantReply = assistantReply;
-        EmitRichTranscriptItems = emitRichTranscriptItems;
+        EmitRichHistoryItems = emitRichHistoryItems;
         EmitTurnIds = emitTurnIds;
         EmitLateDiffAfterCompletion = emitLateDiffAfterCompletion;
         EmitMcpToolProgress = emitMcpToolProgress;
@@ -47,7 +47,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public string AssistantReply { get; }
 
-    public bool EmitRichTranscriptItems { get; }
+    public bool EmitRichHistoryItems { get; }
 
     public bool EmitTurnIds { get; }
 
@@ -62,7 +62,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
-        bool emitRichTranscriptItems = false,
+        bool emitRichHistoryItems = false,
         bool emitTurnIds = false,
         bool emitLateDiffAfterCompletion = false,
         bool emitMcpToolProgress = false,
@@ -74,7 +74,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
             endpoint,
             loadedThreadId,
             assistantReply,
-            emitRichTranscriptItems,
+            emitRichHistoryItems,
             emitTurnIds,
             emitLateDiffAfterCompletion,
             emitMcpToolProgress,
@@ -282,7 +282,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
-                        if (EmitRichTranscriptItems)
+                        if (EmitRichHistoryItems)
                         {
                             await SendJsonAsync(socket, new
                             {
@@ -449,7 +449,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 delta = AssistantReply
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
-                        if (EmitRichTranscriptItems)
+                        if (EmitRichHistoryItems)
                         {
                             await SendJsonAsync(socket, new
                             {
@@ -621,3 +621,4 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 }
+

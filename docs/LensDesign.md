@@ -21,6 +21,7 @@ When Lens UX changes, update both sections in the same work. If a rule is specif
 
 This document governs:
 
+- the canonical Lens history architecture and ownership boundary
 - history ordering and grouping
 - rendering of user messages, assistant output, tool activity, diffs, approvals, and plan-mode questions
 - composer and ready-state presentation
@@ -48,16 +49,84 @@ Future refactors may improve or replace the implementation of any of the above, 
 ## Terminology
 
 - `history` means the canonical provider-backed ordered sequence of Lens items.
+- `history item` means one canonical, self-renderable Lens entry in that sequence. Each item has a type that determines how the frontend renders it.
+- `history window` means a contiguous absolute index range within canonical history.
+- `history count` means the current total number of canonical history items.
 - `timeline` means the rendered visual presentation of that history in the Lens UI.
 - `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names and should not be used as the Lens UI concept.
+
+## Naming Contract
+
+New Lens work must use the following concept names consistently:
+
+- use `history` for the canonical ordered Lens item sequence
+- use `history item` for one canonical renderable entry
+- use `history window` for an absolute index range inside canonical history
+- use `history count` for the total number of canonical history items
+- use `timeline` for the rendered visual presentation of history in the UI
+- use `provider event` for raw Codex or Claude structured inputs before canonization
+- use `canonization` for the provider-to-canonical mapping step in `mtagenthost`
+- use `canonical item type` for the backend-defined item kind that determines frontend rendering behavior
+- use `interview item` for the dedicated question-list widget style item type
+
+The following legacy names should be treated as deprecated for Lens architecture and Lens UI discussion:
+
+- `transcript`
+- `transcript entry`
+- transport-era snapshot/delta naming that predates the canonical history model
+
+Allowed legacy usage:
+
+- existing wire types, DTOs, schema fields, and service names may continue to use legacy names until they are migrated
+- when referring to those legacy symbols, pair them with the intended concept name in docs, reviews, and code comments where useful
+
+Preferred migration language:
+
+- say `history item` instead of `transcript entry`
+- say `history window fetch` instead of `snapshot window` when discussing the intended architecture
+- say `provider event stream` instead of older live-feed transport wording
+- say `canonical history service` instead of older reducer/live-feed service wording
+
+Naming rule:
+
+- no new Lens-facing type, service, DTO, field, API shape, document section, or frontend concept should introduce fresh `transcript` or transport-era live-feed naming unless it is intentionally preserving compatibility with an existing legacy surface
 
 ## Runtime Boundary
 
 - Explicit Codex and Claude Lens sessions must ingest exactly one MidTerm-owned canonical runtime stream, and that stream must come through `mtagenthost`.
-- `mtagenthost` is the only place where provider-specific transport, protocol parsing, and event adaptation belong for Lens.
-- MidTerm must not keep a parallel in-process provider adapter, duplicate parser, or silent fallback runtime for the same Lens provider path.
+- `mtagenthost` is the only place where provider-specific transport, protocol parsing, provider-specific semantics, and event canonization belong for Lens.
+- `mtagenthost` must reduce provider-specific structured events into one provider-neutral canonical Lens history model that is a capability superset of the supported provider surfaces.
+- `mtagenthost` must own the canonical in-memory Lens history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.
+- Lens sessions must be immune to `mt` restarts. Restarting or replacing `mt` must not destroy, reset, or orphan the canonical Lens session state for an attached Codex or Claude Lens runtime.
+- All canonical Lens session state needed for recovery after an `mt` restart must live in the owning `mtagenthost` instance for that Lens session.
+- The intended runtime cardinality is one dedicated `mtagenthost` process per explicit Codex Lens session or Claude Lens session.
+- Canonical Lens history must be optimized for human consumption. Transport noise, fluff, superseded chatter, and non-view-affecting provider detail should be discarded as early as possible to save memory.
 - If `mtagenthost` attach fails, Lens should surface that failure and remain unattached rather than switching to a second provider ingestion path with different behavior.
 - The frontend should consume the same canonical MidTerm Lens concepts regardless of provider and regardless of the provider's raw wire shape.
+
+## Architecture Contract
+
+Specified architecture:
+
+1. Codex and Claude emit structured events with provider-specific formats and semantics.
+2. `mtagenthost` canonizes those provider events into one linear in-memory history of canonical Lens items.
+3. That canonical history is index-addressable and human-oriented. Each item has a type that dictates frontend rendering behavior.
+4. `mt` brokers access to that history. It is a bridge layer, not the canonical history owner.
+5. The frontend measures the viewport and fetches only the history items needed to render the visible region plus a modest margin.
+6. The frontend forgets items that move out of view, while keeping enough nearby history resident that scrolling back roughly 30 to 70 items remains instant.
+7. Restarting `mt` must not interrupt or erase an active Lens session. `mt` must be able to reconnect to the still-owning `mtagenthost` and resume brokering the same canonical history.
+
+The canonical history contract must satisfy the following:
+
+- history fetches are index-window fetches, not provider-event replays and not pixel-window fetches
+- the essential fetch shape is `give me items startIndex..endIndex` or an equivalent `startIndex + count`
+- fetch responses must include the returned absolute item indexes plus the current overall history count
+- the frontend should be able to virtualize from count plus item windows without depending on backend-owned pixel spacer estimates
+- canonical items should be self-renderable for the normal Lens UI path
+- canonical items may intentionally summarize or omit raw provider payload detail if that detail is not intended for direct viewing
+- canonical history should include special interactive item types when the agent expects dedicated UI treatment rather than plain text rendering
+- one required draft interactive type is an `interview` item where the agent emits a list of questions and the frontend renders a dedicated response widget
+- canonical recovery after an `mt` restart must come from `mtagenthost` state, not from rebuilding browser-visible history inside a fresh `mt` process from partial browser caches
 
 ## Core Principles
 
@@ -107,14 +176,14 @@ Future refactors may improve or replace the implementation of any of the above, 
 - Lens must not retain thousands of history nodes in the live DOM.
 - Once the visible history grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
 - Virtualization must preserve stable scroll behavior and not break streaming updates at the bottom.
-- Lens scrollbar geometry for unseen history must come from MidTerm-owned canonical history metrics, not from averaging the currently loaded browser slice.
-- Lens should combine backend-owned unseen-history estimates with browser-measured visible-row heights so the scrollbar stays stable even when history rows vary substantially in height.
-- Lens history transport should be window-aware: MidTerm may deliver only the currently materialized history slice plus total-count/window metadata, and the UI should request older or newer slices on demand instead of assuming the full history is resident in the browser.
-- Browser-resident Lens history should stay bounded to a working window instead of accumulating the full session scrollback in memory.
-- When a Lens surface becomes hidden or inactive, its rendered history DOM should be dropped and its retained browser-side history window should collapse back toward a small latest-history slice while the runtime keeps ingesting canonical state.
-- The browser should treat Lens history as a viewport over MidTerm-owned canonical history, not as a durable full-history cache.
-- Different browsers viewing the same Lens session may hold different local windows and scroll positions without changing the canonical history owned by MidTerm.
-- Older-history fetches should retrieve only the requested canonical slice plus window metadata, not replay the full raw provider event stream.
+- Lens history transport must be count-and-index based. The browser should know total history count and fetch absolute history windows by index.
+- The backend history contract must not require the browser to depend on backend-owned pixel spacer estimates for unseen history.
+- The frontend owns viewport measurement, row measurement, and DOM virtualization behavior.
+- Browser-resident Lens history should stay bounded to the visible working set plus a modest nearby margin instead of accumulating the full session scrollback in memory.
+- The browser should treat Lens history as a viewport over `mtagenthost`-owned canonical history, not as a durable full-history cache.
+- Different browsers viewing the same Lens session may hold different local windows and scroll positions without changing the canonical history.
+- Older-history fetches should retrieve only the requested canonical slice plus total-count metadata, not replay the full raw provider event stream.
+- When a Lens surface becomes hidden or inactive, its rendered history DOM should be dropped and its retained browser-side history should collapse toward a small nearby slice while the runtime keeps ingesting canonical state.
 
 ### 7. Responsive behavior
 
@@ -182,13 +251,39 @@ Future refactors may improve or replace the implementation of any of the above, 
 
 ### Raw Event Reduction
 
+- Codex and Claude may emit radically different structured event shapes and semantics.
+- `mtagenthost` must canonize those provider-specific events into one provider-neutral canonical history model before the web UI sees them.
 - Provider runtimes may emit vastly more data than Lens should render directly.
 - Raw provider traffic is not the Lens UX contract. Canonical history is.
 - The Lens timeline should preserve meaning, identity, and operator comprehension, not raw wire completeness.
-- Giant command outputs, giant file bodies, repetitive progress chatter, and transport-level event spam should be summarized, windowed, or suppressed before they reach the normal timeline.
+- Giant command outputs, giant file bodies, repetitive progress chatter, and transport-level event spam should be summarized, windowed, or suppressed before they reach canonical history.
 - Lens should make it obvious when content is intentionally windowed or summarized by using stable omitted-line markers, bounded previews, or disclosure affordances.
 - Raw provider inputs are transient reducer inputs, not retained Lens history.
 - If content is not meant to be shown later, or needed to determine what is shown later, it should be dropped instead of preserved in a hidden Lens data layer.
+
+### Canonical History Shape
+
+- Canonical Lens history is one linear sequence of canonical history items.
+- That sequence must be addressable by absolute index and current total count.
+- History fetches must operate on index windows rather than provider event streams.
+- Canonical history storage should be designed so the frontend can ask for `startIndex..endIndex` style windows and receive those items plus the current history count.
+- The canonical history should not require the frontend to understand provider-specific event semantics in order to virtualize or render.
+- Each canonical item type must fully determine the frontend renderer path for that item.
+- Canonical item types should cover at least:
+  - user message style items
+  - assistant message style items
+  - tool / machine output items
+  - diff / file change items
+  - request / approval items
+  - system / notice items
+  - interview items
+
+### Interview Items
+
+- Lens must support special canonical interactive history items where the agent expects a dedicated frontend widget rather than plain text rendering.
+- One first-class draft interactive type is an `interview` item that carries a list of questions.
+- The frontend should render `interview` items with a dedicated widget-oriented presentation rather than flattening them into ordinary assistant markdown.
+- Provider-specific question/request semantics may map into that canonical item type, but the frontend should only consume the canonical item contract.
 
 ### Ordering
 
@@ -244,8 +339,8 @@ Future refactors may improve or replace the implementation of any of the above, 
 - When command output is available immediately after a command-execution row, Lens should fold up to 12 tail lines beneath that same `Ran …` line in muted terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - Folded command-output tails should remain raw terminal text. Do not apply assistant-style semantic enrichment, clickable file-path decoration, or inline image previews inside those noisy tail lines.
-- When the backend already materializes a command-output transcript row that contains both the command header and compact output window, Lens should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
-- Canonical command-output transcript rows should preserve the command header as structured command metadata rather than forcing the browser to recover it from a truncated body.
+- When the backend already materializes a command-output history row that contains both the command header and compact output window, Lens should normalize that row directly into the same persistent `Ran …` presentation instead of depending on adjacency with a separate command-execution row.
+- Canonical command-output history rows should preserve the command header as structured command metadata rather than forcing the browser to recover it from a truncated body.
 - Omission markers such as `... earlier output omitted ...` or `... N earlier lines omitted ...` are output-tail metadata, not command headers, and Lens must never render them as the `Ran …` command text.
 - Once a `Ran …` command row has been surfaced in the current Lens history window, later partial updates or transient backend shape changes must not downgrade it back into a generic tool row, strip its folded tail, or drop it from that materialized history slice.
 - Repetitive tool lifecycle chatter should collapse into the owning tool row instead of materializing as many visually separate history rows.
@@ -341,15 +436,24 @@ Future refactors may improve or replace the implementation of any of the above, 
 ## Performance Rules
 
 - Streaming must not cause full history/timeline rerenders.
-- Live Lens transport should flow as `provider event -> mt canonical stream state -> /ws/lens delta -> visible row patch`.
+- Live Lens transport should flow as `provider event -> mtagenthost canonization -> mt bridge -> frontend history window fetch / delta -> visible row patch`.
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
 - Rich tool/log items should support collapsed rendering by default, but working diffs should stay expanded with a bounded visible body.
 - High-volume provider chatter should be reduced before transport so the browser receives canonical history deltas, not raw-event floods.
-- The browser should request older/newer history as explicit window fetches and should not receive arbitrary unseen history by default.
-- Multiple browsers attached to one Lens session should share the same MidTerm-owned canonical history while independently fetching only the windows each browser currently needs.
+- The browser should request history as explicit index windows and should not receive arbitrary unseen history by default.
+- Multiple browsers attached to one Lens session should share the same canonical history while independently fetching only the windows each browser currently needs.
 - Re-entry and reconnect should prefer a latest anchored window plus live follow mode by default; older-history windows should be fetched only after explicit user navigation.
-- If the user is browsing an older window and off-window history mutations arrive, Lens should refresh that canonical window rather than pretending remote spacer geometry can be corrected from partial browser knowledge alone.
+- If the user is browsing an older window and off-window history mutations arrive, Lens should refresh that canonical window rather than pretending unseen history can be corrected from partial browser knowledge alone.
+- The frontend should retain only the visible window plus a modest nearby margin. Once items move far enough out of view, they should be discarded from browser memory and certainly from the live DOM.
+
+## Current Gaps
+
+- not yet implemented: browser virtualization now carries forward observed row-height samples across previously seen windows at the current width bucket, but it still does not keep a richer canonical or long-run distribution model for highly heterogeneous off-window scrollbar accuracy
+- not yet implemented: legacy `SessionLensHistoryService` usage still exists in some non-Lens-browser paths even though the Lens browser-facing canonical history path now comes from `mtagenthost`
+- not yet implemented: older transport-era naming and `transcript` naming still leak through non-browser services, reducer internals, host-owned canonical state types, and some debug/test surfaces even though the active browser/websocket path is now history-first
+- not yet implemented: interview interactions now render inline in the timeline with a dedicated request widget, but they are still modeled as request summaries plus request history rows rather than a fully separate canonical `interview` item type end to end
+- not yet implemented: Codex interview/user-input is supported through a verified structured runtime contract, but Claude interview/user-input remains explicitly unsupported until MidTerm integrates a verified structured Claude contract instead of a guessed bridge
 
 ## Dev Diagnostics
 
@@ -396,6 +500,7 @@ Status in this branch/work item:
 - implemented: hidden/background Lens sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Lens history is treated as a bounded browser-side view window over MidTerm-owned canonical history rather than as an unbounded full-history browser cache
 - implemented: explicit Codex and Claude Lens sessions now route through `mtagenthost` as the single structured runtime boundary; `SessionLensRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
+- implemented: Claude Lens no longer injects or parses a MidTerm-invented XML user-input bridge in the active runtime path; unsupported Claude interview/user-input now remains unsupported instead of relying on guessed protocol behavior
 - implemented: Lens retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: MidTerm-side Lens persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Lens surface no longer routes through terminal focus reclaim, so drag text selection in Lens remains intact after the mouse button is released
@@ -410,17 +515,26 @@ Status in this branch/work item:
 - implemented: immediate command output is folded into the command row as a muted up-to-12-line tail instead of always rendering as a separate noisy row
 - implemented: folded command-output tails now stay raw terminal text without assistant-style file-path linkification or inline image previews
 - implemented: provisional command-output rows now reconcile onto their canonical command/tool identity so folded `Ran …` tails remain attached after later item completion or later commands in the same turn
-- implemented: command-output transcript rows now carry canonical command text separately from the truncated output body, so omission markers cannot be mis-promoted into fake `Ran ...` commands and compact tails keep their line structure
+- implemented: command-output history rows now carry canonical command text separately from the truncated output body, so omission markers cannot be mis-promoted into fake `Ran ...` commands and compact tails keep their line structure
 - implemented: command rows now stay on the dedicated flat `Ran …` presentation once normalized, preserving their folded tails across later partial updates and temporary shape regressions while that history window remains materialized
 - implemented: raw provider/tool chatter is reduced into canonical history rows so the normal Lens timeline does not mirror full wire-level noise
-- implemented: unseen-history spacer geometry now comes from MidTerm-owned canonical height estimates in the Lens snapshot instead of averaging the currently loaded browser slice
+- implemented: browser-facing canonical Lens history now lives in `mtagenthost`, with `mt` brokering history windows and history patches instead of rebuilding a competing canonical browser history reducer
+- implemented: explicit Lens sessions now survive `mt` restart by reconnecting to the owning `mtagenthost` and reusing that host-owned canonical history
+- implemented: Lens history transport between browser and backend now uses count/index history windows and canonical history patches rather than backend-owned unseen-history pixel spacer estimates
+- implemented: `/ws/lens` no longer needs or serves the old browser-facing `snapshot.get` / `events.get` compatibility path; the active Lens browser transport is `history.window.get` plus live `history.patch`
+- implemented: unseen-history spacer geometry is now estimated locally in the browser from total history count plus loaded-row estimates and measured row heights
 - implemented: visible-row virtualization now prefers browser-measured row heights over static heuristics and keeps those measurements as the render window shifts
-- implemented: older-history paging now restores scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
+- implemented: the browser now retains one bounded moving history window and shifts it by overlapping absolute index fetches instead of monotonically expanding the cached history while the user pages around
+- implemented: retained browser history now recenters around the actual visible history range plus a bounded nearby margin rather than only paging by fixed top/bottom thresholds
+- implemented: viewport-driven history refetch now trims retained browser history down to the visible range plus a bounded nearby margin instead of enforcing an extra fixed retained-window floor
+- implemented: unseen-history spacer estimation now retains observed row-height samples across previously visited windows at the current width bucket instead of relying only on the currently loaded slice
+- implemented: older-history and newer-history window shifts restore scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
 - implemented: when off-window canonical history changes arrive while the user is browsing older history, Lens now refreshes that window instead of silently leaving remote spacer geometry stale
 - implemented: when a hidden Lens session returns to view while its cached browser window is still off the live edge, Lens now refreshes the latest window and rerenders immediately when hidden-history compaction finishes so the viewport does not strand the user inside spacer-only voids
+- implemented: the active TypeScript Lens client and browser state now consume history-first window/patch types directly instead of normalizing live browser traffic back into the older snapshot/delta DTO shape
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: assistant rows now stay markdown-rendered while streaming and remain markdown-rendered after later turns begin, so settled replies do not visually fall back to plain text
-- implemented: finalized Lens transcript rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
+- implemented: finalized Lens history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Lens file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
 - implemented: assistant markdown blank-line gap markers now use a tighter quarter-em pause per blank line instead of the older taller half-em spacing
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Lens body
@@ -467,6 +581,8 @@ Status in this branch/work item:
 - implemented: Codex MCP startup-status notifications now reduce into quiet `Agent State` system rows instead of generic unknown-agent fallback tool rows
 - implemented: multi-line Codex stderr startup/deprecation failures now reduce into single red `Agent Error` notice rows instead of separate generic warning lines
 - implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values
+- implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
+- implemented gap: canonical interactive request/question flows now have a dedicated frontend interview widget, but the backend model still represents them as request summaries rather than a first-class canonical `interview` item type
 
 Still mandatory after this work whenever Lens evolves:
 

@@ -8,23 +8,8 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
 {
-    private const string MidTermUserInputOpenTag = "<midterm-user-input>";
-    private const string MidTermUserInputCloseTag = "</midterm-user-input>";
-    private const string MidTermUserInputBridgePrompt =
-        """
-        When you need more information or a decision from the user before you can continue, stop and reply with only one XML block in this exact format:
-        <midterm-user-input>{"questions":[{"id":"question-id","header":"Short header","question":"The full question for the user.","multiSelect":false,"options":[{"label":"Option label","description":"Short tradeoff or explanation"}]}]}</midterm-user-input>
-
-        Rules:
-        - Output only the XML block and nothing else when requesting user input.
-        - Include 1 to 3 questions.
-        - Use short stable ids.
-        - Use options for multiple-choice questions. Use an empty options array for free-form answers.
-        - After the user answers, continue the same task.
-        - If you need more input later, use the same XML block format again.
-        """;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
-    private readonly Action<LensHostEventEnvelope> _emit;
+    private readonly Action<LensProviderEvent> _emit;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<int, ClaudeBlockState> _blocks = [];
@@ -44,12 +29,13 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
     private LensQuickSettingsSummary _quickSettings = new();
-    private PendingClaudeUserInput? _pendingUserInput;
+    private bool _assistantStreamEmitted;
     private bool _turnStarted;
+    private bool _assistantMessageEmitted;
     private bool _interruptRequested;
     private long _sequence;
 
-    public ClaudeLensAgentRuntime(Action<LensHostEventEnvelope> emit)
+    public ClaudeLensAgentRuntime(Action<LensProviderEvent> emit)
     {
         _emit = emit;
     }
@@ -74,8 +60,8 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                 "runtime.attach" => Attach(command),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
-                "request.resolve" => throw new InvalidOperationException("Claude Lens request resolution is not available through the current Claude CLI bridge."),
-                "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
+                "request.resolve" => throw new InvalidOperationException("Claude Lens approval resolution is not supported by the current Claude runtime integration."),
+                "user-input.resolve" => throw new InvalidOperationException("Claude Lens interview/user-input resolution is not supported by the current Claude runtime integration."),
                 _ => throw new InvalidOperationException($"Unsupported Claude command '{command.Type}'.")
             };
         }
@@ -116,11 +102,11 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             _providerThreadId = attach.ResumeThreadId;
         }
 
-        var events = new List<LensHostEventEnvelope>
+        var events = new List<LensProviderEvent>
         {
             CreateEvent("session.started", null, null, null, "mtagenthost.claude", "runtime.attach", attach, lensEvent =>
             {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
+                lensEvent.SessionState = new LensProviderSessionStatePayload
                 {
                     State = "starting",
                     StateLabel = "Starting",
@@ -129,7 +115,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             }),
             CreateEvent("session.ready", null, null, null, "mtagenthost.claude", "runtime.attach", attach, lensEvent =>
             {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
+                lensEvent.SessionState = new LensProviderSessionStatePayload
                 {
                     State = "ready",
                     StateLabel = "Ready",
@@ -143,7 +129,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         {
             events.Add(CreateEvent("thread.started", null, null, null, "mtagenthost.claude", "runtime.attach", attach, lensEvent =>
             {
-                lensEvent.ThreadState = new LensPulseThreadStatePayload
+                lensEvent.ThreadState = new LensProviderThreadStatePayload
                 {
                     State = "active",
                     StateLabel = "Active",
@@ -158,17 +144,12 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     private async Task<HostCommandOutcome> StartTurnAsync(LensHostCommandEnvelope command, CancellationToken ct)
     {
         EnsureAttached();
-        if (_pendingUserInput is not null)
-        {
-            throw new InvalidOperationException("Claude is waiting for user input. Resolve the pending question set or interrupt the turn first.");
-        }
-
         if (_process is { HasExited: false } activeProcess)
         {
             await activeProcess.WaitForExitAsync(ct).ConfigureAwait(false);
         }
 
-        if (_process is not null && (_process.HasExited || string.IsNullOrWhiteSpace(_activeTurnId) || _pendingUserInput is not null))
+        if (_process is not null && (_process.HasExited || string.IsNullOrWhiteSpace(_activeTurnId)))
         {
             await DisposeProcessAsync(resetTurnState: false).ConfigureAwait(false);
         }
@@ -192,9 +173,10 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         _activeTurnModel = quickSettings.Model;
         _activeTurnEffort = quickSettings.Effort;
         _quickSettings = quickSettings;
+        _assistantStreamEmitted = false;
         _turnStarted = false;
+        _assistantMessageEmitted = false;
         _interruptRequested = false;
-        _pendingUserInput = null;
         _blocks.Clear();
         _tools.Clear();
 
@@ -242,72 +224,6 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         };
     }
 
-    private async Task<HostCommandOutcome> ResolveUserInputAsync(LensHostCommandEnvelope command, CancellationToken ct)
-    {
-        EnsureAttached();
-        var resolution = command.ResolveUserInput ?? throw new InvalidOperationException("user-input.resolve payload is required.");
-        var pending = _pendingUserInput;
-        if (pending is null || !string.Equals(pending.RequestId, resolution.RequestId, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"Unknown pending Claude user-input request: {resolution.RequestId}");
-        }
-
-        if (_process is not null && (_process.HasExited || string.IsNullOrWhiteSpace(_activeTurnId)))
-        {
-            await DisposeProcessAsync(resetTurnState: false).ConfigureAwait(false);
-        }
-
-        var answers = NormalizeResolvedAnswers(pending, resolution.Answers);
-        var continuationPrompt = BuildUserInputAnswerPrompt(pending, answers);
-        _pendingUserInput = null;
-
-        try
-        {
-            await StartClaudeProcessAsync(
-                continuationPrompt,
-                [],
-                _activeTurnModel,
-                _activeTurnEffort,
-                _quickSettings.PermissionMode,
-                ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            _pendingUserInput = pending;
-            throw;
-        }
-
-        return Accepted(
-            command.CommandId,
-            command.SessionId,
-            accepted: new LensCommandAcceptedResponse
-            {
-                SessionId = command.SessionId,
-                Status = "accepted",
-                RequestId = resolution.RequestId,
-                TurnId = pending.TurnId
-            },
-            events:
-            [
-                CreateEvent("user-input.resolved", pending.TurnId, pending.ItemId, resolution.RequestId, "midterm.lens", "claude/user-input.resolve", resolution, lensEvent =>
-                {
-                    lensEvent.UserInputResolved = new LensPulseUserInputResolvedPayload
-                    {
-                        Answers = answers
-                    };
-                }),
-                CreateEvent("session.state.changed", pending.TurnId, pending.ItemId, resolution.RequestId, "midterm.lens", "claude/user-input.resolve", resolution, lensEvent =>
-                {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
-                    {
-                        State = "resuming",
-                        StateLabel = "Resuming",
-                        Reason = "Claude is continuing after user input."
-                    };
-                })
-            ]);
-    }
-
     private async Task<HostCommandOutcome> InterruptTurnAsync(LensHostCommandEnvelope command, CancellationToken ct)
     {
         var turnId = string.IsNullOrWhiteSpace(command.InterruptTurn?.TurnId)
@@ -348,7 +264,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             [
                 CreateEvent("turn.aborted", turnId, null, null, "mtagenthost.claude", "turn.interrupt", command.InterruptTurn, lensEvent =>
                 {
-                    lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                    lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                     {
                         State = "interrupted",
                         StateLabel = "Interrupted",
@@ -357,7 +273,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                 }),
                 CreateEvent("session.state.changed", turnId, null, null, "mtagenthost.claude", "turn.interrupt", command.InterruptTurn, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = "ready",
                         StateLabel = "Ready",
@@ -371,7 +287,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
-            while (!ct.IsCancellationRequested && !process.HasExited && _output is not null)
+            while (!ct.IsCancellationRequested && _output is not null)
             {
                 var line = await _output.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null)
@@ -402,7 +318,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
-            while (!ct.IsCancellationRequested && !process.HasExited && _error is not null)
+            while (!ct.IsCancellationRequested && _error is not null)
             {
                 var line = await _error.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null)
@@ -440,7 +356,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         {
             _emit(CreateEvent("turn.completed", _activeTurnId, null, null, "claude.stream-json", "process.exit", new { exitCode = process.ExitCode }, lensEvent =>
             {
-                lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                 {
                     State = "failed",
                     StateLabel = "Failed",
@@ -503,7 +419,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.stream-json", "message_start", root, lensEvent =>
                     {
-                        lensEvent.SessionState = new LensPulseSessionStatePayload
+                        lensEvent.SessionState = new LensProviderSessionStatePayload
                         {
                             State = "running",
                             StateLabel = "Running",
@@ -516,7 +432,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                         _turnStarted = true;
                         _emit(CreateEvent("turn.started", _activeTurnId, null, null, "claude.stream-json", "message_start", root, lensEvent =>
                         {
-                            lensEvent.TurnStarted = new LensPulseTurnStartedPayload
+                            lensEvent.TurnStarted = new LensProviderTurnStartedPayload
                             {
                                 Model = GetString(root, "event", "message", "model") ?? _activeTurnModel,
                                 Effort = _activeTurnEffort
@@ -573,7 +489,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
 
         _emit(CreateEvent("item.started", _activeTurnId, itemId, null, "claude.stream-json", "content_block_start", root, lensEvent =>
         {
-            lensEvent.Item = new LensPulseItemPayload
+            lensEvent.Item = new LensProviderItemPayload
             {
                 ItemType = itemType,
                 Status = "in_progress",
@@ -606,7 +522,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("content.delta", _activeTurnId, state.ItemId, null, "claude.stream-json", "content_block_delta", root, lensEvent =>
                     {
-                        lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+                        lensEvent.ContentDelta = new LensProviderContentDeltaPayload
                         {
                             StreamKind = "reasoning_text",
                             Delta = delta
@@ -615,6 +531,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                 }
                 else
                 {
+                    EmitAssistantDelta(delta, root, rawLine);
                     state.Detail.Append(delta);
                 }
 
@@ -635,7 +552,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                     tool.Detail.Append(partialJson);
                     _emit(CreateEvent("item.updated", _activeTurnId, tool.ItemId, null, "claude.stream-json", "content_block_delta", root, lensEvent =>
                     {
-                        lensEvent.Item = new LensPulseItemPayload
+                        lensEvent.Item = new LensProviderItemPayload
                         {
                             ItemType = tool.ItemType,
                             Status = "in_progress",
@@ -658,42 +575,6 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             return;
         }
 
-        if (TryParseUserInputRequest(text, out var questions, out var visibleAssistantText))
-        {
-            if (!string.IsNullOrWhiteSpace(visibleAssistantText))
-            {
-                EmitAssistantMessage(visibleAssistantText, root, rawLine);
-            }
-
-            var requestId = "ui-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-            var itemId = $"assistant:{_activeTurnId}";
-            _pendingUserInput = new PendingClaudeUserInput
-            {
-                RequestId = requestId,
-                TurnId = _activeTurnId,
-                ItemId = itemId,
-                Questions = questions
-            };
-
-            _emit(CreateEvent("user-input.requested", _activeTurnId, itemId, requestId, "claude.stream-json", "assistant", root, lensEvent =>
-            {
-                lensEvent.UserInputRequested = new LensPulseUserInputRequestedPayload
-                {
-                    Questions = questions
-                };
-            }, rawLine));
-            _emit(CreateEvent("session.state.changed", _activeTurnId, itemId, requestId, "claude.stream-json", "assistant", root, lensEvent =>
-            {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
-                {
-                    State = "waiting_for_input",
-                    StateLabel = "Waiting for input",
-                    Reason = BuildQuestionSummary(questions)
-                };
-            }, rawLine));
-            return;
-        }
-
         EmitAssistantMessage(text, root, rawLine);
     }
 
@@ -704,18 +585,16 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             return;
         }
 
-        var itemId = $"assistant:{_activeTurnId}";
-        _emit(CreateEvent("content.delta", _activeTurnId, itemId, null, "claude.stream-json", "assistant", root, lensEvent =>
+        if (!_assistantStreamEmitted)
         {
-            lensEvent.ContentDelta = new LensPulseContentDeltaPayload
-            {
-                StreamKind = "assistant_text",
-                Delta = text
-            };
-        }, rawLine));
+            EmitAssistantDelta(text, root, rawLine);
+        }
+
+        _assistantMessageEmitted = true;
+        var itemId = $"assistant:{_activeTurnId}";
         _emit(CreateEvent("item.completed", _activeTurnId, itemId, null, "claude.stream-json", "assistant", root, lensEvent =>
         {
-            lensEvent.Item = new LensPulseItemPayload
+            lensEvent.Item = new LensProviderItemPayload
             {
                 ItemType = "assistant_message",
                 Status = "completed",
@@ -755,7 +634,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             {
                 _emit(CreateEvent("content.delta", _activeTurnId, tool.ItemId, null, "claude.stream-json", "tool_result", root, lensEvent =>
                 {
-                    lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+                    lensEvent.ContentDelta = new LensProviderContentDeltaPayload
                     {
                         StreamKind = "command_output",
                         Delta = resultText
@@ -765,7 +644,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
 
             _emit(CreateEvent("item.completed", _activeTurnId, tool.ItemId, null, "claude.stream-json", "tool_result", root, lensEvent =>
             {
-                lensEvent.Item = new LensPulseItemPayload
+                lensEvent.Item = new LensProviderItemPayload
                 {
                     ItemType = tool.ItemType,
                     Status = "completed",
@@ -787,17 +666,16 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         var isError = GetBoolean(root, "is_error");
         var subtype = GetString(root, "subtype") ?? (isError ? "error" : "success");
         var resultText = GetString(root, "result");
-        if (!isError && _pendingUserInput is not null)
+        if (!isError &&
+            !_assistantMessageEmitted &&
+            !string.IsNullOrWhiteSpace(resultText))
         {
-            _blocks.Clear();
-            _tools.Clear();
-            _interruptRequested = false;
-            return;
+            EmitAssistantMessage(resultText, root, rawLine);
         }
 
         _emit(CreateEvent("turn.completed", _activeTurnId, null, null, "claude.stream-json", "result", root, lensEvent =>
         {
-            lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+            lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
             {
                 State = isError ? "failed" : "completed",
                 StateLabel = isError ? "Failed" : "Completed",
@@ -807,7 +685,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }, rawLine));
         _emit(CreateEvent("session.state.changed", _activeTurnId, null, null, "claude.stream-json", "result", root, lensEvent =>
         {
-            lensEvent.SessionState = new LensPulseSessionStatePayload
+            lensEvent.SessionState = new LensProviderSessionStatePayload
             {
                 State = isError ? "error" : "ready",
                 StateLabel = isError ? "Error" : "Ready",
@@ -831,7 +709,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         _providerThreadId = providerThreadId;
         _emit(CreateEvent("thread.started", null, null, null, "claude.stream-json", "session_id", root, lensEvent =>
         {
-            lensEvent.ThreadState = new LensPulseThreadStatePayload
+            lensEvent.ThreadState = new LensProviderThreadStatePayload
             {
                 State = "active",
                 StateLabel = "Active",
@@ -840,11 +718,30 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         }));
     }
 
+    private void EmitAssistantDelta(string text, JsonElement root, string rawLine)
+    {
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(_activeTurnId))
+        {
+            return;
+        }
+
+        _assistantStreamEmitted = true;
+        var itemId = $"assistant:{_activeTurnId}";
+        _emit(CreateEvent("content.delta", _activeTurnId, itemId, null, "claude.stream-json", "assistant", root, lensEvent =>
+        {
+            lensEvent.ContentDelta = new LensProviderContentDeltaPayload
+            {
+                StreamKind = "assistant_text",
+                Delta = text
+            };
+        }, rawLine));
+    }
+
     private void EmitRuntimeMessage(string eventType, string message, string? detail)
     {
         _emit(CreateEvent(eventType, _activeTurnId, null, null, "mtagenthost.claude", eventType, new { message, detail }, lensEvent =>
         {
-            lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+            lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = message,
                 Detail = detail
@@ -856,7 +753,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         string commandId,
         string sessionId,
         LensCommandAcceptedResponse? accepted = null,
-        IReadOnlyList<LensHostEventEnvelope>? events = null)
+        IReadOnlyList<LensProviderEvent>? events = null)
     {
         return new HostCommandOutcome
         {
@@ -876,7 +773,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         };
     }
 
-    private LensHostEventEnvelope CreateEvent(
+    private LensProviderEvent CreateEvent(
         string eventType,
         string? turnId,
         string? itemId,
@@ -884,10 +781,10 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         string source,
         string? method,
         object? payload,
-        Action<LensPulseEvent>? configure = null,
+        Action<LensProviderEvent>? configure = null,
         string? rawPayloadJson = null)
     {
-        var lensEvent = new LensPulseEvent
+        var lensEvent = new LensProviderEvent
         {
             Sequence = Interlocked.Increment(ref _sequence),
             EventId = $"evt-{Provider}-{_sequence.ToString(CultureInfo.InvariantCulture)}",
@@ -899,7 +796,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             RequestId = requestId,
             CreatedAt = DateTimeOffset.UtcNow,
             Type = eventType,
-            Raw = new LensPulseEventRaw
+            Raw = new LensProviderEventRaw
             {
                 Source = source,
                 Method = method,
@@ -907,11 +804,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             }
         };
         configure?.Invoke(lensEvent);
-        return new LensHostEventEnvelope
-        {
-            SessionId = _sessionId ?? string.Empty,
-            Event = lensEvent
-        };
+        return lensEvent;
     }
 
     private static string? SerializePayload(object? payload)
@@ -1088,9 +981,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             "--verbose",
             "--output-format",
             "stream-json",
-            "--include-partial-messages",
-            "--append-system-prompt",
-            MidTermUserInputBridgePrompt
+            "--include-partial-messages"
         };
 
         if (string.Equals(
@@ -1154,7 +1045,7 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
             defaultPermissionMode);
     }
 
-    private LensHostEventEnvelope CreateQuickSettingsUpdatedEvent(
+    private LensProviderEvent CreateQuickSettingsUpdatedEvent(
         LensQuickSettingsSummary quickSettings,
         string source,
         string? method,
@@ -1181,203 +1072,6 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                 LensHostJsonContext.Default.LensTurnRequest),
             _ => default
         };
-    }
-
-    private static List<LensPulseAnsweredQuestion> NormalizeResolvedAnswers(
-        PendingClaudeUserInput pending,
-        IReadOnlyList<LensPulseAnsweredQuestion> answers)
-    {
-        var resolvedById = answers
-            .Where(static answer => !string.IsNullOrWhiteSpace(answer.QuestionId))
-            .GroupBy(answer => answer.QuestionId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
-
-        var normalized = new List<LensPulseAnsweredQuestion>(pending.Questions.Count);
-        foreach (var question in pending.Questions)
-        {
-            if (!resolvedById.TryGetValue(question.Id, out var answer))
-            {
-                normalized.Add(new LensPulseAnsweredQuestion
-                {
-                    QuestionId = question.Id,
-                    Answers = []
-                });
-                continue;
-            }
-
-            normalized.Add(new LensPulseAnsweredQuestion
-            {
-                QuestionId = question.Id,
-                Answers = [.. answer.Answers.Where(static value => !string.IsNullOrWhiteSpace(value))]
-            });
-        }
-
-        return normalized;
-    }
-
-    private static string BuildUserInputAnswerPrompt(PendingClaudeUserInput pending, IReadOnlyList<LensPulseAnsweredQuestion> answers)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("User answers for your previous MidTerm input request:");
-        builder.AppendLine();
-
-        foreach (var question in pending.Questions)
-        {
-            var answer = answers.FirstOrDefault(candidate => string.Equals(candidate.QuestionId, question.Id, StringComparison.Ordinal));
-            var answerText = answer is null || answer.Answers.Count == 0
-                ? "(no answer provided)"
-                : string.Join(", ", answer.Answers);
-        builder.Append("- ");
-        builder.Append(question.Header);
-        builder.Append(" [");
-        builder.Append(question.Id);
-            builder.Append("]: ");
-            builder.AppendLine(answerText);
-        }
-
-        builder.AppendLine();
-        builder.Append("Continue the same task. If you still need user input later, use the same MidTerm XML input block format again and keep that request machine-readable.");
-        return builder.ToString();
-    }
-
-    private static bool TryParseUserInputRequest(
-        string assistantText,
-        out List<LensPulseQuestion> questions,
-        out string visibleAssistantText)
-    {
-        questions = [];
-        visibleAssistantText = assistantText.Trim();
-        var startIndex = assistantText.IndexOf(MidTermUserInputOpenTag, StringComparison.OrdinalIgnoreCase);
-        if (startIndex < 0)
-        {
-            return false;
-        }
-
-        var endIndex = assistantText.IndexOf(MidTermUserInputCloseTag, startIndex + MidTermUserInputOpenTag.Length, StringComparison.OrdinalIgnoreCase);
-        if (endIndex < 0)
-        {
-            return false;
-        }
-
-        var before = assistantText[..startIndex].Trim();
-        var after = assistantText[(endIndex + MidTermUserInputCloseTag.Length)..].Trim();
-        visibleAssistantText = string.Join(Environment.NewLine, new[] { before, after }.Where(static value => !string.IsNullOrWhiteSpace(value)));
-
-        var jsonText = assistantText.Substring(startIndex + MidTermUserInputOpenTag.Length, endIndex - startIndex - MidTermUserInputOpenTag.Length).Trim();
-        if (string.IsNullOrWhiteSpace(jsonText))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(jsonText);
-            var questionArray = document.RootElement.ValueKind switch
-            {
-                JsonValueKind.Array => document.RootElement,
-                JsonValueKind.Object when document.RootElement.TryGetProperty("questions", out var parsedQuestions) => parsedQuestions,
-                _ => default
-            };
-            if (questionArray.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
-            var index = 0;
-            using var questionItems = questionArray.EnumerateArray();
-            while (questionItems.MoveNext())
-            {
-                var entry = questionItems.Current;
-                if (entry.ValueKind != JsonValueKind.Object)
-                {
-                    index++;
-                    continue;
-                }
-
-                var header = GetString(entry, "header");
-                var question = GetString(entry, "question");
-                var normalizedHeader = string.IsNullOrWhiteSpace(header)
-                    ? string.Create(CultureInfo.InvariantCulture, $"Question {index + 1}")
-                    : header.Trim();
-                var normalizedQuestion = string.IsNullOrWhiteSpace(question) ? normalizedHeader : question.Trim();
-                var id = NormalizeQuestionId(GetString(entry, "id"), normalizedHeader, index);
-                var options = new List<LensPulseQuestionOption>();
-                if (entry.TryGetProperty("options", out var optionArray) && optionArray.ValueKind == JsonValueKind.Array)
-                {
-                    using var optionItems = optionArray.EnumerateArray();
-                    while (optionItems.MoveNext())
-                    {
-                        var option = optionItems.Current;
-                        if (option.ValueKind != JsonValueKind.Object)
-                        {
-                            continue;
-                        }
-
-                        var label = GetString(option, "label");
-                        if (string.IsNullOrWhiteSpace(label))
-                        {
-                            continue;
-                        }
-
-                        options.Add(new LensPulseQuestionOption
-                        {
-                            Label = label.Trim(),
-                            Description = (GetString(option, "description") ?? string.Empty).Trim()
-                        });
-                    }
-                }
-
-                questions.Add(new LensPulseQuestion
-                {
-                    Id = id,
-                    Header = normalizedHeader,
-                    Question = normalizedQuestion,
-                    MultiSelect = GetBoolean(entry, "multiSelect"),
-                    Options = options
-                });
-                index++;
-            }
-
-            return questions.Count > 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static string NormalizeQuestionId(string? candidate, string header, int index)
-    {
-        var source = string.IsNullOrWhiteSpace(candidate) ? header : candidate;
-        var builder = new StringBuilder();
-        foreach (var ch in source)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                continue;
-            }
-
-            if (builder.Length > 0 && builder[^1] != '-')
-            {
-                builder.Append('-');
-            }
-        }
-
-        var normalized = builder.ToString().Trim('-');
-        return string.IsNullOrWhiteSpace(normalized)
-            ? string.Create(CultureInfo.InvariantCulture, $"question-{index + 1}")
-            : normalized;
-    }
-
-    private static string BuildQuestionSummary(IReadOnlyList<LensPulseQuestion> questions)
-    {
-        return string.Join(
-            " | ",
-            questions.Select(static question =>
-                string.IsNullOrWhiteSpace(question.Question)
-                    ? question.Header
-                    : $"{question.Header}: {question.Question}"));
     }
 
     private static string JoinClaudeAssistantText(JsonElement root)
@@ -1625,8 +1319,9 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         _activeTurnId = null;
         _activeTurnModel = null;
         _activeTurnEffort = null;
-        _pendingUserInput = null;
+        _assistantStreamEmitted = false;
         _turnStarted = false;
+        _assistantMessageEmitted = false;
         _interruptRequested = false;
         _blocks.Clear();
         _tools.Clear();
@@ -1649,11 +1344,17 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
         public StringBuilder Detail { get; set; } = new();
     }
 
-    private sealed class PendingClaudeUserInput
-    {
-        public string RequestId { get; set; } = string.Empty;
-        public string TurnId { get; set; } = string.Empty;
-        public string? ItemId { get; set; }
-        public List<LensPulseQuestion> Questions { get; set; } = [];
-    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

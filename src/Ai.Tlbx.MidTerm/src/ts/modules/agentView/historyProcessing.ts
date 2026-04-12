@@ -1,15 +1,14 @@
 import { t } from '../i18n';
 import type {
-  LensPulseEvent,
-  LensPulseHistoryEntry,
-  LensPulseRequestSummary,
-  LensPulseSnapshotResponse,
+  LensHistoryRequestSummary,
+  LensHistoryRuntimeNotice,
+  LensHistorySnapshot,
+  LensHistoryItem,
 } from '../../api/client';
 import type {
   LensAttachmentReference,
   LensInlineFileReference,
   LensInlineImagePreview,
-  LensPulseRuntimeNotice,
 } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import {
@@ -108,11 +107,8 @@ function cloneImagePreviews(
   return imagePreviews?.map((preview) => ({ ...preview })) ?? [];
 }
 
-export function buildLensHistoryEntries(
-  snapshot: LensPulseSnapshotResponse,
-  _events: LensPulseEvent[],
-): LensHistoryEntry[] {
-  const historyEntries = Array.isArray(snapshot.transcript) ? snapshot.transcript : [];
+export function buildLensHistoryEntries(snapshot: LensHistorySnapshot): LensHistoryEntry[] {
+  const historyEntries = Array.isArray(snapshot.history) ? snapshot.history : [];
   if (historyEntries.length === 0) {
     return [];
   }
@@ -182,10 +178,7 @@ function resolveHistoryEntryLabel(kind: HistoryKind, itemType: string | null | u
 export function preservePersistentCommandEntries(
   entries: readonly LensHistoryEntry[],
   previousEntries: readonly LensHistoryEntry[],
-  snapshot:
-    | Pick<LensPulseSnapshotResponse, 'historyWindowEnd' | 'historyWindowStart'>
-    | null
-    | undefined,
+  snapshot: Pick<LensHistorySnapshot, 'historyWindowEnd' | 'historyWindowStart'> | null | undefined,
 ): LensHistoryEntry[] {
   if (entries.length === 0 && previousEntries.length === 0) {
     return [];
@@ -237,7 +230,7 @@ export function preservePersistentCommandEntries(
 }
 
 function isCommandExecutionSnapshotEntry(
-  entry: Pick<LensPulseHistoryEntry, 'kind' | 'itemType'>,
+  entry: Pick<LensHistoryItem, 'kind' | 'itemType'>,
 ): boolean {
   return (
     normalizeSnapshotHistoryKind(entry.kind) === 'tool' &&
@@ -408,10 +401,7 @@ function shouldForcePersistentCommandPresentation(
 
 function shouldRetainMissingCommandEntry(
   entry: LensHistoryEntry,
-  snapshot:
-    | Pick<LensPulseSnapshotResponse, 'historyWindowEnd' | 'historyWindowStart'>
-    | null
-    | undefined,
+  snapshot: Pick<LensHistorySnapshot, 'historyWindowEnd' | 'historyWindowStart'> | null | undefined,
 ): boolean {
   if (!snapshot) {
     return true;
@@ -511,7 +501,7 @@ export function isSuppressedLensRuntimeNoticeEntry(
 }
 
 export function buildLensRuntimeStats(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
 ): LensRuntimeStatsSummary | null {
   const stats: LensRuntimeStatsSummary = {
     windowUsedTokens: null,
@@ -525,7 +515,7 @@ export function buildLensRuntimeStats(
   const sources =
     snapshot.notices.length > 0
       ? snapshot.notices
-      : snapshot.transcript
+      : snapshot.history
           .filter((entry) =>
             isSuppressedLensRuntimeNoticeEntry({
               kind: normalizeSnapshotHistoryKind(entry.kind),
@@ -533,7 +523,7 @@ export function buildLensRuntimeStats(
               body: entry.body,
             }),
           )
-          .map<LensPulseRuntimeNotice>((entry) => ({
+          .map<LensHistoryRuntimeNotice>((entry) => ({
             eventId: entry.entryId,
             type: normalizeSnapshotHistoryKind(entry.kind),
             message: entry.title ?? '',
@@ -564,7 +554,7 @@ export function buildLensRuntimeStats(
 }
 
 function parseCodexContextWindowNotice(
-  notice: Pick<LensPulseRuntimeNotice, 'message' | 'detail'>,
+  notice: Pick<LensHistoryRuntimeNotice, 'message' | 'detail'>,
 ): {
   usedTokens: number | null;
   windowTokens: number;
@@ -622,7 +612,7 @@ function parseCodexContextWindowNotice(
 }
 
 function parseCodexRateLimitNotice(
-  notice: Pick<LensPulseRuntimeNotice, 'message' | 'detail'>,
+  notice: Pick<LensHistoryRuntimeNotice, 'message' | 'detail'>,
 ): { primaryUsedPercent: number | null; secondaryUsedPercent: number | null } | null {
   if (
     normalizeComparableHistoryText(notice.message) !==
@@ -655,7 +645,7 @@ function parseCodexRateLimitNotice(
 }
 
 export function applyOptimisticLensTurns(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
   entries: readonly LensHistoryEntry[],
   optimisticTurns: readonly PendingLensTurn[],
 ): { entries: LensHistoryEntry[]; optimisticTurns: PendingLensTurn[] } {
@@ -728,7 +718,7 @@ export function applyOptimisticLensTurns(
 }
 
 export function withInlineLensStatus(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
   entries: LensHistoryEntry[],
   streamConnected: boolean,
 ): LensHistoryEntry[] {
@@ -765,7 +755,7 @@ export function withInlineLensStatus(
 }
 
 export function withLiveAssistantState(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
   entries: LensHistoryEntry[],
 ): LensHistoryEntry[] {
   if (snapshot.currentTurn.state !== 'running' && snapshot.currentTurn.state !== 'in_progress') {
@@ -798,9 +788,9 @@ export function withLiveAssistantState(
 }
 
 export function withTrailingBusyIndicator(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
   entries: LensHistoryEntry[],
-  requests: readonly LensPulseRequestSummary[],
+  requests: readonly LensHistoryRequestSummary[],
 ): LensHistoryEntry[] {
   const currentTurnState = (snapshot.currentTurn.state || '').toLowerCase();
   const sessionState = (snapshot.session.state || '').toLowerCase();
@@ -833,7 +823,7 @@ export function withTrailingBusyIndicator(
   return nextEntries;
 }
 
-function resolveBusyIndicatorLabelFromSnapshotItems(snapshot: LensPulseSnapshotResponse): string {
+function resolveBusyIndicatorLabelFromSnapshotItems(snapshot: LensHistorySnapshot): string {
   const currentTurnId = snapshot.currentTurn.turnId ?? null;
   const items = Array.isArray(snapshot.items) ? snapshot.items : [];
 
@@ -918,7 +908,7 @@ function resolveBusyIndicatorLabelFromItem(item: unknown): string {
     : '';
 }
 
-function resolveBusyIndicatorElapsedMs(snapshot: LensPulseSnapshotResponse): number | null {
+function resolveBusyIndicatorElapsedMs(snapshot: LensHistorySnapshot): number | null {
   const startedAt = snapshot.currentTurn.startedAt ?? null;
   if (!startedAt) {
     return null;
@@ -928,7 +918,7 @@ function resolveBusyIndicatorElapsedMs(snapshot: LensPulseSnapshotResponse): num
   return Number.isFinite(startMs) ? Math.max(0, Date.now() - startMs) : null;
 }
 
-function resolveBusyIndicatorAnimationOffsetMs(snapshot: LensPulseSnapshotResponse): number {
+function resolveBusyIndicatorAnimationOffsetMs(snapshot: LensHistorySnapshot): number {
   const elapsedMs = resolveBusyIndicatorElapsedMs(snapshot);
   if (elapsedMs === null) {
     return 0;
@@ -938,7 +928,7 @@ function resolveBusyIndicatorAnimationOffsetMs(snapshot: LensPulseSnapshotRespon
 }
 
 function maybeRememberCompletedTurnDuration(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
   state: SessionLensViewState,
 ): void {
   const turnId = snapshot.currentTurn.turnId ?? null;
@@ -1012,7 +1002,7 @@ function appendTurnDurationEntries(
 }
 
 export function withTurnDurationNotes(
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
   entries: LensHistoryEntry[],
   state: SessionLensViewState,
 ): LensHistoryEntry[] {
@@ -1022,7 +1012,7 @@ export function withTurnDurationNotes(
 }
 
 export function syncBusyIndicatorTicker(args: {
-  snapshot: LensPulseSnapshotResponse;
+  snapshot: LensHistorySnapshot;
   state: SessionLensViewState;
   entries: readonly LensHistoryEntry[];
   renderCurrentAgentView: (sessionId: string, options?: { immediate?: boolean }) => void;

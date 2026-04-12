@@ -27,11 +27,10 @@ import type {
   LensTurnStartResponse,
   LensInterruptRequest,
   LensCommandAcceptedResponse,
-  LensPulseDeltaResponse,
+  LensHistoryDelta,
   LensRequestDecisionRequest,
   LensUserInputAnswerRequest,
-  LensPulseSnapshotResponse,
-  LensPulseEventListResponse,
+  LensHistorySnapshot,
   CreateHistoryRequest,
   HistoryPatchRequest,
   CreateShareLinkRequest,
@@ -48,10 +47,10 @@ import {
   attachLensSession,
   declineLensRequestWs,
   detachLensSession,
-  getLensEventsWs,
-  getLensSnapshotWs,
+  getLensHistoryWindowWs,
   interruptLensTurnWs,
-  openLensEventSocket,
+  openLensHistorySocket,
+  updateLensHistorySocketWindow,
   resolveLensUserInputWs,
   submitLensTurnWs,
 } from './lensWebSocket';
@@ -513,19 +512,12 @@ export async function sendLensTurn(
   return submitLensTurnWs(id, request);
 }
 
-export async function getLensSnapshot(
+export async function getLensHistoryWindow(
   id: string,
   startIndex?: number,
   count?: number,
-): Promise<LensPulseSnapshotResponse> {
-  return getLensSnapshotWs(id, startIndex, count);
-}
-
-export async function getLensEvents(
-  id: string,
-  afterSequence = 0,
-): Promise<LensPulseEventListResponse> {
-  return getLensEventsWs(id, afterSequence);
+): Promise<LensHistorySnapshot> {
+  return getLensHistoryWindowWs(id, startIndex, count);
 }
 
 export async function interruptLensTurn(
@@ -558,21 +550,29 @@ export async function resolveLensUserInput(
   return resolveLensUserInputWs(id, requestId, request);
 }
 
-export interface LensEventStreamCallbacks {
-  onDelta(delta: LensPulseDeltaResponse): void;
-  onSnapshot?(snapshot: LensPulseSnapshotResponse): void;
+export interface LensHistoryStreamCallbacks {
+  onPatch(patch: LensHistoryDelta): void;
+  onHistoryWindow?(historyWindow: LensHistorySnapshot): void;
   onOpen?(): void;
   onError?(error: Event): void;
 }
 
-export function openLensEventStream(
+export function openLensHistoryStream(
   id: string,
   afterSequence: number,
   startIndex: number | undefined,
   count: number | undefined,
-  callbacks: LensEventStreamCallbacks,
+  callbacks: LensHistoryStreamCallbacks,
 ): () => void {
-  return openLensEventSocket(id, afterSequence, startIndex, count, callbacks);
+  return openLensHistorySocket(id, afterSequence, startIndex, count, callbacks);
+}
+
+export function updateLensHistoryStreamWindow(
+  id: string,
+  startIndex: number | undefined,
+  count: number | undefined,
+): void {
+  updateLensHistorySocketWindow(id, startIndex, count);
 }
 
 // --- Settings ---

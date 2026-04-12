@@ -9,4 +9,10 @@
     <Version>4.0.1</Version>
     <FileVersion>4.0.1.0</FileVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.Tests" />
+    <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.UnitTests" />
+    <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.AgentHost.UnitTests" />
+  </ItemGroup>
 </Project>

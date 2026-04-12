@@ -40,7 +40,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
         var hostDll = ResolveAgentHostDll();
         using var process = StartAgentHost(hostDll);
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
 
         try
         {
@@ -63,18 +63,17 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
             var attachResult = await LensHostTestClient.ReadResultAsync(
                 process.StandardOutput,
-                pendingEvents,
+                pendingPatches,
                 "cmd-attach-real-codex-live-resume");
             Assert.Equal("accepted", attachResult.Status);
 
-            var attachEvents = await ReadAttachObservationAsync(
+            var attachWindow = await WaitForReadyWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                TimeSpan.FromSeconds(8));
-            LogEvents("codex attach", attachEvents);
-
-            var threadEvent = Assert.Single(attachEvents, envelope => envelope.Event.Type == "thread.started");
-            Assert.Equal(candidate.SessionId, threadEvent.Event.ThreadState?.ProviderThreadId);
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-live-resume");
+            LogWindow("codex attach", attachWindow);
+            Assert.Equal(candidate.SessionId, attachWindow.Thread.ThreadId);
 
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
@@ -95,18 +94,19 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
             var turnResult = await LensHostTestClient.ReadResultAsync(
                 process.StandardOutput,
-                pendingEvents,
+                pendingPatches,
                 "cmd-turn-real-codex-live-resume");
             Assert.Equal("accepted", turnResult.Status);
 
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 160);
-            LogEvents("codex turn", turnEvents);
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-live-resume",
+                "completed");
+            LogWindow("codex turn", turnWindow);
 
-            var assistantText = CollectAssistantText(turnEvents);
+            var assistantText = LensHostTestClient.CollectAssistantText(turnWindow);
             _output.WriteLine($"Codex resumed assistant text: {NormalizeMessage(assistantText)}");
             AssertNormalizedMessageMatch(candidate.RecentUserMessage, assistantText);
         }
@@ -144,7 +144,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
         var hostDll = ResolveAgentHostDll();
         using var process = StartAgentHost(hostDll, configureClaudePermissions: true);
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
 
         try
         {
@@ -167,18 +167,17 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
             var attachResult = await LensHostTestClient.ReadResultAsync(
                 process.StandardOutput,
-                pendingEvents,
+                pendingPatches,
                 "cmd-attach-real-claude-live-resume");
             Assert.Equal("accepted", attachResult.Status);
 
-            var attachEvents = await ReadAttachObservationAsync(
+            var attachWindow = await WaitForReadyWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                TimeSpan.FromSeconds(8));
-            LogEvents("claude attach", attachEvents);
-
-            var threadEvent = Assert.Single(attachEvents, envelope => envelope.Event.Type == "thread.started");
-            Assert.Equal(candidate.SessionId, threadEvent.Event.ThreadState?.ProviderThreadId);
+                process.StandardInput,
+                pendingPatches,
+                "session-real-claude-live-resume");
+            LogWindow("claude attach", attachWindow);
+            Assert.Equal(candidate.SessionId, attachWindow.Thread.ThreadId);
 
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
@@ -199,18 +198,19 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
             var turnResult = await LensHostTestClient.ReadResultAsync(
                 process.StandardOutput,
-                pendingEvents,
+                pendingPatches,
                 "cmd-turn-real-claude-live-resume");
             Assert.Equal("accepted", turnResult.Status);
 
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 220);
-            LogEvents("claude turn", turnEvents);
+                process.StandardInput,
+                pendingPatches,
+                "session-real-claude-live-resume",
+                "completed");
+            LogWindow("claude turn", turnWindow);
 
-            var assistantText = CollectAssistantText(turnEvents);
+            var assistantText = LensHostTestClient.CollectAssistantText(turnWindow);
             _output.WriteLine($"Claude resumed assistant text: {NormalizeMessage(assistantText)}");
             AssertNormalizedMessageMatch(candidate.RecentUserMessage, assistantText);
         }
@@ -532,30 +532,6 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         Assert.Equal(normalizedExpected, normalizedActual);
     }
 
-    private static string CollectAssistantText(IEnumerable<LensHostEventEnvelope> events)
-    {
-        var completedAssistantMessages = events
-            .Where(static envelope =>
-                envelope.Event.Type == "item.completed" &&
-                string.Equals(envelope.Event.Item?.ItemType, "assistant_message", StringComparison.Ordinal) &&
-                !string.IsNullOrWhiteSpace(envelope.Event.Item?.Detail))
-            .Select(static envelope => envelope.Event.Item!.Detail!)
-            .ToList();
-
-        if (completedAssistantMessages.Count > 0)
-        {
-            return string.Join(Environment.NewLine, completedAssistantMessages);
-        }
-
-        return string.Concat(
-            events
-                .Where(static envelope =>
-                    envelope.Event.Type == "content.delta" &&
-                    string.Equals(envelope.Event.ContentDelta?.StreamKind, "assistant_text", StringComparison.Ordinal) &&
-                    !string.IsNullOrWhiteSpace(envelope.Event.ContentDelta?.Delta))
-                .Select(static envelope => envelope.Event.ContentDelta!.Delta));
-    }
-
     private static List<string> Tokenize(string text)
     {
         return NonWhitespaceRegex().Matches(text)
@@ -603,44 +579,45 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         }
     }
 
-    private async Task<IReadOnlyList<LensHostEventEnvelope>> ReadAttachObservationAsync(
+    private async Task<LensHistoryWindowResponse> WaitForReadyWindowAsync(
         StreamReader reader,
-        Queue<LensHostEventEnvelope> pendingEvents,
-        TimeSpan timeout)
+        StreamWriter writer,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        string sessionId)
     {
-        var events = new List<LensHostEventEnvelope>();
-        var deadline = DateTimeOffset.UtcNow + timeout;
-        var sawReady = false;
-        var sawThreadStarted = false;
-
-        while (events.Count < 12 && (!sawReady || !sawThreadStarted))
-        {
-            var remaining = deadline - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                break;
-            }
-
-            var envelope = await LensHostTestClient.ReadEventAsync(reader, pendingEvents, remaining);
-            events.Add(envelope);
-            sawReady |= string.Equals(envelope.Event.Type, "session.ready", StringComparison.Ordinal);
-            sawThreadStarted |= string.Equals(envelope.Event.Type, "thread.started", StringComparison.Ordinal);
-        }
-
-        return events;
+        return await LensHostTestClient.WaitForHistoryWindowAsync(
+            reader,
+            writer,
+            pendingPatches,
+            sessionId,
+            window => string.Equals(window.Session.State, "ready", StringComparison.Ordinal) &&
+                      !string.IsNullOrWhiteSpace(window.Thread.ThreadId),
+            TimeSpan.FromSeconds(20),
+            count: 240);
     }
 
-    private void LogEvents(string label, IEnumerable<LensHostEventEnvelope> events)
+    private async Task<LensHistoryWindowResponse> WaitForTurnStateWindowAsync(
+        StreamReader reader,
+        StreamWriter writer,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        string sessionId,
+        string state)
     {
-        foreach (var envelope in events)
-        {
-            _output.WriteLine(
-                $"{label}: {envelope.Event.Type} " +
-                $"thread={envelope.Event.ThreadState?.ProviderThreadId ?? "<none>"} " +
-                $"stream={envelope.Event.ContentDelta?.StreamKind ?? "<none>"} " +
-                $"item={envelope.Event.Item?.ItemType ?? "<none>"} " +
-                $"reason={envelope.Event.SessionState?.Reason ?? "<none>"}");
-        }
+        return await LensHostTestClient.WaitForHistoryWindowAsync(
+            reader,
+            writer,
+            pendingPatches,
+            sessionId,
+            window => string.Equals(window.CurrentTurn.State, state, StringComparison.Ordinal),
+            TimeSpan.FromSeconds(90),
+            count: 320);
+    }
+
+    private void LogWindow(string label, LensHistoryWindowResponse window)
+    {
+        _output.WriteLine(
+            $"{label}: session={window.Session.State} thread={window.Thread.ThreadId} turn={window.CurrentTurn.State} " +
+            $"history={window.History.Count}/{window.HistoryCount} requests={window.Requests.Count} notices={window.Notices.Count}");
     }
 
     private static bool IsRealCodexResumeProbeEnabled()

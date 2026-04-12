@@ -22,7 +22,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         "cancel"
     };
 
-    private readonly Action<LensHostEventEnvelope> _emit;
+    private readonly Action<LensProviderEvent> _emit;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonRpcReply>> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingCodexApproval> _pendingApprovals = new(StringComparer.Ordinal);
@@ -44,7 +44,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private long _sequence;
     private int _nextRequestId;
 
-    public CodexLensAgentRuntime(Action<LensHostEventEnvelope> emit)
+    public CodexLensAgentRuntime(Action<LensProviderEvent> emit)
     {
         _emit = emit;
     }
@@ -201,11 +201,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         _providerThreadId = providerThreadId;
-        var events = new List<LensHostEventEnvelope>
+        var events = new List<LensProviderEvent>
         {
             CreateEvent("session.ready", null, null, null, "codex.app-server", "thread/start", threadResult, lensEvent =>
             {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
+                lensEvent.SessionState = new LensProviderSessionStatePayload
                 {
                     State = "ready",
                     StateLabel = "Ready",
@@ -218,7 +218,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             }),
             CreateEvent("thread.started", null, null, null, "codex.app-server", "thread/start", threadResult, lensEvent =>
             {
-                lensEvent.ThreadState = new LensPulseThreadStatePayload
+                lensEvent.ThreadState = new LensProviderThreadStatePayload
                 {
                     State = "active",
                     StateLabel = "Active",
@@ -355,7 +355,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             [
                 CreateEvent("request.resolved", pending.TurnId, pending.ItemId, requestId, "midterm.lens", "item/requestApproval/decision", default, lensEvent =>
                 {
-                    lensEvent.RequestResolved = new LensPulseRequestResolvedPayload
+                    lensEvent.RequestResolved = new LensProviderRequestResolvedPayload
                     {
                         RequestType = pending.RequestType,
                         Decision = decision
@@ -388,9 +388,9 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             [
                 CreateEvent("user-input.resolved", pending.TurnId, pending.ItemId, resolution.RequestId, "midterm.lens", "item/tool/requestUserInput/answered", default, lensEvent =>
                 {
-                    lensEvent.UserInputResolved = new LensPulseUserInputResolvedPayload
+                    lensEvent.UserInputResolved = new LensProviderUserInputResolvedPayload
                     {
-                        Answers = answers.Select(pair => new LensPulseAnsweredQuestion
+                        Answers = answers.Select(pair => new LensAnsweredQuestion
                         {
                             QuestionId = pair.Key,
                             Answers = [.. pair.Value.Answers]
@@ -590,7 +590,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             _emit(CreateEvent("user-input.requested", turnId, itemId, requestId, "codex.app-server.request", method, payload, lensEvent =>
             {
-                lensEvent.UserInputRequested = new LensPulseUserInputRequestedPayload
+                lensEvent.UserInputRequested = new LensProviderUserInputRequestedPayload
                 {
                     Questions = questions
                 };
@@ -623,7 +623,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             _emit(CreateEvent("request.opened", turnId, itemId, requestId, "codex.app-server.request", method, payload, lensEvent =>
             {
-                lensEvent.RequestOpened = new LensPulseRequestOpenedPayload
+                lensEvent.RequestOpened = new LensProviderRequestOpenedPayload
                 {
                     RequestType = requestType,
                     RequestTypeLabel = requestTypeLabel,
@@ -650,7 +650,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("thread.started", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.ThreadState = new LensPulseThreadStatePayload
+                    lensEvent.ThreadState = new LensProviderThreadStatePayload
                     {
                         State = "active",
                         StateLabel = "Active",
@@ -675,7 +675,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var threadState = ResolveCodexThreadState(method, payload);
                 _emit(CreateEvent("thread.state.changed", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.ThreadState = new LensPulseThreadStatePayload
+                    lensEvent.ThreadState = new LensProviderThreadStatePayload
                     {
                         State = threadState.State,
                         StateLabel = threadState.StateLabel,
@@ -683,7 +683,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     };
                     if (!string.IsNullOrWhiteSpace(threadState.Detail))
                     {
-                        lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                        lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                         {
                             Message = threadState.Message,
                             Detail = threadState.Detail
@@ -698,7 +698,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var threadName = GetString(payload, "threadName") ?? GetString(payload, "thread", "name");
                 _emit(CreateEvent("thread.metadata.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = "Codex thread metadata updated.",
                         Detail = string.IsNullOrWhiteSpace(threadName) ? "The thread metadata changed." : $"Renamed to {threadName.Trim()}."
@@ -712,7 +712,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var detail = BuildCodexTokenUsageDetail(payload);
                 _emit(CreateEvent("thread.token-usage.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = "Codex context window updated.",
                         Detail = detail
@@ -727,7 +727,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 _activeTurnId = turnId;
                 _emit(CreateEvent("session.state.changed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = "running",
                         StateLabel = "Running",
@@ -736,7 +736,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 _emit(CreateEvent("turn.started", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.TurnStarted = new LensPulseTurnStartedPayload
+                    lensEvent.TurnStarted = new LensProviderTurnStartedPayload
                     {
                         Model = GetString(payload, "turn", "model"),
                         Effort = GetString(payload, "turn", "effort")
@@ -757,7 +757,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("turn.completed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                    lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                     {
                         State = turnState,
                         StateLabel = HumanizeTurnState(turnState),
@@ -766,7 +766,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 _emit(CreateEvent("session.state.changed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = string.Equals(turnState, "failed", StringComparison.OrdinalIgnoreCase) ? "error" : "ready",
                         StateLabel = string.Equals(turnState, "failed", StringComparison.OrdinalIgnoreCase) ? "Error" : "Ready",
@@ -786,7 +786,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("turn.aborted", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                    lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                     {
                         State = "interrupted",
                         StateLabel = "Interrupted",
@@ -795,7 +795,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 _emit(CreateEvent("session.state.changed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = "ready",
                         StateLabel = "Ready",
@@ -812,7 +812,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("plan.completed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                     {
-                        lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                        lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
                         {
                             PlanMarkdown = planText
                         };
@@ -826,7 +826,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var diff = GetString(payload, "unifiedDiff") ?? GetString(payload, "diff") ?? GetString(payload, "patch") ?? string.Empty;
                 _emit(CreateEvent("diff.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.DiffUpdated = new LensPulseDiffUpdatedPayload
+                    lensEvent.DiffUpdated = new LensProviderDiffUpdatedPayload
                     {
                         UnifiedDiff = diff
                     };
@@ -861,7 +861,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("plan.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
                     {
-                        lensEvent.PlanDelta = new LensPulsePlanDeltaPayload
+                        lensEvent.PlanDelta = new LensProviderPlanDeltaPayload
                         {
                             Delta = delta
                         };
@@ -877,7 +877,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
                 _emit(CreateEvent("item.started", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
@@ -901,7 +901,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     : BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
@@ -936,7 +936,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var detail = GetString(payload, "summary") ?? BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
@@ -965,7 +965,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                              ?? "Codex started a task.";
                 _emit(CreateEvent("item.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
@@ -987,7 +987,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("item.updated", ResolveTurnId(payload), taskId, null, "codex.eventmsg", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = "reasoning",
                         Status = "in_progress",
@@ -1011,7 +1011,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("item.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
                     {
-                        lensEvent.Item = new LensPulseItemPayload
+                        lensEvent.Item = new LensProviderItemPayload
                         {
                             ItemType = itemType,
                             Status = "completed",
@@ -1026,7 +1026,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("plan.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
                     {
-                        lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                        lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
                         {
                             PlanMarkdown = proposedPlan
                         };
@@ -1049,7 +1049,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     : "reasoning_text";
                 _emit(CreateEvent("content.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.eventmsg", method, payload, lensEvent =>
                 {
-                    lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+                    lensEvent.ContentDelta = new LensProviderContentDeltaPayload
                     {
                         StreamKind = streamKind,
                         Delta = delta
@@ -1075,7 +1075,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     {
                         _emit(CreateEvent("plan.completed", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                         {
-                            lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                            lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
                             {
                                 PlanMarkdown = detail
                             };
@@ -1090,7 +1090,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     : $"{PrettifyToolKind(itemType)} completed";
                 _emit(CreateEvent("item.completed", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType is "agent_message" ? "assistant_message" : itemType,
                         Status = "completed",
@@ -1108,7 +1108,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var reason = GetString(payload, "reason");
                 _emit(CreateEvent("model.rerouted", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = $"Codex rerouted the model from {fromModel} to {toModel}.",
                         Detail = reason
@@ -1121,7 +1121,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             {
                 _emit(CreateEvent("deprecation.notice", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = GetString(payload, "summary") ?? "Codex reported a deprecation notice.",
                         Detail = GetString(payload, "details")
@@ -1134,7 +1134,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             {
                 _emit(CreateEvent("config.warning", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = GetString(payload, "summary") ?? "Codex reported a configuration warning.",
                         Detail = JoinNonEmpty(
@@ -1149,7 +1149,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             {
                 _emit(CreateEvent("account.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = "Codex account details updated.",
                         Detail = BuildCompactJsonDetail(payload)
@@ -1162,7 +1162,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             {
                 _emit(CreateEvent("account.rate-limits.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = "Codex rate limits updated.",
                         Detail = BuildCompactJsonDetail(payload)
@@ -1178,7 +1178,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var error = GetString(payload, "error");
                 _emit(CreateEvent("mcp.oauth.completed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = success ? "MCP sign-in completed." : "MCP sign-in failed.",
                         Detail = JoinNonEmpty(name, error)
@@ -1204,7 +1204,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     payload,
                     lensEvent =>
                     {
-                        lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                        lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                         {
                             Message = BuildCodexMcpStartupStatusMessage(serverName, status, error),
                             Detail = hasError ? error : null
@@ -1221,7 +1221,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             {
                 _emit(CreateEvent(MapRealtimeEventType(method), ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = HumanizeRealtimeEvent(method),
                         Detail = BuildCompactJsonDetail(payload)
@@ -1236,7 +1236,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var willRetry = GetBoolean(payload, "willRetry");
                 _emit(CreateEvent(willRetry ? "runtime.warning" : "runtime.error", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = message,
                         Detail = willRetry ? "Codex reported that it will retry." : message
@@ -1261,7 +1261,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         _emit(CreateEvent("content.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
         {
-            lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+            lensEvent.ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = streamKind,
                 Delta = delta
@@ -1283,7 +1283,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             payload,
             lensEvent =>
             {
-                lensEvent.Item = new LensPulseItemPayload
+                lensEvent.Item = new LensProviderItemPayload
                 {
                     ItemType = "unknown_agent_message",
                     Status = "completed",
@@ -1328,7 +1328,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         _emit(CreateEvent(eventType, null, null, null, "mtagenthost.codex", eventType, default, lensEvent =>
         {
-            lensEvent.SessionState = new LensPulseSessionStatePayload
+            lensEvent.SessionState = new LensProviderSessionStatePayload
             {
                 State = state,
                 StateLabel = stateLabel,
@@ -1341,7 +1341,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         _emit(CreateEvent(eventType, _activeTurnId, null, null, "mtagenthost.codex", eventType, default, lensEvent =>
         {
-            lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+            lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = message,
                 Detail = detail
@@ -1451,7 +1451,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return string.Create(CultureInfo.InvariantCulture, $"{name} {status.Trim()}.");
     }
 
-    private LensHostEventEnvelope CreateEvent(
+    private LensProviderEvent CreateEvent(
         string type,
         string? turnId,
         string? itemId,
@@ -1459,10 +1459,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         string rawSource,
         string? rawMethod,
         JsonElement payload,
-        Action<LensPulseEvent> configure)
+        Action<LensProviderEvent> configure)
     {
         var nextSequence = Interlocked.Increment(ref _sequence);
-        var lensEvent = new LensPulseEvent
+        var lensEvent = new LensProviderEvent
         {
             Sequence = nextSequence,
             EventId = "lens-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
@@ -1474,7 +1474,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             RequestId = requestId,
             CreatedAt = DateTimeOffset.UtcNow,
             Type = type,
-            Raw = new LensPulseEventRaw
+            Raw = new LensProviderEventRaw
             {
                 Source = rawSource,
                 Method = rawMethod,
@@ -1483,11 +1483,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         };
 
         configure(lensEvent);
-        return new LensHostEventEnvelope
-        {
-            SessionId = _sessionId ?? string.Empty,
-            Event = lensEvent
-        };
+        return lensEvent;
     }
 
     private void EnsureAttached()
@@ -1800,7 +1796,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         string commandId,
         string sessionId,
         LensCommandAcceptedResponse? accepted = null,
-        IReadOnlyList<LensHostEventEnvelope>? events = null)
+        IReadOnlyList<LensProviderEvent>? events = null)
     {
         return new HostCommandOutcome
         {
@@ -2173,7 +2169,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
     }
 
-    private LensHostEventEnvelope CreateQuickSettingsUpdatedEvent(
+    private LensProviderEvent CreateQuickSettingsUpdatedEvent(
         LensQuickSettingsSummary quickSettings,
         string source,
         string? method,
@@ -2247,7 +2243,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
     private static IReadOnlyDictionary<string, CodexQuestionAnswer> ToCodexQuestionAnswers(
         PendingCodexUserInput pending,
-        IReadOnlyList<LensPulseAnsweredQuestion> answers)
+        IReadOnlyList<LensAnsweredQuestion> answers)
     {
         var answerMap = answers
             .Where(static answer => !string.IsNullOrWhiteSpace(answer.QuestionId))
@@ -2718,9 +2714,9 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return ids;
     }
 
-    private static List<LensPulseQuestion> ReadCodexQuestions(JsonElement payload)
+    private static List<LensQuestion> ReadCodexQuestions(JsonElement payload)
     {
-        var questions = new List<LensPulseQuestion>();
+        var questions = new List<LensQuestion>();
         if (payload.ValueKind != JsonValueKind.Object ||
             !payload.TryGetProperty("questions", out var questionArray) ||
             questionArray.ValueKind != JsonValueKind.Array)
@@ -2732,7 +2728,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         while (questionItems.MoveNext())
         {
             var question = questionItems.Current;
-            var item = new LensPulseQuestion
+            var item = new LensQuestion
             {
                 Id = GetString(question, "id") ?? string.Empty,
                 Header = GetString(question, "header") ?? string.Empty,
@@ -2746,7 +2742,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 while (optionItems.MoveNext())
                 {
                     var option = optionItems.Current;
-                    item.Options.Add(new LensPulseQuestionOption
+                    item.Options.Add(new LensQuestionOption
                     {
                         Label = GetString(option, "label") ?? string.Empty,
                         Description = GetString(option, "description") ?? string.Empty
@@ -2778,7 +2774,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             "command_execution_approval" => "Command approval",
             "file_read_approval" => "File read approval",
             "file_change_approval" => "File change approval",
-            "tool_user_input" => "User input",
+            "interview" => "Interview",
             _ => requestType
         };
     }
@@ -2892,3 +2888,21 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         public string? Detail { get; set; }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -13,7 +13,7 @@ public static class SpaceEndpoints
         TtyHostSessionManager sessionManager,
         SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         WorkerSessionRegistryService workerSessionRegistry)
     {
         app.MapGet("/api/spaces", async (bool? includeWorkspaces, bool? pinnedOnly, CancellationToken ct) =>
@@ -151,7 +151,7 @@ public static class SpaceEndpoints
                 var sessionId = creation.Session!.Id;
                 ApplySessionSpaceMetadata(sessionManager, sessionId, id, workspacePath, surface);
                 return Results.Json(
-                    BuildSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId),
+                    BuildSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId),
                     AppJsonContext.Default.SessionInfoDto);
             }
 
@@ -188,7 +188,7 @@ public static class SpaceEndpoints
                 guidanceInjected: false);
 
             return Results.Json(
-                BuildSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionIdForWorker),
+                BuildSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionIdForWorker),
                 AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -231,14 +231,14 @@ public static class SpaceEndpoints
     private static SessionInfoDto BuildSessionDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         string sessionId)
     {
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
             session.Supervisor = sessionSupervisor.Describe(session);
-            session.HasLensHistory = lensPulse.HasHistory(session.Id);
+            session.HasLensHistory = lensRuntime.HasHistory(session.Id);
         }
 
         return response.Sessions.First(session => string.Equals(session.Id, sessionId, StringComparison.Ordinal));

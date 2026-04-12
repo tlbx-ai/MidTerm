@@ -6,21 +6,18 @@ using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed class SessionLensRuntimeService : IAsyncDisposable
+public sealed class SessionLensRuntimeService : IAsyncDisposable, ISessionLensHeatSource
 {
     private readonly AiCliProfileService _profileService;
-    private readonly SessionLensPulseService _pulse;
     private readonly SessionLensHostRuntimeService _hostRuntime;
 
     public SessionLensRuntimeService(
         TtyHostSessionManager sessionManager,
         AiCliProfileService profileService,
-        SessionLensPulseService pulse,
         SessionLensHostRuntimeService hostRuntime,
         SettingsService? settingsService = null)
     {
         _profileService = profileService;
-        _pulse = pulse;
         _hostRuntime = hostRuntime;
         sessionManager.OnSessionClosed += Forget;
     }
@@ -110,9 +107,54 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
         return _hostRuntime.DetachAsync(sessionId, ct);
     }
 
-    public bool TryGetSnapshot(string sessionId, out LensRuntimeSnapshot snapshot)
+    public bool TryGetRuntimeSummary(string sessionId, out LensRuntimeSummary summary)
     {
-        return _hostRuntime.TryGetSnapshot(sessionId, out snapshot);
+        return _hostRuntime.TryGetRuntimeSummary(sessionId, out summary);
+    }
+
+    public bool HasHistory(string sessionId)
+    {
+        return _hostRuntime.HasHistory(sessionId);
+    }
+
+    public bool TryGetCachedHistoryWindow(string sessionId, out LensHistoryWindowResponse historyWindow)
+    {
+        return _hostRuntime.TryGetCachedHistoryWindow(sessionId, out historyWindow);
+    }
+
+    public SessionLensHeatSnapshot GetHeatSnapshot(string sessionId)
+    {
+        if (!_hostRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
+        {
+            return SessionLensHeatSnapshot.Cold;
+        }
+
+        if (!ShouldSurfaceWorkingHeat(historyWindow))
+        {
+            return SessionLensHeatSnapshot.Cold;
+        }
+
+        return new SessionLensHeatSnapshot
+        {
+            CurrentHeat = 1,
+            LastActivityAt = historyWindow.Session.LastEventAt ?? historyWindow.CurrentTurn.StartedAt
+        };
+    }
+
+    public Task<LensHistoryWindowResponse?> GetHistoryWindowAsync(
+        string sessionId,
+        int? startIndex = null,
+        int? count = null,
+        CancellationToken ct = default)
+    {
+        return _hostRuntime.GetHistoryWindowAsync(sessionId, startIndex, count, ct);
+    }
+
+    public LensHistoryPatchSubscription SubscribeHistoryPatches(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        return _hostRuntime.SubscribeHistoryPatches(sessionId, cancellationToken);
     }
 
     public async Task<bool> TrySendPromptAsync(
@@ -195,16 +237,53 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable
     public void Forget(string sessionId)
     {
         _hostRuntime.Forget(sessionId);
-        _pulse.Forget(sessionId);
     }
 
     public ValueTask DisposeAsync()
     {
         return ValueTask.CompletedTask;
     }
+
+    private static bool ShouldSurfaceWorkingHeat(LensHistoryWindowResponse historyWindow)
+    {
+        if (historyWindow.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (IsWorkingTurnState(historyWindow.CurrentTurn.State))
+        {
+            return true;
+        }
+
+        return string.IsNullOrWhiteSpace(historyWindow.CurrentTurn.State) &&
+               IsWorkingSessionState(historyWindow.Session.State);
+    }
+
+    private static bool IsWorkingTurnState(string? state)
+    {
+        return state?.Trim().ToLowerInvariant() switch
+        {
+            "running" => true,
+            "in_progress" => true,
+            "started" => true,
+            "submitted" => true,
+            _ => false
+        };
+    }
+
+    private static bool IsWorkingSessionState(string? state)
+    {
+        return state?.Trim().ToLowerInvariant() switch
+        {
+            "starting" => true,
+            "running" => true,
+            _ => false
+        };
+    }
 }
 
-public sealed class LensRuntimeSnapshot
+public sealed class LensRuntimeSummary
 {
     public string SessionId { get; init; } = string.Empty;
     public string Profile { get; init; } = string.Empty;

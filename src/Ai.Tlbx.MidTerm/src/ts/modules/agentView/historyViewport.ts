@@ -1,5 +1,10 @@
 import { estimateHistoryEntryHeight } from './historyContent';
-import type { HistoryScrollMetrics, HistoryVirtualWindow, LensHistoryEntry } from './types';
+import type {
+  HistoryIndexRange,
+  HistoryScrollMetrics,
+  HistoryVirtualWindow,
+  LensHistoryEntry,
+} from './types';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const HISTORY_OVERSCAN_PX = 800;
@@ -62,20 +67,69 @@ export function computeHistoryVirtualWindow(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryVirtualWindow {
+  const visibleRange = computeHistoryIndexRange(
+    entries,
+    scrollTop,
+    clientHeight,
+    clientWidth,
+    HISTORY_OVERSCAN_PX,
+    resolveEntryHeight,
+  );
+  const heightForEntry =
+    resolveEntryHeight ??
+    ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
+  const topSpacerPx = entries
+    .slice(0, visibleRange.start)
+    .reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
+  const visibleHeight = entries
+    .slice(visibleRange.start, visibleRange.end)
+    .reduce((sum, entry, index) => sum + heightForEntry(entry, visibleRange.start + index), 0);
+  const totalHeight = entries.reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
+
+  return {
+    start: visibleRange.start,
+    end: visibleRange.end,
+    topSpacerPx,
+    bottomSpacerPx: Math.max(0, totalHeight - topSpacerPx - visibleHeight),
+  };
+}
+
+export function computeHistoryVisibleRange(
+  entries: ReadonlyArray<LensHistoryEntry>,
+  scrollTop: number,
+  clientHeight: number,
+  clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
+  resolveEntryHeight?: HistoryHeightResolver,
+): HistoryIndexRange {
+  return computeHistoryIndexRange(
+    entries,
+    scrollTop,
+    clientHeight,
+    clientWidth,
+    0,
+    resolveEntryHeight,
+  );
+}
+
+function computeHistoryIndexRange(
+  entries: ReadonlyArray<LensHistoryEntry>,
+  scrollTop: number,
+  clientHeight: number,
+  clientWidth: number,
+  overscanPx: number,
+  resolveEntryHeight?: HistoryHeightResolver,
+): HistoryIndexRange {
   if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
     return {
       start: 0,
       end: entries.length,
-      topSpacerPx: 0,
-      bottomSpacerPx: 0,
     };
   }
 
-  const targetTop = Math.max(0, scrollTop - HISTORY_OVERSCAN_PX);
-  const targetBottom = scrollTop + clientHeight + HISTORY_OVERSCAN_PX;
+  const targetTop = Math.max(0, scrollTop - overscanPx);
+  const targetBottom = scrollTop + clientHeight + overscanPx;
   let cumulative = 0;
   let start = 0;
-  let topSpacerPx = 0;
   const heightForEntry =
     resolveEntryHeight ??
     ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
@@ -89,13 +143,14 @@ export function computeHistoryVirtualWindow(
     const height = heightForEntry(entry, index);
     if (cumulative + height >= targetTop) {
       start = index;
-      topSpacerPx = cumulative;
       break;
     }
     cumulative += height;
   }
 
-  cumulative = topSpacerPx;
+  cumulative = entries
+    .slice(0, start)
+    .reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
   let end = start;
   while (end < entries.length && cumulative < targetBottom) {
     const entry = entries[end];
@@ -107,13 +162,9 @@ export function computeHistoryVirtualWindow(
     end += 1;
   }
 
-  const totalHeight = entries.reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
-
   return {
     start,
     end: Math.max(end, start + 1),
-    topSpacerPx,
-    bottomSpacerPx: Math.max(0, totalHeight - cumulative),
   };
 }
 

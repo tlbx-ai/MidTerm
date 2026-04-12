@@ -31,4 +31,24 @@ internal static partial class LensHistoryTextSanitizer
 
         return builder.ToString().Trim();
     }
+
+    public static string JoinDistinctSections(params string?[] sections)
+    {
+        List<string>? parts = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var section in sections)
+        {
+            var sanitized = Sanitize(section);
+            if (string.IsNullOrWhiteSpace(sanitized) || !seen.Add(sanitized))
+            {
+                continue;
+            }
+
+            parts ??= [];
+            parts.Add(sanitized);
+        }
+
+        return parts is null ? string.Empty : string.Join("\n\n", parts);
+    }
 }

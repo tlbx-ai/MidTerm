@@ -60,7 +60,6 @@ public static partial class SessionApiEndpoints
         SessionTelemetryService sessionTelemetry,
         SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
         SessionCodexHandoffService codexHandoff,
         ProviderResumeCatalogService providerResumeCatalog,
@@ -72,7 +71,7 @@ public static partial class SessionApiEndpoints
         {
             var response = new StateUpdate
             {
-                Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensPulse),
+                Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime),
                 Update = updateService.LatestUpdate,
                 Layout = layoutStateService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id)),
                 ManagerBarQueue = managerBarQueueService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id)).ToList()
@@ -155,12 +154,12 @@ public static partial class SessionApiEndpoints
 
         app.MapGet("/api/sessions", () =>
         {
-            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, lensPulse), AppJsonContext.Default.SessionListDto);
+            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime), AppJsonContext.Default.SessionListDto);
         });
 
         app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
         {
-            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, lensPulse).Sessions, agentOnly);
+            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime).Sessions, agentOnly);
             return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
@@ -193,7 +192,7 @@ public static partial class SessionApiEndpoints
                 string.IsNullOrWhiteSpace(request?.SpaceId)
                     ? SessionLaunchOrigins.AdHoc
                     : SessionLaunchOrigins.Space);
-            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
@@ -249,7 +248,7 @@ public static partial class SessionApiEndpoints
                 await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
             }
 
-            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
             var launchCommand = request.LensOnly
                 ? null
@@ -295,7 +294,7 @@ public static partial class SessionApiEndpoints
                 guidanceInjected);
             foreach (var slashCommand in slashCommands)
             {
-                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
                 if (!TryBuildPromptExecutionPlan(
                         new SessionPromptRequest
                         {
@@ -317,7 +316,7 @@ public static partial class SessionApiEndpoints
 
             return Results.Json(new WorkerBootstrapResponse
             {
-                Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId),
                 Profile = resolvedProfile,
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
@@ -393,7 +392,7 @@ public static partial class SessionApiEndpoints
 
             var response = new SessionStateResponse
             {
-                Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, id),
                 Previews = webPreviewService.ListPreviewSessions(id).Previews.ToArray(),
                 TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, id)
             };
@@ -458,7 +457,7 @@ public static partial class SessionApiEndpoints
                 sessionManager,
                 sessionTelemetry,
                 sessionSupervisor,
-                lensPulse,
+                lensRuntime,
                 aiCliProfileService,
                 workerSessionRegistry,
                 id,
@@ -601,7 +600,7 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file, CancellationToken ct) =>
@@ -964,14 +963,14 @@ public static partial class SessionApiEndpoints
         TtyHostSessionManager sessionManager,
         SessionTelemetryService sessionTelemetry,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry,
         string sessionId,
         SessionPromptRequest request,
         CancellationToken ct)
     {
-        var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+        var session = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
         if (session.Supervisor?.State != SessionSupervisorService.ShellState)
         {
             return session;
@@ -996,7 +995,7 @@ public static partial class SessionApiEndpoints
 
         foreach (var slashCommand in resumePlan.SlashCommands)
         {
-            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
             if (!TryBuildPromptExecutionPlan(
                     new SessionPromptRequest
                     {
@@ -1016,7 +1015,7 @@ public static partial class SessionApiEndpoints
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, slashPlan, ct);
         }
 
-        return GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+        return GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
     }
 
     internal static bool TryBuildWorkerAutoResumePlan(
@@ -1172,13 +1171,13 @@ public static partial class SessionApiEndpoints
     private static SessionListDto GetSessionListDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse)
+        SessionLensRuntimeService lensRuntime)
     {
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
             session.Supervisor = sessionSupervisor.Describe(session);
-            session.HasLensHistory = lensPulse.HasHistory(session.Id);
+            session.HasLensHistory = lensRuntime.HasHistory(session.Id);
         }
 
         return response;
@@ -1227,10 +1226,10 @@ public static partial class SessionApiEndpoints
     private static SessionInfoDto GetSessionDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         string sessionId)
     {
-        return GetSessionListDto(sessionManager, sessionSupervisor, lensPulse).Sessions.First(s => s.Id == sessionId);
+        return GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime).Sessions.First(s => s.Id == sessionId);
     }
 
     internal sealed record SessionPromptExecutionPlan(

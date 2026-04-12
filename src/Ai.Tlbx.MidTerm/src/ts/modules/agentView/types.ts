@@ -1,15 +1,14 @@
 import type {
   LensAttachmentReference,
+  LensHistorySnapshot,
   LensInlineFileReference,
   LensInlineImagePreview,
-  LensPulseRuntimeNotice,
+  LensHistoryRuntimeNotice,
 } from '../../api/types';
-import type { LensPulseEvent, LensPulseSnapshotResponse } from '../../api/client';
 
 export interface SessionLensViewState {
   panel: HTMLDivElement;
-  snapshot: LensPulseSnapshotResponse | null;
-  events: LensPulseEvent[];
+  snapshot: LensHistorySnapshot | null;
   debugScenarioActive: boolean;
   activationRunId: number;
   historyViewport: HTMLDivElement | null;
@@ -30,8 +29,7 @@ export interface SessionLensViewState {
     | 'idle'
     | 'opening'
     | 'attaching'
-    | 'waiting-snapshot'
-    | 'loading-events'
+    | 'waiting-history-window'
     | 'connecting-stream'
     | 'ready'
     | 'failed';
@@ -45,6 +43,7 @@ export interface SessionLensViewState {
   assistantMarkdownCache: Map<string, AssistantMarkdownCacheEntry>;
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
   historyMeasuredHeights: Map<string, number>;
+  historyObservedHeights: Map<string, number>;
   historyMeasuredWidthBucket: number;
   historyTopSpacer: HTMLDivElement | null;
   historyBottomSpacer: HTMLDivElement | null;
@@ -159,6 +158,11 @@ export interface HistoryVirtualWindow {
   bottomSpacerPx: number;
 }
 
+export interface HistoryIndexRange {
+  start: number;
+  end: number;
+}
+
 export interface HistoryViewportMetrics {
   scrollTop: number;
   clientHeight: number;
@@ -229,5 +233,5 @@ export interface LensNoticeEntry {
   order: number;
   title: string;
   meta: string;
-  notice: LensPulseRuntimeNotice;
+  notice: LensHistoryRuntimeNotice;
 }

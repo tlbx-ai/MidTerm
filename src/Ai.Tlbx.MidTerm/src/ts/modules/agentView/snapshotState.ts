@@ -1,12 +1,6 @@
-import type {
-  LensPulseDeltaResponse,
-  LensPulseHistoryEntry,
-  LensPulseSnapshotResponse,
-} from '../../api/client';
+import type { LensHistoryDelta, LensHistoryItem, LensHistorySnapshot } from '../../api/client';
 import type { LensAttachmentReference } from '../../api/types';
 import type { SessionLensViewState } from './types';
-
-const LENS_HISTORY_WINDOW_SIZE = 80;
 
 function cloneHistoryAttachments(
   attachments: readonly LensAttachmentReference[] | undefined,
@@ -14,19 +8,19 @@ function cloneHistoryAttachments(
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
-export function applyLensSnapshotWindowState(
+export function applyLensHistoryWindowState(
   state: SessionLensViewState,
-  snapshot: LensPulseSnapshotResponse,
+  snapshot: LensHistorySnapshot,
 ): void {
   const windowStart =
     typeof snapshot.historyWindowStart === 'number' ? snapshot.historyWindowStart : 0;
   const windowEnd =
     typeof snapshot.historyWindowEnd === 'number'
       ? snapshot.historyWindowEnd
-      : windowStart + snapshot.transcript.length;
+      : windowStart + snapshot.history.length;
   const windowSize = Math.max(0, windowEnd - windowStart);
   state.historyWindowStart = windowStart;
-  state.historyWindowCount = Math.max(windowSize, LENS_HISTORY_WINDOW_SIZE);
+  state.historyWindowCount = windowSize;
 }
 
 export function collapseSnapshotToLatestWindow(
@@ -39,49 +33,35 @@ export function collapseSnapshotToLatestWindow(
   }
 
   const retainedEntries =
-    snapshot.transcript.length > targetWindowCount
-      ? snapshot.transcript.slice(-targetWindowCount)
-      : snapshot.transcript.slice();
-  const totalHistoryCount = Math.max(snapshot.totalHistoryCount, retainedEntries.length);
-  const retainedEstimatedHeightPx = sumEstimatedHistoryHeights(retainedEntries);
+    snapshot.history.length > targetWindowCount
+      ? snapshot.history.slice(-targetWindowCount)
+      : snapshot.history.slice();
+  const historyCount = Math.max(snapshot.historyCount, retainedEntries.length);
 
-  snapshot.transcript = retainedEntries;
-  snapshot.totalHistoryCount = totalHistoryCount;
-  snapshot.estimatedTotalHistoryHeightPx = Math.max(
-    snapshot.estimatedTotalHistoryHeightPx ?? 0,
-    retainedEstimatedHeightPx,
-  );
-  snapshot.estimatedHistoryBeforeWindowPx = Math.max(
-    0,
-    snapshot.estimatedTotalHistoryHeightPx - retainedEstimatedHeightPx,
-  );
-  snapshot.estimatedHistoryAfterWindowPx = 0;
-  snapshot.historyWindowEnd = totalHistoryCount;
-  snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - retainedEntries.length);
+  snapshot.history = retainedEntries;
+  snapshot.historyCount = historyCount;
+  snapshot.historyWindowEnd = historyCount;
+  snapshot.historyWindowStart = Math.max(0, historyCount - retainedEntries.length);
   snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
   snapshot.hasNewerHistory = false;
   state.historyWindowStart = snapshot.historyWindowStart;
-  state.historyWindowCount = Math.max(targetWindowCount, retainedEntries.length);
+  state.historyWindowCount = retainedEntries.length;
 }
 
 export function applyCanonicalLensDelta(
   state: SessionLensViewState,
-  delta: LensPulseDeltaResponse,
+  delta: LensHistoryDelta,
 ): boolean {
   const snapshot = state.snapshot;
   if (!snapshot) {
     return false;
   }
 
-  const previousTotalHistoryCount = snapshot.totalHistoryCount;
-  snapshot.estimatedTotalHistoryHeightPx = Math.max(
-    delta.estimatedTotalHistoryHeightPx ?? 0,
-    snapshot.estimatedTotalHistoryHeightPx ?? 0,
-  );
+  const previousHistoryCount = snapshot.historyCount;
   snapshot.provider = delta.provider || snapshot.provider;
   snapshot.generatedAt = delta.generatedAt;
   snapshot.latestSequence = Math.max(snapshot.latestSequence, delta.latestSequence);
-  snapshot.totalHistoryCount = Math.max(delta.totalHistoryCount, snapshot.totalHistoryCount);
+  snapshot.historyCount = Math.max(delta.historyCount, snapshot.historyCount);
   snapshot.session = cloneSnapshotSessionSummary(delta.session);
   snapshot.thread = cloneSnapshotThreadSummary(delta.thread);
   snapshot.currentTurn = cloneSnapshotTurnSummary(delta.currentTurn);
@@ -97,7 +77,7 @@ export function applyCanonicalLensDelta(
   return applyHistoryWindowDelta(
     state,
     snapshot,
-    previousTotalHistoryCount,
+    previousHistoryCount,
     delta.historyUpserts,
     delta.historyRemovals,
   );
@@ -105,15 +85,15 @@ export function applyCanonicalLensDelta(
 
 function applyHistoryWindowDelta(
   state: SessionLensViewState,
-  snapshot: LensPulseSnapshotResponse,
-  previousTotalHistoryCount: number,
-  upserts: readonly LensPulseHistoryEntry[],
+  snapshot: LensHistorySnapshot,
+  previousHistoryCount: number,
+  upserts: readonly LensHistoryItem[],
   removals: readonly string[],
 ): boolean {
   const currentWindowStart = snapshot.historyWindowStart;
   const currentWindowEnd = snapshot.historyWindowEnd;
-  const wasLiveEdge = currentWindowEnd >= previousTotalHistoryCount;
-  const nextEntries = snapshot.transcript.map(cloneSnapshotHistoryEntry);
+  const wasLiveEdge = currentWindowEnd >= previousHistoryCount;
+  const nextEntries = snapshot.history.map(cloneSnapshotHistoryEntry);
   const entryIndexById = new Map(nextEntries.map((entry, index) => [entry.entryId, index]));
   const requiresWindowRefresh = resolveHistoryWindowRefreshRequirement(
     wasLiveEdge,
@@ -135,7 +115,7 @@ function applyHistoryWindowDelta(
   );
 
   nextEntries.sort((left, right) => left.order - right.order);
-  const targetWindowCount = Math.max(1, state.historyWindowCount || LENS_HISTORY_WINDOW_SIZE);
+  const targetWindowCount = Math.max(1, state.historyWindowCount || snapshot.history.length || 1);
   applyHistoryWindowEntries(
     snapshot,
     nextEntries,
@@ -143,13 +123,12 @@ function applyHistoryWindowDelta(
     currentWindowStart,
     currentWindowEnd,
     targetWindowCount,
-    requiresWindowRefresh,
   );
 
   snapshot.hasOlderHistory = snapshot.historyWindowStart > 0;
-  snapshot.hasNewerHistory = snapshot.historyWindowEnd < snapshot.totalHistoryCount;
+  snapshot.hasNewerHistory = snapshot.historyWindowEnd < snapshot.historyCount;
   state.historyWindowStart = snapshot.historyWindowStart;
-  state.historyWindowCount = Math.max(snapshot.transcript.length, targetWindowCount);
+  state.historyWindowCount = snapshot.history.length;
   return requiresWindowRefresh;
 }
 
@@ -157,7 +136,7 @@ function resolveHistoryWindowRefreshRequirement(
   wasLiveEdge: boolean,
   currentWindowStart: number,
   currentWindowEnd: number,
-  upserts: readonly LensPulseHistoryEntry[],
+  upserts: readonly LensHistoryItem[],
   removals: readonly string[],
   entryIndexById: ReadonlyMap<string, number>,
 ): boolean {
@@ -175,7 +154,7 @@ function resolveHistoryWindowRefreshRequirement(
 }
 
 function applyHistoryEntryRemovals(
-  entries: LensPulseHistoryEntry[],
+  entries: LensHistoryItem[],
   entryIndexById: Map<string, number>,
   removals: readonly string[],
 ): void {
@@ -192,9 +171,9 @@ function applyHistoryEntryRemovals(
 }
 
 function applyHistoryEntryUpserts(
-  entries: LensPulseHistoryEntry[],
+  entries: LensHistoryItem[],
   entryIndexById: Map<string, number>,
-  upserts: readonly LensPulseHistoryEntry[],
+  upserts: readonly LensHistoryItem[],
   wasLiveEdge: boolean,
   currentWindowStart: number,
   currentWindowEnd: number,
@@ -222,58 +201,41 @@ function applyHistoryEntryUpserts(
 }
 
 function applyHistoryWindowEntries(
-  snapshot: LensPulseSnapshotResponse,
-  entries: readonly LensPulseHistoryEntry[],
+  snapshot: LensHistorySnapshot,
+  entries: readonly LensHistoryItem[],
   wasLiveEdge: boolean,
   currentWindowStart: number,
   currentWindowEnd: number,
   targetWindowCount: number,
-  requiresWindowRefresh: boolean,
 ): void {
   if (wasLiveEdge) {
     applyLiveEdgeHistoryWindow(snapshot, entries, targetWindowCount);
     return;
   }
 
-  snapshot.transcript = entries.filter((entry) => {
+  snapshot.history = entries.filter((entry) => {
     const absoluteIndex = Math.max(0, entry.order - 1);
     return absoluteIndex >= currentWindowStart && absoluteIndex < currentWindowEnd;
   });
   snapshot.historyWindowStart = currentWindowStart;
-  snapshot.historyWindowEnd = snapshot.historyWindowStart + snapshot.transcript.length;
-  if (requiresWindowRefresh) {
-    return;
-  }
-
-  const currentWindowEstimatedHeightPx = sumEstimatedHistoryHeights(snapshot.transcript);
-  snapshot.estimatedHistoryAfterWindowPx = Math.max(
-    0,
-    (snapshot.estimatedTotalHistoryHeightPx ?? 0) -
-      (snapshot.estimatedHistoryBeforeWindowPx ?? 0) -
-      currentWindowEstimatedHeightPx,
-  );
+  snapshot.historyWindowEnd = snapshot.historyWindowStart + snapshot.history.length;
 }
 
 function applyLiveEdgeHistoryWindow(
-  snapshot: LensPulseSnapshotResponse,
-  entries: readonly LensPulseHistoryEntry[],
+  snapshot: LensHistorySnapshot,
+  entries: readonly LensHistoryItem[],
   targetWindowCount: number,
 ): void {
   const trimmedEntries =
     entries.length > targetWindowCount ? entries.slice(-targetWindowCount) : entries.slice();
-  snapshot.transcript = trimmedEntries;
-  snapshot.historyWindowEnd = snapshot.totalHistoryCount;
-  snapshot.historyWindowStart = Math.max(0, snapshot.historyWindowEnd - trimmedEntries.length);
-  snapshot.estimatedHistoryAfterWindowPx = 0;
-  snapshot.estimatedHistoryBeforeWindowPx = Math.max(
-    0,
-    (snapshot.estimatedTotalHistoryHeightPx ?? 0) - sumEstimatedHistoryHeights(trimmedEntries),
-  );
+  snapshot.history = trimmedEntries;
+  snapshot.historyWindowEnd = snapshot.historyCount;
+  snapshot.historyWindowStart = Math.max(0, snapshot.historyCount - trimmedEntries.length);
 }
 
 function reindexHistoryEntryMap(
   entryIndexById: Map<string, number>,
-  entries: readonly LensPulseHistoryEntry[],
+  entries: readonly LensHistoryItem[],
 ): void {
   entryIndexById.clear();
   entries.forEach((entry, index) => {
@@ -282,10 +244,10 @@ function reindexHistoryEntryMap(
 }
 
 function upsertSnapshotItems(
-  current: readonly LensPulseSnapshotResponse['items'][number][],
-  upserts: readonly LensPulseSnapshotResponse['items'][number][],
+  current: readonly LensHistorySnapshot['items'][number][],
+  upserts: readonly LensHistorySnapshot['items'][number][],
   removals: readonly string[],
-): LensPulseSnapshotResponse['items'] {
+): LensHistorySnapshot['items'] {
   const next = new Map(current.map((item) => [item.itemId, cloneSnapshotItemSummary(item)]));
 
   for (const itemId of removals) {
@@ -302,10 +264,10 @@ function upsertSnapshotItems(
 }
 
 function upsertSnapshotRequests(
-  current: readonly LensPulseSnapshotResponse['requests'][number][],
-  upserts: readonly LensPulseSnapshotResponse['requests'][number][],
+  current: readonly LensHistorySnapshot['requests'][number][],
+  upserts: readonly LensHistorySnapshot['requests'][number][],
   removals: readonly string[],
-): LensPulseSnapshotResponse['requests'] {
+): LensHistorySnapshot['requests'] {
   const next = new Map(
     current.map((request) => [request.requestId, cloneSnapshotRequestSummary(request)]),
   );
@@ -324,9 +286,9 @@ function upsertSnapshotRequests(
 }
 
 function upsertSnapshotNotices(
-  current: readonly LensPulseSnapshotResponse['notices'][number][],
-  upserts: readonly LensPulseSnapshotResponse['notices'][number][],
-): LensPulseSnapshotResponse['notices'] {
+  current: readonly LensHistorySnapshot['notices'][number][],
+  upserts: readonly LensHistorySnapshot['notices'][number][],
+): LensHistorySnapshot['notices'] {
   const next = new Map(
     current.map((notice) => [notice.eventId, cloneSnapshotRuntimeNotice(notice)]),
   );
@@ -340,7 +302,7 @@ function upsertSnapshotNotices(
   );
 }
 
-function cloneSnapshotHistoryEntry(entry: LensPulseHistoryEntry): LensPulseHistoryEntry {
+function cloneSnapshotHistoryEntry(entry: LensHistoryItem): LensHistoryItem {
   return {
     ...entry,
     attachments: cloneHistoryAttachments(entry.attachments),
@@ -349,13 +311,9 @@ function cloneSnapshotHistoryEntry(entry: LensPulseHistoryEntry): LensPulseHisto
   };
 }
 
-function sumEstimatedHistoryHeights(entries: readonly LensPulseHistoryEntry[]): number {
-  return entries.reduce((sum, entry) => sum + Math.max(0, entry.estimatedHeightPx ?? 0), 0);
-}
-
 function cloneSnapshotItemSummary(
-  item: LensPulseSnapshotResponse['items'][number],
-): LensPulseSnapshotResponse['items'][number] {
+  item: LensHistorySnapshot['items'][number],
+): LensHistorySnapshot['items'][number] {
   return {
     ...item,
     turnId: item.turnId ?? null,
@@ -366,8 +324,8 @@ function cloneSnapshotItemSummary(
 }
 
 function cloneSnapshotRequestSummary(
-  request: LensPulseSnapshotResponse['requests'][number],
-): LensPulseSnapshotResponse['requests'][number] {
+  request: LensHistorySnapshot['requests'][number],
+): LensHistorySnapshot['requests'][number] {
   return {
     ...request,
     turnId: request.turnId ?? null,
@@ -385,8 +343,8 @@ function cloneSnapshotRequestSummary(
 }
 
 function cloneSnapshotRuntimeNotice(
-  notice: LensPulseSnapshotResponse['notices'][number],
-): LensPulseSnapshotResponse['notices'][number] {
+  notice: LensHistorySnapshot['notices'][number],
+): LensHistorySnapshot['notices'][number] {
   return {
     ...notice,
     detail: notice.detail ?? null,
@@ -394,8 +352,8 @@ function cloneSnapshotRuntimeNotice(
 }
 
 function cloneSnapshotSessionSummary(
-  session: LensPulseSnapshotResponse['session'],
-): LensPulseSnapshotResponse['session'] {
+  session: LensHistorySnapshot['session'],
+): LensHistorySnapshot['session'] {
   return {
     ...session,
     reason: session.reason ?? null,
@@ -405,16 +363,16 @@ function cloneSnapshotSessionSummary(
 }
 
 function cloneSnapshotThreadSummary(
-  thread: LensPulseSnapshotResponse['thread'],
-): LensPulseSnapshotResponse['thread'] {
+  thread: LensHistorySnapshot['thread'],
+): LensHistorySnapshot['thread'] {
   return {
     ...thread,
   };
 }
 
 function cloneSnapshotTurnSummary(
-  turn: LensPulseSnapshotResponse['currentTurn'],
-): LensPulseSnapshotResponse['currentTurn'] {
+  turn: LensHistorySnapshot['currentTurn'],
+): LensHistorySnapshot['currentTurn'] {
   return {
     ...turn,
     turnId: turn.turnId ?? null,
@@ -426,8 +384,8 @@ function cloneSnapshotTurnSummary(
 }
 
 function cloneSnapshotQuickSettingsSummary(
-  quickSettings: LensPulseSnapshotResponse['quickSettings'] | null | undefined,
-): LensPulseSnapshotResponse['quickSettings'] {
+  quickSettings: LensHistorySnapshot['quickSettings'] | null | undefined,
+): LensHistorySnapshot['quickSettings'] {
   return {
     model: quickSettings?.model ?? null,
     effort: quickSettings?.effort ?? null,
@@ -437,8 +395,8 @@ function cloneSnapshotQuickSettingsSummary(
 }
 
 function cloneSnapshotStreamsSummary(
-  streams: LensPulseSnapshotResponse['streams'],
-): LensPulseSnapshotResponse['streams'] {
+  streams: LensHistorySnapshot['streams'],
+): LensHistorySnapshot['streams'] {
   return {
     ...streams,
   };

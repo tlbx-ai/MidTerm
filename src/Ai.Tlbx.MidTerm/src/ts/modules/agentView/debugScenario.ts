@@ -1,8 +1,4 @@
-import type {
-  LensPulseEvent,
-  LensPulseHistoryEntry,
-  LensPulseSnapshotResponse,
-} from '../../api/client';
+import type { LensHistoryItem, LensHistorySnapshot } from '../../api/client';
 import type { LensAttachmentReference } from '../../api/types';
 
 export type LensDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
@@ -23,13 +19,13 @@ type DebugScenarioItemFactory = (
   itemType: string,
   detail: string,
   updatedAt: string,
-) => LensPulseSnapshotResponse['items'][number];
+) => LensHistorySnapshot['items'][number];
 
 interface DebugScenarioContent {
-  items: LensPulseSnapshotResponse['items'];
-  requests: LensPulseSnapshotResponse['requests'];
+  items: LensHistorySnapshot['items'];
+  requests: LensHistorySnapshot['requests'];
   assistantText: string;
-  currentTurnState: LensPulseSnapshotResponse['currentTurn']['state'];
+  currentTurnState: LensHistorySnapshot['currentTurn']['state'];
   currentTurnStateLabel: string;
 }
 
@@ -69,8 +65,8 @@ function buildDebugScenarioHistory(args: {
   generatedAt: string;
   turnId: string;
   currentTurnState: string;
-  items: LensPulseSnapshotResponse['items'];
-  requests: LensPulseSnapshotResponse['requests'];
+  items: LensHistorySnapshot['items'];
+  requests: LensHistorySnapshot['requests'];
   assistantText: string;
   reasoningText: string;
   reasoningSummaryText: string;
@@ -78,8 +74,8 @@ function buildDebugScenarioHistory(args: {
   commandOutput: string;
   fileChangeOutput: string;
   unifiedDiff: string;
-}): LensPulseHistoryEntry[] {
-  const historyEntries: LensPulseHistoryEntry[] = [];
+}): LensHistoryItem[] {
+  const historyEntries: LensHistoryItem[] = [];
   let order = 1;
 
   for (const item of args.items) {
@@ -244,7 +240,7 @@ function buildWorkflowDebugScenario(
       {
         requestId: 'request-debug-workflow',
         turnId: 'turn-debug',
-        kind: 'tool_user_input',
+        kind: 'interview',
         kindLabel: 'Question',
         state: 'open',
         decision: null,
@@ -305,7 +301,7 @@ function buildMixedDebugScenario(
       {
         requestId: 'request-debug-choice',
         turnId: 'turn-debug',
-        kind: 'tool_user_input',
+        kind: 'interview',
         kindLabel: 'User input',
         state: 'open',
         decision: null,
@@ -376,8 +372,7 @@ export function buildLensDebugScenario(
   scenario: LensDebugScenarioName,
   origin: string,
 ): {
-  snapshot: LensPulseSnapshotResponse;
-  events: LensPulseEvent[];
+  snapshot: LensHistorySnapshot;
 } {
   const now = Date.now();
   const at = (offsetMs: number) => new Date(now + offsetMs).toISOString();
@@ -388,7 +383,7 @@ export function buildLensDebugScenario(
     itemType: string,
     detail: string,
     updatedAt: string,
-  ): LensPulseSnapshotResponse['items'][number] => ({
+  ): LensHistorySnapshot['items'][number] => ({
     itemId,
     turnId: 'turn-debug',
     itemType,
@@ -427,7 +422,7 @@ export function buildLensDebugScenario(
       provider: 'codex',
       generatedAt: at(0),
       latestSequence: 500,
-      totalHistoryCount: items.length,
+      historyCount: items.length,
       historyWindowStart: 0,
       historyWindowEnd: items.length,
       hasOlderHistory: false,
@@ -471,7 +466,7 @@ export function buildLensDebugScenario(
         fileChangeOutput,
         unifiedDiff,
       },
-      transcript: buildDebugScenarioHistory({
+      history: buildDebugScenarioHistory({
         generatedAt: at(0),
         turnId: 'turn-debug',
         currentTurnState,
@@ -489,6 +484,5 @@ export function buildLensDebugScenario(
       requests,
       notices: [],
     },
-    events: [],
   };
 }

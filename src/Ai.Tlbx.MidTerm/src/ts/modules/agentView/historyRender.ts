@@ -3,10 +3,11 @@ import { estimateHistoryEntryHeight } from './historyContent';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
 import {
   buildHistoryVirtualWindowKey,
+  computeHistoryVisibleRange,
   computeHistoryVirtualWindow,
   HISTORY_VIRTUALIZE_AFTER,
 } from './historyViewport';
-import type { LensPulseRequestSummary, LensPulseSnapshotResponse } from '../../api/client';
+import type { LensHistoryRequestSummary, LensHistorySnapshot } from '../../api/client';
 import type {
   ArtifactClusterInfo,
   HistoryRenderPlan,
@@ -27,7 +28,7 @@ type HistoryRenderDeps = {
   scheduleHistoryRender: (sessionId: string) => void;
   syncAgentViewPresentation: (
     panel: HTMLDivElement,
-    provider: LensPulseSnapshotResponse['provider'] | null | undefined,
+    provider: LensHistorySnapshot['provider'] | null | undefined,
   ) => void;
   createHistoryEntry: (
     entry: LensHistoryEntry,
@@ -37,9 +38,10 @@ type HistoryRenderDeps = {
   createHistorySpacer: (heightPx: number) => HTMLElement;
   createRequestActionBlock: (
     sessionId: string,
-    request: LensPulseRequestSummary,
+    request: LensHistoryRequestSummary,
     busy: boolean,
     state: SessionLensViewState,
+    surface: 'composer' | 'history',
   ) => HTMLElement;
   pruneAssistantMarkdownCache: (
     state: SessionLensViewState,
@@ -47,6 +49,41 @@ type HistoryRenderDeps = {
   ) => void;
   renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
 };
+
+function resolveAverageHistoryEntryHeight(
+  entries: readonly LensHistoryEntry[],
+  state: SessionLensViewState | undefined,
+  resolveEntryHeight: (entry: LensHistoryEntry) => number,
+): number {
+  if ((state?.historyObservedHeights.size ?? 0) > 0) {
+    const observedTotal = Array.from(state?.historyObservedHeights.values() ?? []).reduce(
+      (sum, height) => sum + height,
+      0,
+    );
+    return Math.max(1, observedTotal / (state?.historyObservedHeights.size ?? 1));
+  }
+
+  if (entries.length === 0) {
+    return 72;
+  }
+
+  const totalHeight = entries.reduce((sum, entry) => sum + resolveEntryHeight(entry), 0);
+  return Math.max(1, totalHeight / entries.length);
+}
+
+function estimateOffWindowSpacerPx(
+  entries: readonly LensHistoryEntry[],
+  state: SessionLensViewState | undefined,
+  unseenItemCount: number,
+  resolveEntryHeight: (entry: LensHistoryEntry) => number,
+): number {
+  if (unseenItemCount <= 0) {
+    return 0;
+  }
+
+  const averageHeight = resolveAverageHistoryEntryHeight(entries, state, resolveEntryHeight);
+  return Math.max(0, Math.round(averageHeight * unseenItemCount));
+}
 
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: number): boolean {
@@ -59,7 +96,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     viewport.scrollTop = nextScrollTop;
     return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
   }
-
   function renderActivationView(
     sessionId: string,
     panel: HTMLDivElement,
@@ -126,14 +162,21 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       metrics.clientWidth,
       resolveEntryHeight,
     );
-    const remoteTopSpacerPx = Math.max(0, state?.snapshot?.estimatedHistoryBeforeWindowPx ?? 0);
-    const remoteBottomSpacerPx = Math.max(0, state?.snapshot?.estimatedHistoryAfterWindowPx ?? 0);
+    const historyWindowStart = Math.max(0, state?.snapshot?.historyWindowStart ?? 0);
+    const historyWindowEnd = Math.max(historyWindowStart, state?.snapshot?.historyWindowEnd ?? 0);
+    const totalHistoryCount = Math.max(historyWindowEnd, state?.snapshot?.historyCount ?? 0);
+    const offWindowTopCount = historyWindowStart;
+    const offWindowBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
 
     return {
       emptyStateText: null,
       virtualWindowKey: buildHistoryVirtualWindowKey(virtualWindow),
-      topSpacerPx: remoteTopSpacerPx + virtualWindow.topSpacerPx,
-      bottomSpacerPx: remoteBottomSpacerPx + virtualWindow.bottomSpacerPx,
+      topSpacerPx:
+        estimateOffWindowSpacerPx(entries, state, offWindowTopCount, resolveEntryHeight) +
+        virtualWindow.topSpacerPx,
+      bottomSpacerPx:
+        estimateOffWindowSpacerPx(entries, state, offWindowBottomCount, resolveEntryHeight) +
+        virtualWindow.bottomSpacerPx,
       visibleEntries: entries
         .slice(virtualWindow.start, virtualWindow.end)
         .map((entry, visibleIndex) => {
@@ -166,6 +209,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     if (state.historyMeasuredWidthBucket !== widthBucket) {
       state.historyMeasuredWidthBucket = widthBucket;
       state.historyMeasuredHeights.clear();
+      state.historyObservedHeights.clear();
       state.historyLastVirtualWindowKey = null;
     }
 
@@ -248,6 +292,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       buildHistoryActionToken(entry),
       buildHistoryClusterToken(cluster),
       resolveHistoryEntryBusyToken(entry, state),
+      buildHistoryRequestToken(entry, state),
     ].join('||');
   }
 
@@ -290,6 +335,31 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     return state?.activationActionBusy === true && (entry.actions?.length ?? 0) > 0
       ? 'busy'
       : 'idle';
+  }
+
+  function buildHistoryRequestToken(
+    entry: LensHistoryEntry,
+    state: SessionLensViewState | undefined,
+  ): string {
+    if (entry.kind !== 'request' || !entry.requestId) {
+      return '';
+    }
+
+    const request = state?.snapshot?.requests.find(
+      (candidate) => candidate.requestId === entry.requestId,
+    );
+    if (!request) {
+      return 'missing';
+    }
+
+    return [
+      request.kind,
+      request.state,
+      request.decision ?? '',
+      request.detail ?? '',
+      request.updatedAt,
+      request.answers.map((answer) => `${answer.questionId}:${answer.answers.join(',')}`).join('|'),
+    ].join('::');
   }
 
   function reconcileHistoryRenderPlan(
@@ -396,6 +466,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     if (state.historyMeasuredWidthBucket !== widthBucket) {
       state.historyMeasuredWidthBucket = widthBucket;
       state.historyMeasuredHeights.clear();
+      state.historyObservedHeights.clear();
       state.historyLastVirtualWindowKey = null;
     }
 
@@ -410,6 +481,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       const previousHeight = state.historyMeasuredHeights.get(visibleEntry.key);
       if (previousHeight !== measuredHeight) {
         state.historyMeasuredHeights.set(visibleEntry.key, measuredHeight);
+        state.historyObservedHeights.set(visibleEntry.key, measuredHeight);
         changed = true;
       }
     }
@@ -507,7 +579,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function renderComposerInterruption(
     panel: HTMLDivElement,
     sessionId: string,
-    requests: readonly LensPulseRequestSummary[],
+    requests: readonly LensHistoryRequestSummary[],
     state: SessionLensViewState,
   ): void {
     const shell = panel.querySelector<HTMLElement>('[data-agent-field="composer-shell"]');
@@ -532,13 +604,14 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         activeRequest,
         state.requestBusyIds.has(activeRequest.requestId),
         state,
+        'composer',
       ),
     );
   }
 
   function syncRequestInteractionState(
     state: SessionLensViewState,
-    requests: readonly LensPulseRequestSummary[],
+    requests: readonly LensHistoryRequestSummary[],
   ): void {
     const activeRequestIds = new Set(
       requests.filter((request) => request.state === 'open').map((request) => request.requestId),
@@ -607,8 +680,63 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     return buildHistoryVirtualWindowKey(virtualWindow) !== state.historyLastVirtualWindowKey;
   }
 
+  function getViewportCenteredHistoryWindowRequest(
+    state: SessionLensViewState,
+    options: {
+      minimumMarginItems: number;
+      maximumMarginItems: number;
+    },
+  ): { startIndex: number; count: number } | null {
+    const viewport = state.historyViewport;
+    const snapshot = state.snapshot;
+    if (!viewport || !snapshot || state.historyEntries.length === 0) {
+      return null;
+    }
+
+    const metrics = readHistoryViewportMetrics(viewport);
+    const visibleRange = computeHistoryVisibleRange(
+      state.historyEntries,
+      metrics.scrollTop,
+      metrics.clientHeight,
+      metrics.clientWidth,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+    );
+    const visibleCount = Math.max(1, visibleRange.end - visibleRange.start);
+    const marginItems = Math.max(
+      options.minimumMarginItems,
+      Math.min(options.maximumMarginItems, visibleCount * 2),
+    );
+    const absoluteVisibleStart = snapshot.historyWindowStart + visibleRange.start;
+    const absoluteVisibleEnd = snapshot.historyWindowStart + visibleRange.end;
+    const safeStart = snapshot.historyWindowStart + marginItems;
+    const safeEnd = snapshot.historyWindowEnd - marginItems;
+    const needsShift =
+      absoluteVisibleStart < safeStart ||
+      absoluteVisibleEnd > safeEnd ||
+      snapshot.historyWindowEnd - snapshot.historyWindowStart > visibleCount + marginItems * 2;
+    if (!needsShift) {
+      return null;
+    }
+
+    const desiredStart = Math.max(0, absoluteVisibleStart - marginItems);
+    const desiredEnd = Math.min(snapshot.historyCount, absoluteVisibleEnd + marginItems);
+    const desiredCount = Math.max(1, desiredEnd - desiredStart);
+    const maxStart = Math.max(0, snapshot.historyCount - desiredCount);
+    const startIndex = Math.max(0, Math.min(desiredStart, maxStart));
+    const count = Math.min(snapshot.historyCount - startIndex, desiredCount);
+    if (
+      startIndex === snapshot.historyWindowStart &&
+      count === snapshot.historyWindowEnd - snapshot.historyWindowStart
+    ) {
+      return null;
+    }
+
+    return { startIndex, count };
+  }
+
   return {
     captureHistoryViewportAnchor,
+    getViewportCenteredHistoryWindowRequest,
     renderActivationView,
     renderComposerInterruption,
     renderHistory,
@@ -623,7 +751,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
 export function suppressActiveComposerRequestEntries(
   entries: readonly LensHistoryEntry[],
-  requests: readonly LensPulseRequestSummary[],
+  requests: readonly LensHistoryRequestSummary[],
 ): LensHistoryEntry[] {
   const activeRequest = findActiveComposerRequest(requests);
   if (!activeRequest || activeRequest.state !== 'open') {
@@ -636,9 +764,11 @@ export function suppressActiveComposerRequestEntries(
 }
 
 function findActiveComposerRequest(
-  requests: readonly LensPulseRequestSummary[],
-): LensPulseRequestSummary | null {
-  const openRequests = requests.filter((request) => request.state === 'open');
+  requests: readonly LensHistoryRequestSummary[],
+): LensHistoryRequestSummary | null {
+  const openRequests = requests.filter(
+    (request) => request.state === 'open' && request.kind !== 'interview',
+  );
   if (openRequests.length === 0) {
     return null;
   }

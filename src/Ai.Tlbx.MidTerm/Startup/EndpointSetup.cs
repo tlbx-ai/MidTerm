@@ -764,7 +764,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
@@ -781,8 +781,8 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
-        var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
+        var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(

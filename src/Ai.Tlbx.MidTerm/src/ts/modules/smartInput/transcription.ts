@@ -1,5 +1,5 @@
 /**
- * Transcription Client
+ * Historyion Client
  *
  * Records audio via webAudioAccess.js, then POSTs raw PCM16
  * to the MidTerm.Voice /api/transcribe REST endpoint.
@@ -17,7 +17,7 @@ let recordingStarted = false;
 let onCompletedCallback: ((text: string) => void) | null = null;
 let recordingToken = 0;
 
-export function startTranscription(
+export function startHistoryion(
   _onDelta: (text: string) => void,
   onCompleted: (text: string) => void,
 ): void {
@@ -81,7 +81,7 @@ export function startTranscription(
   })();
 }
 
-export async function stopTranscription(): Promise<void> {
+export async function stopHistoryion(): Promise<void> {
   if (!isRecording) return;
   isRecording = false;
   recordingToken++;
@@ -118,7 +118,7 @@ export async function stopTranscription(): Promise<void> {
     });
 
     if (!response.ok) {
-      log.error(() => `Transcription failed: ${String(response.status)}`);
+      log.error(() => `Historyion failed: ${String(response.status)}`);
       return;
     }
 
@@ -127,7 +127,7 @@ export async function stopTranscription(): Promise<void> {
       onCompletedCallback(result.text);
     }
   } catch (e) {
-    log.error(() => `Transcription error: ${String(e)}`);
+    log.error(() => `Historyion error: ${String(e)}`);
   }
 }
 
