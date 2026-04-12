@@ -6211,6 +6211,130 @@ describe('agentView dev errors', () => {
     expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(4200);
     expect(snapshot.estimatedHistoryAfterWindowPx).toBe(3000);
   });
+
+  it('does not trim the front of a fully loaded history window while custom scrolling away from the live edge', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-custom',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:00Z',
+      latestSequence: 10,
+      historyCount: 64,
+      historyWindowStart: 0,
+      historyWindowEnd: 64,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-custom',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-custom',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-28T10:00:00Z',
+        completedAt: null,
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: 'off',
+        permissionMode: 'default',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: Array.from({ length: 64 }, (_, index) => ({
+        entryId: `assistant:${index + 1}`,
+        order: index + 1,
+        estimatedHeightPx: 84,
+        kind: 'assistant',
+        turnId: 'turn-custom',
+        itemId: `assistant-${index + 1}`,
+        requestId: null,
+        status: 'completed',
+        itemType: 'assistant_text',
+        title: null,
+        body: `Entry ${index + 1}`,
+        attachments: [],
+        streaming: false,
+        createdAt: '2026-03-28T10:00:00Z',
+        updatedAt: '2026-03-28T10:00:00Z',
+      })),
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 0,
+      historyWindowCount: 64,
+      historyAutoScrollPinned: false,
+    } as any;
+
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+      sessionId: 's-custom',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:01Z',
+      latestSequence: 11,
+      historyCount: 65,
+      session: snapshot.session,
+      thread: snapshot.thread,
+      currentTurn: snapshot.currentTurn,
+      quickSettings: snapshot.quickSettings,
+      streams: snapshot.streams,
+      historyUpserts: [
+        {
+          entryId: 'assistant:65',
+          order: 65,
+          estimatedHeightPx: 84,
+          kind: 'assistant',
+          turnId: 'turn-custom',
+          itemId: 'assistant-65',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Entry 65',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T10:00:01Z',
+          updatedAt: '2026-03-28T10:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(requiresWindowRefresh).toBe(true);
+    expect(snapshot.historyWindowStart).toBe(0);
+    expect(snapshot.historyWindowEnd).toBe(64);
+    expect(snapshot.history[0]?.entryId).toBe('assistant:1');
+    expect(snapshot.history).toHaveLength(64);
+    expect(snapshot.hasNewerHistory).toBe(true);
+  });
   it('shows unknown agent fallback entries by default and hides them when disabled', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
@@ -6403,4 +6527,3 @@ describe('agentView dev errors', () => {
     });
   });
 });
-

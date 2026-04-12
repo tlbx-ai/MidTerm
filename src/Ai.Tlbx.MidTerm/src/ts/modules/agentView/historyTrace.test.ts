@@ -186,6 +186,47 @@ describe('historyTrace', () => {
     );
   });
 
+  it('logs in-place history upserts as updates instead of fresh appends', () => {
+    traceLensHistoryPush(
+      'session-1',
+      buildDelta({
+        historyCount: 20,
+        historyUpserts: [
+          {
+            entryId: 'entry-20',
+            order: 20,
+            kind: 'assistant',
+            status: 'streaming',
+            body: 'updated',
+            attachments: [],
+            streaming: true,
+            createdAt: '2026-04-12T20:00:00Z',
+            updatedAt: '2026-04-12T20:00:01Z',
+          },
+        ],
+      }),
+      buildSnapshot({
+        history: [
+          {
+            entryId: 'entry-20',
+            order: 20,
+            kind: 'assistant',
+            status: 'streaming',
+            body: 'previous',
+            attachments: [],
+            streaming: true,
+            createdAt: '2026-04-12T20:00:00Z',
+            updatedAt: '2026-04-12T20:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    expect(consoleDebug).toHaveBeenCalledWith(
+      '[LensHistory session-] push ~#20 seq 2 total 20',
+    );
+  });
+
   it('dedupes unchanged show logs and reports discards when the retained window shifts', () => {
     traceLensHistoryShow({
       sessionId: 'session-1',

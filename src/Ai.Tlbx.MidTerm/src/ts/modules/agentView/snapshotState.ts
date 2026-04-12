@@ -92,7 +92,7 @@ function applyHistoryWindowDelta(
 ): boolean {
   const currentWindowStart = snapshot.historyWindowStart;
   const currentWindowEnd = snapshot.historyWindowEnd;
-  const wasLiveEdge = currentWindowEnd >= previousHistoryCount;
+  const wasLiveEdge = state.historyAutoScrollPinned && currentWindowEnd >= previousHistoryCount;
   const nextEntries = snapshot.history.map(cloneSnapshotHistoryEntry);
   const entryIndexById = new Map(nextEntries.map((entry, index) => [entry.entryId, index]));
   const requiresWindowRefresh = resolveHistoryWindowRefreshRequirement(

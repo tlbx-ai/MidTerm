@@ -178,6 +178,67 @@ function shouldTracePush(delta: LensHistoryDelta): boolean {
   );
 }
 
+function resolveHistoryPushRanges(
+  delta: LensHistoryDelta,
+  currentSnapshot: LensHistorySnapshot | null | undefined,
+): {
+  insertedOrders: number[];
+  updatedOrders: number[];
+  removalOrders: number[];
+} {
+  const previousHistoryCount = currentSnapshot?.historyCount ?? 0;
+  const visibleEntryIds = new Set(currentSnapshot?.history.map((entry) => entry.entryId) ?? []);
+  const insertedOrders = delta.historyUpserts
+    .filter((entry) => entry.order > previousHistoryCount && !visibleEntryIds.has(entry.entryId))
+    .map((entry) => entry.order);
+  const insertedOrderSet = new Set(insertedOrders);
+  const updatedOrders = delta.historyUpserts
+    .filter((entry) => !insertedOrderSet.has(entry.order))
+    .map((entry) => entry.order);
+  const removalOrders =
+    currentSnapshot?.history
+      .filter((entry) => delta.historyRemovals.includes(entry.entryId))
+      .map((entry) => entry.order) ?? [];
+
+  return {
+    insertedOrders,
+    updatedOrders,
+    removalOrders,
+  };
+}
+
+function appendHistoryPushRanges(
+  parts: string[],
+  delta: LensHistoryDelta,
+  ranges: {
+    insertedOrders: readonly number[];
+    updatedOrders: readonly number[];
+    removalOrders: readonly number[];
+  },
+): void {
+  if (ranges.insertedOrders.length > 0) {
+    parts.push(`+${formatDiscreteRangeNumbers(ranges.insertedOrders)}`);
+  }
+  if (ranges.updatedOrders.length > 0) {
+    parts.push(`~${formatDiscreteRangeNumbers(ranges.updatedOrders)}`);
+  }
+  if (ranges.removalOrders.length > 0) {
+    parts.push(`-${formatDiscreteRangeNumbers(ranges.removalOrders)}`);
+  } else if (delta.historyRemovals.length > 0) {
+    parts.push(`-x${delta.historyRemovals.length}`);
+  }
+}
+
+function appendAncillaryPushChanges(parts: string[], delta: LensHistoryDelta): void {
+  if (delta.requestUpserts.length > 0 || delta.requestRemovals.length > 0) {
+    const requestDelta = delta.requestUpserts.length - delta.requestRemovals.length;
+    parts.push(`req ${requestDelta >= 0 ? '+' : ''}${requestDelta}`);
+  }
+  if (delta.noticeUpserts.length > 0) {
+    parts.push(`notice +${delta.noticeUpserts.length}`);
+  }
+}
+
 export function traceLensHistoryFetch(
   sessionId: string,
   snapshot: LensHistorySnapshot,
@@ -198,28 +259,10 @@ export function traceLensHistoryPush(
     return;
   }
 
-  const historyOrders = delta.historyUpserts.map((entry) => entry.order);
-  const removalOrders =
-    currentSnapshot?.history
-      .filter((entry) => delta.historyRemovals.includes(entry.entryId))
-      .map((entry) => entry.order) ?? [];
-
+  const ranges = resolveHistoryPushRanges(delta, currentSnapshot);
   const parts = ['push'];
-  if (historyOrders.length > 0) {
-    parts.push(`+${formatDiscreteRangeNumbers(historyOrders)}`);
-  }
-  if (removalOrders.length > 0) {
-    parts.push(`-${formatDiscreteRangeNumbers(removalOrders)}`);
-  } else if (delta.historyRemovals.length > 0) {
-    parts.push(`-x${delta.historyRemovals.length}`);
-  }
-  if (delta.requestUpserts.length > 0 || delta.requestRemovals.length > 0) {
-    const requestDelta = delta.requestUpserts.length - delta.requestRemovals.length;
-    parts.push(`req ${requestDelta >= 0 ? '+' : ''}${requestDelta}`);
-  }
-  if (delta.noticeUpserts.length > 0) {
-    parts.push(`notice +${delta.noticeUpserts.length}`);
-  }
+  appendHistoryPushRanges(parts, delta, ranges);
+  appendAncillaryPushChanges(parts, delta);
   parts.push(`seq ${delta.latestSequence}`);
   parts.push(`total ${delta.historyCount}`);
   trace(sessionId, parts.join(' '));
