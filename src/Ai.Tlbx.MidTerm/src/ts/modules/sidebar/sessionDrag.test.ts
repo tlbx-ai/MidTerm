@@ -5,9 +5,13 @@ type ListenerMap = Record<string, (event: any) => void>;
 const sessionListListeners: ListenerMap = {};
 const documentListeners: ListenerMap = {};
 const showDockOverlay = vi.fn();
+const reorderSessions = vi.fn();
+const persistSessionOrder = vi.fn();
 
 const layoutRootClasses = new Set<string>(['hidden']);
 const standaloneClasses = new Set<string>();
+let layoutActive = true;
+let mockSessions: Array<{ id: string }> = [];
 
 const sessionList = {
   addEventListener(type: string, listener: (event: any) => void): void {
@@ -108,9 +112,9 @@ vi.mock('../../state', () => ({
 }));
 
 vi.mock('../../stores', () => ({
-  reorderSessions: vi.fn(),
+  reorderSessions,
   $sessionList: {
-    get: () => [],
+    get: () => mockSessions,
   },
   $activeSessionId: {
     get: () => 'solo',
@@ -118,7 +122,7 @@ vi.mock('../../stores', () => ({
 }));
 
 vi.mock('../comms', () => ({
-  persistSessionOrder: vi.fn(),
+  persistSessionOrder,
 }));
 
 vi.mock('./sessionList', () => ({
@@ -134,7 +138,7 @@ vi.mock('../layout/dockOverlay', () => ({
 
 vi.mock('../layout/layoutStore', () => ({
   dockSession: vi.fn(),
-  isLayoutActive: () => true,
+  isLayoutActive: () => layoutActive,
   isSessionInLayout: (sessionId: string) => sessionId === 'layout-a',
 }));
 
@@ -153,7 +157,11 @@ describe('sessionDrag', () => {
     layoutRootClasses.clear();
     layoutRootClasses.add('hidden');
     standaloneClasses.clear();
+    layoutActive = true;
+    mockSessions = [];
     showDockOverlay.mockReset();
+    reorderSessions.mockReset();
+    persistSessionOrder.mockReset();
 
     class FakeHTMLElement {}
     vi.stubGlobal('HTMLElement', FakeHTMLElement);
@@ -198,5 +206,77 @@ describe('sessionDrag', () => {
     expect(layoutRootClasses.has('hidden')).toBe(false);
     expect(standaloneClasses.has('hidden')).toBe(true);
     expect(showDockOverlay).toHaveBeenCalledWith(160, 180, 'dragged');
+  });
+
+  it('does not reorder across different sidebar reorder scopes', async () => {
+    layoutActive = false;
+    mockSessions = [{ id: 'dragged' }, { id: 'target' }];
+    const targetItem = {
+      dataset: {
+        sessionId: 'target',
+        controlMode: 'human',
+        reorderScope: '',
+      },
+      classList: {
+        add: vi.fn(),
+        remove: vi.fn(),
+      },
+      getBoundingClientRect(): DOMRect {
+        return {
+          left: 0,
+          top: 0,
+          right: 240,
+          bottom: 48,
+          width: 240,
+          height: 48,
+          x: 0,
+          y: 0,
+          toJSON(): Record<string, never> {
+            return {};
+          },
+        } as DOMRect;
+      },
+      closest(selector: string): any {
+        return selector === '.session-item' ? targetItem : null;
+      },
+    };
+
+    sessionItem.dataset.reorderScope = 'adhoc';
+
+    class FakeHTMLElement {}
+    Object.setPrototypeOf(targetItem, FakeHTMLElement.prototype);
+    vi.stubGlobal('HTMLElement', FakeHTMLElement);
+
+    vi.resetModules();
+    const { initSessionDrag } = await import('./sessionDrag');
+
+    initSessionDrag();
+
+    sessionListListeners.dragstart?.({
+      target: sessionItem,
+      dataTransfer: {
+        effectAllowed: '',
+        setData: vi.fn(),
+        setDragImage: vi.fn(),
+      },
+    });
+
+    sessionListListeners.dragover?.({
+      preventDefault: vi.fn(),
+      clientY: 12,
+      target: targetItem,
+      dataTransfer: {
+        dropEffect: 'none',
+      },
+    });
+
+    sessionListListeners.drop?.({
+      preventDefault: vi.fn(),
+      target: targetItem,
+    });
+
+    expect(targetItem.classList.add).not.toHaveBeenCalled();
+    expect(reorderSessions).not.toHaveBeenCalled();
+    expect(persistSessionOrder).not.toHaveBeenCalled();
   });
 });

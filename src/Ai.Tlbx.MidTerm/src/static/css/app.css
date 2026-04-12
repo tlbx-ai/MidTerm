@@ -788,6 +788,23 @@ body.has-app-background::after {
   gap: 6px;
 }
 
+.spaces-sidebar-tree > .spaces-tree-adhoc:first-child {
+  margin-top: -10px;
+  margin-inline: -8px;
+}
+
+.spaces-sidebar-tree > .spaces-tree-adhoc:last-child {
+  margin-bottom: -14px;
+}
+
+.spaces-tree-adhoc {
+  gap: 0;
+}
+
+.spaces-tree-adhoc .spaces-tree-target-header {
+  padding: 10px 12px 6px;
+}
+
 .spaces-tree-target-header {
   padding: 0 4px;
   color: var(--text-muted);
@@ -991,15 +1008,20 @@ body.has-app-background::after {
   background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
 }
 
-.spaces-tree-adhoc-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
+.spaces-tree-adhoc-list {
+  gap: 0;
 }
 
 .spaces-tree-session-item {
   cursor: pointer;
+}
+
+.spaces-tree-session-item-reorderable {
+  cursor: grab;
+}
+
+.spaces-tree-session-item-reorderable:active {
+  cursor: grabbing;
 }
 
 .spaces-sidebar-empty {

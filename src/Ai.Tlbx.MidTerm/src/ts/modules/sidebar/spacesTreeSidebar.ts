@@ -40,6 +40,7 @@ import {
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
 } from './sessionList';
+import { getSessionControlMode } from './sessionListLogic';
 
 export interface SessionListCallbacks {
   onSelect: (sessionId: string) => void;
@@ -69,6 +70,10 @@ interface PopoverAction {
   label: string;
   tone?: 'default' | 'danger';
   run: () => void | Promise<void>;
+}
+
+interface SidebarSessionNodeOptions {
+  reorderScope?: string | null;
 }
 
 let callbacks: SessionListCallbacks | null = null;
@@ -558,11 +563,14 @@ function createWorkspaceNode(
   return block;
 }
 
-function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
+function createSidebarSessionNode(
+  entry: SidebarSessionRef,
+  options: SidebarSessionNodeOptions = {},
+): HTMLElement {
+  const reorderScope = normalizeSidebarReorderScope(options.reorderScope);
+  const isReorderable = canReorderSidebarSession(entry, reorderScope);
   const item = document.createElement('div');
-  item.className = `session-item two-line spaces-tree-session-item${entry.id === $activeSessionId.get() ? ' active' : ''}`;
-  item.dataset.sessionId = entry.id;
-  item.setAttribute('aria-current', entry.id === $activeSessionId.get() ? 'true' : 'false');
+  configureSidebarSessionNode(item, entry, reorderScope, isReorderable);
   item.addEventListener('click', () => {
     callbacks?.onSelect(entry.id);
     callbacks?.onCloseSidebar();
@@ -610,6 +618,43 @@ function createSidebarSessionNode(entry: SidebarSessionRef): HTMLElement {
   item.appendChild(info);
   item.appendChild(createSidebarSessionActions(entry));
   return item;
+}
+
+function configureSidebarSessionNode(
+  item: HTMLElement,
+  entry: SidebarSessionRef,
+  reorderScope: string,
+  isReorderable: boolean,
+): void {
+  const isChild = !!entry.session.parentSessionId;
+  const classNames = ['session-item', 'two-line', 'spaces-tree-session-item'];
+  if (entry.id === $activeSessionId.get()) {
+    classNames.push('active');
+  }
+  if (isReorderable) {
+    classNames.push('spaces-tree-session-item-reorderable');
+  }
+  if (isChild) {
+    classNames.push('tmux-child');
+    item.dataset.parentId = entry.session.parentSessionId ?? '';
+  }
+
+  item.className = classNames.join(' ');
+  item.dataset.sessionId = entry.id;
+  item.dataset.controlMode = getSessionControlMode(entry.session);
+  if (reorderScope) {
+    item.dataset.reorderScope = reorderScope;
+  }
+  item.setAttribute('aria-current', entry.id === $activeSessionId.get() ? 'true' : 'false');
+  item.draggable = isReorderable;
+}
+
+function normalizeSidebarReorderScope(value: string | null | undefined): string {
+  return value?.trim() || '';
+}
+
+function canReorderSidebarSession(entry: SidebarSessionRef, reorderScope: string): boolean {
+  return reorderScope !== '' && !entry.session.parentSessionId && getSearchValue() === '';
 }
 
 function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
@@ -665,7 +710,7 @@ function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
 
 function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
   const section = document.createElement('section');
-  section.className = 'spaces-tree-target spaces-tree-adhoc';
+  section.className = 'spaces-tree-target spaces-tree-adhoc session-group session-group-flat';
 
   const header = document.createElement('div');
   header.className = 'spaces-tree-target-header';
@@ -673,13 +718,9 @@ function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
   section.appendChild(header);
 
   const list = document.createElement('div');
-  list.className = 'spaces-tree-adhoc-list';
+  list.className = 'spaces-tree-adhoc-list session-group-items';
   for (const entry of sessions) {
-    const item = document.createElement('div');
-    item.className = 'spaces-tree-adhoc-item';
-    item.appendChild(createSidebarSessionNode(entry));
-
-    list.appendChild(item);
+    list.appendChild(createSidebarSessionNode(entry, { reorderScope: 'adhoc' }));
   }
 
   section.appendChild(list);

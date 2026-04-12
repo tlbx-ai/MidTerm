@@ -52,6 +52,20 @@ function isSameControlMode(target: HTMLElement | null): boolean {
   return target.dataset.controlMode === draggedElement.dataset.controlMode;
 }
 
+function isSameReorderScope(target: HTMLElement | null): boolean {
+  if (!target || !draggedElement) {
+    return false;
+  }
+
+  return (target.dataset.reorderScope ?? '') === (draggedElement.dataset.reorderScope ?? '');
+}
+
+function canReorderWithTarget(target: HTMLElement | null): target is HTMLElement {
+  return (
+    !!target && target !== draggedElement && isSameControlMode(target) && isSameReorderScope(target)
+  );
+}
+
 // Track elements with active drop indicators (avoids full DOM scan)
 const activeIndicators = new Set<HTMLElement>();
 
@@ -183,12 +197,7 @@ function handleDragOver(e: DragEvent): void {
   const target = e.target as HTMLElement;
   const sessionItem = closestSessionItem(target);
 
-  if (!sessionItem || sessionItem === draggedElement) {
-    clearAllDropIndicators();
-    return;
-  }
-
-  if (!isSameControlMode(sessionItem)) {
+  if (!canReorderWithTarget(sessionItem)) {
     clearAllDropIndicators();
     return;
   }
@@ -253,8 +262,7 @@ function handleDrop(e: DragEvent): void {
   const target = e.target as HTMLElement;
   const targetItem = closestSessionItem(target);
 
-  if (!targetItem || targetItem === draggedElement) return;
-  if (!isSameControlMode(targetItem)) return;
+  if (!canReorderWithTarget(targetItem)) return;
 
   const targetSessionId = targetItem.dataset.sessionId;
   if (!targetSessionId) return;
@@ -350,11 +358,7 @@ function handleTouchMove(e: TouchEvent): void {
   const sessionItem = closestSessionItem(el);
   clearAllDropIndicators();
 
-  if (sessionItem && sessionItem !== draggedElement) {
-    if (!isSameControlMode(sessionItem)) {
-      return;
-    }
-
+  if (canReorderWithTarget(sessionItem)) {
     const rect = sessionItem.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
     const isAbove = touch.clientY < midY;
@@ -400,12 +404,7 @@ function handleTouchEnd(e: TouchEvent): void {
 }
 
 function finishTouchSessionReorder(targetItem: HTMLElement | null): void {
-  if (
-    !targetItem ||
-    targetItem === draggedElement ||
-    isLayoutActive() ||
-    !isSameControlMode(targetItem)
-  ) {
+  if (isLayoutActive() || !canReorderWithTarget(targetItem)) {
     return;
   }
 
