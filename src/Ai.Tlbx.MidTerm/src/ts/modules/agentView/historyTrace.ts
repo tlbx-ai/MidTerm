@@ -1,0 +1,346 @@
+import type { LensHistoryDelta, LensHistorySnapshot } from '../../api/client';
+import { computeHistoryVisibleRange } from './historyViewport';
+import type { HistoryViewportMetrics, LensHistoryEntry, SessionLensViewState } from './types';
+
+type LensHistoryFetchReason =
+  | 'initial'
+  | 'refresh'
+  | 'latest'
+  | 'scroll'
+  | 'stream-window'
+  | 'hidden-compact';
+
+type TraceSessionState = {
+  lastShowKey: string | null;
+  lastWindowStart: number | null;
+  lastWindowEnd: number | null;
+};
+
+type TraceShowArgs = {
+  sessionId: string;
+  historyWindowStart: number;
+  historyWindowEnd: number;
+  historyCount: number;
+  visibleStart: number;
+  visibleEnd: number;
+  pinnedToBottom: boolean;
+};
+
+const traceSessionState = new Map<string, TraceSessionState>();
+
+function getTraceSessionState(sessionId: string): TraceSessionState {
+  let state = traceSessionState.get(sessionId);
+  if (!state) {
+    state = {
+      lastShowKey: null,
+      lastWindowStart: null,
+      lastWindowEnd: null,
+    };
+    traceSessionState.set(sessionId, state);
+  }
+
+  return state;
+}
+
+function readLensTraceFlag(): string | null {
+  if (typeof window === 'undefined' || !('localStorage' in window)) {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem('midterm.lensTrace');
+  } catch {
+    return null;
+  }
+}
+
+export function shouldTraceLensHistory(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const explicitFlag =
+    (window as typeof window & { __MIDTERM_LENS_TRACE__?: boolean }).__MIDTERM_LENS_TRACE__ ===
+    true;
+  if (explicitFlag) {
+    return true;
+  }
+
+  const storedFlag = readLensTraceFlag();
+  if (storedFlag === '1' || storedFlag === 'true') {
+    return true;
+  }
+
+  const hostname = window.location.hostname;
+  return hostname === '127.0.0.1' || hostname === 'localhost';
+}
+
+function trace(sessionId: string, message: string): void {
+  if (!shouldTraceLensHistory()) {
+    return;
+  }
+
+  // eslint-disable-next-line no-console
+  console.debug(`[LensHistory ${sessionId.slice(0, 8)}] ${message}`);
+}
+
+function formatRange(startIndex: number, endIndexExclusive: number): string {
+  if (endIndexExclusive <= startIndex) {
+    return 'empty';
+  }
+
+  const start = startIndex + 1;
+  const end = endIndexExclusive;
+  return start === end ? `#${start}` : `#${start}-#${end}`;
+}
+
+function formatDiscreteRangeNumbers(values: readonly number[]): string {
+  if (values.length === 0) {
+    return 'none';
+  }
+
+  const ordered = [...new Set(values.filter((value) => Number.isFinite(value) && value > 0))].sort(
+    (left, right) => left - right,
+  );
+  if (ordered.length === 0) {
+    return 'none';
+  }
+
+  const ranges: string[] = [];
+  const first = ordered[0];
+  if (first === undefined) {
+    return 'none';
+  }
+  let rangeStart = first;
+  let previous = first;
+
+  for (let index = 1; index < ordered.length; index += 1) {
+    const current = ordered[index];
+    if (current === undefined) {
+      continue;
+    }
+
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+
+    ranges.push(rangeStart === previous ? `#${rangeStart}` : `#${rangeStart}-#${previous}`);
+    rangeStart = current;
+    previous = current;
+  }
+
+  ranges.push(rangeStart === previous ? `#${rangeStart}` : `#${rangeStart}-#${previous}`);
+  return ranges.join(', ');
+}
+
+function formatFetchReason(reason: LensHistoryFetchReason): string {
+  switch (reason) {
+    case 'initial':
+      return 'initial';
+    case 'refresh':
+      return 'refresh';
+    case 'latest':
+      return 'bottom';
+    case 'scroll':
+      return 'scroll';
+    case 'stream-window':
+      return 'stream';
+    case 'hidden-compact':
+      return 'compact';
+  }
+}
+
+function formatDiscardRanges(
+  previousStart: number,
+  previousEnd: number,
+  nextStart: number,
+  nextEnd: number,
+): string | null {
+  const ranges: string[] = [];
+  if (previousStart < nextStart) {
+    ranges.push(formatRange(previousStart, Math.min(previousEnd, nextStart)));
+  }
+  if (previousEnd > nextEnd) {
+    ranges.push(formatRange(Math.max(previousStart, nextEnd), previousEnd));
+  }
+
+  return ranges.length > 0 ? ranges.join(', ') : null;
+}
+
+function shouldTracePush(delta: LensHistoryDelta): boolean {
+  return (
+    delta.historyUpserts.length > 0 ||
+    delta.historyRemovals.length > 0 ||
+    delta.requestUpserts.length > 0 ||
+    delta.requestRemovals.length > 0 ||
+    delta.noticeUpserts.length > 0
+  );
+}
+
+export function traceLensHistoryFetch(
+  sessionId: string,
+  snapshot: LensHistorySnapshot,
+  reason: LensHistoryFetchReason,
+): void {
+  trace(
+    sessionId,
+    `fetch ${formatRange(snapshot.historyWindowStart, snapshot.historyWindowEnd)} ${formatFetchReason(reason)} total ${snapshot.historyCount}`,
+  );
+}
+
+export function traceLensHistoryPush(
+  sessionId: string,
+  delta: LensHistoryDelta,
+  currentSnapshot: LensHistorySnapshot | null | undefined,
+): void {
+  if (!shouldTracePush(delta) || !shouldTraceLensHistory()) {
+    return;
+  }
+
+  const historyOrders = delta.historyUpserts.map((entry) => entry.order);
+  const removalOrders =
+    currentSnapshot?.history
+      .filter((entry) => delta.historyRemovals.includes(entry.entryId))
+      .map((entry) => entry.order) ?? [];
+
+  const parts = ['push'];
+  if (historyOrders.length > 0) {
+    parts.push(`+${formatDiscreteRangeNumbers(historyOrders)}`);
+  }
+  if (removalOrders.length > 0) {
+    parts.push(`-${formatDiscreteRangeNumbers(removalOrders)}`);
+  } else if (delta.historyRemovals.length > 0) {
+    parts.push(`-x${delta.historyRemovals.length}`);
+  }
+  if (delta.requestUpserts.length > 0 || delta.requestRemovals.length > 0) {
+    const requestDelta = delta.requestUpserts.length - delta.requestRemovals.length;
+    parts.push(`req ${requestDelta >= 0 ? '+' : ''}${requestDelta}`);
+  }
+  if (delta.noticeUpserts.length > 0) {
+    parts.push(`notice +${delta.noticeUpserts.length}`);
+  }
+  parts.push(`seq ${delta.latestSequence}`);
+  parts.push(`total ${delta.historyCount}`);
+  trace(sessionId, parts.join(' '));
+}
+
+export function traceLensHistoryShow(args: TraceShowArgs): void {
+  if (!shouldTraceLensHistory()) {
+    return;
+  }
+
+  const state = getTraceSessionState(args.sessionId);
+  const showKey = [
+    args.historyWindowStart,
+    args.historyWindowEnd,
+    args.visibleStart,
+    args.visibleEnd,
+    args.pinnedToBottom ? 'bottom' : 'custom',
+  ].join(':');
+  if (state.lastShowKey === showKey) {
+    return;
+  }
+
+  const discard =
+    state.lastWindowStart !== null && state.lastWindowEnd !== null
+      ? formatDiscardRanges(
+          state.lastWindowStart,
+          state.lastWindowEnd,
+          args.historyWindowStart,
+          args.historyWindowEnd,
+        )
+      : null;
+
+  const parts = [
+    'show',
+    formatRange(args.historyWindowStart, args.historyWindowEnd),
+    'view',
+    formatRange(args.visibleStart, args.visibleEnd),
+    args.pinnedToBottom ? 'bottom' : 'custom',
+  ];
+  if (discard) {
+    parts.push(`discard ${discard}`);
+  }
+  if (args.historyWindowEnd < args.historyCount) {
+    parts.push(`total ${args.historyCount}`);
+  }
+
+  trace(args.sessionId, parts.join(' '));
+  state.lastShowKey = showKey;
+  state.lastWindowStart = args.historyWindowStart;
+  state.lastWindowEnd = args.historyWindowEnd;
+}
+
+export function traceRenderedLensHistoryWindow(args: {
+  sessionId: string;
+  entries: readonly LensHistoryEntry[];
+  metrics: HistoryViewportMetrics;
+  state: SessionLensViewState;
+  resolveEntryHeight: (entry: LensHistoryEntry) => number;
+}): void {
+  if (!shouldTraceLensHistory() || !args.state.snapshot) {
+    return;
+  }
+
+  const visibleRange = computeHistoryVisibleRange(
+    args.entries,
+    args.metrics.scrollTop,
+    args.metrics.clientHeight,
+    args.metrics.clientWidth,
+    (entry) => args.resolveEntryHeight(entry),
+  );
+  traceLensHistoryShow({
+    sessionId: args.sessionId,
+    historyWindowStart: args.state.snapshot.historyWindowStart,
+    historyWindowEnd: args.state.snapshot.historyWindowEnd,
+    historyCount: args.state.snapshot.historyCount,
+    visibleStart: args.state.snapshot.historyWindowStart + visibleRange.start,
+    visibleEnd: args.state.snapshot.historyWindowStart + visibleRange.end,
+    pinnedToBottom: args.state.historyAutoScrollPinned,
+  });
+}
+
+export function traceLensHistoryCompact(
+  sessionId: string,
+  previousStart: number,
+  previousEnd: number,
+  nextStart: number,
+  nextEnd: number,
+  historyCount: number,
+): void {
+  if (!shouldTraceLensHistory()) {
+    return;
+  }
+
+  const discard = formatDiscardRanges(previousStart, previousEnd, nextStart, nextEnd);
+  const parts = [
+    'show',
+    formatRange(nextStart, nextEnd),
+    formatFetchReason('hidden-compact'),
+    'view',
+    formatRange(nextStart, nextEnd),
+    'custom',
+  ];
+  if (discard) {
+    parts.push(`discard ${discard}`);
+  }
+  if (nextEnd < historyCount) {
+    parts.push(`total ${historyCount}`);
+  }
+
+  trace(sessionId, parts.join(' '));
+  const state = getTraceSessionState(sessionId);
+  state.lastShowKey = null;
+  state.lastWindowStart = nextStart;
+  state.lastWindowEnd = nextEnd;
+}
+
+export function resetLensHistoryTrace(sessionId?: string): void {
+  if (sessionId) {
+    traceSessionState.delete(sessionId);
+    return;
+  }
+
+  traceSessionState.clear();
+}

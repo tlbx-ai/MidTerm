@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Lens activation/runtime orchestration remains consolidated here until the active path is split into smaller modules. */
 import { createLogger } from '../logging';
 import { buildLensDebugScenario, type LensDebugScenarioName } from './debugScenario';
 import {
@@ -42,6 +43,12 @@ import {
 import { createAgentHistoryDom } from './historyDom';
 import { createAgentHistoryRender } from './historyRender';
 import { applyFetchedLensHistoryWindow, hasRenderableLensHistory } from './historyWindowState';
+import {
+  resetLensHistoryTrace,
+  traceLensHistoryCompact,
+  traceLensHistoryFetch,
+  traceLensHistoryPush,
+} from './historyTrace';
 import { resolveViewportDrivenHistoryWindowCount } from './historyWindowSizing';
 import { prepareLensForForeground, syncAgentViewPresentation } from './viewPresentation';
 import {
@@ -198,6 +205,7 @@ export function destroyAgentView(sessionId: string): void {
   }
 
   viewStates.delete(sessionId);
+  resetLensHistoryTrace(sessionId);
   clearLensTurnSessionState(sessionId);
   removeLensQuickSettingsSessionState(sessionId);
 }
@@ -216,6 +224,7 @@ export function resetAgentViewRuntimeForTests(): void {
   }
 
   viewStates.clear();
+  resetLensHistoryTrace();
   lensTurnLifecycleBound = false;
   lensActiveSessionBound = false;
   lensSelectionGuardBound = false;
@@ -718,6 +727,7 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
           return;
         }
 
+        traceLensHistoryFetch(sessionId, snapshot, 'stream-window');
         if (applyFetchedLensHistoryWindow(sessionId, current, snapshot)) {
           scheduleHistoryRender(sessionId);
         }
@@ -728,6 +738,7 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
           return;
         }
 
+        traceLensHistoryPush(sessionId, delta, current.snapshot);
         const requiresWindowRefresh = applyCanonicalLensDelta(current, delta);
         scheduleHistoryRender(sessionId);
         if (requiresWindowRefresh) {
@@ -805,6 +816,7 @@ async function compactHiddenLensSessionHistory(
           LENS_HISTORY_WINDOW_SIZE,
         ),
       );
+      traceLensHistoryFetch(sessionId, latestSnapshot, 'latest');
       const current = viewStates.get(sessionId);
       if (!current || current !== state) {
         return;
@@ -821,7 +833,18 @@ async function compactHiddenLensSessionHistory(
     }
   }
 
+  const previousStart = snapshot.historyWindowStart;
+  const previousEnd = snapshot.historyWindowEnd;
+  const historyCount = snapshot.historyCount;
   collapseSnapshotToLatestWindow(state, LENS_HISTORY_WINDOW_SIZE);
+  traceLensHistoryCompact(
+    sessionId,
+    previousStart,
+    previousEnd,
+    state.historyWindowStart,
+    state.historyWindowStart + state.historyWindowCount,
+    historyCount,
+  );
 }
 
 async function refreshLensSnapshot(
@@ -844,6 +867,7 @@ async function refreshLensSnapshot(
     const nextSnapshot = options.latestWindow
       ? await getLensHistoryWindow(sessionId, undefined, desiredLatestWindowCount)
       : await getLensHistoryWindow(sessionId, state.historyWindowStart, state.historyWindowCount);
+    traceLensHistoryFetch(sessionId, nextSnapshot, options.latestWindow ? 'latest' : 'refresh');
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       if (state.activationState !== 'ready') {
         setActivationState(
@@ -899,6 +923,7 @@ async function loadLatestLensHistoryWindow(
         Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
       ),
     );
+    traceLensHistoryFetch(sessionId, nextSnapshot, 'latest');
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       renderCurrentAgentView(sessionId);
     }
@@ -934,6 +959,7 @@ async function syncHistoryWindowToViewport(
       requestedWindow.startIndex,
       requestedWindow.count,
     );
+    traceLensHistoryFetch(sessionId, nextSnapshot, 'scroll');
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       renderCurrentAgentView(sessionId);
     }
@@ -1249,6 +1275,7 @@ async function waitForInitialLensSnapshot(
       const snapshot = state.snapshot
         ? await getLensHistoryWindow(sessionId, state.historyWindowStart, state.historyWindowCount)
         : await getLensHistoryWindow(sessionId, undefined, desiredWindowCount);
+      traceLensHistoryFetch(sessionId, snapshot, 'initial');
       applyLensHistoryWindowState(state, snapshot);
       ensureLensActivationIsCurrent(state, activationRunId);
       if (attempt > 1) {
@@ -1326,3 +1353,5 @@ async function retryLensActivation(sessionId: string): Promise<void> {
     }
   }
 }
+
+/* eslint-enable max-lines */

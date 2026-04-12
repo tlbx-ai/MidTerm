@@ -7,6 +7,7 @@ import {
   computeHistoryVirtualWindow,
   HISTORY_VIRTUALIZE_AFTER,
 } from './historyViewport';
+import { traceRenderedLensHistoryWindow } from './historyTrace';
 import type { LensHistoryRequestSummary, LensHistorySnapshot } from '../../api/client';
 import type {
   ArtifactClusterInfo,
@@ -85,17 +86,18 @@ function estimateOffWindowSpacerPx(
   return Math.max(0, Math.round(averageHeight * unseenItemCount));
 }
 
-export function createAgentHistoryRender(deps: HistoryRenderDeps) {
-  function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: number): boolean {
-    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    const nextScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
-    if (Math.abs(nextScrollTop - viewport.scrollTop) <= 1) {
-      return false;
-    }
-
-    viewport.scrollTop = nextScrollTop;
-    return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
+function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: number): boolean {
+  const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+  const nextScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+  if (Math.abs(nextScrollTop - viewport.scrollTop) <= 1) {
+    return false;
   }
+
+  viewport.scrollTop = nextScrollTop;
+  return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
+}
+
+export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function renderActivationView(
     sessionId: string,
     panel: HTMLDivElement,
@@ -108,7 +110,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     renderComposerInterruption(panel, sessionId, [], state);
     renderHistory(panel, entries, sessionId);
   }
-
   function renderHistory(
     panel: HTMLDivElement,
     entries: LensHistoryEntry[],
@@ -135,6 +136,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const measurementChanged = state
       ? measureRenderedHistoryHeights(state, renderPlan.visibleEntries, metrics.clientWidth)
       : false;
+    if (state?.snapshot) {
+      traceRenderedLensHistoryWindow({
+        sessionId,
+        entries,
+        metrics,
+        state,
+        resolveEntryHeight: (entry) =>
+          resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+      });
+    }
     finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state, measurementChanged);
   }
 
