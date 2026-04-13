@@ -3,6 +3,11 @@
 .SYNOPSIS
     Creates a new release by bumping version, committing, tagging, and pushing.
 
+.DESCRIPTION
+    The script refuses to reuse a version that already exists as a tag or in fetched version
+    history, and it re-checks remote state immediately before commit/tag to avoid races during
+    long-running preflight verification.
+
 .PARAMETER Bump
     Version bump type: major, minor, or patch
 
@@ -97,6 +102,89 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-WebVersionFromGitRef {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RefName
+    )
+
+    try {
+        $json = git show "${RefName}:src/version.json" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
+            return $null
+        }
+
+        return (($json | ConvertFrom-Json).web)
+    } catch {
+        return $null
+    }
+}
+
+function Test-GitTagExists {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TagName
+    )
+
+    git rev-parse -q --verify "refs/tags/$TagName" 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
+function Test-WebVersionExistsInHistory {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version
+    )
+
+    $pattern = '"web"\s*:\s*"' + [regex]::Escape($Version) + '"'
+    $hits = @(git log --all --format="%H" --pickaxe-regex -G $pattern -- src/version.json 2>$null)
+    return $hits.Count -gt 0
+}
+
+function Assert-VersionIsAvailable {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version,
+
+        [string[]]$RefsToCheck = @()
+    )
+
+    $tagName = "v$Version"
+    if (Test-GitTagExists -TagName $tagName) {
+        throw "Target version '$Version' is already tagged as '$tagName'."
+    }
+
+    foreach ($ref in $RefsToCheck) {
+        $refVersion = Get-WebVersionFromGitRef -RefName $ref
+        if ($refVersion -eq $Version) {
+            throw "Target version '$Version' is already present in $ref:src/version.json."
+        }
+    }
+
+    if (Test-WebVersionExistsInHistory -Version $Version) {
+        throw "Target version '$Version' already appears in fetched src/version.json history. Choose a new version instead of reusing it."
+    }
+}
+
+function Assert-RemoteDidNotChange {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RemoteRef,
+
+        [Parameter(Mandatory=$true)]
+        [string]$ExpectedCommit
+    )
+
+    $currentRemoteCommit = git rev-parse $RemoteRef 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentRemoteCommit)) {
+        throw "Could not resolve $RemoteRef while verifying release safety."
+    }
+
+    if ($currentRemoteCommit -ne $ExpectedCommit) {
+        throw "Remote $RemoteRef changed during release verification ($ExpectedCommit -> $currentRemoteCommit). Re-run the release script from the updated branch tip."
+    }
+}
+
 # Ensure we're on main branch
 $currentBranch = git branch --show-current
 if ($currentBranch -ne "main") {
@@ -149,7 +237,7 @@ if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[
 
 # Ensure we're up to date with remote
 Write-Host "Checking remote status..." -ForegroundColor Cyan
-git fetch origin 2>$null
+git fetch origin --tags 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
 }
@@ -194,6 +282,8 @@ if ($localCommit -ne $remoteCommit) {
     }
 }
 
+$releaseRemoteCommit = git rev-parse origin/main 2>$null
+
 # Files to update
 $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Csproj files read version dynamically from version.json - no paths needed
@@ -224,6 +314,15 @@ switch ($Bump) {
 
 $newVersion = "$major.$minor.$patch"
 Write-Host "New version: $newVersion" -ForegroundColor Green
+
+try {
+    Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/main")
+} catch {
+    Write-Host ""
+    Write-Host "ERROR: Unsafe release version selection." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    exit 1
+}
 
 # Determine release type
 $isPtyBreaking = $mthostUpdate -eq "yes"
@@ -308,6 +407,14 @@ catch {
 # Git operations
 Write-Host ""
 Write-Host "Committing and tagging..." -ForegroundColor Cyan
+
+git fetch origin --tags 2>$null
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not refresh remote state before commit/tag."
+}
+
+Assert-RemoteDidNotChange -RemoteRef "origin/main" -ExpectedCommit $releaseRemoteCommit
+Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/main")
 
 git add -A
 if ($LASTEXITCODE -ne 0) { throw "git add failed" }
