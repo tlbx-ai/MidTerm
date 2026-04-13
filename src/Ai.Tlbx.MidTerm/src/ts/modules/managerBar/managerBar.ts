@@ -55,6 +55,7 @@ let overflowPopoverEl: HTMLElement | null = null;
 let openMenuButtonId: string | null = null;
 let openMenuAnchorEl: HTMLButtonElement | null = null;
 let overflowActionIds: string[] = [];
+let overflowProxyAnchorEl: HTMLElement | null = null;
 let managerBarResizeObserver: ResizeObserver | null = null;
 let overflowLayoutFrameId: number | null = null;
 
@@ -97,6 +98,18 @@ export function sendCommand(sessionId: string, text: string): void {
   void submitSessionText(sessionId, text).catch((error: unknown) => {
     log.error(() => `Failed to submit manager bar command: ${String(error)}`);
   });
+}
+
+export function setAutomationOverflowProxyAnchor(el: HTMLElement | null): void {
+  overflowProxyAnchorEl = el;
+}
+
+export function triggerAutomationOverflow(): void {
+  toggleOverflowMenu();
+}
+
+export function triggerAddAutomation(): void {
+  openActionModal();
 }
 
 export function initManagerBar(): void {
@@ -525,7 +538,10 @@ function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): v
 }
 
 function toggleOverflowMenu(): void {
-  if (!overflowBtn || !overflowPopoverEl || overflowActionIds.length === 0) {
+  if (!overflowBtn || !overflowPopoverEl) {
+    return;
+  }
+  if (overflowActionIds.length === 0 && !(barEl && isMobileLensSurface(barEl))) {
     return;
   }
 
@@ -571,13 +587,14 @@ function positionManagerActionMenu(): void {
 }
 
 function positionManagerOverflowMenu(): void {
-  if (!overflowPopoverEl || !overflowBtn || overflowPopoverEl.classList.contains('hidden')) {
+  const anchorEl = overflowProxyAnchorEl ?? overflowBtn;
+  if (!overflowPopoverEl || !anchorEl || overflowPopoverEl.classList.contains('hidden')) {
     return;
   }
 
   const viewportPadding = 12;
   const gap = 8;
-  const triggerRect = overflowBtn.getBoundingClientRect();
+  const triggerRect = anchorEl.getBoundingClientRect();
   const popoverRect = overflowPopoverEl.getBoundingClientRect();
   const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
   const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
@@ -617,6 +634,20 @@ function renderOverflowMenuItems(): void {
     button.textContent = action.label;
     overflowPopoverEl.appendChild(button);
   }
+
+  if (barEl && isMobileLensSurface(barEl)) {
+    const addItem = document.createElement('button');
+    addItem.type = 'button';
+    addItem.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
+    addItem.textContent = t('managerBar.addButton');
+    addItem.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeOpenManagerOverflow();
+      openActionModal();
+    });
+    overflowPopoverEl.appendChild(addItem);
+  }
 }
 
 function scheduleOverflowLayout(): void {
@@ -639,13 +670,20 @@ function syncOverflowedButtons(): void {
   const addButton = addBtn;
   const overflowButton = overflowBtn;
 
-  if (managerBar.classList.contains('hidden')) {
+  const isMobileSurface = shouldCollapseManagerButtonsToOverflow(managerBar);
+  if (managerBar.classList.contains('hidden') && !isMobileSurface) {
     return;
   }
+
+  const mobileLens = isMobileLensSurface(managerBar);
+  addButton.classList.toggle('hidden', mobileLens);
 
   const buttonElements = [...buttonStrip.querySelectorAll<HTMLElement>('.manager-btn')];
   if (buttonElements.length === 0) {
     resetOverflowLayoutState(buttonStrip, overflowButton);
+    if (mobileLens) {
+      overflowButton.removeAttribute('hidden');
+    }
     return;
   }
 
@@ -716,7 +754,14 @@ function resetOverflowLayoutState(
 
 function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolean {
   const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
-  return footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'terminal';
+  return footerDock?.dataset.device === 'mobile';
+}
+
+function isMobileLensSurface(managerBar: HTMLElement): boolean {
+  const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
+  return (
+    footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'lens'
+  );
 }
 
 function collapseManagerButtonsToOverflow(

@@ -28,6 +28,11 @@ import {
   getLensQuickSettingsDraft,
   setLensQuickSettingsDraft,
 } from '../lens/quickSettings';
+import {
+  setAutomationOverflowProxyAnchor,
+  triggerAddAutomation,
+  triggerAutomationOverflow,
+} from '../managerBar';
 import { shouldShowManagerBar } from '../managerBar/visibility';
 import { onTabActivated } from '../sessionTabs';
 import { onDevModeChanged } from '../sidebar/voiceSection';
@@ -307,7 +312,7 @@ function resolveShowContext(args: {
   lensActive: boolean;
   touchControlsAvailable: boolean;
 }): boolean {
-  return args.lensActive ? args.isMobile : args.touchControlsAvailable;
+  return args.touchControlsAvailable;
 }
 
 function resolveShowStatus(args: {
@@ -891,6 +896,7 @@ export function hideSmartInput(): void {
 }
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   ensureFooterHosts();
+  const preserveTextareaFocus = document.activeElement === activeTextarea;
 
   const layoutState = getAdaptiveFooterLayoutState();
   if (!layoutState.showFooter) {
@@ -908,7 +914,7 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   syncContextRow(layoutState);
 
   const managerBar = document.getElementById('manager-bar');
-  managerBar?.classList.toggle('hidden', !layoutState.showAutomation);
+  managerBar?.classList.toggle('hidden', !layoutState.showAutomation || layoutState.isMobile);
   syncFooterRailOrder(layoutState);
   syncStatusRow(layoutState);
   footerDock?.toggleAttribute('hidden', false);
@@ -917,8 +923,10 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
   queueFooterReserveSync();
 
-  if (focusTextarea && layoutState.showInput) {
-    activeTextarea?.focus({ preventScroll: true });
+  if ((focusTextarea || preserveTextareaFocus) && layoutState.showInput) {
+    requestAnimationFrame(() => {
+      activeTextarea?.focus({ preventScroll: true });
+    });
   }
 }
 
@@ -1269,6 +1277,34 @@ function getToolButtonRenderArgs(): Parameters<typeof createToolButtonsStrip>[0]
   };
 }
 
+function createAutomationOverflowProxy(): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'manager-bar-overflow adaptive-footer-status-automation-proxy';
+  btn.title = t('managerBar.more');
+  btn.innerHTML = '<span class="icon">&#xe910;</span>';
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    triggerAutomationOverflow();
+  });
+  return btn;
+}
+
+function createAutomationAddProxy(): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'manager-bar-add adaptive-footer-status-automation-proxy';
+  btn.title = t('managerBar.addButton');
+  btn.textContent = '+';
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    triggerAddAutomation();
+  });
+  return btn;
+}
+
 function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   if (!footerPrimaryHost || !dockedBar) {
     return;
@@ -1290,14 +1326,12 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
     applyDraftToTextarea(activeTextarea, layoutState.activeSessionId ?? null);
   }
 
-  const toolsInlineInContext = layoutState.lensActive && layoutState.isMobile;
-  renderPinnedToolsForSession(toolsInlineInContext ? null : (layoutState.activeSessionId ?? null));
-  toolsToggleBtn?.toggleAttribute('hidden', toolsInlineInContext);
-  if (toolsInlineInContext) {
-    setToolsPanelOpen(false);
-  } else {
-    setToolsPanelOpen(toolsPanelOpen);
+  renderPinnedToolsForSession(layoutState.activeSessionId ?? null);
+  if (layoutState.lensActive && layoutState.isMobile && inlineToolHost) {
+    inlineToolHost.hidden = true;
   }
+  toolsToggleBtn?.removeAttribute('hidden');
+  setToolsPanelOpen(toolsPanelOpen);
 }
 
 function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -1307,16 +1341,14 @@ function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
 
   footerContextHost.replaceChildren();
 
-  if (layoutState.lensActive && layoutState.isMobile) {
-    if (toolButtonsStrip) {
-      footerContextHost.appendChild(toolButtonsStrip);
-    }
-    footerContextHost.hidden = false;
-    return;
-  }
-
   if (toolButtonsStrip && toolsPanel && toolButtonsStrip.parentElement !== toolsPanel) {
     toolsPanel.appendChild(toolButtonsStrip);
+  }
+
+  if (layoutState.isMobile && !layoutState.touchControlsExpanded) {
+    touchControllerEl?.classList.remove('visible');
+    footerContextHost.hidden = true;
+    return;
   }
 
   if (layoutState.showContext && layoutState.touchControlsAvailable) {
@@ -1348,6 +1380,7 @@ function syncFooterRailOrder(layoutState: AdaptiveFooterLayoutState): void {
   if (!footerDock || !footerPrimaryHost || !footerContextHost || !footerStatusHost) {
     return;
   }
+  const currentFooterDock = footerDock;
 
   const managerBar = document.getElementById('manager-bar');
   if (!managerBar) {
@@ -1361,8 +1394,16 @@ function syncFooterRailOrder(layoutState: AdaptiveFooterLayoutState): void {
     status: footerStatusHost,
   } satisfies Record<ReturnType<typeof getAdaptiveFooterRailSequence>[number], HTMLElement>;
 
-  for (const key of getAdaptiveFooterRailSequence(layoutState)) {
-    footerDock.appendChild(rails[key]);
+  const desiredOrder = getAdaptiveFooterRailSequence(layoutState);
+  const needsReorder = desiredOrder.some(
+    (key, index) => currentFooterDock.children.item(index) !== rails[key],
+  );
+  if (!needsReorder) {
+    return;
+  }
+
+  for (const key of desiredOrder) {
+    currentFooterDock.appendChild(rails[key]);
   }
 }
 
@@ -1387,11 +1428,64 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     return;
   }
 
+  if (layoutState.isMobile) {
+    renderMobileTerminalStatusRow(layoutState);
+    return;
+  }
+
   const renderedTerminalStatus = renderTerminalStatusRow({
     autoSendEnabled: canUseSmartInputVoiceSupport() && autoSendEnabled,
     footerStatusHost,
   });
   footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);
+}
+
+function renderMobileTerminalStatusRow(layoutState: AdaptiveFooterLayoutState): void {
+  if (!footerStatusHost) {
+    return;
+  }
+
+  setAutomationOverflowProxyAnchor(null);
+
+  const leftCluster = document.createElement('div');
+  leftCluster.className = 'adaptive-footer-status-left';
+
+  if (canUseSmartInputVoiceSupport() && autoSendEnabled) {
+    const autoSendPill = document.createElement('div');
+    autoSendPill.className = 'adaptive-footer-status-pill';
+    autoSendPill.textContent = t('smartInput.autoSend');
+    leftCluster.appendChild(autoSendPill);
+  }
+
+  if (layoutState.touchControlsAvailable && !layoutState.touchControlsExpanded) {
+    const keysToggle = createTerminalTouchToggleButton({
+      expanded: false,
+      onToggle: () => {
+        setTouchKeysExpanded(true);
+      },
+    });
+    leftCluster.appendChild(keysToggle);
+  }
+
+  if (leftCluster.childElementCount > 0) {
+    footerStatusHost.appendChild(leftCluster);
+  }
+
+  if (layoutState.showAutomation) {
+    const rightCluster = document.createElement('div');
+    rightCluster.className = 'adaptive-footer-status-right';
+
+    const overflowProxy = createAutomationOverflowProxy();
+    rightCluster.appendChild(overflowProxy);
+    setAutomationOverflowProxyAnchor(overflowProxy);
+
+    const addProxy = createAutomationAddProxy();
+    rightCluster.appendChild(addProxy);
+
+    footerStatusHost.appendChild(rightCluster);
+  }
+
+  footerStatusHost.toggleAttribute('hidden', false);
 }
 
 function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -1431,6 +1525,13 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   });
   lensSettingsSummaryBtn = summaryBtn;
   footerStatusHost.appendChild(summaryBtn);
+
+  setAutomationOverflowProxyAnchor(null);
+  if (layoutState.isMobile && layoutState.showAutomation) {
+    const overflowProxy = createAutomationOverflowProxy();
+    footerStatusHost.appendChild(overflowProxy);
+    setAutomationOverflowProxyAnchor(overflowProxy);
+  }
 
   lensQuickSettingsRow.classList.add('smart-input-lens-settings-sheet');
   lensQuickSettingsRow.hidden = !lensQuickSettingsSheetOpen;

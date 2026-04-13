@@ -17,10 +17,7 @@ export const ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT =
 export function getAdaptiveFooterRailSequence(
   state: AdaptiveFooterRailSequenceState,
 ): AdaptiveFooterRailKey[] {
-  if (state.lensActive && state.isMobile) {
-    return ['primary', 'automation', 'context', 'status'];
-  }
-
+  void state;
   return ['primary', 'context', 'automation', 'status'];
 }
 

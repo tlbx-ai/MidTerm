@@ -16429,7 +16429,7 @@ body.keyboard-visible .adaptive-footer-context .touch-controller.embedded .touch
   font-size: var(--fs-base);
 }
 
-body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
+body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager-bar:not(.hidden) {
   display: flex !important;
 }
 
@@ -16508,13 +16508,22 @@ body.keyboard-visible .adaptive-footer-dock .manager-bar:not(.hidden) {
     display: flex !important;
   }
 
-  .adaptive-footer-dock[data-device='mobile'][data-surface='terminal'] .manager-bar {
-    gap: 4px;
+  .adaptive-footer-dock[data-device='mobile'] .manager-bar {
+    display: none !important;
   }
 
-  .adaptive-footer-dock[data-device='mobile'][data-surface='terminal'] .manager-bar-buttons {
-    max-width: 0 !important;
-    gap: 0;
+  .adaptive-footer-status-left {
+    display: flex;
+    align-items: center;
+    gap: var(--command-bay-gap);
+    min-width: 0;
+  }
+
+  .adaptive-footer-status-right {
+    display: flex;
+    align-items: center;
+    gap: var(--command-bay-gap);
+    flex-shrink: 0;
   }
 
   .adaptive-footer-dock .manager-btn {

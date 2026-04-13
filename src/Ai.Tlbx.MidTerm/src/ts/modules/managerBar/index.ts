@@ -4,4 +4,10 @@
  * Quick-action buttons below the terminal area for common commands.
  */
 
-export { initManagerBar, sendCommand } from './managerBar';
+export {
+  initManagerBar,
+  sendCommand,
+  setAutomationOverflowProxyAnchor,
+  triggerAddAutomation,
+  triggerAutomationOverflow,
+} from './managerBar';

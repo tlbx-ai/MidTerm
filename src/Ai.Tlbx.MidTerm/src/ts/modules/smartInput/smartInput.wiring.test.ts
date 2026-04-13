@@ -66,7 +66,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('showAutomation');
     expect(source).toContain('showStatus');
     expect(source).toContain('syncFooterRailOrder(layoutState);');
-    expect(layoutSource).toContain("return ['primary', 'automation', 'context', 'status'];");
+    expect(layoutSource).toContain("return ['primary', 'context', 'automation', 'status'];");
+    expect(layoutSource).not.toContain("return ['primary', 'automation', 'context', 'status'];");
   });
 
   it('collapses the adaptive footer immediately while settings are open', () => {
@@ -150,12 +151,15 @@ describe('smart input tab wiring', () => {
     expect(source).toContain(
       "footerStatusHost.classList.add('adaptive-footer-status-sheet-open');",
     );
-    expect(source).toContain('return args.lensActive ? args.isMobile : args.touchControlsAvailable;');
+    expect(source).toContain('return args.touchControlsAvailable;');
     expect(source).toContain('shouldUseCompactLensStatusRail(layoutState)');
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('let suppressNextToolsToggleClick = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
+    expect(source).toContain('const preserveTextareaFocus = document.activeElement === activeTextarea;');
+    expect(source).toContain('if ((focusTextarea || preserveTextareaFocus) && layoutState.showInput) {');
+    expect(source).toContain('const needsReorder = desiredOrder.some(');
     expect(source).toContain('event.stopPropagation();');
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
     expect(viewSource).toContain('inputRow.appendChild(toolsPanel);');
@@ -253,5 +257,31 @@ describe('smart input tab wiring', () => {
     expect(lensResumeButtonSource).toContain('session?.spaceId');
     expect(css).toContain('.smart-input-lens-actions {');
     expect(css).toContain('.smart-input-lens-action {');
+  });
+
+  it('hides inline tools on mobile Lens sessions', () => {
+    expect(source).toContain(
+      'if (layoutState.lensActive && layoutState.isMobile && inlineToolHost) {',
+    );
+    expect(source).toContain('inlineToolHost.hidden = true;');
+  });
+
+  it('merges context and automation controls into the mobile status row', () => {
+    expect(source).toContain('function renderMobileTerminalStatusRow(');
+    expect(source).toContain("leftCluster.className = 'adaptive-footer-status-left';");
+    expect(source).toContain("rightCluster.className = 'adaptive-footer-status-right';");
+    expect(source).toContain('createAutomationOverflowProxy()');
+    expect(source).toContain('createAutomationAddProxy()');
+    expect(source).toContain('setAutomationOverflowProxyAnchor(overflowProxy)');
+    expect(source).toContain('triggerAutomationOverflow()');
+    expect(source).toContain('triggerAddAutomation()');
+    expect(source).toContain(
+      "managerBar?.classList.toggle('hidden', !layoutState.showAutomation || layoutState.isMobile)",
+    );
+    expect(css).toContain('.adaptive-footer-status-left {');
+    expect(css).toContain('.adaptive-footer-status-right {');
+    expect(css).toContain(
+      ".adaptive-footer-dock[data-device='mobile'] .manager-bar {",
+    );
   });
 });

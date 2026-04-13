@@ -50,7 +50,7 @@ describe('manager bar visibility', () => {
     );
     expect(managerBarSource).toContain('function toggleOverflowMenu(): void {');
     expect(managerBarSource).toContain('function syncOverflowedButtons(): void {');
-    expect(managerBarSource).toContain("if (managerBar.classList.contains('hidden')) {");
+    expect(managerBarSource).toContain("managerBar.classList.contains('hidden') && !isMobileSurface");
     expect(managerBarSource).toContain(
       'function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {',
     );
@@ -58,7 +58,7 @@ describe('manager bar visibility', () => {
       'function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolean {',
     );
     expect(managerBarSource).toContain("footerDock?.dataset.device === 'mobile'");
-    expect(managerBarSource).toContain("footerDock.dataset.surface === 'terminal'");
+    expect(managerBarSource).toContain("footerDock.dataset.surface === 'lens'");
     expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '';");
     expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '0px';");
     expect(managerBarSource).toContain("overflowButton.setAttribute('hidden', '');");
@@ -105,6 +105,21 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain("deleteBtn.addEventListener('click', (event) => {");
     expect(managerBarSource).toContain('pendingQueueRemovals.add(queueId);');
     expect(managerBarSource).toContain('removeCommandBayQueueEntry(queueId);');
+  });
+
+  it('collapses the automation bar to overflow and hides add button on mobile Lens', () => {
+    expect(managerBarSource).toContain('function isMobileLensSurface(managerBar: HTMLElement): boolean {');
+    expect(managerBarSource).toContain("addButton.classList.toggle('hidden', mobileLens);");
+    expect(managerBarSource).toContain("t('managerBar.addButton')");
+    expect(managerBarSource).toContain('isMobileLensSurface(barEl)');
+  });
+
+  it('exports trigger hooks and proxy anchor for mobile status row proxy buttons', () => {
+    expect(managerBarSource).toContain('export function triggerAutomationOverflow(): void {');
+    expect(managerBarSource).toContain('export function triggerAddAutomation(): void {');
+    expect(managerBarSource).toContain('export function setAutomationOverflowProxyAnchor(');
+    expect(managerBarSource).toContain('let overflowProxyAnchorEl:');
+    expect(managerBarSource).toContain('overflowProxyAnchorEl ?? overflowBtn');
   });
 
   it('renders prompt queue items beside automation items in the same queue surface', () => {

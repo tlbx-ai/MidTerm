@@ -6,11 +6,11 @@ import {
 } from './layout';
 
 describe('smart input adaptive footer layout helpers', () => {
-  it('places automation ahead of context only for mobile Lens sessions', () => {
+  it('keeps the footer rail order identical across Lens and terminal sessions', () => {
     expect(getAdaptiveFooterRailSequence({ lensActive: true, isMobile: true })).toEqual([
       'primary',
-      'automation',
       'context',
+      'automation',
       'status',
     ]);
     expect(getAdaptiveFooterRailSequence({ lensActive: false, isMobile: true })).toEqual([
