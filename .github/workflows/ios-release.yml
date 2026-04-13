@@ -181,6 +181,8 @@ jobs:
       - name: Clean up
         if: always()
         run: |
-          security delete-keychain "$KEYCHAIN_PATH" || true
+          if [[ -n "${KEYCHAIN_PATH:-}" && -e "$KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
           rm -rf ~/.private_keys
           rm -f ~/Library/MobileDevice/Provisioning\ Profiles/midterm.mobileprovision

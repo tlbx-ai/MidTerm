@@ -485,7 +485,11 @@ public static class TtyHostSpawner
             // mtagenthost, so they need their own process group to survive mt restarts.
             if (setpgid(_process.Id, 0) != 0)
             {
-                Log.Warn(() => $"TtyHostSpawner: setpgid failed for redirected PID {_process.Id} (errno: {Marshal.GetLastPInvokeError()})");
+                var redirectedProcessId = _process.Id;
+                var errno = Marshal.GetLastPInvokeError();
+                Log.Warn(() => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"TtyHostSpawner: setpgid failed for redirected PID {redirectedProcessId} (errno: {errno})"));
             }
 #endif
 
@@ -740,7 +744,7 @@ public static class TtyHostSpawner
             }
             ApplyEnvironmentOverrides(psi.Environment, environmentOverrides);
 
-            var process = Process.Start(psi);
+            using var process = Process.Start(psi);
             if (process is null)
             {
                 const string message = "Process.Start returned null";
@@ -750,17 +754,21 @@ public static class TtyHostSpawner
                     detail: "Process.Start returned null.");
             }
 
-            processId = process.Id;
+            var startedProcessId = process.Id;
+            processId = startedProcessId;
 
             // Move mthost into its own process group so it survives mt restarts.
             // When launchd kills mt, it sends SIGTERM to mt's process group.
             // Without this, mthosts inherit mt's PGID and die with it.
-            if (setpgid(process.Id, 0) != 0)
+            if (setpgid(startedProcessId, 0) != 0)
             {
-                Log.Warn(() => $"TtyHostSpawner: setpgid failed for PID {process.Id} (errno: {Marshal.GetLastPInvokeError()})");
+                var errno = Marshal.GetLastPInvokeError();
+                Log.Warn(() => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"TtyHostSpawner: setpgid failed for PID {startedProcessId} (errno: {errno})"));
             }
 
-            var processIdForLog = process.Id;
+            var processIdForLog = startedProcessId;
             if (isRoot && !string.IsNullOrEmpty(runAsUser))
             {
                 Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned via sudo (PID: {processIdForLog} is sudo, not mthost). Socket discovery will use glob pattern."));
@@ -832,7 +840,9 @@ public static class TtyHostSpawner
         {
             processId = startedPid.Value;
             var launchedPid = processId;
-            Log.Info(() => $"TtyHostSpawner: Spawned mthost via macOS GUI LaunchAgent (session {sessionId}, PID {launchedPid})");
+            Log.Info(() => string.Create(
+                CultureInfo.InvariantCulture,
+                $"TtyHostSpawner: Spawned mthost via macOS GUI LaunchAgent (session {sessionId}, PID {launchedPid})"));
         }
         else
         {
@@ -844,7 +854,7 @@ public static class TtyHostSpawner
 
     private static int? TryGetMacOsLaunchAgentPid(uint uid, string label, int timeoutMs)
     {
-        return PollForValue(
+        return PollForValue<int>(
             TimeSpan.FromMilliseconds(timeoutMs),
             TimeSpan.FromMilliseconds(100),
             () =>
@@ -853,7 +863,7 @@ public static class TtyHostSpawner
                 {
                     var match = MacOsPidRegex.Match(stdout);
                     if (match.Success &&
-                        int.TryParse(match.Groups["pid"].Value, out var pid) &&
+                        int.TryParse(match.Groups["pid"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) &&
                         pid > 0)
                     {
                         return pid;
@@ -1065,7 +1075,10 @@ public static class TtyHostSpawner
             if (logFailures)
             {
                 var stderrTrimmed = stderr.Trim();
-                Log.Warn(() => $"TtyHostSpawner: Command failed ({fileName}, exit {process.ExitCode}): {stderrTrimmed}");
+                var exitCode = process.ExitCode;
+                Log.Warn(() => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"TtyHostSpawner: Command failed ({fileName}, exit {exitCode}): {stderrTrimmed}"));
             }
 
             return false;
