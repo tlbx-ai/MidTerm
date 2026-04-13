@@ -28,6 +28,19 @@ describe('agent view Lens wiring', () => {
     expect(css).not.toContain('order: 1;');
   });
 
+  it('keeps Lens history labels and timestamps left-bound instead of right-bound', () => {
+    expect(css).toMatch(
+      /\.agent-history-user \.agent-history-header,\s*\.agent-history-assistant \.agent-history-header\s*\{[^}]*justify-content:\s*flex-start;/s,
+    );
+    expect(css).toMatch(/\.agent-history-meta\s*\{[^}]*margin-left:\s*0;/s);
+    expect(lensDesign).toContain(
+      'No Lens history row should right-align its header labels or timestamps.',
+    );
+    expect(lensDesign).toContain(
+      'Lens history headers no longer right-bind labels or timestamps;',
+    );
+  });
+
   it('uses slightly larger user and assistant metadata in full-width Lens layout', () => {
     expect(css).toContain(
       ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,",

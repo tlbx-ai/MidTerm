@@ -297,6 +297,7 @@ The canonical history contract must satisfy the following:
 - User prompts should be visually distinct but compact.
 - They should anchor the start of a turn without dominating the screen.
 - Repeated rendering of the same user turn is forbidden.
+- No Lens history row should right-align its header labels or timestamps. Quiet role labels, kind badges, and any timestamp/meta text should stay left-bound and wrap naturally when space is tight.
 - In Codex Lens, user rows should place their quiet role label and timestamp above the message body, not below it.
 - In Codex Lens, assistant rows should place any optional timestamp above the message body when that preference is enabled, but should default to no repeated assistant timestamp.
 - In Codex Lens, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label when the row is otherwise plainly identifiable as assistant output.
@@ -544,6 +545,7 @@ Status in this branch/work item:
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
+- implemented: Lens history headers no longer right-bind labels or timestamps; row badges and any meta text stay left-anchored across user, assistant, tool, diff, request, system, and notice rows
 - implemented: the only animated history activity element is the trailing global busy bubble, now rendered as a rotating SVG triangle with a blue center dot instead of pulsing ellipsis dots
 - implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
 - implemented: Codex Lens now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header

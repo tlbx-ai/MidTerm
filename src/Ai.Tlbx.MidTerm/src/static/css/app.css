@@ -11341,9 +11341,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-view-panel {
-  --agent-lens-max-width: min(100%, 68rem);
-  --agent-lens-content-width: min(100%, 62rem);
-  --agent-lens-user-width: min(100%, 62rem);
+  --agent-lens-max-width: 100%;
+  --agent-lens-content-width: 100%;
+  --agent-lens-user-width: 100%;
   --agent-lens-rail: color-mix(in srgb, var(--border-color) 82%, transparent);
   --agent-lens-rail-strong: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
   --agent-lens-surface: transparent;
@@ -11468,7 +11468,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-composer-interruption {
   width: var(--agent-lens-content-width);
-  margin: 0 auto 12px;
+  margin: 0 0 12px;
 }
 
 .agent-composer-interruption[hidden] {
@@ -11477,7 +11477,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-composer-host {
   width: var(--agent-lens-content-width);
-  margin: 0 auto;
+  margin: 0;
   min-height: 0;
 }
 
@@ -11519,7 +11519,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 0;
   background: transparent;
   box-shadow: none;
-  margin: 0 auto;
+  margin: 0;
   isolation: isolate;
 }
 
@@ -11536,8 +11536,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-user {
-  align-self: flex-start;
-  width: min(100%, var(--agent-lens-user-width));
+  align-self: stretch;
+  width: var(--agent-lens-user-width);
   padding: 8px 0;
   border-radius: 0;
   border: 0;
@@ -11698,7 +11698,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-user .agent-history-header,
 .agent-history-assistant .agent-history-header {
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-top: 0;
 }
 
@@ -11838,7 +11838,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   line-height: 1.2;
   letter-spacing: 0;
   text-transform: none;
-  margin-left: auto;
+  margin-left: 0;
   white-space: nowrap;
 }
 
