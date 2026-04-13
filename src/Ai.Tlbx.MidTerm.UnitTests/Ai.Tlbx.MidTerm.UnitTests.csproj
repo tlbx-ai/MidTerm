@@ -40,4 +40,10 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <Target Name="BuildAgentHostForUnitTests" BeforeTargets="Build">
+    <MSBuild Projects="..\Ai.Tlbx.MidTerm.AgentHost\Ai.Tlbx.MidTerm.AgentHost.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+  </Target>
+
 </Project>

@@ -10982,6 +10982,9 @@ body.shared-session-mode .session-tab-bar {
   min-height: 176px;
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
+  font-weight: var(--terminal-font-weight, normal);
+  letter-spacing: var(--terminal-letter-spacing, 0px);
+  font-kerning: none;
   line-height: calc(var(--terminal-font-size, 16px) * 1.375);
 }
 
@@ -11976,10 +11979,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-busy-label-letter {
   color: color-mix(in srgb, var(--text-muted) 68%, transparent);
   text-shadow: 0 0 0 transparent;
-  animation: agent-history-busy-sweep 1.45s linear infinite alternate;
-  animation-delay: calc(
-    (var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms)
-  );
+  animation:
+    agent-history-busy-sweep 2.9s linear infinite,
+    agent-history-busy-sweep 2.9s linear infinite;
+  animation-delay:
+    calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms)),
+    calc(
+      1450ms + (var(--agent-busy-letter-reverse-index, 0) * 90ms) -
+        var(--agent-busy-animation-offset-ms, 0ms)
+    );
   animation-fill-mode: both;
   white-space: pre;
 }
@@ -15499,6 +15507,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--command-bay-text);
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
+  font-weight: var(--terminal-font-weight, normal);
+  letter-spacing: var(--terminal-letter-spacing, 0px);
+  font-kerning: none;
   line-height: var(--smart-input-textarea-line-height);
   position: relative;
   z-index: 2;

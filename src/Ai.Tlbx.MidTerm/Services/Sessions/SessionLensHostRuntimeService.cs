@@ -1663,17 +1663,39 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
-    private static bool TryResolveDevLaunch(string profile, string mode, string baseDir, out HostLaunch launch)
+    internal static string? ResolveDevHostDllPath(string baseDir)
     {
         var repoRoot = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
-        var devDllCandidates = new[]
+        var preferredConfiguration = baseDir.Contains($"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+            ? "Release"
+            : baseDir.Contains($"{Path.DirectorySeparatorChar}Debug{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                ? "Debug"
+                : null;
+        var configurations = preferredConfiguration is null
+            ? new[] { "Debug", "Release" }
+            : new[] { preferredConfiguration, string.Equals(preferredConfiguration, "Release", StringComparison.Ordinal) ? "Debug" : "Release" };
+        foreach (var configuration in configurations)
         {
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
-        };
-        var devDll = devDllCandidates.FirstOrDefault(File.Exists);
+            var devDllCandidates = new[]
+            {
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
+            };
+            var devDll = devDllCandidates.FirstOrDefault(File.Exists);
+            if (!string.IsNullOrWhiteSpace(devDll))
+            {
+                return devDll;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryResolveDevLaunch(string profile, string mode, string baseDir, out HostLaunch launch)
+    {
+        var devDll = ResolveDevHostDllPath(baseDir);
         if (!string.IsNullOrWhiteSpace(devDll))
         {
             var dotnetHost = ResolveDotNetHostPath();
@@ -2074,7 +2096,6 @@ internal sealed class SubscriptionState
         }
     }
 }
-
 
 
 

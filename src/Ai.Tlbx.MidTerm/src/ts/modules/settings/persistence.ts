@@ -645,7 +645,12 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   document.documentElement.style.setProperty('--terminal-font-size', `${fontSize}px`);
-  document.documentElement.style.setProperty('--terminal-font-family', fontFamily);
+  document.documentElement.style.setProperty(
+    '--terminal-font-family',
+    buildTerminalFontStack(fontFamily),
+  );
+  document.documentElement.style.setProperty('--terminal-letter-spacing', `${letterSpacing}px`);
+  document.documentElement.style.setProperty('--terminal-font-weight', String(fontWeight));
   document.documentElement.style.setProperty(
     '--agent-ui-font-family',
     buildAgentMessageFontStack(settings.agentMessageFontFamily),

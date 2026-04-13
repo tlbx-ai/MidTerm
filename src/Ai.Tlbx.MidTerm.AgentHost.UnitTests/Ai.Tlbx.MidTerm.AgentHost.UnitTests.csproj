@@ -29,6 +29,7 @@
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\FakeCodexWebSocketServer.cs" Link="FakeCodexWebSocketServer.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\LensHostProtocolTests.cs" Link="LensHostProtocolTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\LensHostTestClient.cs" Link="LensHostTestClient.cs" />
+    <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostTestPathResolver.cs" Link="MtAgentHostTestPathResolver.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostClaudeIntegrationTests.cs" Link="MtAgentHostClaudeIntegrationTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostCodexIntegrationTests.cs" Link="MtAgentHostCodexIntegrationTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostIntegrationTests.cs" Link="MtAgentHostIntegrationTests.cs" />

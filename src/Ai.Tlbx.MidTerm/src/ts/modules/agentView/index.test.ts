@@ -5327,6 +5327,92 @@ describe('agentView dev errors', () => {
     expect(fallback[0]?.body).toBe('Working');
   });
 
+  it('does not let assistant text, user prompts, or command text populate the busy bubble', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-3', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: 'Summarize the latest release changes for me.' },
+        history: [
+          {
+            entryId: 'user:turn-3',
+            order: 1,
+            kind: 'user',
+            turnId: 'turn-3',
+            itemId: 'user-3',
+            requestId: null,
+            status: 'completed',
+            itemType: 'user_message',
+            title: null,
+            body: 'Summarize the latest release changes for me.',
+            attachments: [],
+            streaming: false,
+            createdAt: '2026-04-13T11:20:00Z',
+            updatedAt: '2026-04-13T11:20:00Z',
+          },
+        ],
+        items: [
+          {
+            itemId: 'command-3',
+            turnId: 'turn-3',
+            itemType: 'command_execution',
+            status: 'in_progress',
+            title: 'git status --short',
+            detail: 'git status --short',
+            attachments: [],
+            updatedAt: '2026-04-13T11:20:02Z',
+          },
+          {
+            itemId: 'assistant-3',
+            turnId: 'turn-3',
+            itemType: 'assistant_text',
+            status: 'in_progress',
+            title: 'Assistant',
+            detail: 'Summarize the latest release changes for me.',
+            attachments: [],
+            updatedAt: '2026-04-13T11:20:01Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(running[0]?.busyIndicator).toBe(true);
+    expect(running[0]?.body).toBe('Working');
+  });
+
+  it('falls back to Working when a generic in-progress tool detail looks like a shell command', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-4', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: '' },
+        items: [
+          {
+            itemId: 'tool-4',
+            turnId: 'turn-4',
+            itemType: 'tool',
+            status: 'in_progress',
+            title: 'Tool',
+            detail: 'npm run build -- --watch',
+            attachments: [],
+            updatedAt: '2026-04-13T11:21:00Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(running[0]?.busyIndicator).toBe(true);
+    expect(running[0]?.body).toBe('Working');
+  });
+
   it('phase-locks the busy sweep to the turn start so elapsed refreshes do not restart the animation at frame zero', async () => {
     const { withTrailingBusyIndicator } = await import('./index');
     const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(

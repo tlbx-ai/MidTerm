@@ -312,6 +312,7 @@ The canonical history contract must satisfy the following:
 - When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. User-prompt text and assistant-message text must not populate the busy bubble. Only fall back to a generic `Working` label when no meaningful live provider label is available.
 - While a turn is active, that busy bubble should also show a muted wall-clock duration counter plus a quiet `(Press Esc to cancel)` hint immediately after the animated label, not detached against the far edge of the pane.
 - The busy-label animation should sweep smoothly left-to-right and back again without a visible jump reset, and it should remain a pure CSS animation rather than relying on JavaScript timing.
+- The busy-label text highlight should mirror at the right edge and travel back left through the same letters before beginning the next cycle, rather than snapping immediately from the right edge back to the first letter.
 - When the turn settles back to the user, Lens should append one muted inline duration note such as `(Turn took 1m 4s)` into the history instead of leaving the elapsed time only in transient chrome.
 - That turn-settled duration note should render as a quiet near-full-width end-of-turn marker, with horizontal rule segments on both sides of the centered text and only a small gap around the label, rather than as ordinary paragraph text.
 - Per-row fake activity indicators should not linger inside older history rows.
@@ -573,6 +574,7 @@ Status in this branch/work item:
 - implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label and phase-locks its CSS sweep to the turn clock so elapsed-time refreshes do not visibly restart the animation
+- implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by MidTerm-owned persistent queue state rather than browser-local Lens-only submission state
 - implemented: explicit Lens sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
 - implemented: shared Command Bay prompt submissions now bypass the visible queue entirely when that queue is empty and the target session can accept work immediately, so idle Terminal sends and user-turn Lens sends do not flash a transient queued row before dispatch

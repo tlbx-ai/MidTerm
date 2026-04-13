@@ -198,6 +198,7 @@ function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
   container.innerHTML = first.innerHTML;
 }
 
+/* eslint-disable max-lines-per-function -- history row rendering remains intentionally consolidated in one DOM factory. */
 export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
     const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
@@ -508,14 +509,21 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       const style = label.style as CSSStyleDeclaration & Record<string, string>;
       style['--agent-busy-animation-offset-ms'] = `${animationOffsetMs}ms`;
     }
-    for (const [index, character] of Array.from(entry.body || 'Working').entries()) {
+    const labelCharacters = Array.from(entry.body || 'Working');
+    const lastCharacterIndex = Math.max(0, labelCharacters.length - 1);
+    for (const [index, character] of labelCharacters.entries()) {
       const letter = document.createElement('span');
       letter.className = 'agent-history-busy-label-letter';
       if (typeof letter.style.setProperty === 'function') {
         letter.style.setProperty('--agent-busy-letter-index', String(index));
+        letter.style.setProperty(
+          '--agent-busy-letter-reverse-index',
+          String(lastCharacterIndex - index),
+        );
       } else {
         const style = letter.style as CSSStyleDeclaration & Record<string, string>;
         style['--agent-busy-letter-index'] = String(index);
+        style['--agent-busy-letter-reverse-index'] = String(lastCharacterIndex - index);
       }
       letter.textContent = character;
       label.appendChild(letter);
@@ -863,3 +871,4 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     renderRuntimeStats,
   };
 }
+/* eslint-enable max-lines-per-function */

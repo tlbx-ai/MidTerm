@@ -271,9 +271,11 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('white-space: pre;');
     expect(css).toContain('.agent-history-busy-label-letter {');
     expect(css).toContain('.agent-history-busy-status {');
-    expect(css).toContain('animation: agent-history-busy-sweep 1.45s linear infinite alternate;');
+    expect(historyDomSource).toContain('--agent-busy-letter-reverse-index');
+    expect(css).toContain('animation:');
+    expect(css).toContain('agent-history-busy-sweep 2.9s linear infinite');
     expect(css).toMatch(
-      /animation-delay:\s*calc\(\s*\(var\(--agent-busy-letter-index,\s*0\)\s*\*\s*90ms\)\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\);/,
+      /animation-delay:\s*calc\(\s*\(var\(--agent-busy-letter-index,\s*0\)\s*\*\s*90ms\)\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\),\s*calc\(\s*1450ms\s*\+\s*\(var\(--agent-busy-letter-reverse-index,\s*0\)\s*\*\s*90ms\)\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\);/,
     );
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration-body {');
@@ -294,6 +296,7 @@ describe('agent view Lens wiring', () => {
       'busy bubble should also show a muted wall-clock duration counter',
     );
     expect(lensDesign).toContain('hint immediately after the animated label');
+    expect(lensDesign).toContain('mirror at the right edge and travel back left');
     expect(lensDesign).toContain('append one muted inline duration note');
     expect(lensDesign).toContain('near-full-width end-of-turn marker');
   });
