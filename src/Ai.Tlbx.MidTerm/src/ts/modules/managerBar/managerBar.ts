@@ -759,9 +759,7 @@ function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolea
 
 function isMobileLensSurface(managerBar: HTMLElement): boolean {
   const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
-  return (
-    footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'lens'
-  );
+  return footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'lens';
 }
 
 function collapseManagerButtonsToOverflow(
