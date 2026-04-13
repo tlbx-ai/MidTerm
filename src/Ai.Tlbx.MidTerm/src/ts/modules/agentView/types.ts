@@ -15,6 +15,7 @@ export interface SessionLensViewState {
   historyEntries: LensHistoryEntry[];
   historyWindowStart: number;
   historyWindowCount: number;
+  historyWindowTargetCount: number;
   disconnectStream: (() => void) | null;
   streamConnected: boolean;
   refreshInFlight: boolean;

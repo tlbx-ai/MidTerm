@@ -6086,6 +6086,138 @@ describe('agentView dev errors', () => {
     expect(snapshot.hasNewerHistory).toBe(false);
   });
 
+  it('keeps the live-edge retention target when a short initial history window receives more rows', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-live-retain',
+      provider: 'codex',
+      generatedAt: '2026-04-13T10:00:00Z',
+      latestSequence: 1,
+      historyCount: 1,
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-13T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-live-retain',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-live-retain',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-04-13T10:00:00Z',
+        completedAt: null,
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'user:turn-live-retain',
+          order: 1,
+          kind: 'user',
+          turnId: 'turn-live-retain',
+          itemId: 'user-live-retain',
+          requestId: null,
+          status: 'completed',
+          itemType: 'user_message',
+          title: null,
+          body: 'Keep the prior history visible while streaming.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-13T10:00:00Z',
+          updatedAt: '2026-04-13T10:00:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 0,
+      historyWindowCount: 1,
+      historyWindowTargetCount: 80,
+      historyAutoScrollPinned: true,
+    } as any;
+
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+      sessionId: 's-live-retain',
+      provider: 'codex',
+      generatedAt: '2026-04-13T10:00:01Z',
+      latestSequence: 2,
+      historyCount: 2,
+      session: snapshot.session,
+      thread: snapshot.thread,
+      currentTurn: snapshot.currentTurn,
+      quickSettings: snapshot.quickSettings,
+      streams: {
+        ...snapshot.streams,
+        assistantText: 'Streaming reply',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:turn-live-retain',
+          order: 2,
+          kind: 'assistant',
+          turnId: 'turn-live-retain',
+          itemId: 'assistant-live-retain',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Streaming reply',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-04-13T10:00:01Z',
+          updatedAt: '2026-04-13T10:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(requiresWindowRefresh).toBe(false);
+    expect(snapshot.historyWindowStart).toBe(0);
+    expect(snapshot.historyWindowEnd).toBe(2);
+    expect(snapshot.history).toHaveLength(2);
+    expect(snapshot.history.map((entry: any) => entry.entryId)).toEqual([
+      'user:turn-live-retain',
+      'assistant:turn-live-retain',
+    ]);
+    expect(state.historyWindowCount).toBe(2);
+    expect(state.historyWindowTargetCount).toBe(80);
+  });
+
   it('requests a snapshot refresh when off-window history changes arrive while browsing older history', async () => {
     const { applyCanonicalLensDelta } = await import('./index');
 

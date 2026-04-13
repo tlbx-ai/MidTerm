@@ -21,6 +21,11 @@ export function applyLensHistoryWindowState(
   const windowSize = Math.max(0, windowEnd - windowStart);
   state.historyWindowStart = windowStart;
   state.historyWindowCount = windowSize;
+  state.historyWindowTargetCount = Math.max(
+    1,
+    state.historyWindowTargetCount || 0,
+    windowSize,
+  );
 }
 
 export function collapseSnapshotToLatestWindow(
@@ -46,6 +51,7 @@ export function collapseSnapshotToLatestWindow(
   snapshot.hasNewerHistory = false;
   state.historyWindowStart = snapshot.historyWindowStart;
   state.historyWindowCount = retainedEntries.length;
+  state.historyWindowTargetCount = Math.max(1, targetWindowCount);
 }
 
 export function applyCanonicalLensDelta(
@@ -115,7 +121,12 @@ function applyHistoryWindowDelta(
   );
 
   nextEntries.sort((left, right) => left.order - right.order);
-  const targetWindowCount = Math.max(1, state.historyWindowCount || snapshot.history.length || 1);
+  const targetWindowCount = Math.max(
+    1,
+    state.historyWindowTargetCount || 0,
+    state.historyWindowCount || 0,
+    snapshot.history.length || 1,
+  );
   applyHistoryWindowEntries(
     snapshot,
     nextEntries,
