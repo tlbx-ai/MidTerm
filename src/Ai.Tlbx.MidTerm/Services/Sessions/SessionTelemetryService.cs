@@ -12,6 +12,7 @@ public sealed class SessionTelemetryService
     {
         public long UnixSecond { get; init; }
         public int Bytes { get; set; }
+        public int HeatUnits { get; set; }
     }
 
     private sealed class BellRecord
@@ -41,12 +42,13 @@ public sealed class SessionTelemetryService
         var now = DateTimeOffset.UtcNow;
         var unixSecond = now.ToUnixTimeSeconds();
         var bellCount = TerminalOutputSanitizer.CountBellEvents(data);
+        var heatUnits = TerminalOutputSanitizer.CountVisibleTextUnits(data);
 
         lock (state.SyncRoot)
         {
             state.TotalOutputBytes += data.Length;
             state.LastOutputAt = now;
-            AddBytes(state, unixSecond, data.Length);
+            AddBytes(state, unixSecond, data.Length, heatUnits);
 
             if (bellCount > 0)
             {
@@ -110,18 +112,21 @@ public sealed class SessionTelemetryService
             response.LastBellAt = state.LastBellAt;
 
             var bytesBySecond = new Dictionary<long, int>(seconds);
+            var heatUnitsBySecond = new Dictionary<long, int>(seconds);
             foreach (var bucket in state.Buckets)
             {
                 if (bucket.UnixSecond >= startSecond)
                 {
                     bytesBySecond[bucket.UnixSecond] = bucket.Bytes;
+                    heatUnitsBySecond[bucket.UnixSecond] = bucket.HeatUnits;
                 }
             }
 
             for (var second = startSecond; second <= nowSecond; second++)
             {
                 var bytes = bytesBySecond.TryGetValue(second, out var value) ? value : 0;
-                var heat = CalculateHeat(bytes);
+                var heatUnits = heatUnitsBySecond.TryGetValue(second, out var heatValue) ? heatValue : 0;
+                var heat = CalculateHeat(heatUnits);
 
                 response.Heatmap.Add(new SessionActivityHeatSample
                 {
@@ -168,6 +173,7 @@ public sealed class SessionTelemetryService
             TrimBells(state);
 
             var currentBytes = 0;
+            var currentHeatUnits = 0;
             foreach (var bucket in state.Buckets)
             {
                 if (bucket.UnixSecond < startSecond)
@@ -178,6 +184,7 @@ public sealed class SessionTelemetryService
                 if (bucket.UnixSecond == nowSecond)
                 {
                     currentBytes = bucket.Bytes;
+                    currentHeatUnits = bucket.HeatUnits;
                 }
             }
 
@@ -190,23 +197,25 @@ public sealed class SessionTelemetryService
                 LastOutputAt = state.LastOutputAt,
                 LastBellAt = state.LastBellAt,
                 CurrentBytesPerSecond = currentBytes,
-                CurrentHeat = CalculateHeat(currentBytes)
+                CurrentHeat = CalculateHeat(currentHeatUnits)
             };
         }
     }
 
-    private static void AddBytes(SessionTelemetryState state, long unixSecond, int bytes)
+    private static void AddBytes(SessionTelemetryState state, long unixSecond, int bytes, int heatUnits)
     {
         if (state.Buckets.Count > 0 && state.Buckets[^1].UnixSecond == unixSecond)
         {
             state.Buckets[^1].Bytes += bytes;
+            state.Buckets[^1].HeatUnits += heatUnits;
             return;
         }
 
         state.Buckets.Add(new OutputBucket
         {
             UnixSecond = unixSecond,
-            Bytes = bytes
+            Bytes = bytes,
+            HeatUnits = heatUnits
         });
         TrimBuckets(state, unixSecond);
     }
@@ -228,11 +237,11 @@ public sealed class SessionTelemetryService
         }
     }
 
-    private static double CalculateHeat(int bytes)
+    private static double CalculateHeat(int heatUnits)
     {
-        // Heat should reflect fresh terminal activity, not how the current partial
-        // second compares to an older peak bucket in the same window.
-        return bytes > 0 ? 1 : 0;
+        // Heat should reflect fresh visible terminal output, not pure control
+        // traffic that redraws state without producing new terminal content.
+        return heatUnits > 0 ? 1 : 0;
     }
 
     private static void AppendEmptyHeatmap(SessionActivityResponse response, long startSecond, long nowSecond)
