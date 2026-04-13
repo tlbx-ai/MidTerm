@@ -1598,7 +1598,7 @@ body.has-app-background::after {
 }
 
 .history-dropdown-header {
-  padding: 8px 12px;
+  padding: 5px 10px;
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-secondary);
@@ -1619,7 +1619,7 @@ body.has-app-background::after {
 }
 
 .history-dropdown-empty {
-  padding: 16px 12px;
+  padding: 10px;
   text-align: center;
   color: var(--text-muted);
   font-size: var(--fs-md);
@@ -1628,7 +1628,7 @@ body.has-app-background::after {
 .history-item {
   display: flex;
   align-items: center;
-  padding: 6px 8px;
+  padding: 3px 6px;
   cursor: pointer;
   transition: background 0.1s;
   position: relative;
@@ -1676,21 +1676,21 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 3px;
+  gap: 1px;
   overflow: hidden;
-  padding-right: 52px;
+  padding-right: 42px;
 }
 
 .history-entry-list {
   display: flex;
   flex-direction: column;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .history-item-primary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -1712,7 +1712,7 @@ body.has-app-background::after {
 
 .history-item-mode {
   flex: 0 0 auto;
-  padding: 1px 5px;
+  padding: 0 4px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent-gold-muted) 42%, transparent);
   background: color-mix(in srgb, var(--accent-gold-muted) 10%, transparent);
@@ -1730,7 +1730,7 @@ body.has-app-background::after {
   overflow: hidden;
   padding: 0;
   margin: 0;
-  gap: 4px;
+  gap: 3px;
 }
 
 .history-item-info .fg-cwd {
@@ -1751,18 +1751,18 @@ body.has-app-background::after {
 .history-item-actions {
   position: absolute;
   top: 50%;
-  right: 8px;
+  right: 6px;
   transform: translateY(-50%);
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   background: linear-gradient(
     to right,
     transparent,
-    var(--bg-dropdown-opaque) 8px,
+    var(--bg-dropdown-opaque) 6px,
     var(--bg-dropdown-opaque)
   );
-  padding-left: 12px;
+  padding-left: 8px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
@@ -1774,14 +1774,14 @@ body.has-app-background::after {
   background: linear-gradient(
     to right,
     transparent,
-    var(--btn-secondary) 8px,
+    var(--btn-secondary) 6px,
     var(--btn-secondary)
   );
 }
 
 .history-item-delete {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -1830,8 +1830,8 @@ body.has-app-background::after {
 }
 
 .history-item-rename {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -1866,7 +1866,7 @@ body.has-app-background::after {
 }
 
 .history-section-header {
-  padding: 4px 8px;
+  padding: 2px 8px;
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-muted);
