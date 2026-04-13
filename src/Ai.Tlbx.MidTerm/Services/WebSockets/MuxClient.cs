@@ -107,10 +107,11 @@ public sealed class MuxClient : IAsyncDisposable
     private sealed class SessionBuffer : IDisposable
     {
         private byte[] _buffer;
-        private int _position;
+        private int _start;
+        private int _end;
         private bool _disposed;
 
-        public int TotalBytes => _position;
+        public int TotalBytes => _end - _start;
         public int LastCols { get; set; }
         public int LastRows { get; set; }
         public ulong LastSequenceEndExclusive { get; set; }
@@ -127,41 +128,102 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (_disposed) return;
 
-            // If this write would exceed capacity, drop oldest data by shifting
-            if (_position + data.Length > _buffer.Length)
+            if (data.Length > _buffer.Length)
             {
-                var overflow = _position + data.Length - _buffer.Length;
+                DroppedBytes += data.Length - _buffer.Length;
+                data = data.Slice(data.Length - _buffer.Length);
+            }
 
-                if (overflow >= _position)
-                {
-                    // Need to drop everything - incoming data is larger than buffer or fills it
-                    DroppedBytes += _position;
-                    _position = 0;
+            EnsureWritableCapacity(data.Length);
 
-                    // If incoming data itself exceeds buffer, truncate to most recent
-                    if (data.Length > _buffer.Length)
-                    {
-                        DroppedBytes += data.Length - _buffer.Length;
-                        data = data.Slice(data.Length - _buffer.Length);
-                    }
-                }
-                else
+            if (_end + data.Length > _buffer.Length)
+            {
+                var overflow = _end + data.Length - _buffer.Length;
+                ConsumePrefix(overflow);
+
+                if (_end + data.Length > _buffer.Length)
                 {
-                    // Shift buffer to drop oldest bytes, keep most recent
-                    DroppedBytes += overflow;
-                    var keepBytes = _position - overflow;
-                    Buffer.BlockCopy(_buffer, overflow, _buffer, 0, keepBytes);
-                    _position = keepBytes;
+                    CompactToStart();
                 }
             }
 
-            data.CopyTo(_buffer.AsSpan(_position));
-            _position += data.Length;
+            data.CopyTo(_buffer.AsSpan(_end));
+            _end += data.Length;
         }
 
-        public ReadOnlyMemory<byte> GetData() => _buffer.AsMemory(0, _position);
+        public ReadOnlyMemory<byte> GetData() => _buffer.AsMemory(_start, TotalBytes);
 
-        public void Reset() => _position = 0;
+        public void Consume(int count)
+        {
+            if (count <= 0 || _disposed)
+            {
+                return;
+            }
+
+            if (count >= TotalBytes)
+            {
+                Reset();
+                return;
+            }
+
+            _start += count;
+
+            if (_start >= _buffer.Length / 2)
+            {
+                CompactToStart();
+            }
+        }
+
+        public void Reset()
+        {
+            _start = 0;
+            _end = 0;
+        }
+
+        private void EnsureWritableCapacity(int incomingBytes)
+        {
+            if (_end + incomingBytes <= _buffer.Length)
+            {
+                return;
+            }
+
+            if (_start > 0)
+            {
+                CompactToStart();
+            }
+        }
+
+        private void ConsumePrefix(int bytesToDrop)
+        {
+            if (bytesToDrop <= 0)
+            {
+                return;
+            }
+
+            var dropped = Math.Min(bytesToDrop, TotalBytes);
+            if (dropped > 0)
+            {
+                DroppedBytes += dropped;
+                _start += dropped;
+            }
+
+            if (_start == _end)
+            {
+                Reset();
+            }
+        }
+
+        private void CompactToStart()
+        {
+            var totalBytes = TotalBytes;
+            if (totalBytes > 0 && _start > 0)
+            {
+                Buffer.BlockCopy(_buffer, _start, _buffer, 0, totalBytes);
+            }
+
+            _start = 0;
+            _end = totalBytes;
+        }
 
         public void Dispose()
         {
@@ -420,7 +482,7 @@ public sealed class MuxClient : IAsyncDisposable
             {
                 Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
             }
-            await FlushBufferAsync(activeId, activeBuffer, compress: false).ConfigureAwait(false);
+            await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true).ConfigureAwait(false);
             activeBuffer.LastFlushTicks = nowTicks;
         }
 
@@ -434,37 +496,37 @@ public sealed class MuxClient : IAsyncDisposable
                 || elapsed >= FlushInterval)
             {
                 _lastFlushDelayMs[sessionId] = (int)Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
-                await FlushBufferAsync(sessionId, buffer, compress: true).ConfigureAwait(false);
+                await FlushBufferAsync(sessionId, buffer, compress: true, flushAllAvailable: false).ConfigureAwait(false);
                 buffer.LastFlushTicks = nowTicks;
             }
         }
     }
 
-    private async Task FlushBufferAsync(string sessionId, SessionBuffer buffer, bool compress)
+    private async Task FlushBufferAsync(
+        string sessionId,
+        SessionBuffer buffer,
+        bool compress,
+        bool flushAllAvailable)
     {
-        var totalBytes = buffer.TotalBytes;
-        if (totalBytes == 0) return;
-
-        // If data was dropped, notify client before sending (so client can request resync)
-        if (buffer.DroppedBytes > 0)
+        while (buffer.TotalBytes > 0)
         {
-            var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes, TerminalReplayReason.MuxOverflow);
-            await SendFrameAsync(lossFrame).ConfigureAwait(false);
-            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)"));
-            buffer.DroppedBytes = 0;
-        }
+            // If data was dropped, notify client before sending (so client can request resync)
+            if (buffer.DroppedBytes > 0)
+            {
+                var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes, TerminalReplayReason.MuxOverflow);
+                await SendFrameAsync(lossFrame).ConfigureAwait(false);
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)"));
+                buffer.DroppedBytes = 0;
+            }
 
-        // Get data directly from pooled buffer (zero-copy until frame creation)
-        var data = buffer.GetData();
-        var sequenceStart = buffer.LastSequenceEndExclusive - (ulong)totalBytes;
+            // Get data directly from pooled buffer (zero-copy until frame creation)
+            var totalBytes = buffer.TotalBytes;
+            var data = buffer.GetData();
+            var sequenceStart = buffer.LastSequenceEndExclusive - (ulong)totalBytes;
+            var length = Math.Min(MaxFrameChunkBytes, data.Length);
+            var chunk = data.Slice(0, length);
+            var sequenceEndExclusive = sequenceStart + (ulong)length;
 
-        for (var offset = 0; offset < data.Length; offset += MaxFrameChunkBytes)
-        {
-            var length = Math.Min(MaxFrameChunkBytes, data.Length - offset);
-            var chunk = data.Slice(offset, length);
-            var sequenceEndExclusive = sequenceStart + (ulong)offset + (ulong)length;
-
-            // Active sessions skip compression to avoid client-side decompression latency.
             var useCompression = compress && length > MuxProtocol.CompressionThreshold;
             var maxFrameSize = useCompression
                 ? MuxProtocol.CompressedOutputHeaderSize + length + 100
@@ -497,13 +559,13 @@ public sealed class MuxClient : IAsyncDisposable
                 ArrayPool<byte>.Shared.Return(frameBuffer);
             }
 
-            if (compress && offset + length < data.Length)
+            buffer.Consume(length);
+
+            if (!flushAllAvailable)
             {
-                await Task.Yield();
+                break;
             }
         }
-
-        buffer.Reset();
     }
 
     private void DiscardHiddenSessionBuffers()
