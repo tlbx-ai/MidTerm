@@ -116,14 +116,14 @@ describe('smart input tab wiring', () => {
     expect(viewSource).toContain(
       "toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';",
     );
-    expect(css).toContain('font-size: 16px;');
+    expect(css).toContain('font-size: var(--terminal-font-size, 16px);');
     expect(metricsSource).toContain('const MAX_TEXTAREA_OVERLAY_LINES = 7;');
     expect(metricsSource).toContain(
       'const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;',
     );
   });
 
-  it('keeps Lens attachment drafts as durable staged uploads in the composer', () => {
+  it('keeps staged attachment drafts available in both Lens and terminal composers', () => {
     expect(source).toContain('lensAttachmentDrafts');
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
@@ -132,6 +132,10 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("target: 'terminal'");
     expect(source).toContain('void openLensDraftAttachment(currentSessionId, attachment);');
     expect(source).toContain('enqueueCommandBayTurn');
+    expect(source).not.toContain('await handleFileDrop(files);');
+    expect(source).not.toContain(
+      "isLensActiveSession(sessionId) &&\n        clipboardDataMayContainLensComposerImage",
+    );
     expect(submissionSource).toContain('prepareSmartInputOutboundPrompt');
     expect(submissionSource).toContain(
       'queuedTurn: args.submitQueuedTurn(args.sessionId, request)',
@@ -160,7 +164,12 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('.smart-input-editor {');
     expect(css).toContain('.smart-input-textarea {');
+    expect(css).toContain('.adaptive-footer-dock .smart-input-textarea {');
     expect(css).toContain(":root:not([data-command-bay-ligatures='false']) .smart-input-textarea");
+    expect(css).toContain(
+      'font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));',
+    );
+    expect(css).toContain('font-size: var(--terminal-font-size, 16px);');
     expect(css).toContain('font-weight: var(--terminal-font-weight, normal);');
     expect(css).toContain('letter-spacing: var(--terminal-letter-spacing, 0px);');
     expect(css).toContain('--smart-input-textarea-line-height: calc(');

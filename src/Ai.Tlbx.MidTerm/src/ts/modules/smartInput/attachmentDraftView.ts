@@ -17,26 +17,18 @@ export function renderLensAttachmentDraftView(args: {
   host: HTMLDivElement | null;
   sessionId: string | null;
   attachments: readonly LensComposerDraftAttachment[];
-  isLensActiveSession: (sessionId: string) => boolean;
   onOpenAttachment: (sessionId: string, attachment: LensComposerDraftAttachment) => void;
   onRemoveAttachment: (sessionId: string, attachmentId: string) => void;
   onFocusTextarea: () => void;
 }): void {
-  const {
-    attachments,
-    host,
-    isLensActiveSession,
-    onFocusTextarea,
-    onOpenAttachment,
-    onRemoveAttachment,
-    sessionId,
-  } = args;
+  const { attachments, host, onFocusTextarea, onOpenAttachment, onRemoveAttachment, sessionId } =
+    args;
   if (!host) {
     return;
   }
 
   host.replaceChildren();
-  if (!sessionId || !isLensActiveSession(sessionId)) {
+  if (!sessionId) {
     host.hidden = true;
     return;
   }

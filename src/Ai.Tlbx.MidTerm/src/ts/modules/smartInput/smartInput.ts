@@ -30,7 +30,7 @@ import {
 import { shouldShowManagerBar } from '../managerBar/visibility';
 import { onTabActivated } from '../sessionTabs';
 import { onDevModeChanged } from '../sidebar/voiceSection';
-import { handleFileDrop, showDropToast, uploadFile } from '../terminal';
+import { showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
 import { closePopup as closeTouchControllerPopup } from '../touchController/popups';
 import { getAdaptiveFooterRailSequence } from './layout';
@@ -1130,10 +1130,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      if (
-        isLensActiveSession(sessionId) &&
-        clipboardDataMayContainLensComposerImage(event.clipboardData)
-      ) {
+      if (clipboardDataMayContainLensComposerImage(event.clipboardData)) {
         event.preventDefault();
         const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
         void (async () => {
@@ -1147,18 +1144,15 @@ function createDockedDOM(): void {
         return;
       }
 
-      if (isLensActiveSession(sessionId)) {
-        const text = event.clipboardData?.getData('text/plain') ?? '';
-        if (text && shouldConvertPastedTextToSmartInputReference(text)) {
-          event.preventDefault();
-          const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-          void addLensComposerTextReference(sessionId, text, selection);
-          return;
-        }
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      if (text && shouldConvertPastedTextToSmartInputReference(text)) {
+        event.preventDefault();
+        const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
+        void addLensComposerTextReference(sessionId, text, selection);
+        return;
       }
 
       if (draftHasInlineReferences(sessionId)) {
-        const text = event.clipboardData?.getData('text/plain') ?? '';
         if (!text) {
           return;
         }
@@ -1575,7 +1569,6 @@ function renderLensAttachmentDrafts(sessionId: string | null): void {
   renderLensAttachmentDraftView({
     attachments: sessionId ? getLensDraftAttachments(sessionId) : [],
     host: lensAttachmentHost,
-    isLensActiveSession,
     onOpenAttachment: (currentSessionId, attachment) => {
       void openLensDraftAttachment(currentSessionId, attachment);
     },
@@ -1833,11 +1826,6 @@ function handleSmartInputCut(event: ClipboardEvent, textarea: HTMLTextAreaElemen
 async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId || files.length === 0) {
-    return;
-  }
-
-  if (!isLensActiveSession(sessionId)) {
-    await handleFileDrop(files);
     return;
   }
 

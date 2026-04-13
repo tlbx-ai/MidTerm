@@ -296,13 +296,6 @@ function renderSidebarTree(): void {
   for (const section of getVisibleSpaceSections()) {
     host.appendChild(createSpaceTargetSection(section));
   }
-
-  if (host.childElementCount === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'spaces-sidebar-empty';
-    empty.textContent = getSearchValue() ? t('spaces.noSearchMatches') : t('spaces.sidebarEmpty');
-    host.appendChild(empty);
-  }
 }
 
 function getVisibleSpaceSections(): SidebarSpaceSection[] {

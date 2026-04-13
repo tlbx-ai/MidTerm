@@ -1024,15 +1024,6 @@ body.has-app-background::after {
   cursor: grabbing;
 }
 
-.spaces-sidebar-empty {
-  padding: 16px 12px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-input) 86%, transparent);
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-}
-
 @media (max-width: 768px) {
   .spaces-tree-space-actions,
   .spaces-tree-workspace-actions {
@@ -8786,10 +8777,13 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-primary);
   min-height: var(--smart-input-control-height);
   padding: 8px 12px;
-  font-family: inherit;
-  font-size: 16px;
-  line-height: 1.4;
-  max-height: calc(1.4em * 5 + 16px);
+  font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
+  font-size: var(--terminal-font-size, 16px);
+  font-weight: var(--terminal-font-weight, normal);
+  letter-spacing: var(--terminal-letter-spacing, 0px);
+  font-kerning: none;
+  line-height: var(--terminal-line-height, 1);
+  max-height: calc(var(--smart-input-textarea-line-height) * 5 + 16px);
   overflow-y: hidden;
   outline: none;
   scrollbar-width: thin;
