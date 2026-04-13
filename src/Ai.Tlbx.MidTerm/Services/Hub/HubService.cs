@@ -507,7 +507,9 @@ public sealed class HubService
     {
         var machine = GetRequiredMachine(machineId);
         await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
-        using var response = await remote.Client.GetAsync($"/api/recents?count={count}", ct);
+        using var response = await remote.Client.GetAsync(
+            string.Create(CultureInfo.InvariantCulture, $"/api/recents?count={count}"),
+            ct);
         await EnsureSuccessAsync(response, ct);
         return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.ListLaunchEntry, ct)
             ?? [];

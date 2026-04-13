@@ -285,28 +285,24 @@ catch {
 
 # Build verification (catches C# compile issues before committing)
 Write-Host ""
-Write-Host "Running build verification..." -ForegroundColor Cyan
-$buildResult = dotnet build "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj" -c Release 2>&1
-$buildExitCode = $LASTEXITCODE
-$buildLines = @($buildResult | ForEach-Object { "$_" })
-$hasReinvokeSentinel = $buildLines | Where-Object { $_ -match '_REINVOKE_SUCCESS_' }
-$realErrorLines = $buildLines | Where-Object { $_ -match ':\s*error\b' -and $_ -notmatch '_REINVOKE_SUCCESS_' }
-$reinvokeOnlyFailure = $buildExitCode -ne 0 -and $hasReinvokeSentinel -and $realErrorLines.Count -eq 0
-if ($buildExitCode -ne 0 -and -not $reinvokeOnlyFailure) {
+Write-Host "Running .NET test suite..." -ForegroundColor Cyan
+$dotnetTestSuiteScript = Join-Path $PSScriptRoot "run-dotnet-test-suite.ps1"
+$runtimeBuildVerificationScript = Join-Path $PSScriptRoot "run-runtime-build-verification.ps1"
+try {
+    & $dotnetTestSuiteScript -Configuration Release -WarnAsError
+    Write-Host ".NET tests succeeded." -ForegroundColor Green
+
     Write-Host ""
-    Write-Host "ERROR: Build failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "Running runtime build verification..." -ForegroundColor Cyan
+    & $runtimeBuildVerificationScript -Configuration Release -WarnAsError
+    Write-Host "Runtime build verification succeeded." -ForegroundColor Green
+}
+catch {
     Write-Host ""
-    Write-Host "Build output:" -ForegroundColor Yellow
-    $buildLines | ForEach-Object { Write-Host "  $_" }
-    Write-Host ""
-    Write-Host "Fix the build errors and try again." -ForegroundColor Yellow
+    Write-Host "ERROR: Release verification failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
     git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
     exit 1
-}
-if ($reinvokeOnlyFailure) {
-    Write-Host "Build succeeded via frontend reinvoke." -ForegroundColor Green
-} else {
-    Write-Host "Build succeeded." -ForegroundColor Green
 }
 
 # Git operations

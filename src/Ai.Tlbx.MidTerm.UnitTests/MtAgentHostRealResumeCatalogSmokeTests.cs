@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -366,8 +367,9 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                     continue;
                 }
 
-                foreach (var item in content.EnumerateArray())
+                for (var index = 0; index < content.GetArrayLength(); index++)
                 {
+                    var item = content[index];
                     if (item.ValueKind != JsonValueKind.Object ||
                         !TryGetString(item, "type", out var itemType) ||
                         !string.Equals(itemType, "input_text", StringComparison.Ordinal) ||
@@ -480,8 +482,9 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         }
 
         var parts = new List<string>();
-        foreach (var item in content.EnumerateArray())
+        for (var index = 0; index < content.GetArrayLength(); index++)
         {
+            var item = content[index];
             if (item.ValueKind != JsonValueKind.Object ||
                 !TryGetString(item, "type", out var itemType) ||
                 !string.Equals(itemType, "text", StringComparison.Ordinal) ||
@@ -615,9 +618,17 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
     private void LogWindow(string label, LensHistoryWindowResponse window)
     {
-        _output.WriteLine(
-            $"{label}: session={window.Session.State} thread={window.Thread.ThreadId} turn={window.CurrentTurn.State} " +
-            $"history={window.History.Count}/{window.HistoryCount} requests={window.Requests.Count} notices={window.Notices.Count}");
+        _output.WriteLine(string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}: session={1} thread={2} turn={3} history={4}/{5} requests={6} notices={7}",
+            label,
+            window.Session.State,
+            window.Thread.ThreadId,
+            window.CurrentTurn.State,
+            window.History.Count,
+            window.HistoryCount,
+            window.Requests.Count,
+            window.Notices.Count));
     }
 
     private static bool IsRealCodexResumeProbeEnabled()
@@ -743,10 +754,10 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
     }
 
-    [GeneratedRegex(@"\S+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\S+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex NonWhitespaceRegex();
 
-    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex WhitespaceRegex();
 
     private sealed record ResumeProbeCandidate(

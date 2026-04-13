@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Files;
@@ -8,30 +9,37 @@ public sealed partial class SessionLensHistoryService
 {
     private const int MaxInlineMentionsPerField = 24;
     private const int MaxInlineImagePreviewsPerEntry = 6;
+    private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromMilliseconds(250);
 
     private static readonly Regex UnixAbsolutePathPattern = new(
         @"(?:^|[\s""'`(\[{<])(?<path>/(?:[^/:""'`<>|()\r\n\s]+/)*(?:[^/:""'`<>|()\r\n\s]+)?/?)(?=$|[\s""'`)\]}>.,;!?]|:(?=\d))",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly Regex WindowsAbsolutePathPattern = new(
         @"(?:^|[\s""'`(\[{<])(?<path>[A-Za-z]:[\\/](?:[^<>:""/\\|?*()\r\n\s]+[\\/])*(?:[^<>:""/\\|?*()\r\n\s]+)?[\\/]?)(?=$|[\s""'`)\]}>.,;!?]|:(?=\d))",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly Regex UncAbsolutePathPattern = new(
         @"(?:^|[\s""'`(\[{<])(?<path>\\\\[^\\/\r\n\s]+[\\/]+[^\\/\r\n\s]+(?:[\\/]+[^\\/\r\n\s]+)*[\\/]?)(?=$|[\s""'`)\]}>.,;!?]|:(?=\d))",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly Regex QuotedAbsolutePathPattern = new(
         "(?:[\"'`])(?<path>(?:\\\\\\\\[^\\\\/\\r\\n]+[\\\\/]+[^\\\\/\\r\\n]+(?:[\\\\/]+[^\\\\/\\r\\n]+)*[\\\\/]?|[A-Za-z]:[\\\\/](?:[^<>:\"/\\\\|?*\\r\\n]+[\\\\/])*(?:[^<>:\"/\\\\|?*\\r\\n]+)?[\\\\/]?|/(?:[^/:\"'`<>|\\r\\n]+/)*(?:[^/:\"'`<>|\\r\\n]+)?/?))(?:[\"'`])",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly Regex RelativePathPattern = new(
         @"(?:^|[\s""'`([{<])(?<path>(?:\.\.?[/\\])?(?:[\w.@-]+[/\\])*[\w.@-]+\.[A-Za-z][A-Za-z0-9]{0,14})",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly Regex FolderPathPattern = new(
         @"(?:^|[\s""'`([{<])(?<path>(?:\.\.?[/\\])?(?:[\w.@-]+[/\\])+)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly string[] KnownExtensionlessFileNames =
     [
@@ -75,7 +83,58 @@ public sealed partial class SessionLensHistoryService
         $@"(?:^|[\s""'`(\[{{<])(?<path>(?:[\w.@-]+[/\\])*(?:{string.Join("|", KnownExtensionlessFileNames
             .OrderByDescending(static value => value.Length)
             .Select(Regex.Escape))}))",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex LeadingLineInfoPattern = new(
+        @"^:(\d+)(?::(\d+))?",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex TrailingLineInfoPattern = new(
+        @":(\d+)(?::(\d+))?$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex UrlSchemePattern = new(
+        @"^[a-z][a-z0-9+.-]*://",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex IpAddressWithOptionalPortPattern = new(
+        @"^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:/|$)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex TrailingPortPattern = new(
+        @":\d+$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex HostPortPattern = new(
+        @"^[A-Za-z0-9.-]+$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex TldPattern = new(
+        @"^[A-Za-z]{2,24}$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex VersionLikeNumberPattern = new(
+        @"^\d+\.\d+(?:\.\d+)?$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex WindowsDrivePrefixPattern = new(
+        @"^[A-Za-z]:",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
+
+    private static readonly Regex UppercaseIdentifierPattern = new(
+        @"^[A-Z][A-Za-z0-9_]{5,}$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        RegexMatchTimeout);
 
     private static readonly HashSet<string> CommonTlds = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -472,7 +531,7 @@ public sealed partial class SessionLensHistoryService
             return (string.Empty, null, null);
         }
 
-        var match = Regex.Match(source[offset..], @"^:(\d+)(?::(\d+))?");
+        var match = LeadingLineInfoPattern.Match(source[offset..]);
         if (!match.Success)
         {
             return (string.Empty, null, null);
@@ -480,8 +539,8 @@ public sealed partial class SessionLensHistoryService
 
         return (
             match.Value,
-            int.TryParse(match.Groups[1].Value, out var line) ? line : null,
-            int.TryParse(match.Groups[2].Value, out var column) ? column : null);
+            int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var line) ? line : null,
+            int.TryParse(match.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var column) ? column : null);
     }
 
     private static string NormalizePathCandidate(string path)
@@ -516,7 +575,7 @@ public sealed partial class SessionLensHistoryService
 
     private static bool TryMatchTrailingLineInfo(string value, out int length)
     {
-        var match = Regex.Match(value, @":(\d+)(?::(\d+))?$");
+        var match = TrailingLineInfoPattern.Match(value);
         if (!match.Success)
         {
             length = 0;
@@ -572,7 +631,7 @@ public sealed partial class SessionLensHistoryService
             return false;
         }
 
-        if (Regex.IsMatch(normalized, @"^[a-z][a-z0-9+.-]*://", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        if (UrlSchemePattern.IsMatch(normalized))
         {
             return true;
         }
@@ -584,20 +643,20 @@ public sealed partial class SessionLensHistoryService
             return true;
         }
 
-        if (Regex.IsMatch(normalized, @"^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:/|$)", RegexOptions.CultureInvariant))
+        if (IpAddressWithOptionalPortPattern.IsMatch(normalized))
         {
             return true;
         }
 
-        var slashIndex = normalized.IndexOf('/');
+        var slashIndex = normalized.IndexOf("/", StringComparison.Ordinal);
         var prefix = slashIndex >= 0 ? normalized[..slashIndex] : normalized;
-        var hostPort = Regex.Replace(prefix, @":\d+$", string.Empty);
+        var hostPort = TrailingPortPattern.Replace(prefix, string.Empty);
         if (hostPort.Contains('\\', StringComparison.Ordinal) || !hostPort.Contains('.', StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (!Regex.IsMatch(hostPort, @"^[A-Za-z0-9.-]+$", RegexOptions.CultureInvariant))
+        if (!HostPortPattern.IsMatch(hostPort))
         {
             return false;
         }
@@ -609,7 +668,7 @@ public sealed partial class SessionLensHistoryService
         }
 
         var tld = labels[^1];
-        return Regex.IsMatch(tld, @"^[A-Za-z]{2,24}$", RegexOptions.CultureInvariant) &&
+        return TldPattern.IsMatch(tld) &&
                CommonTlds.Contains(tld);
     }
 
@@ -622,7 +681,7 @@ public sealed partial class SessionLensHistoryService
         }
 
         if (IsLikelyUrlOrDomain(normalized) ||
-            Regex.IsMatch(normalized, @"^\d+\.\d+(?:\.\d+)?$", RegexOptions.CultureInvariant))
+            VersionLikeNumberPattern.IsMatch(normalized))
         {
             return true;
         }
@@ -669,7 +728,7 @@ public sealed partial class SessionLensHistoryService
         var normalized = NormalizePathCandidate(value);
         if (string.IsNullOrWhiteSpace(normalized) ||
             normalized.StartsWith("/", StringComparison.Ordinal) ||
-            Regex.IsMatch(normalized, @"^[A-Za-z]:", RegexOptions.CultureInvariant) ||
+            WindowsDrivePrefixPattern.IsMatch(normalized) ||
             normalized.StartsWith(@"\\", StringComparison.Ordinal) ||
             IsLikelyUrlOrDomain(normalized))
         {
@@ -683,7 +742,7 @@ public sealed partial class SessionLensHistoryService
     {
         var normalized = NormalizePathCandidate(value);
         if (string.IsNullOrWhiteSpace(normalized) ||
-            Regex.IsMatch(normalized, @"^[A-Za-z]:", RegexOptions.CultureInvariant) ||
+            WindowsDrivePrefixPattern.IsMatch(normalized) ||
             normalized.StartsWith(@"\\", StringComparison.Ordinal) ||
             IsLikelyUrlOrDomain(normalized))
         {
@@ -693,7 +752,7 @@ public sealed partial class SessionLensHistoryService
         var withoutTrailingSlash = normalized.TrimEnd('/', '\\');
         return !withoutTrailingSlash.Contains('/', StringComparison.Ordinal) &&
                !withoutTrailingSlash.Contains('\\', StringComparison.Ordinal) &&
-               Regex.IsMatch(withoutTrailingSlash, @"^[A-Z][A-Za-z0-9_]{5,}$", RegexOptions.CultureInvariant);
+               UppercaseIdentifierPattern.IsMatch(withoutTrailingSlash);
     }
 
     private static bool ShouldRejectKnownFileMatch(string value)
@@ -701,7 +760,7 @@ public sealed partial class SessionLensHistoryService
         var normalized = NormalizePathCandidate(value);
         return string.IsNullOrWhiteSpace(normalized) ||
                normalized.StartsWith("/", StringComparison.Ordinal) ||
-               Regex.IsMatch(normalized, @"^[A-Za-z]:", RegexOptions.CultureInvariant) ||
+               WindowsDrivePrefixPattern.IsMatch(normalized) ||
                normalized.StartsWith(@"\\", StringComparison.Ordinal) ||
                IsLikelyUrlOrDomain(normalized);
     }
@@ -753,5 +812,4 @@ public sealed partial class SessionLensHistoryService
         int? Column,
         int Priority);
 }
-
 

@@ -79,7 +79,7 @@ jobs:
         run: |
           $version = (Get-Content src/version.json | ConvertFrom-Json).web
           $isDev = "${{ github.ref_name }}".Contains("-dev")
-          $buildArgs = @{ Publish = $true; Version = $version }
+          $buildArgs = @{ Publish = $true; Version = $version; SkipVerify = $true }
           if ($isDev) { $buildArgs.DevRelease = $true }
           ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
 
@@ -88,6 +88,48 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
           retention-days: 1
+
+  frontend-tests:
+    needs: prepare
+    if: needs.prepare.outputs.is_dev != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Install npm packages
+        working-directory: src/Ai.Tlbx.MidTerm
+        run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+
+      - name: Run frontend verification
+        working-directory: src/Ai.Tlbx.MidTerm
+        run: npm run verify
+
+  dotnet-tests:
+    needs: prepare
+    if: needs.prepare.outputs.is_dev != 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Install npm packages
+        working-directory: src/Ai.Tlbx.MidTerm
+        run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+
+      - name: Run .NET test suite
+        shell: pwsh
+        run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError
 
   # ── Build macOS ARM64 + Linux ARM64 for dev prereleases ────────────────────
   build-dev:
@@ -120,10 +162,8 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Build mt + mthost + mtagenthost
-        run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+        shell: pwsh
+        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -240,7 +280,7 @@ jobs:
 
   # ── Build macOS + Linux for stable/public releases ─────────────────────────
   build:
-    needs: [prepare, frontend]
+    needs: [prepare, frontend, frontend-tests, dotnet-tests]
     if: needs.prepare.outputs.is_dev != 'true'
     permissions:
       contents: write
@@ -275,10 +315,8 @@ jobs:
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Build mt + mthost + mtagenthost
-        run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r ${{ matrix.rid }} -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+        shell: pwsh
+        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
@@ -394,22 +432,89 @@ jobs:
         run: security delete-keychain "$KEYCHAIN_PATH" || true
 
   # ── Build Windows: hosted runner for dev, self-hosted with signing for stable ─
-  build-windows:
+  build-windows-dev:
     needs: [prepare, frontend]
+    if: needs.prepare.outputs.is_dev == 'true'
     permissions:
       contents: write
-    runs-on: ${{ needs.prepare.outputs.is_dev == 'true' && 'windows-latest' || fromJSON('["self-hosted","windows","signing"]') }}
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-dotnet@v5
-        if: needs.prepare.outputs.is_dev == 'true'
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Download frontend
+        uses: actions/download-artifact@v6
+        with:
+          name: frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
+
+      - name: Build mt + mthost + mtagenthost
+        shell: pwsh
+        run: ./scripts/publish-runtime-set.ps1 -Rid 'win-x64' -Configuration Release
+
+      - name: Stage artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
+          Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
+          Copy-Item src/version.json staging/win-x64/
+          $mthostPath = 'src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe'
+          if (Test-Path $mthostPath) {
+            Copy-Item $mthostPath staging/win-x64/
+          } else {
+            Write-Host 'mthost.exe not found for win-x64; continuing with web-only artifact set'
+          }
+          Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
+
+      - name: Generate SHA256SUMS
+        shell: pwsh
+        run: |
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')
+          if (Test-Path 'staging/win-x64/mthost.exe') {
+            $files += 'staging/win-x64/mthost.exe'
+          }
+          $hashes = Get-ChildItem $files | ForEach-Object {
+            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $hashes | Set-Content staging/win-x64/SHA256SUMS.txt
+          Write-Host "=== win-x64 ==="
+          Get-Content staging/win-x64/SHA256SUMS.txt
+
+      - name: Sign version.json
+        shell: pwsh
+        env:
+          SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
+        run: ./scripts/sign-release.ps1 -ArtifactsPath staging
+
+      - name: Package and upload to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $archive = "staging/mt-win-x64.zip"
+          if (Get-Command 7z -ErrorAction SilentlyContinue) {
+            7z a -tzip -mx=9 $archive "./staging/win-x64/*" | Out-Null
+          } else {
+            Compress-Archive -Path "./staging/win-x64/*" -DestinationPath $archive -Force
+          }
+          gh release upload "${{ github.ref_name }}" $archive --clobber
+
+  build-windows:
+    needs: [prepare, frontend, frontend-tests, dotnet-tests]
+    if: needs.prepare.outputs.is_dev != 'true'
+    permissions:
+      contents: write
+    runs-on: [self-hosted, windows, signing]
+
+    steps:
+      - uses: actions/checkout@v5
+
       - name: Verify local .NET SDK on self-hosted Windows runner
-        if: needs.prepare.outputs.is_dev != 'true'
         shell: pwsh
         run: |
           $sdks = dotnet --list-sdks
@@ -426,10 +531,7 @@ jobs:
 
       - name: Build mt + mthost + mtagenthost
         shell: pwsh
-        run: |
-          dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r win-x64 -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
-          dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r win-x64 -p:IsPublishing=true -p:ContinuousIntegrationBuild=true --verbosity minimal
+        run: ./scripts/publish-runtime-set.ps1 -Rid 'win-x64' -Configuration Release
 
       - name: Stage artifacts
         shell: pwsh
@@ -446,7 +548,6 @@ jobs:
           Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
 
       - name: Require stable Windows signing inputs
-        if: needs.prepare.outputs.is_dev != 'true'
         shell: pwsh
         run: |
           if (-not (Test-Path 'staging/win-x64/mt.exe')) {
@@ -457,12 +558,10 @@ jobs:
           }
 
       - name: Sign Windows binaries (mt.exe, mthost.exe, mtagenthost.exe)
-        if: needs.prepare.outputs.is_dev != 'true'
         shell: pwsh
         run: ./scripts/sign-windows-binaries.ps1 -StagingPath staging/win-x64
 
       - name: Verify stable Windows Authenticode signatures
-        if: needs.prepare.outputs.is_dev != 'true'
         shell: pwsh
         run: |
           $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')

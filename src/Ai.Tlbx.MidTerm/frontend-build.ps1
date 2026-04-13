@@ -20,6 +20,7 @@
 param(
     [switch]$Publish,        # Enable Brotli compression for publish builds
     [switch]$DevRelease,     # Include source maps in publish (for dev/prerelease builds)
+    [switch]$SkipVerify,     # Skip npm verify/lint/typecheck gates when another job already owns them
     [string]$Version = "dev" # Version to inject into BUILD_VERSION
 )
 
@@ -218,7 +219,12 @@ Write-Host "Asset fingerprint: $AssetVersion" -ForegroundColor DarkGray
 # PHASE 1+2: Static verification
 # ===========================================
 if ($Publish) {
-    Invoke-NpmScript -Name "verify" -Label "Running publish TypeScript/lint/test gate..."
+    if ($SkipVerify) {
+        Write-Host "Skipping publish TypeScript/lint/test gate..." -ForegroundColor Yellow
+    }
+    else {
+        Invoke-NpmScript -Name "verify" -Label "Running publish TypeScript/lint/test gate..."
+    }
 }
 else {
     Invoke-NpmScript -Name "typecheck" -Label "Running production TypeScript type-check..."

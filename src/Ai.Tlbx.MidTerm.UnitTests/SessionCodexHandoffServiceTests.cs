@@ -12,6 +12,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class SessionCodexHandoffServiceTests : IDisposable
 {
     private readonly string _tempRoot = Path.Combine(Path.GetTempPath(), "midterm-codex-handoff-tests", Guid.NewGuid().ToString("N"));
+    private readonly List<HandoffServiceContext> _serviceContexts = [];
 
     public SessionCodexHandoffServiceTests()
     {
@@ -221,6 +222,11 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
 
     public void Dispose()
     {
+        foreach (var context in _serviceContexts)
+        {
+            context.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
         try
         {
             if (Directory.Exists(_tempRoot))
@@ -235,22 +241,14 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
 
     private HandoffServiceContext CreateServiceContext(string? mode = null)
     {
-        var hostRuntime = new SessionLensHostRuntimeService(new SettingsService(), mode: mode ?? "off");
-        var sessionManager = new TtyHostSessionManager();
-        var lensRuntime = new SessionLensRuntimeService(sessionManager, new AiCliProfileService(), hostRuntime);
-        var service = new SessionCodexHandoffService(
-            sessionManager,
-            new WorkerSessionRegistryService(),
-            new AiCliProfileService(),
-            new SessionForegroundProcessService(),
-            lensRuntime,
-            _tempRoot);
-        return new HandoffServiceContext(service, lensRuntime, sessionManager, hostRuntime);
+        var context = new HandoffServiceContext(_tempRoot, mode ?? "off");
+        _serviceContexts.Add(context);
+        return context;
     }
 
     private SessionCodexHandoffService CreateService()
     {
-        return CreateServiceContext().Detach();
+        return CreateServiceContext().Service;
     }
 
     private string WriteSessionMeta(string sessionId, string cwd, DateTimeOffset timestamp)
@@ -283,30 +281,45 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
         return filePath;
     }
 
-    private sealed class HandoffServiceContext(
-        SessionCodexHandoffService service,
-        SessionLensRuntimeService lensRuntime,
-        TtyHostSessionManager sessionManager,
-        SessionLensHostRuntimeService hostRuntime) : IAsyncDisposable
+    private sealed class HandoffServiceContext : IAsyncDisposable
     {
-        public SessionCodexHandoffService Service { get; } = service;
+        private readonly SessionLensRuntimeService _lensRuntime;
+        private readonly TtyHostSessionManager _sessionManager;
+        private readonly SessionLensHostRuntimeService _hostRuntime;
+        private bool _disposed;
 
-        public SessionLensRuntimeService LensRuntime { get; } = lensRuntime;
-
-        public SessionCodexHandoffService Detach()
+        public HandoffServiceContext(
+            string tempRoot,
+            string mode)
         {
-            GC.SuppressFinalize(this);
-            return Service;
+            _hostRuntime = new SessionLensHostRuntimeService(new SettingsService(), mode: mode);
+            _sessionManager = new TtyHostSessionManager();
+            _lensRuntime = new SessionLensRuntimeService(_sessionManager, new AiCliProfileService(), _hostRuntime);
+            Service = new SessionCodexHandoffService(
+                _sessionManager,
+                new WorkerSessionRegistryService(),
+                new AiCliProfileService(),
+                new SessionForegroundProcessService(),
+                _lensRuntime,
+                tempRoot);
+            LensRuntime = _lensRuntime;
         }
+
+        public SessionCodexHandoffService Service { get; }
+
+        public SessionLensRuntimeService LensRuntime { get; }
 
         public async ValueTask DisposeAsync()
         {
-            await LensRuntime.DisposeAsync();
-            await sessionManager.DisposeAsync();
-            await hostRuntime.DisposeAsync();
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            await _lensRuntime.DisposeAsync();
+            await _sessionManager.DisposeAsync();
+            await _hostRuntime.DisposeAsync();
         }
     }
 }
-
-
-
