@@ -3,6 +3,7 @@ const MAX_TEXTAREA_OVERLAY_LINES = 7;
 const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;
 const MOBILE_BREAKPOINT_PX = 768;
 const COLLAPSED_HEIGHT_DATASET_KEY = 'midtermCollapsedHeightPx';
+const SINGLE_LINE_DATASET_KEY = 'midtermSingleLine';
 
 export function resizeSmartInputTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.minHeight = '';
@@ -25,11 +26,18 @@ export function resizeSmartInputTextarea(textarea: HTMLTextAreaElement): void {
     borderBottom;
   const contentHeight = textarea.scrollHeight + borderTop + borderBottom;
   const nextHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
+  const collapsedHeight =
+    minHeight > 0
+      ? minHeight
+      : effectiveLineHeight + paddingTop + paddingBottom + borderTop + borderBottom;
 
   if (!(COLLAPSED_HEIGHT_DATASET_KEY in textarea.dataset) && minHeight > 0) {
     textarea.dataset[COLLAPSED_HEIGHT_DATASET_KEY] = String(minHeight);
   }
 
+  textarea.dataset[SINGLE_LINE_DATASET_KEY] =
+    nextHeight <= collapsedHeight + 0.5 ? 'true' : 'false';
+  textarea.style.setProperty('--smart-input-textarea-rendered-height', `${String(nextHeight)}px`);
   textarea.style.height = `${String(nextHeight)}px`;
   textarea.style.minHeight = `${String(nextHeight)}px`;
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';

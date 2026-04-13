@@ -8775,8 +8775,8 @@ body.shared-session-mode .session-tab-bar {
   border-radius: 8px;
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
-  min-height: var(--smart-input-control-height);
-  padding: 8px 12px;
+  min-height: var(--smart-input-textarea-min-height);
+  padding: var(--smart-input-textarea-padding-y) 12px;
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
@@ -15523,12 +15523,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-textarea {
-  --smart-input-textarea-min-height: 42px;
+  --smart-input-textarea-min-height: var(--smart-input-control-height);
+  --smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);
   --smart-input-textarea-line-height: calc(
     var(--terminal-font-size, 16px) * var(--terminal-line-height, 1)
   );
-  --smart-input-textarea-padding-y: calc(
-    (var(--smart-input-textarea-min-height) - var(--smart-input-textarea-line-height) - 2px) / 2
+  --smart-input-textarea-multiline-padding-y: 8px;
+  --smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);
+  --smart-input-textarea-single-line-padding-y: calc(
+    (
+        var(--smart-input-textarea-rendered-height) - var(--smart-input-textarea-line-height) - 2px
+      ) / 2
   );
   width: 100%;
   min-height: var(--smart-input-textarea-min-height);
@@ -15545,6 +15550,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   line-height: var(--terminal-line-height, 1);
   position: relative;
   z-index: 2;
+}
+
+.smart-input-textarea[data-midterm-single-line='true'] {
+  --smart-input-textarea-padding-y: var(--smart-input-textarea-single-line-padding-y);
 }
 
 .smart-input-textarea:focus {
