@@ -931,32 +931,11 @@ public static partial class SessionApiEndpoints
         SessionPromptExecutionPlan plan,
         CancellationToken ct)
     {
-        if (plan.InterruptData is { Length: > 0 })
-        {
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.InterruptData, ct);
-            if (plan.InterruptDelayMs > 0)
-            {
-                await Task.Delay(plan.InterruptDelayMs, ct);
-            }
-        }
-
-        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.PromptData, ct);
-        if (plan.SubmitDelayMs > 0)
-        {
-            await Task.Delay(plan.SubmitDelayMs, ct);
-        }
-
-        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
-
-        for (var i = 0; i < plan.FollowupSubmitCount; i++)
-        {
-            if (plan.FollowupSubmitDelayMs > 0)
-            {
-                await Task.Delay(plan.FollowupSubmitDelayMs, ct);
-            }
-
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
-        }
+        await SessionPromptPlanExecutor.ExecuteAsync(
+            plan,
+            (data, cancellationToken) => SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, data, cancellationToken),
+            static (delayMs, cancellationToken) => Task.Delay(delayMs, cancellationToken),
+            ct).ConfigureAwait(false);
     }
 
     private static async Task<SessionInfoDto> EnsureWorkerReadyForPromptAsync(

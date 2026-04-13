@@ -1611,7 +1611,7 @@ body.has-app-background::after {
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
+  text-transform: none;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -1637,7 +1637,7 @@ body.has-app-background::after {
 .history-item {
   display: flex;
   align-items: center;
-  padding: 3px 8px;
+  padding: 6px 8px;
   cursor: pointer;
   transition: background 0.1s;
   position: relative;
@@ -1683,21 +1683,40 @@ body.has-app-background::after {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 0 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
   overflow: hidden;
+  padding-right: 52px;
+}
+
+.history-entry-list {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+}
+
+.history-item-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-item-secondary {
+  min-width: 0;
 }
 
 .history-item-label {
-  font-size: var(--fs-lg);
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
-  max-width: 50%;
-  padding: 2px 0;
 }
 
 .history-item-mode {
@@ -1715,11 +1734,21 @@ body.has-app-background::after {
 }
 
 .history-item-info .session-foreground {
+  width: 100%;
   font-size: var(--fs-xs);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 2px 0;
+  padding: 0;
+  margin: 0;
+  gap: 4px;
+}
+
+.history-item-info .fg-cwd {
+  direction: ltr;
+  text-align: left;
+}
+
+.history-item-info .fg-process {
+  min-width: 0;
 }
 
 .history-item-text {
@@ -1730,11 +1759,18 @@ body.has-app-background::after {
 
 .history-item-actions {
   position: absolute;
+  top: 50%;
   right: 8px;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
-  background: linear-gradient(to right, transparent, var(--bg-input) 8px, var(--bg-input));
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--bg-dropdown-opaque) 8px,
+    var(--bg-dropdown-opaque)
+  );
   padding-left: 12px;
   opacity: 0;
   pointer-events: none;

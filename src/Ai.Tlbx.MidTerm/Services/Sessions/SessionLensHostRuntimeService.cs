@@ -1545,28 +1545,10 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
 
         if (!string.IsNullOrWhiteSpace(profileDirectory))
         {
-            if (Directory.Exists(profileDirectory))
-            {
-                environmentOverrides["USERPROFILE"] = profileDirectory;
-                environmentOverrides["HOME"] = profileDirectory;
-                environmentOverrides["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
-
-                var root = Path.GetPathRoot(profileDirectory);
-                if (!string.IsNullOrWhiteSpace(root))
-                {
-                    environmentOverrides["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    environmentOverrides["HOMEPATH"] = profileDirectory[root.Length..];
-                }
-
-                var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
-                var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
-                environmentOverrides["APPDATA"] = appDataDirectory;
-                environmentOverrides["LOCALAPPDATA"] = localAppDataDirectory;
-                foreach (var directory in AiCliCommandLocator.GetUserCommandDirectories(profileDirectory).Reverse())
-                {
-                    AddPathEntry(pathPrependEntries, directory);
-                }
-            }
+            LensHostEnvironmentResolver.ApplyProfileEnvironment(
+                environmentOverrides,
+                profileDirectory,
+                pathPrependEntries);
         }
 
         ApplyProviderSettings(environmentOverrides, settings);
@@ -2098,7 +2080,6 @@ internal sealed class SubscriptionState
         }
     }
 }
-
 
 
 

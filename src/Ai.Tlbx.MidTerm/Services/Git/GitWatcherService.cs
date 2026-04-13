@@ -272,14 +272,25 @@ public sealed class GitWatcherService : IDisposable
         try
         {
             var token = watcher.ReplaceDebounce();
+            _ = RunDebouncedRefreshAsync(repoRoot, watcher, token);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
 
-            _ = Task.Delay(500, token).ContinueWith(async _ =>
+    private async Task RunDebouncedRefreshAsync(string repoRoot, RepoWatcher watcher, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(500, token).ConfigureAwait(false);
+            if (!token.IsCancellationRequested)
             {
-                if (!token.IsCancellationRequested)
-                {
-                    await CoalescedRefreshAsync(repoRoot, watcher);
-                }
-            }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+                await CoalescedRefreshAsync(repoRoot, watcher).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
         }
         catch (ObjectDisposedException)
         {

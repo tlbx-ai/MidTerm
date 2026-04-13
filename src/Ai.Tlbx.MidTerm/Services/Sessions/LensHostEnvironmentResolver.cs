@@ -28,33 +28,51 @@ internal static class LensHostEnvironmentResolver
     internal static void ApplyProfileEnvironment(ProcessStartInfo startInfo, string? profileDirectory)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
+        ApplyProfileEnvironment(startInfo.Environment, profileDirectory);
+    }
+
+    internal static void ApplyProfileEnvironment(
+        IDictionary<string, string?> environment,
+        string? profileDirectory,
+        IList<string>? pathPrependEntries = null)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
         if (string.IsNullOrWhiteSpace(profileDirectory) || !Directory.Exists(profileDirectory))
         {
             return;
         }
 
-        startInfo.Environment["USERPROFILE"] = profileDirectory;
-        startInfo.Environment["HOME"] = profileDirectory;
-        startInfo.Environment["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
+        environment["USERPROFILE"] = profileDirectory;
+        environment["HOME"] = profileDirectory;
+        environment["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
 
         var root = Path.GetPathRoot(profileDirectory);
         if (!string.IsNullOrWhiteSpace(root))
         {
-            startInfo.Environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            startInfo.Environment["HOMEPATH"] = profileDirectory[root.Length..];
+            environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            environment["HOMEPATH"] = profileDirectory[root.Length..];
         }
 
         var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
         var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
-        startInfo.Environment["APPDATA"] = appDataDirectory;
-        startInfo.Environment["LOCALAPPDATA"] = localAppDataDirectory;
+        environment["APPDATA"] = appDataDirectory;
+        environment["LOCALAPPDATA"] = localAppDataDirectory;
 
         // Lens runtimes often rely on per-user command shims and local bins.
         // Service environments do not always inherit those PATH entries, so add the
         // common user-local locations explicitly for standalone Lens sessions.
         foreach (var directory in AiCliCommandLocator.GetUserCommandDirectories(profileDirectory).Reverse())
         {
-            PrependPath(startInfo, directory);
+            if (pathPrependEntries is null)
+            {
+                PrependPath(environment, directory);
+            }
+            else if (!string.IsNullOrWhiteSpace(directory) &&
+                     Directory.Exists(directory) &&
+                     !pathPrependEntries.Contains(directory, StringComparer.OrdinalIgnoreCase))
+            {
+                pathPrependEntries.Add(directory);
+            }
         }
     }
 
@@ -280,14 +298,14 @@ internal static class LensHostEnvironmentResolver
         return candidates;
     }
 
-    private static void PrependPath(ProcessStartInfo startInfo, string? directory)
+    private static void PrependPath(IDictionary<string, string?> environment, string? directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
         {
             return;
         }
 
-        var existingPath = startInfo.Environment.TryGetValue("PATH", out var currentPath)
+        var existingPath = environment.TryGetValue("PATH", out var currentPath)
             ? currentPath ?? string.Empty
             : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
 
@@ -298,7 +316,7 @@ internal static class LensHostEnvironmentResolver
             return;
         }
 
-        startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+        environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
             ? directory
             : directory + Path.PathSeparator + existingPath;
     }

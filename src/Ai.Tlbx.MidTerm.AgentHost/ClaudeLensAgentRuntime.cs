@@ -1356,5 +1356,3 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
 
 
 
-
-

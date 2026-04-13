@@ -1,4 +1,5 @@
 using System.Text;
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -357,5 +358,79 @@ public sealed class SessionApiEndpointsTests
 
         Assert.True(ok);
         Assert.True(fallbackCalled);
+    }
+
+    [Fact]
+    public async Task SessionPromptPlanExecutor_ExecutesInterruptPromptSubmitAndFollowupsInOrder()
+    {
+        var plan = new SessionApiEndpoints.SessionPromptExecutionPlan(
+            InterruptData: [(byte)0x03],
+            PromptData: Encoding.UTF8.GetBytes("status"),
+            SubmitData: [0x0D],
+            InterruptDelayMs: 25,
+            SubmitDelayMs: 50,
+            FollowupSubmitCount: 2,
+            FollowupSubmitDelayMs: 75);
+
+        var steps = new List<string>();
+
+        await SessionPromptPlanExecutor.ExecuteAsync(
+            plan,
+            (data, _) =>
+            {
+                steps.Add(FormattableString.Invariant($"send:{Convert.ToHexString(data)}"));
+                return Task.CompletedTask;
+            },
+            (delayMs, _) =>
+            {
+                steps.Add(FormattableString.Invariant($"delay:{delayMs}"));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            [
+                "send:03",
+                "delay:25",
+                $"send:{Convert.ToHexString(Encoding.UTF8.GetBytes("status"))}",
+                "delay:50",
+                "send:0D",
+                "delay:75",
+                "send:0D",
+                "delay:75",
+                "send:0D"
+            ],
+            steps);
+    }
+
+    [Fact]
+    public async Task SessionPromptPlanExecutor_SkipsInterruptAndDelayStepsWhenNotRequested()
+    {
+        var plan = new SessionApiEndpoints.SessionPromptExecutionPlan(
+            InterruptData: null,
+            PromptData: Encoding.UTF8.GetBytes("go"),
+            SubmitData: [0x0D],
+            InterruptDelayMs: 0,
+            SubmitDelayMs: 0,
+            FollowupSubmitCount: 0,
+            FollowupSubmitDelayMs: 0);
+
+        var steps = new List<string>();
+
+        await SessionPromptPlanExecutor.ExecuteAsync(
+            plan,
+            (data, _) =>
+            {
+                steps.Add(FormattableString.Invariant($"send:{Encoding.UTF8.GetString(data)}"));
+                return Task.CompletedTask;
+            },
+            (delayMs, _) =>
+            {
+                steps.Add(FormattableString.Invariant($"delay:{delayMs}"));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["send:go", "send:\r"], steps);
     }
 }

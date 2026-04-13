@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
@@ -202,8 +201,8 @@ public static partial class WebPreviewEndpoints
             Directory.CreateDirectory(cssDir);
 
             // Process HTML — strip proxy artifacts, decode ext URLs
-            var html = StripProxyArtifacts(request.Html);
-            html = DecodeExtUrls(html);
+            var html = WebPreviewHtmlSnapshotSanitizer.StripProxyArtifacts(request.Html);
+            html = WebPreviewHtmlSnapshotSanitizer.DecodeExtUrls(html);
 
             // Download CSS files and rewrite hrefs
             foreach (var cssUrl in request.CssUrls.Distinct(StringComparer.Ordinal))
@@ -278,30 +277,6 @@ public static partial class WebPreviewEndpoints
         {
             service.ClearLog(sessionId, previewName);
             return Results.Ok();
-        });
-    }
-
-    /// <summary>
-    /// Removes proxy-injected artifacts from the captured DOM HTML:
-    /// the <base> tag, the MT proxy script, and any blob: script tags.
-    /// </summary>
-    private static string StripProxyArtifacts(string html)
-    {
-        html = BaseTagRegex().Replace(html, "");
-        html = ProxyScriptRegex().Replace(html, "");
-        html = BlobScriptRegex().Replace(html, "");
-        return html;
-    }
-
-    /// <summary>
-    /// Replaces /_ext?u=ENCODED proxy URLs with the decoded original URLs.
-    /// </summary>
-    private static string DecodeExtUrls(string html)
-    {
-        return ExtUrlRegex().Replace(html, m =>
-        {
-            try { return Uri.UnescapeDataString(m.Groups[1].Value); }
-            catch { return m.Value; }
         });
     }
 
@@ -389,19 +364,4 @@ public static partial class WebPreviewEndpoints
         return "soft";
     }
 
-    // Strips <base href="..."> or <base target="..."> tags
-    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex BaseTagRegex();
-
-    // Strips the MT proxy shim script (the minified IIFE containing window.__mtProxy)
-    [GeneratedRegex(@"<script>\(function\(\)\{.*?window\.__mtProxy.*?</script>", RegexOptions.Singleline, 1000)]
-    private static partial Regex ProxyScriptRegex();
-
-    // Strips <script src="blob:..."> tags injected at runtime (e.g. by html2canvas loader)
-    [GeneratedRegex(@"<script[^>]+src=[""']blob:[^""'>]+[""'][^>]*></script>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]
-    private static partial Regex BlobScriptRegex();
-
-    // Matches /_ext?u=ENCODED_URL patterns for decoding
-    [GeneratedRegex(@"/_ext\?u=([^&""'\s>]+)", RegexOptions.None, 1000)]
-    private static partial Regex ExtUrlRegex();
 }

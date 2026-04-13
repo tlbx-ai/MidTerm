@@ -844,21 +844,41 @@ public static class TtyHostSpawner
 
     private static int? TryGetMacOsLaunchAgentPid(uint uid, string label, int timeoutMs)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        return PollForValue(
+            TimeSpan.FromMilliseconds(timeoutMs),
+            TimeSpan.FromMilliseconds(100),
+            () =>
+            {
+                if (RunProcessSync("launchctl", ["print", $"gui/{uid}/{label}"], out var stdout, out _, logFailures: false))
+                {
+                    var match = MacOsPidRegex.Match(stdout);
+                    if (match.Success &&
+                        int.TryParse(match.Groups["pid"].Value, out var pid) &&
+                        pid > 0)
+                    {
+                        return pid;
+                    }
+                }
+
+                return null;
+            });
+    }
+
+    internal static T? PollForValue<T>(TimeSpan timeout, TimeSpan pollInterval, Func<T?> poll)
+        where T : struct
+    {
+        ArgumentNullException.ThrowIfNull(poll);
+
+        var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
-            if (RunProcessSync("launchctl", ["print", $"gui/{uid}/{label}"], out var stdout, out _, logFailures: false))
+            var value = poll();
+            if (value.HasValue)
             {
-                var match = MacOsPidRegex.Match(stdout);
-                if (match.Success &&
-                    int.TryParse(match.Groups["pid"].Value, out var pid) &&
-                    pid > 0)
-                {
-                    return pid;
-                }
+                return value.Value;
             }
 
-            Thread.Sleep(100);
+            Thread.Sleep(pollInterval);
         }
 
         return null;

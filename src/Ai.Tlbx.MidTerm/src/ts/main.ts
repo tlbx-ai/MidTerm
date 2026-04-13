@@ -1258,11 +1258,11 @@ function bindEvents(): void {
   });
   bindClick('btn-rename-mobile', () => {
     const activeId = $activeSessionId.get();
-    if (activeId) promptRenameSession(activeId);
+    if (activeId) void promptRenameSession(activeId);
   });
   bindClick('btn-rename-titlebar', () => {
     const activeId = $activeSessionId.get();
-    if (activeId) promptRenameSession(activeId);
+    if (activeId) void promptRenameSession(activeId);
   });
   bindClick('btn-close-mobile', () => {
     const activeId = $activeSessionId.get();

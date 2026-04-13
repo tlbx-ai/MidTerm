@@ -56,7 +56,7 @@ import { destroyAgentView } from './modules/agentView';
 import { destroyFileBrowser } from './modules/fileBrowser';
 import { destroyGitSession } from './modules/git';
 import { destroyCommandsSession } from './modules/commands';
-import { showAlert } from './utils/dialog';
+import { showAlert, showTextPrompt } from './utils/dialog';
 import { dom, newlyCreatedSessions, sessionTerminals } from './state';
 import {
   $activeSessionId,
@@ -510,12 +510,15 @@ export function createSessionActionHandlers({
     input.select();
   }
 
-  function promptRenameSession(sessionId: string): void {
+  async function promptRenameSession(sessionId: string): Promise<void> {
     const session = getSession(sessionId);
     if (!session) return;
 
     const currentName = session.name || session.shellType;
-    const newName = prompt('Rename terminal:', currentName);
+    const newName = await showTextPrompt({
+      title: 'Rename terminal',
+      initialValue: currentName,
+    });
     if (newName !== null) {
       renameSession(sessionId, newName);
     }
