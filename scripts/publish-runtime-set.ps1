@@ -35,6 +35,22 @@ $processes = @()
 Push-Location $RepoRoot
 try {
     foreach ($project in $projects) {
+        & dotnet restore $project.Path -r $Rid --verbosity minimal
+        if ($LASTEXITCODE -ne 0) {
+            throw "dotnet restore failed for $($project.Name)"
+        }
+    }
+
+    & dotnet build "src/Ai.Tlbx.MidTerm.Common/Ai.Tlbx.MidTerm.Common.csproj" `
+        -c $Configuration `
+        --no-restore `
+        --verbosity minimal `
+        -p:ContinuousIntegrationBuild=true
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet build failed for Ai.Tlbx.MidTerm.Common"
+    }
+
+    foreach ($project in $projects) {
         $stdoutPath = Join-Path $logRoot "$($project.Name).stdout.log"
         $stderrPath = Join-Path $logRoot "$($project.Name).stderr.log"
         $argumentList = @(
@@ -42,15 +58,24 @@ try {
             $project.Path,
             "-c", $Configuration,
             "-r", $Rid,
-            "--verbosity", "minimal"
+            "--verbosity", "minimal",
+            "--no-restore",
+            "-p:BuildProjectReferences=false"
         ) + $project.ExtraArgs
 
-        $process = Start-Process -FilePath "dotnet" `
-            -ArgumentList $argumentList `
-            -WorkingDirectory $RepoRoot `
-            -RedirectStandardOutput $stdoutPath `
-            -RedirectStandardError $stderrPath `
-            -PassThru
+        $startInfo = @{
+            FilePath = "dotnet"
+            ArgumentList = $argumentList
+            WorkingDirectory = $RepoRoot
+            RedirectStandardOutput = $stdoutPath
+            RedirectStandardError = $stderrPath
+            PassThru = $true
+        }
+        if ($IsWindows) {
+            $startInfo.WindowStyle = "Hidden"
+        }
+
+        $process = Start-Process @startInfo
 
         $processes += @{
             Name = $project.Name
