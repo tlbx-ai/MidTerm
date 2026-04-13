@@ -144,6 +144,7 @@ internal static class LensHostTestClient
         string sessionId,
         int? startIndex = null,
         int? count = null,
+        int? viewportWidth = null,
         string? commandId = null)
     {
         var requestCommandId = string.IsNullOrWhiteSpace(commandId)
@@ -158,7 +159,8 @@ internal static class LensHostTestClient
             HistoryWindow = new LensHostHistoryWindowRequest
             {
                 StartIndex = startIndex,
-                Count = count
+                Count = count,
+                ViewportWidth = viewportWidth
             }
         });
 

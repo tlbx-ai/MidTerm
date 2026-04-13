@@ -54,6 +54,7 @@ type LensSessionSubscription = {
   historyWindow?: {
     startIndex?: number;
     count?: number;
+    viewportWidth?: number;
     windowRevision?: string;
   };
   listeners: Set<LensSubscriptionCallbacks>;
@@ -100,15 +101,22 @@ function createRequestId(): string {
 function buildHistoryWindow(
   startIndex: number | undefined,
   count: number | undefined,
+  viewportWidth: number | undefined,
   windowRevision: string | undefined,
 ): LensSessionSubscription['historyWindow'] | undefined {
-  if (startIndex === undefined && count === undefined && !windowRevision) {
+  if (
+    startIndex === undefined &&
+    count === undefined &&
+    viewportWidth === undefined &&
+    !windowRevision
+  ) {
     return undefined;
   }
 
   return {
     ...(startIndex === undefined ? {} : { startIndex }),
     ...(count === undefined ? {} : { count }),
+    ...(viewportWidth === undefined ? {} : { viewportWidth }),
     ...(windowRevision ? { windowRevision } : {}),
   };
 }
@@ -120,6 +128,7 @@ function historyWindowsEqual(
   return (
     left?.startIndex === right?.startIndex &&
     left?.count === right?.count &&
+    left?.viewportWidth === right?.viewportWidth &&
     left?.windowRevision === right?.windowRevision
   );
 }
@@ -361,6 +370,7 @@ async function requestHistoryWindow(
   startIndex?: number,
   count?: number,
   windowRevision?: string,
+  viewportWidth?: number,
 ): Promise<LensHistorySnapshot> {
   await ensureConnected();
   const id = createRequestId();
@@ -373,11 +383,12 @@ async function requestHistoryWindow(
     action: 'history.window.get',
     sessionId,
     historyWindow:
-      startIndex === undefined && count === undefined
+      startIndex === undefined && count === undefined && viewportWidth === undefined
         ? undefined
         : {
             ...(startIndex === undefined ? {} : { startIndex }),
             ...(count === undefined ? {} : { count }),
+            ...(viewportWidth === undefined ? {} : { viewportWidth }),
             ...(windowRevision ? { windowRevision } : {}),
           },
   });
@@ -437,8 +448,9 @@ export async function getLensHistoryWindowWs(
   startIndex?: number,
   count?: number,
   windowRevision?: string,
+  viewportWidth?: number,
 ): Promise<LensHistorySnapshot> {
-  return requestHistoryWindow(sessionId, startIndex, count, windowRevision);
+  return requestHistoryWindow(sessionId, startIndex, count, windowRevision, viewportWidth);
 }
 
 export async function submitLensTurnWs(
@@ -491,6 +503,7 @@ export function openLensHistorySocket(
   count: number | undefined,
   windowRevision: string | undefined,
   callbacks: LensSubscriptionCallbacks,
+  viewportWidth?: number,
 ): () => void {
   let subscription = subscriptions.get(sessionId);
   if (!subscription) {
@@ -500,7 +513,7 @@ export function openLensHistorySocket(
     };
   }
   subscription.afterSequence = Math.max(subscription.afterSequence, afterSequence);
-  const nextHistoryWindow = buildHistoryWindow(startIndex, count, windowRevision);
+  const nextHistoryWindow = buildHistoryWindow(startIndex, count, viewportWidth, windowRevision);
   if (nextHistoryWindow) {
     subscription.historyWindow = nextHistoryWindow;
   }
@@ -555,13 +568,14 @@ export function updateLensHistorySocketWindow(
   startIndex: number | undefined,
   count: number | undefined,
   windowRevision: string | undefined,
+  viewportWidth?: number,
 ): void {
   const subscription = subscriptions.get(sessionId);
   if (!subscription) {
     return;
   }
 
-  const nextHistoryWindow = buildHistoryWindow(startIndex, count, windowRevision);
+  const nextHistoryWindow = buildHistoryWindow(startIndex, count, viewportWidth, windowRevision);
   if (historyWindowsEqual(subscription.historyWindow, nextHistoryWindow)) {
     return;
   }

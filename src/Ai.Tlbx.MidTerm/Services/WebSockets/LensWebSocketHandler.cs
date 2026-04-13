@@ -127,6 +127,7 @@ public sealed class LensWebSocketHandler
                 {
                     StartIndex = historyWindow.StartIndex,
                     Count = historyWindow.Count,
+                    ViewportWidth = historyWindow.ViewportWidth,
                     WindowRevision = historyWindow.WindowRevision
                 };
 
@@ -134,6 +135,7 @@ public sealed class LensWebSocketHandler
                 sessionId,
                 requestedWindow?.StartIndex,
                 requestedWindow?.Count,
+                requestedWindow?.ViewportWidth,
                 shutdownToken).ConfigureAwait(false);
 
             var state = LensSocketSubscription.Create(_lensRuntime, sessionId, shutdownToken);
@@ -360,6 +362,7 @@ public sealed class LensWebSocketHandler
                         request.SessionId,
                         request.HistoryWindow?.StartIndex,
                         request.HistoryWindow?.Count,
+                        request.HistoryWindow?.ViewportWidth,
                         CancellationToken.None).ConfigureAwait(false);
                     if (historyWindow is null)
                     {

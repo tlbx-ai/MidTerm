@@ -135,6 +135,9 @@ export function buildLensHistoryEntries(snapshot: LensHistorySnapshot): LensHist
         sourceTurnId: entry.turnId ?? null,
         sourceItemType: entry.itemType ?? null,
       };
+      if (typeof entry.estimatedHeightPx === 'number' && entry.estimatedHeightPx > 0) {
+        mapped.estimatedHeightPx = entry.estimatedHeightPx;
+      }
       if (entry.requestId) {
         mapped.requestId = entry.requestId;
       }

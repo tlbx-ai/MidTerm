@@ -145,9 +145,15 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable, ISessionLensHe
         string sessionId,
         int? startIndex = null,
         int? count = null,
+        int? viewportWidth = null,
         CancellationToken ct = default)
     {
-        return _hostRuntime.GetHistoryWindowAsync(sessionId, startIndex, count, ct);
+        return _hostRuntime.GetHistoryWindowAsync(
+            sessionId,
+            startIndex,
+            count,
+            viewportWidth,
+            ct);
     }
 
     public LensHistoryPatchSubscription SubscribeHistoryPatches(

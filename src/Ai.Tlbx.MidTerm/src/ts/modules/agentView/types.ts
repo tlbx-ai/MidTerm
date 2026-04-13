@@ -27,6 +27,7 @@ export interface SessionLensViewState {
   historyLastScrollMetrics: HistoryScrollMetrics | null;
   historyLastUserScrollIntentAt: number;
   historyWindowRevision: string | null;
+  historyWindowViewportWidth: number | null;
   historyRenderScheduled: number | null;
   activationState:
     | 'idle'
@@ -47,11 +48,18 @@ export interface SessionLensViewState {
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
   historyMeasuredHeights: Map<string, number>;
   historyObservedHeights: Map<string, number>;
+  historyMeasuredHeightsByBucket: Map<number, Map<string, number>>;
+  historyObservedHeightsByBucket: Map<number, Map<string, number>>;
+  historyObservedHeightSamplesByBucket: Map<number, Map<string, number[]>>;
   historyMeasuredWidthBucket: number;
+  historyMeasurementObserver: ResizeObserver | null;
+  historyViewportResizeObserver: ResizeObserver | null;
+  historyViewportSize: HistoryViewportSize | null;
   historyTopSpacer: HTMLDivElement | null;
   historyBottomSpacer: HTMLDivElement | null;
   historyEmptyState: HTMLDivElement | null;
   pendingHistoryPrependAnchor: HistoryViewportAnchor | null;
+  pendingHistoryLayoutAnchor: HistoryViewportAnchor | null;
   historyLastVirtualWindowKey: string | null;
   historyExpandedEntries: Set<string>;
   runtimeStats: LensRuntimeStatsSummary | null;
@@ -132,6 +140,7 @@ export interface LensActivationIssue {
 export interface LensHistoryEntry {
   id: string;
   order: number;
+  estimatedHeightPx?: number;
   kind: HistoryKind;
   tone: HistoryTone;
   label: string;
@@ -172,6 +181,11 @@ export interface HistoryViewportMetrics {
   scrollTop: number;
   clientHeight: number;
   clientWidth: number;
+}
+
+export interface HistoryViewportSize {
+  width: number;
+  height: number;
 }
 
 export interface HistoryScrollMetrics {

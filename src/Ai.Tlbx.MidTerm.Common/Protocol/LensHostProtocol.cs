@@ -334,6 +334,7 @@ public sealed class LensHistoryWindowRequest
 {
     public int? StartIndex { get; set; }
     public int? Count { get; set; }
+    public int? ViewportWidth { get; set; }
     public string? WindowRevision { get; set; }
 }
 
@@ -435,6 +436,7 @@ public sealed class LensHostHistoryWindowRequest
 {
     public int? StartIndex { get; set; }
     public int? Count { get; set; }
+    public int? ViewportWidth { get; set; }
 }
 
 public sealed class LensHostCommandEnvelope
@@ -537,7 +539,6 @@ public sealed class LensHostHistoryPatchEnvelope
 public partial class LensHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

@@ -254,7 +254,8 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                     HistoryWindow = GetHistoryWindow(
                         command.SessionId,
                         command.HistoryWindow?.StartIndex,
-                        command.HistoryWindow?.Count)
+                        command.HistoryWindow?.Count,
+                        command.HistoryWindow?.ViewportWidth)
                 }
             };
         }
@@ -269,9 +270,13 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         return MaybeAppendSubmittedUserMessage(command, outcome, runtime.Provider);
     }
 
-    private LensHistoryWindowResponse? GetHistoryWindow(string sessionId, int? startIndex, int? count)
+    private LensHistoryWindowResponse? GetHistoryWindow(
+        string sessionId,
+        int? startIndex,
+        int? count,
+        int? viewportWidth)
     {
-        return _history.GetSnapshotWindow(sessionId, startIndex, count);
+        return _history.GetSnapshotWindow(sessionId, startIndex, count, viewportWidth);
     }
 
     private static HostCommandOutcome MaybeAppendSubmittedUserMessage(
@@ -720,7 +725,6 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         }
     }
 }
-
 
 
 

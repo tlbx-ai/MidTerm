@@ -56,7 +56,7 @@ describe('lensWebSocket', () => {
 
     const disconnect = openLensHistorySocket('session-1', 5, 0, 80, 'rev-1', {
       onPatch: vi.fn(),
-    });
+    }, 960);
 
     await vi.waitFor(() => {
       expect(FakeWebSocket.instances).toHaveLength(1);
@@ -66,12 +66,12 @@ describe('lensWebSocket', () => {
     const socket = FakeWebSocket.instances[0]!;
     const initialSubscribeCount = socket.sent.length;
 
-    updateLensHistorySocketWindow('session-1', 0, 80, 'rev-1');
+    updateLensHistorySocketWindow('session-1', 0, 80, 'rev-1', 960);
     await Promise.resolve();
 
     expect(socket.sent).toHaveLength(initialSubscribeCount);
 
-    updateLensHistorySocketWindow('session-1', 10, 80, 'rev-2');
+    updateLensHistorySocketWindow('session-1', 10, 80, 'rev-2', 960);
     await vi.waitFor(() => {
       expect(socket.sent).toHaveLength(initialSubscribeCount + 1);
     });
@@ -88,7 +88,7 @@ describe('lensWebSocket', () => {
     openLensHistorySocket('session-1', 0, 10, 40, 'rev-current', {
       onPatch: vi.fn(),
       onHistoryWindow,
-    });
+    }, 960);
 
     await vi.waitFor(() => {
       expect(FakeWebSocket.instances).toHaveLength(1);

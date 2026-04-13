@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -276,6 +277,38 @@ public sealed class SessionLensHistoryServiceTests
         Assert.All(snapshot.History, entry => Assert.True(entry.EstimatedHeightPx > 0));
         Assert.Equal("entry-7", snapshot.History[0].Body);
         Assert.Equal("entry-11", snapshot.History[^1].Body);
+    }
+
+    [Fact]
+    public void GetSnapshotWindow_UsesViewportWidthForEstimatedHistoryHeights()
+    {
+        var service = new SessionLensHistoryService();
+        var longBody = string.Join(' ', Enumerable.Repeat("variable-height-history", 80));
+
+        service.Append(new LensProviderEvent
+        {
+            EventId = "e-width-1",
+            SessionId = "s-width",
+            Provider = "codex",
+            ThreadId = "thread-width",
+            ItemId = "item-width-1",
+            CreatedAt = ParseUtc("2026-03-20T14:00:00Z"),
+            Type = "item.completed",
+            Item = new LensProviderItemPayload
+            {
+                ItemType = "assistant_message",
+                Status = "completed",
+                Title = "Assistant message",
+                Detail = longBody
+            }
+        });
+
+        var narrowSnapshot = service.GetSnapshotWindow("s-width", 0, 1, viewportWidth: 320);
+        var wideSnapshot = service.GetSnapshotWindow("s-width", 0, 1, viewportWidth: 1280);
+
+        Assert.NotNull(narrowSnapshot);
+        Assert.NotNull(wideSnapshot);
+        Assert.True(narrowSnapshot!.History[0].EstimatedHeightPx > wideSnapshot!.History[0].EstimatedHeightPx);
     }
 
     [Fact]
@@ -2141,8 +2174,6 @@ public sealed class SessionLensHistoryServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
-
 
 
 

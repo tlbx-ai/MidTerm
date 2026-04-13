@@ -8,6 +8,31 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class LensWebSocketProtocolTests
 {
     [Fact]
+    public void HistoryWindowRequest_RoundTripsViewportWidth()
+    {
+        var message = new LensWsRequestMessage
+        {
+            Id = "req-viewport",
+            Action = "history.window.get",
+            SessionId = "session-1",
+            HistoryWindow = new LensHistoryWindowRequest
+            {
+                StartIndex = 12,
+                Count = 48,
+                ViewportWidth = 960,
+                WindowRevision = "rev-viewport"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(message, LensHostJsonContext.Default.LensWsRequestMessage);
+        var roundTrip = JsonSerializer.Deserialize(json, LensHostJsonContext.Default.LensWsRequestMessage);
+
+        Assert.NotNull(roundTrip);
+        Assert.Equal(960, roundTrip!.HistoryWindow?.ViewportWidth);
+        Assert.Equal("rev-viewport", roundTrip.HistoryWindow?.WindowRevision);
+    }
+
+    [Fact]
     public void HistoryWindowMessage_RoundTripsWindowRevision()
     {
         var message = new LensWsHistoryWindowMessage

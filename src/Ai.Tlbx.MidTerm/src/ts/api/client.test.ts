@@ -90,7 +90,13 @@ describe('api client lens helpers', () => {
     const { getLensHistoryWindow } = await import('./client');
     const result = await getLensHistoryWindow('session-1', 7, 2);
 
-    expect(getLensHistoryWindowWs).toHaveBeenCalledWith('session-1', 7, 2, undefined);
+    expect(getLensHistoryWindowWs).toHaveBeenCalledWith(
+      'session-1',
+      7,
+      2,
+      undefined,
+      undefined,
+    );
     expect(result.latestSequence).toBe(7);
   });
 

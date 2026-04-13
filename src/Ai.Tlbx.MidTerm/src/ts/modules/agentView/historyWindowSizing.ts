@@ -1,5 +1,4 @@
-const DEFAULT_VISIBLE_ENTRY_HEIGHT_PX = 72;
-const OBSERVED_HEIGHT_SAMPLE_LIMIT = 24;
+import { resolveRepresentativeHistoryEntryHeight } from './historyMeasurements';
 
 export function resolveViewportDrivenHistoryWindowCount(
   viewport: HTMLDivElement | null | undefined,
@@ -23,26 +22,5 @@ export function resolveViewportDrivenHistoryWindowCount(
 }
 
 function resolveRepresentativeEntryHeight(observedHeights?: Iterable<number> | null): number {
-  if (!observedHeights) {
-    return DEFAULT_VISIBLE_ENTRY_HEIGHT_PX;
-  }
-
-  const sample: number[] = [];
-  for (const value of observedHeights) {
-    if (!Number.isFinite(value) || value <= 0) {
-      continue;
-    }
-
-    sample.push(value);
-    if (sample.length > OBSERVED_HEIGHT_SAMPLE_LIMIT) {
-      sample.shift();
-    }
-  }
-
-  if (sample.length === 0) {
-    return DEFAULT_VISIBLE_ENTRY_HEIGHT_PX;
-  }
-
-  sample.sort((left, right) => left - right);
-  return sample[Math.floor(sample.length / 2)] ?? DEFAULT_VISIBLE_ENTRY_HEIGHT_PX;
+  return resolveRepresentativeHistoryEntryHeight(observedHeights);
 }

@@ -48,12 +48,22 @@ export function applyFetchedLensHistoryWindow(
   state.snapshot = snapshot;
   state.historyWindowRevision = windowRevision ?? state.historyWindowRevision;
   if (state.disconnectStream) {
-    updateLensHistoryStreamWindow(
-      sessionId,
-      state.historyWindowStart,
-      state.historyWindowCount,
-      state.historyWindowRevision ?? undefined,
-    );
+    if (state.historyWindowViewportWidth == null) {
+      updateLensHistoryStreamWindow(
+        sessionId,
+        state.historyWindowStart,
+        state.historyWindowCount,
+        state.historyWindowRevision ?? undefined,
+      );
+    } else {
+      updateLensHistoryStreamWindow(
+        sessionId,
+        state.historyWindowStart,
+        state.historyWindowCount,
+        state.historyWindowRevision ?? undefined,
+        state.historyWindowViewportWidth,
+      );
+    }
   }
 
   return true;

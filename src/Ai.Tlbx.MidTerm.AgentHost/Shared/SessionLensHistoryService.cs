@@ -275,7 +275,7 @@ public sealed partial class SessionLensHistoryService
             {
                 return null;
             }
-            return CloneSnapshot(sessionId, log.NextSequence, log.State, 0, null);
+            return CloneSnapshot(sessionId, log.NextSequence, log.State, 0, null, null);
         }
     }
 
@@ -292,7 +292,11 @@ public sealed partial class SessionLensHistoryService
         }
     }
 
-    public LensHistoryWindowResponse? GetSnapshotWindow(string sessionId, int? startIndex = null, int? count = null)
+    public LensHistoryWindowResponse? GetSnapshotWindow(
+        string sessionId,
+        int? startIndex = null,
+        int? count = null,
+        int? viewportWidth = null)
     {
         if (!TryGetLog(sessionId, out var log))
         {
@@ -310,7 +314,13 @@ public sealed partial class SessionLensHistoryService
             var boundedCount = Math.Max(1, count ?? DefaultHistoryWindowSize);
             var effectiveStart = startIndex ?? Math.Max(0, totalCount - boundedCount);
             effectiveStart = Math.Clamp(effectiveStart, 0, Math.Max(0, totalCount - 1));
-            return CloneSnapshot(sessionId, log.NextSequence, log.State, effectiveStart, boundedCount);
+            return CloneSnapshot(
+                sessionId,
+                log.NextSequence,
+                log.State,
+                effectiveStart,
+                boundedCount,
+                viewportWidth);
         }
     }
 
@@ -786,7 +796,8 @@ public sealed partial class SessionLensHistoryService
         long latestSequence,
         LensConversationState state,
         int historyWindowStart,
-        int? historyWindowCount)
+        int? historyWindowCount,
+        int? viewportWidth)
     {
         var orderedHistory = state.HistoryEntries.Values
             .OrderBy(entry => entry.Order)
@@ -805,7 +816,7 @@ public sealed partial class SessionLensHistoryService
         var historySlice = orderedHistory
             .Skip(boundedStart)
             .Take(boundedCount)
-            .Select(entry => CloneHistoryEntry(sessionId, entry))
+            .Select(entry => CloneHistoryEntry(entry, viewportWidth))
             .ToList();
         var historyWindowEnd = boundedStart + historySlice.Count;
 
@@ -886,7 +897,7 @@ public sealed partial class SessionLensHistoryService
             Streams = CloneStreamsSummary(source.Streams),
             HistoryEntries = source.HistoryEntries.Values
                 .OrderBy(entry => entry.Order)
-                .Select(CloneHistoryEntry)
+                .Select(entry => CloneHistoryEntry(entry))
                 .ToList(),
             Items = source.Items.Values
                 .OrderBy(item => item.ItemId, StringComparer.Ordinal)
@@ -2023,7 +2034,7 @@ public sealed partial class SessionLensHistoryService
             CurrentTurn = CloneTurnSummary(source.CurrentTurn),
             QuickSettings = CloneQuickSettingsSummary(source.QuickSettings),
             Streams = CloneStreamsSummary(source.Streams),
-            HistoryUpserts = source.HistoryUpserts.Select(CloneHistoryEntry).ToList(),
+            HistoryUpserts = source.HistoryUpserts.Select(entry => CloneHistoryEntry(entry)).ToList(),
             HistoryRemovals = [.. source.HistoryRemovals],
             ItemUpserts = source.ItemUpserts.Select(CloneItemSummary).ToList(),
             ItemRemovals = [.. source.ItemRemovals],
@@ -2167,11 +2178,16 @@ public sealed partial class SessionLensHistoryService
 
     private static LensHistoryItem CloneHistoryEntry(LensHistoryItem source)
     {
+        return CloneHistoryEntry(source, null);
+    }
+
+    private static LensHistoryItem CloneHistoryEntry(LensHistoryItem source, int? viewportWidth)
+    {
         return new LensHistoryItem
         {
             EntryId = source.EntryId,
             Order = source.Order,
-            EstimatedHeightPx = EstimateHistoryEntryHeightPx(source),
+            EstimatedHeightPx = EstimateHistoryEntryHeightPx(source, viewportWidth),
             Kind = source.Kind,
             TurnId = source.TurnId,
             ItemId = source.ItemId,
@@ -2197,13 +2213,13 @@ public sealed partial class SessionLensHistoryService
         return state.HistoryEntries.Values.Sum(static entry => EstimateHistoryEntryHeightPx(entry));
     }
 
-    private static int EstimateHistoryEntryHeightPx(LensHistoryItem entry)
+    private static int EstimateHistoryEntryHeightPx(LensHistoryItem entry, int? viewportWidth = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        const int viewportWidth = 960;
+        var effectiveViewportWidth = Math.Clamp(viewportWidth ?? 960, 240, 2400);
         var horizontalChrome = ResolveHistoryHorizontalChromePx(entry.Kind);
-        var contentWidth = Math.Max(140, viewportWidth - horizontalChrome);
+        var contentWidth = Math.Max(140, effectiveViewportWidth - horizontalChrome);
         var averageCharWidthPx = ResolveHistoryAverageCharWidthPx(entry.Kind);
         var charsPerLine = Math.Max(18, (int)Math.Floor(contentWidth / averageCharWidthPx));
         var textLines = EstimateWrappedTextLines(entry.Body, charsPerLine);
@@ -4006,10 +4022,6 @@ public sealed class SessionLensHistoryPatchSubscription : IDisposable
         _state.Close();
     }
 }
-
-
-
-
 
 
 

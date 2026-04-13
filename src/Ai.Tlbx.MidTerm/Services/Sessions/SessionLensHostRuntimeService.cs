@@ -542,6 +542,7 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         string sessionId,
         int? startIndex = null,
         int? count = null,
+        int? viewportWidth = null,
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
@@ -558,7 +559,8 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
                     HistoryWindow = new LensHostHistoryWindowRequest
                     {
                         StartIndex = startIndex,
-                        Count = count
+                        Count = count,
+                        ViewportWidth = viewportWidth
                     }
                 },
                 ct).ConfigureAwait(false);
@@ -2096,8 +2098,6 @@ internal sealed class SubscriptionState
         }
     }
 }
-
-
 
 
 

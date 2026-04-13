@@ -1,6 +1,10 @@
 import { t } from '../i18n';
-import { estimateHistoryEntryHeight } from './historyContent';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
+import {
+  recordHistoryMeasuredHeight,
+  resolveHistoryViewportEntryHeight,
+  resolveRepresentativeHistoryEntryHeight,
+} from './historyMeasurements';
 import {
   buildHistoryVirtualWindowKey,
   computeHistoryVisibleRange,
@@ -67,11 +71,7 @@ function resolveAverageHistoryEntryHeight(
   resolveEntryHeight: (entry: LensHistoryEntry) => number,
 ): number {
   if ((state?.historyObservedHeights.size ?? 0) > 0) {
-    const observedTotal = Array.from(state?.historyObservedHeights.values() ?? []).reduce(
-      (sum, height) => sum + height,
-      0,
-    );
-    return Math.max(1, observedTotal / (state?.historyObservedHeights.size ?? 1));
+    return resolveRepresentativeHistoryEntryHeight(state?.historyObservedHeights.values() ?? []);
   }
 
   if (entries.length === 0) {
@@ -142,8 +142,67 @@ function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: n
   return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
 }
 
-function resolveHistoryMeasurementWidthBucket(clientWidth: number): number {
-  return Math.max(240, Math.round(clientWidth / 40) * 40);
+function syncHistoryMeasurementObserver(args: {
+  sessionId: string;
+  state: SessionLensViewState;
+  visibleEntries: readonly HistoryVisibleEntry[];
+  getState: (sessionId: string) => SessionLensViewState | undefined;
+  captureHistoryViewportAnchor: (
+    state: SessionLensViewState,
+    key?: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor',
+  ) => boolean;
+  scheduleHistoryRender: (sessionId: string) => void;
+}): void {
+  if (typeof ResizeObserver !== 'function') {
+    return;
+  }
+
+  args.state.historyMeasurementObserver ??= new ResizeObserver((records) => {
+    const current = args.getState(args.sessionId);
+    const viewport = current?.historyViewport;
+    if (!current || !viewport) {
+      return;
+    }
+
+    let changed = false;
+    for (const record of records) {
+      const target = record.target as HTMLElement;
+      const entryId = target.dataset.lensEntryId;
+      if (!entryId) {
+        continue;
+      }
+
+      changed =
+        recordHistoryMeasuredHeight(
+          current,
+          entryId,
+          record.contentRect.height,
+          viewport.clientWidth,
+        ) || changed;
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    if (
+      !current.historyAutoScrollPinned &&
+      current.pendingHistoryPrependAnchor === null &&
+      current.pendingHistoryLayoutAnchor === null
+    ) {
+      args.captureHistoryViewportAnchor(current, 'pendingHistoryLayoutAnchor');
+    }
+
+    args.scheduleHistoryRender(args.sessionId);
+  });
+
+  args.state.historyMeasurementObserver.disconnect();
+  for (const visibleEntry of args.visibleEntries) {
+    const node = args.state.historyRenderedNodes.get(visibleEntry.key)?.node;
+    if (node) {
+      args.state.historyMeasurementObserver.observe(node);
+    }
+  }
 }
 
 function buildVisibleHistoryEntries(args: {
@@ -265,7 +324,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
     const measurementChanged = state
-      ? measureRenderedHistoryHeights(state, renderPlan.visibleEntries, metrics.clientWidth)
+      ? measureRenderedHistoryHeights(
+          sessionId,
+          state,
+          renderPlan.visibleEntries,
+          metrics.clientWidth,
+        )
       : false;
     if (state?.snapshot) {
       traceRenderedLensHistoryWindow({
@@ -311,7 +375,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       windowMetrics.clientWidth,
       resolveEntryHeight,
     );
-    const deferVirtualization = state?.pendingHistoryPrependAnchor !== null;
+    const deferVirtualization = Boolean(
+      state?.pendingHistoryPrependAnchor || state?.pendingHistoryLayoutAnchor,
+    );
     const visibleStart = deferVirtualization ? 0 : virtualWindow.start;
     const visibleEnd = deferVirtualization ? entries.length : virtualWindow.end;
 
@@ -336,28 +402,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     };
   }
 
-  function resolveHistoryViewportEntryHeight(
-    entry: LensHistoryEntry,
-    state: SessionLensViewState | undefined,
-    clientWidth: number,
-  ): number {
-    if (!state) {
-      return estimateHistoryEntryHeight(entry, clientWidth);
-    }
-
-    const widthBucket = resolveHistoryMeasurementWidthBucket(clientWidth);
-    if (state.historyMeasuredWidthBucket !== widthBucket) {
-      state.historyMeasuredWidthBucket = widthBucket;
-      state.historyMeasuredHeights.clear();
-      state.historyObservedHeights.clear();
-      state.historyLastVirtualWindowKey = null;
-    }
-
-    return (
-      state.historyMeasuredHeights.get(entry.id) ?? estimateHistoryEntryHeight(entry, clientWidth)
-    );
-  }
-
   function finalizeRenderedHistoryState(
     sessionId: string,
     panel: HTMLDivElement,
@@ -366,10 +410,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     state: SessionLensViewState | undefined,
     measurementChanged: boolean,
   ): void {
-    const scrollAdjusted =
-      state && state.pendingHistoryPrependAnchor && !state.historyAutoScrollPinned
-        ? restorePendingHistoryAnchor(viewport, state)
-        : false;
+    let scrollAdjusted = false;
+    if (state && !state.historyAutoScrollPinned) {
+      scrollAdjusted =
+        restorePendingHistoryAnchor(viewport, state, 'pendingHistoryPrependAnchor') ||
+        restorePendingHistoryAnchor(viewport, state, 'pendingHistoryLayoutAnchor');
+    }
 
     if (state?.historyAutoScrollPinned) {
       syncPinnedHistoryViewport(sessionId, panel, viewport, entries.length);
@@ -486,6 +532,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     if (plan.emptyStateText) {
       const emptyNode = ensureEmptyHistoryNode(state, plan.emptyStateText);
       syncOrderedChildren(container, [emptyNode]);
+      state.historyMeasurementObserver?.disconnect();
       state.historyRenderedNodes.clear();
       state.historyTopSpacer = null;
       state.historyBottomSpacer = null;
@@ -555,10 +602,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   ): HTMLElement {
     const existing = state.historyRenderedNodes.get(visibleEntry.key);
     if (existing && existing.signature === visibleEntry.signature) {
+      existing.node.dataset.lensEntryId = visibleEntry.key;
       return existing.node;
     }
 
     const node = deps.createHistoryEntry(visibleEntry.entry, sessionId, visibleEntry.cluster);
+    node.dataset.lensEntryId = visibleEntry.key;
     state.historyRenderedNodes.set(visibleEntry.key, {
       node,
       signature: visibleEntry.signature,
@@ -569,18 +618,11 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function measureRenderedHistoryHeights(
+    sessionId: string,
     state: SessionLensViewState,
     visibleEntries: readonly HistoryVisibleEntry[],
     clientWidth: number,
   ): boolean {
-    const widthBucket = resolveHistoryMeasurementWidthBucket(clientWidth);
-    if (state.historyMeasuredWidthBucket !== widthBucket) {
-      state.historyMeasuredWidthBucket = widthBucket;
-      state.historyMeasuredHeights.clear();
-      state.historyObservedHeights.clear();
-      state.historyLastVirtualWindowKey = null;
-    }
-
     let changed = false;
     for (const visibleEntry of visibleEntries) {
       const rendered = state.historyRenderedNodes.get(visibleEntry.key);
@@ -588,27 +630,32 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         continue;
       }
 
-      const measuredHeight = Math.max(1, Math.round(rendered.node.getBoundingClientRect().height));
-      const previousHeight = state.historyMeasuredHeights.get(visibleEntry.key);
-      if (previousHeight !== measuredHeight) {
-        state.historyMeasuredHeights.set(visibleEntry.key, measuredHeight);
-        state.historyObservedHeights.set(visibleEntry.key, measuredHeight);
-        changed = true;
-      }
+      changed =
+        recordHistoryMeasuredHeight(
+          state,
+          visibleEntry.key,
+          rendered.node.getBoundingClientRect().height,
+          clientWidth,
+        ) || changed;
     }
 
-    if (changed) {
-      state.historyLastVirtualWindowKey = null;
-    }
-
+    syncHistoryMeasurementObserver({
+      sessionId,
+      state,
+      visibleEntries,
+      getState: deps.getState,
+      captureHistoryViewportAnchor,
+      scheduleHistoryRender: deps.scheduleHistoryRender,
+    });
     return changed;
   }
 
   function restorePendingHistoryAnchor(
     viewport: HTMLDivElement,
     state: SessionLensViewState,
+    key: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor',
   ): boolean {
-    const anchor = state.pendingHistoryPrependAnchor;
+    const anchor = state[key];
     if (!anchor) {
       return false;
     }
@@ -620,7 +667,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const viewportRect = viewport.getBoundingClientRect();
     const anchorRect = anchorNode.getBoundingClientRect();
-    state.pendingHistoryPrependAnchor = null;
+    state[key] = null;
     setHistoryScrollMode(state, 'browse');
     return syncViewportScrollPosition(
       viewport,
@@ -628,10 +675,15 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     );
   }
 
-  function captureHistoryViewportAnchor(state: SessionLensViewState): boolean {
+  function captureHistoryViewportAnchor(
+    state: SessionLensViewState,
+    key:
+      | 'pendingHistoryPrependAnchor'
+      | 'pendingHistoryLayoutAnchor' = 'pendingHistoryPrependAnchor',
+  ): boolean {
     const viewport = state.historyViewport;
     if (!viewport) {
-      state.pendingHistoryPrependAnchor = null;
+      state[key] = null;
       return false;
     }
 
@@ -657,7 +709,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       }
     }
 
-    state.pendingHistoryPrependAnchor = bestAnchor;
+    state[key] = bestAnchor;
     return bestAnchor !== null;
   }
 

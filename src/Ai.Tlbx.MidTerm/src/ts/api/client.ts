@@ -517,8 +517,9 @@ export async function getLensHistoryWindow(
   startIndex?: number,
   count?: number,
   windowRevision?: string,
+  viewportWidth?: number,
 ): Promise<LensHistorySnapshot> {
-  return getLensHistoryWindowWs(id, startIndex, count, windowRevision);
+  return getLensHistoryWindowWs(id, startIndex, count, windowRevision, viewportWidth);
 }
 
 export async function interruptLensTurn(
@@ -565,8 +566,17 @@ export function openLensHistoryStream(
   count: number | undefined,
   windowRevision: string | undefined,
   callbacks: LensHistoryStreamCallbacks,
+  viewportWidth?: number,
 ): () => void {
-  return openLensHistorySocket(id, afterSequence, startIndex, count, windowRevision, callbacks);
+  return openLensHistorySocket(
+    id,
+    afterSequence,
+    startIndex,
+    count,
+    windowRevision,
+    callbacks,
+    viewportWidth,
+  );
 }
 
 export function updateLensHistoryStreamWindow(
@@ -574,8 +584,9 @@ export function updateLensHistoryStreamWindow(
   startIndex: number | undefined,
   count: number | undefined,
   windowRevision: string | undefined,
+  viewportWidth?: number,
 ): void {
-  updateLensHistorySocketWindow(id, startIndex, count, windowRevision);
+  updateLensHistorySocketWindow(id, startIndex, count, windowRevision, viewportWidth);
 }
 
 // --- Settings ---

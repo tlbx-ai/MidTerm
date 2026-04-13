@@ -14,6 +14,11 @@ export const HISTORY_VIRTUALIZE_AFTER = 50;
 
 type HistoryHeightResolver = (entry: LensHistoryEntry, index: number) => number;
 
+interface HistoryLayoutModel {
+  prefixHeights: number[];
+  totalHeight: number;
+}
+
 export function stabilizeHistoryEntryOrder(
   entries: readonly LensHistoryEntry[],
 ): LensHistoryEntry[] {
@@ -96,6 +101,7 @@ export function computeHistoryVirtualWindow(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryVirtualWindow {
+  const layout = buildHistoryLayoutModel(entries, clientWidth, resolveEntryHeight);
   const visibleRange = computeHistoryIndexRange(
     entries,
     scrollTop,
@@ -103,23 +109,17 @@ export function computeHistoryVirtualWindow(
     clientWidth,
     HISTORY_OVERSCAN_PX,
     resolveEntryHeight,
+    layout,
   );
-  const heightForEntry =
-    resolveEntryHeight ??
-    ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
-  const topSpacerPx = entries
-    .slice(0, visibleRange.start)
-    .reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
-  const visibleHeight = entries
-    .slice(visibleRange.start, visibleRange.end)
-    .reduce((sum, entry, index) => sum + heightForEntry(entry, visibleRange.start + index), 0);
-  const totalHeight = entries.reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
+  const topSpacerPx = layout.prefixHeights[visibleRange.start] ?? 0;
+  const visibleHeight =
+    (layout.prefixHeights[visibleRange.end] ?? layout.totalHeight) - topSpacerPx;
 
   return {
     start: visibleRange.start,
     end: visibleRange.end,
     topSpacerPx,
-    bottomSpacerPx: Math.max(0, totalHeight - topSpacerPx - visibleHeight),
+    bottomSpacerPx: Math.max(0, layout.totalHeight - topSpacerPx - visibleHeight),
   };
 }
 
@@ -130,6 +130,7 @@ export function computeHistoryVisibleRange(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryIndexRange {
+  const layout = buildHistoryLayoutModel(entries, clientWidth, resolveEntryHeight);
   return computeHistoryIndexRange(
     entries,
     scrollTop,
@@ -137,6 +138,7 @@ export function computeHistoryVisibleRange(
     clientWidth,
     0,
     resolveEntryHeight,
+    layout,
   );
 }
 
@@ -147,6 +149,7 @@ function computeHistoryIndexRange(
   clientWidth: number,
   overscanPx: number,
   resolveEntryHeight?: HistoryHeightResolver,
+  layout?: HistoryLayoutModel,
 ): HistoryIndexRange {
   if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
     return {
@@ -155,46 +158,82 @@ function computeHistoryIndexRange(
     };
   }
 
+  const currentLayout = layout ?? buildHistoryLayoutModel(entries, clientWidth, resolveEntryHeight);
   const targetTop = Math.max(0, scrollTop - overscanPx);
   const targetBottom = scrollTop + clientHeight + overscanPx;
-  let cumulative = 0;
-  let start = 0;
+  const start = findFirstIntersectingHistoryIndex(currentLayout.prefixHeights, targetTop);
+  const end = Math.max(
+    start + 1,
+    Math.min(
+      entries.length,
+      findFirstHistoryEndAtOrAfter(currentLayout.prefixHeights, targetBottom),
+    ),
+  );
+
+  return {
+    start,
+    end,
+  };
+}
+
+function buildHistoryLayoutModel(
+  entries: ReadonlyArray<LensHistoryEntry>,
+  clientWidth: number,
+  resolveEntryHeight?: HistoryHeightResolver,
+): HistoryLayoutModel {
+  const prefixHeights = new Array<number>(entries.length + 1);
+  prefixHeights[0] = 0;
   const heightForEntry =
     resolveEntryHeight ??
     ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
 
+  let cumulativeHeight = 0;
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    if (!entry) {
-      continue;
-    }
-
-    const height = heightForEntry(entry, index);
-    if (cumulative + height >= targetTop) {
-      start = index;
-      break;
-    }
-    cumulative += height;
-  }
-
-  cumulative = entries
-    .slice(0, start)
-    .reduce((sum, entry, index) => sum + heightForEntry(entry, index), 0);
-  let end = start;
-  while (end < entries.length && cumulative < targetBottom) {
-    const entry = entries[end];
-    if (!entry) {
-      break;
-    }
-
-    cumulative += heightForEntry(entry, end);
-    end += 1;
+    cumulativeHeight += entry ? heightForEntry(entry, index) : 0;
+    prefixHeights[index + 1] = cumulativeHeight;
   }
 
   return {
-    start,
-    end: Math.max(end, start + 1),
+    prefixHeights,
+    totalHeight: cumulativeHeight,
   };
+}
+
+function findFirstIntersectingHistoryIndex(
+  prefixHeights: readonly number[],
+  targetTop: number,
+): number {
+  let low = 1;
+  let high = prefixHeights.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((prefixHeights[middle] ?? 0) > targetTop) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return Math.max(0, Math.min(prefixHeights.length - 2, low - 1));
+}
+
+function findFirstHistoryEndAtOrAfter(
+  prefixHeights: readonly number[],
+  targetBottom: number,
+): number {
+  let low = 1;
+  let high = prefixHeights.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((prefixHeights[middle] ?? 0) >= targetBottom) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return Math.max(1, Math.min(prefixHeights.length - 1, low));
 }
 
 export function buildHistoryVirtualWindowKey(window: HistoryVirtualWindow): string {
