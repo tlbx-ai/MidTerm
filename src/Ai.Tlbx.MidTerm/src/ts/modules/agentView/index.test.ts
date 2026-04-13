@@ -548,6 +548,27 @@ describe('agentView dev errors', () => {
     ).toBe(false);
   });
 
+  it('stops auto-follow on even small upward user scrolls near the live edge', async () => {
+    const { resolveHistoryAutoScrollPinned } = await import('./index');
+
+    expect(
+      resolveHistoryAutoScrollPinned({
+        wasPinned: true,
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 860,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        userInitiated: true,
+      }),
+    ).toBe(false);
+  });
+
   it('does not repin auto-follow just because layout changed while already detached from the live edge', async () => {
     const { resolveHistoryAutoScrollPinned } = await import('./index');
 
@@ -5087,6 +5108,55 @@ describe('agentView dev errors', () => {
     expect(windowed.end).toBeLessThan(entries.length);
     expect(windowed.topSpacerPx).toBeGreaterThan(0);
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
+  });
+
+  it('subtracts older-history top spacer height before resolving the visible window', async () => {
+    const { computeHistoryVisibleRange } = await import('./historyViewport');
+    const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 41,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 41}`,
+      meta: 'now',
+    })) as any;
+
+    const viewportMetrics = resolveHistoryWindowViewportMetrics(
+      entries,
+      {
+        snapshot: {
+          historyWindowStart: 40,
+          historyWindowEnd: 120,
+          historyCount: 200,
+        },
+        historyObservedHeights: new Map(),
+      } as any,
+      {
+        scrollTop: 4350,
+        clientHeight: 600,
+        clientWidth: 900,
+      },
+      () => 100,
+    );
+
+    expect(viewportMetrics.offWindowTopSpacerPx).toBe(4000);
+    expect(viewportMetrics.scrollTop).toBe(350);
+
+    const visibleRange = computeHistoryVisibleRange(
+      entries,
+      viewportMetrics.scrollTop,
+      viewportMetrics.clientHeight,
+      viewportMetrics.clientWidth,
+      () => 100,
+    );
+    const unadjustedRange = computeHistoryVisibleRange(entries, 4350, 600, 900, () => 100);
+
+    expect(visibleRange.start).toBe(3);
+    expect(unadjustedRange.start).toBe(43);
   });
 
   it('estimates taller history rows for narrow viewports', async () => {

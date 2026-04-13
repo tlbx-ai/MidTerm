@@ -44,8 +44,17 @@ export function resolveHistoryAutoScrollPinned(args: {
   userInitiated: boolean;
 }): boolean {
   const nearBottom = isScrollContainerNearBottom(args.current);
+  const userScrolledUp =
+    args.previous !== null &&
+    Number.isFinite(args.previous.scrollTop) &&
+    Number.isFinite(args.current.scrollTop) &&
+    args.current.scrollTop < args.previous.scrollTop - 1;
 
   if (args.userInitiated) {
+    if (userScrolledUp) {
+      return false;
+    }
+
     return nearBottom;
   }
 

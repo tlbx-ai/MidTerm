@@ -51,6 +51,14 @@ type HistoryRenderDeps = {
   renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
 };
 
+export type HistoryWindowViewportMetrics = HistoryViewportMetrics & {
+  historyWindowStart: number;
+  historyWindowEnd: number;
+  totalHistoryCount: number;
+  offWindowTopSpacerPx: number;
+  offWindowBottomSpacerPx: number;
+};
+
 function resolveAverageHistoryEntryHeight(
   entries: readonly LensHistoryEntry[],
   state: SessionLensViewState | undefined,
@@ -86,6 +94,41 @@ function estimateOffWindowSpacerPx(
   return Math.max(0, Math.round(averageHeight * unseenItemCount));
 }
 
+export function resolveHistoryWindowViewportMetrics(
+  entries: readonly LensHistoryEntry[],
+  state: SessionLensViewState | undefined,
+  metrics: HistoryViewportMetrics,
+  resolveEntryHeight: (entry: LensHistoryEntry) => number,
+): HistoryWindowViewportMetrics {
+  const historyWindowStart = Math.max(0, state?.snapshot?.historyWindowStart ?? 0);
+  const historyWindowEnd = Math.max(historyWindowStart, state?.snapshot?.historyWindowEnd ?? 0);
+  const totalHistoryCount = Math.max(historyWindowEnd, state?.snapshot?.historyCount ?? 0);
+  const offWindowTopCount = historyWindowStart;
+  const offWindowBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
+  const offWindowTopSpacerPx = estimateOffWindowSpacerPx(
+    entries,
+    state,
+    offWindowTopCount,
+    resolveEntryHeight,
+  );
+  const offWindowBottomSpacerPx = estimateOffWindowSpacerPx(
+    entries,
+    state,
+    offWindowBottomCount,
+    resolveEntryHeight,
+  );
+
+  return {
+    ...metrics,
+    scrollTop: Math.max(0, metrics.scrollTop - offWindowTopSpacerPx),
+    historyWindowStart,
+    historyWindowEnd,
+    totalHistoryCount,
+    offWindowTopSpacerPx,
+    offWindowBottomSpacerPx,
+  };
+}
+
 function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: number): boolean {
   const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
   const nextScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
@@ -95,6 +138,22 @@ function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: n
 
   viewport.scrollTop = nextScrollTop;
   return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
+}
+
+function readHistoryViewportMetrics(container: HTMLDivElement): HistoryViewportMetrics {
+  return {
+    scrollTop: container.scrollTop,
+    clientHeight: container.clientHeight,
+    clientWidth: container.clientWidth,
+  };
+}
+
+function readHistoryScrollMetrics(container: HTMLDivElement): HistoryScrollMetrics {
+  return {
+    scrollTop: container.scrollTop,
+    clientHeight: container.clientHeight,
+    scrollHeight: container.scrollHeight,
+  };
 }
 
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
@@ -166,28 +225,25 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const resolveEntryHeight = (entry: LensHistoryEntry) =>
       resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth);
-    const virtualWindow = computeHistoryVirtualWindow(
+    const windowMetrics = resolveHistoryWindowViewportMetrics(
       entries,
-      metrics.scrollTop,
-      metrics.clientHeight,
-      metrics.clientWidth,
+      state,
+      metrics,
       resolveEntryHeight,
     );
-    const historyWindowStart = Math.max(0, state?.snapshot?.historyWindowStart ?? 0);
-    const historyWindowEnd = Math.max(historyWindowStart, state?.snapshot?.historyWindowEnd ?? 0);
-    const totalHistoryCount = Math.max(historyWindowEnd, state?.snapshot?.historyCount ?? 0);
-    const offWindowTopCount = historyWindowStart;
-    const offWindowBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
+    const virtualWindow = computeHistoryVirtualWindow(
+      entries,
+      windowMetrics.scrollTop,
+      windowMetrics.clientHeight,
+      windowMetrics.clientWidth,
+      resolveEntryHeight,
+    );
 
     return {
       emptyStateText: null,
       virtualWindowKey: buildHistoryVirtualWindowKey(virtualWindow),
-      topSpacerPx:
-        estimateOffWindowSpacerPx(entries, state, offWindowTopCount, resolveEntryHeight) +
-        virtualWindow.topSpacerPx,
-      bottomSpacerPx:
-        estimateOffWindowSpacerPx(entries, state, offWindowBottomCount, resolveEntryHeight) +
-        virtualWindow.bottomSpacerPx,
+      topSpacerPx: windowMetrics.offWindowTopSpacerPx + virtualWindow.topSpacerPx,
+      bottomSpacerPx: windowMetrics.offWindowBottomSpacerPx + virtualWindow.bottomSpacerPx,
       visibleEntries: entries
         .slice(virtualWindow.start, virtualWindow.end)
         .map((entry, visibleIndex) => {
@@ -641,22 +697,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
   }
 
-  function readHistoryViewportMetrics(container: HTMLDivElement): HistoryViewportMetrics {
-    return {
-      scrollTop: container.scrollTop,
-      clientHeight: container.clientHeight,
-      clientWidth: container.clientWidth,
-    };
-  }
-
-  function readHistoryScrollMetrics(container: HTMLDivElement): HistoryScrollMetrics {
-    return {
-      scrollTop: container.scrollTop,
-      clientHeight: container.clientHeight,
-      scrollHeight: container.scrollHeight,
-    };
-  }
-
   function scrollHistoryToBottom(sessionId: string, behavior: ScrollBehavior = 'auto'): void {
     const state = deps.getState(sessionId);
     const viewport = state?.historyViewport;
@@ -681,12 +721,18 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const metrics = readHistoryViewportMetrics(viewport);
+    const windowMetrics = resolveHistoryWindowViewportMetrics(
+      state.historyEntries,
+      state,
+      metrics,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+    );
     const virtualWindow = computeHistoryVirtualWindow(
       state.historyEntries,
-      metrics.scrollTop,
-      metrics.clientHeight,
-      metrics.clientWidth,
-      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+      windowMetrics.scrollTop,
+      windowMetrics.clientHeight,
+      windowMetrics.clientWidth,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, windowMetrics.clientWidth),
     );
     return buildHistoryVirtualWindowKey(virtualWindow) !== state.historyLastVirtualWindowKey;
   }
@@ -705,12 +751,18 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const metrics = readHistoryViewportMetrics(viewport);
+    const windowMetrics = resolveHistoryWindowViewportMetrics(
+      state.historyEntries,
+      state,
+      metrics,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+    );
     const visibleRange = computeHistoryVisibleRange(
       state.historyEntries,
-      metrics.scrollTop,
-      metrics.clientHeight,
-      metrics.clientWidth,
-      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+      windowMetrics.scrollTop,
+      windowMetrics.clientHeight,
+      windowMetrics.clientWidth,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, windowMetrics.clientWidth),
     );
     const visibleCount = Math.max(1, visibleRange.end - visibleRange.start);
     const marginItems = Math.max(
