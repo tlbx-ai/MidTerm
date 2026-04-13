@@ -394,6 +394,120 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
+          function clampByte(v){
+            v=Math.round(v);
+            if(v<0)return 0;
+            if(v>255)return 255;
+            return v;
+          }
+          function parseSrgbChannel(raw){
+            if(!raw)return null;
+            if(/%$/.test(raw)){
+              var pct=parseFloat(raw);
+              if(!isFinite(pct))return null;
+              return clampByte((pct/100)*255);
+            }
+            var num=parseFloat(raw);
+            if(!isFinite(num))return null;
+            return num<=1?clampByte(num*255):clampByte(num);
+          }
+          function parseSrgbAlpha(raw){
+            if(!raw)return 1;
+            if(/%$/.test(raw)){
+              var pct=parseFloat(raw);
+              if(!isFinite(pct))return 1;
+              return Math.max(0,Math.min(1,pct/100));
+            }
+            var num=parseFloat(raw);
+            if(!isFinite(num))return 1;
+            return Math.max(0,Math.min(1,num));
+          }
+          function normalizeCssColorFunctions(value){
+            if(typeof value!=="string"||value.indexOf("color(")<0)return value;
+            return value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
+              var rr=parseSrgbChannel(r),gg=parseSrgbChannel(g),bb=parseSrgbChannel(b);
+              if(rr===null||gg===null||bb===null)return _;
+              var aa=parseSrgbAlpha(a);
+              if(aa>=1)return "rgb("+rr+", "+gg+", "+bb+")";
+              var alphaText=(Math.round(aa*1000)/1000).toString();
+              return "rgba("+rr+", "+gg+", "+bb+", "+alphaText+")";
+            });
+          }
+          function normalizeCloneCaptureColors(root,view){
+            if(!root||!view||!view.getComputedStyle)return;
+            var nodes=[root];
+            if(root.querySelectorAll){
+              var all=root.querySelectorAll("*");
+              for(var i=0;i<all.length;i++)nodes.push(all[i]);
+            }
+            for(var n=0;n<nodes.length;n++){
+              var node=nodes[n];
+              if(!node||!node.style)continue;
+              var styles;
+              try{styles=view.getComputedStyle(node);}catch(e){continue;}
+              if(!styles)continue;
+              for(var i=0;i<styles.length;i++){
+                var prop=styles[i],value=styles.getPropertyValue(prop);
+                if(typeof value!=="string"||value.indexOf("color(")<0)continue;
+                var normalized=normalizeCssColorFunctions(value);
+                if(normalized!==value){
+                  try{node.style.setProperty(prop,normalized);}catch(e){}
+                }
+              }
+            }
+          }
+          function createNormalizedStyleReader(styles){
+            if(!styles||typeof styles!=="object")return styles;
+            if(typeof Proxy!=="function")return styles;
+            try{
+              return new Proxy(styles,{
+                get:function(target,prop){
+                  if(prop==="getPropertyValue"){
+                    return function(name){
+                      return normalizeCssColorFunctions(target.getPropertyValue(name));
+                    };
+                  }
+                  if(prop==="setProperty"){
+                    return function(name,value,priority){
+                      return target.setProperty(name,normalizeCssColorFunctions(value),priority);
+                    };
+                  }
+                  if(prop==="getPropertyPriority"){
+                    return function(name){
+                      return target.getPropertyPriority(name);
+                    };
+                  }
+                  if(prop==="item"){
+                    return function(index){
+                      return target.item(index);
+                    };
+                  }
+                  var value=target[prop];
+                  if(typeof value==="function")return value.bind(target);
+                  return typeof value==="string"?normalizeCssColorFunctions(value):value;
+                }
+              });
+            }catch(e){}
+            return styles;
+          }
+          function installComputedStyleColorNormalization(view){
+            if(!view||typeof view.getComputedStyle!=="function")return function(){};
+            var current=view.getComputedStyle;
+            if(current&&current.__mtColorNormalized)return function(){};
+            var wrapped=function(){
+              return createNormalizedStyleReader(current.apply(this,arguments));
+            };
+            try{wrapped.__mtColorNormalized=true;}catch(e){}
+            try{
+              view.getComputedStyle=wrapped;
+              return function(){
+                try{
+                  if(view.getComputedStyle===wrapped)view.getComputedStyle=current;
+                }catch(e){}
+              };
+            }catch(e){}
+            return function(){};
+          }
           function rewriteEl(el){
             if(!el.getAttribute)return;
             ["src","href","action","data","formaction","poster"].forEach(function(attr){
@@ -507,11 +621,26 @@ public sealed partial class WebPreviewProxyMiddleware
                     else setTimeout(poll,200);
                   })();return;}
                 case"screenshot":{
+                  var restoreComputedStyles=installComputedStyleColorNormalization(window);
                   ensureH2c().then(function(){
-                    return window.html2canvas(document.documentElement,{useCORS:true,logging:false,scale:1});
+                    return window.html2canvas(document.documentElement,{
+                      useCORS:true,
+                      logging:false,
+                      scale:1,
+                      onclone:function(doc){
+                        try{
+                          installComputedStyleColorNormalization(doc.defaultView||window);
+                          normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window));
+                        }catch(e){}
+                      }
+                    });
                   }).then(function(canvas){
+                      try{restoreComputedStyles();}catch(e){}
                       res.result=canvas.toDataURL("image/png");bws.send(JSON.stringify(res));
-                  }).catch(function(e){res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));});
+                  }).catch(function(e){
+                      try{restoreComputedStyles();}catch(x){}
+                      res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));
+                  });
                   return;}
                 case"snapshot":{
                   res.result=document.documentElement.outerHTML;

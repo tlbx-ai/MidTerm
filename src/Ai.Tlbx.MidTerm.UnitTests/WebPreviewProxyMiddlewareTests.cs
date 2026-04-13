@@ -113,6 +113,26 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_ScreenshotCapture_NormalizesColorFunctionsBeforeHtml2Canvas()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function normalizeCssColorFunctions", script, StringComparison.Ordinal);
+        Assert.Contains("function normalizeCloneCaptureColors", script, StringComparison.Ordinal);
+        Assert.Contains("function createNormalizedStyleReader", script, StringComparison.Ordinal);
+        Assert.Contains("function installComputedStyleColorNormalization", script, StringComparison.Ordinal);
+        Assert.Contains("value.indexOf(\"color(\")<0", script, StringComparison.Ordinal);
+        Assert.Contains("installComputedStyleColorNormalization(window)", script, StringComparison.Ordinal);
+        Assert.Contains("installComputedStyleColorNormalization(doc.defaultView||window)", script, StringComparison.Ordinal);
+        Assert.Contains("onclone:function(doc)", script, StringComparison.Ordinal);
+        Assert.Contains("normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window))", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_NavigationBridge_DeduplicatesAndCoalescesUpdates()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(

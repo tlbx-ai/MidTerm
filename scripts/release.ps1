@@ -101,6 +101,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$recentTagRefreshCount = 5
 
 function Get-WebVersionFromGitRef {
     param(
@@ -185,6 +186,50 @@ function Assert-RemoteDidNotChange {
     }
 }
 
+function Get-RecentRemoteTagNames {
+    param(
+        [Parameter(Mandatory=$true)]
+        [int]$Count
+    )
+
+    $tagRefs = @(git ls-remote --tags --refs --sort="-version:refname" origin "v*" 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not list remote tags."
+    }
+
+    $tagNames = foreach ($tagRef in $tagRefs) {
+        if ($tagRef -match 'refs/tags/(?<name>\S+)$') {
+            $Matches.name
+        }
+    }
+
+    return @($tagNames | Select-Object -First $Count)
+}
+
+function Refresh-RemoteState {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string[]]$BranchRefs,
+
+        [int]$RecentTagCount = 5
+    )
+
+    $refspecs = @()
+    foreach ($branchRef in $BranchRefs) {
+        $refspecs += "refs/heads/$branchRef" + ":refs/remotes/origin/$branchRef"
+    }
+
+    $recentTagNames = Get-RecentRemoteTagNames -Count $RecentTagCount
+    foreach ($tagName in $recentTagNames) {
+        $refspecs += "+refs/tags/${tagName}:refs/tags/${tagName}"
+    }
+
+    git fetch origin @refspecs 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not refresh remote branches and recent tags."
+    }
+}
+
 # Ensure we're on main branch
 $currentBranch = git branch --show-current
 if ($currentBranch -ne "main") {
@@ -237,8 +282,10 @@ if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[
 
 # Ensure we're up to date with remote
 Write-Host "Checking remote status..." -ForegroundColor Cyan
-git fetch origin --tags 2>$null
-if ($LASTEXITCODE -ne 0) {
+try {
+    Refresh-RemoteState -BranchRefs @("main") -RecentTagCount $recentTagRefreshCount
+}
+catch {
     Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
 }
 
@@ -408,10 +455,7 @@ catch {
 Write-Host ""
 Write-Host "Committing and tagging..." -ForegroundColor Cyan
 
-git fetch origin --tags 2>$null
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not refresh remote state before commit/tag."
-}
+Refresh-RemoteState -BranchRefs @("main") -RecentTagCount $recentTagRefreshCount
 
 Assert-RemoteDidNotChange -RemoteRef "origin/main" -ExpectedCommit $releaseRemoteCommit
 Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/main")

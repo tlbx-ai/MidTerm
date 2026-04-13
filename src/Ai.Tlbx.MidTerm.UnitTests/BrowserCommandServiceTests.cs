@@ -7,6 +7,28 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class BrowserCommandServiceTests
 {
     [Fact]
+    public void ResolveTimeoutSeconds_UsesLongerDefaultForScreenshots()
+    {
+        var screenshotTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
+        {
+            Command = "screenshot"
+        });
+        var defaultTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
+        {
+            Command = "url"
+        });
+        var explicitTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
+        {
+            Command = "screenshot",
+            Timeout = 7
+        });
+
+        Assert.Equal(30, screenshotTimeout);
+        Assert.Equal(10, defaultTimeout);
+        Assert.Equal(7, explicitTimeout);
+    }
+
+    [Fact]
     public async Task TryRegisterClient_ReplacesExistingPreviewClientOnReconnect()
     {
         var service = new BrowserCommandService();

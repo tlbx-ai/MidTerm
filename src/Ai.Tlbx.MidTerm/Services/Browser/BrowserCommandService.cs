@@ -6,6 +6,8 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public sealed class BrowserCommandService
 {
+    private const int DefaultCommandTimeoutSeconds = 10;
+    private const int DefaultScreenshotTimeoutSeconds = 30;
     private readonly Lock _clientGate = new();
     private readonly ConcurrentDictionary<string, PendingCommand> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, BrowserClient> _clients = new(StringComparer.Ordinal);
@@ -139,7 +141,7 @@ public sealed class BrowserCommandService
             };
         }
 
-        var timeoutSeconds = request.Timeout ?? 10;
+        var timeoutSeconds = ResolveTimeoutSeconds(request);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -287,6 +289,18 @@ public sealed class BrowserCommandService
         }
 
         return string.Join('\n', lines) + "\n";
+    }
+
+    internal static int ResolveTimeoutSeconds(BrowserCommandRequest request)
+    {
+        if (request.Timeout is > 0)
+        {
+            return request.Timeout.Value;
+        }
+
+        return string.Equals(request.Command, "screenshot", StringComparison.OrdinalIgnoreCase)
+            ? DefaultScreenshotTimeoutSeconds
+            : DefaultCommandTimeoutSeconds;
     }
 
     public BrowserStatusResponse GetStatus(
