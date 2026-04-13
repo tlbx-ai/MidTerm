@@ -1019,10 +1019,17 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 .Select(CloneAttachment)
                 .Where(static attachment => attachment is not null)
                 .Cast<LensAttachmentReference>()
+                .ToList() ?? [],
+            TerminalReplay = turn.TerminalReplay?
+                .Select(CloneTerminalReplayStep)
+                .Where(static step => step is not null)
+                .Cast<LensTerminalReplayStep>()
                 .ToList() ?? []
         };
 
-        return string.IsNullOrWhiteSpace(normalized.Text) && normalized.Attachments.Count == 0
+        return string.IsNullOrWhiteSpace(normalized.Text)
+               && normalized.Attachments.Count == 0
+               && normalized.TerminalReplay.Count == 0
             ? null
             : normalized;
     }
@@ -1045,6 +1052,49 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             Path = attachment.Path.Trim(),
             MimeType = string.IsNullOrWhiteSpace(attachment.MimeType) ? null : attachment.MimeType.Trim(),
             DisplayName = string.IsNullOrWhiteSpace(attachment.DisplayName) ? null : attachment.DisplayName.Trim()
+        };
+    }
+
+    private static LensTerminalReplayStep? CloneTerminalReplayStep(LensTerminalReplayStep? step)
+    {
+        if (step is null)
+        {
+            return null;
+        }
+
+        var kind = string.IsNullOrWhiteSpace(step.Kind) ? "text" : step.Kind.Trim();
+        var text = string.IsNullOrEmpty(step.Text) ? null : step.Text;
+        var path = string.IsNullOrWhiteSpace(step.Path) ? null : step.Path.Trim();
+        var mimeType = string.IsNullOrWhiteSpace(step.MimeType) ? null : step.MimeType.Trim();
+
+        return kind switch
+        {
+            "text" when !string.IsNullOrEmpty(text) => new LensTerminalReplayStep
+            {
+                Kind = "text",
+                Text = text,
+                UseBracketedPaste = step.UseBracketedPaste
+            },
+            "image" when !string.IsNullOrWhiteSpace(path) => new LensTerminalReplayStep
+            {
+                Kind = "image",
+                Path = path,
+                MimeType = mimeType,
+                UseBracketedPaste = step.UseBracketedPaste
+            },
+            "filePath" when !string.IsNullOrWhiteSpace(path) => new LensTerminalReplayStep
+            {
+                Kind = "filePath",
+                Path = path,
+                UseBracketedPaste = step.UseBracketedPaste
+            },
+            "textFile" when !string.IsNullOrWhiteSpace(path) => new LensTerminalReplayStep
+            {
+                Kind = "textFile",
+                Path = path,
+                UseBracketedPaste = step.UseBracketedPaste
+            },
+            _ => null
         };
     }
 

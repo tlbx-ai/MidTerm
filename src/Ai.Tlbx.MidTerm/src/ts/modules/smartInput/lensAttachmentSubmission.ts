@@ -25,7 +25,6 @@ export async function submitLensComposerDraft(
     sessionId: args.sessionId,
     draft: args.draft,
     attachments: args.attachments,
-    target: 'lens',
     uploadFailureMessage: args.uploadFailureMessage,
     attachmentReadFailureMessage: args.attachmentReadFailureMessage,
     uploadFile: args.uploadFile,

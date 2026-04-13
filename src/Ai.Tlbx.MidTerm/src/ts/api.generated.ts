@@ -3984,6 +3984,13 @@ export interface components {
       mimeType: null | string;
       displayName: null | string;
     };
+    LensTerminalReplayStep: {
+      kind: string;
+      text: null | string;
+      path: null | string;
+      mimeType: null | string;
+      useBracketedPaste: boolean;
+    };
     LensTurnRequest: {
       text?: null | string;
       model?: null | string;
@@ -3991,6 +3998,7 @@ export interface components {
       planMode?: null | string;
       permissionMode?: null | string;
       attachments: components['schemas']['LensAttachmentReference'][];
+      terminalReplay: components['schemas']['LensTerminalReplayStep'][];
     };
     LocalUpdateInfo: {
       available: boolean;

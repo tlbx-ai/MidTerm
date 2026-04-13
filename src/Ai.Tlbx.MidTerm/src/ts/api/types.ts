@@ -283,6 +283,14 @@ export interface LensRequestDecisionRequest {
   decision: string;
 }
 
+export interface LensTerminalReplayStep {
+  kind: 'text' | 'image' | 'filePath' | 'textFile';
+  text?: string | null;
+  path?: string | null;
+  mimeType?: string | null;
+  useBracketedPaste?: boolean;
+}
+
 export interface LensTurnRequest {
   text?: string | null;
   model?: string | null;
@@ -290,6 +298,7 @@ export interface LensTurnRequest {
   planMode?: string | null;
   permissionMode?: string | null;
   attachments: LensAttachmentReference[];
+  terminalReplay?: LensTerminalReplayStep[];
 }
 
 export interface LensTurnStartResponse {

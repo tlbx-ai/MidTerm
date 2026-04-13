@@ -71,6 +71,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LensTurnRequest))]
 [JsonSerializable(typeof(LensAttachmentReference))]
 [JsonSerializable(typeof(List<LensAttachmentReference>))]
+[JsonSerializable(typeof(LensTerminalReplayStep))]
+[JsonSerializable(typeof(List<LensTerminalReplayStep>))]
 [JsonSerializable(typeof(LensTurnStartResponse))]
 [JsonSerializable(typeof(LensInterruptRequest))]
 [JsonSerializable(typeof(LensRequestDecisionRequest))]
@@ -289,7 +291,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

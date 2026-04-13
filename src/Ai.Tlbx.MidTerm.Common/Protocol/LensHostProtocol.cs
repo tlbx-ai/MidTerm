@@ -287,6 +287,7 @@ public sealed class LensTurnRequest
     public string? PlanMode { get; set; }
     public string? PermissionMode { get; set; }
     public List<LensAttachmentReference> Attachments { get; set; } = [];
+    public List<LensTerminalReplayStep> TerminalReplay { get; set; } = [];
 }
 
 public sealed class LensAttachmentReference
@@ -295,6 +296,15 @@ public sealed class LensAttachmentReference
     public string Path { get; set; } = string.Empty;
     public string? MimeType { get; set; }
     public string? DisplayName { get; set; }
+}
+
+public sealed class LensTerminalReplayStep
+{
+    public string Kind { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? Path { get; set; }
+    public string? MimeType { get; set; }
+    public bool UseBracketedPaste { get; set; }
 }
 
 public sealed class LensTurnStartResponse
@@ -539,8 +549,6 @@ public sealed class LensHostHistoryPatchEnvelope
 public partial class LensHostJsonContext : JsonSerializerContext
 {
 }
-
-
 
 
 

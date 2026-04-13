@@ -4640,9 +4640,46 @@
           }
         }
       },
+      "LensTerminalReplayStep": {
+        "required": [
+          "kind",
+          "text",
+          "path",
+          "mimeType",
+          "useBracketedPaste"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "useBracketedPaste": {
+            "type": "boolean"
+          }
+        }
+      },
       "LensTurnRequest": {
         "required": [
-          "attachments"
+          "attachments",
+          "terminalReplay"
         ],
         "type": "object",
         "properties": {
@@ -4680,6 +4717,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          },
+          "terminalReplay": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensTerminalReplayStep"
             }
           }
         }

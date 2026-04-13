@@ -48,7 +48,6 @@ describe('smartInputOutboundReferences', () => {
           previewUrl: null,
         },
       ],
-      target: 'lens',
       uploadFailureMessage: 'upload failed',
       attachmentReadFailureMessage: 'read failed',
       uploadFile: vi.fn(),
@@ -67,10 +66,10 @@ describe('smartInputOutboundReferences', () => {
     });
   });
 
-  it('materializes referenced attachment paths into the terminal prompt body', async () => {
-    const { prepareSmartInputOutboundPrompt } = await import('./smartInputOutboundReferences');
+  it('builds terminal replay steps that preserve inline text and image order', async () => {
+    const { prepareSmartInputTerminalTurn } = await import('./smartInputOutboundReferences');
 
-    const result = await prepareSmartInputOutboundPrompt({
+    const result = await prepareSmartInputTerminalTurn({
       sessionId: 's1',
       draft: {
         nextOrdinalByKind: { image: 3 },
@@ -114,16 +113,21 @@ describe('smartInputOutboundReferences', () => {
           previewUrl: null,
         },
       ],
-      target: 'terminal',
+      bracketedPasteModeEnabled: false,
       uploadFailureMessage: 'upload failed',
-      attachmentReadFailureMessage: 'read failed',
       uploadFile: vi.fn(),
     });
 
     expect(result).toEqual({
-      text:
-        'Compare [Image 1] with [Image 2].\n\n[Image 1]: Q:/repo/.midterm/uploads/one.png\n[Image 2]: Q:/repo/.midterm/uploads/two.png',
+      text: 'Compare [Image 1] with [Image 2].',
       attachments: [],
+      terminalReplay: [
+        { kind: 'text', text: 'Compare ' },
+        { kind: 'image', path: 'Q:/repo/.midterm/uploads/one.png', mimeType: 'image/png' },
+        { kind: 'text', text: ' with ' },
+        { kind: 'image', path: 'Q:/repo/.midterm/uploads/two.png', mimeType: 'image/png' },
+        { kind: 'text', text: '.' },
+      ],
     });
   });
 
@@ -160,7 +164,6 @@ describe('smartInputOutboundReferences', () => {
             previewUrl: null,
           },
         ],
-        target: 'lens',
         uploadFailureMessage: 'upload failed',
         attachmentReadFailureMessage: 'read failed',
         uploadFile: vi.fn(),
@@ -173,5 +176,55 @@ describe('smartInputOutboundReferences', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('replays inline text references as pasted text content in terminal mode', async () => {
+    const { prepareSmartInputTerminalTurn } = await import('./smartInputOutboundReferences');
+
+    const result = await prepareSmartInputTerminalTurn({
+      sessionId: 's1',
+      draft: {
+        nextOrdinalByKind: { text: 2 },
+        parts: [
+          { kind: 'text', text: 'Before ' },
+          { kind: 'reference', referenceId: 'txt-1' },
+          { kind: 'text', text: ' after' },
+        ],
+      },
+      attachments: [
+        {
+          id: 'txt-1',
+          kind: 'file',
+          file: new File(['alpha\nbeta'], 'pasted-text.txt', { type: 'text/plain' }),
+          uploadedPath: 'Q:/repo/.midterm/uploads/pasted-text.txt',
+          displayName: 'pasted-text.txt',
+          mimeType: 'text/plain',
+          referenceCharCount: 10,
+          referenceKind: 'text',
+          referenceLabel: 'Text 1',
+          referenceLineCount: 2,
+          referenceOrdinal: 1,
+          sizeBytes: 10,
+          previewUrl: null,
+        },
+      ],
+      bracketedPasteModeEnabled: true,
+      uploadFailureMessage: 'upload failed',
+      uploadFile: vi.fn(),
+    });
+
+    expect(result).toEqual({
+      text: 'Before [Text 1] after',
+      attachments: [],
+      terminalReplay: [
+        { kind: 'text', text: 'Before ' },
+        {
+          kind: 'textFile',
+          path: 'Q:/repo/.midterm/uploads/pasted-text.txt',
+          useBracketedPaste: true,
+        },
+        { kind: 'text', text: ' after' },
+      ],
+    });
   });
 });

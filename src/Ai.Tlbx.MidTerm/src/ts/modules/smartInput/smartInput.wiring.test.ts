@@ -129,7 +129,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
     expect(source).toContain('shouldConvertPastedTextToSmartInputReference');
     expect(source).toContain('addLensComposerTextReference');
-    expect(source).toContain("target: 'terminal'");
+    expect(source).toContain('prepareSmartInputTerminalTurn');
     expect(source).toContain('void openLensDraftAttachment(currentSessionId, attachment);');
     expect(source).toContain('enqueueCommandBayTurn');
     expect(source).not.toContain('await handleFileDrop(files);');
@@ -235,7 +235,8 @@ describe('smart input tab wiring', () => {
   });
 
   it('routes command-bay sends through the backend-owned queue instead of direct terminal submission', () => {
-    expect(source).toContain('await enqueueCommandBayTurn(sessionId, {');
+    expect(source).toContain('prepareSmartInputTerminalTurn');
+    expect(source).toContain('await enqueueCommandBayTurn(sessionId, request);');
     expect(source).toContain('submitQueuedTurn: enqueueCommandBayTurn,');
   });
 

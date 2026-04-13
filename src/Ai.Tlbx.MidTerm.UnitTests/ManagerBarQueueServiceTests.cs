@@ -61,7 +61,22 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             var entry = initial.EnqueuePrompt("session-1", new LensTurnRequest
             {
                 Text = "Summarize the diff.",
-                Attachments = []
+                Attachments = [],
+                TerminalReplay =
+                [
+                    new LensTerminalReplayStep
+                    {
+                        Kind = "text",
+                        Text = "Summarize ",
+                        UseBracketedPaste = true
+                    },
+                    new LensTerminalReplayStep
+                    {
+                        Kind = "image",
+                        Path = "Q:/repo/.midterm/uploads/image.png",
+                        MimeType = "image/png"
+                    }
+                ]
             });
 
             Assert.NotNull(entry);
@@ -72,6 +87,11 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         var snapshot = Assert.Single(restarted.GetSnapshot(["session-1"]));
         Assert.Equal("prompt", snapshot.Kind);
         Assert.Equal("Summarize the diff.", snapshot.Turn?.Text);
+        Assert.NotNull(snapshot.Turn);
+        Assert.Equal(2, snapshot.Turn!.TerminalReplay.Count);
+        Assert.True(snapshot.Turn.TerminalReplay[0].UseBracketedPaste);
+        Assert.Equal("image", snapshot.Turn.TerminalReplay[1].Kind);
+        Assert.Equal("Q:/repo/.midterm/uploads/image.png", snapshot.Turn.TerminalReplay[1].Path);
         Assert.Null(snapshot.Action);
         Assert.Equal("pendingCooldown", snapshot.Phase);
     }
@@ -439,6 +459,16 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
                 Effort = request.Effort,
                 PlanMode = request.PlanMode,
                 PermissionMode = request.PermissionMode,
+                TerminalReplay = request.TerminalReplay
+                    .Select(static step => new LensTerminalReplayStep
+                    {
+                        Kind = step.Kind,
+                        Text = step.Text,
+                        Path = step.Path,
+                        MimeType = step.MimeType,
+                        UseBracketedPaste = step.UseBracketedPaste
+                    })
+                    .ToList(),
                 Attachments = request.Attachments
                     .Select(static attachment => new LensAttachmentReference
                     {

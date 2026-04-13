@@ -1,6 +1,7 @@
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Services;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -23,17 +24,20 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
     private readonly SessionHeatService _sessionHeat;
     private readonly SessionTelemetryService _sessionTelemetry;
     private readonly SessionLensRuntimeService _lensRuntime;
+    private readonly ClipboardService _clipboardService;
 
     public ManagerBarQueueRuntime(
         TtyHostSessionManager sessionManager,
         SessionHeatService sessionHeat,
         SessionTelemetryService sessionTelemetry,
-        SessionLensRuntimeService lensRuntime)
+        SessionLensRuntimeService lensRuntime,
+        ClipboardService clipboardService)
     {
         _sessionManager = sessionManager;
         _sessionHeat = sessionHeat;
         _sessionTelemetry = sessionTelemetry;
         _lensRuntime = lensRuntime;
+        _clipboardService = clipboardService;
     }
 
     public IReadOnlyCollection<string> GetActiveSessionIds()
@@ -134,6 +138,23 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
 
         if (!UsesTurnQueue(sessionId))
         {
+            if (request.TerminalReplay is { Count: > 0 })
+            {
+                var session = _sessionManager.GetSession(sessionId);
+                if (session is null)
+                {
+                    return;
+                }
+
+                await TerminalReplayExecutor.ExecuteAsync(
+                    request.TerminalReplay,
+                    (data, ct) => SendInputAndRecordAsync(sessionId, data, ct),
+                    (path, mimeType, ct) => TryPasteTerminalReplayImageAsync(sessionId, session, path, mimeType, ct),
+                    static (delayMs, ct) => Task.Delay(delayMs, ct),
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Text))
             {
                 await SendPromptAsync(sessionId, request.Text, cancellationToken).ConfigureAwait(false);
@@ -143,5 +164,38 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
         }
 
         await _lensRuntime.StartTurnAsync(sessionId, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendInputAndRecordAsync(
+        string sessionId,
+        byte[] data,
+        CancellationToken cancellationToken)
+    {
+        _sessionTelemetry.RecordInput(sessionId, data.Length);
+        await _sessionManager.SendInputAsync(sessionId, data, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryPasteTerminalReplayImageAsync(
+        string sessionId,
+        SessionInfo session,
+        string path,
+        string? mimeType,
+        CancellationToken cancellationToken)
+    {
+        var success = await SessionApiEndpoints.TrySetClipboardImageAsync(
+            token => _sessionManager.SetClipboardImageAsync(sessionId, path, mimeType, token),
+            _ => _clipboardService.SetImageAsync(
+                path,
+                mimeType,
+                SessionApiEndpoints.GetPreferredClipboardProcessId(session)),
+            cancellationToken).ConfigureAwait(false);
+
+        if (!success)
+        {
+            return false;
+        }
+
+        await SendInputAndRecordAsync(sessionId, [0x1b, 0x76], cancellationToken).ConfigureAwait(false);
+        return true;
     }
 }

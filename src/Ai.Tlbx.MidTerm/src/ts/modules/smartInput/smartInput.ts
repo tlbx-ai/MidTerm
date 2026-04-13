@@ -16,6 +16,7 @@ import {
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
+import { isBracketedPasteEnabled } from '../comms';
 import {
   createLensTurnRequest,
   handleLensEscape,
@@ -45,7 +46,7 @@ import {
   releaseLensComposerDraftAttachmentPreviews,
 } from './lensAttachments';
 import { submitLensComposerDraft } from './lensAttachmentSubmission';
-import { prepareSmartInputOutboundPrompt } from './smartInputOutboundReferences';
+import { prepareSmartInputTerminalTurn } from './smartInputOutboundReferences';
 import { startHistoryion, stopHistoryion } from './transcription';
 import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
@@ -1851,6 +1852,30 @@ function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElemen
   ta.focus();
 }
 
+async function sendTerminalComposerTurn(
+  sessionId: string,
+  ta: HTMLTextAreaElement,
+  draft: SmartInputComposerDraft,
+  attachments: readonly LensComposerDraftAttachment[],
+): Promise<boolean> {
+  const request = await prepareSmartInputTerminalTurn({
+    sessionId,
+    draft,
+    attachments,
+    bracketedPasteModeEnabled: isBracketedPasteEnabled(sessionId),
+    uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
+    uploadFile,
+  });
+  if (!request.text && (request.terminalReplay?.length ?? 0) === 0) {
+    return false;
+  }
+
+  await enqueueCommandBayTurn(sessionId, request);
+  pushCurrentPromptToHistory(sessionId);
+  clearSubmittedSmartInputState(sessionId, ta);
+  return true;
+}
+
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
@@ -1866,25 +1891,7 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
 
   if (!isLensActiveSession(sessionId)) {
     try {
-      const prepared = await prepareSmartInputOutboundPrompt({
-        sessionId,
-        draft,
-        attachments: lensAttachments,
-        target: 'terminal',
-        uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
-        attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
-        uploadFile,
-      });
-      if (!prepared.text) {
-        return;
-      }
-
-      await enqueueCommandBayTurn(sessionId, {
-        text: prepared.text,
-        attachments: [],
-      });
-      pushCurrentPromptToHistory(sessionId);
-      clearSubmittedSmartInputState(sessionId, ta);
+      await sendTerminalComposerTurn(sessionId, ta, draft, lensAttachments);
     } catch (error) {
       showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
     }
