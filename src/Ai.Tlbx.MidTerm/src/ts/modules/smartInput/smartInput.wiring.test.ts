@@ -143,6 +143,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-attachments {');
     expect(css).toContain('.smart-input-attachment-chip {');
     expect(css).toContain('.smart-input-attachment-open {');
+    expect(viewSource).toContain("textarea.addEventListener('pointerdown', () => {");
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
