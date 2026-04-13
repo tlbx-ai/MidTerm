@@ -10980,6 +10980,9 @@ body.shared-session-mode .session-tab-bar {
 
 .manager-action-prompt-input {
   min-height: 176px;
+  font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
+  font-size: var(--terminal-font-size, 16px);
+  line-height: calc(var(--terminal-font-size, 16px) * 1.375);
 }
 
 .manager-action-prompt-row-chain .manager-action-prompt-input {
