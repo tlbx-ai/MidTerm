@@ -66,6 +66,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('showAutomation');
     expect(source).toContain('showStatus');
     expect(source).toContain('syncFooterRailOrder(layoutState);');
+    expect(layoutSource).toContain("return ['primary', 'status', 'context', 'automation'];");
     expect(layoutSource).toContain("return ['primary', 'context', 'automation', 'status'];");
     expect(layoutSource).not.toContain("return ['primary', 'automation', 'context', 'status'];");
   });
@@ -94,7 +95,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('createTerminalTouchToggleButton({');
     expect(source).toContain('function setTouchKeysExpanded(expanded: boolean): void {');
     expect(source).toContain('closeTouchControllerPopup();');
-    expect(source).toContain('footerContextHost.appendChild(keysToggle);');
+    expect(source).toContain('footerContextHost.appendChild(touchControllerEl);');
     expect(viewSource).toContain(
       "keysToggle.className = 'adaptive-footer-context-toggle adaptive-footer-status-toggle';",
     );
@@ -105,6 +106,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       ".adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {",
     );
+    expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain('.adaptive-footer-context-toggle {');
     expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
@@ -235,6 +237,7 @@ describe('smart input tab wiring', () => {
 
   it('advertises prompt history restoration from the empty Automation Bar composer', () => {
     expect(viewSource).toContain("textarea.placeholder = t('smartInput.placeholder');");
+    expect(source).toContain("layoutState.isMobile ? 'smartInput.placeholderMobile' : 'smartInput.placeholder'");
     expect(source).toContain('pushCurrentPromptToHistory(sessionId);');
     expect(source).toContain('sessionPromptHistoryNavigation');
   });
@@ -270,6 +273,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('function renderMobileTerminalStatusRow(');
     expect(source).toContain("leftCluster.className = 'adaptive-footer-status-left';");
     expect(source).toContain("rightCluster.className = 'adaptive-footer-status-right';");
+    expect(source).toContain('expanded: layoutState.touchControlsExpanded,');
+    expect(source).toContain('setTouchKeysExpanded(!layoutState.touchControlsExpanded);');
     expect(source).toContain('createAutomationOverflowProxy()');
     expect(source).toContain('createAutomationAddProxy()');
     expect(source).toContain('setAutomationOverflowProxyAnchor(overflowProxy)');

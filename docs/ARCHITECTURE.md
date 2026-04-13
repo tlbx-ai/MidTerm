@@ -203,6 +203,7 @@ It exists because MidTerm no longer treats those pieces as unrelated bars stacke
 - explicit Lens queue draining is turn-gated: one queued item may dispatch only after the current provider turn has settled back to the user
 - the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal, including the collapsed special-keys toggle when the full key row is hidden
 - the status rail hosts Lens model / effort / plan / permission awareness or other compact terminal state pills without forcing a dedicated extra row just to reopen special keys
+- mobile Terminal keeps the compact status rail above the expanded special-keys grid so the keys toggle and automation proxies stay on the same header row while the key grid opens beneath them
 - Lens always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode
 - Lens keeps model / effort / plan awareness visible at all times even when the editable controls collapse on mobile
 - desktop Terminal assumes a hardware keyboard and therefore does not surface cursor-key buttons in the Command Bay

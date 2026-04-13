@@ -763,6 +763,7 @@
   "smartInput.autoSendOnHint": "L’envoi automatique est activé pour la saisie transcrite",
   "smartInput.mic": "Maintenir pour parler",
   "smartInput.placeholder": "Tapez ici... (ou appuyez sur Flèche haut pour restaurer vos derniers prompts)",
+  "smartInput.placeholderMobile": "Tapez ici...",
   "smartInput.send": "Envoyer",
   "smartInput.sendGestureHint": "Envoyer. Double-cliquez ou appuyez longuement pour basculer l’envoi automatique",
   "smartInput.resume": "Reprendre",

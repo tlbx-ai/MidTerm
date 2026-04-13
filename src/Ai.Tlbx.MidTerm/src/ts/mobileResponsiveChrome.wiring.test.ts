@@ -47,11 +47,12 @@ describe('mobile responsive chrome wiring', () => {
     expect(css).toContain(
       ".adaptive-footer-dock[data-device='mobile'] .manager-bar {",
     );
-    expect(css).toContain('--command-bay-control-height-mobile: 40px;');
+    expect(css).toContain('--command-bay-control-height-mobile: 44px;');
     expect(css).toContain('--command-bay-control-height: var(--command-bay-control-height-mobile);');
     expect(css).toContain('min-height: 46px;');
     expect(css).toContain('grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));');
     expect(css).toContain('.adaptive-footer-context .smart-input-tools-strip {');
+    expect(css).toContain("bottom: calc(100% + var(--command-bay-gap));");
     expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {");
     expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {");
     expect(css).toContain('position: sticky;');

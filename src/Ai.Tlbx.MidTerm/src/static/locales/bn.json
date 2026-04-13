@@ -763,6 +763,7 @@
   "smartInput.autoSendOnHint": "Transcribed input-এর জন্য auto-send enabled আছে",
   "smartInput.mic": "কথা বলতে ধরে রাখুন",
   "smartInput.placeholder": "এখানে টাইপ করুন... (অথবা আগের প্রম্পটগুলো ফিরিয়ে আনতে উপরের অ্যারো চাপুন)",
+  "smartInput.placeholderMobile": "এখানে টাইপ করুন...",
   "smartInput.send": "Send",
   "smartInput.sendGestureHint": "Send. Auto-send toggle করতে double-click বা long-press করুন",
   "smartInput.resume": "Resume",

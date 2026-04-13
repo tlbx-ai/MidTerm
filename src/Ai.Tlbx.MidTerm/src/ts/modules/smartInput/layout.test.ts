@@ -6,7 +6,7 @@ import {
 } from './layout';
 
 describe('smart input adaptive footer layout helpers', () => {
-  it('keeps the footer rail order identical across Lens and terminal sessions', () => {
+  it('keeps mobile terminal status controls above the expanded keys rail without changing Lens order', () => {
     expect(getAdaptiveFooterRailSequence({ lensActive: true, isMobile: true })).toEqual([
       'primary',
       'context',
@@ -15,9 +15,9 @@ describe('smart input adaptive footer layout helpers', () => {
     ]);
     expect(getAdaptiveFooterRailSequence({ lensActive: false, isMobile: true })).toEqual([
       'primary',
+      'status',
       'context',
       'automation',
-      'status',
     ]);
     expect(getAdaptiveFooterRailSequence({ lensActive: true, isMobile: false })).toEqual([
       'primary',

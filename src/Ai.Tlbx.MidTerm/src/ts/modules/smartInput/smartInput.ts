@@ -1323,6 +1323,9 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
 
   activeTextarea = dockedBar.querySelector('.smart-input-textarea');
   if (activeTextarea) {
+    activeTextarea.placeholder = t(
+      layoutState.isMobile ? 'smartInput.placeholderMobile' : 'smartInput.placeholder',
+    );
     applyDraftToTextarea(activeTextarea, layoutState.activeSessionId ?? null);
   }
 
@@ -1352,24 +1355,12 @@ function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   if (layoutState.showContext && layoutState.touchControlsAvailable) {
-    const keysToggle = createTerminalTouchToggleButton({
-      expanded: keysExpanded,
-      onToggle: () => {
-        setTouchKeysExpanded(!keysExpanded);
-      },
-    });
-
     if (keysExpanded && touchControllerEl) {
       touchControllerEl.classList.add('embedded', 'visible');
-      footerContextHost.appendChild(keysToggle);
       footerContextHost.appendChild(touchControllerEl);
       footerContextHost.hidden = false;
       return;
     }
-
-    footerContextHost.appendChild(keysToggle);
-    footerContextHost.hidden = false;
-    return;
   }
 
   touchControllerEl?.classList.remove('visible');
@@ -1457,11 +1448,11 @@ function renderMobileTerminalStatusRow(layoutState: AdaptiveFooterLayoutState): 
     leftCluster.appendChild(autoSendPill);
   }
 
-  if (layoutState.touchControlsAvailable && !layoutState.touchControlsExpanded) {
+  if (layoutState.touchControlsAvailable) {
     const keysToggle = createTerminalTouchToggleButton({
-      expanded: false,
+      expanded: layoutState.touchControlsExpanded,
       onToggle: () => {
-        setTouchKeysExpanded(true);
+        setTouchKeysExpanded(!layoutState.touchControlsExpanded);
       },
     });
     leftCluster.appendChild(keysToggle);
