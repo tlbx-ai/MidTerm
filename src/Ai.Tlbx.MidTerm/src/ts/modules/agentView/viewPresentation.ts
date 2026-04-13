@@ -1,4 +1,5 @@
 import { normalizeLensProvider, resolveLensLayoutMode } from './activationHelpers';
+import { setHistoryScrollMode } from './historyViewport';
 import type { SessionLensViewState } from './types';
 
 export function syncAgentViewPresentation(
@@ -10,7 +11,7 @@ export function syncAgentViewPresentation(
 }
 
 export function prepareLensForForeground(state: SessionLensViewState): void {
-  state.historyAutoScrollPinned = true;
+  setHistoryScrollMode(state, 'follow');
   state.historyLastScrollMetrics = null;
   state.historyLastUserScrollIntentAt = 0;
   state.pendingHistoryPrependAnchor = null;

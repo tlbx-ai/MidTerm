@@ -334,6 +334,7 @@ public sealed class LensHistoryWindowRequest
 {
     public int? StartIndex { get; set; }
     public int? Count { get; set; }
+    public string? WindowRevision { get; set; }
 }
 
 public sealed class LensWsRequestMessage
@@ -381,6 +382,7 @@ public sealed class LensWsHistoryWindowMessage
     public string Type { get; set; } = "history.window";
     public string? Id { get; set; }
     public string SessionId { get; set; } = string.Empty;
+    public string? WindowRevision { get; set; }
     public LensHistoryWindowResponse HistoryWindow { get; set; } = new();
 }
 
@@ -535,7 +537,6 @@ public sealed class LensHostHistoryPatchEnvelope
 public partial class LensHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

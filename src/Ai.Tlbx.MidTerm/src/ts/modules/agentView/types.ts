@@ -22,9 +22,11 @@ export interface SessionLensViewState {
   requestBusyIds: Set<string>;
   requestDraftAnswersById: Record<string, Record<string, string[]>>;
   requestQuestionIndexById: Record<string, number>;
+  historyScrollMode: HistoryScrollMode;
   historyAutoScrollPinned: boolean;
   historyLastScrollMetrics: HistoryScrollMetrics | null;
   historyLastUserScrollIntentAt: number;
+  historyWindowRevision: string | null;
   historyRenderScheduled: number | null;
   activationState:
     | 'idle'
@@ -65,6 +67,8 @@ export interface LensRuntimeStatsSummary {
   primaryRateLimitUsedPercent: number | null;
   secondaryRateLimitUsedPercent: number | null;
 }
+
+export type HistoryScrollMode = 'follow' | 'browse' | 'restore-anchor';
 
 export interface PendingLensTurn {
   optimisticId: string;
@@ -189,6 +193,7 @@ export interface HistoryRenderPlan {
   topSpacerPx: number;
   bottomSpacerPx: number;
   visibleEntries: HistoryVisibleEntry[];
+  deferVirtualization: boolean;
 }
 
 export interface HistoryRenderedNode {
@@ -201,6 +206,7 @@ export interface HistoryRenderedNode {
 export interface HistoryViewportAnchor {
   entryId: string;
   topOffsetPx: number;
+  absoluteIndex: number;
 }
 
 export interface HistoryBodyPresentation {

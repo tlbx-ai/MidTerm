@@ -54,6 +54,7 @@ type LensSessionSubscription = {
   historyWindow?: {
     startIndex?: number;
     count?: number;
+    windowRevision?: string;
   };
   listeners: Set<LensSubscriptionCallbacks>;
 };
@@ -65,6 +66,7 @@ type LensServerMessage =
       type: 'history.window';
       id?: string;
       sessionId: string;
+      windowRevision?: string | null;
       historyWindow: LensHistoryWindowResponse;
     }
   | { type: 'history.patch'; sessionId: string; patch: LensHistoryPatch }
@@ -98,14 +100,16 @@ function createRequestId(): string {
 function buildHistoryWindow(
   startIndex: number | undefined,
   count: number | undefined,
+  windowRevision: string | undefined,
 ): LensSessionSubscription['historyWindow'] | undefined {
-  if (startIndex === undefined && count === undefined) {
+  if (startIndex === undefined && count === undefined && !windowRevision) {
     return undefined;
   }
 
   return {
     ...(startIndex === undefined ? {} : { startIndex }),
     ...(count === undefined ? {} : { count }),
+    ...(windowRevision ? { windowRevision } : {}),
   };
 }
 
@@ -113,7 +117,21 @@ function historyWindowsEqual(
   left: LensSessionSubscription['historyWindow'] | undefined,
   right: LensSessionSubscription['historyWindow'] | undefined,
 ): boolean {
-  return left?.startIndex === right?.startIndex && left?.count === right?.count;
+  return (
+    left?.startIndex === right?.startIndex &&
+    left?.count === right?.count &&
+    left?.windowRevision === right?.windowRevision
+  );
+}
+
+function normalizeHistoryWindowResponse(
+  historyWindow: LensHistoryWindowResponse,
+  windowRevision: string | null | undefined,
+): LensHistorySnapshot {
+  return {
+    ...historyWindow,
+    windowRevision: windowRevision ?? null,
+  };
 }
 
 function rejectAllPending(error: Error): void {
@@ -177,13 +195,24 @@ function handleHistoryWindowMessage(
       subscription.afterSequence,
       message.historyWindow.latestSequence,
     );
+    if (
+      subscription.historyWindow?.windowRevision &&
+      message.windowRevision &&
+      subscription.historyWindow.windowRevision !== message.windowRevision
+    ) {
+      return;
+    }
     for (const listener of subscription.listeners) {
-      listener.onHistoryWindow?.(message.historyWindow);
+      listener.onHistoryWindow?.(
+        normalizeHistoryWindowResponse(message.historyWindow, message.windowRevision),
+      );
     }
     return;
   }
 
-  resolvePendingRequest(message.id, 'historyWindow')?.resolve(message.historyWindow);
+  resolvePendingRequest(message.id, 'historyWindow')?.resolve(
+    normalizeHistoryWindowResponse(message.historyWindow, message.windowRevision),
+  );
 }
 
 function handleSubscriptionSequenceUpdate(
@@ -331,6 +360,7 @@ async function requestHistoryWindow(
   sessionId: string,
   startIndex?: number,
   count?: number,
+  windowRevision?: string,
 ): Promise<LensHistorySnapshot> {
   await ensureConnected();
   const id = createRequestId();
@@ -348,6 +378,7 @@ async function requestHistoryWindow(
         : {
             ...(startIndex === undefined ? {} : { startIndex }),
             ...(count === undefined ? {} : { count }),
+            ...(windowRevision ? { windowRevision } : {}),
           },
   });
   return request;
@@ -405,8 +436,9 @@ export async function getLensHistoryWindowWs(
   sessionId: string,
   startIndex?: number,
   count?: number,
+  windowRevision?: string,
 ): Promise<LensHistorySnapshot> {
-  return requestHistoryWindow(sessionId, startIndex, count);
+  return requestHistoryWindow(sessionId, startIndex, count, windowRevision);
 }
 
 export async function submitLensTurnWs(
@@ -457,6 +489,7 @@ export function openLensHistorySocket(
   afterSequence: number,
   startIndex: number | undefined,
   count: number | undefined,
+  windowRevision: string | undefined,
   callbacks: LensSubscriptionCallbacks,
 ): () => void {
   let subscription = subscriptions.get(sessionId);
@@ -467,7 +500,7 @@ export function openLensHistorySocket(
     };
   }
   subscription.afterSequence = Math.max(subscription.afterSequence, afterSequence);
-  const nextHistoryWindow = buildHistoryWindow(startIndex, count);
+  const nextHistoryWindow = buildHistoryWindow(startIndex, count, windowRevision);
   if (nextHistoryWindow) {
     subscription.historyWindow = nextHistoryWindow;
   }
@@ -521,13 +554,14 @@ export function updateLensHistorySocketWindow(
   sessionId: string,
   startIndex: number | undefined,
   count: number | undefined,
+  windowRevision: string | undefined,
 ): void {
   const subscription = subscriptions.get(sessionId);
   if (!subscription) {
     return;
   }
 
-  const nextHistoryWindow = buildHistoryWindow(startIndex, count);
+  const nextHistoryWindow = buildHistoryWindow(startIndex, count, windowRevision);
   if (historyWindowsEqual(subscription.historyWindow, nextHistoryWindow)) {
     return;
   }

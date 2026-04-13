@@ -2,8 +2,10 @@ import { estimateHistoryEntryHeight } from './historyContent';
 import type {
   HistoryIndexRange,
   HistoryScrollMetrics,
+  HistoryScrollMode,
   HistoryVirtualWindow,
   LensHistoryEntry,
+  SessionLensViewState,
 } from './types';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
@@ -37,12 +39,17 @@ export function isScrollContainerNearBottom(position: {
   return scrollHeight - clientHeight - scrollTop <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
 }
 
-export function resolveHistoryAutoScrollPinned(args: {
-  wasPinned: boolean;
+export function resolveHistoryScrollMode(args: {
+  previousMode: HistoryScrollMode;
   previous: HistoryScrollMetrics | null;
   current: HistoryScrollMetrics;
   userInitiated: boolean;
-}): boolean {
+  pendingAnchorRestore: boolean;
+}): HistoryScrollMode {
+  if (args.pendingAnchorRestore) {
+    return 'restore-anchor';
+  }
+
   const nearBottom = isScrollContainerNearBottom(args.current);
   const userScrolledUp =
     args.previous !== null &&
@@ -52,17 +59,30 @@ export function resolveHistoryAutoScrollPinned(args: {
 
   if (args.userInitiated) {
     if (userScrolledUp) {
-      return false;
+      return 'browse';
     }
 
-    return nearBottom;
+    return nearBottom ? 'follow' : 'browse';
   }
 
-  if (args.wasPinned) {
-    return true;
+  if (args.previousMode === 'follow') {
+    return 'follow';
   }
 
-  return nearBottom;
+  return nearBottom ? 'follow' : 'browse';
+}
+
+export function isHistoryScrollModePinned(mode: HistoryScrollMode): boolean {
+  return mode === 'follow';
+}
+
+export function setHistoryScrollMode(
+  state: SessionLensViewState,
+  mode: HistoryScrollMode,
+): HistoryScrollMode {
+  state.historyScrollMode = mode;
+  state.historyAutoScrollPinned = isHistoryScrollModePinned(mode);
+  return mode;
 }
 
 /**

@@ -126,7 +126,8 @@ public sealed class LensWebSocketHandler
                 : new LensHistoryWindowRequest
                 {
                     StartIndex = historyWindow.StartIndex,
-                    Count = historyWindow.Count
+                    Count = historyWindow.Count,
+                    WindowRevision = historyWindow.WindowRevision
                 };
 
             var currentHistoryWindow = await _lensRuntime.GetHistoryWindowAsync(
@@ -168,6 +169,7 @@ public sealed class LensWebSocketHandler
                     new LensWsHistoryWindowMessage
                     {
                         SessionId = sessionId,
+                        WindowRevision = requestedWindow?.WindowRevision,
                         HistoryWindow = currentHistoryWindow
                     },
                     AppJsonContext.Default.LensWsHistoryWindowMessage).ConfigureAwait(false);
@@ -370,6 +372,7 @@ public sealed class LensWebSocketHandler
                         {
                             Id = request.Id,
                             SessionId = request.SessionId,
+                            WindowRevision = request.HistoryWindow?.WindowRevision,
                             HistoryWindow = historyWindow
                         },
                         AppJsonContext.Default.LensWsHistoryWindowMessage).ConfigureAwait(false);

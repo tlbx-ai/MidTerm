@@ -6,6 +6,7 @@ import {
   computeHistoryVisibleRange,
   computeHistoryVirtualWindow,
   HISTORY_VIRTUALIZE_AFTER,
+  setHistoryScrollMode,
 } from './historyViewport';
 import { traceRenderedLensHistoryWindow } from './historyTrace';
 import type { LensHistoryRequestSummary, LensHistorySnapshot } from '../../api/client';
@@ -13,6 +14,7 @@ import type {
   ArtifactClusterInfo,
   HistoryRenderPlan,
   HistoryScrollMetrics,
+  HistoryViewportAnchor,
   HistoryViewportMetrics,
   HistoryVisibleEntry,
   LensHistoryEntry,
@@ -140,6 +142,76 @@ function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: n
   return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
 }
 
+function resolveHistoryMeasurementWidthBucket(clientWidth: number): number {
+  return Math.max(240, Math.round(clientWidth / 40) * 40);
+}
+
+function buildVisibleHistoryEntries(args: {
+  entries: readonly LensHistoryEntry[];
+  visibleStart: number;
+  visibleEnd: number;
+  state: SessionLensViewState | undefined;
+  resolveCluster: (
+    entries: readonly LensHistoryEntry[],
+    absoluteIndex: number,
+  ) => ArtifactClusterInfo | null;
+  buildSignature: (
+    entry: LensHistoryEntry,
+    cluster: ArtifactClusterInfo | null,
+    state: SessionLensViewState | undefined,
+  ) => string;
+}): HistoryVisibleEntry[] {
+  const { entries, visibleStart, visibleEnd, state, resolveCluster, buildSignature } = args;
+  return entries.slice(visibleStart, visibleEnd).map((entry, visibleIndex) => {
+    const absoluteIndex = visibleStart + visibleIndex;
+    const cluster = resolveCluster(entries, absoluteIndex);
+    return {
+      key: entry.id,
+      entry,
+      cluster,
+      signature: buildSignature(entry, cluster, state),
+    };
+  });
+}
+
+function resolveAnchorAbsoluteIndex(state: SessionLensViewState, entryId: string): number {
+  const relativeIndex = state.historyEntries.findIndex((entry) => entry.id === entryId);
+  const historyWindowStart = state.snapshot?.historyWindowStart ?? 0;
+  return relativeIndex >= 0 ? historyWindowStart + relativeIndex : historyWindowStart;
+}
+
+function buildHistoryAttachmentToken(entry: LensHistoryEntry): string {
+  return (entry.attachments ?? [])
+    .map((attachment) =>
+      [attachment.kind, attachment.displayName, attachment.path, attachment.mimeType ?? ''].join(
+        ':',
+      ),
+    )
+    .join('|');
+}
+
+function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {
+  return cluster
+    ? [cluster.position, cluster.label ?? '', cluster.count, cluster.onlyTools ? '1' : '0'].join(
+        ':',
+      )
+    : '';
+}
+
+function buildAssistantPreviewToken(
+  entry: LensHistoryEntry,
+  state: SessionLensViewState | undefined,
+): string {
+  void state;
+  return (entry.imagePreviews ?? []).map((preview) => preview.resolvedPath).join('|');
+}
+
+function buildHistoryActionToken(entry: LensHistoryEntry): string {
+  return (entry.actions ?? [])
+    .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
+    .join('|');
+}
+
 function readHistoryViewportMetrics(container: HTMLDivElement): HistoryViewportMetrics {
   return {
     scrollTop: container.scrollTop,
@@ -220,6 +292,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         topSpacerPx: 0,
         bottomSpacerPx: 0,
         visibleEntries: [],
+        deferVirtualization: false,
       };
     }
 
@@ -238,29 +311,29 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       windowMetrics.clientWidth,
       resolveEntryHeight,
     );
+    const deferVirtualization = state?.pendingHistoryPrependAnchor !== null;
+    const visibleStart = deferVirtualization ? 0 : virtualWindow.start;
+    const visibleEnd = deferVirtualization ? entries.length : virtualWindow.end;
 
     return {
       emptyStateText: null,
-      virtualWindowKey: buildHistoryVirtualWindowKey(virtualWindow),
-      topSpacerPx: windowMetrics.offWindowTopSpacerPx + virtualWindow.topSpacerPx,
-      bottomSpacerPx: windowMetrics.offWindowBottomSpacerPx + virtualWindow.bottomSpacerPx,
-      visibleEntries: entries
-        .slice(virtualWindow.start, virtualWindow.end)
-        .map((entry, visibleIndex) => {
-          const absoluteIndex = virtualWindow.start + visibleIndex;
-          const cluster = resolveArtifactCluster(entries, absoluteIndex);
-          return {
-            key: entry.id,
-            entry,
-            cluster,
-            signature: buildHistoryEntrySignature(entry, cluster, state),
-          };
-        }),
+      virtualWindowKey: deferVirtualization ? null : buildHistoryVirtualWindowKey(virtualWindow),
+      topSpacerPx: deferVirtualization
+        ? windowMetrics.offWindowTopSpacerPx
+        : windowMetrics.offWindowTopSpacerPx + virtualWindow.topSpacerPx,
+      bottomSpacerPx: deferVirtualization
+        ? windowMetrics.offWindowBottomSpacerPx
+        : windowMetrics.offWindowBottomSpacerPx + virtualWindow.bottomSpacerPx,
+      visibleEntries: buildVisibleHistoryEntries({
+        entries,
+        visibleStart,
+        visibleEnd,
+        state,
+        resolveCluster: resolveArtifactCluster,
+        buildSignature: buildHistoryEntrySignature,
+      }),
+      deferVirtualization,
     };
-  }
-
-  function resolveHistoryMeasurementWidthBucket(clientWidth: number): number {
-    return Math.max(240, Math.round(clientWidth / 40) * 40);
   }
 
   function resolveHistoryViewportEntryHeight(
@@ -303,6 +376,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     } else if (state && scrollAdjusted) {
       state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
       renderScrollToBottomControl(panel, state);
+      if (entries.length > HISTORY_VIRTUALIZE_AFTER) {
+        deps.scheduleHistoryRender(sessionId);
+      }
     }
 
     if (measurementChanged && entries.length > HISTORY_VIRTUALIZE_AFTER) {
@@ -329,7 +405,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    current.historyAutoScrollPinned = true;
+    setHistoryScrollMode(current, 'follow');
     current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
     renderScrollToBottomControl(panel, current);
   }
@@ -361,38 +437,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       resolveHistoryEntryBusyToken(entry, state),
       buildHistoryRequestToken(entry, state),
     ].join('||');
-  }
-
-  function buildHistoryAttachmentToken(entry: LensHistoryEntry): string {
-    return (entry.attachments ?? [])
-      .map((attachment) =>
-        [attachment.kind, attachment.displayName, attachment.path, attachment.mimeType ?? ''].join(
-          ':',
-        ),
-      )
-      .join('|');
-  }
-
-  function buildAssistantPreviewToken(
-    entry: LensHistoryEntry,
-    state: SessionLensViewState | undefined,
-  ): string {
-    void state;
-    return (entry.imagePreviews ?? []).map((preview) => preview.resolvedPath).join('|');
-  }
-
-  function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {
-    return cluster
-      ? [cluster.position, cluster.label ?? '', cluster.count, cluster.onlyTools ? '1' : '0'].join(
-          ':',
-        )
-      : '';
-  }
-
-  function buildHistoryActionToken(entry: LensHistoryEntry): string {
-    return (entry.actions ?? [])
-      .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
-      .join('|');
   }
 
   function resolveHistoryEntryBusyToken(
@@ -577,6 +621,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const viewportRect = viewport.getBoundingClientRect();
     const anchorRect = anchorNode.getBoundingClientRect();
     state.pendingHistoryPrependAnchor = null;
+    setHistoryScrollMode(state, 'browse');
     return syncViewportScrollPosition(
       viewport,
       viewport.scrollTop + (anchorRect.top - viewportRect.top - anchor.topOffsetPx),
@@ -591,7 +636,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const viewportRect = viewport.getBoundingClientRect();
-    let bestAnchor: { entryId: string; topOffsetPx: number } | null = null;
+    let bestAnchor: HistoryViewportAnchor | null = null;
     for (const [entryId, rendered] of state.historyRenderedNodes) {
       if (typeof rendered.node.getBoundingClientRect !== 'function') {
         continue;
@@ -604,7 +649,11 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
       const topOffsetPx = nodeRect.top - viewportRect.top;
       if (!bestAnchor || topOffsetPx < bestAnchor.topOffsetPx) {
-        bestAnchor = { entryId, topOffsetPx };
+        bestAnchor = {
+          entryId,
+          topOffsetPx,
+          absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+        };
       }
     }
 
@@ -704,7 +753,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    state.historyAutoScrollPinned = true;
+    setHistoryScrollMode(state, 'follow');
     state.historyLastUserScrollIntentAt = 0;
     viewport.scrollTo({
       top: viewport.scrollHeight,
@@ -742,6 +791,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     options: {
       minimumMarginItems: number;
       maximumMarginItems: number;
+      anchorAbsoluteIndex?: number | null;
     },
   ): { startIndex: number; count: number } | null {
     const viewport = state.historyViewport;
@@ -783,9 +833,18 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const desiredStart = Math.max(0, absoluteVisibleStart - marginItems);
     const desiredEnd = Math.min(snapshot.historyCount, absoluteVisibleEnd + marginItems);
-    const desiredCount = Math.max(1, desiredEnd - desiredStart);
+    const anchorAbsoluteIndex =
+      typeof options.anchorAbsoluteIndex === 'number' &&
+      Number.isFinite(options.anchorAbsoluteIndex)
+        ? Math.max(0, Math.min(snapshot.historyCount - 1, options.anchorAbsoluteIndex))
+        : null;
+    const anchoredStart =
+      anchorAbsoluteIndex === null ? desiredStart : Math.min(desiredStart, anchorAbsoluteIndex);
+    const anchoredEnd =
+      anchorAbsoluteIndex === null ? desiredEnd : Math.max(desiredEnd, anchorAbsoluteIndex + 1);
+    const desiredCount = Math.max(1, anchoredEnd - anchoredStart);
     const maxStart = Math.max(0, snapshot.historyCount - desiredCount);
-    const startIndex = Math.max(0, Math.min(desiredStart, maxStart));
+    const startIndex = Math.max(0, Math.min(anchoredStart, maxStart));
     const count = Math.min(snapshot.historyCount - startIndex, desiredCount);
     if (
       startIndex === snapshot.historyWindowStart &&

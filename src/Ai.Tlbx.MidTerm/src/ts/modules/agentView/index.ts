@@ -37,7 +37,8 @@ import {
 } from './snapshotState';
 import {
   hasActiveLensSelectionInPanel,
-  resolveHistoryAutoScrollPinned,
+  resolveHistoryScrollMode,
+  setHistoryScrollMode,
   stabilizeHistoryEntryOrder,
 } from './historyViewport';
 import { createAgentHistoryDom } from './historyDom';
@@ -103,6 +104,16 @@ let lensActiveSessionBound = false;
 let lensSelectionGuardBound = false;
 let lensForegroundRecoveryBound = false;
 let lensForegroundRecoveryPending = false;
+
+function createHistoryWindowRevision(sessionId: string): string {
+  return `${sessionId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function issueHistoryWindowRevision(sessionId: string, state: SessionLensViewState): string {
+  const revision = createHistoryWindowRevision(sessionId);
+  state.historyWindowRevision = revision;
+  return revision;
+}
 
 const historyDom = createAgentHistoryDom({
   getState: (sessionId) => viewStates.get(sessionId),
@@ -171,7 +182,7 @@ export function initAgentView(): void {
       return;
     }
 
-    state.historyAutoScrollPinned = true;
+    setHistoryScrollMode(state, 'follow');
     releaseHiddenLensRenderState(state);
     void compactHiddenLensSessionHistory(sessionId, state);
   });
@@ -276,7 +287,8 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.activationIssue = null;
   state.activationActionBusy = false;
   state.requestBusyIds.clear();
-  state.historyAutoScrollPinned = true;
+  state.historyWindowRevision = null;
+  setHistoryScrollMode(state, 'follow');
   renderCurrentAgentView(sessionId);
   switchTab(sessionId, 'agent');
   return true;
@@ -479,11 +491,14 @@ async function tryLoadReadonlyLensHistory(
       LENS_HISTORY_RETENTION_MIN_MARGIN,
       LENS_HISTORY_RETENTION_MAX_MARGIN,
       LENS_HISTORY_WINDOW_SIZE,
+      state.historyObservedHeights.values(),
     );
+    const windowRevision = issueHistoryWindowRevision(sessionId, state);
     const snapshot = await getLensHistoryWindow(
       sessionId,
       undefined,
       state.historyWindowTargetCount,
+      windowRevision,
     );
     ensureLensActivationIsCurrent(state, activationRunId);
     const hasSnapshotHistory = hasRenderableLensHistory(snapshot);
@@ -530,9 +545,11 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     requestBusyIds: new Set<string>(),
     requestDraftAnswersById: {},
     requestQuestionIndexById: {},
+    historyScrollMode: 'follow',
     historyAutoScrollPinned: true,
     historyLastScrollMetrics: null,
     historyLastUserScrollIntentAt: 0,
+    historyWindowRevision: null,
     historyRenderScheduled: null,
     activationState: 'idle',
     activationDetail: '',
@@ -590,13 +607,18 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     }
 
     const scrollMetrics = historyRender.readHistoryScrollMetrics(currentViewport);
-    current.historyAutoScrollPinned = resolveHistoryAutoScrollPinned({
-      wasPinned: current.historyAutoScrollPinned,
-      previous: current.historyLastScrollMetrics,
-      current: scrollMetrics,
-      userInitiated:
-        Date.now() - current.historyLastUserScrollIntentAt <= USER_HISTORY_SCROLL_INTENT_WINDOW_MS,
-    });
+    setHistoryScrollMode(
+      current,
+      resolveHistoryScrollMode({
+        previousMode: current.historyScrollMode,
+        previous: current.historyLastScrollMetrics,
+        current: scrollMetrics,
+        userInitiated:
+          Date.now() - current.historyLastUserScrollIntentAt <=
+          USER_HISTORY_SCROLL_INTENT_WINDOW_MS,
+        pendingAnchorRestore: current.pendingHistoryPrependAnchor !== null,
+      }),
+    );
     current.historyLastScrollMetrics = scrollMetrics;
     historyRender.renderScrollToBottomControl(current.panel, current);
     const fetchThresholdPx = Math.max(
@@ -702,6 +724,7 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
     afterSequence,
     state.historyWindowStart,
     state.historyWindowCount,
+    state.historyWindowRevision ?? issueHistoryWindowRevision(sessionId, state),
     {
       onOpen: () => {
         const current = viewStates.get(sessionId);
@@ -818,7 +841,9 @@ async function compactHiddenLensSessionHistory(
           LENS_HISTORY_RETENTION_MIN_MARGIN,
           LENS_HISTORY_RETENTION_MAX_MARGIN,
           LENS_HISTORY_WINDOW_SIZE,
+          state.historyObservedHeights.values(),
         ),
+        issueHistoryWindowRevision(sessionId, state),
       );
       traceLensHistoryFetch(sessionId, latestSnapshot, 'latest');
       const current = viewStates.get(sessionId);
@@ -867,13 +892,20 @@ async function refreshLensSnapshot(
       LENS_HISTORY_RETENTION_MIN_MARGIN,
       LENS_HISTORY_RETENTION_MAX_MARGIN,
       Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+      state.historyObservedHeights.values(),
     );
     if (options.latestWindow) {
       state.historyWindowTargetCount = desiredLatestWindowCount;
     }
+    const windowRevision = issueHistoryWindowRevision(sessionId, state);
     const nextSnapshot = options.latestWindow
-      ? await getLensHistoryWindow(sessionId, undefined, desiredLatestWindowCount)
-      : await getLensHistoryWindow(sessionId, state.historyWindowStart, state.historyWindowCount);
+      ? await getLensHistoryWindow(sessionId, undefined, desiredLatestWindowCount, windowRevision)
+      : await getLensHistoryWindow(
+          sessionId,
+          state.historyWindowStart,
+          state.historyWindowCount,
+          windowRevision,
+        );
     traceLensHistoryFetch(sessionId, nextSnapshot, options.latestWindow ? 'latest' : 'refresh');
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       if (state.activationState !== 'ready') {
@@ -925,11 +957,14 @@ async function loadLatestLensHistoryWindow(
       LENS_HISTORY_RETENTION_MIN_MARGIN,
       LENS_HISTORY_RETENTION_MAX_MARGIN,
       Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+      state.historyObservedHeights.values(),
     );
+    const windowRevision = issueHistoryWindowRevision(sessionId, state);
     const nextSnapshot = await getLensHistoryWindow(
       sessionId,
       undefined,
       state.historyWindowTargetCount,
+      windowRevision,
     );
     traceLensHistoryFetch(sessionId, nextSnapshot, 'latest');
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
@@ -950,22 +985,32 @@ async function syncHistoryWindowToViewport(
     return;
   }
 
+  const hasAnchor = historyRender.captureHistoryViewportAnchor(state);
+  const anchorAbsoluteIndex = hasAnchor
+    ? (state.pendingHistoryPrependAnchor?.absoluteIndex ?? null)
+    : null;
   const requestedWindow = historyRender.getViewportCenteredHistoryWindowRequest(state, {
     minimumMarginItems: LENS_HISTORY_RETENTION_MIN_MARGIN,
     maximumMarginItems: LENS_HISTORY_RETENTION_MAX_MARGIN,
+    anchorAbsoluteIndex,
   });
   if (!requestedWindow) {
+    state.pendingHistoryPrependAnchor = null;
     return;
   }
 
   const isBackwardShift = requestedWindow.startIndex < state.historyWindowStart;
+  if (isBackwardShift && hasAnchor && !state.historyAutoScrollPinned) {
+    setHistoryScrollMode(state, 'restore-anchor');
+  }
   state.refreshInFlight = true;
   try {
-    historyRender.captureHistoryViewportAnchor(state);
+    const windowRevision = issueHistoryWindowRevision(sessionId, state);
     const nextSnapshot = await getLensHistoryWindow(
       sessionId,
       requestedWindow.startIndex,
       requestedWindow.count,
+      windowRevision,
     );
     traceLensHistoryFetch(sessionId, nextSnapshot, 'scroll');
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
@@ -1260,7 +1305,7 @@ export {
   computeHistoryVirtualWindow,
   hasActiveLensSelectionInPanel,
   isScrollContainerNearBottom,
-  resolveHistoryAutoScrollPinned,
+  resolveHistoryScrollMode,
 } from './historyViewport';
 export { suppressActiveComposerRequestEntries } from './historyRender';
 export { applyCanonicalLensDelta } from './snapshotState';
@@ -1279,11 +1324,18 @@ async function waitForInitialLensSnapshot(
         LENS_HISTORY_RETENTION_MIN_MARGIN,
         LENS_HISTORY_RETENTION_MAX_MARGIN,
         state.historyWindowCount,
+        state.historyObservedHeights.values(),
       );
       state.historyWindowTargetCount = desiredWindowCount;
+      const windowRevision = issueHistoryWindowRevision(sessionId, state);
       const snapshot = state.snapshot
-        ? await getLensHistoryWindow(sessionId, state.historyWindowStart, state.historyWindowCount)
-        : await getLensHistoryWindow(sessionId, undefined, desiredWindowCount);
+        ? await getLensHistoryWindow(
+            sessionId,
+            state.historyWindowStart,
+            state.historyWindowCount,
+            windowRevision,
+          )
+        : await getLensHistoryWindow(sessionId, undefined, desiredWindowCount, windowRevision);
       traceLensHistoryFetch(sessionId, snapshot, 'initial');
       applyLensHistoryWindowState(state, snapshot);
       ensureLensActivationIsCurrent(state, activationRunId);

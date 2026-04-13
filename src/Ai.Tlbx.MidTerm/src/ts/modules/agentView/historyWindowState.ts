@@ -31,14 +31,29 @@ export function applyFetchedLensHistoryWindow(
   snapshot: LensHistorySnapshot,
 ): boolean {
   const currentSnapshot = state.snapshot;
+  const windowRevision = snapshot.windowRevision ?? null;
+  if (
+    state.historyWindowRevision &&
+    windowRevision &&
+    windowRevision !== state.historyWindowRevision
+  ) {
+    return false;
+  }
+
   if (currentSnapshot && snapshot.latestSequence < currentSnapshot.latestSequence) {
     return false;
   }
 
   applyLensHistoryWindowState(state, snapshot);
   state.snapshot = snapshot;
+  state.historyWindowRevision = windowRevision ?? state.historyWindowRevision;
   if (state.disconnectStream) {
-    updateLensHistoryStreamWindow(sessionId, state.historyWindowStart, state.historyWindowCount);
+    updateLensHistoryStreamWindow(
+      sessionId,
+      state.historyWindowStart,
+      state.historyWindowCount,
+      state.historyWindowRevision ?? undefined,
+    );
   }
 
   return true;

@@ -44,34 +44,36 @@ describe('api client lens helpers', () => {
   });
 
   it('passes index-window arguments through to the Lens history transport and returns the payload', async () => {
-    const getLensHistoryWindowWs = vi.fn(async (_sessionId: string, _start?: number, _count?: number) => ({
-      sessionId: 'session-1',
-      latestSequence: 7,
-      historyCount: 11,
-      historyWindowStart: 7,
-      historyWindowEnd: 9,
-      hasOlderHistory: true,
-      hasNewerHistory: true,
-      provider: 'codex',
-      generatedAt: new Date().toISOString(),
-      session: { state: 'ready', stateLabel: 'Ready' },
-      thread: { threadId: 't1', state: 'active', stateLabel: 'Active' },
-      currentTurn: { state: 'idle', stateLabel: 'Idle' },
-      quickSettings: { planMode: 'off', permissionMode: 'manual' },
-      streams: {
-        assistantText: '',
-        reasoningText: '',
-        reasoningSummaryText: '',
-        planText: '',
-        commandOutput: '',
-        fileChangeOutput: '',
-        unifiedDiff: '',
-      },
-      history: [],
-      items: [],
-      requests: [],
-      notices: [],
-    }));
+    const getLensHistoryWindowWs = vi.fn(
+      async (_sessionId: string, _start?: number, _count?: number, _windowRevision?: string) => ({
+        sessionId: 'session-1',
+        latestSequence: 7,
+        historyCount: 11,
+        historyWindowStart: 7,
+        historyWindowEnd: 9,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+        provider: 'codex',
+        generatedAt: new Date().toISOString(),
+        session: { state: 'ready', stateLabel: 'Ready' },
+        thread: { threadId: 't1', state: 'active', stateLabel: 'Active' },
+        currentTurn: { state: 'idle', stateLabel: 'Idle' },
+        quickSettings: { planMode: 'off', permissionMode: 'manual' },
+        streams: {
+          assistantText: '',
+          reasoningText: '',
+          reasoningSummaryText: '',
+          planText: '',
+          commandOutput: '',
+          fileChangeOutput: '',
+          unifiedDiff: '',
+        },
+        history: [],
+        items: [],
+        requests: [],
+        notices: [],
+      }),
+    );
     vi.doMock('./lensWebSocket', () => ({
       attachLensSession: vi.fn(),
       detachLensSession: vi.fn(),
@@ -88,7 +90,7 @@ describe('api client lens helpers', () => {
     const { getLensHistoryWindow } = await import('./client');
     const result = await getLensHistoryWindow('session-1', 7, 2);
 
-    expect(getLensHistoryWindowWs).toHaveBeenCalledWith('session-1', 7, 2);
+    expect(getLensHistoryWindowWs).toHaveBeenCalledWith('session-1', 7, 2, undefined);
     expect(result.latestSequence).toBe(7);
   });
 

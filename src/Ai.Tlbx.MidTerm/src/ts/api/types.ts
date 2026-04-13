@@ -252,6 +252,7 @@ export interface LensHistoryWindowResponse {
   sessionId: string;
   provider: string;
   generatedAt: string;
+  windowRevision?: string | null;
   latestSequence: number;
   historyCount: number;
   historyWindowStart: number;
