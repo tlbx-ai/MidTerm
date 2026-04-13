@@ -21,11 +21,7 @@ export function applyLensHistoryWindowState(
   const windowSize = Math.max(0, windowEnd - windowStart);
   state.historyWindowStart = windowStart;
   state.historyWindowCount = windowSize;
-  state.historyWindowTargetCount = Math.max(
-    1,
-    state.historyWindowTargetCount || 0,
-    windowSize,
-  );
+  state.historyWindowTargetCount = Math.max(1, state.historyWindowTargetCount || 0, windowSize);
 }
 
 export function collapseSnapshotToLatestWindow(
