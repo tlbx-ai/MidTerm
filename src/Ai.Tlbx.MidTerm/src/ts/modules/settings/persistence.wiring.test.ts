@@ -187,10 +187,14 @@ describe('settings persistence wiring', () => {
     expect(persistenceSource).toContain("document.getElementById('setting-terminal-env')");
     expect(persistenceSource).toContain("document.getElementById('setting-codex-env')");
     expect(persistenceSource).toContain("document.getElementById('setting-claude-env')");
-    expect(persistenceSource).toContain('buildTerminalFontStack(fontFamily)');
+    expect(persistenceSource).toContain(
+      'const fontFamily = buildTerminalFontStack(settings.fontFamily);',
+    );
     expect(persistenceSource).toContain("'--terminal-letter-spacing'");
+    expect(persistenceSource).toContain("'--terminal-line-height'");
     expect(persistenceSource).toContain("'--terminal-font-weight'");
     expect(persistenceSource).toContain("'--agent-ui-font-family'");
+    expect(persistenceSource).not.toContain('buildTerminalFontStack(fontFamily)');
     expect(persistenceSource).toContain('document.documentElement.dataset.commandBayLigatures =');
     expect(persistenceSource).toContain(
       'document.documentElement.dataset.agentShowMessageTimestamps =',

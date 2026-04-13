@@ -11021,7 +11021,7 @@ body.shared-session-mode .session-tab-bar {
   font-weight: var(--terminal-font-weight, normal);
   letter-spacing: var(--terminal-letter-spacing, 0px);
   font-kerning: none;
-  line-height: calc(var(--terminal-font-size, 16px) * 1.375);
+  line-height: var(--terminal-line-height, 1);
 }
 
 .manager-action-prompt-row-chain .manager-action-prompt-input {
@@ -15530,7 +15530,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .smart-input-textarea {
   --smart-input-textarea-min-height: 42px;
-  --smart-input-textarea-line-height: calc(var(--terminal-font-size, 16px) * 1.375);
+  --smart-input-textarea-line-height: calc(
+    var(--terminal-font-size, 16px) * var(--terminal-line-height, 1)
+  );
   --smart-input-textarea-padding-y: calc(
     (var(--smart-input-textarea-min-height) - var(--smart-input-textarea-line-height) - 2px) / 2
   );
@@ -15546,7 +15548,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   font-weight: var(--terminal-font-weight, normal);
   letter-spacing: var(--terminal-letter-spacing, 0px);
   font-kerning: none;
-  line-height: var(--smart-input-textarea-line-height);
+  line-height: var(--terminal-line-height, 1);
   position: relative;
   z-index: 2;
 }
