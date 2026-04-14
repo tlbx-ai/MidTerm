@@ -14,6 +14,8 @@ export function resizeSmartInputTextarea(
   textarea: HTMLTextAreaElement,
   options: ResizeSmartInputTextareaOptions = {},
 ): void {
+  const expandedMinHeight = resolveExpandedComposerTextareaMinHeight(textarea);
+  const expandedComposerActive = expandedMinHeight > 0;
   const preserveScrollTop = Number.isFinite(options.preserveScrollTop ?? Number.NaN)
     ? Math.max(0, options.preserveScrollTop ?? 0)
     : Math.max(0, textarea.scrollTop);
@@ -28,7 +30,7 @@ export function resizeSmartInputTextarea(
   const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
   const borderTop = Number.parseFloat(computedStyle.borderTopWidth) || 0;
   const borderBottom = Number.parseFloat(computedStyle.borderBottomWidth) || 0;
-  const minHeight = Number.parseFloat(computedStyle.minHeight) || 0;
+  const minHeight = Math.max(Number.parseFloat(computedStyle.minHeight) || 0, expandedMinHeight);
   const maxHeight =
     effectiveLineHeight * MAX_VISIBLE_TEXTAREA_LINES +
     paddingTop +
@@ -47,7 +49,7 @@ export function resizeSmartInputTextarea(
   }
 
   textarea.dataset[SINGLE_LINE_DATASET_KEY] =
-    nextHeight <= collapsedHeight + 0.5 ? 'true' : 'false';
+    !expandedComposerActive && nextHeight <= collapsedHeight + 0.5 ? 'true' : 'false';
   textarea.style.setProperty('--smart-input-textarea-rendered-height', `${String(nextHeight)}px`);
   textarea.style.height = `${String(nextHeight)}px`;
   textarea.style.minHeight = `${String(nextHeight)}px`;
@@ -65,6 +67,24 @@ export function resizeSmartInputTextarea(
       : nextHeight;
   const maxScrollTop = Math.max(0, textarea.scrollHeight - viewportHeight);
   textarea.scrollTop = Math.min(preserveScrollTop, maxScrollTop);
+}
+
+function resolveExpandedComposerTextareaMinHeight(textarea: HTMLTextAreaElement): number {
+  if (typeof textarea.closest !== 'function') {
+    return 0;
+  }
+
+  const expandedDock = textarea.closest('.adaptive-footer-dock[data-composer-expanded="true"]');
+  if (!(expandedDock instanceof HTMLElement)) {
+    return 0;
+  }
+
+  const shell = textarea.parentElement;
+  if (!(shell instanceof HTMLElement)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(shell.getBoundingClientRect().height));
 }
 
 export function getCollapsedSmartInputTextareaHeight(textarea: HTMLTextAreaElement): number {

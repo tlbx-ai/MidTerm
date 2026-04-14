@@ -15390,16 +15390,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   position: fixed;
   inset: 0;
   z-index: 260;
-  justify-content: flex-end;
+  align-items: stretch;
+  justify-content: stretch;
   gap: 0;
   padding:
     calc(20px + env(safe-area-inset-top, 0px))
     calc(20px + env(safe-area-inset-right, 0px))
     calc(20px + env(safe-area-inset-bottom, 0px))
     calc(20px + env(safe-area-inset-left, 0px));
-  background: color-mix(in srgb, var(--overlay-bg-dark) 92%, black 8%);
-  -webkit-backdrop-filter: blur(8px) saturate(108%);
-  backdrop-filter: blur(8px) saturate(108%);
+  background: color-mix(in srgb, var(--overlay-bg-dark) 68%, transparent);
+  -webkit-backdrop-filter: blur(4px) saturate(104%);
+  backdrop-filter: blur(4px) saturate(104%);
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] > .adaptive-footer-context,
@@ -15409,39 +15410,53 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary {
-  width: min(1040px, 100%);
-  align-self: center;
-  margin-top: auto;
+  width: 100%;
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary > .smart-input-docked {
   width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true']
   .adaptive-footer-primary
   > .smart-input-docked.visible {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--command-bay-border-strong) 86%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--command-bay-surface-strong) 95%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-strong) 90%, transparent);
   box-shadow:
-    0 24px 80px color-mix(in srgb, black 42%, transparent),
+    0 18px 48px color-mix(in srgb, black 26%, transparent),
     0 0 0 1px color-mix(in srgb, white 3%, transparent);
-  max-height: min(88dvh, 920px);
+  max-height: none;
   overflow: hidden;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-row {
+  flex: 1 1 auto;
+  min-height: 0;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-content: stretch;
+  align-items: stretch;
   gap: 10px;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-editor {
-  flex: 1 1 100%;
+  flex: 1 1 auto;
   min-height: 0;
   gap: 10px;
+}
+
+.adaptive-footer-dock[data-composer-expanded='true'] .smart-input-textarea-shell {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-attachments {
@@ -15456,7 +15471,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-textarea {
   --smart-input-textarea-min-height: clamp(220px, 42dvh, 560px);
   --smart-input-textarea-max-visible-lines: 24;
+  height: 100%;
   border-radius: 14px;
+}
+
+.adaptive-footer-dock[data-composer-expanded='true']
+  .smart-input-textarea[data-midterm-single-line='true'] {
+  --smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-expand-toggle {
@@ -16621,7 +16642,7 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-l
 }
 
 body.keyboard-visible .adaptive-footer-dock[data-composer-expanded='true'][data-device='mobile'] {
-  justify-content: flex-end;
+  justify-content: stretch;
   overflow: hidden;
   scroll-padding-bottom: 0;
 }
@@ -16630,7 +16651,8 @@ body.keyboard-visible
   .adaptive-footer-dock[data-composer-expanded='true'][data-device='mobile']
   .adaptive-footer-primary
   > .smart-input-docked.visible {
-  max-height: min(50dvh, 440px);
+  max-height: none;
+  height: min(50dvh, 440px);
 }
 
 body.keyboard-visible
@@ -16697,6 +16719,10 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
       calc(12px + env(safe-area-inset-right, 0px))
       calc(12px + env(safe-area-inset-bottom, 0px))
       calc(12px + env(safe-area-inset-left, 0px));
+  }
+
+  .adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary {
+    width: 100%;
   }
 
   .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-row {

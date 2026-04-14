@@ -221,6 +221,14 @@ describe('smart input tab wiring', () => {
     );
   });
 
+  it('keeps per-session composer drafts and expanded state when switching the active session', () => {
+    expect(source).toContain('persistDraftForSession(lastSessionId);');
+    expect(source).toContain('syncDraftForActiveSession();');
+    expect(source).toContain('const sessionComposerExpanded = new Map<string, boolean>();');
+    expect(source).toContain('function setComposerExpandedForSession(sessionId: string, expanded: boolean): void {');
+    expect(source).toContain('return sessionId ? sessionComposerExpanded.get(sessionId) === true : false;');
+  });
+
   it('renders the plus-menu tools as popover actions with icon and text labels', () => {
     expect(viewSource).toContain("toolsToggleBtn.setAttribute('aria-haspopup', 'menu');");
     expect(viewSource).toContain(
