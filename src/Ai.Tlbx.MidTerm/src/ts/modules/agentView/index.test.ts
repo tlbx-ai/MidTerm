@@ -747,6 +747,27 @@ describe('agentView dev errors', () => {
     ).toBe('browse');
   });
 
+  it('preserves browse mode and scroll position when Lens returns to the foreground', async () => {
+    const { prepareLensForForeground } = await import('./viewPresentation');
+
+    const historyViewport = createMockDomNode({
+      scrollTop: 987,
+    });
+    const state = {
+      historyScrollMode: 'browse',
+      historyAutoScrollPinned: false,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyViewport,
+    } as any;
+
+    prepareLensForForeground(state);
+
+    expect(state.historyScrollMode).toBe('browse');
+    expect(state.historyAutoScrollPinned).toBe(false);
+    expect(historyViewport.scrollTop).toBe(987);
+  });
+
   it('does not repin auto-follow just because layout changed while already detached from the live edge', async () => {
     const { resolveHistoryScrollMode } = await import('./index');
 

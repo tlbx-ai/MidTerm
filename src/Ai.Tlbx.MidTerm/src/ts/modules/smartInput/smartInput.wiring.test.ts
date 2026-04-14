@@ -23,6 +23,16 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("onTabActivated('files', (sessionId) => {");
   });
 
+  it('suppresses embedded-preview autofocus so nested MidTerm cannot steal outer Command Bay focus', () => {
+    expect(source).toContain("import { isEmbeddedWebPreviewContext } from '../web/webContext';");
+    expect(source).toContain('function shouldAllowProgrammaticSmartInputFocus(): boolean {');
+    expect(source).toContain('return !isEmbeddedWebPreviewContext();');
+    expect(source).toContain(
+      'isLensActiveSession(sessionId) && shouldAllowProgrammaticSmartInputFocus()',
+    );
+    expect(source).toContain('syncSmartInputVisibility(shouldAllowProgrammaticSmartInputFocus());');
+  });
+
   it('does not rely on agent deactivation timing to hide Lens-only controls', () => {
     expect(source).not.toContain("onTabDeactivated('agent'");
   });
@@ -160,7 +170,10 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('let suppressNextToolsToggleClick = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
     expect(source).toContain('const preserveTextareaFocus = document.activeElement === activeTextarea;');
-    expect(source).toContain('if ((focusTextarea || preserveTextareaFocus) && layoutState.showInput) {');
+    expect(source).toContain('layoutState.showInput &&');
+    expect(source).toContain(
+      'preserveTextareaFocus || (focusTextarea && shouldAllowProgrammaticSmartInputFocus())',
+    );
     expect(source).toContain('const needsReorder = desiredOrder.some(');
     expect(source).toContain('event.stopPropagation();');
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");

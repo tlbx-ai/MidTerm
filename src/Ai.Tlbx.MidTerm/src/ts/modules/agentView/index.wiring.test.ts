@@ -135,6 +135,17 @@ describe('agent view Lens wiring', () => {
     );
   });
 
+  it('does not force Lens back to the live edge on tab deactivate or foreground recovery', () => {
+    const deactivateBlock = indexSource.match(
+      /onTabDeactivated\('agent', \(sessionId\) => \{[\s\S]*?\n  \}\);/,
+    );
+    expect(deactivateBlock?.[0]).toBeTruthy();
+    expect(deactivateBlock?.[0]).not.toContain("setHistoryScrollMode(state, 'follow');");
+    expect(indexSource).toContain(
+      "void refreshLensSnapshot(sessionId, { latestWindow: state.historyAutoScrollPinned });",
+    );
+  });
+
   it('styles command-execution rows as console-like Ran blocks with terminal monospace', () => {
     expect(css).toContain('.agent-history-command-body {');
     expect(css).toContain('.agent-history-command-entry {');

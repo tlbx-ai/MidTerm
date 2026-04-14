@@ -264,7 +264,6 @@ export function initAgentView(): void {
       return;
     }
 
-    setHistoryScrollMode(state, 'follow');
     releaseHiddenLensRenderState(state);
     void compactHiddenLensSessionHistory(sessionId, state);
   });
@@ -836,7 +835,7 @@ function bindLensForegroundRecovery(): void {
     prepareLensForForeground(state);
     renderCurrentAgentView(sessionId, { immediate: true });
     if (state.snapshot) {
-      void refreshLensSnapshot(sessionId, { latestWindow: true });
+      void refreshLensSnapshot(sessionId, { latestWindow: state.historyAutoScrollPinned });
     }
   };
 
@@ -965,6 +964,10 @@ async function compactHiddenLensSessionHistory(
 
   const snapshot = state.snapshot;
   if (!snapshot) {
+    return;
+  }
+
+  if (!state.historyAutoScrollPinned) {
     return;
   }
 

@@ -40,6 +40,7 @@ import { showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
 import { closePopup as closeTouchControllerPopup } from '../touchController/popups';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
   clipboardDataMayContainLensComposerImage,
@@ -830,7 +831,9 @@ export function initSmartInput(): void {
     persistDraftForSession(lastSessionId);
     lastSessionId = sessionId;
     syncDraftForActiveSession();
-    syncSmartInputVisibility(isLensActiveSession(sessionId));
+    syncSmartInputVisibility(
+      isLensActiveSession(sessionId) && shouldAllowProgrammaticSmartInputFocus(),
+    );
   });
 
   $currentSettings.subscribe((settings) => {
@@ -866,7 +869,7 @@ export function initSmartInput(): void {
 
   onTabActivated('agent', (sessionId) => {
     if ($activeSessionId.get() === sessionId) {
-      syncSmartInputVisibility(true);
+      syncSmartInputVisibility(shouldAllowProgrammaticSmartInputFocus());
     }
   });
 
@@ -935,7 +938,7 @@ export function initSmartInput(): void {
 }
 
 export function showSmartInput(): void {
-  syncSmartInputVisibility(true);
+  syncSmartInputVisibility(shouldAllowProgrammaticSmartInputFocus());
 }
 
 export function hideSmartInput(): void {
@@ -971,7 +974,10 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
   queueFooterReserveSync();
 
-  if ((focusTextarea || preserveTextareaFocus) && layoutState.showInput) {
+  if (
+    layoutState.showInput &&
+    (preserveTextareaFocus || (focusTextarea && shouldAllowProgrammaticSmartInputFocus()))
+  ) {
     requestAnimationFrame(() => {
       activeTextarea?.focus({ preventScroll: true });
     });
@@ -1050,13 +1056,20 @@ function syncComposerExpandedPresentation(layoutState: AdaptiveFooterLayoutState
 
   const textarea = activeTextarea;
   const preserveScrollTop = textarea.scrollTop;
+  const preserveComposerFocus = document.activeElement === textarea;
   requestAnimationFrame(() => {
     resizeSmartInputTextarea(textarea, { preserveScrollTop });
-    textarea.focus({ preventScroll: true });
+    if (preserveComposerFocus || shouldAllowProgrammaticSmartInputFocus()) {
+      textarea.focus({ preventScroll: true });
+    }
     if (!footerResizeObserver) {
       queueFooterReserveSync();
     }
   });
+}
+
+function shouldAllowProgrammaticSmartInputFocus(): boolean {
+  return !isEmbeddedWebPreviewContext();
 }
 
 function createDockedDOM(): void {

@@ -11,12 +11,11 @@ export function syncAgentViewPresentation(
 }
 
 export function prepareLensForForeground(state: SessionLensViewState): void {
-  setHistoryScrollMode(state, 'follow');
-  state.historyLastScrollMetrics = null;
-  state.historyLastUserScrollIntentAt = 0;
-  state.pendingHistoryPrependAnchor = null;
-
-  if (state.historyViewport) {
-    state.historyViewport.scrollTop = 0;
+  if (
+    state.historyScrollMode === 'restore-anchor' &&
+    state.pendingHistoryPrependAnchor === null &&
+    state.pendingHistoryLayoutAnchor === null
+  ) {
+    setHistoryScrollMode(state, state.historyAutoScrollPinned ? 'follow' : 'browse');
   }
 }
