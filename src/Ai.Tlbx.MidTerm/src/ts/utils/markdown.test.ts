@@ -100,6 +100,41 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<th data-align="left" data-col-kind="text" title="Name" aria-label="Name">Name</th>');
   });
 
+  it('renders fenced csv blocks as interactive tables instead of code blocks', () => {
+    const html = renderMarkdown(
+      '```csv\nName,Score,Mode\nAlpha,42,Lens\nBeta,7,Terminal\n```',
+    );
+
+    expect(html).toContain('<table class="agent-markdown-table" data-table-source="csv">');
+    expect(html).toContain('<th data-col-kind="text" title="Name" aria-label="Name">Name</th>');
+    expect(html).toContain('<td data-col-kind="numeric">42</td>');
+    expect(html).toContain(
+      '<td data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="info" data-cell-kind="tag">Lens</span></td>',
+    );
+    expect(html).not.toContain('<pre class="agent-markdown-pre"><code data-language="csv">');
+  });
+
+  it('renders semicolon-delimited csv fences as tables when comma is not present', () => {
+    const html = renderMarkdown(
+      '```text/csv\nName;Latency;Status\nAlpha;118 ms;Ready\nBeta;205 ms;Pending\n```',
+    );
+
+    expect(html).toContain('<table class="agent-markdown-table" data-table-source="csv">');
+    expect(html).toContain(
+      '<th data-col-kind="numeric" title="Latency" aria-label="Latency">Latency</th>',
+    );
+    expect(html).toContain(
+      '<td data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="positive" data-cell-kind="tag">Ready</span></td>',
+    );
+  });
+
+  it('falls back to a code block when a csv fence is malformed', () => {
+    const html = renderMarkdown('```csv\nName,Notes\nAlpha,\"unterminated\n```');
+
+    expect(html).toContain('<pre class="agent-markdown-pre"><code data-language="csv">');
+    expect(html).not.toContain('data-table-source="csv"');
+  });
+
   it('does not treat underscores inside plain tokens as emphasis', () => {
     const html = renderMarkdown('HELLO_FROM_CODEX\n\nTOOL_DONE');
 

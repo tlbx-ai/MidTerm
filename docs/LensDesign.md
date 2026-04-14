@@ -224,7 +224,7 @@ The canonical history contract must satisfy the following:
 - Use at most 2 to 4 font styles across the Lens surface.
 - Reserve stronger styles for true hierarchy boundaries only.
 - Favor readable body text and restrained metadata styling.
-- Monospace should be used for code, commands, paths, and diffs only.
+- In Codex Lens, user and assistant prompt bodies should follow the configured terminal monospace stack and terminal font size so prompt and response text align with command-oriented work.
 
 ### Containers
 
@@ -301,6 +301,7 @@ The canonical history contract must satisfy the following:
 - In Codex Lens, user rows should place their quiet role label and timestamp above the message body, not below it.
 - In Codex Lens, assistant rows should place any optional timestamp above the message body when that preference is enabled, but should default to no repeated assistant timestamp.
 - In Codex Lens, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label when the row is otherwise plainly identifiable as assistant output.
+- In Codex Lens, the first assistant message row of a new turn should show a quiet `Agent` badge so the answer start is visually distinct from the preceding user prompt, but later assistant rows in the same turn should omit that repeated badge.
 
 ### Assistant output
 
@@ -359,6 +360,7 @@ The canonical history contract must satisfy the following:
 - If settlement later adds higher-confidence file-link or image-preview enrichment, that refinement must preserve the same markdown-rendered body instead of downgrading the row to raw plain text.
 - Markdown tables should stay left-anchored and use intrinsic width when their content is narrow, rather than stretching across the whole history lane by default.
 - Assistant markdown tables should expose compact per-column sort and filter controls in the header row so dense comparison output can be reorganized in place.
+- Fenced CSV blocks in assistant markdown should render through that same interactive table treatment so tabular data is readable without raw code-block noise.
 - Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
 - That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
 - Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
@@ -550,6 +552,7 @@ Status in this branch/work item:
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Lens body
 - implemented: assistant markdown tables now stay left-anchored at intrinsic width when narrow instead of always stretching across the full history lane
 - implemented: assistant markdown tables now add compact per-column sort and filter controls directly in the header row
+- implemented: fenced CSV code blocks in assistant markdown now render as the same compact sortable/filterable table treatment instead of raw code blocks
 - implemented: Codex Lens uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Lens distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Lens row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
@@ -558,7 +561,9 @@ Status in this branch/work item:
 - implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
 - implemented: Codex Lens now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
 - implemented: Codex Lens now keeps the quiet role label on user rows while omitting the redundant repeated `Agent` badge on assistant message rows
+- implemented: the first assistant message row in each turn now restores a quiet `Agent` badge so the answer start stays distinguishable from the preceding user prompt without reintroducing repeated badge noise on later assistant rows
 - implemented: assistant-message timestamps are now controlled by an Agent setting, default hidden, while user-row timestamps remain visible above the prompt body
+- implemented: Codex Lens user and assistant prompt bodies now follow the configured terminal monospace stack and terminal font size instead of a separate agent-ui font treatment
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Lens diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Lens diff rows now use console-style `Edited {path}` file headers and tighter green/red hunk blocks with line numbers

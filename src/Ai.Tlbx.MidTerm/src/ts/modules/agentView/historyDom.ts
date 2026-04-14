@@ -261,8 +261,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function createHistoryEntry(
     entry: LensHistoryEntry,
     sessionId: string,
-    artifactCluster: ArtifactClusterInfo | null = null,
+    options: {
+      artifactCluster?: ArtifactClusterInfo | null;
+      showAssistantBadge?: boolean;
+    } = {},
   ): HTMLElement {
+    const artifactCluster = options.artifactCluster ?? null;
     if (entry.busyIndicator) {
       return createBusyIndicatorEntry(entry);
     }
@@ -274,7 +278,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       article.appendChild(createArtifactClusterLabel(artifactCluster));
     }
 
-    article.appendChild(createHistoryHeader(entry, sessionId));
+    article.appendChild(createHistoryHeader(entry, sessionId, options.showAssistantBadge === true));
     appendHistoryTitle(article, entry, sessionId);
     appendHistoryBody(article, entry, sessionId);
 
@@ -324,7 +328,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
   }
 
-  function createHistoryHeader(entry: LensHistoryEntry, sessionId: string): HTMLElement {
+  function createHistoryHeader(
+    entry: LensHistoryEntry,
+    sessionId: string,
+    showAssistantBadge: boolean,
+  ): HTMLElement {
     const header = document.createElement('div');
     header.className = 'agent-history-header';
 
@@ -334,6 +342,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       entry,
       deps.getState(sessionId)?.snapshot?.provider,
     );
+    if (entry.kind === 'assistant' && showAssistantBadge) {
+      badge.dataset.visible = 'true';
+    }
     header.appendChild(badge);
 
     if (entry.meta.trim()) {

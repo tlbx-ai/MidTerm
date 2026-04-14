@@ -40,7 +40,10 @@ type HistoryRenderDeps = {
   createHistoryEntry: (
     entry: LensHistoryEntry,
     sessionId: string,
-    artifactCluster?: ArtifactClusterInfo | null,
+    options?: {
+      artifactCluster?: ArtifactClusterInfo | null;
+      showAssistantBadge?: boolean;
+    },
   ) => HTMLElement;
   createHistorySpacer: (heightPx: number) => HTMLElement;
   createRequestActionBlock: (
@@ -218,19 +221,64 @@ function buildVisibleHistoryEntries(args: {
     entry: LensHistoryEntry,
     cluster: ArtifactClusterInfo | null,
     state: SessionLensViewState | undefined,
+    showAssistantBadge: boolean,
   ) => string;
 }): HistoryVisibleEntry[] {
   const { entries, visibleStart, visibleEnd, state, resolveCluster, buildSignature } = args;
   return entries.slice(visibleStart, visibleEnd).map((entry, visibleIndex) => {
     const absoluteIndex = visibleStart + visibleIndex;
     const cluster = resolveCluster(entries, absoluteIndex);
+    const showAssistantBadge = shouldShowAssistantBadge(entries, absoluteIndex);
     return {
       key: entry.id,
       entry,
       cluster,
-      signature: buildSignature(entry, cluster, state),
+      showAssistantBadge,
+      signature: buildSignature(entry, cluster, state, showAssistantBadge),
     };
   });
+}
+
+function shouldShowAssistantBadge(
+  entries: readonly LensHistoryEntry[],
+  absoluteIndex: number,
+): boolean {
+  const entry = entries[absoluteIndex];
+  if (!entry || entry.kind !== 'assistant') {
+    return false;
+  }
+
+  const sourceTurnId = entry.sourceTurnId?.trim() ?? '';
+  if (sourceTurnId) {
+    for (let index = absoluteIndex - 1; index >= 0; index -= 1) {
+      const previous = entries[index];
+      if (
+        previous?.kind === 'assistant' &&
+        (previous.sourceTurnId?.trim() ?? '') === sourceTurnId
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  for (let index = absoluteIndex - 1; index >= 0; index -= 1) {
+    const previous = entries[index];
+    if (!previous) {
+      continue;
+    }
+
+    if (previous.kind === 'assistant') {
+      return false;
+    }
+
+    if (previous.kind === 'user') {
+      return true;
+    }
+  }
+
+  return true;
 }
 
 function resolveAnchorAbsoluteIndex(state: SessionLensViewState, entryId: string): number {
@@ -460,6 +508,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     entry: LensHistoryEntry,
     cluster: ArtifactClusterInfo | null,
     state: SessionLensViewState | undefined,
+    showAssistantBadge: boolean,
   ): string {
     return [
       entry.kind,
@@ -473,6 +522,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       entry.busyIndicator ? '1' : '0',
       entry.busyElapsedText ?? '',
       entry.turnDurationNote ? '1' : '0',
+      showAssistantBadge ? '1' : '0',
       entry.sourceItemType ?? '',
       entry.commandText ?? '',
       (entry.commandOutputTail ?? []).join('\n'),
@@ -606,7 +656,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return existing.node;
     }
 
-    const node = deps.createHistoryEntry(visibleEntry.entry, sessionId, visibleEntry.cluster);
+    const node = deps.createHistoryEntry(visibleEntry.entry, sessionId, {
+      artifactCluster: visibleEntry.cluster,
+      showAssistantBadge: visibleEntry.showAssistantBadge,
+    });
     node.dataset.lensEntryId = visibleEntry.key;
     state.historyRenderedNodes.set(visibleEntry.key, {
       node,

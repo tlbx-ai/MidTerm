@@ -452,6 +452,159 @@ describe('agentView dev errors', () => {
     expect(resolveHistoryBadgeLabel('assistant', 'claude')).toBe('Assistant');
   });
 
+  it('shows the Agent badge only on the first assistant row of a turn', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const state = {
+      panel: createPanel(),
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 4,
+        historyWindowEnd: 4,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: null,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 4,
+      historyWindowTargetCount: 4,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'follow',
+      historyAutoScrollPinned: true,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: 0,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyRenderScheduled: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyTopSpacer: null,
+      historyBottomSpacer: null,
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const viewport = createMockDomNode({
+      clientHeight: 900,
+      clientWidth: 1200,
+      scrollHeight: 900,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 900 })),
+    });
+    state.historyViewport = viewport;
+    state.panel.querySelector = vi.fn((selector: string) => {
+      if (selector === '[data-agent-field="history"]') {
+        return viewport;
+      }
+
+      return createMockDomNode();
+    });
+
+    const visibleBadges: boolean[] = [];
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: (entry, _sessionId, options) => {
+        const node = createMockDomNode({
+          getBoundingClientRect: vi.fn(() => ({ height: 40, top: 0, bottom: 40 })),
+        });
+        node.dataset = {};
+        if (entry.kind === 'assistant') {
+          visibleBadges.push(options?.showAssistantBadge === true);
+        }
+        return node;
+      },
+      createHistorySpacer: () => createMockDomNode(),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    render.renderHistory(
+      state.panel,
+      [
+        {
+          id: 'user:turn-1',
+          order: 1,
+          kind: 'user',
+          tone: 'info',
+          label: 'User',
+          title: '',
+          body: 'Question',
+          meta: '12:00:00',
+          sourceTurnId: 'turn-1',
+        },
+        {
+          id: 'assistant:turn-1:1',
+          order: 2,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'First part',
+          meta: '12:00:01',
+          sourceTurnId: 'turn-1',
+        },
+        {
+          id: 'assistant:turn-1:2',
+          order: 3,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'Second part',
+          meta: '12:00:02',
+          sourceTurnId: 'turn-1',
+        },
+        {
+          id: 'assistant:turn-2:1',
+          order: 4,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'New turn answer',
+          meta: '12:00:03',
+          sourceTurnId: 'turn-2',
+        },
+      ] as any,
+      's1',
+    );
+
+    expect(visibleBadges).toEqual([true, false, true]);
+  });
+
   it('renders history metadata as timestamp-only text for every row kind', async () => {
     const { formatHistoryMeta, shouldHideStatusInMeta } = await import('./index');
 

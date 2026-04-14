@@ -198,6 +198,7 @@ export interface HistoryVisibleEntry {
   key: string;
   entry: LensHistoryEntry;
   cluster: ArtifactClusterInfo | null;
+  showAssistantBadge: boolean;
   signature: string;
 }
 

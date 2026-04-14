@@ -7,6 +7,8 @@ function escapeMarkdownHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+type MarkdownStructuredTableSource = 'markdown' | 'csv';
+
 function isSafeMarkdownHref(url: string): boolean {
   return /^(https?:\/\/|mailto:)/i.test(url);
 }
@@ -76,6 +78,152 @@ function splitMarkdownTableRow(line: string): string[] {
     .replace(/\|$/, '')
     .split('|')
     .map((cell) => cell.trim());
+}
+
+function countUnquotedDelimitedSeparators(line: string, delimiter: string): number {
+  let count = 0;
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const value = line[index];
+    if (value === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        index += 1;
+        continue;
+      }
+
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && value === delimiter) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function finalizeDelimitedMarkdownRow(row: string[]): string[] {
+  return row.map((cell) => cell.trim());
+}
+
+function parseDelimitedMarkdownRows(source: string, delimiter: string): string[][] | null {
+  const normalized = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const value = normalized[index] ?? '';
+    if (inQuotes) {
+      if (value === '"') {
+        if (normalized[index + 1] === '"') {
+          cell += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += value;
+      }
+      continue;
+    }
+
+    if (value === '"') {
+      inQuotes = true;
+      continue;
+    }
+
+    if (value === delimiter) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+
+    if (value === '\n') {
+      row.push(cell);
+      rows.push(finalizeDelimitedMarkdownRow(row));
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += value;
+  }
+
+  if (inQuotes) {
+    return null;
+  }
+
+  row.push(cell);
+  rows.push(finalizeDelimitedMarkdownRow(row));
+
+  while (rows.length > 0 && rows[rows.length - 1]?.every((value) => value.length === 0)) {
+    rows.pop();
+  }
+
+  return rows.filter((candidate) => candidate.some((value) => value.length > 0));
+}
+
+function detectDelimitedMarkdownRows(source: string): string[][] | null {
+  const normalized = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const sampleLine =
+    normalized
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? '';
+  const delimiterCandidates = [',', ';', '\t'] as const;
+  const rankedCandidates = [...delimiterCandidates].sort(
+    (left, right) =>
+      countUnquotedDelimitedSeparators(sampleLine, right) -
+      countUnquotedDelimitedSeparators(sampleLine, left),
+  );
+
+  let bestRows: string[][] | null = null;
+  let bestScore = -1;
+
+  for (const delimiter of rankedCandidates) {
+    const parsed = parseDelimitedMarkdownRows(normalized, delimiter);
+    if (!parsed || parsed.length < 2) {
+      continue;
+    }
+
+    const headerWidth = parsed[0]?.length ?? 0;
+    if (headerWidth === 0) {
+      continue;
+    }
+
+    const widthPenalty = parsed.reduce((sum, row) => sum + Math.abs(row.length - headerWidth), 0);
+    const score = headerWidth * 100 + parsed.length * 10 - widthPenalty;
+    if (score > bestScore) {
+      bestRows = parsed;
+      bestScore = score;
+    }
+  }
+
+  return bestRows;
+}
+
+function normalizeStructuredTableRows(rows: readonly string[][]): {
+  headers: string[];
+  rows: string[][];
+  alignments: Array<'left' | 'center' | 'right' | ''>;
+} {
+  const headerCells = rows[0] ?? [];
+  const bodyRows = rows.slice(1);
+  const columnCount = Math.max(headerCells.length, ...bodyRows.map((row) => row.length), 0);
+  const headers = Array.from({ length: columnCount }, (_, cellIndex) => headerCells[cellIndex] ?? '');
+  const normalizedRows = bodyRows.map((row) =>
+    Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] ?? ''),
+  );
+
+  return {
+    headers,
+    rows: normalizedRows,
+    alignments: Array.from({ length: columnCount }, () => ''),
+  };
 }
 
 function parseMarkdownTableAlignments(line: string): Array<'left' | 'center' | 'right' | ''> {
@@ -225,6 +373,49 @@ function renderMarkdownTableHeaderContent(
 
   const shortLabel = shortMarkdownTableHeaderLabel(header, kind);
   return `<span class="agent-markdown-th-short">${shortLabel}</span>`;
+}
+
+function renderStructuredMarkdownTable(args: {
+  headers: readonly string[];
+  rows: readonly string[][];
+  alignments: ReadonlyArray<'left' | 'center' | 'right' | ''>;
+  source: MarkdownStructuredTableSource;
+}): string {
+  const { headers, rows, alignments, source } = args;
+  const columnKinds = inferMarkdownTableColumnKinds(headers, rows, alignments);
+  const isDense = headers.length >= 7;
+  const denseAttr = isDense ? ' data-table-density="dense"' : '';
+  const sourceAttr = source === 'csv' ? ' data-table-source="csv"' : '';
+
+  return `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}${sourceAttr}><thead><tr>${headers
+    .map((cell, cellIndex) => {
+      const alignment = alignments[cellIndex] || '';
+      const alignAttr = alignment ? ` data-align="${alignment}"` : '';
+      const kindAttr = ` data-col-kind="${columnKinds[cellIndex] ?? 'text'}"`;
+      return `<th${alignAttr}${kindAttr} title="${cell}" aria-label="${cell}">${renderMarkdownTableHeaderContent(
+        cell,
+        columnKinds[cellIndex] ?? 'text',
+        isDense,
+      )}</th>`;
+    })
+    .join('')}</tr></thead><tbody>${rows
+    .map(
+      (row) =>
+        `<tr>${row
+          .map((cell, cellIndex) => {
+            const alignment = alignments[cellIndex] || '';
+            const alignAttr = alignment ? ` data-align="${alignment}"` : '';
+            const kind = columnKinds[cellIndex] ?? 'text';
+            const kindAttr = ` data-col-kind="${kind}"`;
+            return `<td${alignAttr}${kindAttr}>${renderMarkdownTableCellContent(
+              headers[cellIndex] ?? '',
+              cell,
+              kind,
+            )}</td>`;
+          })
+          .join('')}</tr>`,
+    )
+    .join('')}</tbody></table></div>`;
 }
 
 function inferMarkdownTableCellTone(
@@ -602,48 +793,41 @@ function renderMarkdownTables(text: string): string {
     const normalizedRows = bodyRows.map((row) =>
       Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] ?? ''),
     );
-    const columnKinds = inferMarkdownTableColumnKinds(
-      normalizedHeaders,
-      normalizedRows,
-      alignments,
-    );
-    const isDense = columnCount >= 7;
-    const denseAttr = isDense ? ' data-table-density="dense"' : '';
-
     rendered.push(
-      `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}><thead><tr>${normalizedHeaders
-        .map((cell, cellIndex) => {
-          const alignment = alignments[cellIndex] || '';
-          const alignAttr = alignment ? ` data-align="${alignment}"` : '';
-          const kindAttr = ` data-col-kind="${columnKinds[cellIndex] ?? 'text'}"`;
-          return `<th${alignAttr}${kindAttr} title="${cell}" aria-label="${cell}">${renderMarkdownTableHeaderContent(
-            cell,
-            columnKinds[cellIndex] ?? 'text',
-            isDense,
-          )}</th>`;
-        })
-        .join('')}</tr></thead><tbody>${normalizedRows
-        .map(
-          (row) =>
-            `<tr>${row
-              .map((cell, cellIndex) => {
-                const alignment = alignments[cellIndex] || '';
-                const alignAttr = alignment ? ` data-align="${alignment}"` : '';
-                const kind = columnKinds[cellIndex] ?? 'text';
-                const kindAttr = ` data-col-kind="${kind}"`;
-                return `<td${alignAttr}${kindAttr}>${renderMarkdownTableCellContent(
-                  normalizedHeaders[cellIndex] ?? '',
-                  cell,
-                  kind,
-                )}</td>`;
-              })
-              .join('')}</tr>`,
-        )
-        .join('')}</tbody></table></div>`,
+      renderStructuredMarkdownTable({
+        headers: normalizedHeaders,
+        rows: normalizedRows,
+        alignments,
+        source: 'markdown',
+      }),
     );
   }
 
   return rendered.join('\n');
+}
+
+function renderDelimitedMarkdownBlock(source: string): string | null {
+  const rows = detectDelimitedMarkdownRows(source);
+  if (!rows) {
+    return null;
+  }
+
+  const normalized = normalizeStructuredTableRows(rows);
+  if (normalized.headers.length === 0 || normalized.rows.length === 0) {
+    return null;
+  }
+
+  return renderStructuredMarkdownTable({
+    headers: normalized.headers,
+    rows: normalized.rows,
+    alignments: normalized.alignments,
+    source: 'csv',
+  });
+}
+
+function isCsvMarkdownFenceLanguage(language: string): boolean {
+  const normalized = language.trim().toLowerCase();
+  return normalized === 'csv' || normalized === 'text/csv';
 }
 
 function isBlockLevelMarkdownLine(line: string): boolean {
@@ -710,19 +894,28 @@ function wrapMarkdownParagraphs(text: string): string {
 export function renderMarkdown(text: string): string {
   const codeBlocks: string[] = [];
   const normalized = text.replace(/\r\n?/g, '\n');
-  let html = escapeMarkdownHtml(normalized);
-
-  html = html.replace(
-    /```([\w+-]*)\n([\s\S]*?)```/g,
+  const withoutCodeBlocks = normalized.replace(
+    /```([\w.+/-]*)\n([\s\S]*?)```/g,
     (_match: string, language: string, code: string) => {
-      const languageAttr = language ? ` data-language="${language}"` : '';
       const token = `@@MIDTERMMD${codeBlocks.length}@@`;
-      codeBlocks.push(
-        `<pre class="agent-markdown-pre"><code${languageAttr}>${code.trim()}</code></pre>`,
-      );
+      const csvTable = isCsvMarkdownFenceLanguage(language)
+        ? renderDelimitedMarkdownBlock(code.trim())
+        : null;
+      if (csvTable) {
+        codeBlocks.push(csvTable);
+      } else {
+        const languageAttr = language ? ` data-language="${escapeMarkdownHtml(language)}"` : '';
+        codeBlocks.push(
+          `<pre class="agent-markdown-pre"><code${languageAttr}>${escapeMarkdownHtml(
+            code.trim(),
+          )}</code></pre>`,
+        );
+      }
       return token;
     },
   );
+
+  let html = escapeMarkdownHtml(withoutCodeBlocks);
 
   html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 

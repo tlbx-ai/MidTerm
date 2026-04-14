@@ -11392,10 +11392,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-lens-user-label: color-mix(in srgb, var(--accent-blue) 54%, var(--text-muted) 46%);
   --agent-lens-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
   --agent-history-message-font-family: var(
-    --agent-ui-font-family,
-    'Segoe UI Variable Text',
-    'Segoe UI',
-    var(--font-ui)
+    --terminal-font-family,
+    var(--agent-history-mono-font-family, var(--font-mono))
   );
   --agent-history-user-font-family: var(--agent-history-message-font-family);
   --agent-history-assistant-font-family: var(--agent-history-message-font-family);
@@ -11809,6 +11807,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none;
 }
 
+.agent-view-panel[data-lens-layout='full-width-left']
+  .agent-history-badge-assistant[data-visible='true'] {
+  display: inline-flex;
+  color: var(--agent-lens-assistant-label);
+}
+
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-header,
 .agent-view-panel[data-lens-layout='full-width-left']
   .agent-history-assistant
@@ -11908,21 +11912,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-user .agent-history-body {
   color: var(--agent-lens-user-text);
   font-family: var(--agent-history-user-font-family);
-  font-size: 0.92rem;
-  line-height: 1.58;
+  font-size: var(--terminal-font-size, 16px);
+  font-weight: var(--terminal-font-weight, normal);
+  letter-spacing: var(--terminal-letter-spacing, 0px);
+  font-kerning: none;
+  line-height: var(--terminal-line-height, 1);
 }
 
 .agent-view-panel[data-lens-layout='full-width-left'] .agent-history-user .agent-history-body {
   color: color-mix(in srgb, var(--agent-lens-user-text) 92%, var(--text-secondary) 8%);
-  font-size: 0.95rem;
-  line-height: 1.64;
+  font-size: var(--terminal-font-size, 16px);
+  line-height: var(--terminal-line-height, 1);
 }
 
 .agent-history-assistant .agent-history-body {
   color: var(--text-primary);
   font-family: var(--agent-history-assistant-font-family);
-  font-size: 1rem;
-  line-height: 1.46;
+  font-size: var(--terminal-font-size, 16px);
+  font-weight: var(--terminal-font-weight, normal);
+  letter-spacing: var(--terminal-letter-spacing, 0px);
+  font-kerning: none;
+  line-height: var(--terminal-line-height, 1);
 }
 
 .agent-history-busy-indicator {

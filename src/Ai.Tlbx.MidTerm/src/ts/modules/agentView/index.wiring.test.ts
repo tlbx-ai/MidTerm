@@ -41,7 +41,7 @@ describe('agent view Lens wiring', () => {
     );
   });
 
-  it('uses slightly larger user and assistant metadata in full-width Lens layout', () => {
+  it('keeps full-width Lens metadata compact while allowing the first assistant row in a turn to show Agent', () => {
     expect(css).toContain(
       ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-user,",
     );
@@ -53,18 +53,24 @@ describe('agent view Lens wiring', () => {
       ".agent-view-panel[data-lens-layout='full-width-left'] .agent-history-badge-assistant {",
     );
     expect(css).toContain('display: none;');
+    expect(css).toContain(".agent-history-badge-assistant[data-visible='true'] {");
+    expect(css).toContain('color: var(--agent-lens-assistant-label);');
     expect(css).toMatch(
       /:root:not\(\[data-agent-show-message-timestamps='true'\]\)\s+\.agent-history-assistant\s+\.agent-history-meta\s*\{/,
     );
   });
 
-  it('lets agent message typography follow the configurable agent UI font while machine rows stay on terminal monospace', () => {
-    expect(css).toMatch(/--agent-history-message-font-family:\s*var\(\s*--agent-ui-font-family,/);
+  it('uses the terminal font stack and terminal size for user and assistant prompts while machine rows stay on terminal monospace', () => {
+    expect(css).toMatch(/--agent-history-message-font-family:\s*var\(\s*--terminal-font-family,/);
     expect(css).toContain(
       '--agent-history-mono-font-family: var(--terminal-font-family, var(--font-mono));',
     );
     expect(css).toContain('.agent-history-user .agent-history-body {');
     expect(css).toContain('.agent-history-assistant .agent-history-body {');
+    expect(css).toContain('font-size: var(--terminal-font-size, 16px);');
+    expect(css).toContain('font-weight: var(--terminal-font-weight, normal);');
+    expect(css).toContain('letter-spacing: var(--terminal-letter-spacing, 0px);');
+    expect(css).toContain('line-height: var(--terminal-line-height, 1);');
     expect(viewShellSource).not.toContain('--agent-font-family');
   });
 
@@ -77,6 +83,9 @@ describe('agent view Lens wiring', () => {
     );
     expect(lensDesign).toContain(
       'assistant rows should place any optional timestamp above the message body when that preference is enabled',
+    );
+    expect(lensDesign).toContain(
+      'the first assistant message row of a new turn should show a quiet `Agent` badge',
     );
   });
 
@@ -186,6 +195,9 @@ describe('agent view Lens wiring', () => {
     );
     expect(lensDesign).toContain(
       'Assistant markdown tables should expose compact per-column sort and filter controls in the header row',
+    );
+    expect(lensDesign).toContain(
+      'Fenced CSV blocks in assistant markdown should render through that same interactive table treatment',
     );
   });
 
