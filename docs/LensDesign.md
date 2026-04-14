@@ -540,6 +540,8 @@ Status in this branch/work item:
 - implemented: Lens scroll semantics now use explicit browser modes (`follow`, `browse`, `restore-anchor`) so upward user scrolls detach immediately while backward-history anchor restoration stays distinct from live-edge follow mode
 - implemented: follow mode now also detaches on real upward viewport movement away from the live edge even when an embedded/nested browser misses the explicit wheel/touch intent marker, preventing stuck-bottom repinning loops
 - implemented: explicit upward wheel, touch-drag, and keyboard browse intent now detaches live-follow before any later rerender or foreground recovery can re-pin the viewport to the live edge
+- implemented: follow mode now also detaches on small real upward viewport movement near the live edge even when the browser misses explicit input intent, so a near-bottom scroll start cannot stay latched in follow mode and snap back down
+- implemented: once Lens has detached into `browse`, non-user scroll/layout churn near the live edge no longer promotes it back to `follow`; only explicit user return-to-bottom behavior may re-enter live follow
 - implemented: Lens tab deactivation, browser foreground recovery, and visible-state rerenders now preserve an explicit older-history browse state instead of force-resetting the viewport to the live edge
 - implemented: the active-turn busy elapsed timer now updates only the existing busy-indicator label in place instead of forcing a full Lens history rerender, so idle sessions have no active bottom-pin loop and running sessions avoid timer-driven repin work
 - implemented: when a hidden Lens session is browsing older history, browser-side hidden compaction preserves that current browse window instead of snapping the hidden snapshot to the latest tail
@@ -577,6 +579,7 @@ Status in this branch/work item:
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
 - implemented: desktop Lens quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals the editable controls as a compact sheet
 - implemented: Lens model quick settings now use provider-scoped populated lists instead of a freeform textbox, while preserving current non-preset models already present in session state
+- implemented: Lens quick-settings dropdowns no longer rebuild and resync on every no-op footer refresh; unchanged option lists and unchanged selected values now stay quiet so idle Lens sessions avoid repeated `midterm:options` and `midterm:sync` event churn
 - implemented: constrained desktop Lens layouts now collapse quick settings into the same summary-plus-sheet pattern used on mobile instead of allowing the inline rail to run off screen
 - implemented: bookmark-scoped Lens `Resume` now lives inside that quick-settings line as a low-chrome text action directly after `Permissions` instead of as a detached status control
 - implemented: Lens Smart Input now stages file/image selections and clipboard files as removable composer chips, and the `+` / photo actions no longer auto-submit a Lens turn on selection

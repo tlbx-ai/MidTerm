@@ -70,7 +70,7 @@ export function resolveHistoryScrollMode(args: {
     return nearBottom ? 'follow' : 'browse';
   }
 
-  if (args.previousMode === 'follow' && userScrolledUp && !nearBottom) {
+  if (args.previousMode === 'follow' && userScrolledUp) {
     return 'browse';
   }
 
@@ -78,7 +78,7 @@ export function resolveHistoryScrollMode(args: {
     return 'follow';
   }
 
-  return nearBottom ? 'follow' : 'browse';
+  return 'browse';
 }
 
 export function isHistoryScrollModePinned(mode: HistoryScrollMode): boolean {

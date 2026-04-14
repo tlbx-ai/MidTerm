@@ -61,6 +61,15 @@ describe('smart input tab wiring', () => {
     expect(viewSource).toContain("document.addEventListener('scroll', updateMenuPlacement, true);");
   });
 
+  it('avoids no-op Lens quick-setting dropdown churn during footer resync', () => {
+    expect(viewSource).toContain("if (select.dataset.midtermOptionsSignature === nextSignature) {");
+    expect(viewSource).toContain("select.dataset.midtermOptionsSignature = nextSignature;");
+    expect(viewSource).toContain("select.dispatchEvent(new Event('midterm:options'));");
+    expect(viewSource).toContain('syncSelection();');
+    expect(footerSupportSource).toContain('if (select.value === nextValue) {');
+    expect(footerSupportSource).toContain("select.dispatchEvent(new Event('midterm:sync'));");
+  });
+
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {
     expect(html).toContain('id="adaptive-footer-dock"');
     expect(html).toContain('id="adaptive-footer-reserve"');

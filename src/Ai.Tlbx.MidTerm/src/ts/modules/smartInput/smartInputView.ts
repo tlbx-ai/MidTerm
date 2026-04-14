@@ -413,6 +413,13 @@ export function setLensQuickSettingsDropdownOptions(
   select: HTMLSelectElement,
   options: readonly LensQuickSettingsOption[],
 ): void {
+  const nextSignature = options
+    .map((option) => `${option.value}\u0000${option.label}`)
+    .join('\u0001');
+  if (select.dataset.midtermOptionsSignature === nextSignature) {
+    return;
+  }
+
   const previousValue = select.value;
   select.replaceChildren();
 
@@ -427,6 +434,7 @@ export function setLensQuickSettingsDropdownOptions(
     select.value = previousValue;
   }
 
+  select.dataset.midtermOptionsSignature = nextSignature;
   select.dispatchEvent(new Event('midterm:options'));
 }
 
@@ -514,6 +522,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
       });
       menu.appendChild(optionButton);
     }
+    syncSelection();
   };
 
   const syncSelection = (): void => {

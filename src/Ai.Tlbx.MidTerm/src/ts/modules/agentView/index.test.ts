@@ -747,6 +747,28 @@ describe('agentView dev errors', () => {
     ).toBe('browse');
   });
 
+  it('stops auto-follow on even small upward viewport movement near the live edge when intent markers are missed', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 860,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
   it('preserves browse mode and scroll position when Lens returns to the foreground', async () => {
     const { prepareLensForForeground } = await import('./viewPresentation');
 
@@ -783,6 +805,28 @@ describe('agentView dev errors', () => {
           scrollTop: 240,
           clientHeight: 600,
           scrollHeight: 2760,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
+  it('keeps browse mode sticky near the live edge until the user explicitly returns to bottom', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'browse',
+        previous: {
+          scrollTop: 1736,
+          clientHeight: 600,
+          scrollHeight: 2400,
+        },
+        current: {
+          scrollTop: 1738,
+          clientHeight: 600,
+          scrollHeight: 2400,
         },
         userInitiated: false,
         pendingAnchorRestore: false,

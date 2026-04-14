@@ -147,9 +147,11 @@ export function syncLensQuickSettingsControls(args: {
 }
 
 function syncLensQuickSettingSelect(select: HTMLSelectElement, nextValue: string): void {
-  if (select.value !== nextValue) {
-    select.value = nextValue;
+  if (select.value === nextValue) {
+    return;
   }
+
+  select.value = nextValue;
   select.dispatchEvent(new Event('midterm:sync'));
 }
 
