@@ -1024,5 +1024,7 @@
   "smartInput.modeSmart": "Smart Input",
   "smartInput.modeBoth": "Both",
   "smartInput.keysShow": "Show keys",
-  "smartInput.keysHide": "Hide keys"
+  "smartInput.keysHide": "Hide keys",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

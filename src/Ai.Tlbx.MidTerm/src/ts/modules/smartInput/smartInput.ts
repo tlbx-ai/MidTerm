@@ -39,6 +39,7 @@ import { onDevModeChanged } from '../sidebar/voiceSection';
 import { showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
 import { closePopup as closeTouchControllerPopup } from '../touchController/popups';
+import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
   clipboardDataMayContainLensComposerImage,
@@ -65,6 +66,7 @@ import {
   formatLensQuickSettingsSummary,
   openFileInputPicker as showSmartInputFilePicker,
   renderTerminalStatusRow,
+  syncSmartInputComposerExpandToggleState,
   type ToolKind,
 } from './smartInputView';
 import {
@@ -134,6 +136,7 @@ let footerStatusHost: HTMLDivElement | null = null;
 let dockedBar: HTMLDivElement | null = null;
 let touchControllerEl: HTMLElement | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
+let composerExpandBtn: HTMLButtonElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let toolsToggleBtn: HTMLButtonElement | null = null;
 let toolsPanel: HTMLDivElement | null = null;
@@ -162,6 +165,8 @@ let suppressNextToolsToggleClick = false;
 let footerResizeQueued = false;
 let footerResizeObserver: ResizeObserver | null = null;
 let lastReservedFooterHeightPx = Number.NaN;
+let releaseComposerExpandedBackButtonLayer: (() => void) | null = null;
+let lastAppliedComposerExpanded = false;
 
 const AUTO_SEND_LONG_PRESS_MS = 520;
 const sessionDrafts = new Map<string, SmartInputComposerDraft>();
@@ -169,6 +174,7 @@ const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
 const sessionPromptHistories = new Map<string, SmartInputPromptHistoryEntry[]>();
 const sessionPromptHistoryNavigation = new Map<string, SmartInputPromptHistoryNavigationState>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
+const sessionComposerExpanded = new Map<string, boolean>();
 let lensResumeConversationHandler:
   | ((args: {
       sessionId: string;
@@ -185,6 +191,47 @@ function setTouchKeysExpanded(expanded: boolean): void {
     touchControllerEl?.classList.remove('visible');
   }
   syncSmartInputVisibility();
+}
+
+function isComposerExpanded(sessionId: string | null | undefined): boolean {
+  return sessionId ? sessionComposerExpanded.get(sessionId) === true : false;
+}
+
+function setComposerExpandedForSession(sessionId: string, expanded: boolean): void {
+  if (expanded) {
+    sessionComposerExpanded.set(sessionId, true);
+    return;
+  }
+
+  sessionComposerExpanded.delete(sessionId);
+}
+
+function setActiveSessionComposerExpanded(expanded: boolean): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId || expanded === isComposerExpanded(sessionId)) {
+    return;
+  }
+
+  if (expanded) {
+    closeFooterTransientUi();
+  }
+
+  setComposerExpandedForSession(sessionId, expanded);
+  syncSmartInputVisibility(true);
+}
+
+function syncComposerExpandedBackButtonLayer(expanded: boolean): void {
+  if (expanded) {
+    if (!releaseComposerExpandedBackButtonLayer) {
+      releaseComposerExpandedBackButtonLayer = registerBackButtonLayer(() => {
+        setActiveSessionComposerExpanded(false);
+      });
+    }
+    return;
+  }
+
+  releaseComposerExpandedBackButtonLayer?.();
+  releaseComposerExpandedBackButtonLayer = null;
 }
 
 interface SmartInputPromptHistoryNavigationState {
@@ -636,15 +683,15 @@ function renderSessionDraftIntoTextarea(
     return;
   }
 
+  const preserveScrollTop = textarea.scrollTop;
   const nextValue = getSessionDraftText(sessionId);
   if (textarea.value !== nextValue) {
     textarea.value = nextValue;
   }
+  resizeSmartInputTextarea(textarea, { preserveScrollTop });
   if (selection) {
     textarea.setSelectionRange(selection.start, selection.end);
   }
-  textarea.scrollTop = 0;
-  resizeSmartInputTextarea(textarea);
 }
 
 function updateSessionDraftAndTextarea(
@@ -912,6 +959,7 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   applyFooterPresentation(layoutState);
   syncInputRow(layoutState);
   syncContextRow(layoutState);
+  syncComposerExpandedPresentation(layoutState);
 
   const managerBar = document.getElementById('manager-bar');
   managerBar?.classList.toggle('hidden', !layoutState.showAutomation || layoutState.isMobile);
@@ -936,6 +984,12 @@ function hideAdaptiveFooter(): void {
   }
   setToolsPanelOpen(false);
   setLensQuickSettingsSheetOpen(false);
+  footerDock.dataset.composerExpanded = 'false';
+  if (dockedBar) {
+    dockedBar.dataset.composerExpanded = 'false';
+  }
+  lastAppliedComposerExpanded = false;
+  syncComposerExpandedBackButtonLayer(false);
   footerDock.hidden = true;
   footerPrimaryHost?.setAttribute('hidden', '');
   footerContextHost?.setAttribute('hidden', '');
@@ -947,6 +1001,14 @@ function ensureFooterHosts(): void {
   footerPrimaryHost ??= document.getElementById('adaptive-footer-primary') as HTMLDivElement | null;
   footerContextHost ??= document.getElementById('adaptive-footer-context') as HTMLDivElement | null;
   footerStatusHost ??= document.getElementById('adaptive-footer-status') as HTMLDivElement | null;
+  if (footerDock && !('composerBackdropClickBound' in footerDock.dataset)) {
+    footerDock.dataset.composerBackdropClickBound = 'true';
+    footerDock.addEventListener('click', (event) => {
+      if (event.target === footerDock && isComposerExpanded($activeSessionId.get())) {
+        setActiveSessionComposerExpanded(false);
+      }
+    });
+  }
   ensureFooterResizeObserver();
 }
 
@@ -971,6 +1033,32 @@ function applyFooterPresentation(layoutState: AdaptiveFooterLayoutState): void {
   footerDock.classList.toggle('keys-expanded', layoutState.touchControlsExpanded);
 }
 
+function syncComposerExpandedPresentation(layoutState: AdaptiveFooterLayoutState): void {
+  const composerExpanded = layoutState.showInput && isComposerExpanded(layoutState.activeSessionId);
+  footerDock?.setAttribute('data-composer-expanded', composerExpanded ? 'true' : 'false');
+  dockedBar?.setAttribute('data-composer-expanded', composerExpanded ? 'true' : 'false');
+  if (composerExpandBtn) {
+    syncSmartInputComposerExpandToggleState(composerExpandBtn, composerExpanded);
+  }
+  syncComposerExpandedBackButtonLayer(composerExpanded);
+
+  const stateChanged = composerExpanded !== lastAppliedComposerExpanded;
+  lastAppliedComposerExpanded = composerExpanded;
+  if (!stateChanged || !activeTextarea) {
+    return;
+  }
+
+  const textarea = activeTextarea;
+  const preserveScrollTop = textarea.scrollTop;
+  requestAnimationFrame(() => {
+    resizeSmartInputTextarea(textarea, { preserveScrollTop });
+    textarea.focus({ preventScroll: true });
+    if (!footerResizeObserver) {
+      queueFooterReserveSync();
+    }
+  });
+}
+
 function createDockedDOM(): void {
   ensureFooterHosts();
   if (!footerPrimaryHost || !footerContextHost || !footerStatusHost) {
@@ -984,6 +1072,11 @@ function createDockedDOM(): void {
     createToolsStrip: () => createToolButtonsStrip(getToolButtonRenderArgs()),
     onAttachInputChange: (files) => {
       void handleSmartInputSelectedFiles(files);
+    },
+    onExpandToggleClick: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));
     },
     onLensEffortChange: () => {
       const sessionId = $activeSessionId.get();
@@ -1075,10 +1168,12 @@ function createDockedDOM(): void {
       handleSmartInputCut(event, textarea);
     },
     onTextareaInput: (textarea) => {
+      let draftRenderedIntoTextarea = false;
       const sessionId = $activeSessionId.get();
       if (sessionId) {
         resetPromptHistoryNavigation(sessionId);
         if (draftHasInlineReferences(sessionId)) {
+          draftRenderedIntoTextarea = true;
           renderSessionDraftIntoTextarea(
             sessionId,
             textarea,
@@ -1092,7 +1187,9 @@ function createDockedDOM(): void {
           setSessionDraftText(sessionId, textarea.value);
         }
       }
-      resizeSmartInputTextarea(textarea);
+      if (!draftRenderedIntoTextarea) {
+        resizeSmartInputTextarea(textarea);
+      }
       if (!footerResizeObserver) {
         queueFooterReserveSync();
       }
@@ -1110,6 +1207,12 @@ function createDockedDOM(): void {
         !event.altKey &&
         !event.metaKey
       ) {
+        if (isComposerExpanded(sessionId)) {
+          event.preventDefault();
+          setActiveSessionComposerExpanded(false);
+          return;
+        }
+
         if (sessionId && isLensActiveSession(sessionId)) {
           event.preventDefault();
           void handleLensEscape(sessionId);
@@ -1213,6 +1316,7 @@ function createDockedDOM(): void {
   lensPlanSelect = dom.lensPlanSelect;
   lensPermissionSelect = dom.lensPermissionSelect;
   lensAttachmentHost = dom.lensAttachmentHost;
+  composerExpandBtn = dom.composerExpandBtn;
   activeTextarea = dom.textarea;
   sendBtn = dom.sendBtn;
   toolsToggleBtn = dom.toolsToggleBtn;
@@ -2069,6 +2173,7 @@ export function removeSmartInputSessionState(sessionId: string): void {
   sessionPromptHistories.delete(sessionId);
   resetPromptHistoryNavigation(sessionId);
   sessionPinnedTools.delete(sessionId);
+  sessionComposerExpanded.delete(sessionId);
   if ($activeSessionId.get() === sessionId) {
     syncDraftForActiveSession();
     renderPinnedToolsForSession(sessionId);
@@ -2179,6 +2284,7 @@ function updateFooterReservedHeight(): void {
   updateFooterReservedHeightSupport({
     footerDock,
     activeTextarea,
+    composerExpanded: isComposerExpanded($activeSessionId.get()),
     lastReservedFooterHeightPx,
     setLastReservedFooterHeightPx,
   });

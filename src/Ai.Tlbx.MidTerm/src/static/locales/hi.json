@@ -886,5 +886,7 @@
   "managerBar.modal.cancel": "रद्द करें",
   "managerBar.modal.save": "Action सहेजें",
   "managerBar.modal.errorPromptRequired": "सेव करने से पहले कम से कम एक prompt जोड़ें।",
-  "managerBar.modal.errorScheduleRequired": "सेव करने से पहले कम से कम एक schedule entry जोड़ें।"
+  "managerBar.modal.errorScheduleRequired": "सेव करने से पहले कम से कम एक schedule entry जोड़ें।",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

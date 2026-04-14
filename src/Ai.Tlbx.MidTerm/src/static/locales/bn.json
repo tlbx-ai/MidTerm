@@ -886,5 +886,7 @@
   "managerBar.modal.cancel": "বাতিল",
   "managerBar.modal.save": "Action সংরক্ষণ করুন",
   "managerBar.modal.errorPromptRequired": "সংরক্ষণের আগে অন্তত একটি prompt যোগ করুন।",
-  "managerBar.modal.errorScheduleRequired": "সংরক্ষণের আগে অন্তত একটি schedule entry যোগ করুন।"
+  "managerBar.modal.errorScheduleRequired": "সংরক্ষণের আগে অন্তত একটি schedule entry যোগ করুন।",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

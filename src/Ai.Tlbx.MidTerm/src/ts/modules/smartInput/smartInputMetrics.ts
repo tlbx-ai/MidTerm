@@ -5,7 +5,18 @@ const MOBILE_BREAKPOINT_PX = 768;
 const COLLAPSED_HEIGHT_DATASET_KEY = 'midtermCollapsedHeightPx';
 const SINGLE_LINE_DATASET_KEY = 'midtermSingleLine';
 
-export function resizeSmartInputTextarea(textarea: HTMLTextAreaElement): void {
+interface ResizeSmartInputTextareaOptions {
+  preserveScrollTop?: number | null;
+}
+
+// eslint-disable-next-line complexity -- autoresize must reconcile min/max height, overflow mode, and preserved internal scroll state without snapping the prompt viewport.
+export function resizeSmartInputTextarea(
+  textarea: HTMLTextAreaElement,
+  options: ResizeSmartInputTextareaOptions = {},
+): void {
+  const preserveScrollTop = Number.isFinite(options.preserveScrollTop ?? Number.NaN)
+    ? Math.max(0, options.preserveScrollTop ?? 0)
+    : Math.max(0, textarea.scrollTop);
   textarea.style.minHeight = '';
   textarea.style.height = 'auto';
 
@@ -40,7 +51,20 @@ export function resizeSmartInputTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.setProperty('--smart-input-textarea-rendered-height', `${String(nextHeight)}px`);
   textarea.style.height = `${String(nextHeight)}px`;
   textarea.style.minHeight = `${String(nextHeight)}px`;
-  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  const isOverflowing = textarea.scrollHeight > maxHeight;
+  textarea.style.overflowY = isOverflowing ? 'auto' : 'hidden';
+
+  if (!isOverflowing) {
+    textarea.scrollTop = 0;
+    return;
+  }
+
+  const viewportHeight =
+    Number.isFinite(textarea.clientHeight) && textarea.clientHeight > 0
+      ? textarea.clientHeight
+      : nextHeight;
+  const maxScrollTop = Math.max(0, textarea.scrollHeight - viewportHeight);
+  textarea.scrollTop = Math.min(preserveScrollTop, maxScrollTop);
 }
 
 export function getCollapsedSmartInputTextareaHeight(textarea: HTMLTextAreaElement): number {

@@ -6,8 +6,10 @@ import {
 } from './smartInputMetrics';
 
 interface FakeTextarea {
+  clientHeight: number;
   dataset: Record<string, string | undefined>;
   scrollHeight: number;
+  scrollTop: number;
   style: {
     cssText?: string;
     fontSize: string;
@@ -51,8 +53,10 @@ function createTextarea(scrollHeight: number): HTMLTextAreaElement {
   };
 
   return {
+    clientHeight: 0,
     dataset: {},
     scrollHeight,
+    scrollTop: 0,
     style,
   } as HTMLTextAreaElement;
 }
@@ -110,6 +114,29 @@ describe('smartInputMetrics', () => {
     expect(textarea.dataset.midtermSingleLine).toBe('false');
     expect(textarea.style.overflowY).toBe('auto');
     expect(getCollapsedSmartInputTextareaHeight(textarea)).toBe(44);
+  });
+
+  it('preserves the current internal scroll offset while the composer stays overflowed', () => {
+    const textarea = createTextarea(320);
+    textarea.clientHeight = 166;
+    textarea.scrollTop = 72;
+    vi.stubGlobal('getComputedStyle', (target: HTMLTextAreaElement) =>
+      ({
+        borderBottomWidth: '1px',
+        borderTopWidth: '1px',
+        fontSize: target.style.fontSize || '16px',
+        lineHeight: target.style.lineHeight || '18px',
+        minHeight: target.style.minHeight || '44px',
+        paddingBottom: '10px',
+        paddingTop: '10px',
+      }) as CSSStyleDeclaration,
+    );
+
+    resizeSmartInputTextarea(textarea);
+
+    expect(textarea.style.height).toBe('166px');
+    expect(textarea.style.overflowY).toBe('auto');
+    expect(textarea.scrollTop).toBe(72);
   });
 
   it('marks collapsed prompts as single-line so CSS can vertically center them', () => {

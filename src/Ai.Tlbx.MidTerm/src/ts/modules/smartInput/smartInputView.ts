@@ -11,6 +11,7 @@ export interface LensQuickSettingsOption {
 
 export interface SmartInputDomRefs {
   attachInput: HTMLInputElement;
+  composerExpandBtn: HTMLButtonElement;
   inlineToolHost: HTMLDivElement;
   inputRow: HTMLDivElement;
   lensAttachmentHost: HTMLDivElement;
@@ -36,6 +37,7 @@ interface CreateSmartInputDomArgs {
   onLensPermissionChange: () => void;
   onLensPlanChange: () => void;
   onPhotoInputChange: (files: FileList) => void;
+  onExpandToggleClick: (event: MouseEvent) => void;
   onSendClick: () => void;
   onSendDoubleClick: (event: MouseEvent) => void;
   onSendPointerDown: () => void;
@@ -154,6 +156,9 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   lensAttachmentHost.className = 'smart-input-attachments';
   lensAttachmentHost.hidden = true;
 
+  const textareaShell = document.createElement('div');
+  textareaShell.className = 'smart-input-textarea-shell';
+
   const textarea = document.createElement('textarea');
   textarea.className = 'smart-input-textarea';
   textarea.rows = 1;
@@ -181,6 +186,16 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   textarea.addEventListener('keydown', (event) => {
     args.onTextareaKeydown(event, textarea);
   });
+
+  const composerExpandBtn = document.createElement('button');
+  composerExpandBtn.type = 'button';
+  composerExpandBtn.className = 'smart-input-expand-toggle';
+  composerExpandBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  composerExpandBtn.addEventListener('click', args.onExpandToggleClick);
+  syncSmartInputComposerExpandToggleState(composerExpandBtn, false);
 
   const sendBtn = document.createElement('button');
   sendBtn.type = 'button';
@@ -239,7 +254,9 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   toolsPanel.hidden = true;
 
   editorHost.appendChild(lensAttachmentHost);
-  editorHost.appendChild(textarea);
+  textareaShell.appendChild(textarea);
+  textareaShell.appendChild(composerExpandBtn);
+  editorHost.appendChild(textareaShell);
   inputRow.appendChild(editorHost);
   inputRow.appendChild(inlineToolHost);
   inputRow.appendChild(sendBtn);
@@ -250,6 +267,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
 
   return {
     attachInput,
+    composerExpandBtn,
     inlineToolHost,
     inputRow,
     lensAttachmentHost,
@@ -266,6 +284,22 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     toolsStrip: args.createToolsStrip(),
     toolsToggleBtn,
   };
+}
+
+export function syncSmartInputComposerExpandToggleState(
+  button: HTMLButtonElement,
+  expanded: boolean,
+): void {
+  button.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+  button.setAttribute(
+    'aria-label',
+    expanded ? t('smartInput.collapseComposer') : t('smartInput.expandComposer'),
+  );
+  button.title = expanded ? t('smartInput.collapseComposer') : t('smartInput.expandComposer');
+  button.dataset.expanded = expanded ? 'true' : 'false';
+  button.innerHTML = expanded
+    ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M15 4h5v5M20 4l-6 6M9 20H4v-5M4 20l6-6M4 9V4h5M4 4l6 6M20 15v5h-5M20 20l-6-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M9 4H4v5M4 4l6 6M15 20h5v-5M20 20l-6-6M20 9V4h-5M20 4l-6 6M4 15v5h5M4 20l6-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 
 export function createToolButtonsStrip(args: CreateToolButtonsStripArgs): HTMLDivElement {

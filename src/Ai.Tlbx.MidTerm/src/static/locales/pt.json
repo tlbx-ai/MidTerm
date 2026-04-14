@@ -886,5 +886,7 @@
   "managerBar.modal.cancel": "Cancelar",
   "managerBar.modal.save": "Salvar ação",
   "managerBar.modal.errorPromptRequired": "Adicione pelo menos um prompt antes de salvar.",
-  "managerBar.modal.errorScheduleRequired": "Adicione pelo menos um horário antes de salvar."
+  "managerBar.modal.errorScheduleRequired": "Adicione pelo menos um horário antes de salvar.",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

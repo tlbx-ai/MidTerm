@@ -886,5 +886,7 @@
   "managerBar.modal.cancel": "キャンセル",
   "managerBar.modal.save": "アクションを保存",
   "managerBar.modal.errorPromptRequired": "保存する前に少なくとも1つのPromptを追加してください。",
-  "managerBar.modal.errorScheduleRequired": "保存する前に少なくとも1つのスケジュールを追加してください。"
+  "managerBar.modal.errorScheduleRequired": "保存する前に少なくとも1つのスケジュールを追加してください。",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

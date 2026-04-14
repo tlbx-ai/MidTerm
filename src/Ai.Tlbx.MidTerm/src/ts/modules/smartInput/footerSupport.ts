@@ -172,11 +172,12 @@ export function queueFooterReserveSync(args: {
 export function updateFooterReservedHeight(args: {
   footerDock: HTMLDivElement | null;
   activeTextarea: HTMLTextAreaElement | null;
+  composerExpanded: boolean;
   lastReservedFooterHeightPx: number;
   setLastReservedFooterHeightPx: (value: number) => void;
 }): void {
   const root = document.documentElement;
-  if (!args.footerDock || args.footerDock.hidden) {
+  if (!args.footerDock || args.footerDock.hidden || args.composerExpanded) {
     setAdaptiveFooterReservedHeight(
       root,
       0,

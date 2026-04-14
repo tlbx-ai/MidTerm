@@ -886,5 +886,7 @@
   "managerBar.modal.cancel": "取消",
   "managerBar.modal.save": "保存操作",
   "managerBar.modal.errorPromptRequired": "保存前至少添加一条 prompt。",
-  "managerBar.modal.errorScheduleRequired": "保存前至少添加一个计划时间。"
+  "managerBar.modal.errorScheduleRequired": "保存前至少添加一个计划时间。",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

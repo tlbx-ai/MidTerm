@@ -886,5 +886,7 @@
   "agentView.loadError": "Los datos del agente no se pudieron cargar ahora mismo.",
   "agentView.never": "Nunca",
   "agentView.unknownTime": "Desconocido",
-  "agentView.justNow": "Justo ahora"
+  "agentView.justNow": "Justo ahora",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }

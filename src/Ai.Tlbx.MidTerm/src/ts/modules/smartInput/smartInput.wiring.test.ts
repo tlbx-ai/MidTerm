@@ -190,6 +190,37 @@ describe('smart input tab wiring', () => {
     expect(metricsSource).toContain("const SINGLE_LINE_DATASET_KEY = 'midtermSingleLine';");
   });
 
+  it('keeps attachment and token rerenders from snapping the composer viewport back to the top', () => {
+    expect(source).toContain('const preserveScrollTop = textarea.scrollTop;');
+    expect(source).toContain('resizeSmartInputTextarea(textarea, { preserveScrollTop });');
+    expect(source).toContain('let draftRenderedIntoTextarea = false;');
+    expect(source).toContain('if (!draftRenderedIntoTextarea) {');
+    expect(css).toContain('--smart-input-textarea-max-visible-lines: 8;');
+    expect(css).toContain(
+      'var(--smart-input-textarea-line-height) * var(--smart-input-textarea-max-visible-lines)',
+    );
+  });
+
+  it('supports an inset composer expand toggle without duplicating the live textarea', () => {
+    expect(viewSource).toContain("textareaShell.className = 'smart-input-textarea-shell';");
+    expect(viewSource).toContain("composerExpandBtn.className = 'smart-input-expand-toggle';");
+    expect(viewSource).toContain('syncSmartInputComposerExpandToggleState(composerExpandBtn, false);');
+    expect(viewSource).toContain("textareaShell.appendChild(textarea);");
+    expect(viewSource).toContain("textareaShell.appendChild(composerExpandBtn);");
+    expect(source).toContain('const sessionComposerExpanded = new Map<string, boolean>();');
+    expect(source).toContain("footerDock?.setAttribute('data-composer-expanded', composerExpanded ? 'true' : 'false');");
+    expect(source).toContain('setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));');
+    expect(source).toContain('releaseComposerExpandedBackButtonLayer = registerBackButtonLayer(() => {');
+    expect(footerSupportSource).toContain('composerExpanded: boolean;');
+    expect(footerSupportSource).toContain('args.composerExpanded');
+    expect(css).toContain('.smart-input-textarea-shell {');
+    expect(css).toContain('.smart-input-expand-toggle {');
+    expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {");
+    expect(css).toContain(
+      "body.keyboard-visible .adaptive-footer-dock[data-composer-expanded='true'][data-device='mobile']",
+    );
+  });
+
   it('renders the plus-menu tools as popover actions with icon and text labels', () => {
     expect(viewSource).toContain("toolsToggleBtn.setAttribute('aria-haspopup', 'menu');");
     expect(viewSource).toContain(

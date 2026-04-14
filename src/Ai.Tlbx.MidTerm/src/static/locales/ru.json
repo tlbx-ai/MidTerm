@@ -886,5 +886,7 @@
   "managerBar.modal.cancel": "Отмена",
   "managerBar.modal.save": "Сохранить действие",
   "managerBar.modal.errorPromptRequired": "Добавьте хотя бы один prompt перед сохранением.",
-  "managerBar.modal.errorScheduleRequired": "Добавьте хотя бы один слот расписания перед сохранением."
+  "managerBar.modal.errorScheduleRequired": "Добавьте хотя бы один слот расписания перед сохранением.",
+  "smartInput.expandComposer": "Expand composer",
+  "smartInput.collapseComposer": "Collapse composer"
 }
