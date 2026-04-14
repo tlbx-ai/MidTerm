@@ -50,4 +50,13 @@ describe('terminal surface wiring', () => {
     expect(managerSource).toContain('return getActiveTab(activeSessionId) !== \'terminal\';');
     expect(managerSource).toContain('if (!target || shouldSkipGlobalFocusReclaim(target)) {');
   });
+
+  it('suppresses embedded preview terminal auto-focus so nested MidTerm does not steal outer Command Bay focus', () => {
+    expect(managerSource).toContain(
+      "import { isEmbeddedWebPreviewContext } from '../web/webContext';",
+    );
+    expect(managerSource).toContain(
+      'if (isEmbeddedWebPreviewContext() || isSearchVisible() || hasNonTerminalFocus()) return;',
+    );
+  });
 });

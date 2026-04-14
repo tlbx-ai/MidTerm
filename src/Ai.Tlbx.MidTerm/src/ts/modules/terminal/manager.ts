@@ -82,6 +82,7 @@ import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
+import { isEmbeddedWebPreviewContext } from '../web/webContext';
 
 let showBellNotification: (sessionId: string) => void = () => {};
 
@@ -633,8 +634,7 @@ export function syncTerminalWebglState(
  * Respects search panel - won't focus if search is visible.
  */
 export function focusActiveTerminal(): void {
-  if (isSearchVisible()) return;
-  if (hasNonTerminalFocus()) return;
+  if (isEmbeddedWebPreviewContext() || isSearchVisible() || hasNonTerminalFocus()) return;
 
   if (isSmartInputMode()) {
     showSmartInput();
@@ -1283,9 +1283,7 @@ const WS_MAX_PAYLOAD = 32 * 1024;
 // PSReadLine does syntax highlighting, history, etc. on each character
 const NON_BPM_CHUNK_SIZE = 512;
 const NON_BPM_CHUNK_DELAY = 30;
-// Only show paste indicator for pastes > 1KB
 const PASTE_INDICATOR_THRESHOLD = 1024;
-// Minimum badge display time so users can see it
 const MIN_BADGE_DISPLAY_MS = 300;
 
 /**
