@@ -214,7 +214,10 @@ function normalizeStructuredTableRows(rows: readonly string[][]): {
   const headerCells = rows[0] ?? [];
   const bodyRows = rows.slice(1);
   const columnCount = Math.max(headerCells.length, ...bodyRows.map((row) => row.length), 0);
-  const headers = Array.from({ length: columnCount }, (_, cellIndex) => headerCells[cellIndex] ?? '');
+  const headers = Array.from(
+    { length: columnCount },
+    (_, cellIndex) => headerCells[cellIndex] ?? '',
+  );
   const normalizedRows = bodyRows.map((row) =>
     Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] ?? ''),
   );

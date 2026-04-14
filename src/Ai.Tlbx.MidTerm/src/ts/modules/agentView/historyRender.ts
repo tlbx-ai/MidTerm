@@ -239,30 +239,25 @@ function buildVisibleHistoryEntries(args: {
   });
 }
 
-function shouldShowAssistantBadge(
+function hasEarlierAssistantInTurn(
+  entries: readonly LensHistoryEntry[],
+  absoluteIndex: number,
+  sourceTurnId: string,
+): boolean {
+  for (let index = absoluteIndex - 1; index >= 0; index -= 1) {
+    const previous = entries[index];
+    if (previous?.kind === 'assistant' && (previous.sourceTurnId?.trim() ?? '') === sourceTurnId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function didUserStartMostRecentUntaggedRun(
   entries: readonly LensHistoryEntry[],
   absoluteIndex: number,
 ): boolean {
-  const entry = entries[absoluteIndex];
-  if (!entry || entry.kind !== 'assistant') {
-    return false;
-  }
-
-  const sourceTurnId = entry.sourceTurnId?.trim() ?? '';
-  if (sourceTurnId) {
-    for (let index = absoluteIndex - 1; index >= 0; index -= 1) {
-      const previous = entries[index];
-      if (
-        previous?.kind === 'assistant' &&
-        (previous.sourceTurnId?.trim() ?? '') === sourceTurnId
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   for (let index = absoluteIndex - 1; index >= 0; index -= 1) {
     const previous = entries[index];
     if (!previous) {
@@ -279,6 +274,21 @@ function shouldShowAssistantBadge(
   }
 
   return true;
+}
+
+function shouldShowAssistantBadge(
+  entries: readonly LensHistoryEntry[],
+  absoluteIndex: number,
+): boolean {
+  const entry = entries[absoluteIndex];
+  if (!entry || entry.kind !== 'assistant') {
+    return false;
+  }
+
+  const sourceTurnId = entry.sourceTurnId?.trim() ?? '';
+  return sourceTurnId
+    ? !hasEarlierAssistantInTurn(entries, absoluteIndex, sourceTurnId)
+    : didUserStartMostRecentUntaggedRun(entries, absoluteIndex);
 }
 
 function resolveAnchorAbsoluteIndex(state: SessionLensViewState, entryId: string): number {
