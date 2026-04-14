@@ -725,6 +725,28 @@ describe('agentView dev errors', () => {
     ).toBe('browse');
   });
 
+  it('stops auto-follow when the viewport moves upward even if the browser missed the explicit scroll-intent marker', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 760,
+          clientHeight: 600,
+          scrollHeight: 1860,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
   it('does not repin auto-follow just because layout changed while already detached from the live edge', async () => {
     const { resolveHistoryScrollMode } = await import('./index');
 
@@ -5707,6 +5729,41 @@ describe('agentView dev errors', () => {
 
     expect(settled).toHaveLength(1);
     expect(settled.some((entry: any) => entry.busyIndicator)).toBe(false);
+  });
+
+  it('updates the busy elapsed label in place instead of forcing a full Lens render on each timer tick', async () => {
+    const { syncBusyIndicatorTicker } = await import('./historyProcessing');
+
+    let timerCallback: (() => void) | null = null;
+    (window.setTimeout as any) = vi.fn((callback: () => void) => {
+      timerCallback = callback;
+      return 1;
+    });
+
+    const renderCurrentAgentView = vi.fn();
+    const updateBusyIndicatorElapsed = vi.fn(() => true);
+    const state = { busyIndicatorTickHandle: null } as any;
+    const snapshot = {
+      sessionId: 's-busy',
+      currentTurn: {
+        startedAt: new Date(Date.now() - 5_000).toISOString(),
+      },
+    } as any;
+
+    syncBusyIndicatorTicker({
+      snapshot,
+      state,
+      entries: [{ id: 'busy', busyIndicator: true }] as any,
+      renderCurrentAgentView,
+      updateBusyIndicatorElapsed,
+    });
+
+    expect(typeof timerCallback).toBe('function');
+    timerCallback?.();
+
+    expect(updateBusyIndicatorElapsed).toHaveBeenCalledWith('s-busy', '5s');
+    expect(renderCurrentAgentView).not.toHaveBeenCalled();
+    expect(window.setTimeout).toHaveBeenCalledTimes(2);
   });
 
   it('formats turn durations using compact wall-clock units', async () => {

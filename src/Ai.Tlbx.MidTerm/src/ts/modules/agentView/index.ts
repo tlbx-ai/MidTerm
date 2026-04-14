@@ -1356,6 +1356,7 @@ function renderAgentView(
     state,
     entries: renderedEntries,
     renderCurrentAgentView,
+    updateBusyIndicatorElapsed: historyRender.updateBusyIndicatorElapsed,
   });
   historyDom.renderRuntimeStats(panel, runtimeStats);
   historyRender.renderHistory(panel, renderedEntries, snapshot.sessionId);

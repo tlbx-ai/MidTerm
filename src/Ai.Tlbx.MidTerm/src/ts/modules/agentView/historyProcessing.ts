@@ -1074,8 +1074,9 @@ export function syncBusyIndicatorTicker(args: {
   state: SessionLensViewState;
   entries: readonly LensHistoryEntry[];
   renderCurrentAgentView: (sessionId: string, options?: { immediate?: boolean }) => void;
+  updateBusyIndicatorElapsed: (sessionId: string, elapsedText: string) => boolean;
 }): void {
-  const { snapshot, state, entries, renderCurrentAgentView } = args;
+  const { snapshot, state, entries, renderCurrentAgentView, updateBusyIndicatorElapsed } = args;
   if (!entries.some((entry) => entry.busyIndicator)) {
     if (state.busyIndicatorTickHandle !== null) {
       window.clearTimeout(state.busyIndicatorTickHandle);
@@ -1090,7 +1091,13 @@ export function syncBusyIndicatorTicker(args: {
 
   state.busyIndicatorTickHandle = window.setTimeout(() => {
     state.busyIndicatorTickHandle = null;
-    renderCurrentAgentView(snapshot.sessionId, { immediate: true });
+    const elapsedText = formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot));
+    if (!updateBusyIndicatorElapsed(snapshot.sessionId, elapsedText)) {
+      renderCurrentAgentView(snapshot.sessionId, { immediate: true });
+      return;
+    }
+
+    syncBusyIndicatorTicker(args);
   }, 1000);
 }
 

@@ -145,6 +145,32 @@ function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: n
   return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
 }
 
+function updateBusyIndicatorElapsedInState(
+  state: SessionLensViewState | undefined,
+  elapsedText: string,
+): boolean {
+  if (!state) {
+    return false;
+  }
+
+  for (const rendered of state.historyRenderedNodes.values()) {
+    if (!rendered.entry.busyIndicator) {
+      continue;
+    }
+
+    const elapsed = rendered.node.querySelector<HTMLElement>('.agent-history-busy-elapsed');
+    if (!elapsed) {
+      return false;
+    }
+
+    elapsed.textContent = elapsedText;
+    rendered.entry.busyElapsedText = elapsedText;
+    return true;
+  }
+
+  return false;
+}
+
 function syncHistoryMeasurementObserver(args: {
   sessionId: string;
   state: SessionLensViewState;
@@ -983,6 +1009,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     shouldRenderForViewportScroll,
     suppressActiveComposerRequestEntries,
     syncRequestInteractionState,
+    updateBusyIndicatorElapsed: (sessionId: string, elapsedText: string) =>
+      updateBusyIndicatorElapsedInState(deps.getState(sessionId), elapsedText),
   };
 }
 
