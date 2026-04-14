@@ -208,6 +208,23 @@ export function syncSessionPreviews(
   return state;
 }
 
+export function removeSessionPreview(sessionId: string, previewName?: string | null): string {
+  const normalized = normalizePreviewName(previewName);
+  const state = ensureState(sessionId);
+
+  if (normalized !== DEFAULT_PREVIEW_NAME) {
+    state.previews.delete(normalized);
+  }
+
+  if (!state.previews.has(state.selectedPreviewName)) {
+    const fallback = Array.from(state.previews.keys()).sort(comparePreviewNames)[0];
+    state.selectedPreviewName = fallback ?? DEFAULT_PREVIEW_NAME;
+  }
+
+  ensurePreviewState(sessionId, state.selectedPreviewName);
+  return state.selectedPreviewName;
+}
+
 /** Get the web preview URL for the active selected preview. */
 export function getActiveUrl(): string | null {
   return getActivePreview()?.url ?? null;

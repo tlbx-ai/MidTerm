@@ -1,5 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-
 import { shouldReloadPreviewFrame } from './previewLoadToken';
 import { buildProxyUrl } from './previewProxyUrl';
 import type { BrowserStatusResponse } from './webApi';
@@ -143,5 +144,16 @@ describe('webPanel browser status indicator', () => {
 
   it('returns null when the preview is healthy and controllable', () => {
     expect(buildBrowserPreviewStatusIndicatorState(createBrowserStatus())).toBeNull();
+  });
+});
+
+describe('webPanel preview tabs', () => {
+  it('wires a close button only for non-default preview tabs', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
+
+    expect(source).toContain("let previewTabCloseHandler: ((previewName: string) => void) | null = null;");
+    expect(source).toContain("if (preview.previewName !== DEFAULT_PREVIEW_NAME) {");
+    expect(source).toContain("closeButton.className = 'web-preview-tab-close';");
+    expect(source).toContain('previewTabCloseHandler?.(preview.previewName);');
   });
 });

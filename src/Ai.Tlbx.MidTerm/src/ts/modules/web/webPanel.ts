@@ -35,6 +35,7 @@ import {
 } from './previewProxyUrl';
 import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
+  DEFAULT_PREVIEW_NAME,
   getActiveDockedClient,
   getActivePreview,
   getActivePreviewName,
@@ -100,6 +101,7 @@ let actionMessage: HTMLElement | null = null;
 let screenshotButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
+let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
@@ -136,6 +138,10 @@ export function setPreviewTabSelectHandler(handler: (previewName: string) => voi
   previewTabSelectHandler = handler;
 }
 
+export function setPreviewTabCloseHandler(handler: (previewName: string) => void): void {
+  previewTabCloseHandler = handler;
+}
+
 /** Render the active session's named preview tabs. */
 export function renderPreviewTabs(): void {
   if (!previewTabs) {
@@ -151,27 +157,46 @@ export function renderPreviewTabs(): void {
   }
 
   for (const preview of listSessionPreviews(sessionId)) {
+    const tab = document.createElement('div');
+    tab.className = 'web-preview-tab-shell';
+    tab.dataset.previewName = preview.previewName;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'web-preview-tab';
     if (preview.previewName === selectedPreviewName) {
-      button.classList.add('active');
+      tab.classList.add('active');
     }
     if (preview.mode === 'detached') {
-      button.classList.add('detached');
+      tab.classList.add('detached');
     }
     if (!preview.url) {
-      button.classList.add('empty');
+      tab.classList.add('empty');
     }
     const label = buildPreviewTabLabel(preview.url);
     button.textContent = label;
     button.title = preview.url?.trim() || label;
     button.setAttribute('aria-label', `Preview tab ${label}`);
-    button.dataset.previewName = preview.previewName;
     button.addEventListener('click', () => {
       previewTabSelectHandler?.(preview.previewName);
     });
-    previewTabs.appendChild(button);
+    tab.appendChild(button);
+
+    if (preview.previewName !== DEFAULT_PREVIEW_NAME) {
+      const closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'web-preview-tab-close';
+      closeButton.textContent = '×';
+      closeButton.title = `Close ${label}`;
+      closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
+      closeButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        previewTabCloseHandler?.(preview.previewName);
+      });
+      tab.appendChild(closeButton);
+    }
+
+    previewTabs.appendChild(tab);
   }
 }
 
@@ -499,10 +524,7 @@ function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
 function replacePreviewIframe(frameKey: string): HTMLIFrameElement | null {
   const existing = previewFrames.get(frameKey);
   if (existing) {
-    existing.name = '';
-    existing.src = 'about:blank';
-    existing.remove();
-    previewFrames.delete(frameKey);
+    destroyPreviewFrameByKey(frameKey, existing);
   }
 
   if (activeFrameKey === frameKey) {
@@ -515,6 +537,30 @@ function replacePreviewIframe(frameKey: string): HTMLIFrameElement | null {
 function ensurePreviewIframe(sessionId: string, previewName: string): HTMLIFrameElement | null {
   const frameKey = getPreviewFrameKey(sessionId, previewName);
   return previewFrames.get(frameKey) ?? createPreviewIframe(frameKey);
+}
+
+function destroyPreviewFrameByKey(
+  frameKey: string,
+  frame: HTMLIFrameElement | null = previewFrames.get(frameKey) ?? null,
+): void {
+  if (!frame) {
+    return;
+  }
+
+  frame.name = '';
+  frame.src = 'about:blank';
+  frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+  frame.remove();
+  previewFrames.delete(frameKey);
+
+  if (activeFrameKey === frameKey) {
+    activeFrameKey = null;
+    loadedUrl = null;
+  }
+}
+
+export function destroyPreviewFrame(sessionId: string, previewName: string): void {
+  destroyPreviewFrameByKey(getPreviewFrameKey(sessionId, previewName));
 }
 
 function shouldRemountPreviewFrame(

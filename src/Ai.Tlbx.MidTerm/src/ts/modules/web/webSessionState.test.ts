@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { $activeSessionId } from '../../stores';
 import {
+  DEFAULT_PREVIEW_NAME,
   getSessionDockedClient,
+  getSessionSelectedPreviewName,
+  removeSessionPreview,
   removeSessionState,
   setSessionDockedClient,
+  setSessionSelectedPreviewName,
   upsertSessionPreview,
 } from './webSessionState';
 
@@ -80,5 +84,22 @@ describe('webSessionState docked preview identity', () => {
     });
 
     expect(getSessionDockedClient(sessionId, previewName)).toBeNull();
+  });
+
+  it('falls back to the default preview when removing the selected named preview', () => {
+    upsertSessionPreview({
+      sessionId,
+      previewName: 'docs',
+      routeKey: 'route-2',
+      url: 'https://example.com/docs',
+      active: true,
+      targetRevision: 1,
+    });
+    setSessionSelectedPreviewName(sessionId, 'docs');
+
+    const selected = removeSessionPreview(sessionId, 'docs');
+
+    expect(selected).toBe(DEFAULT_PREVIEW_NAME);
+    expect(getSessionSelectedPreviewName(sessionId)).toBe(DEFAULT_PREVIEW_NAME);
   });
 });

@@ -286,6 +286,13 @@ export function isDetachedOpenForSession(
   });
 }
 
+export function closeDetachedPreview(sessionId: string, previewName: string): void {
+  closePopupForPreview(sessionId, previewName);
+  if (sessionId === $activeSessionId.get() && previewName === getActivePreviewName()) {
+    $webPreviewDetached.set(false);
+  }
+}
+
 /** Apply a viewport override to an already-detached popup preview. */
 export function setDetachedPreviewViewport(
   sessionId: string,

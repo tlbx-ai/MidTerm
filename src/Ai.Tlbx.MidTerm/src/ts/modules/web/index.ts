@@ -16,22 +16,27 @@ import {
   initViewportReset,
 } from './webDock';
 import {
+  destroyPreviewFrame,
   initWebPanel,
   loadPreview,
   renderPreviewTabs,
   restoreLastUrl,
+  setPreviewTabCloseHandler,
   setPreviewTabSelectHandler,
 } from './webPanel';
 import {
+  closeDetachedPreview,
   closeDetachedIfOwnedBy,
   dockBack,
   initDetach,
   isDetachedOpenForSession,
 } from './webDetach';
-import { listWebPreviewSessions } from './webApi';
+import { deleteWebPreviewSession, listWebPreviewSessions } from './webApi';
 import {
+  DEFAULT_PREVIEW_NAME,
   getSessionPreview,
   getSessionSelectedPreviewName,
+  removeSessionPreview,
   removeSessionState,
   setSessionMode,
   setSessionSelectedPreviewName,
@@ -50,6 +55,9 @@ export function initWebPreview(): void {
   initViewportReset();
   setPreviewTabSelectHandler((previewName) => {
     void selectActivePreview(previewName);
+  });
+  setPreviewTabCloseHandler((previewName) => {
+    void closeActivePreview(previewName);
   });
 
   document.getElementById('web-preview-close')?.addEventListener('click', closeWebPreviewDock);
@@ -142,6 +150,29 @@ export async function selectActivePreview(previewName: string): Promise<void> {
     setSessionMode(sessionId, normalized, 'docked');
   }
 
+  renderPreviewTabs();
+  await syncActiveWebPreview();
+}
+
+export async function closeActivePreview(previewName: string): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    return;
+  }
+
+  const normalized = previewName.trim() || DEFAULT_PREVIEW_NAME;
+  if (normalized === DEFAULT_PREVIEW_NAME) {
+    return;
+  }
+
+  const deleted = await deleteWebPreviewSession(sessionId, normalized);
+  if (!deleted) {
+    return;
+  }
+
+  closeDetachedPreview(sessionId, normalized);
+  destroyPreviewFrame(sessionId, normalized);
+  removeSessionPreview(sessionId, normalized);
   renderPreviewTabs();
   await syncActiveWebPreview();
 }
