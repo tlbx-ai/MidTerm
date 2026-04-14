@@ -13,6 +13,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private const string PromptQueueKind = "prompt";
     private const double CooldownHeatThreshold = 0.25;
     private const int PostTriggerIgnoreHeatMs = 5000;
+    private const int TerminalHeatSettleWindowMs = 5000;
     private const int PollIntervalMs = 500;
     private const int DuplicateEnqueueWindowMs = 1500;
 
@@ -500,7 +501,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return true;
         }
 
-        var heat = _runtime.GetCurrentHeat(entry.SessionId);
+        var heat = _runtime.GetHeatSnapshot(entry.SessionId);
         return EvaluateCooldown(entry, heat, now);
     }
 
@@ -519,7 +520,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
     private static bool EvaluateCooldown(
         ManagerBarQueueEntryDto entry,
-        double currentHeat,
+        SessionHeatSnapshot heat,
         DateTimeOffset now)
     {
         if (entry.IgnoreHeatUntil is not null && now < entry.IgnoreHeatUntil.Value)
@@ -527,17 +528,47 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return false;
         }
 
-        if (entry.AwaitingHeatRise && currentHeat > CooldownHeatThreshold)
+        if (entry.AwaitingHeatRise && HasObservedOutputSinceLastDispatch(entry, heat.LastOutputAt))
         {
             entry.AwaitingHeatRise = false;
         }
 
-        if (currentHeat > CooldownHeatThreshold)
+        if (!IsTerminalCooldownReady(heat, now))
         {
             return false;
         }
 
         return !entry.AwaitingHeatRise;
+    }
+
+    private static bool IsTerminalCooldownReady(SessionHeatSnapshot heat, DateTimeOffset now)
+    {
+        return heat.CurrentHeat <= CooldownHeatThreshold &&
+               !HasRecentOutput(heat.LastOutputAt, now);
+    }
+
+    private static bool HasRecentOutput(DateTimeOffset? lastOutputAt, DateTimeOffset now)
+    {
+        return lastOutputAt is { } outputAt &&
+               now < outputAt.AddMilliseconds(TerminalHeatSettleWindowMs);
+    }
+
+    private static bool HasObservedOutputSinceLastDispatch(
+        ManagerBarQueueEntryDto entry,
+        DateTimeOffset? lastOutputAt)
+    {
+        if (lastOutputAt is null)
+        {
+            return false;
+        }
+
+        if (entry.IgnoreHeatUntil is not { } ignoreHeatUntil)
+        {
+            return true;
+        }
+
+        var dispatchStartedAt = ignoreHeatUntil.AddMilliseconds(-PostTriggerIgnoreHeatMs);
+        return lastOutputAt >= dispatchStartedAt;
     }
 
     private bool AdvanceQueueEntry(ManagerBarQueueEntryDto entry, int index, DateTimeOffset now)
@@ -1190,7 +1221,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return _runtime.IsTurnQueueReady(sessionId);
         }
 
-        return _runtime.GetCurrentHeat(sessionId) <= CooldownHeatThreshold;
+        return IsTerminalCooldownReady(_runtime.GetHeatSnapshot(sessionId), _timeProvider.GetUtcNow());
     }
 
     public async ValueTask DisposeAsync()

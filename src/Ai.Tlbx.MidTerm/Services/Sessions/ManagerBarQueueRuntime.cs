@@ -9,7 +9,7 @@ public interface IManagerBarQueueRuntime
 {
     IReadOnlyCollection<string> GetActiveSessionIds();
     bool SessionExists(string sessionId);
-    double GetCurrentHeat(string sessionId);
+    SessionHeatSnapshot GetHeatSnapshot(string sessionId);
     bool UsesTurnQueue(string sessionId);
     bool IsTurnQueueReady(string sessionId);
     Task SendPromptAsync(string sessionId, string prompt, CancellationToken cancellationToken);
@@ -52,9 +52,9 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
         return _sessionManager.GetSession(sessionId) is not null;
     }
 
-    public double GetCurrentHeat(string sessionId)
+    public SessionHeatSnapshot GetHeatSnapshot(string sessionId)
     {
-        return _sessionHeat.GetSnapshot(sessionId).CurrentHeat;
+        return _sessionHeat.GetSnapshot(sessionId);
     }
 
     public bool UsesTurnQueue(string sessionId)

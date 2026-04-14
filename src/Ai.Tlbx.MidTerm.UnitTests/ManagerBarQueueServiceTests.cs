@@ -143,6 +143,30 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SubmitPromptAsync_QueuesTerminalPromptWhenRecentOutputHasNotSettled()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            CurrentHeat = 0,
+            LastOutputAt = _timeProvider.GetUtcNow()
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var (accepted, entry) = await service.SubmitPromptAsync(
+            "session-1",
+            new LensTurnRequest
+            {
+                Text = "status"
+            });
+
+        Assert.True(accepted);
+        Assert.NotNull(entry);
+        Assert.Empty(runtime.SentPrompts);
+        Assert.Single(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
     public async Task SubmitPromptAsync_FastTracksLensPromptWhenTurnHasReturnedToUser()
     {
         var runtime = new FakeRuntime(["session-1"])
@@ -329,14 +353,36 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         Assert.Equal(["first"], runtime.SentPrompts);
 
-        runtime.CurrentHeat = 0.8;
-        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+        runtime.LastOutputAt = _timeProvider.GetUtcNow();
         await Task.Delay(1200);
         Assert.Equal(["first"], runtime.SentPrompts);
 
-        runtime.CurrentHeat = 0.1;
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
         await Task.Delay(1200);
         Assert.Equal(["first", "second"], runtime.SentPrompts);
+    }
+
+    [Fact]
+    public async Task ProcessLoop_WaitsForRecentTerminalOutputToSettleBeforeDispatchingQueuedPrompt()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            CurrentHeat = 0,
+            LastOutputAt = _timeProvider.GetUtcNow()
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.Start();
+
+        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "status" });
+
+        await Task.Delay(1200);
+        Assert.Empty(runtime.SentPrompts);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+        await Task.Delay(1200);
+
+        Assert.Equal(["status"], runtime.SentPrompts);
     }
 
     [Fact]
@@ -399,6 +445,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     {
         private readonly HashSet<string> _sessionIds;
         public double CurrentHeat { get; set; }
+        public DateTimeOffset? LastOutputAt { get; set; }
         public bool UsesTurnQueueValue { get; set; }
         public bool TurnQueueReady { get; set; } = true;
         public List<string> SentPrompts { get; } = [];
@@ -419,9 +466,13 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             return _sessionIds.Contains(sessionId);
         }
 
-        public double GetCurrentHeat(string sessionId)
+        public SessionHeatSnapshot GetHeatSnapshot(string sessionId)
         {
-            return CurrentHeat;
+            return new SessionHeatSnapshot
+            {
+                CurrentHeat = CurrentHeat,
+                LastOutputAt = LastOutputAt
+            };
         }
 
         public bool UsesTurnQueue(string sessionId)
