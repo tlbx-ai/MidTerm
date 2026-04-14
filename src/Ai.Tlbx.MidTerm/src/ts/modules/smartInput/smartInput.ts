@@ -221,6 +221,19 @@ function setActiveSessionComposerExpanded(expanded: boolean): void {
   syncSmartInputVisibility(true);
 }
 
+function collapseComposerAfterSuccessfulSend(sessionId: string): void {
+  if (!isComposerExpanded(sessionId)) {
+    return;
+  }
+
+  if ($activeSessionId.get() === sessionId) {
+    setActiveSessionComposerExpanded(false);
+    return;
+  }
+
+  setComposerExpandedForSession(sessionId, false);
+}
+
 function syncComposerExpandedBackButtonLayer(expanded: boolean): void {
   if (expanded) {
     if (!releaseComposerExpandedBackButtonLayer) {
@@ -2082,6 +2095,7 @@ async function sendTerminalComposerTurn(
   await enqueueCommandBayTurn(sessionId, request);
   pushCurrentPromptToHistory(sessionId);
   clearSubmittedSmartInputState(sessionId, ta);
+  collapseComposerAfterSuccessfulSend(sessionId);
   return true;
 }
 
@@ -2126,6 +2140,7 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     await queuedTurn;
     pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, ta);
+    collapseComposerAfterSuccessfulSend(sessionId);
     releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
   } catch (error) {
     const shouldRestore =

@@ -229,6 +229,11 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-textarea-shell {');
     expect(css).toContain('.smart-input-expand-toggle {');
     expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {");
+    expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {\n  top: 0;");
+    expect(css).toContain('justify-content: flex-end;');
+    expect(css).toContain(
+      ".adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary {\n  flex: 1 1 auto;",
+    );
     expect(css).toContain(
       "body.keyboard-visible .adaptive-footer-dock[data-composer-expanded='true'][data-device='mobile']",
     );
@@ -240,6 +245,12 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('const sessionComposerExpanded = new Map<string, boolean>();');
     expect(source).toContain('function setComposerExpandedForSession(sessionId: string, expanded: boolean): void {');
     expect(source).toContain('return sessionId ? sessionComposerExpanded.get(sessionId) === true : false;');
+  });
+
+  it('auto-collapses the expanded composer only after a prompt send succeeds', () => {
+    expect(source).toContain('function collapseComposerAfterSuccessfulSend(sessionId: string): void {');
+    expect(source).toContain('if ($activeSessionId.get() === sessionId) {');
+    expect(source).toContain('collapseComposerAfterSuccessfulSend(sessionId);');
   });
 
   it('renders the plus-menu tools as popover actions with icon and text labels', () => {

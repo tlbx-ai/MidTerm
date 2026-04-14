@@ -15424,20 +15424,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {
-  position: fixed;
-  inset: 0;
+  top: 0;
   z-index: 260;
+  min-height: 0;
   align-items: stretch;
-  justify-content: stretch;
+  justify-content: flex-end;
   gap: 0;
+  overflow: hidden;
   padding:
-    calc(20px + env(safe-area-inset-top, 0px))
-    calc(20px + env(safe-area-inset-right, 0px))
-    calc(20px + env(safe-area-inset-bottom, 0px))
-    calc(20px + env(safe-area-inset-left, 0px));
-  background: color-mix(in srgb, var(--overlay-bg-dark) 68%, transparent);
-  -webkit-backdrop-filter: blur(4px) saturate(104%);
-  backdrop-filter: blur(4px) saturate(104%);
+    calc(12px + env(safe-area-inset-top, 0px))
+    calc(12px + env(safe-area-inset-right, 0px))
+    calc(12px + env(safe-area-inset-bottom, 0px))
+    calc(12px + env(safe-area-inset-left, 0px));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--overlay-bg-dark) 0%, transparent),
+    color-mix(in srgb, var(--overlay-bg-dark) 14%, transparent) 64%,
+    color-mix(in srgb, var(--overlay-bg-dark) 20%, transparent)
+  );
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] > .adaptive-footer-context,
@@ -15447,6 +15453,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary {
+  flex: 1 1 auto;
   width: 100%;
   min-height: 0;
   align-self: stretch;
@@ -15465,12 +15472,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--command-bay-border-strong) 86%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--command-bay-surface-strong) 90%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-strong) 84%, transparent);
   box-shadow:
-    0 18px 48px color-mix(in srgb, black 26%, transparent),
+    0 12px 32px color-mix(in srgb, black 18%, transparent),
     0 0 0 1px color-mix(in srgb, white 3%, transparent);
   max-height: none;
   overflow: hidden;
@@ -15518,11 +15526,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-expand-toggle {
-  top: 10px;
-  right: 10px;
+  top: 4px;
+  right: 4px;
   bottom: auto;
-  background: color-mix(in srgb, var(--command-bay-surface) 88%, transparent);
-  box-shadow: 0 2px 12px color-mix(in srgb, black 14%, transparent);
+  background: transparent;
+  box-shadow: none;
 }
 
 .adaptive-footer-rail {
@@ -15678,7 +15686,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-textarea-shell {
-  --smart-input-expand-control-size: 28px;
+  --smart-input-expand-control-size: 14px;
   --smart-input-expand-hit-size: 40px;
   position: relative;
   display: flex;
@@ -15748,11 +15756,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   height: var(--smart-input-expand-control-size);
   border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--command-bay-surface) 82%, transparent);
+  background: transparent;
   color: color-mix(in srgb, var(--command-bay-muted) 84%, var(--command-bay-text));
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  top: 4px;
+  right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -15779,13 +15787,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .smart-input-expand-toggle > svg {
   display: block;
+  width: 12px;
+  height: 12px;
   pointer-events: none;
 }
 
 .smart-input-expand-toggle:hover,
 .smart-input-expand-toggle:focus-visible,
 .smart-input-expand-toggle[data-expanded='true'] {
-  background: color-mix(in srgb, var(--command-bay-surface-hover) 82%, transparent);
   color: var(--command-bay-text);
 }
 
