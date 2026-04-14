@@ -12052,33 +12052,29 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   align-items: center;
   color: var(--text-on-accent);
   text-shadow:
-    0 0 4px color-mix(in srgb, var(--text-on-accent) 70%, transparent),
-    0 0 9px color-mix(in srgb, var(--text-on-accent) 45%, transparent),
-    0 0 14px color-mix(in srgb, var(--agent-lens-live) 35%, transparent);
+    0 0 5px color-mix(in srgb, var(--text-on-accent) 85%, transparent),
+    0 0 11px color-mix(in srgb, var(--text-on-accent) 60%, transparent),
+    0 0 18px color-mix(in srgb, var(--agent-lens-live) 48%, transparent);
   white-space: pre;
   pointer-events: none;
   -webkit-mask-image: linear-gradient(
     90deg,
-    transparent 0%,
     transparent 38%,
     black 50%,
-    transparent 62%,
-    transparent 100%
+    transparent 62%
   );
   mask-image: linear-gradient(
     90deg,
-    transparent 0%,
     transparent 38%,
     black 50%,
-    transparent 62%,
-    transparent 100%
+    transparent 62%
   );
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: agent-history-busy-sweep 1.45s ease-in-out infinite alternate;
-  animation-delay: calc(0ms - var(--agent-busy-animation-offset-ms, 0ms));
+  animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;
+  animation-delay: var(--agent-busy-animation-delay-ms, 0ms);
   will-change: mask-position;
 }
 
@@ -12114,13 +12110,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 @keyframes agent-history-busy-sweep {
   0% {
-    -webkit-mask-position: 100% 0;
-    mask-position: 100% 0;
+    -webkit-mask-position: 66% 0;
+    mask-position: 66% 0;
   }
 
   100% {
-    -webkit-mask-position: 0% 0;
-    mask-position: 0% 0;
+    -webkit-mask-position: 34% 0;
+    mask-position: 34% 0;
   }
 }
 

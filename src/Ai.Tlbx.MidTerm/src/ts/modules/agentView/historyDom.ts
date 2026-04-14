@@ -32,6 +32,8 @@ import type {
   SessionLensViewState,
 } from './types';
 
+const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 3770;
+
 function lensText(key: string, fallback: string): string {
   const translated = t(key);
   return !translated || translated === key ? fallback : translated;
@@ -514,12 +516,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';
     const labelText = entry.body || 'Working';
-    const animationOffsetMs = Math.max(0, Math.trunc(entry.busyAnimationOffsetMs ?? 0));
+    const animationDelayMs = -(Date.now() % BUSY_SWEEP_WALLCLOCK_CYCLE_MS);
     if (typeof label.style.setProperty === 'function') {
-      label.style.setProperty('--agent-busy-animation-offset-ms', `${animationOffsetMs}ms`);
+      label.style.setProperty('--agent-busy-animation-delay-ms', `${animationDelayMs}ms`);
     } else {
       const style = label.style as CSSStyleDeclaration & Record<string, string>;
-      style['--agent-busy-animation-offset-ms'] = `${animationOffsetMs}ms`;
+      style['--agent-busy-animation-delay-ms'] = `${animationDelayMs}ms`;
     }
     label.dataset.text = labelText;
     const labelBase = document.createElement('span');

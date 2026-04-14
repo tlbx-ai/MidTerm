@@ -295,10 +295,11 @@ describe('agent view Lens wiring', () => {
       'resolveBusyIndicatorLabelFromSnapshotItems(snapshot)',
     );
     expect(historyProcessingSource).toContain('BUSY_INDICATOR_EXCLUDED_ITEM_TYPES');
-    expect(historyProcessingSource).toContain('resolveBusyIndicatorAnimationOffsetMs(snapshot)');
     expect(historyDomSource).toContain("labelBase.className = 'agent-history-busy-label-base'");
     expect(historyDomSource).toContain("labelGlow.className = 'agent-history-busy-label-glow'");
-    expect(historyDomSource).toContain('--agent-busy-animation-offset-ms');
+    expect(historyDomSource).toContain('BUSY_SWEEP_WALLCLOCK_CYCLE_MS');
+    expect(historyDomSource).toContain('--agent-busy-animation-delay-ms');
+    expect(historyDomSource).toContain('-(Date.now() % BUSY_SWEEP_WALLCLOCK_CYCLE_MS)');
     expect(historyDomSource).toContain('agent-history-busy-elapsed');
     expect(historyDomSource).toContain('(Press Esc to cancel)');
     expect(css).toContain('.agent-history-busy-bubble {');
@@ -311,10 +312,10 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('mask-size: 300% 100%;');
     expect(css).toContain('-webkit-mask-size: 300% 100%;');
-    expect(css).toContain('animation: agent-history-busy-sweep 1.45s ease-in-out infinite alternate;');
-    expect(css).toMatch(
-      /animation-delay:\s*calc\(\s*0ms\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\);/,
-    );
+    expect(css).toContain('animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;');
+    expect(css).toContain('animation-delay: var(--agent-busy-animation-delay-ms, 0ms);');
+    expect(css).toMatch(/mask-position:\s*66%\s*0;/);
+    expect(css).toMatch(/mask-position:\s*34%\s*0;/);
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration-body {');
     expect(css).toContain('.agent-history-turn-duration-marker {');

@@ -6026,7 +6026,7 @@ describe('agentView dev errors', () => {
     expect(running[0]?.body).toBe('Working');
   });
 
-  it('phase-locks the busy sweep to the turn start so elapsed refreshes do not restart the animation at frame zero', async () => {
+  it('does not persist a phase-offset field on the busy entry so the DOM can phase-lock to wallclock at render time', async () => {
     const { withTrailingBusyIndicator } = await import('./index');
     const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(
       Date.parse('2026-04-04T20:00:13.700Z'),
@@ -6049,7 +6049,7 @@ describe('agentView dev errors', () => {
       );
 
       expect(running[0]?.busyIndicator).toBe(true);
-      expect(running[0]?.busyAnimationOffsetMs).toBe(800);
+      expect((running[0] as any)?.busyAnimationOffsetMs).toBeUndefined();
     } finally {
       dateNowSpy.mockRestore();
     }

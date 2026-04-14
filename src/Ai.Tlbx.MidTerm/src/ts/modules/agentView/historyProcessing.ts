@@ -74,8 +74,6 @@ const BUSY_INDICATOR_EXCLUDED_ITEM_TYPES = new Set([
   'usermessage',
 ]);
 
-const BUSY_SWEEP_DURATION_MS = 1450;
-const BUSY_SWEEP_CYCLE_MS = BUSY_SWEEP_DURATION_MS * 2;
 const COMMAND_HISTORY_ITEM_TYPES = new Set([
   'command',
   'commandcall',
@@ -816,7 +814,6 @@ export function withTrailingBusyIndicator(
     meta: '',
     busyIndicator: true,
     busyElapsedText: formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot)),
-    busyAnimationOffsetMs: resolveBusyIndicatorAnimationOffsetMs(snapshot),
   });
   return nextEntries;
 }
@@ -974,15 +971,6 @@ function resolveBusyIndicatorElapsedMs(snapshot: LensHistorySnapshot): number | 
 
   const startMs = Date.parse(startedAt);
   return Number.isFinite(startMs) ? Math.max(0, Date.now() - startMs) : null;
-}
-
-function resolveBusyIndicatorAnimationOffsetMs(snapshot: LensHistorySnapshot): number {
-  const elapsedMs = resolveBusyIndicatorElapsedMs(snapshot);
-  if (elapsedMs === null) {
-    return 0;
-  }
-
-  return elapsedMs % BUSY_SWEEP_CYCLE_MS;
 }
 
 function maybeRememberCompletedTurnDuration(
