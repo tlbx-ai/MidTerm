@@ -289,14 +289,15 @@ describe('agent view Lens wiring', () => {
     );
   });
 
-  it('renders the busy indicator as Working with per-letter sweep animation', () => {
+  it('renders the busy indicator as Working with a KITT mask sweep animation', () => {
     expect(historyProcessingSource).toContain("lensText('lens.status.working', 'Working')");
     expect(historyProcessingSource).toContain(
       'resolveBusyIndicatorLabelFromSnapshotItems(snapshot)',
     );
     expect(historyProcessingSource).toContain('BUSY_INDICATOR_EXCLUDED_ITEM_TYPES');
     expect(historyProcessingSource).toContain('resolveBusyIndicatorAnimationOffsetMs(snapshot)');
-    expect(historyDomSource).toContain('agent-history-busy-label-letter');
+    expect(historyDomSource).toContain("labelBase.className = 'agent-history-busy-label-base'");
+    expect(historyDomSource).toContain("labelGlow.className = 'agent-history-busy-label-glow'");
     expect(historyDomSource).toContain('--agent-busy-animation-offset-ms');
     expect(historyDomSource).toContain('agent-history-busy-elapsed');
     expect(historyDomSource).toContain('(Press Esc to cancel)');
@@ -305,13 +306,14 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-busy-label {');
     expect(css).toContain('flex: 0 0 auto;');
     expect(css).toContain('white-space: pre;');
-    expect(css).toContain('.agent-history-busy-label-letter {');
+    expect(css).toContain('.agent-history-busy-label-base {');
+    expect(css).toContain('.agent-history-busy-label-glow {');
     expect(css).toContain('.agent-history-busy-status {');
-    expect(historyDomSource).toContain('--agent-busy-letter-reverse-index');
-    expect(css).toContain('animation:');
-    expect(css).toContain('agent-history-busy-sweep 2.9s linear infinite');
+    expect(css).toContain('mask-size: 300% 100%;');
+    expect(css).toContain('-webkit-mask-size: 300% 100%;');
+    expect(css).toContain('animation: agent-history-busy-sweep 1.45s ease-in-out infinite alternate;');
     expect(css).toMatch(
-      /animation-delay:\s*calc\(\s*\(var\(--agent-busy-letter-index,\s*0\)\s*\*\s*90ms\)\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\),\s*calc\(\s*1450ms\s*\+\s*\(var\(--agent-busy-letter-reverse-index,\s*0\)\s*\*\s*90ms\)\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\);/,
+      /animation-delay:\s*calc\(\s*0ms\s*-\s*var\(--agent-busy-animation-offset-ms,\s*0ms\)\s*\);/,
     );
     expect(css).toContain('.agent-history-busy-cancel {');
     expect(css).toContain('.agent-history-turn-duration-body {');

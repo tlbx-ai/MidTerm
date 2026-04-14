@@ -513,6 +513,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';
+    const labelText = entry.body || 'Working';
     const animationOffsetMs = Math.max(0, Math.trunc(entry.busyAnimationOffsetMs ?? 0));
     if (typeof label.style.setProperty === 'function') {
       label.style.setProperty('--agent-busy-animation-offset-ms', `${animationOffsetMs}ms`);
@@ -520,25 +521,16 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       const style = label.style as CSSStyleDeclaration & Record<string, string>;
       style['--agent-busy-animation-offset-ms'] = `${animationOffsetMs}ms`;
     }
-    const labelCharacters = Array.from(entry.body || 'Working');
-    const lastCharacterIndex = Math.max(0, labelCharacters.length - 1);
-    for (const [index, character] of labelCharacters.entries()) {
-      const letter = document.createElement('span');
-      letter.className = 'agent-history-busy-label-letter';
-      if (typeof letter.style.setProperty === 'function') {
-        letter.style.setProperty('--agent-busy-letter-index', String(index));
-        letter.style.setProperty(
-          '--agent-busy-letter-reverse-index',
-          String(lastCharacterIndex - index),
-        );
-      } else {
-        const style = letter.style as CSSStyleDeclaration & Record<string, string>;
-        style['--agent-busy-letter-index'] = String(index);
-        style['--agent-busy-letter-reverse-index'] = String(lastCharacterIndex - index);
-      }
-      letter.textContent = character;
-      label.appendChild(letter);
-    }
+    label.dataset.text = labelText;
+    const labelBase = document.createElement('span');
+    labelBase.className = 'agent-history-busy-label-base';
+    labelBase.textContent = labelText;
+    label.appendChild(labelBase);
+    const labelGlow = document.createElement('span');
+    labelGlow.className = 'agent-history-busy-label-glow';
+    labelGlow.setAttribute('aria-hidden', 'true');
+    labelGlow.textContent = labelText;
+    label.appendChild(labelGlow);
     bubble.appendChild(label);
 
     const status = document.createElement('span');

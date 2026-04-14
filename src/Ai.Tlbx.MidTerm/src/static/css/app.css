@@ -12027,16 +12027,59 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-busy-label {
+  position: relative;
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 0.01em;
-  color: color-mix(in srgb, var(--text-muted) 76%, transparent);
+  gap: 0;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: pre;
+  isolation: isolate;
+}
+
+.agent-history-busy-label-base {
+  color: color-mix(in srgb, var(--text-muted) 68%, transparent);
+  white-space: pre;
+}
+
+.agent-history-busy-label-glow {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-on-accent);
+  text-shadow:
+    0 0 4px color-mix(in srgb, var(--text-on-accent) 70%, transparent),
+    0 0 9px color-mix(in srgb, var(--text-on-accent) 45%, transparent),
+    0 0 14px color-mix(in srgb, var(--agent-lens-live) 35%, transparent);
+  white-space: pre;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 38%,
+    black 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 38%,
+    black 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  animation: agent-history-busy-sweep 1.45s ease-in-out infinite alternate;
+  animation-delay: calc(0ms - var(--agent-busy-animation-offset-ms, 0ms));
+  will-change: mask-position;
 }
 
 .agent-history-busy-status {
@@ -12059,22 +12102,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--text-muted) 78%, transparent);
 }
 
-.agent-history-busy-label-letter {
-  color: color-mix(in srgb, var(--text-muted) 68%, transparent);
-  text-shadow: 0 0 0 transparent;
-  animation:
-    agent-history-busy-sweep 2.9s linear infinite,
-    agent-history-busy-sweep 2.9s linear infinite;
-  animation-delay:
-    calc((var(--agent-busy-letter-index, 0) * 90ms) - var(--agent-busy-animation-offset-ms, 0ms)),
-    calc(
-      1450ms + (var(--agent-busy-letter-reverse-index, 0) * 90ms) -
-        var(--agent-busy-animation-offset-ms, 0ms)
-    );
-  animation-fill-mode: both;
-  white-space: pre;
-}
-
 @keyframes agent-history-busy-spin {
   from {
     transform: rotate(0deg);
@@ -12087,30 +12114,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 @keyframes agent-history-busy-sweep {
   0% {
-    color: color-mix(in srgb, var(--text-muted) 66%, transparent);
-    text-shadow: 0 0 0 transparent;
-  }
-
-  40% {
-    color: color-mix(in srgb, var(--text-secondary) 82%, white 12%);
-    text-shadow: 0 0 4px color-mix(in srgb, var(--agent-lens-live) 24%, transparent);
-  }
-
-  55% {
-    color: color-mix(in srgb, var(--text-on-accent) 98%, transparent);
-    text-shadow:
-      0 0 6px color-mix(in srgb, white 42%, transparent),
-      0 0 10px color-mix(in srgb, var(--agent-lens-live) 28%, transparent);
-  }
-
-  70% {
-    color: color-mix(in srgb, var(--text-secondary) 84%, white 8%);
-    text-shadow: 0 0 5px color-mix(in srgb, var(--agent-lens-live) 18%, transparent);
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
   }
 
   100% {
-    color: color-mix(in srgb, var(--text-muted) 66%, transparent);
-    text-shadow: 0 0 0 transparent;
+    -webkit-mask-position: 0% 0;
+    mask-position: 0% 0;
   }
 }
 
