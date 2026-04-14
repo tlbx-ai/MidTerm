@@ -732,6 +732,7 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
   }
 
   viewport.dataset.lensScrollBound = 'true';
+  let lastTouchClientY: number | null = null;
   const markUserScrollIntent = () => {
     const current = viewStates.get(sessionId);
     if (!current) {
@@ -740,10 +741,75 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
 
     current.historyLastUserScrollIntentAt = Date.now();
   };
-  viewport.addEventListener('wheel', markUserScrollIntent, { passive: true });
-  viewport.addEventListener('touchstart', markUserScrollIntent, { passive: true });
+  const detachFollowForExplicitBrowseIntent = () => {
+    const current = viewStates.get(sessionId);
+    if (
+      !current ||
+      !current.historyAutoScrollPinned ||
+      current.pendingHistoryPrependAnchor !== null ||
+      current.pendingHistoryLayoutAnchor !== null
+    ) {
+      return;
+    }
+
+    setHistoryScrollMode(current, 'browse');
+    historyRender.renderScrollToBottomControl(current.panel, current);
+  };
+  viewport.addEventListener(
+    'wheel',
+    (event) => {
+      markUserScrollIntent();
+      if (event.deltaY < 0) {
+        detachFollowForExplicitBrowseIntent();
+      }
+    },
+    { passive: true },
+  );
+  viewport.addEventListener(
+    'touchstart',
+    (event) => {
+      markUserScrollIntent();
+      lastTouchClientY = event.touches[0]?.clientY ?? null;
+    },
+    { passive: true },
+  );
+  viewport.addEventListener(
+    'touchmove',
+    (event) => {
+      markUserScrollIntent();
+      const nextTouchClientY = event.touches[0]?.clientY ?? null;
+      if (
+        typeof nextTouchClientY === 'number' &&
+        typeof lastTouchClientY === 'number' &&
+        nextTouchClientY > lastTouchClientY + 1
+      ) {
+        detachFollowForExplicitBrowseIntent();
+      }
+      lastTouchClientY = nextTouchClientY;
+    },
+    { passive: true },
+  );
+  viewport.addEventListener(
+    'touchend',
+    () => {
+      lastTouchClientY = null;
+    },
+    { passive: true },
+  );
+  viewport.addEventListener(
+    'touchcancel',
+    () => {
+      lastTouchClientY = null;
+    },
+    { passive: true },
+  );
   viewport.addEventListener('pointerdown', markUserScrollIntent, { passive: true });
-  viewport.addEventListener('keydown', markUserScrollIntent);
+  viewport.addEventListener('keydown', (event) => {
+    markUserScrollIntent();
+    if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
+      detachFollowForExplicitBrowseIntent();
+    }
+  });
   viewport.addEventListener('scroll', () => {
     const current = viewStates.get(sessionId);
     const currentViewport = current?.historyViewport;

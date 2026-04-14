@@ -1780,6 +1780,88 @@ describe('agentView dev errors', () => {
     expect(historyHost.scrollTop).toBe(0);
   });
 
+  it('treats explicit upward wheel intent as a browse detach before foreground recovery reloads history', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 40,
+          historyCount: 400,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 45,
+          historyCount: 405,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+        }),
+      );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        1,
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
+    });
+
+    const wheelHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'wheel',
+    )?.[1] as ((event: { deltaY: number }) => void) | undefined;
+    expect(wheelHandler).toBeTypeOf('function');
+
+    wheelHandler?.({ deltaY: -24 });
+
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'hidden';
+    (document as { visibilityState: string; hidden: boolean }).hidden = true;
+    triggerDocumentEvent('visibilitychange');
+
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'visible';
+    (document as { visibilityState: string; hidden: boolean }).hidden = false;
+    triggerDocumentEvent('visibilitychange');
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        2,
+        's1',
+        160,
+        80,
+        expect.any(String),
+      );
+    });
+  });
+
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
     openLensHistoryStream.mockReturnValue(disconnectStream);
