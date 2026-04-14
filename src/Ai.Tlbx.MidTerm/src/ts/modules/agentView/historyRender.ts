@@ -1,24 +1,35 @@
 import { t } from '../i18n';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
 import {
+  resolveHistoryEstimatedEntryHeight,
   recordHistoryMeasuredHeight,
   resolveHistoryViewportEntryHeight,
-  resolveRepresentativeHistoryEntryHeight,
 } from './historyMeasurements';
 import {
   buildHistoryVirtualWindowKey,
-  computeHistoryVisibleRange,
   computeHistoryVirtualWindow,
   HISTORY_VIRTUALIZE_AFTER,
+  LENS_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
 } from './historyViewport';
 import { traceRenderedLensHistoryWindow } from './historyTrace';
 import type { LensHistoryRequestSummary, LensHistorySnapshot } from '../../api/client';
+import {
+  captureViewportAnchor,
+  resolveRetainedWindowViewportMetrics,
+  resolveScrollCompensationDelta,
+  resolveViewportCenteredWindowRequest,
+  restoreViewportAnchor,
+  syncViewportScrollPosition,
+  type VirtualizerAnchor,
+  type VirtualizerMeasuredItemChange,
+  type VirtualizerWindowViewportMetrics,
+} from '../../utils/virtualizer';
 import type {
   ArtifactClusterInfo,
   HistoryRenderPlan,
   HistoryScrollMetrics,
-  HistoryViewportAnchor,
+  HistoryVirtualWindow,
   HistoryViewportMetrics,
   HistoryVisibleEntry,
   LensHistoryEntry,
@@ -60,44 +71,7 @@ type HistoryRenderDeps = {
   renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
 };
 
-export type HistoryWindowViewportMetrics = HistoryViewportMetrics & {
-  historyWindowStart: number;
-  historyWindowEnd: number;
-  totalHistoryCount: number;
-  offWindowTopSpacerPx: number;
-  offWindowBottomSpacerPx: number;
-};
-
-function resolveAverageHistoryEntryHeight(
-  entries: readonly LensHistoryEntry[],
-  state: SessionLensViewState | undefined,
-  resolveEntryHeight: (entry: LensHistoryEntry) => number,
-): number {
-  if ((state?.historyObservedHeights.size ?? 0) > 0) {
-    return resolveRepresentativeHistoryEntryHeight(state?.historyObservedHeights.values() ?? []);
-  }
-
-  if (entries.length === 0) {
-    return 72;
-  }
-
-  const totalHeight = entries.reduce((sum, entry) => sum + resolveEntryHeight(entry), 0);
-  return Math.max(1, totalHeight / entries.length);
-}
-
-function estimateOffWindowSpacerPx(
-  entries: readonly LensHistoryEntry[],
-  state: SessionLensViewState | undefined,
-  unseenItemCount: number,
-  resolveEntryHeight: (entry: LensHistoryEntry) => number,
-): number {
-  if (unseenItemCount <= 0) {
-    return 0;
-  }
-
-  const averageHeight = resolveAverageHistoryEntryHeight(entries, state, resolveEntryHeight);
-  return Math.max(0, Math.round(averageHeight * unseenItemCount));
-}
+export type HistoryWindowViewportMetrics = VirtualizerWindowViewportMetrics;
 
 export function resolveHistoryWindowViewportMetrics(
   entries: readonly LensHistoryEntry[],
@@ -107,42 +81,33 @@ export function resolveHistoryWindowViewportMetrics(
 ): HistoryWindowViewportMetrics {
   const historyWindowStart = Math.max(0, state?.snapshot?.historyWindowStart ?? 0);
   const historyWindowEnd = Math.max(historyWindowStart, state?.snapshot?.historyWindowEnd ?? 0);
-  const totalHistoryCount = Math.max(historyWindowEnd, state?.snapshot?.historyCount ?? 0);
-  const offWindowTopCount = historyWindowStart;
-  const offWindowBottomCount = Math.max(0, totalHistoryCount - historyWindowEnd);
-  const offWindowTopSpacerPx = estimateOffWindowSpacerPx(
-    entries,
-    state,
-    offWindowTopCount,
-    resolveEntryHeight,
-  );
-  const offWindowBottomSpacerPx = estimateOffWindowSpacerPx(
-    entries,
-    state,
-    offWindowBottomCount,
-    resolveEntryHeight,
-  );
-
-  return {
-    ...metrics,
-    scrollTop: Math.max(0, metrics.scrollTop - offWindowTopSpacerPx),
-    historyWindowStart,
-    historyWindowEnd,
-    totalHistoryCount,
-    offWindowTopSpacerPx,
-    offWindowBottomSpacerPx,
-  };
+  return resolveRetainedWindowViewportMetrics({
+    items: entries,
+    viewportMetrics: metrics,
+    retainedWindow: {
+      windowStart: historyWindowStart,
+      windowEnd: historyWindowEnd,
+      totalCount: Math.max(historyWindowEnd, state?.snapshot?.historyCount ?? 0),
+    },
+    observedSizes: state?.historyObservedHeights.values(),
+    resolveItemSize: (entry) => resolveEntryHeight(entry),
+    resolveEstimatedItemSize: (entry) =>
+      resolveHistoryEstimatedEntryHeight(entry, metrics.clientWidth),
+  });
 }
 
-function syncViewportScrollPosition(viewport: HTMLDivElement, targetScrollTop: number): boolean {
-  const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-  const nextScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
-  if (Math.abs(nextScrollTop - viewport.scrollTop) <= 1) {
-    return false;
+function toHistoryViewportAnchor(
+  anchor: VirtualizerAnchor | null,
+): SessionLensViewState['pendingHistoryLayoutAnchor'] {
+  if (!anchor) {
+    return null;
   }
 
-  viewport.scrollTop = nextScrollTop;
-  return Math.abs(viewport.scrollTop - nextScrollTop) <= 1;
+  return {
+    entryId: anchor.key,
+    topOffsetPx: anchor.topOffsetPx,
+    absoluteIndex: anchor.absoluteIndex,
+  };
 }
 
 function updateBusyIndicatorElapsedInState(
@@ -171,15 +136,73 @@ function updateBusyIndicatorElapsedInState(
   return false;
 }
 
+function resolveMeasurementBrowseAnchor(
+  state: SessionLensViewState,
+  viewport: HTMLDivElement,
+): VirtualizerAnchor | null {
+  if (state.historyAutoScrollPinned || state.pendingHistoryPrependAnchor !== null) {
+    return null;
+  }
+
+  return captureViewportAnchor({
+    viewport,
+    renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+      key: entryId,
+      node: rendered.node,
+      absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+    })),
+  });
+}
+
+function collectHistoryMeasurementChanges(args: {
+  state: SessionLensViewState;
+  viewport: HTMLDivElement;
+  records: readonly ResizeObserverEntry[];
+}): VirtualizerMeasuredItemChange[] {
+  const { state, viewport, records } = args;
+  const changes: VirtualizerMeasuredItemChange[] = [];
+
+  for (const record of records) {
+    const target = record.target as HTMLElement;
+    const entryId = target.dataset.lensEntryId;
+    if (!entryId) {
+      continue;
+    }
+
+    const relativeIndex = state.historyEntries.findIndex((entry) => entry.id === entryId);
+    const entry = relativeIndex >= 0 ? (state.historyEntries[relativeIndex] ?? null) : null;
+    const previousSize =
+      entry === null ? null : resolveHistoryViewportEntryHeight(entry, state, viewport.clientWidth);
+    const sizeChanged = recordHistoryMeasuredHeight(
+      state,
+      entryId,
+      record.contentRect.height,
+      viewport.clientWidth,
+    );
+    if (!sizeChanged || entry === null || previousSize === null) {
+      continue;
+    }
+
+    const nextSize = resolveHistoryViewportEntryHeight(entry, state, viewport.clientWidth);
+    changes.push({
+      absoluteIndex: (state.snapshot?.historyWindowStart ?? 0) + relativeIndex,
+      previousSize,
+      nextSize,
+    });
+    const rendered = state.historyRenderedNodes.get(entryId);
+    if (rendered) {
+      rendered.lastMeasuredWidthBucket = state.historyMeasuredWidthBucket;
+    }
+  }
+
+  return changes;
+}
+
 function syncHistoryMeasurementObserver(args: {
   sessionId: string;
   state: SessionLensViewState;
   visibleEntries: readonly HistoryVisibleEntry[];
   getState: (sessionId: string) => SessionLensViewState | undefined;
-  captureHistoryViewportAnchor: (
-    state: SessionLensViewState,
-    key?: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor',
-  ) => boolean;
   scheduleHistoryRender: (sessionId: string) => void;
 }): void {
   if (typeof ResizeObserver !== 'function') {
@@ -193,33 +216,27 @@ function syncHistoryMeasurementObserver(args: {
       return;
     }
 
-    let changed = false;
-    for (const record of records) {
-      const target = record.target as HTMLElement;
-      const entryId = target.dataset.lensEntryId;
-      if (!entryId) {
-        continue;
-      }
-
-      changed =
-        recordHistoryMeasuredHeight(
-          current,
-          entryId,
-          record.contentRect.height,
-          viewport.clientWidth,
-        ) || changed;
-    }
-
-    if (!changed) {
+    const browseAnchor = resolveMeasurementBrowseAnchor(current, viewport);
+    const measurementChanges = collectHistoryMeasurementChanges({
+      state: current,
+      viewport,
+      records,
+    });
+    if (measurementChanges.length === 0) {
       return;
     }
 
-    if (
-      !current.historyAutoScrollPinned &&
-      current.pendingHistoryPrependAnchor === null &&
-      current.pendingHistoryLayoutAnchor === null
-    ) {
-      args.captureHistoryViewportAnchor(current, 'pendingHistoryLayoutAnchor');
+    const compensationDelta = resolveScrollCompensationDelta({
+      changes: measurementChanges,
+      anchorAbsoluteIndex: browseAnchor?.absoluteIndex,
+    });
+    if (!current.historyAutoScrollPinned && compensationDelta !== 0) {
+      syncViewportScrollPosition(viewport, viewport.scrollTop + compensationDelta);
+      current.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
+    }
+
+    if (!current.historyAutoScrollPinned && current.pendingHistoryPrependAnchor === null) {
+      current.pendingHistoryLayoutAnchor = toHistoryViewportAnchor(browseAnchor);
     }
 
     args.scheduleHistoryRender(args.sessionId);
@@ -371,6 +388,70 @@ function readHistoryScrollMetrics(container: HTMLDivElement): HistoryScrollMetri
   };
 }
 
+function sumHistoryEntryHeights(
+  entries: readonly LensHistoryEntry[],
+  start: number,
+  end: number,
+  resolveEntryHeight: (entry: LensHistoryEntry) => number,
+): number {
+  let total = 0;
+  for (let index = Math.max(0, start); index < Math.min(entries.length, end); index += 1) {
+    const entry = entries[index];
+    if (entry) {
+      total += resolveEntryHeight(entry);
+    }
+  }
+
+  return total;
+}
+
+function expandHistoryVirtualWindowForPendingAnchor(args: {
+  entries: readonly LensHistoryEntry[];
+  virtualWindow: HistoryVirtualWindow;
+  state?: SessionLensViewState | undefined;
+  resolveEntryHeight: (entry: LensHistoryEntry) => number;
+}): HistoryVirtualWindow {
+  const { entries, virtualWindow, state, resolveEntryHeight } = args;
+  const anchorEntryId =
+    state?.pendingHistoryPrependAnchor?.entryId ?? state?.pendingHistoryLayoutAnchor?.entryId;
+  if (!anchorEntryId) {
+    return virtualWindow;
+  }
+
+  const anchorIndex = entries.findIndex((entry) => entry.id === anchorEntryId);
+  if (anchorIndex < 0) {
+    return virtualWindow;
+  }
+
+  const corridorStart = Math.max(0, anchorIndex - LENS_HISTORY_OVERSCAN_ITEMS);
+  const corridorEnd = Math.min(entries.length, anchorIndex + LENS_HISTORY_OVERSCAN_ITEMS + 1);
+  const start = Math.min(virtualWindow.start, corridorStart);
+  const end = Math.max(virtualWindow.end, corridorEnd);
+  if (start === virtualWindow.start && end === virtualWindow.end) {
+    return virtualWindow;
+  }
+
+  const extraTopHeight = sumHistoryEntryHeights(
+    entries,
+    start,
+    virtualWindow.start,
+    resolveEntryHeight,
+  );
+  const extraBottomHeight = sumHistoryEntryHeights(
+    entries,
+    virtualWindow.end,
+    end,
+    resolveEntryHeight,
+  );
+
+  return {
+    start,
+    end,
+    topSpacerPx: Math.max(0, virtualWindow.topSpacerPx - extraTopHeight),
+    bottomSpacerPx: Math.max(0, virtualWindow.bottomSpacerPx - extraBottomHeight),
+  };
+}
+
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function renderActivationView(
     sessionId: string,
@@ -440,7 +521,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         topSpacerPx: 0,
         bottomSpacerPx: 0,
         visibleEntries: [],
-        deferVirtualization: false,
       };
     }
 
@@ -459,30 +539,26 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       windowMetrics.clientWidth,
       resolveEntryHeight,
     );
-    const deferVirtualization = Boolean(
-      state?.pendingHistoryPrependAnchor || state?.pendingHistoryLayoutAnchor,
-    );
-    const visibleStart = deferVirtualization ? 0 : virtualWindow.start;
-    const visibleEnd = deferVirtualization ? entries.length : virtualWindow.end;
+    const renderedWindow = expandHistoryVirtualWindowForPendingAnchor({
+      entries,
+      virtualWindow,
+      state,
+      resolveEntryHeight,
+    });
 
     return {
       emptyStateText: null,
-      virtualWindowKey: deferVirtualization ? null : buildHistoryVirtualWindowKey(virtualWindow),
-      topSpacerPx: deferVirtualization
-        ? windowMetrics.offWindowTopSpacerPx
-        : windowMetrics.offWindowTopSpacerPx + virtualWindow.topSpacerPx,
-      bottomSpacerPx: deferVirtualization
-        ? windowMetrics.offWindowBottomSpacerPx
-        : windowMetrics.offWindowBottomSpacerPx + virtualWindow.bottomSpacerPx,
+      virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
+      topSpacerPx: windowMetrics.offWindowTopSpacerPx + renderedWindow.topSpacerPx,
+      bottomSpacerPx: windowMetrics.offWindowBottomSpacerPx + renderedWindow.bottomSpacerPx,
       visibleEntries: buildVisibleHistoryEntries({
         entries,
-        visibleStart,
-        visibleEnd,
+        visibleStart: renderedWindow.start,
+        visibleEnd: renderedWindow.end,
         state,
         resolveCluster: resolveArtifactCluster,
         buildSignature: buildHistoryEntrySignature,
       }),
-      deferVirtualization,
     };
   }
 
@@ -702,6 +778,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       signature: visibleEntry.signature,
       entry: visibleEntry.entry,
       cluster: visibleEntry.cluster,
+      lastMeasuredWidthBucket: null,
     });
     return node;
   }
@@ -713,9 +790,14 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     clientWidth: number,
   ): boolean {
     let changed = false;
+    const widthBucket = state.historyMeasuredWidthBucket;
     for (const visibleEntry of visibleEntries) {
       const rendered = state.historyRenderedNodes.get(visibleEntry.key);
       if (!rendered?.node || typeof rendered.node.getBoundingClientRect !== 'function') {
+        continue;
+      }
+
+      if (rendered.lastMeasuredWidthBucket === widthBucket) {
         continue;
       }
 
@@ -726,6 +808,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           rendered.node.getBoundingClientRect().height,
           clientWidth,
         ) || changed;
+      rendered.lastMeasuredWidthBucket = state.historyMeasuredWidthBucket;
     }
 
     syncHistoryMeasurementObserver({
@@ -733,7 +816,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state,
       visibleEntries,
       getState: deps.getState,
-      captureHistoryViewportAnchor,
       scheduleHistoryRender: deps.scheduleHistoryRender,
     });
     return changed;
@@ -749,19 +831,17 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return false;
     }
 
-    const anchorNode = state.historyRenderedNodes.get(anchor.entryId)?.node;
-    if (!anchorNode || typeof anchorNode.getBoundingClientRect !== 'function') {
-      return false;
-    }
-
-    const viewportRect = viewport.getBoundingClientRect();
-    const anchorRect = anchorNode.getBoundingClientRect();
     state[key] = null;
     setHistoryScrollMode(state, 'browse');
-    return syncViewportScrollPosition(
+    return restoreViewportAnchor({
       viewport,
-      viewport.scrollTop + (anchorRect.top - viewportRect.top - anchor.topOffsetPx),
-    );
+      anchor: {
+        key: anchor.entryId,
+        topOffsetPx: anchor.topOffsetPx,
+        absoluteIndex: anchor.absoluteIndex,
+      },
+      resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
+    });
   }
 
   function captureHistoryViewportAnchor(
@@ -776,30 +856,22 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return false;
     }
 
-    const viewportRect = viewport.getBoundingClientRect();
-    let bestAnchor: HistoryViewportAnchor | null = null;
-    for (const [entryId, rendered] of state.historyRenderedNodes) {
-      if (typeof rendered.node.getBoundingClientRect !== 'function') {
-        continue;
-      }
-
-      const nodeRect = rendered.node.getBoundingClientRect();
-      if (nodeRect.bottom < viewportRect.top || nodeRect.top > viewportRect.bottom) {
-        continue;
-      }
-
-      const topOffsetPx = nodeRect.top - viewportRect.top;
-      if (!bestAnchor || topOffsetPx < bestAnchor.topOffsetPx) {
-        bestAnchor = {
-          entryId,
-          topOffsetPx,
-          absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
-        };
-      }
-    }
-
-    state[key] = bestAnchor;
-    return bestAnchor !== null;
+    const anchor = captureViewportAnchor({
+      viewport,
+      renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+        key: entryId,
+        node: rendered.node,
+        absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+      })),
+    });
+    state[key] = anchor
+      ? {
+          entryId: anchor.key,
+          topOffsetPx: anchor.topOffsetPx,
+          absoluteIndex: anchor.absoluteIndex,
+        }
+      : null;
+    return anchor !== null;
   }
 
   function syncOrderedChildren(container: HTMLElement, nodes: readonly HTMLElement[]): void {
@@ -930,8 +1002,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function getViewportCenteredHistoryWindowRequest(
     state: SessionLensViewState,
     options: {
-      minimumMarginItems: number;
-      maximumMarginItems: number;
+      fetchAheadItems: number;
       anchorAbsoluteIndex?: number | null;
     },
   ): { startIndex: number; count: number } | null {
@@ -942,59 +1013,24 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const metrics = readHistoryViewportMetrics(viewport);
-    const windowMetrics = resolveHistoryWindowViewportMetrics(
-      state.historyEntries,
-      state,
-      metrics,
-      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
-    );
-    const visibleRange = computeHistoryVisibleRange(
-      state.historyEntries,
-      windowMetrics.scrollTop,
-      windowMetrics.clientHeight,
-      windowMetrics.clientWidth,
-      (entry) => resolveHistoryViewportEntryHeight(entry, state, windowMetrics.clientWidth),
-    );
-    const visibleCount = Math.max(1, visibleRange.end - visibleRange.start);
-    const marginItems = Math.max(
-      options.minimumMarginItems,
-      Math.min(options.maximumMarginItems, visibleCount * 2),
-    );
-    const absoluteVisibleStart = snapshot.historyWindowStart + visibleRange.start;
-    const absoluteVisibleEnd = snapshot.historyWindowStart + visibleRange.end;
-    const safeStart = snapshot.historyWindowStart + marginItems;
-    const safeEnd = snapshot.historyWindowEnd - marginItems;
-    const needsShift =
-      absoluteVisibleStart < safeStart ||
-      absoluteVisibleEnd > safeEnd ||
-      snapshot.historyWindowEnd - snapshot.historyWindowStart > visibleCount + marginItems * 2;
-    if (!needsShift) {
-      return null;
-    }
-
-    const desiredStart = Math.max(0, absoluteVisibleStart - marginItems);
-    const desiredEnd = Math.min(snapshot.historyCount, absoluteVisibleEnd + marginItems);
-    const anchorAbsoluteIndex =
-      typeof options.anchorAbsoluteIndex === 'number' &&
-      Number.isFinite(options.anchorAbsoluteIndex)
-        ? Math.max(0, Math.min(snapshot.historyCount - 1, options.anchorAbsoluteIndex))
-        : null;
-    const anchoredStart =
-      anchorAbsoluteIndex === null ? desiredStart : Math.min(desiredStart, anchorAbsoluteIndex);
-    const anchoredEnd =
-      anchorAbsoluteIndex === null ? desiredEnd : Math.max(desiredEnd, anchorAbsoluteIndex + 1);
-    const desiredCount = Math.max(1, anchoredEnd - anchoredStart);
-    const maxStart = Math.max(0, snapshot.historyCount - desiredCount);
-    const startIndex = Math.max(0, Math.min(anchoredStart, maxStart));
-    const count = Math.min(snapshot.historyCount - startIndex, desiredCount);
-    if (
-      startIndex === snapshot.historyWindowStart &&
-      count === snapshot.historyWindowEnd - snapshot.historyWindowStart
-    ) {
-      return null;
-    }
-
-    return { startIndex, count };
+    const resolveEntryHeight = (entry: LensHistoryEntry) =>
+      resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth);
+    const request = resolveViewportCenteredWindowRequest({
+      items: state.historyEntries,
+      viewportMetrics: metrics,
+      retainedWindow: {
+        windowStart: snapshot.historyWindowStart,
+        windowEnd: snapshot.historyWindowEnd,
+        totalCount: snapshot.historyCount,
+      },
+      fetchAheadItems: options.fetchAheadItems,
+      resolveItemSize: (entry) => resolveEntryHeight(entry),
+      observedSizes: state.historyObservedHeights.values(),
+      anchorAbsoluteIndex: options.anchorAbsoluteIndex,
+      resolveEstimatedItemSize: (entry) =>
+        resolveHistoryEstimatedEntryHeight(entry, metrics.clientWidth),
+    });
+    return request;
   }
 
   return {

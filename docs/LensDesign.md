@@ -179,6 +179,7 @@ The canonical history contract must satisfy the following:
 - Lens history transport must be count-and-index based. The browser should know total history count and fetch absolute history windows by index.
 - The backend history contract must not require the browser to depend on backend-owned pixel spacer estimates for unseen history.
 - The frontend owns viewport measurement, row measurement, and DOM virtualization behavior.
+- That browser-side virtualization should live behind a reusable frontend virtualizer core with item-based knobs such as `overscanItems` and `fetchAheadItems`; Lens-specific history-window fetch policy should stay in a thin Lens adapter instead of being scattered through unrelated UI code.
 - Browser-resident Lens history should stay bounded to the visible working set plus a modest nearby margin instead of accumulating the full session scrollback in memory.
 - The browser should treat Lens history as a viewport over `mtagenthost`-owned canonical history, not as a durable full-history cache.
 - Different browsers viewing the same Lens session may hold different local windows and scroll positions without changing the canonical history.
@@ -210,6 +211,8 @@ The canonical history contract must satisfy the following:
 - When a Lens surface is reopened, reactivated, or restored after being hidden, it should re-enter at the live edge in follow mode by default unless the user is in the middle of an explicit older-history navigation flow.
 - When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
 - When older-history paging prepends more canonical rows, Lens should preserve the reader position by anchoring to a stable visible history row identity and restoring against that row's real DOM offset, not by summing guessed row heights.
+- When measured row heights change above the reader while browsing older history, the virtualizer should compensate the viewport scroll offset from those concrete size deltas instead of relying only on a later rerender to keep the visible content stable.
+- Unseen-history spacer estimation should prefer stable global width-bucket observations and backend/window estimates over raw current-slice averages so scrollbar position does not whip around when a newly fetched slice has a very different row mix.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage
@@ -530,12 +533,15 @@ Status in this branch/work item:
 - implemented: visible-row virtualization now prefers browser-measured row heights over static heuristics and keeps those measurements as the render window shifts
 - implemented: browser-side virtual-range math now uses cumulative prefix-height layout math with binary-search index lookup instead of repeated linear spacer scans through the full retained window
 - implemented: the browser now retains one bounded moving history window and shifts it by overlapping absolute index fetches instead of monotonically expanding the cached history while the user pages around
+- implemented: shared browser-side virtualization now lives behind a reusable virtualizer core that owns width-bucketed measurement reuse, visible-range math, spacer geometry, anchor capture/restore, and viewport-centered retained-window demand
+- implemented: unseen-history spacer estimation now prefers stable width-bucket observations plus estimated row heights, clamping local slice bias so random older-history fetches do not yank the scrollbar as aggressively when a fetched slice has an unusual row mix
 - implemented: retained browser history now recenters around the actual visible history range plus a bounded nearby margin rather than only paging by fixed top/bottom thresholds
 - implemented: viewport-driven history refetch now trims retained browser history down to the visible range plus a bounded nearby margin instead of enforcing an extra fixed retained-window floor
 - implemented: unseen-history spacer estimation now retains observed row-height samples across previously visited windows at the current width bucket instead of relying only on the currently loaded slice
 - implemented: browser-requested history windows now include the current viewport width bucket so `mtagenthost` can return width-aware per-row height estimates instead of assuming one fixed desktop width
 - implemented: older-history and newer-history window shifts restore scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
-- implemented: while Lens is restoring a backward-history anchor after a window shift, it temporarily keeps that fetched window materialized so browser scroll clamping cannot strand the viewport inside spacer-only black gaps before the anchor row is restored
+- implemented: while Lens is restoring a backward-history anchor after a window shift or layout reflow, it expands only to a bounded anchor corridor around that row instead of materializing the full retained window
+- implemented: while browsing, measured row-size corrections above the active anchor now apply direct scroll compensation before rerender so late row growth does not shove the reader downward while the DOM catches up
 - implemented: browser-requested history windows now carry a client-owned revision token through the websocket path so stale same-sequence window responses cannot overwrite a newer intended viewport after async refetches or resubscribe churn
 - implemented: Lens scroll semantics now use explicit browser modes (`follow`, `browse`, `restore-anchor`) so upward user scrolls detach immediately while backward-history anchor restoration stays distinct from live-edge follow mode
 - implemented: follow mode now also detaches on real upward viewport movement away from the live edge even when an embedded/nested browser misses the explicit wheel/touch intent marker, preventing stuck-bottom repinning loops

@@ -5531,8 +5531,8 @@ describe('agentView dev errors', () => {
       () => 100,
     );
 
-    expect(viewportMetrics.offWindowTopSpacerPx).toBe(4000);
-    expect(viewportMetrics.scrollTop).toBe(350);
+    expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
+    expect(viewportMetrics.scrollTop).toBe(1550);
 
     const visibleRange = computeHistoryVisibleRange(
       entries,
@@ -5543,11 +5543,11 @@ describe('agentView dev errors', () => {
     );
     const unadjustedRange = computeHistoryVisibleRange(entries, 4350, 600, 900, () => 100);
 
-    expect(visibleRange.start).toBe(3);
+    expect(visibleRange.start).toBe(15);
     expect(unadjustedRange.start).toBe(43);
   });
 
-  it('keeps the fetched history window materialized while restoring a prepend anchor', async () => {
+  it('keeps the pending prepend anchor inside a bounded render corridor', async () => {
     const { createAgentHistoryRender } = await import('./historyRender');
 
     const historyViewport = createMockDomNode({
@@ -5647,9 +5647,113 @@ describe('agentView dev errors', () => {
 
     render.renderActivationView('s1', panel, state, entries);
 
-    expect(historyViewport.childNodes.length).toBe(entries.length + 2);
-    expect(state.historyRenderedNodes.size).toBe(entries.length);
+    expect(historyViewport.childNodes.length).toBeLessThan(entries.length + 2);
+    expect(state.historyRenderedNodes.size).toBeLessThan(entries.length);
+    expect(state.historyRenderedNodes.has('row-360')).toBe(true);
     expect(scheduleHistoryRender).toHaveBeenCalled();
+  });
+
+  it('does not remeasure unchanged visible rows on every render pass', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 0,
+      scrollHeight: 5600,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const measuredNode = createMockDomNode({
+      textContent: 'Row 0',
+      getBoundingClientRect: vi.fn(() => ({ top: 24, bottom: 124, height: 100 })),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 1,
+        historyCount: 1,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyTopSpacer: null,
+      historyBottomSpacer: null,
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(() => measuredNode),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = [
+      {
+        id: 'row-0',
+        order: 1,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: 'Row 0',
+        meta: 'now',
+      },
+    ] as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(measuredNode.getBoundingClientRect).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the captured anchor absolute index inside a viewport-centered history fetch', async () => {
@@ -5699,8 +5803,7 @@ describe('agentView dev errors', () => {
     });
 
     const requestedWindow = render.getViewportCenteredHistoryWindowRequest(state, {
-      minimumMarginItems: 30,
-      maximumMarginItems: 70,
+      fetchAheadItems: 30,
       anchorAbsoluteIndex: state.pendingHistoryPrependAnchor.absoluteIndex,
     });
 

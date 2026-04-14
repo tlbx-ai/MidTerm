@@ -207,7 +207,6 @@ export interface HistoryRenderPlan {
   topSpacerPx: number;
   bottomSpacerPx: number;
   visibleEntries: HistoryVisibleEntry[];
-  deferVirtualization: boolean;
 }
 
 export interface HistoryRenderedNode {
@@ -215,6 +214,7 @@ export interface HistoryRenderedNode {
   signature: string;
   entry: LensHistoryEntry;
   cluster: ArtifactClusterInfo | null;
+  lastMeasuredWidthBucket: number | null;
 }
 
 export interface HistoryViewportAnchor {

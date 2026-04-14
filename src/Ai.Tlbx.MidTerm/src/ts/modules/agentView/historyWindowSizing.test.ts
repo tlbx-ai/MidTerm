@@ -9,7 +9,6 @@ describe('historyWindowSizing', () => {
     const count = resolveViewportDrivenHistoryWindowCount(
       viewport,
       30,
-      70,
       80,
       [144, 152, 148, 150],
     );
@@ -20,7 +19,7 @@ describe('historyWindowSizing', () => {
   it('falls back to the default estimate when no observed heights are available', () => {
     const viewport = { clientHeight: 600 } as HTMLDivElement;
 
-    const count = resolveViewportDrivenHistoryWindowCount(viewport, 30, 70, 80);
+    const count = resolveViewportDrivenHistoryWindowCount(viewport, 30, 80);
 
     expect(count).toBe(69);
   });
