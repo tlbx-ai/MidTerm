@@ -10,6 +10,10 @@ const metricsSource = readFileSync(path.join(__dirname, 'smartInputMetrics.ts'),
 const submissionSource = readFileSync(path.join(__dirname, 'lensAttachmentSubmission.ts'), 'utf8');
 const layoutSource = readFileSync(path.join(__dirname, 'layout.ts'), 'utf8');
 const keyBindingsSource = readFileSync(path.join(__dirname, 'smartInputKeyBindings.ts'), 'utf8');
+const textareaShortcutsSource = readFileSync(
+  path.join(__dirname, 'smartInputTextareaShortcuts.ts'),
+  'utf8',
+);
 const viewSource = readFileSync(path.join(__dirname, 'smartInputView.ts'), 'utf8');
 const footerSupportSource = readFileSync(path.join(__dirname, 'footerSupport.ts'), 'utf8');
 const lensResumeButtonSource = readFileSync(path.join(__dirname, 'lensResumeButton.ts'), 'utf8');
@@ -305,6 +309,20 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('insertSmartInputLineBreak(textarea);');
     expect(source).toContain('if (shouldSubmitSmartInputOnEnter(event)) {');
     expect(source).not.toContain("if (event.key === 'Enter' && !event.shiftKey) {");
+  });
+
+  it('captures Shift+Tab by active surface so Lens toggles plan mode and Terminal receives backtab', () => {
+    expect(source).toContain("import { getActiveTab, onTabActivated } from '../sessionTabs';");
+    expect(source).toContain(
+      "import { resolveSmartInputShiftTabAction } from './smartInputTextareaShortcuts';",
+    );
+    expect(source).toContain('function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {');
+    expect(source).toContain('const shiftTabAction = resolveSmartInputShiftTabAction(');
+    expect(source).toContain('if (handleSmartInputShiftTabShortcut(event)) {');
+    expect(source).toContain('toggleLensPlanMode(sessionId);');
+    expect(source).toContain("sendInput(sessionId, '\\x1b[Z');");
+    expect(textareaShortcutsSource).toContain("return 'toggle-lens-plan-mode';");
+    expect(textareaShortcutsSource).toContain("return 'forward-to-terminal';");
   });
 
   it('advertises prompt history restoration from the empty Automation Bar composer', () => {

@@ -16,7 +16,7 @@ import {
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
-import { isBracketedPasteEnabled } from '../comms';
+import { isBracketedPasteEnabled, sendInput } from '../comms';
 import {
   createLensTurnRequest,
   handleLensEscape,
@@ -34,7 +34,7 @@ import {
   triggerAutomationOverflow,
 } from '../managerBar';
 import { shouldShowManagerBar } from '../managerBar/visibility';
-import { onTabActivated } from '../sessionTabs';
+import { getActiveTab, onTabActivated } from '../sessionTabs';
 import { onDevModeChanged } from '../sidebar/voiceSection';
 import { showDropToast, uploadFile } from '../terminal';
 import { shouldShowTouchController } from '../touchController/detection';
@@ -105,6 +105,7 @@ import {
   shouldInsertLineBreakOnEnter,
   shouldSubmitSmartInputOnEnter,
 } from './enterBehavior';
+import { resolveSmartInputShiftTabAction } from './smartInputTextareaShortcuts';
 import {
   allocateSmartInputComposerReferenceOrdinal,
   cloneSmartInputComposerDraft,
@@ -1221,6 +1222,10 @@ function createDockedDOM(): void {
       }
     },
     onTextareaKeydown: (event, textarea) => {
+      if (handleSmartInputShiftTabShortcut(event)) {
+        return;
+      }
+
       if (handlePromptHistoryKeydown(event, textarea)) {
         return;
       }
@@ -1786,6 +1791,34 @@ function toggleAutoSendEnabled(): void {
   localStorage.setItem('smartinput-autosend', String(autoSendEnabled));
   updateAutoSendVisibilitySupport({ dockedBar, sendBtn, autoSendEnabled });
   syncSmartInputVisibility();
+}
+
+function toggleLensPlanMode(sessionId: string): void {
+  const draft = getLensQuickSettingsDraft(sessionId);
+  setLensQuickSettingsDraft(sessionId, {
+    planMode: draft.planMode === 'on' ? 'off' : 'on',
+  });
+  syncSmartInputVisibility();
+}
+
+function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {
+  const sessionId = $activeSessionId.get();
+  const shiftTabAction = resolveSmartInputShiftTabAction(
+    event,
+    sessionId ? getActiveTab(sessionId) : null,
+  );
+  if (shiftTabAction === 'toggle-lens-plan-mode' && sessionId) {
+    event.preventDefault();
+    toggleLensPlanMode(sessionId);
+    return true;
+  }
+  if (shiftTabAction === 'forward-to-terminal' && sessionId) {
+    event.preventDefault();
+    sendInput(sessionId, '\x1b[Z');
+    return true;
+  }
+
+  return false;
 }
 
 function renderLensAttachmentDrafts(sessionId: string | null): void {

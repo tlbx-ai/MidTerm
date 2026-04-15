@@ -428,6 +428,8 @@ The canonical history contract must satisfy the following:
 - Quick-settings must communicate whether they affect the next turn, the active session runtime, or require a thread/runtime reopen behind the scenes.
 - Lens sessions that were launched from a bookmark may expose a small provider-native `Resume` action inline with the quick-settings rail, immediately after the permission control.
 - That `Resume` action must open MidTerm's provider resume picker and create a new Lens session bound to the selected provider conversation; it must not silently swap the current Lens session to a different provider thread in place.
+- While the shared Command Bay composer is focused, bare `Shift+Tab` should toggle Lens plan mode for the active Lens surface instead of moving browser focus away from the composer.
+- The same shared composer shortcut must remain surface-aware: when the active surface is Terminal, bare `Shift+Tab` should pass through to the terminal as a raw backtab key instead of toggling Lens state.
 - Lens composer attachments should stage inside the composer itself as removable chips instead of triggering an immediate turn on selection.
 - Lens should allow attachment-only turns and should treat repeated paste or repeated `+` actions as additive until the user explicitly removes a chip or sends the turn.
 - Clipboard paste inside the active Lens composer should capture browser-exposed files/images into those chips while leaving plain-text paste behavior intact.
@@ -601,6 +603,7 @@ Status in this branch/work item:
 - implemented: desktop Lens quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 - implemented: Lens plain `Esc` now interrupts active Lens turns from the composer, touch-controller, focused Lens surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap
+- implemented: while the shared Command Bay composer is focused, bare `Shift+Tab` now toggles plan mode only for the active Lens surface and forwards raw backtab to the active Terminal surface instead of applying one behavior across both surfaces
 - implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface
 - implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
