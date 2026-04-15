@@ -242,10 +242,8 @@ jobs:
           echo "=== ${{ matrix.rid }} ==="
           cat SHA256SUMS.txt
 
-      - id: notarize_dev
-        name: Notarize (Best Effort For Dev)
+      - name: Notarize
         if: startsWith(matrix.rid, 'osx-')
-        continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -261,12 +259,6 @@ jobs:
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-
-      - name: Record dev notarization warning
-        if: startsWith(matrix.rid, 'osx-') && steps.notarize_dev.outcome != 'success'
-        shell: bash
-        run: |
-          echo "Dev prerelease notarization did not complete; continuing with signed artifacts." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sign version.json
         shell: pwsh
