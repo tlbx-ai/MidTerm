@@ -90,6 +90,7 @@ import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
   attachSessionLens,
   detachSessionLens,
+  type LensHistoryDelta,
   getLensHistoryWindow,
   openLensHistoryStream,
   updateLensHistoryStreamWindow,
@@ -101,6 +102,7 @@ import { $activeSessionId } from '../../stores';
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionLensViewState>();
 const LENS_HISTORY_WINDOW_SIZE = 80;
+const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
@@ -282,6 +284,7 @@ export function destroyAgentView(sessionId: string): void {
     log.warn(() => `Failed to detach Lens for ${sessionId}: ${String(error)}`);
   });
   const state = viewStates.get(sessionId);
+  clearPendingHistoryRenderBatch(state);
   if (state && state.historyRenderScheduled !== null) {
     window.cancelAnimationFrame(state.historyRenderScheduled);
   }
@@ -307,6 +310,7 @@ export function destroyAgentView(sessionId: string): void {
 
 export function resetAgentViewRuntimeForTests(): void {
   for (const [sessionId, state] of viewStates) {
+    clearPendingHistoryRenderBatch(state);
     if (state.historyRenderScheduled !== null) {
       window.cancelAnimationFrame(state.historyRenderScheduled);
     }
@@ -635,6 +639,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyWindowRevision: null,
     historyWindowViewportWidth: null,
     historyRenderScheduled: null,
+    historyRenderBatchHandle: null,
     activationState: 'idle',
     activationDetail: '',
     activationTrace: [],
@@ -920,6 +925,56 @@ function scheduleHistoryRender(sessionId: string): void {
   renderCurrentAgentView(sessionId);
 }
 
+function clearPendingHistoryRenderBatch(state: SessionLensViewState | undefined): void {
+  if (!state || state.historyRenderBatchHandle === null) {
+    return;
+  }
+
+  window.clearTimeout(state.historyRenderBatchHandle);
+  state.historyRenderBatchHandle = null;
+}
+
+function shouldBatchLiveHistoryRender(delta: LensHistoryDelta): boolean {
+  if (delta.requestUpserts.length > 0 || delta.requestRemovals.length > 0) {
+    return false;
+  }
+
+  const currentTurnState = (delta.currentTurn.state || '').toLowerCase();
+  if (currentTurnState !== 'running' && currentTurnState !== 'in_progress') {
+    return false;
+  }
+
+  return (
+    delta.historyUpserts.length > 0 ||
+    delta.historyRemovals.length > 0 ||
+    delta.itemUpserts.length > 0 ||
+    delta.itemRemovals.length > 0 ||
+    delta.noticeUpserts.length > 0
+  );
+}
+
+function scheduleLiveHistoryRender(sessionId: string): void {
+  const state = viewStates.get(sessionId);
+  if (!state) {
+    return;
+  }
+
+  state.renderDirty = true;
+  if (!isLensViewVisible(sessionId, state) || state.historyRenderBatchHandle !== null) {
+    return;
+  }
+
+  state.historyRenderBatchHandle = window.setTimeout(() => {
+    const current = viewStates.get(sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.historyRenderBatchHandle = null;
+    renderCurrentAgentView(sessionId);
+  }, LIVE_HISTORY_RENDER_BATCH_MS);
+}
+
 function openLiveLensStream(sessionId: string, afterSequence: number): void {
   const state = viewStates.get(sessionId);
   if (!state) {
@@ -969,7 +1024,11 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
 
       traceLensHistoryPush(sessionId, delta, current.snapshot);
       const requiresWindowRefresh = applyCanonicalLensDelta(current, delta);
-      scheduleHistoryRender(sessionId);
+      if (shouldBatchLiveHistoryRender(delta)) {
+        scheduleLiveHistoryRender(sessionId);
+      } else {
+        renderCurrentAgentView(sessionId);
+      }
       if (requiresWindowRefresh) {
         void refreshLensSnapshot(sessionId);
       }
@@ -998,6 +1057,7 @@ function closeLensStream(sessionId: string): void {
 }
 
 function releaseHiddenLensRenderState(state: SessionLensViewState): void {
+  clearPendingHistoryRenderBatch(state);
   state.historyEntries = [];
   state.historyMeasurementObserver?.disconnect();
   state.historyRenderedNodes.clear();
@@ -1244,6 +1304,7 @@ function renderCurrentAgentView(
     return;
   }
 
+  clearPendingHistoryRenderBatch(state);
   state.renderDirty = true;
 
   if (!options.force && !isLensViewVisible(sessionId, state)) {

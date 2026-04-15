@@ -202,6 +202,7 @@ The canonical history contract must satisfy the following:
 - Lens must show incremental assistant stream chunks as they arrive.
 - The UI must not depend on a final assistant message before showing useful user feedback.
 - Streaming state should feel low-latency and in-place instead of replacing one row with a later unrelated row.
+- Lens should keep canonical live state current on every patch, but the expensive browser-side timeline paint path should explicitly coalesce fast live patch bursts to a bounded cadence of roughly 4 fps so long assistant output does not trigger a full markdown rerender on every incoming delta.
 
 ### 10. Scroll-follow discipline
 
@@ -559,6 +560,7 @@ Status in this branch/work item:
 - implemented: the active TypeScript Lens client and browser state now consume history-first window/patch types directly instead of normalizing live browser traffic back into the older snapshot/delta DTO shape
 - implemented: assistant markdown now keeps single line breaks inside the same dense paragraph with simple line breaks, while blank lines still form real paragraph boundaries
 - implemented: assistant rows now stay markdown-rendered while streaming and remain markdown-rendered after later turns begin, so settled replies do not visually fall back to plain text
+- implemented: live Lens history patches now update canonical state immediately but batch browser-side timeline paints to a 250 ms cadence while a turn is actively streaming, so long assistant text no longer forces a markdown rerender on every incoming delta
 - implemented: finalized Lens history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Lens file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
 - implemented: assistant markdown blank-line gap markers now use a tighter quarter-em pause per blank line instead of the older taller half-em spacing

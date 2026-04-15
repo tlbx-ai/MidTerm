@@ -29,6 +29,7 @@ export interface SessionLensViewState {
   historyWindowRevision: string | null;
   historyWindowViewportWidth: number | null;
   historyRenderScheduled: number | null;
+  historyRenderBatchHandle: number | null;
   activationState:
     | 'idle'
     | 'opening'

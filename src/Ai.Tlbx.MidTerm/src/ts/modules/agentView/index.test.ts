@@ -482,6 +482,7 @@ describe('agentView dev errors', () => {
       historyWindowRevision: null,
       historyWindowViewportWidth: null,
       historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
       activationState: 'ready',
       activationDetail: '',
       activationTrace: [],
@@ -2072,6 +2073,159 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
 
     expect(detachSessionLens).toHaveBeenCalledWith('s1');
+  });
+
+  it('batches live history patch renders to one paint every 250ms', async () => {
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        currentTurn: {
+          turnId: 'turn-1',
+          state: 'running',
+          stateLabel: 'Running',
+          model: 'gpt-5.4',
+          effort: 'medium',
+          startedAt: '2026-03-28T11:00:00Z',
+          completedAt: null,
+        },
+        session: {
+          state: 'running',
+          stateLabel: 'Running',
+          reason: null,
+          lastError: null,
+          lastEventAt: '2026-03-28T11:00:00Z',
+        },
+      }),
+    );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    activate?.('s1', createPanel());
+
+    await vi.waitFor(() => {
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+    });
+
+    const streamCallbacks = openLensHistoryStream.mock.calls[0]?.[5] as
+      | { onPatch(delta: unknown): void }
+      | undefined;
+    expect(streamCallbacks).toBeTruthy();
+
+    const requestAnimationFrameMock = window.requestAnimationFrame as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    const setTimeoutMock = window.setTimeout as unknown as ReturnType<typeof vi.fn>;
+    requestAnimationFrameMock.mockClear();
+    setTimeoutMock.mockClear();
+
+    const firstPatch = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T11:00:01Z',
+      latestSequence: 2,
+      historyCount: 1,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T11:00:01Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'medium',
+        startedAt: '2026-03-28T11:00:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'partial',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:assistant-1',
+          order: 1,
+          kind: 'assistant',
+          turnId: 'turn-1',
+          itemId: 'assistant-1',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'partial',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-03-28T11:00:00Z',
+          updatedAt: '2026-03-28T11:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    };
+
+    streamCallbacks?.onPatch(firstPatch);
+    streamCallbacks?.onPatch({
+      ...firstPatch,
+      generatedAt: '2026-03-28T11:00:02Z',
+      latestSequence: 3,
+      session: {
+        ...firstPatch.session,
+        lastEventAt: '2026-03-28T11:00:02Z',
+      },
+      streams: {
+        ...firstPatch.streams,
+        assistantText: 'partial answer',
+      },
+      historyUpserts: [
+        {
+          ...firstPatch.historyUpserts[0],
+          body: 'partial answer',
+          updatedAt: '2026-03-28T11:00:02Z',
+        },
+      ],
+    });
+
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1);
+    expect(setTimeoutMock.mock.calls[0]?.[1]).toBe(250);
+    expect(requestAnimationFrameMock).not.toHaveBeenCalled();
+
+    const flushRenderBatch = setTimeoutMock.mock.calls[0]?.[0] as (() => void) | undefined;
+    expect(flushRenderBatch).toBeTypeOf('function');
+    flushRenderBatch?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
   });
 
   it('classifies a busy terminal attach failure into a readonly handoff issue', async () => {
