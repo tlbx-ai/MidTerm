@@ -18,4 +18,11 @@ export function prepareLensForForeground(state: SessionLensViewState): void {
   ) {
     setHistoryScrollMode(state, state.historyAutoScrollPinned ? 'follow' : 'browse');
   }
+
+  if (state.historyAutoScrollPinned) {
+    state.historyNavigatorMode = 'follow-live';
+    state.historyNavigatorDragTargetIndex = null;
+  } else if (state.historyNavigatorMode !== 'drag-preview') {
+    state.historyNavigatorMode = 'browse';
+  }
 }

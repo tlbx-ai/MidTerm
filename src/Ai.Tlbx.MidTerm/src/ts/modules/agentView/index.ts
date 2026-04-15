@@ -37,7 +37,6 @@ import {
 } from './snapshotState';
 import {
   hasActiveLensSelectionInPanel,
-  LENS_HISTORY_INDEX_SCROLL_STEP_PX,
   resolveHistoryScrollMode,
   setHistoryScrollMode,
   stabilizeHistoryEntryOrder,
@@ -47,7 +46,7 @@ import {
   resolveRepresentativeHistoryEntryHeight,
 } from './historyMeasurements';
 import { createAgentHistoryDom } from './historyDom';
-import { createAgentHistoryRender } from './historyRender';
+import { createAgentHistoryRender, resolveHistoryNavigatorTarget } from './historyRender';
 import {
   DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG,
   resolveLensHistoryFetchAheadItems,
@@ -110,6 +109,9 @@ const LENS_HISTORY_WINDOW_SIZE = 80;
 const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 const VIRTUALIZER_DEBUG_FETCH_LIMIT = 10;
+const HISTORY_NAVIGATOR_PREVIEW_COUNT = 5;
+const HISTORY_NAVIGATOR_PREVIEW_THROTTLE_MS = 80;
+const HISTORY_NAVIGATOR_HYDRATE_IDLE_MS = 120;
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
 let lensSelectionGuardBound = false;
@@ -222,7 +224,6 @@ const historyRender = createAgentHistoryRender({
   createHistoryEntry: historyDom.createHistoryEntry,
   createHistoryPlaceholderBlock: historyDom.createHistoryPlaceholderBlock,
   syncBusyIndicatorEntry: historyDom.syncBusyIndicatorEntry,
-  createHistorySpacer: historyDom.createHistorySpacer,
   createRequestActionBlock: historyDom.createRequestActionBlock,
   pruneAssistantMarkdownCache: historyDom.pruneAssistantMarkdownCache,
   renderRuntimeStats: historyDom.renderRuntimeStats,
@@ -319,6 +320,7 @@ export function initAgentView(): void {
  * Tears down per-session Lens state when a session closes or loses the Lens
  * surface so stale streams, timers, and attach state do not leak across turns.
  */
+/* eslint-disable complexity -- teardown has to coordinate stream/timer/render cleanup in one place. */
 export function destroyAgentView(sessionId: string): void {
   closeLensStream(sessionId);
   void detachSessionLens(sessionId).catch((error: unknown) => {
@@ -331,6 +333,12 @@ export function destroyAgentView(sessionId: string): void {
   }
   if (state && state.busyIndicatorTickHandle !== null) {
     window.clearTimeout(state.busyIndicatorTickHandle);
+  }
+  if (state && state.historyNavigatorPreviewHandle !== null) {
+    window.clearTimeout(state.historyNavigatorPreviewHandle);
+  }
+  if (state && state.historyNavigatorHydrateHandle !== null) {
+    window.clearTimeout(state.historyNavigatorHydrateHandle);
   }
   state?.historyMeasurementObserver?.disconnect();
   state?.historyViewportResizeObserver?.disconnect();
@@ -358,6 +366,7 @@ export function destroyAgentView(sessionId: string): void {
   clearLensTurnSessionState(sessionId);
   removeLensQuickSettingsSessionState(sessionId);
 }
+/* eslint-enable complexity */
 
 export function resetAgentViewRuntimeForTests(): void {
   for (const [sessionId, state] of viewStates) {
@@ -367,6 +376,12 @@ export function resetAgentViewRuntimeForTests(): void {
     }
     if (state.busyIndicatorTickHandle !== null) {
       window.clearTimeout(state.busyIndicatorTickHandle);
+    }
+    if (state.historyNavigatorPreviewHandle !== null) {
+      window.clearTimeout(state.historyNavigatorPreviewHandle);
+    }
+    if (state.historyNavigatorHydrateHandle !== null) {
+      window.clearTimeout(state.historyNavigatorHydrateHandle);
     }
     state.disconnectStream?.();
     state.historyMeasurementObserver?.disconnect();
@@ -431,6 +446,8 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.requestBusyIds.clear();
   state.historyWindowRevision = null;
   setHistoryScrollMode(state, 'follow');
+  state.historyNavigatorMode = 'follow-live';
+  state.historyNavigatorDragTargetIndex = null;
   renderCurrentAgentView(sessionId);
   switchTab(sessionId, 'agent');
   return true;
@@ -674,8 +691,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     debugScenarioActive: false,
     activationRunId: 0,
     historyViewport: null,
-    historyIndexScrollHost: null,
-    historyIndexScrollSizer: null,
+    historyProgressNav: null,
+    historyProgressThumb: null,
     historyEntries: [],
     historyWindowStart: 0,
     historyWindowCount: initialHistoryWindowCount,
@@ -695,7 +712,16 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyLastVoidSyncScrollTop: null,
     historyWindowRevision: null,
     historyWindowViewportWidth: null,
-    historyIndexVisibleCount: 0,
+    historyNavigatorMode: 'follow-live',
+    historyNavigatorAnchorIndex: null,
+    historyNavigatorDragTargetIndex: null,
+    historyNavigatorQueuedTargetIndex: null,
+    historyNavigatorQueuedRequestKind: null,
+    historyNavigatorPreviewHandle: null,
+    historyNavigatorHydrateHandle: null,
+    historyNavigatorLastPreviewRequestAt: 0,
+    historyPendingJumpTargetIndex: null,
+    historyPendingJumpAlign: null,
     historyRenderScheduled: null,
     historyRenderBatchHandle: null,
     activationState: 'idle',
@@ -744,49 +770,315 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
   return created;
 }
 
-function resolveHistoryIndexVisibleCount(state: SessionLensViewState): number {
-  const viewportHeight = Math.max(1, state.historyViewport?.clientHeight ?? 0);
-  const representativeHeight = resolveRepresentativeHistoryEntryHeight(
-    state.historyObservedHeights.values(),
-  );
-  return Math.max(1, Math.ceil(viewportHeight / representativeHeight));
+function syncHistoryProgressNavigator(sessionId: string): void {
+  historyRender.syncViewportOffset(sessionId);
 }
 
-function syncHistoryIndexScrollbar(state: SessionLensViewState): void {
-  const scrollHost = state.historyIndexScrollHost;
-  const scrollSizer = state.historyIndexScrollSizer;
-  if (!scrollHost || !scrollSizer) {
+function resolveHistoryKeyboardStepPx(state: SessionLensViewState): number {
+  return Math.max(
+    24,
+    Math.round(
+      resolveRepresentativeHistoryEntryHeight(state.historyObservedHeights.values()) * 0.5,
+    ),
+  );
+}
+
+function clearHistoryNavigatorPreviewTimer(state: SessionLensViewState): void {
+  if (state.historyNavigatorPreviewHandle === null) {
     return;
   }
 
-  state.historyIndexVisibleCount = resolveHistoryIndexVisibleCount(state);
-  scrollSizer.style.height = `${Math.max(
-    scrollHost.clientHeight,
-    (state.snapshot?.historyCount ?? state.historyEntries.length) *
-      LENS_HISTORY_INDEX_SCROLL_STEP_PX,
-  )}px`;
+  window.clearTimeout(state.historyNavigatorPreviewHandle);
+  state.historyNavigatorPreviewHandle = null;
+}
+
+function clearHistoryNavigatorHydrateTimer(state: SessionLensViewState): void {
+  if (state.historyNavigatorHydrateHandle === null) {
+    return;
+  }
+
+  window.clearTimeout(state.historyNavigatorHydrateHandle);
+  state.historyNavigatorHydrateHandle = null;
+}
+
+function clearQueuedHistoryNavigatorRequest(state: SessionLensViewState): void {
+  state.historyNavigatorQueuedTargetIndex = null;
+  state.historyNavigatorQueuedRequestKind = null;
+}
+
+function resolveHistoryJumpAlign(
+  state: SessionLensViewState,
+  absoluteIndex: number,
+): 'top' | 'center' | 'bottom' {
+  const historyCount = Math.max(state.snapshot?.historyCount ?? 0, state.historyEntries.length);
+  if (absoluteIndex <= 0) {
+    return 'top';
+  }
+
+  if (historyCount > 0 && absoluteIndex >= historyCount - 1) {
+    return 'bottom';
+  }
+
+  return 'center';
+}
+
+function isHistoryIndexInsideCurrentWindow(
+  state: SessionLensViewState,
+  absoluteIndex: number,
+): boolean {
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return false;
+  }
+
+  return absoluteIndex >= snapshot.historyWindowStart && absoluteIndex < snapshot.historyWindowEnd;
+}
+
+function queueHistoryNavigatorRequest(
+  state: SessionLensViewState,
+  targetIndex: number,
+  kind: 'preview' | 'hydrate',
+): void {
+  state.historyNavigatorQueuedTargetIndex = targetIndex;
+  state.historyNavigatorQueuedRequestKind =
+    kind === 'hydrate' || state.historyNavigatorQueuedRequestKind === 'hydrate'
+      ? 'hydrate'
+      : 'preview';
+}
+
+function resolveCenteredHistoryWindowStart(
+  historyCount: number,
+  targetIndex: number,
+  count: number,
+): number {
+  if (historyCount <= 0 || count <= 0) {
+    return 0;
+  }
+
+  const clampedCount = Math.max(1, Math.min(historyCount, count));
+  return Math.max(
+    0,
+    Math.min(targetIndex - Math.floor(clampedCount / 2), historyCount - clampedCount),
+  );
+}
+
+/* eslint-disable complexity -- jump preview/hydration intentionally shares one queued request path. */
+async function requestHistoryNavigatorWindow(
+  sessionId: string,
+  state: SessionLensViewState,
+  targetIndex: number,
+  kind: 'preview' | 'hydrate',
+): Promise<void> {
+  const snapshot = state.snapshot;
+  if (!snapshot) {
+    return;
+  }
+
+  const historyCount = Math.max(snapshot.historyCount, state.historyEntries.length);
+  if (historyCount <= 0) {
+    return;
+  }
+
+  const clampedTargetIndex = Math.max(0, Math.min(historyCount - 1, targetIndex));
+  const desiredCount =
+    kind === 'preview'
+      ? Math.min(historyCount, HISTORY_NAVIGATOR_PREVIEW_COUNT)
+      : resolveLensHistoryWindowTargetCount(
+          state.historyViewport,
+          Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+          state.historyObservedHeights.values(),
+        );
+  const requestCount = Math.max(1, Math.min(historyCount, desiredCount));
+  const requestStart = resolveCenteredHistoryWindowStart(
+    historyCount,
+    clampedTargetIndex,
+    requestCount,
+  );
+  const alreadyMaterialized =
+    isHistoryIndexInsideCurrentWindow(state, clampedTargetIndex) &&
+    state.historyWindowCount >= requestCount;
+
+  state.historyPendingJumpTargetIndex = clampedTargetIndex;
+  state.historyPendingJumpAlign = resolveHistoryJumpAlign(state, clampedTargetIndex);
+  if (kind === 'hydrate') {
+    state.historyWindowTargetCount = requestCount;
+  }
+
+  if (alreadyMaterialized) {
+    if (kind === 'hydrate') {
+      state.historyNavigatorMode = 'browse';
+      state.historyNavigatorDragTargetIndex = null;
+    }
+    renderCurrentAgentView(sessionId, { immediate: true });
+    return;
+  }
+
+  if (state.refreshInFlight) {
+    queueHistoryNavigatorRequest(state, clampedTargetIndex, kind);
+    return;
+  }
+
+  if (kind === 'preview') {
+    state.historyNavigatorLastPreviewRequestAt = Date.now();
+  }
+  state.refreshInFlight = true;
+  try {
+    const windowRevision = issueHistoryWindowRevision(sessionId, state);
+    const nextSnapshot = await requestLensHistoryWindow(
+      sessionId,
+      state,
+      requestStart,
+      requestCount,
+      windowRevision,
+    );
+    traceLensHistoryFetch(sessionId, nextSnapshot, kind === 'preview' ? 'drag-preview' : 'jump');
+    recordVirtualizerFetch(state, {
+      reason: kind === 'preview' ? 'drag-preview' : 'jump',
+      requestedStart: requestStart,
+      requestedCount: requestCount,
+      returnedStart: nextSnapshot.historyWindowStart,
+      returnedEnd: nextSnapshot.historyWindowEnd,
+      historyCount: nextSnapshot.historyCount,
+    });
+    if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
+      if (kind === 'hydrate') {
+        state.historyNavigatorMode = 'browse';
+        state.historyNavigatorDragTargetIndex = null;
+      }
+      renderCurrentAgentView(sessionId, { immediate: kind === 'preview' });
+    }
+  } catch (error) {
+    log.warn(
+      () =>
+        `Failed to ${kind === 'preview' ? 'preview' : 'jump'} Lens history for ${sessionId}: ${String(error)}`,
+    );
+    if (kind === 'hydrate' && !state.historyAutoScrollPinned) {
+      state.historyNavigatorMode = 'browse';
+      state.historyNavigatorDragTargetIndex = null;
+    }
+  } finally {
+    state.refreshInFlight = false;
+    if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {
+      if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+        flushPendingHistoryWindowViewportSync(sessionId, state);
+      }
+    }
+  }
+}
+/* eslint-enable complexity */
+
+function flushQueuedHistoryNavigatorRequest(
+  sessionId: string,
+  state: SessionLensViewState,
+): boolean {
+  const targetIndex = state.historyNavigatorQueuedTargetIndex;
+  const requestKind = state.historyNavigatorQueuedRequestKind;
+  if (targetIndex === null || requestKind === null) {
+    return false;
+  }
+
+  clearQueuedHistoryNavigatorRequest(state);
+  void requestHistoryNavigatorWindow(sessionId, state, targetIndex, requestKind);
+  return true;
+}
+
+function primeHistoryNavigatorPreview(
+  sessionId: string,
+  state: SessionLensViewState,
+  targetIndex: number,
+  flushNow = false,
+): void {
+  clearHistoryNavigatorHydrateTimer(state);
+  state.historyPendingJumpTargetIndex = targetIndex;
+  state.historyPendingJumpAlign = resolveHistoryJumpAlign(state, targetIndex);
+
+  if (flushNow || isHistoryIndexInsideCurrentWindow(state, targetIndex)) {
+    clearHistoryNavigatorPreviewTimer(state);
+    void requestHistoryNavigatorWindow(sessionId, state, targetIndex, 'preview');
+    return;
+  }
+
+  const now = Date.now();
+  const remainingMs = Math.max(
+    0,
+    HISTORY_NAVIGATOR_PREVIEW_THROTTLE_MS - (now - state.historyNavigatorLastPreviewRequestAt),
+  );
+  if (remainingMs === 0 && state.historyNavigatorPreviewHandle === null) {
+    state.historyNavigatorLastPreviewRequestAt = now;
+    void requestHistoryNavigatorWindow(sessionId, state, targetIndex, 'preview');
+    return;
+  }
+
+  if (state.historyNavigatorPreviewHandle !== null) {
+    return;
+  }
+
+  state.historyNavigatorPreviewHandle = window.setTimeout(() => {
+    const current = viewStates.get(sessionId);
+    if (!current) {
+      return;
+    }
+
+    current.historyNavigatorPreviewHandle = null;
+    current.historyNavigatorLastPreviewRequestAt = Date.now();
+    const latestTargetIndex =
+      current.historyNavigatorDragTargetIndex ?? current.historyNavigatorAnchorIndex ?? targetIndex;
+    void requestHistoryNavigatorWindow(sessionId, current, latestTargetIndex, 'preview');
+  }, remainingMs);
+}
+
+function scheduleHistoryNavigatorHydration(
+  sessionId: string,
+  state: SessionLensViewState,
+  targetIndex: number,
+): void {
+  clearHistoryNavigatorHydrateTimer(state);
+  state.historyNavigatorHydrateHandle = window.setTimeout(() => {
+    const current = viewStates.get(sessionId);
+    if (!current || current.historyAutoScrollPinned) {
+      return;
+    }
+
+    current.historyNavigatorHydrateHandle = null;
+    void requestHistoryNavigatorWindow(sessionId, current, targetIndex, 'hydrate');
+  }, HISTORY_NAVIGATOR_HYDRATE_IDLE_MS);
+}
+
+function enterHistoryFollowLive(sessionId: string, state: SessionLensViewState): void {
+  clearHistoryNavigatorPreviewTimer(state);
+  clearHistoryNavigatorHydrateTimer(state);
+  clearQueuedHistoryNavigatorRequest(state);
+  state.historyPendingJumpTargetIndex = null;
+  state.historyPendingJumpAlign = null;
+  state.historyViewportSyncPending = false;
+  state.historyViewportSyncQueuedDuringRefresh = false;
+  state.historyNavigatorMode = 'follow-live';
+  state.historyNavigatorDragTargetIndex = null;
+  setHistoryScrollMode(state, 'follow');
+  syncHistoryProgressNavigator(sessionId);
+  if (state.snapshot?.hasNewerHistory) {
+    void loadLatestLensHistoryWindow(sessionId, state);
+    return;
+  }
+
+  historyRender.scrollHistoryToBottom(sessionId, 'smooth');
 }
 
 function bindHistoryViewport(sessionId: string, state: SessionLensViewState): void {
   const viewport = state.panel.querySelector<HTMLDivElement>('[data-agent-field="history"]');
   state.historyViewport = viewport;
-  state.historyIndexScrollHost = state.panel.querySelector<HTMLDivElement>(
-    '[data-agent-field="history-index-scroll"]',
+  state.historyProgressNav = state.panel.querySelector<HTMLDivElement>(
+    '[data-agent-field="history-progress-nav"]',
   );
-  state.historyIndexScrollSizer = state.panel.querySelector<HTMLDivElement>(
-    '[data-agent-field="history-index-scroll-sizer"]',
+  state.historyProgressThumb = state.panel.querySelector<HTMLDivElement>(
+    '[data-agent-field="history-progress-thumb"]',
   );
   if (!viewport) {
     return;
   }
 
-  if (state.historyIndexScrollHost) {
-    viewport.style.overflow = '';
-  } else {
-    viewport.style.overflow = 'hidden auto';
-  }
-
-  syncHistoryIndexScrollbar(state);
+  viewport.style.overflow = 'hidden auto';
+  syncHistoryProgressNavigator(sessionId);
 
   state.historyViewportSize = {
     width: viewport.clientWidth,
@@ -827,21 +1119,18 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
         Math.max(LENS_HISTORY_WINDOW_SIZE, current.historyWindowCount),
         current.historyObservedHeights.values(),
       );
-      syncHistoryIndexScrollbar(current);
+      syncHistoryProgressNavigator(sessionId);
       syncLiveHistoryWindowViewport(sessionId, current);
       scheduleHistoryRender(sessionId);
     });
     state.historyViewportResizeObserver.observe(viewport);
   }
 
-  const scrollHost = state.historyIndexScrollHost;
-  const scrollEventTarget = scrollHost ?? viewport;
-
-  if (scrollEventTarget.dataset.lensScrollBound === 'true') {
+  if (viewport.dataset.lensScrollBound === 'true') {
     return;
   }
 
-  scrollEventTarget.dataset.lensScrollBound = 'true';
+  viewport.dataset.lensScrollBound = 'true';
   let lastTouchClientY: number | null = null;
   const markUserScrollIntent = () => {
     const current = viewStates.get(sessionId);
@@ -863,21 +1152,22 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     }
 
     setHistoryScrollMode(current, 'browse');
+    current.historyNavigatorMode = 'browse';
+    current.historyNavigatorDragTargetIndex = null;
     historyRender.renderScrollToBottomControl(current.panel, current);
   };
-  const stepIndexScroll = (deltaPx: number) => {
+  const stepViewportScroll = (deltaPx: number) => {
     const current = viewStates.get(sessionId);
-    const currentScrollHost = current?.historyIndexScrollHost ?? current?.historyViewport;
-    if (!current || !currentScrollHost) {
+    const currentViewport = current?.historyViewport;
+    if (!current || !currentViewport) {
       return;
     }
 
-    syncHistoryIndexScrollbar(current);
-    currentScrollHost.scrollTop = Math.max(
+    currentViewport.scrollTop = Math.max(
       0,
       Math.min(
-        currentScrollHost.scrollHeight - currentScrollHost.clientHeight,
-        currentScrollHost.scrollTop + deltaPx,
+        currentViewport.scrollHeight - currentViewport.clientHeight,
+        currentViewport.scrollTop + deltaPx,
       ),
     );
   };
@@ -888,12 +1178,8 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       if (event.deltaY < 0) {
         detachFollowForExplicitBrowseIntent();
       }
-      if ('preventDefault' in event && typeof event.preventDefault === 'function') {
-        event.preventDefault();
-      }
-      stepIndexScroll(event.deltaY);
     },
-    { passive: false },
+    { passive: true },
   );
   viewport.addEventListener(
     'touchstart',
@@ -914,9 +1200,6 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
         nextTouchClientY > lastTouchClientY + 1
       ) {
         detachFollowForExplicitBrowseIntent();
-      }
-      if (typeof nextTouchClientY === 'number' && typeof lastTouchClientY === 'number') {
-        stepIndexScroll(lastTouchClientY - nextTouchClientY);
       }
       lastTouchClientY = nextTouchClientY;
     },
@@ -940,6 +1223,9 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
   /* eslint-disable complexity -- key-driven index scrolling intentionally handles the compact browse command set in one place. */
   viewport.addEventListener('keydown', (event) => {
     markUserScrollIntent();
+    const current = viewStates.get(sessionId);
+    const keyboardStepPx = current ? resolveHistoryKeyboardStepPx(current) : 40;
+    const pageStepPx = Math.max(1, current?.historyViewport?.clientHeight ?? 0);
     if (
       event.key === 'ArrowUp' ||
       event.key === 'PageUp' ||
@@ -954,34 +1240,28 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       detachFollowForExplicitBrowseIntent();
     }
     if (event.key === 'ArrowUp') {
-      stepIndexScroll(-LENS_HISTORY_INDEX_SCROLL_STEP_PX);
+      stepViewportScroll(-keyboardStepPx);
     } else if (event.key === 'ArrowDown') {
-      stepIndexScroll(LENS_HISTORY_INDEX_SCROLL_STEP_PX);
+      stepViewportScroll(keyboardStepPx);
     } else if (event.key === 'PageUp') {
-      stepIndexScroll(
-        -Math.max(1, state.historyIndexVisibleCount) * LENS_HISTORY_INDEX_SCROLL_STEP_PX,
-      );
+      stepViewportScroll(-pageStepPx);
     } else if (event.key === 'PageDown') {
-      stepIndexScroll(
-        Math.max(1, state.historyIndexVisibleCount) * LENS_HISTORY_INDEX_SCROLL_STEP_PX,
-      );
+      stepViewportScroll(pageStepPx);
     } else if (event.key === 'Home') {
-      stepIndexScroll(-(scrollHost ?? viewport).scrollHeight);
+      stepViewportScroll(-viewport.scrollHeight);
     } else if (event.key === 'End') {
-      stepIndexScroll((scrollHost ?? viewport).scrollHeight);
+      stepViewportScroll(viewport.scrollHeight);
     }
   });
   /* eslint-enable complexity */
-  /* eslint-disable complexity -- scroll/fetch coordination stays consolidated here while the index-scroll model settles. */
-  const handleIndexScroll = () => {
+  /* eslint-disable complexity -- scroll/fetch coordination stays consolidated here while the progress navigator replaces the older host-scroller path. */
+  const handleViewportScroll = () => {
     const current = viewStates.get(sessionId);
     const currentViewport = current?.historyViewport;
-    const currentScrollHost = current?.historyIndexScrollHost ?? current?.historyViewport;
-    if (!current || !currentViewport || !currentScrollHost) {
+    if (!current || !currentViewport) {
       return;
     }
 
-    syncHistoryIndexScrollbar(current);
     const scrollMetrics = historyRender.readHistoryScrollMetrics(currentViewport, current);
     setHistoryScrollMode(
       current,
@@ -997,18 +1277,32 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
           current.pendingHistoryLayoutAnchor !== null,
       }),
     );
+    if (current.historyAutoScrollPinned) {
+      current.historyNavigatorMode = 'follow-live';
+      current.historyNavigatorDragTargetIndex = null;
+    } else if (current.historyNavigatorMode !== 'drag-preview') {
+      current.historyNavigatorMode = 'browse';
+      current.historyNavigatorDragTargetIndex = null;
+    }
     current.historyLastScrollMetrics = scrollMetrics;
+    historyRender.syncViewportOffset(sessionId);
     historyRender.renderScrollToBottomControl(current.panel, current);
+    if (current.historyNavigatorMode === 'drag-preview') {
+      if (historyRender.shouldRenderForViewportScroll(current)) {
+        scheduleHistoryRender(sessionId);
+      }
+      return;
+    }
     if (current.refreshInFlight && !current.historyAutoScrollPinned) {
       current.historyViewportSyncPending = true;
       current.historyViewportSyncQueuedDuringRefresh = true;
     }
     const fetchThresholdPx = Math.max(
       resolveLensHistoryFetchThresholdPx(current),
-      Math.round(Math.max(1, current.historyIndexVisibleCount) * LENS_HISTORY_INDEX_SCROLL_STEP_PX),
+      Math.round(Math.max(1, currentViewport.clientHeight)),
     );
     const distanceFromBottom =
-      currentScrollHost.scrollHeight - currentScrollHost.clientHeight - currentScrollHost.scrollTop;
+      currentViewport.scrollHeight - currentViewport.clientHeight - currentViewport.scrollTop;
 
     if (current.snapshot?.hasNewerHistory && distanceFromBottom <= fetchThresholdPx) {
       if (current.historyAutoScrollPinned) {
@@ -1025,10 +1319,73 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     }
   };
   /* eslint-enable complexity */
-  if (scrollHost) {
-    scrollHost.addEventListener('scroll', handleIndexScroll);
+  viewport.addEventListener('scroll', handleViewportScroll);
+
+  const progressNav = state.historyProgressNav;
+  if (progressNav && progressNav.dataset.lensProgressBound !== 'true') {
+    progressNav.dataset.lensProgressBound = 'true';
+    let activePointerId: number | null = null;
+    const updateNavigatorTarget = (clientY: number, finalize = false) => {
+      const current = viewStates.get(sessionId);
+      if (!current) {
+        return;
+      }
+
+      markUserScrollIntent();
+      const target = resolveHistoryNavigatorTarget({
+        state: current,
+        clientY,
+      });
+      if (!target) {
+        return;
+      }
+
+      if (finalize && target.atLiveEdge) {
+        enterHistoryFollowLive(sessionId, current);
+        return;
+      }
+
+      setHistoryScrollMode(current, 'browse');
+      current.historyNavigatorMode = 'drag-preview';
+      current.historyNavigatorDragTargetIndex = target.targetIndex;
+      syncHistoryProgressNavigator(sessionId);
+      primeHistoryNavigatorPreview(sessionId, current, target.targetIndex, finalize);
+      if (finalize) {
+        scheduleHistoryNavigatorHydration(sessionId, current, target.targetIndex);
+      }
+    };
+
+    progressNav.addEventListener('pointerdown', (event) => {
+      activePointerId = event.pointerId;
+      progressNav.dataset.dragging = 'true';
+      progressNav.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      updateNavigatorTarget(event.clientY);
+    });
+
+    progressNav.addEventListener('pointermove', (event) => {
+      if (activePointerId !== event.pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      updateNavigatorTarget(event.clientY);
+    });
+
+    const finishNavigatorDrag = (event: PointerEvent) => {
+      if (activePointerId !== event.pointerId) {
+        return;
+      }
+
+      activePointerId = null;
+      Reflect.deleteProperty(progressNav.dataset, 'dragging');
+      progressNav.releasePointerCapture(event.pointerId);
+      updateNavigatorTarget(event.clientY, true);
+    };
+
+    progressNav.addEventListener('pointerup', finishNavigatorDrag);
+    progressNav.addEventListener('pointercancel', finishNavigatorDrag);
   }
-  viewport.addEventListener('scroll', handleIndexScroll);
 
   const scrollButton = state.panel.querySelector<HTMLButtonElement>(
     '[data-agent-field="scroll-to-bottom"]',
@@ -1240,6 +1597,9 @@ function closeLensStream(sessionId: string): void {
 
 function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   clearPendingHistoryRenderBatch(state);
+  clearHistoryNavigatorPreviewTimer(state);
+  clearHistoryNavigatorHydrateTimer(state);
+  clearQueuedHistoryNavigatorRequest(state);
   state.historyEntries = [];
   state.historyMeasurementObserver?.disconnect();
   state.historyRenderedNodes.clear();
@@ -1251,6 +1611,10 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.historyLastVoidSyncScrollTop = null;
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
+  state.historyPendingJumpTargetIndex = null;
+  state.historyPendingJumpAlign = null;
+  state.historyNavigatorDragTargetIndex = null;
+  state.historyNavigatorMode = state.historyAutoScrollPinned ? 'follow-live' : 'browse';
   state.historyLastVirtualWindowKey = null;
   state.historyViewportSyncPending = false;
   state.renderDirty = true;
@@ -1413,8 +1777,10 @@ async function refreshLensSnapshot(
     renderCurrentAgentView(sessionId);
   } finally {
     state.refreshInFlight = false;
-    if (!flushQueuedRefreshViewportSync(sessionId, state)) {
-      flushPendingHistoryWindowViewportSync(sessionId, state);
+    if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {
+      if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+        flushPendingHistoryWindowViewportSync(sessionId, state);
+      }
     }
   }
 }
@@ -1458,13 +1824,19 @@ async function loadLatestLensHistoryWindow(
     log.warn(() => `Failed to load latest Lens history for ${sessionId}: ${String(error)}`);
   } finally {
     state.refreshInFlight = false;
-    if (!flushQueuedRefreshViewportSync(sessionId, state)) {
-      flushPendingHistoryWindowViewportSync(sessionId, state);
+    if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {
+      if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+        flushPendingHistoryWindowViewportSync(sessionId, state);
+      }
     }
   }
 }
 
 function queueHistoryWindowViewportSync(sessionId: string, state: SessionLensViewState): void {
+  if (state.historyNavigatorMode === 'drag-preview') {
+    return;
+  }
+
   if (state.historyViewportSyncPending) {
     return;
   }
@@ -1478,7 +1850,11 @@ function queueHistoryWindowViewportSync(sessionId: string, state: SessionLensVie
 }
 
 function flushQueuedRefreshViewportSync(sessionId: string, state: SessionLensViewState): boolean {
-  if (state.historyViewportSyncQueuedDuringRefresh && !state.historyAutoScrollPinned) {
+  if (
+    state.historyViewportSyncQueuedDuringRefresh &&
+    !state.historyAutoScrollPinned &&
+    state.historyNavigatorMode !== 'drag-preview'
+  ) {
     state.historyViewportSyncQueuedDuringRefresh = false;
     void syncHistoryWindowToViewport(sessionId, state, true);
     return true;
@@ -1491,7 +1867,11 @@ function flushPendingHistoryWindowViewportSync(
   sessionId: string,
   state: SessionLensViewState,
 ): void {
-  if (!state.historyViewportSyncPending || state.refreshInFlight) {
+  if (
+    !state.historyViewportSyncPending ||
+    state.refreshInFlight ||
+    state.historyNavigatorMode === 'drag-preview'
+  ) {
     return;
   }
 
@@ -1551,8 +1931,10 @@ async function syncHistoryWindowToViewport(
         );
       } finally {
         state.refreshInFlight = false;
-        if (!flushQueuedRefreshViewportSync(sessionId, state)) {
-          flushPendingHistoryWindowViewportSync(sessionId, state);
+        if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {
+          if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+            flushPendingHistoryWindowViewportSync(sessionId, state);
+          }
         }
       }
       return;
@@ -1565,6 +1947,7 @@ async function syncHistoryWindowToViewport(
   const isBackwardShift = requestedWindow.startIndex < state.historyWindowStart;
   if (isBackwardShift && hasAnchor && !state.historyAutoScrollPinned) {
     setHistoryScrollMode(state, 'restore-anchor');
+    state.historyNavigatorMode = 'browse';
   }
   state.refreshInFlight = true;
   try {
@@ -1595,8 +1978,10 @@ async function syncHistoryWindowToViewport(
     );
   } finally {
     state.refreshInFlight = false;
-    if (!flushQueuedRefreshViewportSync(sessionId, state)) {
-      flushPendingHistoryWindowViewportSync(sessionId, state);
+    if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {
+      if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+        flushPendingHistoryWindowViewportSync(sessionId, state);
+      }
     }
   }
 }

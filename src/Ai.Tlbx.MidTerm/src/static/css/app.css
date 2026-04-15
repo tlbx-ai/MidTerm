@@ -11571,37 +11571,75 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-direction: column;
   gap: 0;
   min-height: 0;
-  overflow: hidden;
+  position: relative;
+  overflow: hidden auto;
   padding: 18px 18px 32px;
   scroll-padding-bottom: 28px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-.agent-history-index-scroll {
-  flex: 0 0 12px;
-  min-width: 12px;
+.agent-history::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.agent-history-progress-nav {
+  position: relative;
+  flex: 0 0 14px;
+  min-width: 14px;
   min-height: 0;
-  overflow: hidden auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text-primary) 16%, transparent) transparent;
+  border-radius: 999px;
+  touch-action: none;
+  user-select: none;
+  outline: none;
 }
 
-.agent-history-index-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.agent-history-index-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.agent-history-index-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+.agent-history-progress-track,
+.agent-history-progress-thumb {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   border-radius: 999px;
 }
 
-.agent-history-index-scroll-sizer {
-  width: 1px;
+.agent-history-progress-track {
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.agent-history-progress-thumb {
+  top: 6px;
+  width: 12px;
+  min-height: 40px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 84%, white 10%),
+      color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 76%, black 6%)
+    );
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--surface-0) 76%, transparent),
+    0 6px 18px color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 18%, transparent);
+  will-change: top;
+}
+
+.agent-history-progress-nav[data-mode='drag-preview'] .agent-history-progress-thumb {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--surface-0) 76%, transparent),
+    0 10px 24px color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 24%, transparent);
+}
+
+.agent-history-progress-nav:focus-visible .agent-history-progress-track {
+  background: color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 22%, transparent);
+}
+
+.agent-history-progress-nav:focus-visible .agent-history-progress-thumb {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 32%, transparent),
+    0 10px 24px color-mix(in srgb, var(--agent-accent, var(--terminal-accent)) 24%, transparent);
 }
 
 .agent-composer-shell {
@@ -13280,18 +13318,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border-color: color-mix(in srgb, var(--accent-gold) 50%, transparent);
 }
 
-.agent-history-spacer {
-  flex: 0 0 auto;
-  pointer-events: none;
-}
-
 .agent-history-placeholder {
+  box-sizing: border-box;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 56px;
-  margin: 2px 0;
+  min-height: 0;
+  margin: 0;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
   background:

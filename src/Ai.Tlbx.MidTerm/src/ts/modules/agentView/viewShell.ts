@@ -39,13 +39,19 @@ export function ensureAgentViewSkeleton(
           <div class="agent-runtime-stats" data-agent-field="runtime-stats" hidden></div>
           <div class="agent-virtualizer-debug" data-agent-field="virtualizer-debug" hidden></div>
           <div class="agent-history-shell">
-            <div class="agent-history" data-agent-field="history"></div>
+            <div class="agent-history" data-agent-field="history" tabindex="0"></div>
             <div
-              class="agent-history-index-scroll"
-              data-agent-field="history-index-scroll"
+              class="agent-history-progress-nav"
+              data-agent-field="history-progress-nav"
+              role="scrollbar"
+              tabindex="0"
               aria-label="${lensText('lens.history.indexScroll', 'History navigation scrollbar')}"
+              aria-valuemin="1"
+              aria-valuemax="1"
+              aria-valuenow="1"
             >
-              <div class="agent-history-index-scroll-sizer" data-agent-field="history-index-scroll-sizer"></div>
+              <div class="agent-history-progress-track" data-agent-field="history-progress-track"></div>
+              <div class="agent-history-progress-thumb" data-agent-field="history-progress-thumb"></div>
             </div>
           </div>
           <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
@@ -81,11 +87,16 @@ export function ensureAgentViewSkeleton(
   });
 }
 
+/* eslint-disable complexity -- repairs both legacy and current Lens shells in place for upgrade safety. */
 function repairAgentViewSkeleton(panel: HTMLDivElement): void {
   const history = panel.querySelector<HTMLDivElement>('[data-agent-field="history"]');
   const composerShell = panel.querySelector<HTMLElement>('[data-agent-field="composer-shell"]');
   if (!history || !composerShell) {
     return;
+  }
+
+  if (typeof history.hasAttribute !== 'function' || !history.hasAttribute('tabindex')) {
+    history.tabIndex = 0;
   }
 
   let historyShell = panel.querySelector<HTMLDivElement>('.agent-history-shell');
@@ -96,25 +107,66 @@ function repairAgentViewSkeleton(panel: HTMLDivElement): void {
     historyShell.append(history);
   }
 
-  let indexScrollHost = panel.querySelector<HTMLDivElement>(
+  const legacyIndexScrollHost = panel.querySelector<HTMLDivElement>(
     '[data-agent-field="history-index-scroll"]',
   );
-  if (!indexScrollHost) {
-    indexScrollHost = document.createElement('div');
-    indexScrollHost.className = 'agent-history-index-scroll';
-    indexScrollHost.dataset.agentField = 'history-index-scroll';
-    indexScrollHost.setAttribute(
+  const legacyIndexScrollSizer = panel.querySelector<HTMLDivElement>(
+    '[data-agent-field="history-index-scroll-sizer"]',
+  );
+  if (legacyIndexScrollSizer) {
+    if (typeof legacyIndexScrollSizer.remove === 'function') {
+      legacyIndexScrollSizer.remove();
+    } else {
+      legacyIndexScrollSizer.parentNode?.removeChild(legacyIndexScrollSizer);
+    }
+  }
+
+  let progressNav = panel.querySelector<HTMLDivElement>(
+    '[data-agent-field="history-progress-nav"]',
+  );
+  if (!progressNav) {
+    progressNav = document.createElement('div');
+    progressNav.className = 'agent-history-progress-nav';
+    progressNav.dataset.agentField = 'history-progress-nav';
+    progressNav.tabIndex = 0;
+    progressNav.setAttribute('role', 'scrollbar');
+    progressNav.setAttribute(
       'aria-label',
       lensText('lens.history.indexScroll', 'History navigation scrollbar'),
     );
-    historyShell.append(indexScrollHost);
+    progressNav.setAttribute('aria-valuemin', '1');
+    progressNav.setAttribute('aria-valuemax', '1');
+    progressNav.setAttribute('aria-valuenow', '1');
+    if (legacyIndexScrollHost) {
+      if (typeof legacyIndexScrollHost.replaceWith === 'function') {
+        legacyIndexScrollHost.replaceWith(progressNav);
+      } else {
+        legacyIndexScrollHost.parentNode?.insertBefore(progressNav, legacyIndexScrollHost);
+        legacyIndexScrollHost.parentNode?.removeChild(legacyIndexScrollHost);
+      }
+    } else {
+      historyShell.append(progressNav);
+    }
+  } else if (legacyIndexScrollHost) {
+    if (typeof legacyIndexScrollHost.remove === 'function') {
+      legacyIndexScrollHost.remove();
+    } else {
+      legacyIndexScrollHost.parentNode?.removeChild(legacyIndexScrollHost);
+    }
   }
 
-  if (!panel.querySelector('[data-agent-field="history-index-scroll-sizer"]')) {
-    const sizer = document.createElement('div');
-    sizer.className = 'agent-history-index-scroll-sizer';
-    sizer.dataset.agentField = 'history-index-scroll-sizer';
-    indexScrollHost.append(sizer);
+  if (!panel.querySelector('[data-agent-field="history-progress-track"]')) {
+    const track = document.createElement('div');
+    track.className = 'agent-history-progress-track';
+    track.dataset.agentField = 'history-progress-track';
+    progressNav.append(track);
+  }
+
+  if (!panel.querySelector('[data-agent-field="history-progress-thumb"]')) {
+    const thumb = document.createElement('div');
+    thumb.className = 'agent-history-progress-thumb';
+    thumb.dataset.agentField = 'history-progress-thumb';
+    progressNav.append(thumb);
   }
 
   if (!panel.querySelector('[data-agent-field="scroll-to-bottom"]')) {
@@ -127,6 +179,7 @@ function repairAgentViewSkeleton(panel: HTMLDivElement): void {
     composerShell.parentNode?.insertBefore(scrollButton, composerShell);
   }
 }
+/* eslint-enable complexity */
 
 function syncAgentViewPresentation(
   panel: HTMLDivElement,

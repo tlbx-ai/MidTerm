@@ -12,8 +12,8 @@ export interface SessionLensViewState {
   debugScenarioActive: boolean;
   activationRunId: number;
   historyViewport: HTMLDivElement | null;
-  historyIndexScrollHost: HTMLDivElement | null;
-  historyIndexScrollSizer: HTMLDivElement | null;
+  historyProgressNav: HTMLDivElement | null;
+  historyProgressThumb: HTMLDivElement | null;
   historyEntries: LensHistoryEntry[];
   historyWindowStart: number;
   historyWindowCount: number;
@@ -33,7 +33,16 @@ export interface SessionLensViewState {
   historyLastVoidSyncScrollTop: number | null;
   historyWindowRevision: string | null;
   historyWindowViewportWidth: number | null;
-  historyIndexVisibleCount: number;
+  historyNavigatorMode: HistoryNavigatorMode;
+  historyNavigatorAnchorIndex: number | null;
+  historyNavigatorDragTargetIndex: number | null;
+  historyNavigatorQueuedTargetIndex: number | null;
+  historyNavigatorQueuedRequestKind: HistoryNavigatorRequestKind | null;
+  historyNavigatorPreviewHandle: number | null;
+  historyNavigatorHydrateHandle: number | null;
+  historyNavigatorLastPreviewRequestAt: number;
+  historyPendingJumpTargetIndex: number | null;
+  historyPendingJumpAlign: HistoryJumpAlign | null;
   historyRenderScheduled: number | null;
   historyRenderBatchHandle: number | null;
   activationState:
@@ -85,6 +94,9 @@ export interface LensRuntimeStatsSummary {
 }
 
 export type HistoryScrollMode = 'follow' | 'browse' | 'restore-anchor';
+export type HistoryNavigatorMode = 'follow-live' | 'browse' | 'drag-preview';
+export type HistoryNavigatorRequestKind = 'preview' | 'hydrate';
+export type HistoryJumpAlign = 'top' | 'center' | 'bottom';
 
 export interface PendingLensTurn {
   optimisticId: string;

@@ -175,12 +175,18 @@ The canonical history contract must satisfy the following:
 
 - Lens must not retain thousands of history nodes in the live DOM.
 - Once the visible history grows beyond roughly 50 rendered items, older items should be virtualized out of the active DOM window.
-- Virtualization must preserve stable scroll behavior and not break streaming updates at the bottom.
+- Virtualization must preserve stable local reading motion and must not break streaming updates at the bottom.
 - Lens history transport must be count-and-index based. The browser should know total history count and fetch absolute history windows by index.
 - The backend history contract must not require the browser to depend on backend-owned pixel spacer estimates for unseen history.
-- The frontend owns viewport measurement, row measurement, and DOM virtualization behavior.
-- Lens history scrollbar ownership must be separate from the rendered history DOM. The timeline DOM may be a bounded materialized slice with placeholders, but the history navigation range itself must come from a dedicated browser-side virtual scroll model keyed to canonical item indexes rather than from rendered row heights or DOM spacer accumulation.
-- That browser-side virtualization should live behind a reusable frontend virtualizer core with item-based knobs such as `overscanItems` and `fetchAheadItems`; Lens-specific history-window fetch policy should stay in a thin Lens adapter instead of being scattered through unrelated UI code.
+- The frontend owns viewport measurement, row measurement, anchor preservation, and DOM virtualization behavior.
+- Lens must treat history navigation as a two-layer system:
+  - a dedicated progress navigator for global history seeking in canonical index space
+  - the history pane itself as the native local pixel scroller for the currently materialized kernel
+- The progress navigator must not derive its range or thumb position from rendered DOM height. Its behavior should feel the same whether the session has 100 items or 10,000,000 items.
+- Direct progress-nav drags should map to canonical history progress, land on a tiny centered preview window around the latest target, and only then hydrate into a normal browse window after drag idle. Lens must not try to materialize the entire traversed span during a large scrub.
+- The materialized browse kernel should remain contiguous around the visible region and should grow outward as the user locally scrolls. Trimming older/newer materialized rows must preserve the visible reader anchor by stable item identity and pixel offset.
+- Placeholder blocks may represent buffered or far-off ranges, but the viewport must not settle into placeholder-only or empty estimated space. If no concrete row intersects the viewport, Lens should urgently materialize the nearest canonical rows.
+- That browser-side virtualization should live behind a reusable frontend virtualizer core with item-based knobs such as `overscanItems`, preview-window sizing, and `fetchAheadItems`; Lens-specific history-window fetch policy should stay in a thin Lens adapter instead of being scattered through unrelated UI code.
 - Browser-resident Lens history should stay bounded to the visible working set plus a modest nearby margin instead of accumulating the full session scrollback in memory.
 - The browser should treat Lens history as a viewport over `mtagenthost`-owned canonical history, not as a durable full-history cache.
 - Different browsers viewing the same Lens session may hold different local windows and scroll positions without changing the canonical history.
@@ -209,15 +215,18 @@ The canonical history contract must satisfy the following:
 
 - Lens should auto-follow the live edge by default.
 - If the user scrolls away from the bottom, automatic scrolling must stop immediately.
-- Automatic scrolling may resume only after the user reaches the bottom again or explicitly presses a "back to bottom" control.
+- Automatic scrolling may resume only after the user reaches the bottom again, drags the progress navigator to exact max, or explicitly presses a "back to bottom" control.
 - When a Lens surface is reopened, reactivated, or restored after being hidden, it should re-enter at the live edge in follow mode by default unless the user is in the middle of an explicit older-history navigation flow.
 - When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
+- Progress-nav jumps should target canonical absolute indexes, not estimated pixel offsets. Default jump alignment should center the target item, except that the first item should top-clamp and the last item should bottom-clamp when enough content exists above it.
 - When older-history paging prepends more canonical rows, Lens should preserve the reader position by anchoring to a stable visible history row identity and restoring against that row's real DOM offset, not by summing guessed row heights.
 - When measured row heights change above the reader while browsing older history, the virtualizer should compensate the viewport scroll offset from those concrete size deltas instead of relying only on a later rerender to keep the visible content stable.
 - Lens retained-history fetch policy should keep at least 20 canonical items of margin on both sides of the current visible range whenever history bounds allow it.
 - If scrolling continues while a retained-history window fetch is already in flight, Lens should queue a follow-up viewport-centered fetch pass so the retained window catches up immediately after the in-flight response resolves.
-- Unseen-history spacer estimation should prefer stable global width-bucket observations and backend/window estimates over raw current-slice averages so scrollbar position does not whip around when a newly fetched slice has a very different row mix.
+- Placeholder sizing may use stable width-bucket observations and measured local row history, but navigator position must remain canonical/index-based and must not whip around when a newly fetched slice has a very different row mix.
 - When Lens uses a dedicated history scrollbar, that scrollbar should operate in canonical index space and must not treat rendered DOM height as the source of truth for navigation position.
+- Dragging the dedicated history scrollbar should scrub directly in canonical progress space and should coalesce toward the latest target. Stale preview or hydrate fetches must not overwrite a newer navigator target.
+- Wheel, trackpad, keyboard, and touch scrolling on the history pane itself should stay native and pixel-based inside the currently materialized kernel; fetch/grow/prune work must preserve the visible anchor so that local reading motion does not shake when the retained window expands or trims.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage
@@ -300,23 +309,33 @@ The canonical history contract must satisfy the following:
 - A streaming assistant response should update its existing row in place.
 - Tool updates should attach to the owning turn and item instead of spawning visually disjoint duplicates.
 
+### Shared row anatomy
+
+- Lens should render one left-anchored timeline, not a mix of chat bubbles, cards, and console panes.
+- Every history item should read as one row in that timeline with a compact header and a body. If metadata exists, it belongs above the body, stays left-bound, and wraps naturally when space is tight.
+- No Lens history row should right-align its header labels or timestamps.
+- Canonical item type should determine presentation. Provider wire quirks must not leak into the visible row grammar.
+- User, assistant, tool, diff, request, interview, system, and notice rows may differ in density and emphasis, but they must still feel like one coherent timeline system.
+
 ### User messages
 
 - User prompts should be visually distinct but compact.
 - They should anchor the start of a turn without dominating the screen.
 - Repeated rendering of the same user turn is forbidden.
-- No Lens history row should right-align its header labels or timestamps. Quiet role labels, kind badges, and any timestamp/meta text should stay left-bound and wrap naturally when space is tight.
 - In Codex Lens, user rows should place their quiet role label and timestamp above the message body, not below it.
-- In Codex Lens, assistant rows should place any optional timestamp above the message body when that preference is enabled, but should default to no repeated assistant timestamp.
-- In Codex Lens, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label when the row is otherwise plainly identifiable as assistant output.
-- In Codex Lens, the first assistant message row of a new turn should show a quiet `Agent` badge so the answer start is visually distinct from the preceding user prompt, but later assistant rows in the same turn should omit that repeated badge.
+- In Codex Lens, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label on every message.
+- In Codex Lens, user and assistant content should share the same left edge, and user prompt bodies should follow the configured terminal monospace stack and terminal font size.
+- If the user message carries staged attachments or image references, those should sit as compact supporting artifacts beneath the prompt rather than exploding the row into a card.
 
 ### Assistant output
 
 - Assistant content is the primary reading surface and should have the clearest typography.
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
+- Streaming assistant text should render through the same markdown surface as settled assistant output.
 - When the final assistant item lands for a turn that already has streamed assistant text, Lens should reconcile that into one settled assistant row rather than showing both the streamed row and a second final duplicate.
+- In Codex Lens, the first assistant message row of a new turn should show a quiet `Agent` badge so the answer start is visually distinct from the preceding user prompt, but later assistant rows in the same turn should omit that repeated badge.
+- Assistant rows should default to no repeated assistant timestamp; if timestamps are enabled, assistant rows should place any optional timestamp above the message body when that preference is enabled.
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
 - When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. User-prompt text and assistant-message text must not populate the busy bubble. Only fall back to a generic `Working` label when no meaningful live provider label is available.
@@ -327,11 +346,30 @@ The canonical history contract must satisfy the following:
 - That turn-settled duration note should render as a quiet near-full-width end-of-turn marker, with horizontal rule segments on both sides of the centered text and only a small gap around the label, rather than as ordinary paragraph text.
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
+- Assistant markdown is the canonical assistant body surface for both streaming and settled text.
+- Markdown paragraph and list spacing should be dense and terminal-like. Simple line breaks and bullet lists must not create chat-style empty-line gaps between adjacent lines.
+- Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults, roughly closer to a half-line pause than a full chat-paragraph gap.
+- Assistant markdown should model those blank-line pauses explicitly as compact gap markers in the rendered structure instead of relying on ordinary paragraph margins to approximate dense terminal spacing.
+- Bullet and numbered lists should stack compactly, with minimal vertical slack between adjacent items and between the surrounding text and the list block.
+- List markers must stay fully visible inside the rendered assistant markdown block. Overflow containment in Lens must not crop bullet or number markers.
+- Current Codex Lens markdown gap markers should stay very tight, roughly a quarter-em pause per blank line rather than the older taller half-em spacing.
+- If settlement later adds higher-confidence file-link or image-preview enrichment, that refinement must preserve the same markdown-rendered body instead of downgrading the row to raw plain text.
+- Markdown tables should stay left-anchored and use intrinsic width when their content is narrow, rather than stretching across the whole history lane by default.
+- Assistant markdown tables should expose compact per-column sort and filter controls in the header row so dense comparison output can be reorganized in place.
+- Fenced CSV blocks in assistant markdown should render through that same interactive table treatment so tabular data is readable without raw code-block noise.
+- Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
+- That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
+- Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
+- Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
+- Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Lens should interpret them as session telemetry instead of timeline content.
+- Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing context-window usage as a percent-of-limit summary plus accumulated session input/output token totals.
+- If the provider notice only exposes cumulative session token totals rather than reliable live context occupancy, Lens must not fake a context percent; it should fall back to the window limit plus session in/out totals instead.
 
-### Tool activity
+### Tool, reasoning, plan, system, and notice rows
 
 - Tool activity should be visible, but compressed by default.
 - Starts, progress, completion, and failure should read as one evolving activity line or block where possible.
+- Tool, reasoning, plan, diff, request, and system rows should share one restrained structural language instead of mixing rail markers, unrelated borders, and unrelated card treatments.
 - Raw transport noise must not leak into the UI.
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Lens history.
 - Provider startup/runtime state notices that MidTerm understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
@@ -339,7 +377,6 @@ The canonical history contract must satisfy the following:
 - When Codex or Claude emits an unknown structured provider event, MidTerm should preserve it as a canonical diagnostic history item instead of silently dropping it.
 - Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown MidTerm fallback output rather than pretending to be a first-class mapped concept.
 - Lens should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before MidTerm ships a dedicated mapping.
-- Tool, reasoning, plan, diff, request, and system rows should share one restrained structural language instead of mixing rail markers, unrelated borders, and unrelated card treatments.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
@@ -358,30 +395,14 @@ The canonical history contract must satisfy the following:
 - Command-execution rows and diff rows should not repeat timestamp meta. Those artifact rows should read like quiet console output, not timestamped chat turns.
 - Command-execution rows should remain fully flat. Do not wrap them in bordered cards, bubble shells, or inset containers that break text selection or console-like continuity.
 - Lens should not draw decorative card outlines, rounded shells, or inset border treatments around machine-oriented history rows. Tool, reasoning, plan, diff, and command artifacts should stay flat unless a future design contract explicitly reintroduces structure.
-- Markdown paragraph and list spacing should be dense and terminal-like. Simple line breaks and bullet lists must not create chat-style empty-line gaps between adjacent lines.
-- Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults, roughly closer to a half-line pause than a full chat-paragraph gap.
-- Assistant markdown should model those blank-line pauses explicitly as compact gap markers in the rendered structure instead of relying on ordinary paragraph margins to approximate dense terminal spacing.
-- Bullet and numbered lists should stack compactly, with minimal vertical slack between adjacent items and between the surrounding text and the list block.
-- List markers must stay fully visible inside the rendered assistant markdown block. Overflow containment in Lens must not crop bullet or number markers.
-- Current Codex Lens markdown gap markers should stay very tight, roughly a quarter-em pause per blank line rather than the older taller half-em spacing.
-- Streaming assistant text should render through the same markdown surface as settled assistant output so lists, headings, and dense paragraph spacing stay stable while the row grows in place.
-- If settlement later adds higher-confidence file-link or image-preview enrichment, that refinement must preserve the same markdown-rendered body instead of downgrading the row to raw plain text.
-- Markdown tables should stay left-anchored and use intrinsic width when their content is narrow, rather than stretching across the whole history lane by default.
-- Assistant markdown tables should expose compact per-column sort and filter controls in the header row so dense comparison output can be reorganized in place.
-- Fenced CSV blocks in assistant markdown should render through that same interactive table treatment so tabular data is readable without raw code-block noise.
-- Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
-- That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
-- Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
-- Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
-- Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Lens should interpret them as session telemetry instead of timeline content.
-- Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing context-window usage as a percent-of-limit summary plus accumulated session input/output token totals.
-- If the provider notice only exposes cumulative session token totals rather than reliable live context occupancy, Lens must not fake a context percent; it should fall back to the window limit plus session in/out totals instead.
 
-### Plan-mode questions and approvals
+### Plan-mode questions, approvals, and interviews
 
 - Requests that require user action must stand out clearly from passive history content.
 - They should read like the next required interaction, not like another log entry.
 - The composer and action affordances should align with that state.
+- Request and approval rows should remain inline in the chronological timeline instead of escaping into detached chrome.
+- Canonical `interview` items should render as a dedicated question-and-answer widget rather than being flattened into ordinary assistant markdown.
 
 ### Diffs and file changes
 
@@ -627,7 +648,9 @@ Status in this branch/work item:
 - implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
 - implemented: long Lens histories no longer collapse everything outside the active corridor into two blind spacers; the timeline now keeps segmented placeholder blocks in the DOM for buffered/off-window ranges and triggers an urgent viewport-centered history-window sync whenever the viewport has no intersecting concrete rows, so mobile and browse-mode recovery do not settle into black voids
 - implemented: Lens now exposes a separate top-right virtualizer debug overlay with total history count, current placeholder-block count, visible absolute item span with edge IDs, and the last ten history-window fetches so spacer/void regressions can be inspected live without polluting the timeline
-- implemented: Lens history navigation now uses a dedicated sibling scrollbar driven by canonical item indexes instead of letting rendered timeline DOM height own scroll range; the timeline itself is a bounded non-scrollable materialized slice that follows that separate index-space scroll model
+- implemented: Lens history navigation now uses a dedicated progress navigator keyed directly to canonical item indexes instead of DOM height or a synthetic total-height scroll host
+- implemented: the history pane itself is again the native local pixel scroller for the currently materialized kernel, while browse-mode retained-window growth and trims preserve the reader anchor
+- implemented: direct progress-nav scrubs now jump to a tiny centered preview window first and then hydrate into a normal browse window after drag idle, so large jumps do not try to materialize the traversed span
 - implemented gap: canonical interactive request/question flows now have a dedicated frontend interview widget, but the backend model still represents them as request summaries rather than a first-class canonical `interview` item type
 
 Still mandatory after this work whenever Lens evolves:

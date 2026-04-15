@@ -823,13 +823,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return row;
   }
 
-  function createHistorySpacer(heightPx: number): HTMLElement {
-    const spacer = document.createElement('div');
-    spacer.className = 'agent-history-spacer';
-    spacer.style.height = `${Math.max(0, Math.round(heightPx))}px`;
-    return spacer;
-  }
-
   function createHistoryPlaceholderBlock(args: {
     heightPx: number;
     itemCount: number;
@@ -1073,7 +1066,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   return {
     createHistoryEntry,
     createHistoryPlaceholderBlock,
-    createHistorySpacer,
     createRequestActionBlock,
     pruneAssistantMarkdownCache,
     renderRuntimeStats,

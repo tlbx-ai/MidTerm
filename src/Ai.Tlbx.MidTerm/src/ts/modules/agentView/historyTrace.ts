@@ -7,6 +7,8 @@ type LensHistoryFetchReason =
   | 'refresh'
   | 'latest'
   | 'scroll'
+  | 'jump'
+  | 'drag-preview'
   | 'stream-window'
   | 'hidden-compact';
 
@@ -144,6 +146,10 @@ function formatFetchReason(reason: LensHistoryFetchReason): string {
       return 'bottom';
     case 'scroll':
       return 'scroll';
+    case 'jump':
+      return 'jump';
+    case 'drag-preview':
+      return 'drag';
     case 'stream-window':
       return 'stream';
     case 'hidden-compact':
