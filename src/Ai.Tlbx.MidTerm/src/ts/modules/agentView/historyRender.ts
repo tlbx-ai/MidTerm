@@ -518,6 +518,31 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
 }
 
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
+  function isVirtualizedHistoryContext(
+    state: SessionLensViewState | undefined,
+    entryCount: number,
+  ): boolean {
+    if (!state) {
+      return entryCount > HISTORY_VIRTUALIZE_AFTER;
+    }
+
+    const snapshot = state.snapshot;
+    const historyCount = snapshot?.historyCount ?? entryCount;
+    if (historyCount > HISTORY_VIRTUALIZE_AFTER) {
+      return true;
+    }
+
+    if (state.historyTopSpacer !== null || state.historyBottomSpacer !== null) {
+      return true;
+    }
+
+    if (!snapshot) {
+      return false;
+    }
+
+    return snapshot.historyWindowStart > 0 || snapshot.historyWindowEnd < snapshot.historyCount;
+  }
+
   function renderActivationView(
     sessionId: string,
     panel: HTMLDivElement,
@@ -672,12 +697,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     } else if (state && browseViewportAdjusted) {
       state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
       renderScrollToBottomControl(panel, state);
-      if (entries.length > HISTORY_VIRTUALIZE_AFTER) {
+      if (isVirtualizedHistoryContext(state, entries.length)) {
         deps.scheduleHistoryRender(sessionId);
       }
     }
 
-    if (measurementChanged && entries.length > HISTORY_VIRTUALIZE_AFTER) {
+    if (measurementChanged && isVirtualizedHistoryContext(state, entries.length)) {
       deps.scheduleHistoryRender(sessionId);
     }
   }
@@ -692,11 +717,11 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       viewport,
       viewport.scrollHeight - viewport.clientHeight,
     );
-    if (didAutoScroll && entryCount > HISTORY_VIRTUALIZE_AFTER) {
+    const current = deps.getState(sessionId);
+    if (didAutoScroll && isVirtualizedHistoryContext(current, entryCount)) {
       deps.scheduleHistoryRender(sessionId);
     }
 
-    const current = deps.getState(sessionId);
     if (!current) {
       return;
     }
@@ -1068,8 +1093,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
   function shouldRenderForViewportScroll(state: SessionLensViewState): boolean {
     const viewport = state.historyViewport;
-    if (!viewport || state.historyEntries.length <= HISTORY_VIRTUALIZE_AFTER) {
+    if (!viewport || !isVirtualizedHistoryContext(state, state.historyEntries.length)) {
       return false;
+    }
+
+    if (
+      state.historyRenderedNodes.size > 0 &&
+      (state.historyTopSpacer !== null || state.historyBottomSpacer !== null) &&
+      !hasIntersectingRenderedHistoryEntry(viewport, state)
+    ) {
+      return true;
     }
 
     const metrics = readHistoryViewportMetrics(viewport);
