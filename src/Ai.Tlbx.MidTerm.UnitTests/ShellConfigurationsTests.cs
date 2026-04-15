@@ -13,6 +13,7 @@ public sealed class ShellConfigurationsTests
         using var watchIteration = new EnvironmentVariableScope("DOTNET_WATCH_ITERATION", "7");
         using var modifiableAssemblies = new EnvironmentVariableScope("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
         using var hostingStartupAssemblies = new EnvironmentVariableScope("ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", "Microsoft.AspNetCore.Watch.BrowserRefresh");
+        using var noColor = new EnvironmentVariableScope("NO_COLOR", "1");
 
         var env = new PwshShellConfiguration().GetEnvironmentVariables();
 
@@ -21,6 +22,21 @@ public sealed class ShellConfigurationsTests
         Assert.DoesNotContain("DOTNET_WATCH_ITERATION", env.Keys, StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain("DOTNET_MODIFIABLE_ASSEMBLIES", env.Keys, StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain("ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", env.Keys, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NO_COLOR", env.Keys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GetEnvironmentVariables_AdvertisesAndForcesRichColorSupport()
+    {
+        var env = new PwshShellConfiguration().GetEnvironmentVariables();
+
+        Assert.Equal("xterm-256color", env["TERM"]);
+        Assert.Equal("truecolor", env["COLORTERM"]);
+        Assert.Equal("midterm", env["TERM_PROGRAM"]);
+        Assert.Equal("3", env["FORCE_COLOR"]);
+        Assert.Equal("1", env["CLICOLOR"]);
+        Assert.Equal("1", env["CLICOLOR_FORCE"]);
+        Assert.Equal("1", env["PY_COLORS"]);
     }
 
     private sealed class EnvironmentVariableScope : IDisposable

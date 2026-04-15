@@ -597,7 +597,9 @@ function attachWebglAddon(sessionId: string, state: TerminalState): void {
   }
 
   try {
-    const webglAddon = new WebglAddon();
+    // Preserve the draw buffer so browser screenshot capture paths (html2canvas)
+    // can read terminal pixels when WebGL rendering is enabled.
+    const webglAddon = new WebglAddon(true);
     webglAddon.onContextLoss(() => {
       if (state.webglAddon !== webglAddon) {
         return;

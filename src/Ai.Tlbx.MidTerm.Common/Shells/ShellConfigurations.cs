@@ -22,6 +22,7 @@ public abstract class ShellConfigurationBase : IShellConfiguration
 {
     private static readonly string[] InheritedEnvironmentVariablesToStrip =
     [
+        "NO_COLOR",
         "DOTNET_STARTUP_HOOKS",
         "DOTNET_WATCH",
         "DOTNET_WATCH_ITERATION",
@@ -45,6 +46,12 @@ public abstract class ShellConfigurationBase : IShellConfiguration
     /// All platforms set TERM=xterm-256color and COLORTERM=truecolor. This matches what
     /// iTerm2, WezTerm, and Alacritty do. xterm.js supports full 24-bit color, and ConPTY
     /// on Windows supports all VT sequences including 24-bit SGR (since Windows 10 1903+).
+    ///
+    /// Color forcing:
+    /// - FORCE_COLOR=3
+    /// - CLICOLOR=1 / CLICOLOR_FORCE=1
+    /// - PY_COLORS=1
+    /// NO_COLOR is stripped from inherited environment to prevent accidental ANSI suppression.
     ///
     /// TERM=xterm-256color is chosen over xterm-direct because:
     /// - xterm-256color is universally available in terminfo on all systems
@@ -71,6 +78,10 @@ public abstract class ShellConfigurationBase : IShellConfiguration
         env["TERM"] = "xterm-256color";
         env["COLORTERM"] = "truecolor";
         env["TERM_PROGRAM"] = "midterm";
+        env["FORCE_COLOR"] = "3";
+        env["CLICOLOR"] = "1";
+        env["CLICOLOR_FORCE"] = "1";
+        env["PY_COLORS"] = "1";
 
         if (OperatingSystem.IsWindows())
         {
