@@ -46,6 +46,7 @@ import { createAgentHistoryDom } from './historyDom';
 import { createAgentHistoryRender } from './historyRender';
 import {
   DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG,
+  resolveLensHistoryFetchAheadItems,
   resolveLensHistoryFetchThresholdPx,
   resolveLensHistoryWindowTargetCount,
 } from './historyVirtualizer';
@@ -370,6 +371,7 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.activationRunId += 1;
   state.streamConnected = true;
   state.refreshInFlight = false;
+  state.historyViewportSyncPending = false;
   state.activationState = 'ready';
   state.activationDetail = 'Lens debug scenario loaded.';
   state.activationTrace = [];
@@ -626,6 +628,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyWindowStart: 0,
     historyWindowCount: initialHistoryWindowCount,
     historyWindowTargetCount: initialHistoryWindowCount,
+    historyViewportSyncPending: false,
     disconnectStream: null,
     streamConnected: false,
     refreshInFlight: false,
@@ -845,10 +848,10 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       if (current.historyAutoScrollPinned) {
         void loadLatestLensHistoryWindow(sessionId, current);
       } else {
-        void syncHistoryWindowToViewport(sessionId, current);
+        queueHistoryWindowViewportSync(sessionId, current);
       }
     } else if (!current.historyAutoScrollPinned) {
-      void syncHistoryWindowToViewport(sessionId, current);
+      queueHistoryWindowViewportSync(sessionId, current);
     }
 
     if (historyRender.shouldRenderForViewportScroll(current)) {
@@ -1069,6 +1072,7 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
   state.historyLastVirtualWindowKey = null;
+  state.historyViewportSyncPending = false;
   state.renderDirty = true;
 
   const historyHost = state.panel.querySelector<HTMLElement>('[data-agent-field="history"]');
@@ -1209,6 +1213,7 @@ async function refreshLensSnapshot(
     renderCurrentAgentView(sessionId);
   } finally {
     state.refreshInFlight = false;
+    flushPendingHistoryWindowViewportSync(sessionId, state);
   }
 }
 
@@ -1243,6 +1248,30 @@ async function loadLatestLensHistoryWindow(
     log.warn(() => `Failed to load latest Lens history for ${sessionId}: ${String(error)}`);
   } finally {
     state.refreshInFlight = false;
+    flushPendingHistoryWindowViewportSync(sessionId, state);
+  }
+}
+
+function queueHistoryWindowViewportSync(sessionId: string, state: SessionLensViewState): void {
+  if (state.refreshInFlight) {
+    state.historyViewportSyncPending = true;
+    return;
+  }
+
+  void syncHistoryWindowToViewport(sessionId, state);
+}
+
+function flushPendingHistoryWindowViewportSync(
+  sessionId: string,
+  state: SessionLensViewState,
+): void {
+  if (!state.historyViewportSyncPending || state.refreshInFlight) {
+    return;
+  }
+
+  state.historyViewportSyncPending = false;
+  if (!state.historyAutoScrollPinned) {
+    void syncHistoryWindowToViewport(sessionId, state);
   }
 }
 
@@ -1259,7 +1288,7 @@ async function syncHistoryWindowToViewport(
     ? (state.pendingHistoryPrependAnchor?.absoluteIndex ?? null)
     : null;
   const requestedWindow = historyRender.getViewportCenteredHistoryWindowRequest(state, {
-    fetchAheadItems: DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG.fetchAheadItems,
+    fetchAheadItems: resolveLensHistoryFetchAheadItems(DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG),
     anchorAbsoluteIndex,
   });
   if (!requestedWindow) {
@@ -1292,6 +1321,7 @@ async function syncHistoryWindowToViewport(
     );
   } finally {
     state.refreshInFlight = false;
+    flushPendingHistoryWindowViewportSync(sessionId, state);
   }
 }
 

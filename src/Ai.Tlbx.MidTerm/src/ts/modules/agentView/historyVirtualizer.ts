@@ -7,20 +7,29 @@ export interface LensHistoryVirtualizerConfig {
   fetchAheadItems: number;
 }
 
+export const LENS_HISTORY_MIN_FETCH_AHEAD_ITEMS = 20;
+
 export const DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG: LensHistoryVirtualizerConfig = {
   overscanItems: 12,
   fetchAheadItems: 30,
 };
 
+export function resolveLensHistoryFetchAheadItems(
+  config: LensHistoryVirtualizerConfig = DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG,
+): number {
+  return Math.max(LENS_HISTORY_MIN_FETCH_AHEAD_ITEMS, config.fetchAheadItems);
+}
+
 export function resolveLensHistoryFetchThresholdPx(
   state: SessionLensViewState,
   config: LensHistoryVirtualizerConfig = DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG,
 ): number {
+  const fetchAheadItems = resolveLensHistoryFetchAheadItems(config);
   return Math.max(
     1,
     Math.round(
       resolveRepresentativeHistoryEntryHeight(state.historyObservedHeights.values()) *
-        config.fetchAheadItems,
+        fetchAheadItems,
     ),
   );
 }
@@ -31,9 +40,10 @@ export function resolveLensHistoryWindowTargetCount(
   observedHeights?: Iterable<number> | null,
   config: LensHistoryVirtualizerConfig = DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG,
 ): number {
+  const fetchAheadItems = resolveLensHistoryFetchAheadItems(config);
   return resolveViewportDrivenHistoryWindowCount(
     viewport,
-    config.fetchAheadItems,
+    fetchAheadItems,
     fallbackCount,
     observedHeights,
   );

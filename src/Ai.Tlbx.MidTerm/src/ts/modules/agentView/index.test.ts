@@ -1907,6 +1907,124 @@ describe('agentView dev errors', () => {
     });
   });
 
+  it('queues a follow-up viewport history sync when scroll continues during an in-flight browse fetch', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+
+    const buildWindowSnapshot = (startIndex: number, count: number, latestSequence: number) =>
+      createSnapshot({
+        latestSequence,
+        historyCount: 640,
+        historyWindowStart: startIndex,
+        historyWindowEnd: startIndex + count,
+        hasOlderHistory: startIndex > 0,
+        hasNewerHistory: startIndex + count < 640,
+        history: Array.from({ length: count }, (_value, index) => {
+          const order = startIndex + index + 1;
+          return {
+            entryId: `assistant:${order}`,
+            turnId: `turn-${order}`,
+            itemId: `assistant-${order}`,
+            requestId: null,
+            order,
+            kind: 'assistant',
+            status: 'completed',
+            itemType: 'assistant_text',
+            title: null,
+            body: `History row ${order}`,
+            updatedAt: '2026-04-15T12:00:00Z',
+            streaming: false,
+            attachments: [],
+            createdAt: '2026-04-15T12:00:00Z',
+          };
+        }),
+      });
+
+    let resolveSecondWindow: (() => void) | null = null;
+    const requestedWindows: Array<{ startIndex: number | undefined; count: number | undefined }> =
+      [];
+    getLensHistoryWindow.mockImplementation(
+      async (
+        _sessionId: string,
+        startIndex?: number,
+        count?: number,
+      ): Promise<any> => {
+        requestedWindows.push({ startIndex, count });
+
+        if (requestedWindows.length === 1) {
+          return buildWindowSnapshot(320, 80, 40);
+        }
+
+        if (requestedWindows.length === 2) {
+          return new Promise((resolve) => {
+            resolveSecondWindow = () =>
+              resolve(buildWindowSnapshot(startIndex ?? 0, count ?? 80, 41));
+          });
+        }
+
+        return buildWindowSnapshot(startIndex ?? 0, count ?? 80, 42);
+      },
+    );
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.clientHeight = 600;
+    historyHost.clientWidth = 920;
+    historyHost.scrollHeight = 12000;
+    historyHost.scrollTop = 4200;
+    historyHost.getBoundingClientRect = vi.fn(() => ({ top: 0, bottom: 600 }));
+    historyHost.querySelector = vi.fn(() => null);
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenCalledTimes(1);
+    });
+
+    const wheelHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'wheel',
+    )?.[1] as ((event: { deltaY: number }) => void) | undefined;
+    const scrollHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'scroll',
+    )?.[1] as (() => void) | undefined;
+    expect(wheelHandler).toBeTypeOf('function');
+    expect(scrollHandler).toBeTypeOf('function');
+
+    wheelHandler?.({ deltaY: -32 });
+
+    historyHost.scrollTop = 1100;
+    scrollHandler?.();
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenCalledTimes(2);
+    });
+
+    historyHost.scrollTop = 140;
+    scrollHandler?.();
+    await Promise.resolve();
+    expect(getLensHistoryWindow).toHaveBeenCalledTimes(2);
+
+    expect(resolveSecondWindow).toBeTypeOf('function');
+    resolveSecondWindow?.();
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenCalledTimes(3);
+    });
+    expect(requestedWindows[2]?.startIndex).toBeTypeOf('number');
+    expect((requestedWindows[2]?.count ?? 0) > 0).toBe(true);
+  });
+
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
     openLensHistoryStream.mockReturnValue(disconnectStream);
@@ -7758,7 +7876,7 @@ describe('agentView dev errors', () => {
           status: 'completed',
           itemType: 'unknown_agent_message',
           title: 'Unknown agent message',
-          body: 'Method: codex/event/background_terminal_wait\n{"msg":{"text":"Waited for background terminal  npm run lint"}}',
+          body: 'Method: codex/event/unhandled_notification\n{"msg":{"text":"Unhandled codex event for fallback coverage"}}',
           attachments: [],
           streaming: false,
           createdAt: '2026-04-08T16:40:00Z',

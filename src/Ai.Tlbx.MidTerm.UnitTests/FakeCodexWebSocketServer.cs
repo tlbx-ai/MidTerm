@@ -25,6 +25,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitLateDiffAfterCompletion,
         bool emitMcpToolProgress,
         bool emitUnknownAgentNotification,
+        bool emitBackgroundTerminalWaitNotification,
         bool emitMcpStartupStatus)
     {
         Endpoint = endpoint;
@@ -35,6 +36,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitLateDiffAfterCompletion = emitLateDiffAfterCompletion;
         EmitMcpToolProgress = emitMcpToolProgress;
         EmitUnknownAgentNotification = emitUnknownAgentNotification;
+        EmitBackgroundTerminalWaitNotification = emitBackgroundTerminalWaitNotification;
         EmitMcpStartupStatus = emitMcpStartupStatus;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
@@ -57,6 +59,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitUnknownAgentNotification { get; }
 
+    public bool EmitBackgroundTerminalWaitNotification { get; }
+
     public bool EmitMcpStartupStatus { get; }
 
     public static FakeCodexWebSocketServer Start(
@@ -67,6 +71,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitLateDiffAfterCompletion = false,
         bool emitMcpToolProgress = false,
         bool emitUnknownAgentNotification = false,
+        bool emitBackgroundTerminalWaitNotification = false,
         bool emitMcpStartupStatus = false)
     {
         var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
@@ -79,6 +84,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
             emitLateDiffAfterCompletion,
             emitMcpToolProgress,
             emitUnknownAgentNotification,
+            emitBackgroundTerminalWaitNotification,
             emitMcpStartupStatus);
     }
 
@@ -385,7 +391,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                     }
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
-                            if (EmitUnknownAgentNotification)
+                            if (EmitBackgroundTerminalWaitNotification)
                             {
                                 await SendJsonAsync(socket, new
                                 {
@@ -399,6 +405,22 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                             turn_id = turnId,
                                             item_id = "item-command-1",
                                             text = "Waited for background terminal  npm run lint"
+                                        }
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                            }
+                            if (EmitUnknownAgentNotification)
+                            {
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "codex/event/unhandled_notification",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        msg = new
+                                        {
+                                            turn_id = turnId,
+                                            text = "Unhandled codex event for fallback coverage"
                                         }
                                     }
                                 }, _shutdown.Token).ConfigureAwait(false);
@@ -621,4 +643,3 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 }
-

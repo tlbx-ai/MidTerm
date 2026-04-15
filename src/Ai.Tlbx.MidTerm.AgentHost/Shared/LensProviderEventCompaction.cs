@@ -81,6 +81,16 @@ public static class LensProviderEventCompaction
                 Detail = CompactItemDetail(source.Item.ItemType, source.Item.Detail),
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
+            Task = source.Task is null ? null : new LensProviderTaskPayload
+            {
+                TaskId = source.Task.TaskId,
+                Status = source.Task.Status,
+                TaskType = source.Task.TaskType,
+                Description = CompactTextMiddle(source.Task.Description, MaxRuntimeDetailChars),
+                Summary = CompactTextMiddle(source.Task.Summary, MaxRuntimeDetailChars),
+                LastToolName = source.Task.LastToolName,
+                UsageJson = CompactTextMiddle(source.Task.UsageJson, MaxRuntimeDetailChars)
+            },
             QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensQuickSettingsPayload
             {
                 Model = source.QuickSettingsUpdated.Model,

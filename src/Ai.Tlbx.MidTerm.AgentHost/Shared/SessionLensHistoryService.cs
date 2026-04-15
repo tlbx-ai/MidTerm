@@ -1986,6 +1986,16 @@ public sealed partial class SessionLensHistoryService
                 Detail = source.Item.Detail,
                 Attachments = CloneAttachments(source.Item.Attachments)
             },
+            Task = source.Task is null ? null : new LensProviderTaskPayload
+            {
+                TaskId = source.Task.TaskId,
+                Status = source.Task.Status,
+                TaskType = source.Task.TaskType,
+                Description = source.Task.Description,
+                Summary = source.Task.Summary,
+                LastToolName = source.Task.LastToolName,
+                UsageJson = source.Task.UsageJson
+            },
             QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensQuickSettingsPayload
             {
                 Model = source.QuickSettingsUpdated.Model,
@@ -3249,6 +3259,7 @@ public sealed partial class SessionLensHistoryService
         return string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "resolved", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "stopped", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "error", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
     }
@@ -4022,8 +4033,6 @@ public sealed class SessionLensHistoryPatchSubscription : IDisposable
         _state.Close();
     }
 }
-
-
 
 
 

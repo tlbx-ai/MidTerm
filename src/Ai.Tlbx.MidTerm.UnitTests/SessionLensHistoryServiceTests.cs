@@ -1933,6 +1933,42 @@ public sealed class SessionLensHistoryServiceTests
     }
 
     [Fact]
+    public void GetEvents_PreservesCanonicalTaskPayloads()
+    {
+        var service = new SessionLensHistoryService();
+
+        service.Append(new LensProviderEvent
+        {
+            EventId = "task-progress",
+            SessionId = "s-task-events",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            TurnId = "turn-1",
+            ItemId = "task-1",
+            CreatedAt = ParseUtc("2026-04-15T08:10:00Z"),
+            Type = "task.progress",
+            Task = new LensProviderTaskPayload
+            {
+                TaskId = "task-1",
+                Status = "waiting",
+                Description = "Waited for background terminal  npm run lint",
+                Summary = "Waiting for background terminal completion",
+                LastToolName = "npm run lint"
+            }
+        });
+
+        var providerEvents = service.GetProviderEvents("s-task-events");
+
+        var taskEvent = Assert.Single(providerEvents.Events);
+        Assert.Equal("task.progress", taskEvent.Type);
+        Assert.NotNull(taskEvent.Task);
+        Assert.Equal("task-1", taskEvent.Task!.TaskId);
+        Assert.Equal("waiting", taskEvent.Task.Status);
+        Assert.Equal("Waited for background terminal  npm run lint", taskEvent.Task.Description);
+        Assert.Equal("npm run lint", taskEvent.Task.LastToolName);
+    }
+
+    [Fact]
     public void GetSnapshot_EnrichesHistoryEntriesWithClickableFileMentionsAndImagePreviews()
     {
         var service = new SessionLensHistoryService();
@@ -2174,7 +2210,6 @@ public sealed class SessionLensHistoryServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
 
 
 

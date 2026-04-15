@@ -24,6 +24,7 @@ public sealed class LensProviderEvent
     public LensProviderPlanCompletedPayload? PlanCompleted { get; set; }
     public LensProviderDiffUpdatedPayload? DiffUpdated { get; set; }
     public LensProviderItemPayload? Item { get; set; }
+    public LensProviderTaskPayload? Task { get; set; }
     public LensQuickSettingsPayload? QuickSettingsUpdated { get; set; }
     public LensProviderRequestOpenedPayload? RequestOpened { get; set; }
     public LensProviderRequestResolvedPayload? RequestResolved { get; set; }
@@ -97,6 +98,17 @@ public sealed class LensProviderItemPayload
     public List<LensAttachmentReference> Attachments { get; set; } = [];
 }
 
+public sealed class LensProviderTaskPayload
+{
+    public string TaskId { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? TaskType { get; set; }
+    public string? Description { get; set; }
+    public string? Summary { get; set; }
+    public string? LastToolName { get; set; }
+    public string? UsageJson { get; set; }
+}
+
 public sealed class LensProviderRequestOpenedPayload
 {
     public string RequestType { get; set; } = string.Empty;
@@ -146,6 +158,7 @@ public sealed class LensProviderEventListResponse
 [JsonSerializable(typeof(LensProviderPlanCompletedPayload))]
 [JsonSerializable(typeof(LensProviderDiffUpdatedPayload))]
 [JsonSerializable(typeof(LensProviderItemPayload))]
+[JsonSerializable(typeof(LensProviderTaskPayload))]
 [JsonSerializable(typeof(LensProviderRequestOpenedPayload))]
 [JsonSerializable(typeof(LensProviderRequestResolvedPayload))]
 [JsonSerializable(typeof(LensProviderUserInputRequestedPayload))]

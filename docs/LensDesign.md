@@ -213,6 +213,8 @@ The canonical history contract must satisfy the following:
 - When the user seeks into older history, Lens should expand or shift the history window deterministically without resetting the live Lens session or replaying the entire history from scratch.
 - When older-history paging prepends more canonical rows, Lens should preserve the reader position by anchoring to a stable visible history row identity and restoring against that row's real DOM offset, not by summing guessed row heights.
 - When measured row heights change above the reader while browsing older history, the virtualizer should compensate the viewport scroll offset from those concrete size deltas instead of relying only on a later rerender to keep the visible content stable.
+- Lens retained-history fetch policy should keep at least 20 canonical items of margin on both sides of the current visible range whenever history bounds allow it.
+- If scrolling continues while a retained-history window fetch is already in flight, Lens should queue a follow-up viewport-centered fetch pass so the retained window catches up immediately after the in-flight response resolves.
 - Unseen-history spacer estimation should prefer stable global width-bucket observations and backend/window estimates over raw current-slice averages so scrollbar position does not whip around when a newly fetched slice has a very different row mix.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
@@ -540,6 +542,8 @@ Status in this branch/work item:
 - implemented: unseen-history spacer estimation now prefers stable width-bucket observations plus estimated row heights, clamping local slice bias so random older-history fetches do not yank the scrollbar as aggressively when a fetched slice has an unusual row mix
 - implemented: retained browser history now recenters around the actual visible history range plus a bounded nearby margin rather than only paging by fixed top/bottom thresholds
 - implemented: viewport-driven history refetch now trims retained browser history down to the visible range plus a bounded nearby margin instead of enforcing an extra fixed retained-window floor
+- implemented: retained-window fetch policy now enforces a minimum 20-item fetch-ahead margin on each side of the visible range (when canonical bounds allow) so browse paging cannot collapse to razor-thin retained slices
+- implemented: while browsing, additional scroll movement during an in-flight window sync now queues an immediate follow-up viewport sync so retained history catches up as soon as the active fetch resolves
 - implemented: unseen-history spacer estimation now retains observed row-height samples across previously visited windows at the current width bucket instead of relying only on the currently loaded slice
 - implemented: browser-requested history windows now include the current viewport width bucket so `mtagenthost` can return width-aware per-row height estimates instead of assuming one fixed desktop width
 - implemented: older-history and newer-history window shifts restore scroll position from a stable visible anchor row and actual DOM offsets instead of summing estimated prepended row heights
@@ -616,6 +620,7 @@ Status in this branch/work item:
 - implemented: runtime/system notice text is sanitized for ANSI/control-byte noise, de-duplicates repeated message/detail payloads, and system rows render with quieter metadata/body emphasis than the main conversation lane
 - implemented: Codex MCP startup-status notifications now reduce into quiet `Agent State` system rows instead of generic unknown-agent fallback tool rows
 - implemented: multi-line Codex stderr startup/deprecation failures now reduce into single red `Agent Error` notice rows instead of separate generic warning lines
+- implemented: Codex `codex/event/task_started`, `codex/event/agent_reasoning`, `codex/event/task_complete`, and `codex/event/background_terminal_wait` now canonize into explicit `task.*` events, and background-terminal wait no longer falls through to unknown-agent fallback rows
 - implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values
 - implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
 - implemented gap: canonical interactive request/question flows now have a dedicated frontend interview widget, but the backend model still represents them as request summaries rather than a first-class canonical `interview` item type

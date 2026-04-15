@@ -950,75 +950,82 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             case "codex/event/task_started":
             {
                 var turnId = ResolveTurnId(payload);
-                var taskId = GetString(payload, "id") ?? turnId;
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
                 if (string.IsNullOrWhiteSpace(taskId))
                 {
                     break;
                 }
 
                 var taskType = GetString(payload, "msg", "collaboration_mode_kind");
-                var itemType = ResolveCodexTaskItemType(taskType);
-                var title = itemType == "plan" ? "Planning" : "Reasoning";
                 var detail = GetString(payload, "msg", "text")
                              ?? GetString(payload, "msg", "summary")
                              ?? GetString(payload, "msg", "last_agent_message")
                              ?? "Codex started a task.";
-                _emit(CreateEvent("item.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
-                {
-                    lensEvent.Item = new LensProviderItemPayload
-                    {
-                        ItemType = itemType,
-                        Status = "in_progress",
-                        Title = title,
-                        Detail = detail
-                    };
-                }));
+                EmitCodexTaskStarted(turnId, taskId, taskType, detail, method, payload);
                 break;
             }
 
             case "codex/event/agent_reasoning":
             {
-                var taskId = GetString(payload, "id") ?? ResolveTurnId(payload);
+                var turnId = ResolveTurnId(payload);
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
                 var detail = GetString(payload, "msg", "text");
                 if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(detail))
                 {
                     break;
                 }
 
-                _emit(CreateEvent("item.updated", ResolveTurnId(payload), taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+                EmitCodexTaskProgress(
+                    turnId,
+                    taskId,
+                    taskType: null,
+                    description: detail,
+                    summary: detail,
+                    status: "in_progress",
+                    method,
+                    payload);
+                break;
+            }
+
+            case "codex/event/background_terminal_wait":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
+                var detail = GetString(payload, "msg", "text")
+                             ?? GetString(payload, "msg", "summary")
+                             ?? BuildCodexItemDetail(payload);
+                if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(detail))
                 {
-                    lensEvent.Item = new LensProviderItemPayload
-                    {
-                        ItemType = "reasoning",
-                        Status = "in_progress",
-                        Title = "Reasoning",
-                        Detail = detail
-                    };
-                }));
+                    break;
+                }
+
+                EmitCodexTaskProgress(
+                    turnId,
+                    taskId,
+                    taskType: null,
+                    description: detail,
+                    summary: detail,
+                    status: "waiting",
+                    method,
+                    payload,
+                    lastToolName: ExtractBackgroundTerminalCommand(detail));
                 break;
             }
 
             case "codex/event/task_complete":
             {
                 var turnId = ResolveTurnId(payload);
-                var taskId = GetString(payload, "id") ?? turnId;
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
                 var taskType = GetString(payload, "msg", "collaboration_mode_kind");
-                var itemType = ResolveCodexTaskItemType(taskType);
                 var summary = GetString(payload, "msg", "last_agent_message")
                               ?? GetString(payload, "msg", "text")
                               ?? "Codex completed a task.";
+                var status = NormalizeTaskCompletedStatus(
+                    GetString(payload, "msg", "status") ??
+                    GetString(payload, "status"));
                 if (!string.IsNullOrWhiteSpace(taskId))
                 {
-                    _emit(CreateEvent("item.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
-                    {
-                        lensEvent.Item = new LensProviderItemPayload
-                        {
-                            ItemType = itemType,
-                            Status = "completed",
-                            Title = itemType == "plan" ? "Plan completed" : "Reasoning completed",
-                            Detail = summary
-                        };
-                    }));
+                    EmitCodexTaskCompleted(turnId, taskId, taskType, status, summary, method, payload);
                 }
 
                 var proposedPlan = ExtractProposedPlanMarkdown(summary);
@@ -2527,6 +2534,178 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return extracted.Length == 0 ? null : extracted;
     }
 
+    private void EmitCodexTaskStarted(
+        string? turnId,
+        string taskId,
+        string? taskType,
+        string description,
+        string method,
+        JsonElement payload)
+    {
+        var itemType = ResolveCodexTaskItemType(taskType);
+        var title = itemType == "plan" ? "Planning" : "Reasoning";
+
+        _emit(CreateEvent("task.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Task = new LensProviderTaskPayload
+            {
+                TaskId = taskId,
+                Status = "started",
+                TaskType = taskType,
+                Description = description
+            };
+        }));
+
+        _emit(CreateEvent("item.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Item = new LensProviderItemPayload
+            {
+                ItemType = itemType,
+                Status = "in_progress",
+                Title = title,
+                Detail = description
+            };
+        }));
+    }
+
+    private void EmitCodexTaskProgress(
+        string? turnId,
+        string taskId,
+        string? taskType,
+        string description,
+        string? summary,
+        string status,
+        string method,
+        JsonElement payload,
+        string? lastToolName = null)
+    {
+        var itemType = ResolveCodexTaskItemType(taskType);
+        var normalizedStatus = string.Equals(status, "waiting", StringComparison.OrdinalIgnoreCase)
+            ? "waiting"
+            : "in_progress";
+        var title = normalizedStatus == "waiting"
+            ? "Waiting for background terminal"
+            : itemType == "plan"
+                ? "Planning"
+                : "Reasoning";
+
+        _emit(CreateEvent("task.progress", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Task = new LensProviderTaskPayload
+            {
+                TaskId = taskId,
+                Status = normalizedStatus,
+                TaskType = taskType,
+                Description = description,
+                Summary = summary,
+                LastToolName = lastToolName
+            };
+        }));
+
+        _emit(CreateEvent("item.updated", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Item = new LensProviderItemPayload
+            {
+                ItemType = itemType,
+                Status = "in_progress",
+                Title = title,
+                Detail = description
+            };
+        }));
+    }
+
+    private void EmitCodexTaskCompleted(
+        string? turnId,
+        string taskId,
+        string? taskType,
+        string status,
+        string summary,
+        string method,
+        JsonElement payload)
+    {
+        var normalizedStatus = NormalizeTaskCompletedStatus(status);
+        var itemType = ResolveCodexTaskItemType(taskType);
+        var itemStatus = normalizedStatus switch
+        {
+            "failed" => "failed",
+            "stopped" => "stopped",
+            _ => "completed"
+        };
+        var title = itemType == "plan"
+            ? normalizedStatus switch
+            {
+                "failed" => "Plan failed",
+                "stopped" => "Plan stopped",
+                _ => "Plan completed"
+            }
+            : normalizedStatus switch
+            {
+                "failed" => "Reasoning failed",
+                "stopped" => "Reasoning stopped",
+                _ => "Reasoning completed"
+            };
+
+        _emit(CreateEvent("task.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Task = new LensProviderTaskPayload
+            {
+                TaskId = taskId,
+                Status = normalizedStatus,
+                TaskType = taskType,
+                Summary = summary
+            };
+        }));
+
+        _emit(CreateEvent("item.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Item = new LensProviderItemPayload
+            {
+                ItemType = itemType,
+                Status = itemStatus,
+                Title = title,
+                Detail = summary
+            };
+        }));
+    }
+
+    private static string? ResolveCodexTaskId(JsonElement payload)
+    {
+        return GetString(payload, "id") ??
+               GetString(payload, "msg", "task_id") ??
+               GetString(payload, "msg", "taskId") ??
+               GetString(payload, "msg", "turn_id") ??
+               GetString(payload, "msg", "turnId");
+    }
+
+    private static string NormalizeTaskCompletedStatus(string? status)
+    {
+        return status?.Trim().ToLowerInvariant() switch
+        {
+            "failed" => "failed",
+            "stopped" => "stopped",
+            "cancelled" => "stopped",
+            _ => "completed"
+        };
+    }
+
+    private static string? ExtractBackgroundTerminalCommand(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        const string marker = "background terminal";
+        var markerIndex = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        var command = message[(markerIndex + marker.Length)..].Trim();
+        return string.IsNullOrWhiteSpace(command) ? null : command;
+    }
+
     private static string ResolveCodexTaskItemType(string? taskType)
     {
         return string.Equals(taskType, "plan", StringComparison.OrdinalIgnoreCase)
@@ -2888,8 +3067,6 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         public string? Detail { get; set; }
     }
 }
-
-
 
 
 

@@ -703,7 +703,103 @@ public sealed class MtAgentHostCodexIntegrationTests
                 item => item.TurnId == "turn-remote-1" &&
                         item.ItemType == "unknown_agent_message" &&
                         item.Title == "Unknown agent message" &&
-                        item.Body.Contains("codex/event/background_terminal_wait", StringComparison.Ordinal) &&
+                        item.Body.Contains("codex/event/unhandled_notification", StringComparison.Ordinal) &&
+                        item.Body.Contains("Unhandled codex event for fallback coverage", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_MapsCodexBackgroundTerminalWaitIntoCanonicalTaskProgress()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-background-wait-1",
+            assistantReply: "Background wait handled.",
+            emitRichHistoryItems: true,
+            emitTurnIds: true,
+            emitBackgroundTerminalWaitNotification: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-background-wait",
+                SessionId = "session-background-wait",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-background-wait",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-background-wait-1"
+                    },
+                    ResumeThreadId = "thread-remote-background-wait-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-background-wait");
+            _ = await WaitForReadyWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-background-wait");
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-background-wait",
+                SessionId = "session-background-wait",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Show background wait.",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-background-wait");
+            _ = await LensHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingPatches,
+                patch => patch.Patch.HistoryUpserts.Any(item =>
+                    item.TurnId == "turn-remote-1" &&
+                    item.Kind == "reasoning" &&
+                    item.Body.Contains("Waited for background terminal", StringComparison.Ordinal)),
+                maxPatches: 20,
+                timeout: TimeSpan.FromSeconds(10));
+
+            var turnWindow = await LensHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-background-wait",
+                count: 128);
+            Assert.Contains(
+                turnWindow.History,
+                item => item.TurnId == "turn-remote-1" &&
+                        item.Kind == "reasoning" &&
+                        item.Title == "Waiting for background terminal" &&
                         item.Body.Contains("Waited for background terminal  npm run lint", StringComparison.Ordinal));
         }
         finally
@@ -1189,4 +1285,3 @@ public sealed class MtAgentHostCodexIntegrationTests
         public bool? ThreadStartExperimentalRawEvents { get; set; }
     }
 }
-
