@@ -4,7 +4,9 @@ import {
   getLensQuickSettingsDraft,
   getLensQuickSettingsEffective,
   getLensQuickSettingsProvider,
+  getLensResolvedProviderModel,
 } from '../lens/quickSettings';
+import { hasInterruptibleLensTurnWork } from '../lens/input';
 import { getLensModelOptions } from '../lens/modelOptions';
 import { isDevMode } from '../sidebar/voiceSection';
 import {
@@ -14,6 +16,7 @@ import {
 import { shouldShowLensQuickSettings, type SmartInputVisibilityState } from './visibility';
 import {
   formatLensQuickSettingsSummary,
+  setLensQuickSettingsDropdownDisabled,
   setLensQuickSettingsDropdownOptions,
 } from './smartInputView';
 import { getCollapsedSmartInputTextareaHeight } from './smartInputMetrics';
@@ -122,6 +125,8 @@ export function syncLensQuickSettingsControls(args: {
   const provider = getLensQuickSettingsProvider(sessionId);
   const draft = getLensQuickSettingsDraft(sessionId);
   const effective = getLensQuickSettingsEffective(sessionId);
+  const resolvedProviderModel = getLensResolvedProviderModel(provider);
+  const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);
   if (dockedBar) {
     dockedBar.dataset.lensSession = 'true';
   }
@@ -132,6 +137,7 @@ export function syncLensQuickSettingsControls(args: {
     getLensModelOptions({
       provider,
       currentValues: [draft.model, effective.model],
+      defaultLabel: resolvedProviderModel,
     }),
   );
 
@@ -139,9 +145,16 @@ export function syncLensQuickSettingsControls(args: {
   syncLensQuickSettingSelect(lensEffortSelect, draft.effort ?? '');
   syncLensQuickSettingSelect(lensPlanSelect, draft.planMode);
   syncLensQuickSettingSelect(lensPermissionSelect, draft.permissionMode);
+  setLensQuickSettingsDropdownDisabled(lensModelSelect, quickSettingsLocked);
+  setLensQuickSettingsDropdownDisabled(lensEffortSelect, quickSettingsLocked);
+  setLensQuickSettingsDropdownDisabled(lensPlanSelect, quickSettingsLocked);
+  setLensQuickSettingsDropdownDisabled(lensPermissionSelect, quickSettingsLocked);
 
   if (lensSettingsSummaryBtn) {
-    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary(draft);
+    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary({
+      ...draft,
+      model: draft.model ?? resolvedProviderModel,
+    });
     lensSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
 }

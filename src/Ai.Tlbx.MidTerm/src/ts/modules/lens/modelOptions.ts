@@ -24,11 +24,13 @@ export function getLensDefaultModelLabel(provider: string | null | undefined): s
 export function getLensModelOptions(args: {
   provider: string | null | undefined;
   currentValues?: readonly (string | null | undefined)[];
+  defaultLabel?: string | null | undefined;
 }): LensModelOption[] {
+  const normalizedDefaultLabel = normalizeOptionValue(args.defaultLabel);
   const options: LensModelOption[] = [
     {
       value: '',
-      label: getLensDefaultModelLabel(args.provider),
+      label: normalizedDefaultLabel ?? getLensDefaultModelLabel(args.provider),
     },
   ];
 

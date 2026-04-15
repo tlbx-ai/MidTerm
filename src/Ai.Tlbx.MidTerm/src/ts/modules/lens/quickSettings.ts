@@ -175,6 +175,10 @@ function resolveRememberedProviderModel(
   return legacyModel;
 }
 
+export function getLensResolvedProviderModel(provider: string | null): string | null {
+  return resolveRememberedProviderModel(provider, null);
+}
+
 function persistRememberedProviderModel(provider: string | null, model: string | null): void {
   if (provider !== 'codex' && provider !== 'claude') {
     return;

@@ -438,6 +438,18 @@ export function setLensQuickSettingsDropdownOptions(
   select.dispatchEvent(new Event('midterm:options'));
 }
 
+export function setLensQuickSettingsDropdownDisabled(
+  select: HTMLSelectElement,
+  disabled: boolean,
+): void {
+  if (select.disabled === disabled) {
+    return;
+  }
+
+  select.disabled = disabled;
+  select.dispatchEvent(new Event('midterm:disabled'));
+}
+
 function createLensQuickSettingsField(labelText: string, control: HTMLElement): HTMLDivElement {
   const field = document.createElement('div');
   field.className = 'smart-input-lens-field';
@@ -482,6 +494,16 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     menu.classList.add('hidden');
     wrapper.classList.remove('smart-input-lens-dropdown-open-up');
     trigger.setAttribute('aria-expanded', 'false');
+  };
+
+  const syncDisabledState = (): void => {
+    const disabled = select.disabled;
+    trigger.disabled = disabled;
+    trigger.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    wrapper.classList.toggle('smart-input-lens-dropdown-disabled', disabled);
+    if (disabled) {
+      closeMenu();
+    }
   };
 
   const updateMenuPlacement = (): void => {
@@ -538,6 +560,11 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
   rebuildMenu();
 
   trigger.addEventListener('click', (event) => {
+    if (select.disabled) {
+      closeMenu();
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     const nextOpen = menu.classList.contains('hidden');
@@ -577,9 +604,11 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
   document.addEventListener('scroll', updateMenuPlacement, true);
 
   select.addEventListener('midterm:options', rebuildMenu as EventListener);
+  select.addEventListener('midterm:disabled', syncDisabledState as EventListener);
   select.addEventListener('change', syncSelection);
   select.addEventListener('midterm:sync', syncSelection as EventListener);
   syncSelection();
+  syncDisabledState();
 
   wrapper.appendChild(select);
   wrapper.appendChild(trigger);

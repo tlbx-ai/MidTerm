@@ -63,15 +63,27 @@ describe('smart input tab wiring', () => {
       "wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);",
     );
     expect(viewSource).toContain("document.addEventListener('scroll', updateMenuPlacement, true);");
+    expect(viewSource).toContain('trigger.disabled = disabled;');
+    expect(viewSource).toContain("select.addEventListener('midterm:disabled', syncDisabledState as EventListener);");
   });
 
   it('avoids no-op Lens quick-setting dropdown churn during footer resync', () => {
     expect(viewSource).toContain("if (select.dataset.midtermOptionsSignature === nextSignature) {");
     expect(viewSource).toContain("select.dataset.midtermOptionsSignature = nextSignature;");
     expect(viewSource).toContain("select.dispatchEvent(new Event('midterm:options'));");
+    expect(viewSource).toContain("select.dispatchEvent(new Event('midterm:disabled'));");
     expect(viewSource).toContain('syncSelection();');
     expect(footerSupportSource).toContain('if (select.value === nextValue) {');
     expect(footerSupportSource).toContain("select.dispatchEvent(new Event('midterm:sync'));");
+  });
+
+  it('locks Lens quick settings while turns are running or queued', () => {
+    expect(source).toContain('hasInterruptibleLensTurnWork');
+    expect(footerSupportSource).toContain('const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);');
+    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensModelSelect, quickSettingsLocked);');
+    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensEffortSelect, quickSettingsLocked);');
+    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensPlanSelect, quickSettingsLocked);');
+    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensPermissionSelect, quickSettingsLocked);');
   });
 
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {

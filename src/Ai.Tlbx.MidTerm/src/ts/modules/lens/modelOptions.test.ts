@@ -15,6 +15,18 @@ describe('lens model options', () => {
     ]);
   });
 
+  it('renders the resolved concrete default model label when one is known', () => {
+    expect(
+      getLensModelOptions({
+        provider: 'codex',
+        defaultLabel: 'gpt-5.4',
+      })[0],
+    ).toEqual({
+      value: '',
+      label: 'gpt-5.4',
+    });
+  });
+
   it('preserves active custom models that are not in the preset list', () => {
     expect(
       getLensModelOptions({

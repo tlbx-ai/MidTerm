@@ -8,6 +8,7 @@ import type { MidTermSettingsPublic } from '../../api/types';
 import { updateSettings } from '../../api/client';
 import { $currentSettings, $sessions } from '../../stores';
 import {
+  getLensResolvedProviderModel,
   getLensQuickSettingsDraft,
   removeLensQuickSettingsSessionState,
   setLensQuickSettingsDraft,
@@ -77,6 +78,10 @@ describe('lens quick settings', () => {
     });
 
     expect(getLensQuickSettingsDraft('codex-default').model).toBe('gpt-5.4');
+  });
+
+  it('resolves the concrete provider model for default codex Lens sessions', () => {
+    expect(getLensResolvedProviderModel('codex')).toBe('gpt-5.4');
   });
 
   it('persists the selected provider model into MidTerm settings', () => {
