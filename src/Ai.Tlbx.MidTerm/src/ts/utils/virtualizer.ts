@@ -33,6 +33,7 @@ export interface VirtualizerWindowViewportMetrics extends VirtualizerViewportMet
   retainedWindowEnd: number;
   totalCount: number;
   offWindowTopSpacerPx: number;
+  effectiveOffWindowTopSpacerPx: number;
   offWindowBottomSpacerPx: number;
 }
 
@@ -401,6 +402,10 @@ export function resolveRetainedWindowViewportMetrics<TItem>(args: {
     resolveItemSize,
     resolveEstimatedItemSize,
   });
+  const effectiveOffWindowTopSpacerPx = Math.min(
+    offWindowTopSpacerPx,
+    Math.max(0, viewportMetrics.scrollTop),
+  );
   const offWindowBottomSpacerPx = estimateOffWindowSpacerPx({
     items,
     observedSizes,
@@ -411,11 +416,12 @@ export function resolveRetainedWindowViewportMetrics<TItem>(args: {
 
   return {
     ...viewportMetrics,
-    scrollTop: Math.max(0, viewportMetrics.scrollTop - offWindowTopSpacerPx),
+    scrollTop: Math.max(0, viewportMetrics.scrollTop - effectiveOffWindowTopSpacerPx),
     retainedWindowStart: retainedWindow.windowStart,
     retainedWindowEnd: retainedWindow.windowEnd,
     totalCount: retainedWindow.totalCount,
     offWindowTopSpacerPx,
+    effectiveOffWindowTopSpacerPx,
     offWindowBottomSpacerPx,
   };
 }

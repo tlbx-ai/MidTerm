@@ -5686,6 +5686,7 @@ describe('agentView dev errors', () => {
     );
 
     expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
+    expect(viewportMetrics.effectiveOffWindowTopSpacerPx).toBe(2800);
     expect(viewportMetrics.scrollTop).toBe(1550);
 
     const visibleRange = computeHistoryVisibleRange(
@@ -5699,6 +5700,43 @@ describe('agentView dev errors', () => {
 
     expect(visibleRange.start).toBe(15);
     expect(unadjustedRange.start).toBe(43);
+  });
+
+  it('caps the viewport-aligned off-window top spacer when estimates exceed the current scroll offset', async () => {
+    const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 41,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 41}`,
+      meta: 'now',
+    })) as any;
+
+    const viewportMetrics = resolveHistoryWindowViewportMetrics(
+      entries,
+      {
+        snapshot: {
+          historyWindowStart: 40,
+          historyWindowEnd: 120,
+          historyCount: 200,
+        },
+        historyObservedHeights: new Map(),
+      } as any,
+      {
+        scrollTop: 240,
+        clientHeight: 600,
+        clientWidth: 900,
+      },
+      () => 100,
+    );
+
+    expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
+    expect(viewportMetrics.effectiveOffWindowTopSpacerPx).toBe(240);
+    expect(viewportMetrics.scrollTop).toBe(0);
   });
 
   it('keeps the pending prepend anchor inside a bounded render corridor', async () => {
@@ -5805,6 +5843,111 @@ describe('agentView dev errors', () => {
     expect(state.historyRenderedNodes.size).toBeLessThan(entries.length);
     expect(state.historyRenderedNodes.has('row-360')).toBe(true);
     expect(scheduleHistoryRender).toHaveBeenCalled();
+  });
+
+  it('realigns browse-mode history when every rendered row drifts outside the viewport', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2000,
+      scrollHeight: 6000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 80,
+        historyCount: 80,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyTopSpacer: null,
+      historyBottomSpacer: null,
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({ top: -1200, bottom: -1100, height: 100 })),
+        }),
+      ),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(historyViewport.scrollTop).toBe(776);
   });
 
   it('does not remeasure unchanged visible rows on every render pass', async () => {

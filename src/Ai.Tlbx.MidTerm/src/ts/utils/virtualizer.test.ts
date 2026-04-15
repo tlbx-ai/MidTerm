@@ -83,7 +83,31 @@ describe('virtualizer', () => {
     });
 
     expect(metrics.offWindowTopSpacerPx).toBe(6000);
+    expect(metrics.effectiveOffWindowTopSpacerPx).toBe(0);
     expect(metrics.offWindowBottomSpacerPx).toBe(4800);
+  });
+
+  it('caps the viewport-aligned off-window top spacer so visible rows remain reachable', () => {
+    const metrics = resolveRetainedWindowViewportMetrics({
+      items: Array.from({ length: 10 }, (_, index) => ({ id: `row-${index}` })),
+      viewportMetrics: {
+        scrollTop: 240,
+        clientHeight: 600,
+        clientWidth: 900,
+      },
+      retainedWindow: {
+        windowStart: 50,
+        windowEnd: 60,
+        totalCount: 100,
+      },
+      observedSizes: [100, 102, 98, 101, 99],
+      resolveItemSize: () => 220,
+      resolveEstimatedItemSize: () => 210,
+    });
+
+    expect(metrics.offWindowTopSpacerPx).toBe(6000);
+    expect(metrics.effectiveOffWindowTopSpacerPx).toBe(240);
+    expect(metrics.scrollTop).toBe(0);
   });
 
   it('computes scroll compensation from size changes above the current browse anchor', () => {

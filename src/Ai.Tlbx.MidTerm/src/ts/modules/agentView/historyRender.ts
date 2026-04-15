@@ -388,6 +388,71 @@ function readHistoryScrollMetrics(container: HTMLDivElement): HistoryScrollMetri
   };
 }
 
+function hasIntersectingRenderedHistoryEntry(
+  viewport: HTMLDivElement,
+  state: SessionLensViewState,
+): boolean {
+  if (typeof viewport.getBoundingClientRect !== 'function') {
+    return true;
+  }
+
+  const viewportRect = viewport.getBoundingClientRect();
+  for (const rendered of state.historyRenderedNodes.values()) {
+    if (typeof rendered.node.getBoundingClientRect !== 'function') {
+      continue;
+    }
+
+    const rect = rendered.node.getBoundingClientRect();
+    const offsetTopPx = rect.top - viewportRect.top;
+    const offsetBottomPx = rect.bottom - viewportRect.top;
+    if (offsetBottomPx >= 0 && offsetTopPx <= viewport.clientHeight) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function recoverViewportFromRenderedHistoryGap(
+  viewport: HTMLDivElement,
+  state: SessionLensViewState,
+): boolean {
+  if (typeof viewport.getBoundingClientRect !== 'function') {
+    return false;
+  }
+
+  const viewportRect = viewport.getBoundingClientRect();
+  let nearestOffsetTopPx: number | null = null;
+  let nearestDistancePx: number | null = null;
+  for (const rendered of state.historyRenderedNodes.values()) {
+    if (typeof rendered.node.getBoundingClientRect !== 'function') {
+      continue;
+    }
+
+    const rect = rendered.node.getBoundingClientRect();
+    const offsetTopPx = rect.top - viewportRect.top;
+    const offsetBottomPx = rect.bottom - viewportRect.top;
+    if (offsetBottomPx >= 0 && offsetTopPx <= viewport.clientHeight) {
+      return false;
+    }
+
+    const distancePx =
+      offsetTopPx > viewport.clientHeight
+        ? offsetTopPx - viewport.clientHeight
+        : Math.max(0, -offsetBottomPx);
+    if (nearestDistancePx === null || distancePx < nearestDistancePx) {
+      nearestDistancePx = distancePx;
+      nearestOffsetTopPx = offsetTopPx;
+    }
+  }
+
+  if (nearestOffsetTopPx === null) {
+    return false;
+  }
+
+  return syncViewportScrollPosition(viewport, viewport.scrollTop + nearestOffsetTopPx - 24);
+}
+
 function sumHistoryEntryHeights(
   entries: readonly LensHistoryEntry[],
   start: number,
@@ -549,7 +614,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     return {
       emptyStateText: null,
       virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
-      topSpacerPx: windowMetrics.offWindowTopSpacerPx + renderedWindow.topSpacerPx,
+      topSpacerPx: windowMetrics.effectiveOffWindowTopSpacerPx + renderedWindow.topSpacerPx,
       bottomSpacerPx: windowMetrics.offWindowBottomSpacerPx + renderedWindow.bottomSpacerPx,
       visibleEntries: buildVisibleHistoryEntries({
         entries,
@@ -562,6 +627,36 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     };
   }
 
+  function adjustBrowseViewportIfNeeded(
+    viewport: HTMLDivElement,
+    state: SessionLensViewState | undefined,
+  ): boolean {
+    if (!state || state.historyAutoScrollPinned) {
+      return false;
+    }
+
+    const restoredAnchor =
+      restorePendingHistoryAnchor(viewport, state, 'pendingHistoryPrependAnchor') ||
+      restorePendingHistoryAnchor(viewport, state, 'pendingHistoryLayoutAnchor');
+    if (restoredAnchor) {
+      return true;
+    }
+
+    if (state.historyTopSpacer === null && state.historyBottomSpacer === null) {
+      return false;
+    }
+
+    if (state.historyRenderedNodes.size === 0) {
+      return false;
+    }
+
+    if (hasIntersectingRenderedHistoryEntry(viewport, state)) {
+      return false;
+    }
+
+    return recoverViewportFromRenderedHistoryGap(viewport, state);
+  }
+
   function finalizeRenderedHistoryState(
     sessionId: string,
     panel: HTMLDivElement,
@@ -570,16 +665,11 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     state: SessionLensViewState | undefined,
     measurementChanged: boolean,
   ): void {
-    let scrollAdjusted = false;
-    if (state && !state.historyAutoScrollPinned) {
-      scrollAdjusted =
-        restorePendingHistoryAnchor(viewport, state, 'pendingHistoryPrependAnchor') ||
-        restorePendingHistoryAnchor(viewport, state, 'pendingHistoryLayoutAnchor');
-    }
+    const browseViewportAdjusted = adjustBrowseViewportIfNeeded(viewport, state);
 
     if (state?.historyAutoScrollPinned) {
       syncPinnedHistoryViewport(sessionId, panel, viewport, entries.length);
-    } else if (state && scrollAdjusted) {
+    } else if (state && browseViewportAdjusted) {
       state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
       renderScrollToBottomControl(panel, state);
       if (entries.length > HISTORY_VIRTUALIZE_AFTER) {
