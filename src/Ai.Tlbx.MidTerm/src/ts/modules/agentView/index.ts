@@ -780,6 +780,12 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     return;
   }
 
+  if (state.historyIndexScrollHost) {
+    viewport.style.overflow = '';
+  } else {
+    viewport.style.overflow = 'hidden auto';
+  }
+
   syncHistoryIndexScrollbar(state);
 
   state.historyViewportSize = {
