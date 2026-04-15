@@ -1213,7 +1213,6 @@ body.has-app-background::after {
     0 0 16px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 84%, transparent),
     0 0 28px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 62%, transparent);
   transition:
-    transform 0.2s ease-in-out,
     background-color 0.15s ease-in-out,
     opacity 0.2s;
 }
