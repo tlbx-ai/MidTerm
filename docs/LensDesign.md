@@ -179,6 +179,7 @@ The canonical history contract must satisfy the following:
 - Lens history transport must be count-and-index based. The browser should know total history count and fetch absolute history windows by index.
 - The backend history contract must not require the browser to depend on backend-owned pixel spacer estimates for unseen history.
 - The frontend owns viewport measurement, row measurement, and DOM virtualization behavior.
+- Lens history scrollbar ownership must be separate from the rendered history DOM. The timeline DOM may be a bounded materialized slice with placeholders, but the history navigation range itself must come from a dedicated browser-side virtual scroll model keyed to canonical item indexes rather than from rendered row heights or DOM spacer accumulation.
 - That browser-side virtualization should live behind a reusable frontend virtualizer core with item-based knobs such as `overscanItems` and `fetchAheadItems`; Lens-specific history-window fetch policy should stay in a thin Lens adapter instead of being scattered through unrelated UI code.
 - Browser-resident Lens history should stay bounded to the visible working set plus a modest nearby margin instead of accumulating the full session scrollback in memory.
 - The browser should treat Lens history as a viewport over `mtagenthost`-owned canonical history, not as a durable full-history cache.
@@ -216,6 +217,7 @@ The canonical history contract must satisfy the following:
 - Lens retained-history fetch policy should keep at least 20 canonical items of margin on both sides of the current visible range whenever history bounds allow it.
 - If scrolling continues while a retained-history window fetch is already in flight, Lens should queue a follow-up viewport-centered fetch pass so the retained window catches up immediately after the in-flight response resolves.
 - Unseen-history spacer estimation should prefer stable global width-bucket observations and backend/window estimates over raw current-slice averages so scrollbar position does not whip around when a newly fetched slice has a very different row mix.
+- When Lens uses a dedicated history scrollbar, that scrollbar should operate in canonical index space and must not treat rendered DOM height as the source of truth for navigation position.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage
@@ -625,6 +627,7 @@ Status in this branch/work item:
 - implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
 - implemented: long Lens histories no longer collapse everything outside the active corridor into two blind spacers; the timeline now keeps segmented placeholder blocks in the DOM for buffered/off-window ranges and triggers an urgent viewport-centered history-window sync whenever the viewport has no intersecting concrete rows, so mobile and browse-mode recovery do not settle into black voids
 - implemented: Lens now exposes a separate top-right virtualizer debug overlay with total history count, current placeholder-block count, visible absolute item span with edge IDs, and the last ten history-window fetches so spacer/void regressions can be inspected live without polluting the timeline
+- implemented: Lens history navigation now uses a dedicated sibling scrollbar driven by canonical item indexes instead of letting rendered timeline DOM height own scroll range; the timeline itself is a bounded non-scrollable materialized slice that follows that separate index-space scroll model
 - implemented gap: canonical interactive request/question flows now have a dedicated frontend interview widget, but the backend model still represents them as request summaries rather than a first-class canonical `interview` item type
 
 Still mandatory after this work whenever Lens evolves:

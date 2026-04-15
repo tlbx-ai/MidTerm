@@ -11558,19 +11558,50 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   white-space: nowrap;
 }
 
+.agent-history-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+
 .agent-history {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 0;
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   padding: 18px 18px 32px;
   scroll-padding-bottom: 28px;
+}
+
+.agent-history-index-scroll {
+  flex: 0 0 12px;
+  min-width: 12px;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-primary) 16%, transparent) transparent;
+}
+
+.agent-history-index-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agent-history-index-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-history-index-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+  border-radius: 999px;
+}
+
+.agent-history-index-scroll-sizer {
+  width: 1px;
 }
 
 .agent-composer-shell {

@@ -12,11 +12,14 @@ export interface SessionLensViewState {
   debugScenarioActive: boolean;
   activationRunId: number;
   historyViewport: HTMLDivElement | null;
+  historyIndexScrollHost: HTMLDivElement | null;
+  historyIndexScrollSizer: HTMLDivElement | null;
   historyEntries: LensHistoryEntry[];
   historyWindowStart: number;
   historyWindowCount: number;
   historyWindowTargetCount: number;
   historyViewportSyncPending: boolean;
+  historyViewportSyncQueuedDuringRefresh: boolean;
   disconnectStream: (() => void) | null;
   streamConnected: boolean;
   refreshInFlight: boolean;
@@ -30,6 +33,7 @@ export interface SessionLensViewState {
   historyLastVoidSyncScrollTop: number | null;
   historyWindowRevision: string | null;
   historyWindowViewportWidth: number | null;
+  historyIndexVisibleCount: number;
   historyRenderScheduled: number | null;
   historyRenderBatchHandle: number | null;
   activationState:

@@ -17,6 +17,7 @@ import {
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 export const HISTORY_VIRTUALIZE_AFTER = 50;
 export const LENS_HISTORY_OVERSCAN_ITEMS = DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG.overscanItems;
+export const LENS_HISTORY_INDEX_SCROLL_STEP_PX = 4;
 
 type HistoryHeightResolver = (entry: LensHistoryEntry, index: number) => number;
 

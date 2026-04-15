@@ -37,11 +37,15 @@ import {
 } from './snapshotState';
 import {
   hasActiveLensSelectionInPanel,
+  LENS_HISTORY_INDEX_SCROLL_STEP_PX,
   resolveHistoryScrollMode,
   setHistoryScrollMode,
   stabilizeHistoryEntryOrder,
 } from './historyViewport';
-import { resolveHistoryWindowViewportWidth } from './historyMeasurements';
+import {
+  resolveHistoryWindowViewportWidth,
+  resolveRepresentativeHistoryEntryHeight,
+} from './historyMeasurements';
 import { createAgentHistoryDom } from './historyDom';
 import { createAgentHistoryRender } from './historyRender';
 import {
@@ -670,11 +674,14 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     debugScenarioActive: false,
     activationRunId: 0,
     historyViewport: null,
+    historyIndexScrollHost: null,
+    historyIndexScrollSizer: null,
     historyEntries: [],
     historyWindowStart: 0,
     historyWindowCount: initialHistoryWindowCount,
     historyWindowTargetCount: initialHistoryWindowCount,
     historyViewportSyncPending: false,
+    historyViewportSyncQueuedDuringRefresh: false,
     disconnectStream: null,
     streamConnected: false,
     refreshInFlight: false,
@@ -688,6 +695,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyLastVoidSyncScrollTop: null,
     historyWindowRevision: null,
     historyWindowViewportWidth: null,
+    historyIndexVisibleCount: 0,
     historyRenderScheduled: null,
     historyRenderBatchHandle: null,
     activationState: 'idle',
@@ -736,12 +744,43 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
   return created;
 }
 
+function resolveHistoryIndexVisibleCount(state: SessionLensViewState): number {
+  const viewportHeight = Math.max(1, state.historyViewport?.clientHeight ?? 0);
+  const representativeHeight = resolveRepresentativeHistoryEntryHeight(
+    state.historyObservedHeights.values(),
+  );
+  return Math.max(1, Math.ceil(viewportHeight / representativeHeight));
+}
+
+function syncHistoryIndexScrollbar(state: SessionLensViewState): void {
+  const scrollHost = state.historyIndexScrollHost;
+  const scrollSizer = state.historyIndexScrollSizer;
+  if (!scrollHost || !scrollSizer) {
+    return;
+  }
+
+  state.historyIndexVisibleCount = resolveHistoryIndexVisibleCount(state);
+  scrollSizer.style.height = `${Math.max(
+    scrollHost.clientHeight,
+    (state.snapshot?.historyCount ?? state.historyEntries.length) *
+      LENS_HISTORY_INDEX_SCROLL_STEP_PX,
+  )}px`;
+}
+
 function bindHistoryViewport(sessionId: string, state: SessionLensViewState): void {
   const viewport = state.panel.querySelector<HTMLDivElement>('[data-agent-field="history"]');
   state.historyViewport = viewport;
+  state.historyIndexScrollHost = state.panel.querySelector<HTMLDivElement>(
+    '[data-agent-field="history-index-scroll"]',
+  );
+  state.historyIndexScrollSizer = state.panel.querySelector<HTMLDivElement>(
+    '[data-agent-field="history-index-scroll-sizer"]',
+  );
   if (!viewport) {
     return;
   }
+
+  syncHistoryIndexScrollbar(state);
 
   state.historyViewportSize = {
     width: viewport.clientWidth,
@@ -782,17 +821,21 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
         Math.max(LENS_HISTORY_WINDOW_SIZE, current.historyWindowCount),
         current.historyObservedHeights.values(),
       );
+      syncHistoryIndexScrollbar(current);
       syncLiveHistoryWindowViewport(sessionId, current);
       scheduleHistoryRender(sessionId);
     });
     state.historyViewportResizeObserver.observe(viewport);
   }
 
-  if (viewport.dataset.lensScrollBound === 'true') {
+  const scrollHost = state.historyIndexScrollHost;
+  const scrollEventTarget = scrollHost ?? viewport;
+
+  if (scrollEventTarget.dataset.lensScrollBound === 'true') {
     return;
   }
 
-  viewport.dataset.lensScrollBound = 'true';
+  scrollEventTarget.dataset.lensScrollBound = 'true';
   let lastTouchClientY: number | null = null;
   const markUserScrollIntent = () => {
     const current = viewStates.get(sessionId);
@@ -816,6 +859,22 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     setHistoryScrollMode(current, 'browse');
     historyRender.renderScrollToBottomControl(current.panel, current);
   };
+  const stepIndexScroll = (deltaPx: number) => {
+    const current = viewStates.get(sessionId);
+    const currentScrollHost = current?.historyIndexScrollHost ?? current?.historyViewport;
+    if (!current || !currentScrollHost) {
+      return;
+    }
+
+    syncHistoryIndexScrollbar(current);
+    currentScrollHost.scrollTop = Math.max(
+      0,
+      Math.min(
+        currentScrollHost.scrollHeight - currentScrollHost.clientHeight,
+        currentScrollHost.scrollTop + deltaPx,
+      ),
+    );
+  };
   viewport.addEventListener(
     'wheel',
     (event) => {
@@ -823,8 +882,12 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       if (event.deltaY < 0) {
         detachFollowForExplicitBrowseIntent();
       }
+      if ('preventDefault' in event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      stepIndexScroll(event.deltaY);
     },
-    { passive: true },
+    { passive: false },
   );
   viewport.addEventListener(
     'touchstart',
@@ -846,6 +909,9 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       ) {
         detachFollowForExplicitBrowseIntent();
       }
+      if (typeof nextTouchClientY === 'number' && typeof lastTouchClientY === 'number') {
+        stepIndexScroll(lastTouchClientY - nextTouchClientY);
+      }
       lastTouchClientY = nextTouchClientY;
     },
     { passive: true },
@@ -865,20 +931,52 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     { passive: true },
   );
   viewport.addEventListener('pointerdown', markUserScrollIntent, { passive: true });
+  /* eslint-disable complexity -- key-driven index scrolling intentionally handles the compact browse command set in one place. */
   viewport.addEventListener('keydown', (event) => {
     markUserScrollIntent();
+    if (
+      event.key === 'ArrowUp' ||
+      event.key === 'PageUp' ||
+      event.key === 'Home' ||
+      event.key === 'ArrowDown' ||
+      event.key === 'PageDown' ||
+      event.key === 'End'
+    ) {
+      event.preventDefault();
+    }
     if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
       detachFollowForExplicitBrowseIntent();
     }
+    if (event.key === 'ArrowUp') {
+      stepIndexScroll(-LENS_HISTORY_INDEX_SCROLL_STEP_PX);
+    } else if (event.key === 'ArrowDown') {
+      stepIndexScroll(LENS_HISTORY_INDEX_SCROLL_STEP_PX);
+    } else if (event.key === 'PageUp') {
+      stepIndexScroll(
+        -Math.max(1, state.historyIndexVisibleCount) * LENS_HISTORY_INDEX_SCROLL_STEP_PX,
+      );
+    } else if (event.key === 'PageDown') {
+      stepIndexScroll(
+        Math.max(1, state.historyIndexVisibleCount) * LENS_HISTORY_INDEX_SCROLL_STEP_PX,
+      );
+    } else if (event.key === 'Home') {
+      stepIndexScroll(-(scrollHost ?? viewport).scrollHeight);
+    } else if (event.key === 'End') {
+      stepIndexScroll((scrollHost ?? viewport).scrollHeight);
+    }
   });
-  viewport.addEventListener('scroll', () => {
+  /* eslint-enable complexity */
+  /* eslint-disable complexity -- scroll/fetch coordination stays consolidated here while the index-scroll model settles. */
+  const handleIndexScroll = () => {
     const current = viewStates.get(sessionId);
     const currentViewport = current?.historyViewport;
-    if (!current || !currentViewport) {
+    const currentScrollHost = current?.historyIndexScrollHost ?? current?.historyViewport;
+    if (!current || !currentViewport || !currentScrollHost) {
       return;
     }
 
-    const scrollMetrics = historyRender.readHistoryScrollMetrics(currentViewport);
+    syncHistoryIndexScrollbar(current);
+    const scrollMetrics = historyRender.readHistoryScrollMetrics(currentViewport, current);
     setHistoryScrollMode(
       current,
       resolveHistoryScrollMode({
@@ -895,12 +993,16 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     );
     current.historyLastScrollMetrics = scrollMetrics;
     historyRender.renderScrollToBottomControl(current.panel, current);
+    if (current.refreshInFlight && !current.historyAutoScrollPinned) {
+      current.historyViewportSyncPending = true;
+      current.historyViewportSyncQueuedDuringRefresh = true;
+    }
     const fetchThresholdPx = Math.max(
       resolveLensHistoryFetchThresholdPx(current),
-      Math.round(currentViewport.clientHeight * 0.8),
+      Math.round(Math.max(1, current.historyIndexVisibleCount) * LENS_HISTORY_INDEX_SCROLL_STEP_PX),
     );
     const distanceFromBottom =
-      currentViewport.scrollHeight - currentViewport.clientHeight - currentViewport.scrollTop;
+      currentScrollHost.scrollHeight - currentScrollHost.clientHeight - currentScrollHost.scrollTop;
 
     if (current.snapshot?.hasNewerHistory && distanceFromBottom <= fetchThresholdPx) {
       if (current.historyAutoScrollPinned) {
@@ -915,7 +1017,12 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     if (historyRender.shouldRenderForViewportScroll(current)) {
       scheduleHistoryRender(sessionId);
     }
-  });
+  };
+  /* eslint-enable complexity */
+  if (scrollHost) {
+    scrollHost.addEventListener('scroll', handleIndexScroll);
+  }
+  viewport.addEventListener('scroll', handleIndexScroll);
 
   const scrollButton = state.panel.querySelector<HTMLButtonElement>(
     '[data-agent-field="scroll-to-bottom"]',
@@ -1300,7 +1407,9 @@ async function refreshLensSnapshot(
     renderCurrentAgentView(sessionId);
   } finally {
     state.refreshInFlight = false;
-    flushPendingHistoryWindowViewportSync(sessionId, state);
+    if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+      flushPendingHistoryWindowViewportSync(sessionId, state);
+    }
   }
 }
 
@@ -1343,7 +1452,9 @@ async function loadLatestLensHistoryWindow(
     log.warn(() => `Failed to load latest Lens history for ${sessionId}: ${String(error)}`);
   } finally {
     state.refreshInFlight = false;
-    flushPendingHistoryWindowViewportSync(sessionId, state);
+    if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+      flushPendingHistoryWindowViewportSync(sessionId, state);
+    }
   }
 }
 
@@ -1360,6 +1471,16 @@ function queueHistoryWindowViewportSync(sessionId: string, state: SessionLensVie
   flushPendingHistoryWindowViewportSync(sessionId, state);
 }
 
+function flushQueuedRefreshViewportSync(sessionId: string, state: SessionLensViewState): boolean {
+  if (state.historyViewportSyncQueuedDuringRefresh && !state.historyAutoScrollPinned) {
+    state.historyViewportSyncQueuedDuringRefresh = false;
+    void syncHistoryWindowToViewport(sessionId, state, true);
+    return true;
+  }
+
+  return false;
+}
+
 function flushPendingHistoryWindowViewportSync(
   sessionId: string,
   state: SessionLensViewState,
@@ -1370,13 +1491,15 @@ function flushPendingHistoryWindowViewportSync(
 
   state.historyViewportSyncPending = false;
   if (!state.historyAutoScrollPinned) {
-    void syncHistoryWindowToViewport(sessionId, state);
+    void syncHistoryWindowToViewport(sessionId, state, true);
   }
 }
 
+/* eslint-disable complexity -- viewport/window synchronization keeps both forced and anchored browse paths in one place while the index-scroll model settles. */
 async function syncHistoryWindowToViewport(
   sessionId: string,
   state: SessionLensViewState,
+  forceRequest = false,
 ): Promise<void> {
   if (state.refreshInFlight || !state.snapshot) {
     state.historyViewportSyncPending = true;
@@ -1392,6 +1515,43 @@ async function syncHistoryWindowToViewport(
     anchorAbsoluteIndex,
   });
   if (!requestedWindow) {
+    if (forceRequest) {
+      state.refreshInFlight = true;
+      try {
+        const windowRevision = issueHistoryWindowRevision(sessionId, state);
+        const nextSnapshot = await requestLensHistoryWindow(
+          sessionId,
+          state,
+          state.historyWindowStart,
+          state.historyWindowCount,
+          windowRevision,
+        );
+        traceLensHistoryFetch(sessionId, nextSnapshot, 'scroll');
+        recordVirtualizerFetch(state, {
+          reason: 'scroll',
+          requestedStart: state.historyWindowStart,
+          requestedCount: state.historyWindowCount,
+          returnedStart: nextSnapshot.historyWindowStart,
+          returnedEnd: nextSnapshot.historyWindowEnd,
+          historyCount: nextSnapshot.historyCount,
+        });
+        if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
+          renderCurrentAgentView(sessionId);
+        }
+      } catch (error) {
+        log.warn(
+          () =>
+            `Failed to force-refresh viewport-centered Lens history for ${sessionId}: ${String(error)}`,
+        );
+      } finally {
+        state.refreshInFlight = false;
+        if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+          flushPendingHistoryWindowViewportSync(sessionId, state);
+        }
+      }
+      return;
+    }
+
     state.pendingHistoryPrependAnchor = null;
     return;
   }
@@ -1429,9 +1589,12 @@ async function syncHistoryWindowToViewport(
     );
   } finally {
     state.refreshInFlight = false;
-    flushPendingHistoryWindowViewportSync(sessionId, state);
+    if (!flushQueuedRefreshViewportSync(sessionId, state)) {
+      flushPendingHistoryWindowViewportSync(sessionId, state);
+    }
   }
 }
+/* eslint-enable complexity */
 
 function renderCurrentAgentView(
   sessionId: string,
