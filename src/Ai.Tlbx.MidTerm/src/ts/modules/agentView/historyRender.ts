@@ -27,6 +27,7 @@ import {
 } from '../../utils/virtualizer';
 import type {
   ArtifactClusterInfo,
+  HistoryPlaceholderBlock,
   HistoryRenderPlan,
   HistoryScrollMetrics,
   HistoryVirtualWindow,
@@ -35,6 +36,7 @@ import type {
   LensHistoryEntry,
   SessionLensViewState,
 } from './types';
+/* eslint-disable max-lines -- Lens history rendering/virtualization remains intentionally consolidated while the browser-side virtualizer is being hardened. */
 
 function lensText(key: string, fallback: string): string {
   const translated = t(key);
@@ -56,7 +58,15 @@ type HistoryRenderDeps = {
       showAssistantBadge?: boolean;
     },
   ) => HTMLElement;
+  syncBusyIndicatorEntry?: (node: HTMLElement, entry: LensHistoryEntry) => void;
   createHistorySpacer: (heightPx: number) => HTMLElement;
+  createHistoryPlaceholderBlock?: (args: {
+    heightPx: number;
+    itemCount: number;
+    direction: 'earlier' | 'later';
+    label: string;
+    rangeLabel: string;
+  }) => HTMLElement;
   createRequestActionBlock: (
     sessionId: string,
     request: LensHistoryRequestSummary,
@@ -69,7 +79,11 @@ type HistoryRenderDeps = {
     entries: readonly LensHistoryEntry[],
   ) => void;
   renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
+  syncViewportHistoryWindow?: (sessionId: string) => void;
 };
+
+const HISTORY_PLACEHOLDER_TARGET_BLOCK_HEIGHT_PX = 960;
+const HISTORY_PLACEHOLDER_MAX_BLOCKS = 10;
 
 export type HistoryWindowViewportMetrics = VirtualizerWindowViewportMetrics;
 
@@ -470,6 +484,83 @@ function sumHistoryEntryHeights(
   return total;
 }
 
+function createFallbackHistoryPlaceholderBlock(args: {
+  heightPx: number;
+  itemCount: number;
+  direction: 'earlier' | 'later';
+  label: string;
+  rangeLabel: string;
+}): HTMLDivElement {
+  const block = document.createElement('div');
+  block.className = 'agent-history-placeholder';
+  block.dataset.direction = args.direction;
+  block.style.height = `${Math.max(0, Math.round(args.heightPx))}px`;
+  return block;
+}
+
+function formatHistoryPlaceholderRange(startIndex: number, endIndex: number): string {
+  const start = startIndex + 1;
+  const end = endIndex;
+  if (end <= start) {
+    return `${Math.max(1, start)}`;
+  }
+
+  return `${Math.max(1, start)}-${Math.max(start, end)}`;
+}
+
+function buildHistoryPlaceholderBlocks(args: {
+  keyPrefix: string;
+  heightPx: number;
+  itemCount: number;
+  direction: 'earlier' | 'later';
+  label: string;
+  absoluteStart: number;
+}): HistoryPlaceholderBlock[] {
+  const roundedHeightPx = Math.max(0, Math.round(args.heightPx));
+  if (roundedHeightPx <= 0 || args.itemCount <= 0) {
+    return [];
+  }
+
+  const blockCount = Math.max(
+    1,
+    Math.min(
+      HISTORY_PLACEHOLDER_MAX_BLOCKS,
+      Math.ceil(roundedHeightPx / HISTORY_PLACEHOLDER_TARGET_BLOCK_HEIGHT_PX),
+      args.itemCount,
+    ),
+  );
+  const blocks: HistoryPlaceholderBlock[] = [];
+  let remainingHeightPx = roundedHeightPx;
+  let remainingItemCount = args.itemCount;
+  let nextAbsoluteIndex = args.absoluteStart;
+
+  for (let index = 0; index < blockCount; index += 1) {
+    const slotsLeft = blockCount - index;
+    const blockItemCount = Math.max(1, Math.round(remainingItemCount / slotsLeft));
+    const blockHeightPx =
+      index === blockCount - 1
+        ? remainingHeightPx
+        : Math.max(blockItemCount, Math.round(remainingHeightPx / slotsLeft));
+    const nextAbsoluteEnd = Math.min(
+      args.absoluteStart + args.itemCount,
+      nextAbsoluteIndex + blockItemCount,
+    );
+    blocks.push({
+      key: `${args.keyPrefix}-${index}`,
+      heightPx: blockHeightPx,
+      itemCount: blockItemCount,
+      direction: args.direction,
+      label: args.label,
+      rangeLabel: formatHistoryPlaceholderRange(nextAbsoluteIndex, nextAbsoluteEnd),
+    });
+    remainingHeightPx = Math.max(0, remainingHeightPx - blockHeightPx);
+    remainingItemCount = Math.max(0, remainingItemCount - blockItemCount);
+    nextAbsoluteIndex = nextAbsoluteEnd;
+  }
+
+  return blocks;
+}
+
 function expandHistoryVirtualWindowForPendingAnchor(args: {
   entries: readonly LensHistoryEntry[];
   virtualWindow: HistoryVirtualWindow;
@@ -517,6 +608,7 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
   };
 }
 
+/* eslint-disable max-lines-per-function, complexity -- Lens history render orchestration is intentionally centralized while the virtualizer contract is still moving. */
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function isVirtualizedHistoryContext(
     state: SessionLensViewState | undefined,
@@ -532,7 +624,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return true;
     }
 
-    if (state.historyTopSpacer !== null || state.historyBottomSpacer !== null) {
+    if (
+      state.historyLeadingPlaceholders.length > 0 ||
+      state.historyTrailingPlaceholders.length > 0
+    ) {
       return true;
     }
 
@@ -608,8 +703,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return {
         emptyStateText: lensText('lens.emptyHistory', 'No history entries yet.'),
         virtualWindowKey: null,
-        topSpacerPx: 0,
-        bottomSpacerPx: 0,
+        leadingPlaceholders: [],
+        trailingPlaceholders: [],
         visibleEntries: [],
       };
     }
@@ -635,12 +730,50 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state,
       resolveEntryHeight,
     });
+    const retainedWindowStart = windowMetrics.retainedWindowStart;
+    const retainedWindowEnd = windowMetrics.retainedWindowEnd;
+    const leadingPlaceholders = [
+      ...buildHistoryPlaceholderBlocks({
+        keyPrefix: 'history-off-window-earlier',
+        heightPx: windowMetrics.effectiveOffWindowTopSpacerPx,
+        itemCount: retainedWindowStart,
+        direction: 'earlier',
+        label: lensText('lens.history.placeholderEarlier', 'Earlier history'),
+        absoluteStart: 0,
+      }),
+      ...buildHistoryPlaceholderBlocks({
+        keyPrefix: 'history-retained-earlier',
+        heightPx: renderedWindow.topSpacerPx,
+        itemCount: renderedWindow.start,
+        direction: 'earlier',
+        label: lensText('lens.history.placeholderNearbyEarlier', 'Buffered earlier rows'),
+        absoluteStart: retainedWindowStart,
+      }),
+    ];
+    const trailingPlaceholders = [
+      ...buildHistoryPlaceholderBlocks({
+        keyPrefix: 'history-retained-later',
+        heightPx: renderedWindow.bottomSpacerPx,
+        itemCount: Math.max(0, entries.length - renderedWindow.end),
+        direction: 'later',
+        label: lensText('lens.history.placeholderNearbyLater', 'Buffered later rows'),
+        absoluteStart: retainedWindowStart + renderedWindow.end,
+      }),
+      ...buildHistoryPlaceholderBlocks({
+        keyPrefix: 'history-off-window-later',
+        heightPx: windowMetrics.offWindowBottomSpacerPx,
+        itemCount: Math.max(0, windowMetrics.totalCount - retainedWindowEnd),
+        direction: 'later',
+        label: lensText('lens.history.placeholderLater', 'Later history'),
+        absoluteStart: retainedWindowEnd,
+      }),
+    ];
 
     return {
       emptyStateText: null,
       virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
-      topSpacerPx: windowMetrics.effectiveOffWindowTopSpacerPx + renderedWindow.topSpacerPx,
-      bottomSpacerPx: windowMetrics.offWindowBottomSpacerPx + renderedWindow.bottomSpacerPx,
+      leadingPlaceholders,
+      trailingPlaceholders,
       visibleEntries: buildVisibleHistoryEntries({
         entries,
         visibleStart: renderedWindow.start,
@@ -667,7 +800,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return true;
     }
 
-    if (state.historyTopSpacer === null && state.historyBottomSpacer === null) {
+    const leadingPlaceholders = state.historyLeadingPlaceholders;
+    const trailingPlaceholders = state.historyTrailingPlaceholders;
+    if (leadingPlaceholders.length === 0 && trailingPlaceholders.length === 0) {
       return false;
     }
 
@@ -691,14 +826,33 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     measurementChanged: boolean,
   ): void {
     const browseViewportAdjusted = adjustBrowseViewportIfNeeded(viewport, state);
+    const hasPlaceholderRanges =
+      state !== undefined &&
+      (state.historyLeadingPlaceholders.length > 0 || state.historyTrailingPlaceholders.length > 0);
+    const viewportHasConcreteRows =
+      !state || !hasPlaceholderRanges ? true : hasIntersectingRenderedHistoryEntry(viewport, state);
 
     if (state?.historyAutoScrollPinned) {
+      state.historyLastVoidSyncScrollTop = null;
       syncPinnedHistoryViewport(sessionId, panel, viewport, entries.length);
     } else if (state && browseViewportAdjusted) {
+      state.historyLastVoidSyncScrollTop = null;
       state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport);
       renderScrollToBottomControl(panel, state);
       if (isVirtualizedHistoryContext(state, entries.length)) {
         deps.scheduleHistoryRender(sessionId);
+      }
+    }
+
+    if (state && viewportHasConcreteRows) {
+      state.historyLastVoidSyncScrollTop = null;
+    }
+
+    if (state && !state.historyAutoScrollPinned && entries.length > 0 && !viewportHasConcreteRows) {
+      const roundedScrollTop = Math.round(viewport.scrollTop);
+      if (state.historyLastVoidSyncScrollTop !== roundedScrollTop) {
+        state.historyLastVoidSyncScrollTop = roundedScrollTop;
+        deps.syncViewportHistoryWindow?.(sessionId);
       }
     }
 
@@ -811,18 +965,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       syncOrderedChildren(container, [emptyNode]);
       state.historyMeasurementObserver?.disconnect();
       state.historyRenderedNodes.clear();
-      state.historyTopSpacer = null;
-      state.historyBottomSpacer = null;
+      state.historyLeadingPlaceholders = [];
+      state.historyTrailingPlaceholders = [];
       return;
     }
 
     state.historyEmptyState = null;
     const nextChildren: HTMLElement[] = [];
-    if (plan.topSpacerPx > 0) {
-      nextChildren.push(ensureHistorySpacerNode(state, 'top', plan.topSpacerPx));
-    } else {
-      state.historyTopSpacer = null;
-    }
+    nextChildren.push(
+      ...resolveHistoryPlaceholderNodes(state, 'leading', plan.leadingPlaceholders),
+    );
 
     const visibleKeys = new Set<string>();
     for (const visibleEntry of plan.visibleEntries) {
@@ -836,11 +988,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       }
     }
 
-    if (plan.bottomSpacerPx > 0) {
-      nextChildren.push(ensureHistorySpacerNode(state, 'bottom', plan.bottomSpacerPx));
-    } else {
-      state.historyBottomSpacer = null;
-    }
+    nextChildren.push(
+      ...resolveHistoryPlaceholderNodes(state, 'trailing', plan.trailingPlaceholders),
+    );
 
     syncOrderedChildren(container, nextChildren);
     state.historyLastVirtualWindowKey = plan.virtualWindowKey;
@@ -856,20 +1006,66 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     return state.historyEmptyState;
   }
 
-  function ensureHistorySpacerNode(
+  function ensureHistoryPlaceholderNode(
     state: SessionLensViewState,
-    position: 'top' | 'bottom',
-    heightPx: number,
+    position: 'leading' | 'trailing',
+    blockIndex: number,
+    block: HistoryPlaceholderBlock,
   ): HTMLDivElement {
-    const existing = position === 'top' ? state.historyTopSpacer : state.historyBottomSpacer;
-    const spacer = existing ?? (deps.createHistorySpacer(0) as HTMLDivElement);
-    spacer.style.height = `${Math.max(0, Math.round(heightPx))}px`;
-    if (position === 'top') {
-      state.historyTopSpacer = spacer;
-    } else {
-      state.historyBottomSpacer = spacer;
+    const store =
+      position === 'leading' ? state.historyLeadingPlaceholders : state.historyTrailingPlaceholders;
+    const existing = store[blockIndex];
+    const placeholderFactory =
+      deps.createHistoryPlaceholderBlock ?? createFallbackHistoryPlaceholderBlock;
+    const node =
+      existing ??
+      (placeholderFactory({
+        heightPx: block.heightPx,
+        itemCount: block.itemCount,
+        direction: block.direction,
+        label: block.label,
+        rangeLabel: block.rangeLabel,
+      }) as HTMLDivElement);
+    node.className = 'agent-history-placeholder';
+    node.dataset.direction = block.direction;
+    node.dataset.placeholderKey = block.key;
+    node.style.height = `${Math.max(0, Math.round(block.heightPx))}px`;
+    const selectorRoot = node as unknown as Record<string, unknown>;
+    if (typeof selectorRoot['querySelector'] !== 'function') {
+      store[blockIndex] = node;
+      return node;
     }
-    return spacer;
+
+    // Existing placeholder nodes are reused, so refresh their visible labels.
+    const title = node.querySelector<HTMLElement>('.agent-history-placeholder-title');
+    if (title) {
+      title.textContent = block.label;
+    }
+
+    const meta = node.querySelector<HTMLElement>('.agent-history-placeholder-meta');
+    if (meta) {
+      meta.textContent = `${block.itemCount} items${block.rangeLabel ? ` • ${block.rangeLabel}` : ''}`;
+    }
+    node.setAttribute(
+      'aria-label',
+      `${block.label}: ${block.itemCount} items represented by an estimated placeholder block`,
+    );
+    store[blockIndex] = node;
+    return node;
+  }
+
+  function resolveHistoryPlaceholderNodes(
+    state: SessionLensViewState,
+    position: 'leading' | 'trailing',
+    blocks: readonly HistoryPlaceholderBlock[],
+  ): HTMLDivElement[] {
+    const store =
+      position === 'leading' ? state.historyLeadingPlaceholders : state.historyTrailingPlaceholders;
+    const nodes = blocks.map((block, index) =>
+      ensureHistoryPlaceholderNode(state, position, index, block),
+    );
+    store.length = blocks.length;
+    return nodes;
   }
 
   function resolveRenderedHistoryNode(
@@ -878,6 +1074,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     visibleEntry: HistoryVisibleEntry,
   ): HTMLElement {
     const existing = state.historyRenderedNodes.get(visibleEntry.key);
+    if (existing && existing.entry.busyIndicator && visibleEntry.entry.busyIndicator) {
+      deps.syncBusyIndicatorEntry?.(existing.node, visibleEntry.entry);
+      existing.node.dataset.lensEntryId = visibleEntry.key;
+      existing.signature = visibleEntry.signature;
+      existing.entry = visibleEntry.entry;
+      existing.cluster = visibleEntry.cluster;
+      existing.lastMeasuredWidthBucket = null;
+      return existing.node;
+    }
+
     if (existing && existing.signature === visibleEntry.signature) {
       existing.node.dataset.lensEntryId = visibleEntry.key;
       return existing.node;
@@ -1099,7 +1305,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     if (
       state.historyRenderedNodes.size > 0 &&
-      (state.historyTopSpacer !== null || state.historyBottomSpacer !== null) &&
+      (state.historyLeadingPlaceholders.length > 0 ||
+        state.historyTrailingPlaceholders.length > 0) &&
       !hasIntersectingRenderedHistoryEntry(viewport, state)
     ) {
       return true;
@@ -1253,3 +1460,5 @@ function findArtifactClusterBoundary(
     boundary = nextIndex;
   }
 }
+/* eslint-enable max-lines-per-function, complexity */
+/* eslint-enable max-lines */

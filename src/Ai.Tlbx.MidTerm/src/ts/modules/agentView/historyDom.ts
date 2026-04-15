@@ -33,6 +33,7 @@ import type {
 } from './types';
 
 const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 3770;
+const BUSY_SPIN_WALLCLOCK_CYCLE_MS = 1150;
 
 function lensText(key: string, fallback: string): string {
   const translated = t(key);
@@ -202,6 +203,83 @@ function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
 
 /* eslint-disable max-lines-per-function -- history row rendering remains intentionally consolidated in one DOM factory. */
 export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
+  function resolveWallclockNowMs(): number {
+    if (typeof performance === 'undefined' || typeof performance.now !== 'function') {
+      return Date.now();
+    }
+
+    if (typeof performance.timeOrigin === 'number' && Number.isFinite(performance.timeOrigin)) {
+      return performance.timeOrigin + performance.now();
+    }
+
+    return Date.now() + performance.now();
+  }
+
+  function resolveWallclockAnimationDelayMs(cycleMs: number): string {
+    const nowMs = resolveWallclockNowMs();
+    const phaseMs = ((nowMs % cycleMs) + cycleMs) % cycleMs;
+    const delayMs = -phaseMs;
+    return `${delayMs.toFixed(3).replace(/\.?0+$/, '')}ms`;
+  }
+
+  function applyBusyIndicatorPhaseLock(root: ParentNode): void {
+    const selectorRoot = root as unknown as Record<string, unknown>;
+    if (typeof selectorRoot['querySelector'] !== 'function') {
+      return;
+    }
+
+    const label = (root as Element).querySelector<HTMLElement>('.agent-history-busy-label');
+    if (label) {
+      label.style.setProperty(
+        '--agent-busy-animation-delay-ms',
+        resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS),
+      );
+    }
+
+    const spinner = (root as Element).querySelector<HTMLElement>('.agent-history-busy-spinner');
+    if (spinner) {
+      spinner.style.setProperty(
+        '--agent-busy-spin-delay-ms',
+        resolveWallclockAnimationDelayMs(BUSY_SPIN_WALLCLOCK_CYCLE_MS),
+      );
+    }
+  }
+
+  function syncBusyIndicatorEntry(article: HTMLElement, entry: LensHistoryEntry): void {
+    if (!entry.busyIndicator) {
+      return;
+    }
+
+    const selectorRoot = article as unknown as Record<string, unknown>;
+    if (typeof selectorRoot['querySelector'] !== 'function') {
+      return;
+    }
+
+    const labelText = entry.body || 'Working';
+    const label = article.querySelector<HTMLElement>('.agent-history-busy-label');
+    if (label) {
+      label.dataset.text = labelText;
+      const labelBase = label.querySelector<HTMLElement>('.agent-history-busy-label-base');
+      if (labelBase && labelBase.textContent !== labelText) {
+        labelBase.textContent = labelText;
+      }
+      const labelGlow = label.querySelector<HTMLElement>('.agent-history-busy-label-glow');
+      if (labelGlow && labelGlow.textContent !== labelText) {
+        labelGlow.textContent = labelText;
+      }
+    }
+
+    const elapsed = article.querySelector<HTMLElement>('.agent-history-busy-elapsed');
+    if (elapsed) {
+      const elapsedText = entry.busyElapsedText ?? '0s';
+      if (elapsed.textContent !== elapsedText) {
+        elapsed.textContent = elapsedText;
+      }
+    }
+
+    applyBusyIndicatorPhaseLock(article);
+  }
+
   function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
     const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
     if (!host) {
@@ -516,13 +594,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';
     const labelText = entry.body || 'Working';
-    const animationDelayMs = -(Date.now() % BUSY_SWEEP_WALLCLOCK_CYCLE_MS);
-    if (typeof label.style.setProperty === 'function') {
-      label.style.setProperty('--agent-busy-animation-delay-ms', `${animationDelayMs}ms`);
-    } else {
-      const style = label.style as CSSStyleDeclaration & Record<string, string>;
-      style['--agent-busy-animation-delay-ms'] = `${animationDelayMs}ms`;
-    }
     label.dataset.text = labelText;
     const labelBase = document.createElement('span');
     labelBase.className = 'agent-history-busy-label-base';
@@ -547,6 +618,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     status.appendChild(cancelHint);
     bubble.appendChild(status);
     article.appendChild(bubble);
+    syncBusyIndicatorEntry(article, entry);
     return article;
   }
 
@@ -659,6 +731,39 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     spacer.className = 'agent-history-spacer';
     spacer.style.height = `${Math.max(0, Math.round(heightPx))}px`;
     return spacer;
+  }
+
+  function createHistoryPlaceholderBlock(args: {
+    heightPx: number;
+    itemCount: number;
+    direction: 'earlier' | 'later';
+    label: string;
+    rangeLabel: string;
+  }): HTMLElement {
+    const block = document.createElement('div');
+    block.className = 'agent-history-placeholder';
+    block.dataset.direction = args.direction;
+    block.style.height = `${Math.max(0, Math.round(args.heightPx))}px`;
+    block.setAttribute(
+      'aria-label',
+      `${args.label}: ${args.itemCount} items represented by an estimated placeholder block`,
+    );
+
+    const chip = document.createElement('div');
+    chip.className = 'agent-history-placeholder-chip';
+
+    const title = document.createElement('span');
+    title.className = 'agent-history-placeholder-title';
+    title.textContent = args.label;
+    chip.appendChild(title);
+
+    const meta = document.createElement('span');
+    meta.className = 'agent-history-placeholder-meta';
+    meta.textContent = `${args.itemCount} items${args.rangeLabel ? ` • ${args.rangeLabel}` : ''}`;
+    chip.appendChild(meta);
+
+    block.appendChild(chip);
+    return block;
   }
 
   function getCachedAssistantMarkdown(
@@ -870,10 +975,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   return {
     createHistoryEntry,
+    createHistoryPlaceholderBlock,
     createHistorySpacer,
     createRequestActionBlock,
     pruneAssistantMarkdownCache,
     renderRuntimeStats,
+    syncBusyIndicatorEntry,
   };
 }
 /* eslint-enable max-lines-per-function */

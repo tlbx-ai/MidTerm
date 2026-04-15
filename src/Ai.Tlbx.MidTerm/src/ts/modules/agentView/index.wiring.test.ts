@@ -298,8 +298,12 @@ describe('agent view Lens wiring', () => {
     expect(historyDomSource).toContain("labelBase.className = 'agent-history-busy-label-base'");
     expect(historyDomSource).toContain("labelGlow.className = 'agent-history-busy-label-glow'");
     expect(historyDomSource).toContain('BUSY_SWEEP_WALLCLOCK_CYCLE_MS');
+    expect(historyDomSource).toContain('BUSY_SPIN_WALLCLOCK_CYCLE_MS');
     expect(historyDomSource).toContain('--agent-busy-animation-delay-ms');
-    expect(historyDomSource).toContain('-(Date.now() % BUSY_SWEEP_WALLCLOCK_CYCLE_MS)');
+    expect(historyDomSource).toContain('--agent-busy-spin-delay-ms');
+    expect(historyDomSource).toContain('resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS)');
+    expect(historyDomSource).toContain('resolveWallclockAnimationDelayMs(BUSY_SPIN_WALLCLOCK_CYCLE_MS)');
+    expect(historyDomSource).toContain('performance.timeOrigin + performance.now()');
     expect(historyDomSource).toContain('agent-history-busy-elapsed');
     expect(historyDomSource).toContain('(Press Esc to cancel)');
     expect(css).toContain('.agent-history-busy-bubble {');
@@ -312,6 +316,8 @@ describe('agent view Lens wiring', () => {
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('mask-size: 300% 100%;');
     expect(css).toContain('-webkit-mask-size: 300% 100%;');
+    expect(css).toContain('animation: agent-history-busy-spin 1.15s linear infinite;');
+    expect(css).toContain('animation-delay: var(--agent-busy-spin-delay-ms, 0ms);');
     expect(css).toContain('animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;');
     expect(css).toContain('animation-delay: var(--agent-busy-animation-delay-ms, 0ms);');
     expect(css).toMatch(/mask-position:\s*66%\s*0;/);

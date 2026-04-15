@@ -12009,6 +12009,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-busy-spinner {
   transform-origin: 12px 12px;
   animation: agent-history-busy-spin 1.15s linear infinite;
+  animation-delay: var(--agent-busy-spin-delay-ms, 0ms);
 }
 
 .agent-history-busy-triangle {
@@ -13207,6 +13208,75 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-history-spacer {
   flex: 0 0 auto;
   pointer-events: none;
+}
+
+.agent-history-placeholder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  margin: 2px 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
+  background:
+    repeating-linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--text-primary) 3%, transparent) 0,
+      color-mix(in srgb, var(--text-primary) 3%, transparent) 18px,
+      transparent 18px,
+      transparent 36px
+    ),
+    color-mix(in srgb, var(--text-primary) 2%, transparent);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.agent-history-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-0) 72%, transparent),
+    transparent 28%,
+    transparent 72%,
+    color-mix(in srgb, var(--surface-0) 72%, transparent)
+  );
+}
+
+.agent-history-placeholder-chip {
+  position: sticky;
+  top: 18px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(100%, 92%);
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 9%, transparent);
+  background: color-mix(in srgb, var(--surface-0) 88%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 78%, var(--text-secondary) 22%);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(8px);
+}
+
+.agent-history-placeholder-title,
+.agent-history-placeholder-meta {
+  position: relative;
+  z-index: 1;
+}
+
+.agent-history-placeholder-title {
+  font-weight: 600;
+}
+
+.agent-history-placeholder-meta {
+  color: color-mix(in srgb, var(--text-secondary) 80%, var(--text-primary) 20%);
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
 }
 
 .agent-history-actions,

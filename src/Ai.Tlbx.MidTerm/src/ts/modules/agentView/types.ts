@@ -27,6 +27,7 @@ export interface SessionLensViewState {
   historyAutoScrollPinned: boolean;
   historyLastScrollMetrics: HistoryScrollMetrics | null;
   historyLastUserScrollIntentAt: number;
+  historyLastVoidSyncScrollTop: number | null;
   historyWindowRevision: string | null;
   historyWindowViewportWidth: number | null;
   historyRenderScheduled: number | null;
@@ -57,8 +58,8 @@ export interface SessionLensViewState {
   historyMeasurementObserver: ResizeObserver | null;
   historyViewportResizeObserver: ResizeObserver | null;
   historyViewportSize: HistoryViewportSize | null;
-  historyTopSpacer: HTMLDivElement | null;
-  historyBottomSpacer: HTMLDivElement | null;
+  historyLeadingPlaceholders: HTMLDivElement[];
+  historyTrailingPlaceholders: HTMLDivElement[];
   historyEmptyState: HTMLDivElement | null;
   pendingHistoryPrependAnchor: HistoryViewportAnchor | null;
   pendingHistoryLayoutAnchor: HistoryViewportAnchor | null;
@@ -203,11 +204,20 @@ export interface HistoryVisibleEntry {
   signature: string;
 }
 
+export interface HistoryPlaceholderBlock {
+  key: string;
+  heightPx: number;
+  itemCount: number;
+  direction: 'earlier' | 'later';
+  label: string;
+  rangeLabel: string;
+}
+
 export interface HistoryRenderPlan {
   emptyStateText: string | null;
   virtualWindowKey: string | null;
-  topSpacerPx: number;
-  bottomSpacerPx: number;
+  leadingPlaceholders: HistoryPlaceholderBlock[];
+  trailingPlaceholders: HistoryPlaceholderBlock[];
   visibleEntries: HistoryVisibleEntry[];
 }
 

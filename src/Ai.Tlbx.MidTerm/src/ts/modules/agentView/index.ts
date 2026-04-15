@@ -215,10 +215,20 @@ const historyRender = createAgentHistoryRender({
   scheduleHistoryRender,
   syncAgentViewPresentation,
   createHistoryEntry: historyDom.createHistoryEntry,
+  createHistoryPlaceholderBlock: historyDom.createHistoryPlaceholderBlock,
+  syncBusyIndicatorEntry: historyDom.syncBusyIndicatorEntry,
   createHistorySpacer: historyDom.createHistorySpacer,
   createRequestActionBlock: historyDom.createRequestActionBlock,
   pruneAssistantMarkdownCache: historyDom.pruneAssistantMarkdownCache,
   renderRuntimeStats: historyDom.renderRuntimeStats,
+  syncViewportHistoryWindow: (sessionId) => {
+    const state = viewStates.get(sessionId);
+    if (!state || state.historyAutoScrollPinned) {
+      return;
+    }
+
+    queueHistoryWindowViewportSync(sessionId, state);
+  },
 });
 
 function lensText(key: string, fallback: string): string {
@@ -297,9 +307,10 @@ export function destroyAgentView(sessionId: string): void {
   state?.historyRenderedNodes.clear();
   state?.historyObservedHeights.clear();
   if (state) {
-    state.historyTopSpacer = null;
-    state.historyBottomSpacer = null;
+    state.historyLeadingPlaceholders = [];
+    state.historyTrailingPlaceholders = [];
     state.historyEmptyState = null;
+    state.historyLastVoidSyncScrollTop = null;
     state.historyExpandedEntries.clear();
   }
 
@@ -639,6 +650,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyAutoScrollPinned: true,
     historyLastScrollMetrics: null,
     historyLastUserScrollIntentAt: 0,
+    historyLastVoidSyncScrollTop: null,
     historyWindowRevision: null,
     historyWindowViewportWidth: null,
     historyRenderScheduled: null,
@@ -662,8 +674,8 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyMeasurementObserver: null,
     historyViewportResizeObserver: null,
     historyViewportSize: null,
-    historyTopSpacer: null,
-    historyBottomSpacer: null,
+    historyLeadingPlaceholders: [],
+    historyTrailingPlaceholders: [],
     historyEmptyState: null,
     pendingHistoryPrependAnchor: null,
     pendingHistoryLayoutAnchor: null,
@@ -1066,9 +1078,10 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.historyRenderedNodes.clear();
   state.assistantMarkdownCache.clear();
   state.historyObservedHeights.clear();
-  state.historyTopSpacer = null;
-  state.historyBottomSpacer = null;
+  state.historyLeadingPlaceholders = [];
+  state.historyTrailingPlaceholders = [];
   state.historyEmptyState = null;
+  state.historyLastVoidSyncScrollTop = null;
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
   state.historyLastVirtualWindowKey = null;
@@ -1253,12 +1266,16 @@ async function loadLatestLensHistoryWindow(
 }
 
 function queueHistoryWindowViewportSync(sessionId: string, state: SessionLensViewState): void {
-  if (state.refreshInFlight) {
-    state.historyViewportSyncPending = true;
+  if (state.historyViewportSyncPending) {
     return;
   }
 
-  void syncHistoryWindowToViewport(sessionId, state);
+  state.historyViewportSyncPending = true;
+  if (state.refreshInFlight) {
+    return;
+  }
+
+  flushPendingHistoryWindowViewportSync(sessionId, state);
 }
 
 function flushPendingHistoryWindowViewportSync(
@@ -1280,6 +1297,7 @@ async function syncHistoryWindowToViewport(
   state: SessionLensViewState,
 ): Promise<void> {
   if (state.refreshInFlight || !state.snapshot) {
+    state.historyViewportSyncPending = true;
     return;
   }
 

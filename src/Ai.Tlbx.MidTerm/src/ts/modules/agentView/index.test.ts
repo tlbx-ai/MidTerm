@@ -502,8 +502,8 @@ describe('agentView dev errors', () => {
       historyMeasurementObserver: null,
       historyViewportResizeObserver: null,
       historyViewportSize: null,
-      historyTopSpacer: null,
-      historyBottomSpacer: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
       historyEmptyState: null,
       pendingHistoryPrependAnchor: null,
       pendingHistoryLayoutAnchor: null,
@@ -604,6 +604,130 @@ describe('agentView dev errors', () => {
     );
 
     expect(visibleBadges).toEqual([true, false, true]);
+  });
+
+  it('keeps the busy indicator DOM node and syncs it in place across live updates', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const state = {
+      panel: createPanel(),
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 1,
+        historyWindowEnd: 1,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: null,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 1,
+      historyWindowTargetCount: 1,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'follow',
+      historyAutoScrollPinned: true,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: 0,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const viewport = createMockDomNode({
+      clientHeight: 900,
+      clientWidth: 1200,
+      scrollHeight: 900,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 900 })),
+    });
+    state.historyViewport = viewport;
+    state.panel.querySelector = vi.fn((selector: string) => {
+      if (selector === '[data-agent-field="history"]') {
+        return viewport;
+      }
+
+      return createMockDomNode();
+    });
+
+    const busyNode = createMockDomNode({
+      dataset: {},
+      getBoundingClientRect: vi.fn(() => ({ height: 32, top: 0, bottom: 32 })),
+    });
+    const createHistoryEntry = vi.fn(() => busyNode);
+    const syncBusyIndicatorEntry = vi.fn();
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry,
+      syncBusyIndicatorEntry,
+      createHistorySpacer: () => createMockDomNode(),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const firstEntry = {
+      id: 'busy-indicator:turn-1',
+      order: 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Agent',
+      title: '',
+      body: 'Working',
+      meta: '',
+      busyIndicator: true,
+      busyElapsedText: '5s',
+    };
+    const updatedEntry = {
+      ...firstEntry,
+      body: 'Applying diff',
+      busyElapsedText: '6s',
+    };
+
+    render.renderHistory(state.panel, [firstEntry] as any, 's1');
+    render.renderHistory(state.panel, [updatedEntry] as any, 's1');
+
+    expect(createHistoryEntry).toHaveBeenCalledTimes(1);
+    expect(syncBusyIndicatorEntry).toHaveBeenCalledTimes(1);
+    expect(syncBusyIndicatorEntry).toHaveBeenCalledWith(busyNode, updatedEntry);
+    expect(state.historyRenderedNodes.get(firstEntry.id)?.node).toBe(busyNode);
   });
 
   it('renders history metadata as timestamp-only text for every row kind', async () => {
@@ -5905,8 +6029,8 @@ describe('agentView dev errors', () => {
       historyMeasuredHeights: new Map(),
       historyObservedHeights: new Map(),
       historyMeasuredWidthBucket: 0,
-      historyTopSpacer: null,
-      historyBottomSpacer: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
       historyEmptyState: null,
       pendingHistoryPrependAnchor: {
         entryId: 'row-360',
@@ -6013,8 +6137,8 @@ describe('agentView dev errors', () => {
       historyObservedHeightsByBucket: new Map(),
       historyObservedHeightSamplesByBucket: new Map(),
       historyMeasuredWidthBucket: 0,
-      historyTopSpacer: null,
-      historyBottomSpacer: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
       historyEmptyState: null,
       pendingHistoryPrependAnchor: null,
       pendingHistoryLayoutAnchor: null,
@@ -6122,8 +6246,8 @@ describe('agentView dev errors', () => {
       historyObservedHeightsByBucket: new Map(),
       historyObservedHeightSamplesByBucket: new Map(),
       historyMeasuredWidthBucket: 0,
-      historyTopSpacer: createMockDomNode(),
-      historyBottomSpacer: createMockDomNode(),
+      historyLeadingPlaceholders: [createMockDomNode()],
+      historyTrailingPlaceholders: [createMockDomNode()],
       historyEmptyState: null,
       pendingHistoryPrependAnchor: null,
       pendingHistoryLayoutAnchor: null,
@@ -6152,6 +6276,116 @@ describe('agentView dev errors', () => {
     });
 
     expect(render.shouldRenderForViewportScroll(state)).toBe(true);
+  });
+
+  it('requests a viewport-centered history sync when placeholders fill the viewport without a concrete row', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2000,
+      scrollHeight: 6000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const syncViewportHistoryWindow = vi.fn();
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 80,
+        historyCount: 400,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({ top: -1200, bottom: -1100, height: 100 })),
+        }),
+      ),
+      createHistorySpacer: vi.fn(),
+      createHistoryPlaceholderBlock: vi.fn((args: any) =>
+        createMockDomNode({
+          className: 'agent-history-placeholder',
+          style: { height: `${args.heightPx}px` },
+          dataset: { direction: args.direction },
+          querySelector: vi.fn(() => null),
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+      syncViewportHistoryWindow,
+    });
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(syncViewportHistoryWindow).toHaveBeenCalledWith('s1');
   });
 
   it('does not remeasure unchanged visible rows on every render pass', async () => {
@@ -6208,8 +6442,8 @@ describe('agentView dev errors', () => {
       historyObservedHeightsByBucket: new Map(),
       historyObservedHeightSamplesByBucket: new Map(),
       historyMeasuredWidthBucket: 0,
-      historyTopSpacer: null,
-      historyBottomSpacer: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
       historyEmptyState: null,
       pendingHistoryPrependAnchor: null,
       pendingHistoryLayoutAnchor: null,
