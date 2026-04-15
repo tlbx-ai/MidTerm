@@ -696,6 +696,31 @@ function bindSessionItemSelection(
     return;
   }
 
+  let lastImmediateSelectionAt = 0;
+  const selectSession = () => {
+    closeMobileActionMenu();
+    if (callbacks && sessionId) {
+      callbacks.onSelect(sessionId);
+      callbacks.onCloseSidebar();
+    }
+  };
+
+  item.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      event.button !== 0 ||
+      event.pointerType === 'touch' ||
+      target?.closest(
+        'button, a, input, select, textarea, [role="menu"], [role="menuitem"], .session-actions',
+      )
+    ) {
+      return;
+    }
+
+    lastImmediateSelectionAt = Date.now();
+    selectSession();
+  });
+
   item.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
     if (
@@ -706,11 +731,11 @@ function bindSessionItemSelection(
       return;
     }
 
-    closeMobileActionMenu();
-    if (callbacks && sessionId) {
-      callbacks.onSelect(sessionId);
-      callbacks.onCloseSidebar();
+    if (Date.now() - lastImmediateSelectionAt < 750) {
+      return;
     }
+
+    selectSession();
   });
 }
 
