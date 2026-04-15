@@ -8,6 +8,7 @@ import {
 import {
   buildHistoryVirtualWindowKey,
   computeHistoryVirtualWindow,
+  computeHistoryVisibleRange,
   HISTORY_VIRTUALIZE_AFTER,
   LENS_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
@@ -34,6 +35,8 @@ import type {
   HistoryViewportMetrics,
   HistoryVisibleEntry,
   LensHistoryEntry,
+  LensVirtualizerDebugState,
+  LensVirtualizerVisibleRange,
   SessionLensViewState,
 } from './types';
 /* eslint-disable max-lines -- Lens history rendering/virtualization remains intentionally consolidated while the browser-side virtualizer is being hardened. */
@@ -41,6 +44,32 @@ import type {
 function lensText(key: string, fallback: string): string {
   const translated = t(key);
   return !translated || translated === key ? fallback : translated;
+}
+
+function ensureVirtualizerDebugState(state: SessionLensViewState): LensVirtualizerDebugState {
+  const stateRecord = state as unknown as Record<string, unknown>;
+  const existing = stateRecord['historyVirtualizerDebug'];
+  if (isLensVirtualizerDebugState(existing)) {
+    return existing;
+  }
+
+  const created: LensVirtualizerDebugState = {
+    host: null,
+    placeholderCount: 0,
+    visibleRange: {
+      absoluteStart: null,
+      absoluteEnd: null,
+      startId: null,
+      endId: null,
+    },
+    recentFetches: [],
+  };
+  stateRecord['historyVirtualizerDebug'] = created;
+  return created;
+}
+
+function isLensVirtualizerDebugState(value: unknown): value is LensVirtualizerDebugState {
+  return value !== null && typeof value === 'object';
 }
 
 type HistoryRenderDeps = {
@@ -79,6 +108,7 @@ type HistoryRenderDeps = {
     entries: readonly LensHistoryEntry[],
   ) => void;
   renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
+  renderVirtualizerDebug?: (panel: HTMLDivElement, state: SessionLensViewState | undefined) => void;
   syncViewportHistoryWindow?: (sessionId: string) => void;
 };
 
@@ -692,6 +722,78 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       });
     }
     finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state, measurementChanged);
+    updateVirtualizerDebugState(state, renderPlan, metrics);
+    deps.renderVirtualizerDebug?.(panel, state);
+  }
+
+  function resolveVisibleRangeDebugState(
+    state: SessionLensViewState,
+    renderPlan: HistoryRenderPlan,
+  ): LensVirtualizerVisibleRange {
+    const firstVisible = renderPlan.visibleEntries[0];
+    const lastVisible = renderPlan.visibleEntries[renderPlan.visibleEntries.length - 1];
+    if (!state.snapshot || !firstVisible || !lastVisible) {
+      return {
+        absoluteStart: null,
+        absoluteEnd: null,
+        startId: null,
+        endId: null,
+      };
+    }
+
+    const firstRelativeIndex = state.historyEntries.findIndex(
+      (entry) => entry.id === firstVisible.key,
+    );
+    const lastRelativeIndex = state.historyEntries.findIndex(
+      (entry) => entry.id === lastVisible.key,
+    );
+    if (firstRelativeIndex < 0 || lastRelativeIndex < 0) {
+      return {
+        absoluteStart: null,
+        absoluteEnd: null,
+        startId: null,
+        endId: null,
+      };
+    }
+
+    return {
+      absoluteStart: state.snapshot.historyWindowStart + firstRelativeIndex,
+      absoluteEnd: state.snapshot.historyWindowStart + lastRelativeIndex,
+      startId: firstVisible.key,
+      endId: lastVisible.key,
+    };
+  }
+
+  function updateVirtualizerDebugState(
+    state: SessionLensViewState | undefined,
+    renderPlan: HistoryRenderPlan,
+    metrics: HistoryViewportMetrics,
+  ): void {
+    if (!state) {
+      return;
+    }
+
+    const debugState = ensureVirtualizerDebugState(state);
+    debugState.placeholderCount =
+      renderPlan.leadingPlaceholders.length + renderPlan.trailingPlaceholders.length;
+    const visibleRange = computeHistoryVisibleRange(
+      state.historyEntries,
+      metrics.scrollTop,
+      metrics.clientHeight,
+      metrics.clientWidth,
+      (entry) => resolveHistoryViewportEntryHeight(entry, state, metrics.clientWidth),
+    );
+    debugState.visibleRange = resolveVisibleRangeDebugState(state, {
+      ...renderPlan,
+      visibleEntries: buildVisibleHistoryEntries({
+        entries: state.historyEntries,
+        visibleStart: visibleRange.start,
+        visibleEnd: visibleRange.end,
+        state,
+        resolveCluster: resolveArtifactCluster,
+        buildSignature: buildHistoryEntrySignature,
+      }),
+    });
   }
 
   function buildHistoryRenderPlan(

@@ -253,9 +253,13 @@ describe('agent view Lens wiring', () => {
 
   it('keeps runtime token stats in a compact hovering overlay instead of history rows', () => {
     expect(viewShellSource).toContain('data-agent-field="runtime-stats"');
+    expect(viewShellSource).toContain('data-agent-field="virtualizer-debug"');
     expect(indexSource).toContain('buildLensRuntimeStats(snapshot)');
+    expect(indexSource).toContain('recordVirtualizerFetch(');
     expect(historyDomSource).toContain('formatTokenWindowCompact(stats)');
+    expect(historyDomSource).toContain('renderVirtualizerDebug(');
     expect(css).toContain('.agent-runtime-stats {');
+    expect(css).toContain('.agent-virtualizer-debug {');
     expect(css).toContain('.agent-runtime-stats-detail {');
     expect(lensDesign).toContain(
       'Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows.',

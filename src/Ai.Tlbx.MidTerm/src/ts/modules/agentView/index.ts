@@ -105,6 +105,7 @@ const viewStates = new Map<string, SessionLensViewState>();
 const LENS_HISTORY_WINDOW_SIZE = 80;
 const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
+const VIRTUALIZER_DEBUG_FETCH_LIMIT = 10;
 let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
 let lensSelectionGuardBound = false;
@@ -221,6 +222,7 @@ const historyRender = createAgentHistoryRender({
   createRequestActionBlock: historyDom.createRequestActionBlock,
   pruneAssistantMarkdownCache: historyDom.pruneAssistantMarkdownCache,
   renderRuntimeStats: historyDom.renderRuntimeStats,
+  renderVirtualizerDebug: historyDom.renderVirtualizerDebug,
   syncViewportHistoryWindow: (sessionId) => {
     const state = viewStates.get(sessionId);
     if (!state || state.historyAutoScrollPinned) {
@@ -249,6 +251,30 @@ function lensFormat(
     (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
     lensText(key, fallback),
   );
+}
+
+function recordVirtualizerFetch(
+  state: SessionLensViewState,
+  args: {
+    reason: string;
+    requestedStart: number | null;
+    requestedCount: number | null;
+    returnedStart: number;
+    returnedEnd: number;
+    historyCount: number;
+  },
+): void {
+  state.historyVirtualizerDebug.recentFetches = [
+    {
+      reason: args.reason,
+      requestedStart: args.requestedStart,
+      requestedCount: args.requestedCount,
+      returnedStart: args.returnedStart,
+      returnedEnd: args.returnedEnd,
+      historyCount: args.historyCount,
+    },
+    ...state.historyVirtualizerDebug.recentFetches,
+  ].slice(0, VIRTUALIZER_DEBUG_FETCH_LIMIT);
 }
 
 /**
@@ -310,6 +336,15 @@ export function destroyAgentView(sessionId: string): void {
     state.historyLeadingPlaceholders = [];
     state.historyTrailingPlaceholders = [];
     state.historyEmptyState = null;
+    state.historyVirtualizerDebug.host = null;
+    state.historyVirtualizerDebug.placeholderCount = 0;
+    state.historyVirtualizerDebug.visibleRange = {
+      absoluteStart: null,
+      absoluteEnd: null,
+      startId: null,
+      endId: null,
+    };
+    state.historyVirtualizerDebug.recentFetches = [];
     state.historyLastVoidSyncScrollTop = null;
     state.historyExpandedEntries.clear();
   }
@@ -677,6 +712,17 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyLeadingPlaceholders: [],
     historyTrailingPlaceholders: [],
     historyEmptyState: null,
+    historyVirtualizerDebug: {
+      host: null,
+      placeholderCount: 0,
+      visibleRange: {
+        absoluteStart: null,
+        absoluteEnd: null,
+        startId: null,
+        endId: null,
+      },
+      recentFetches: [],
+    },
     pendingHistoryPrependAnchor: null,
     pendingHistoryLayoutAnchor: null,
     historyLastVirtualWindowKey: null,
@@ -1027,6 +1073,14 @@ function openLiveLensStream(sessionId: string, afterSequence: number): void {
       }
 
       traceLensHistoryFetch(sessionId, snapshot, 'stream-window');
+      recordVirtualizerFetch(current, {
+        reason: 'stream-window',
+        requestedStart: snapshot.historyWindowStart,
+        requestedCount: snapshot.historyWindowEnd - snapshot.historyWindowStart,
+        returnedStart: snapshot.historyWindowStart,
+        returnedEnd: snapshot.historyWindowEnd,
+        historyCount: snapshot.historyCount,
+      });
       if (applyFetchedLensHistoryWindow(sessionId, current, snapshot)) {
         scheduleHistoryRender(sessionId);
       }
@@ -1128,6 +1182,18 @@ async function compactHiddenLensSessionHistory(
         issueHistoryWindowRevision(sessionId, state),
       );
       traceLensHistoryFetch(sessionId, latestSnapshot, 'latest');
+      recordVirtualizerFetch(state, {
+        reason: 'latest',
+        requestedStart: null,
+        requestedCount: resolveLensHistoryWindowTargetCount(
+          state.historyViewport,
+          LENS_HISTORY_WINDOW_SIZE,
+          state.historyObservedHeights.values(),
+        ),
+        returnedStart: latestSnapshot.historyWindowStart,
+        returnedEnd: latestSnapshot.historyWindowEnd,
+        historyCount: latestSnapshot.historyCount,
+      });
       const current = viewStates.get(sessionId);
       if (!current || current !== state) {
         return;
@@ -1194,6 +1260,14 @@ async function refreshLensSnapshot(
           windowRevision,
         );
     traceLensHistoryFetch(sessionId, nextSnapshot, options.latestWindow ? 'latest' : 'refresh');
+    recordVirtualizerFetch(state, {
+      reason: options.latestWindow ? 'latest' : 'refresh',
+      requestedStart: options.latestWindow ? null : state.historyWindowStart,
+      requestedCount: options.latestWindow ? desiredLatestWindowCount : state.historyWindowCount,
+      returnedStart: nextSnapshot.historyWindowStart,
+      returnedEnd: nextSnapshot.historyWindowEnd,
+      historyCount: nextSnapshot.historyCount,
+    });
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       if (state.activationState !== 'ready') {
         setActivationState(
@@ -1254,6 +1328,14 @@ async function loadLatestLensHistoryWindow(
       windowRevision,
     );
     traceLensHistoryFetch(sessionId, nextSnapshot, 'latest');
+    recordVirtualizerFetch(state, {
+      reason: 'latest',
+      requestedStart: null,
+      requestedCount: state.historyWindowTargetCount,
+      returnedStart: nextSnapshot.historyWindowStart,
+      returnedEnd: nextSnapshot.historyWindowEnd,
+      historyCount: nextSnapshot.historyCount,
+    });
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       renderCurrentAgentView(sessionId);
     }
@@ -1329,6 +1411,14 @@ async function syncHistoryWindowToViewport(
       windowRevision,
     );
     traceLensHistoryFetch(sessionId, nextSnapshot, 'scroll');
+    recordVirtualizerFetch(state, {
+      reason: 'scroll',
+      requestedStart: requestedWindow.startIndex,
+      requestedCount: requestedWindow.count,
+      returnedStart: nextSnapshot.historyWindowStart,
+      returnedEnd: nextSnapshot.historyWindowEnd,
+      historyCount: nextSnapshot.historyCount,
+    });
     if (applyFetchedLensHistoryWindow(sessionId, state, nextSnapshot)) {
       renderCurrentAgentView(sessionId);
     }
@@ -1661,6 +1751,14 @@ async function waitForInitialLensSnapshot(
             windowRevision,
           );
       traceLensHistoryFetch(sessionId, snapshot, 'initial');
+      recordVirtualizerFetch(state, {
+        reason: 'initial',
+        requestedStart: state.snapshot ? state.historyWindowStart : null,
+        requestedCount: state.snapshot ? state.historyWindowCount : desiredWindowCount,
+        returnedStart: snapshot.historyWindowStart,
+        returnedEnd: snapshot.historyWindowEnd,
+        historyCount: snapshot.historyCount,
+      });
       applyLensHistoryWindowState(state, snapshot);
       ensureLensActivationIsCurrent(state, activationRunId);
       if (attempt > 1) {

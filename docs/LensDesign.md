@@ -624,6 +624,7 @@ Status in this branch/work item:
 - implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values
 - implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
 - implemented: long Lens histories no longer collapse everything outside the active corridor into two blind spacers; the timeline now keeps segmented placeholder blocks in the DOM for buffered/off-window ranges and triggers an urgent viewport-centered history-window sync whenever the viewport has no intersecting concrete rows, so mobile and browse-mode recovery do not settle into black voids
+- implemented: Lens now exposes a separate top-right virtualizer debug overlay with total history count, current placeholder-block count, visible absolute item span with edge IDs, and the last ten history-window fetches so spacer/void regressions can be inspected live without polluting the timeline
 - implemented gap: canonical interactive request/question flows now have a dedicated frontend interview widget, but the backend model still represents them as request summaries rather than a first-class canonical `interview` item type
 
 Still mandatory after this work whenever Lens evolves:

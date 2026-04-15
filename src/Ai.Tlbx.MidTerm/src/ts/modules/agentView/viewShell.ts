@@ -40,6 +40,7 @@ export function ensureAgentViewSkeleton(
     <section class="agent-view">
       <div class="agent-chat-shell">
         <div class="agent-runtime-stats" data-agent-field="runtime-stats" hidden></div>
+        <div class="agent-virtualizer-debug" data-agent-field="virtualizer-debug" hidden></div>
         <div class="agent-history" data-agent-field="history"></div>
         <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
         <section class="agent-composer-shell" data-agent-field="composer-shell" hidden>
