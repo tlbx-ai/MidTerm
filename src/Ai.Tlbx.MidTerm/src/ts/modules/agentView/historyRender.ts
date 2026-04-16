@@ -36,8 +36,6 @@ import type {
   HistoryViewportMetrics,
   HistoryVisibleEntry,
   LensHistoryEntry,
-  LensVirtualizerDebugState,
-  LensVirtualizerVisibleRange,
   SessionLensViewState,
 } from './types';
 /* eslint-disable max-lines -- Lens history rendering/virtualization remains intentionally consolidated while the browser-side virtualizer is being hardened. */
@@ -59,32 +57,6 @@ function resolveHistoryEntryHeight(
   clientWidth: number,
 ): number {
   return resolveHistoryViewportEntryHeight(entry, state, clientWidth);
-}
-
-function ensureVirtualizerDebugState(state: SessionLensViewState): LensVirtualizerDebugState {
-  const stateRecord = state as unknown as Record<string, unknown>;
-  const existing = stateRecord['historyVirtualizerDebug'];
-  if (isLensVirtualizerDebugState(existing)) {
-    return existing;
-  }
-
-  const created: LensVirtualizerDebugState = {
-    host: null,
-    placeholderCount: 0,
-    visibleRange: {
-      absoluteStart: null,
-      absoluteEnd: null,
-      startId: null,
-      endId: null,
-    },
-    recentFetches: [],
-  };
-  stateRecord['historyVirtualizerDebug'] = created;
-  return created;
-}
-
-function isLensVirtualizerDebugState(value: unknown): value is LensVirtualizerDebugState {
-  return value !== null && typeof value === 'object';
 }
 
 type HistoryRenderDeps = {
@@ -122,7 +94,6 @@ type HistoryRenderDeps = {
     entries: readonly LensHistoryEntry[],
   ) => void;
   renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
-  renderVirtualizerDebug?: (panel: HTMLDivElement, state: SessionLensViewState | undefined) => void;
   syncViewportHistoryWindow?: (sessionId: string) => void;
 };
 
@@ -484,18 +455,13 @@ function readHistoryScrollMetrics(
   };
 }
 
-function resolveFallbackVisibleRangeFromMetrics(
+function resolveHistoryNavigatorVisibleMidpoint(
   state: SessionLensViewState,
   viewport: HTMLDivElement,
-): LensVirtualizerVisibleRange {
+): number | null {
   const snapshot = state.snapshot;
   if (!snapshot || state.historyEntries.length === 0) {
-    return {
-      absoluteStart: null,
-      absoluteEnd: null,
-      startId: null,
-      endId: null,
-    };
+    return null;
   }
 
   const metrics = readHistoryViewportMetrics(viewport, state);
@@ -507,66 +473,13 @@ function resolveFallbackVisibleRangeFromMetrics(
     (entry) => resolveHistoryEntryHeight(entry, state, metrics.clientWidth),
   );
   if (visibleRange.end <= visibleRange.start) {
-    return {
-      absoluteStart: null,
-      absoluteEnd: null,
-      startId: null,
-      endId: null,
-    };
+    return null;
   }
 
-  const firstEntry = state.historyEntries[visibleRange.start] ?? null;
-  const lastEntry =
-    state.historyEntries[Math.max(visibleRange.start, visibleRange.end - 1)] ?? null;
-  return {
-    absoluteStart: snapshot.historyWindowStart + visibleRange.start,
-    absoluteEnd: snapshot.historyWindowStart + Math.max(visibleRange.start, visibleRange.end - 1),
-    startId: firstEntry?.id ?? null,
-    endId: lastEntry?.id ?? null,
-  };
-}
-
-/* eslint-disable complexity -- DOM-intersection fallback is intentionally localized here for the debug overlay. */
-function resolveRenderedVisibleRange(
-  state: SessionLensViewState,
-  viewport: HTMLDivElement,
-): LensVirtualizerVisibleRange {
-  const snapshot = state.snapshot;
-  if (!snapshot || typeof viewport.getBoundingClientRect !== 'function') {
-    return resolveFallbackVisibleRangeFromMetrics(state, viewport);
-  }
-
-  const viewportRect = viewport.getBoundingClientRect();
-  let firstRelativeIndex: number | null = null;
-  let lastRelativeIndex: number | null = null;
-  for (let index = 0; index < state.historyEntries.length; index += 1) {
-    const entry = state.historyEntries[index];
-    const node = entry ? state.historyRenderedNodes.get(entry.id)?.node : null;
-    if (!node || typeof node.getBoundingClientRect !== 'function') {
-      continue;
-    }
-
-    const rect = node.getBoundingClientRect();
-    const offsetTopPx = rect.top - viewportRect.top;
-    const offsetBottomPx = rect.bottom - viewportRect.top;
-    if (offsetBottomPx < 0 || offsetTopPx > viewport.clientHeight) {
-      continue;
-    }
-
-    firstRelativeIndex ??= index;
-    lastRelativeIndex = index;
-  }
-
-  if (firstRelativeIndex === null || lastRelativeIndex === null) {
-    return resolveFallbackVisibleRangeFromMetrics(state, viewport);
-  }
-
-  return {
-    absoluteStart: snapshot.historyWindowStart + firstRelativeIndex,
-    absoluteEnd: snapshot.historyWindowStart + lastRelativeIndex,
-    startId: state.historyEntries[firstRelativeIndex]?.id ?? null,
-    endId: state.historyEntries[lastRelativeIndex]?.id ?? null,
-  };
+  const visibleStart = snapshot.historyWindowStart + visibleRange.start;
+  const visibleEnd =
+    snapshot.historyWindowStart + Math.max(visibleRange.start, visibleRange.end - 1);
+  return (visibleStart + visibleEnd) / 2;
 }
 
 function resolveHistoryNavigatorAnchorIndex(
@@ -590,17 +503,9 @@ function resolveHistoryNavigatorAnchorIndex(
     return historyCount - 1;
   }
 
-  const visibleRange = resolveFallbackVisibleRangeFromMetrics(state, viewport);
-  if (
-    visibleRange.absoluteStart !== null &&
-    visibleRange.absoluteEnd !== null &&
-    Number.isFinite(visibleRange.absoluteStart) &&
-    Number.isFinite(visibleRange.absoluteEnd)
-  ) {
-    return clampHistoryAbsoluteIndex(
-      (visibleRange.absoluteStart + visibleRange.absoluteEnd) / 2,
-      historyCount,
-    );
+  const visibleMidpoint = resolveHistoryNavigatorVisibleMidpoint(state, viewport);
+  if (visibleMidpoint !== null && Number.isFinite(visibleMidpoint)) {
+    return clampHistoryAbsoluteIndex(visibleMidpoint, historyCount);
   }
 
   return clampHistoryAbsoluteIndex(
@@ -609,37 +514,42 @@ function resolveHistoryNavigatorAnchorIndex(
   );
 }
 
-function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined): void {
-  const host = state?.historyProgressNav;
-  const thumb = state?.historyProgressThumb;
-  if (!state || !host || !thumb) {
-    return;
-  }
-
-  const snapshot = state.snapshot;
-  const historyCount = Math.max(snapshot?.historyCount ?? 0, state.historyEntries.length);
+function prepareHistoryProgressNavigator(
+  host: HTMLDivElement,
+  thumb: HTMLDivElement,
+  historyCount: number,
+): boolean {
   if (typeof host.removeAttribute === 'function') {
     host.removeAttribute('hidden');
   }
   host.hidden = false;
-  host.dataset.ready = historyCount > 0 ? 'true' : 'false';
-  host.tabIndex = historyCount > 0 ? 0 : -1;
-  host.setAttribute('aria-disabled', historyCount > 0 ? 'false' : 'true');
-  if (historyCount <= 0) {
-    thumb.style.height = '';
-    thumb.style.top = `${HISTORY_PROGRESS_THUMB_INSET_PX}px`;
-    host.dataset.mode = 'browse';
-    host.setAttribute('aria-valuemin', '0');
-    host.setAttribute('aria-valuemax', '0');
-    host.setAttribute('aria-valuenow', '0');
-    host.setAttribute('aria-valuetext', lensText('lens.history.navigator.empty', 'No history'));
-    return;
+
+  const ready = historyCount > 0;
+  host.dataset.ready = ready ? 'true' : 'false';
+  host.tabIndex = ready ? 0 : -1;
+  host.setAttribute('aria-disabled', ready ? 'false' : 'true');
+  if (ready) {
+    return false;
   }
 
-  const viewport = state.historyViewport;
-  const anchorIndex =
-    viewport === null ? historyCount - 1 : resolveHistoryNavigatorAnchorIndex(state, viewport);
-  state.historyNavigatorAnchorIndex = anchorIndex;
+  thumb.style.height = '';
+  thumb.style.top = `${HISTORY_PROGRESS_THUMB_INSET_PX}px`;
+  host.dataset.mode = 'browse';
+  host.setAttribute('aria-valuemin', '0');
+  host.setAttribute('aria-valuemax', '0');
+  host.setAttribute('aria-valuenow', '0');
+  host.setAttribute('aria-valuetext', lensText('lens.history.navigator.empty', 'No history'));
+  return true;
+}
+
+function applyHistoryProgressNavigatorPosition(args: {
+  host: HTMLDivElement;
+  thumb: HTMLDivElement;
+  historyCount: number;
+  anchorIndex: number | null;
+  mode: SessionLensViewState['historyNavigatorMode'];
+}): void {
+  const { host, thumb, historyCount, anchorIndex, mode } = args;
   const thumbHeightPx = resolveHistoryProgressThumbHeightPx(host);
   const trackHeightPx = Math.max(1, host.clientHeight - HISTORY_PROGRESS_THUMB_INSET_PX * 2);
   const trackTravelPx = Math.max(0, trackHeightPx - thumbHeightPx);
@@ -647,7 +557,7 @@ function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined)
     historyCount <= 1 || anchorIndex === null ? 1 : anchorIndex / Math.max(1, historyCount - 1);
   const thumbTopPx = HISTORY_PROGRESS_THUMB_INSET_PX + Math.round(trackTravelPx * progress);
 
-  host.dataset.mode = state.historyNavigatorMode;
+  host.dataset.mode = mode;
   host.setAttribute('aria-valuemin', '1');
   host.setAttribute('aria-valuemax', String(Math.max(1, historyCount)));
   host.setAttribute(
@@ -662,6 +572,32 @@ function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined)
   );
   thumb.style.height = `${thumbHeightPx}px`;
   thumb.style.top = `${thumbTopPx}px`;
+}
+
+function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined): void {
+  const host = state?.historyProgressNav;
+  const thumb = state?.historyProgressThumb;
+  if (!state || !host || !thumb) {
+    return;
+  }
+
+  const snapshot = state.snapshot;
+  const historyCount = Math.max(snapshot?.historyCount ?? 0, state.historyEntries.length);
+  if (prepareHistoryProgressNavigator(host, thumb, historyCount)) {
+    return;
+  }
+
+  const viewport = state.historyViewport;
+  const anchorIndex =
+    viewport === null ? historyCount - 1 : resolveHistoryNavigatorAnchorIndex(state, viewport);
+  state.historyNavigatorAnchorIndex = anchorIndex;
+  applyHistoryProgressNavigatorPosition({
+    host,
+    thumb,
+    historyCount,
+    anchorIndex,
+    mode: state.historyNavigatorMode,
+  });
 }
 
 export function resolveHistoryNavigatorTarget(args: {
@@ -689,8 +625,6 @@ export function resolveHistoryNavigatorTarget(args: {
     atLiveEdge: normalizedProgress >= 1 || targetIndex >= historyCount - 1,
   };
 }
-/* eslint-enable complexity */
-
 function hasIntersectingRenderedHistoryEntry(
   viewport: HTMLDivElement,
   state: SessionLensViewState,
@@ -983,27 +917,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       });
     }
     finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state, measurementChanged);
-    updateVirtualizerDebugState(state, viewport, renderPlan);
     syncHistoryProgressNavigatorUi(state);
-    deps.renderVirtualizerDebug?.(panel, state);
-  }
-
-  function updateVirtualizerDebugState(
-    state: SessionLensViewState | undefined,
-    viewport: HTMLDivElement,
-    renderPlan: HistoryRenderPlan,
-  ): void {
-    if (!state) {
-      return;
-    }
-
-    const debugState = ensureVirtualizerDebugState(state);
-    debugState.placeholderCount =
-      renderPlan.leadingPlaceholders.length + renderPlan.trailingPlaceholders.length;
-    debugState.visibleRange =
-      debugState.host && !debugState.host.hidden
-        ? resolveRenderedVisibleRange(state, viewport)
-        : resolveFallbackVisibleRangeFromMetrics(state, viewport);
   }
 
   function buildHistoryRenderPlan(

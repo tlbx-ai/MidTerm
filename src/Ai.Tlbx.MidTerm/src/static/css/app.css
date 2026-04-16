@@ -11491,50 +11491,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   backdrop-filter: blur(5px);
 }
 
-.agent-virtualizer-debug {
-  position: absolute;
-  top: 58px;
-  right: 18px;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: min(46ch, calc(100vw - 36px));
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--text-muted) 28%, transparent);
-  border-radius: 10px;
-  background: color-mix(
-    in srgb,
-    var(--terminal-canvas-background, var(--terminal-bg)) 86%,
-    transparent
-  );
-  color: color-mix(in srgb, var(--text-secondary) 90%, var(--text-primary) 10%);
-  font-family: var(--agent-history-mono-font-family, var(--font-mono));
-  font-size: 11px;
-  line-height: 1.35;
-  pointer-events: none;
-  backdrop-filter: blur(5px);
-}
-
-.agent-virtualizer-debug[hidden] {
-  display: none;
-}
-
-.agent-virtualizer-debug-heading,
-.agent-virtualizer-debug-subheading {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.agent-virtualizer-debug-fetches {
-  margin: 0;
-  padding-left: 1.25rem;
-}
-
-.agent-virtualizer-debug-fetches li {
-  margin: 0;
-}
-
 .agent-runtime-stats[hidden] {
   display: none;
 }

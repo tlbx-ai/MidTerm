@@ -75,7 +75,6 @@ export interface SessionLensViewState {
   historyLeadingPlaceholders: HTMLDivElement[];
   historyTrailingPlaceholders: HTMLDivElement[];
   historyEmptyState: HTMLDivElement | null;
-  historyVirtualizerDebug: LensVirtualizerDebugState;
   pendingHistoryPrependAnchor: HistoryViewportAnchor | null;
   pendingHistoryLayoutAnchor: HistoryViewportAnchor | null;
   historyLastVirtualWindowKey: string | null;
@@ -237,29 +236,6 @@ export interface HistoryRenderPlan {
   leadingPlaceholders: HistoryPlaceholderBlock[];
   trailingPlaceholders: HistoryPlaceholderBlock[];
   visibleEntries: HistoryVisibleEntry[];
-}
-
-export interface LensVirtualizerVisibleRange {
-  absoluteStart: number | null;
-  absoluteEnd: number | null;
-  startId: string | null;
-  endId: string | null;
-}
-
-export interface LensVirtualizerFetchRecord {
-  reason: string;
-  requestedStart: number | null;
-  requestedCount: number | null;
-  returnedStart: number;
-  returnedEnd: number;
-  historyCount: number;
-}
-
-export interface LensVirtualizerDebugState {
-  host: HTMLDivElement | null;
-  placeholderCount: number;
-  visibleRange: LensVirtualizerVisibleRange;
-  recentFetches: LensVirtualizerFetchRecord[];
 }
 
 export interface HistoryRenderedNode {

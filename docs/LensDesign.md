@@ -366,6 +366,7 @@ The canonical history contract must satisfy the following:
 - Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Lens should interpret them as session telemetry instead of timeline content.
 - Lens should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing context-window usage as a percent-of-limit summary plus accumulated session input/output token totals.
 - If the provider notice only exposes cumulative session token totals rather than reliable live context occupancy, Lens must not fake a context percent; it should fall back to the window limit plus session in/out totals instead.
+- Virtualizer diagnostics should stay in traces, tests, and developer tooling rather than as a persistent Lens session overlay. The Lens surface should stay focused on history, navigation, and operator controls.
 
 ### Tool, reasoning, plan, system, and notice rows
 
@@ -649,7 +650,7 @@ Status in this branch/work item:
 - implemented: runtime stats now suppress bogus context percentages when Codex reports cumulative token totals, falling back to the window limit plus session in/out totals instead of displaying impossible values
 - implemented: request-backed interview interactions now render inline in the history timeline with a dedicated question-and-answer widget instead of being flattened into plain body text or composer-only interruption chrome
 - implemented: long Lens histories no longer collapse everything outside the active corridor into two blind spacers; the timeline now keeps segmented placeholder blocks in the DOM for buffered/off-window ranges and triggers an urgent viewport-centered history-window sync whenever the viewport has no intersecting concrete rows, so mobile and browse-mode recovery do not settle into black voids
-- implemented: Lens now exposes a separate top-right virtualizer debug overlay with total history count, current placeholder-block count, visible absolute item span with edge IDs, and the last ten history-window fetches so spacer/void regressions can be inspected live without polluting the timeline
+- implemented: Lens no longer renders a browser-visible virtualizer debug overlay; virtualization diagnostics stay in traces/tests so the session surface remains focused on history, navigation, and operator controls
 - implemented: Lens history navigation now uses a dedicated progress navigator keyed directly to canonical item indexes instead of DOM height or a synthetic total-height scroll host
 - implemented: the separate progress navigator now keeps a visible thumb/track treatment even when accent variables or advanced color functions are unavailable, so the Lens-owned scrollbar does not disappear into a transparent rail
 - implemented: the progress navigator now stays in layout as a stateful Lens rail instead of relying on `hidden` attribute toggles for visibility, which prevents reused session shells from collapsing the navigator out of existence

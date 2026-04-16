@@ -28,7 +28,6 @@ import type {
   HistoryBodyPresentation,
   LensHistoryAction,
   LensHistoryEntry,
-  LensVirtualizerDebugState,
   LensRuntimeStatsSummary,
   SessionLensViewState,
 } from './types';
@@ -202,32 +201,6 @@ function collapseSingleParagraphMarkdownBody(container: HTMLElement): void {
   container.innerHTML = first.innerHTML;
 }
 
-function ensureVirtualizerDebugState(state: SessionLensViewState): LensVirtualizerDebugState {
-  const stateRecord = state as unknown as Record<string, unknown>;
-  const existing = stateRecord['historyVirtualizerDebug'];
-  if (isLensVirtualizerDebugState(existing)) {
-    return existing;
-  }
-
-  const created: LensVirtualizerDebugState = {
-    host: null,
-    placeholderCount: 0,
-    visibleRange: {
-      absoluteStart: null,
-      absoluteEnd: null,
-      startId: null,
-      endId: null,
-    },
-    recentFetches: [],
-  };
-  stateRecord['historyVirtualizerDebug'] = created;
-  return created;
-}
-
-function isLensVirtualizerDebugState(value: unknown): value is LensVirtualizerDebugState {
-  return value !== null && typeof value === 'object';
-}
-
 /* eslint-disable max-lines-per-function -- history row rendering remains intentionally consolidated in one DOM factory. */
 export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function resolveWallclockNowMs(): number {
@@ -363,76 +336,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
 
     host.appendChild(detail);
-  }
-
-  function formatVirtualizerVisibleRange(
-    visibleRange: LensVirtualizerDebugState['visibleRange'],
-  ): string {
-    if (
-      visibleRange.absoluteStart === null ||
-      visibleRange.absoluteEnd === null ||
-      !visibleRange.startId ||
-      !visibleRange.endId
-    ) {
-      return 'none';
-    }
-
-    return `#${visibleRange.absoluteStart + 1}..#${visibleRange.absoluteEnd + 1} (${visibleRange.startId} -> ${visibleRange.endId})`;
-  }
-
-  function renderVirtualizerDebug(
-    panel: HTMLDivElement,
-    state: SessionLensViewState | undefined,
-  ): void {
-    const host = panel.querySelector<HTMLDivElement>('[data-agent-field="virtualizer-debug"]');
-    if (!host || !state?.snapshot) {
-      if (host) {
-        host.hidden = true;
-        host.replaceChildren();
-      }
-      return;
-    }
-
-    const debugState = ensureVirtualizerDebugState(state);
-    debugState.host = host;
-
-    host.hidden = false;
-    host.replaceChildren();
-
-    const heading = document.createElement('div');
-    heading.className = 'agent-virtualizer-debug-heading';
-    heading.textContent = 'Virtualizer';
-    host.appendChild(heading);
-
-    const lines = [
-      `overall ${state.snapshot.historyCount}`,
-      `placeholders ${debugState.placeholderCount}`,
-      `in view ${formatVirtualizerVisibleRange(debugState.visibleRange)}`,
-    ];
-    for (const text of lines) {
-      const line = document.createElement('div');
-      line.className = 'agent-virtualizer-debug-line';
-      line.textContent = text;
-      host.appendChild(line);
-    }
-
-    const fetchHeading = document.createElement('div');
-    fetchHeading.className = 'agent-virtualizer-debug-subheading';
-    fetchHeading.textContent = 'Last 10 fetches';
-    host.appendChild(fetchHeading);
-
-    const list = document.createElement('ol');
-    list.className = 'agent-virtualizer-debug-fetches';
-    for (const fetch of debugState.recentFetches) {
-      const item = document.createElement('li');
-      const requested =
-        fetch.requestedStart === null || fetch.requestedCount === null
-          ? 'latest'
-          : `req #${fetch.requestedStart + 1} x${fetch.requestedCount}`;
-      item.textContent = `${fetch.reason} ${requested} -> #${fetch.returnedStart + 1}..#${fetch.returnedEnd} total ${fetch.historyCount}`;
-      list.appendChild(item);
-    }
-    host.appendChild(list);
   }
 
   function createHistoryEntry(
@@ -1069,7 +972,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     createRequestActionBlock,
     pruneAssistantMarkdownCache,
     renderRuntimeStats,
-    renderVirtualizerDebug,
     syncBusyIndicatorEntry,
   };
 }
