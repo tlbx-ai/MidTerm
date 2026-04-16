@@ -85,7 +85,6 @@ describe('smartInputMetrics', () => {
     expect(textarea.style.height).toBe('102px');
     expect(textarea.style.minHeight).toBe('102px');
     expect(textarea.dataset.midtermCollapsedHeightPx).toBe('44');
-    expect(textarea.dataset.midtermSingleLine).toBe('false');
     expect(getCollapsedSmartInputTextareaHeight(textarea)).toBe(44);
     expect(textarea.style.overflowY).toBe('hidden');
     expect((textarea.style as FakeTextarea['style']).setPropertyValue?.['--smart-input-textarea-rendered-height']).toBe(
@@ -111,7 +110,6 @@ describe('smartInputMetrics', () => {
 
     expect(textarea.style.height).toBe('166px');
     expect(textarea.style.minHeight).toBe('166px');
-    expect(textarea.dataset.midtermSingleLine).toBe('false');
     expect(textarea.style.overflowY).toBe('auto');
     expect(getCollapsedSmartInputTextareaHeight(textarea)).toBe(44);
   });
@@ -157,7 +155,6 @@ describe('smartInputMetrics', () => {
 
     expect(textarea.style.height).toBe('44px');
     expect(textarea.style.minHeight).toBe('44px');
-    expect(textarea.dataset.midtermSingleLine).toBe('true');
     expect((textarea.style as FakeTextarea['style']).setPropertyValue?.['--smart-input-textarea-rendered-height']).toBe(
       '44px',
     );
