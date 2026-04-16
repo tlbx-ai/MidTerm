@@ -666,6 +666,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyViewportSyncPending: false,
     historyViewportSyncForcePending: false,
     historyViewportSyncQueuedDuringRefresh: false,
+    historyViewportSyncSuppressUntil: 0,
     disconnectStream: null,
     streamConnected: false,
     refreshInFlight: false,
@@ -1001,6 +1002,7 @@ function enterHistoryFollowLive(sessionId: string, state: SessionLensViewState):
   state.historyViewportSyncPending = false;
   state.historyViewportSyncForcePending = false;
   state.historyViewportSyncQueuedDuringRefresh = false;
+  state.historyViewportSyncSuppressUntil = 0;
   state.historyNavigatorMode = 'follow-live';
   state.historyNavigatorDragTargetIndex = null;
   setHistoryScrollMode(state, 'follow');
@@ -1094,6 +1096,7 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     }
 
     current.historyLastUserScrollIntentAt = Date.now();
+    current.historyViewportSyncSuppressUntil = 0;
   };
   const detachFollowForExplicitBrowseIntent = () => {
     const current = viewStates.get(sessionId);
@@ -1217,6 +1220,7 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       return;
     }
 
+    const viewportSyncSuppressed = Date.now() < current.historyViewportSyncSuppressUntil;
     const scrollMetrics = historyRender.readHistoryScrollMetrics(currentViewport, current);
     setHistoryScrollMode(
       current,
@@ -1248,7 +1252,7 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
       }
       return;
     }
-    if (current.refreshInFlight && !current.historyAutoScrollPinned) {
+    if (current.refreshInFlight && !current.historyAutoScrollPinned && !viewportSyncSuppressed) {
       current.historyViewportSyncPending = true;
       current.historyViewportSyncQueuedDuringRefresh = true;
     }
@@ -1262,10 +1266,10 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     if (current.snapshot?.hasNewerHistory && distanceFromBottom <= fetchThresholdPx) {
       if (current.historyAutoScrollPinned) {
         void loadLatestLensHistoryWindow(sessionId, current);
-      } else {
+      } else if (!viewportSyncSuppressed) {
         queueHistoryWindowViewportSync(sessionId, current);
       }
-    } else if (!current.historyAutoScrollPinned) {
+    } else if (!current.historyAutoScrollPinned && !viewportSyncSuppressed) {
       queueHistoryWindowViewportSync(sessionId, current);
     }
 
@@ -1565,6 +1569,7 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.historyLastVirtualWindowKey = null;
   state.historyViewportSyncPending = false;
   state.historyViewportSyncForcePending = false;
+  state.historyViewportSyncSuppressUntil = 0;
   state.renderDirty = true;
 
   const historyHost = state.panel.querySelector<HTMLElement>('[data-agent-field="history"]');

@@ -730,6 +730,319 @@ describe('agentView dev errors', () => {
     expect(state.historyRenderedNodes.get(firstEntry.id)?.node).toBe(busyNode);
   });
 
+  it('suppresses immediate viewport rewindowing when a browse anchor is restored programmatically', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const panel = createPanel();
+    const viewport = createMockDomNode({
+      clientHeight: 600,
+      clientWidth: 900,
+      scrollHeight: 1800,
+      scrollTop: 320,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(function (this: any, options: { top?: number }) {
+        if (typeof options?.top === 'number') {
+          this.scrollTop = options.top;
+        }
+      }),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 600 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    panel.querySelector = vi.fn((selector: string) => {
+      switch (selector) {
+        case '[data-agent-field="history"]':
+          return viewport;
+        case '[data-agent-field="scroll-to-bottom"]':
+          return scrollButton;
+        case '[data-agent-field="composer-shell"]':
+          return composerShell;
+        case '[data-agent-field="composer-interruption"]':
+          return composerInterruption;
+        default:
+          return createMockDomNode();
+      }
+    });
+
+    const state = {
+      panel,
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 3,
+        historyWindowStart: 0,
+        historyWindowEnd: 3,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: viewport,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 3,
+      historyWindowTargetCount: 3,
+      historyViewportSyncPending: false,
+      historyViewportSyncForcePending: false,
+      historyViewportSyncQueuedDuringRefresh: false,
+      historyViewportSyncSuppressUntil: 0,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'browse',
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: 0,
+      historyLastVoidSyncScrollTop: null,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: null,
+      historyNavigatorDragTargetIndex: null,
+      historyNavigatorQueuedTargetIndex: null,
+      historyNavigatorQueuedRequestKind: null,
+      historyNavigatorPreviewHandle: null,
+      historyNavigatorHydrateHandle: null,
+      historyNavigatorLastPreviewRequestAt: 0,
+      historyPendingJumpTargetIndex: null,
+      historyPendingJumpAlign: null,
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: {
+        entryId: 'assistant:2',
+        topOffsetPx: 18,
+        absoluteIndex: 1,
+      },
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: (entry) =>
+        createMockDomNode({
+          dataset: {},
+          getBoundingClientRect: vi.fn(() =>
+            entry.id === 'assistant:2'
+              ? { top: 96, bottom: 156, height: 60 }
+              : { top: 180, bottom: 240, height: 60 },
+          ),
+        }),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    render.renderHistory(
+      panel,
+      [
+        {
+          id: 'user:1',
+          order: 1,
+          kind: 'user',
+          tone: 'info',
+          label: 'User',
+          title: '',
+          body: 'Question',
+          meta: '12:00',
+        },
+        {
+          id: 'assistant:2',
+          order: 2,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'Answer',
+          meta: '12:01',
+        },
+        {
+          id: 'assistant:3',
+          order: 3,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'More',
+          meta: '12:02',
+        },
+      ] as any,
+      's1',
+    );
+
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    expect(state.historyViewportSyncSuppressUntil).toBeGreaterThan(Date.now() - 1);
+  });
+
+  it('clears stale browse sync state when returning Lens history to the live edge', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const panel = createPanel();
+    const viewport = createMockDomNode({
+      clientHeight: 600,
+      clientWidth: 900,
+      scrollHeight: 2400,
+      scrollTop: 400,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(function (this: any, options: { top?: number }) {
+        if (typeof options?.top === 'number') {
+          this.scrollTop = options.top;
+        }
+      }),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 600 })),
+    });
+    const scrollButton = createMockDomNode();
+    panel.querySelector = vi.fn((selector: string) => {
+      if (selector === '[data-agent-field="history"]') {
+        return viewport;
+      }
+      if (selector === '[data-agent-field="scroll-to-bottom"]') {
+        return scrollButton;
+      }
+
+      return createMockDomNode();
+    });
+
+    const state = {
+      panel,
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 40,
+        historyWindowStart: 0,
+        historyWindowEnd: 40,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: viewport,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 40,
+      historyWindowTargetCount: 40,
+      historyViewportSyncPending: true,
+      historyViewportSyncForcePending: true,
+      historyViewportSyncQueuedDuringRefresh: true,
+      historyViewportSyncSuppressUntil: Date.now() + 1000,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'browse',
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: Date.now(),
+      historyLastVoidSyncScrollTop: 144,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: null,
+      historyNavigatorDragTargetIndex: 8,
+      historyNavigatorQueuedTargetIndex: null,
+      historyNavigatorQueuedRequestKind: null,
+      historyNavigatorPreviewHandle: null,
+      historyNavigatorHydrateHandle: null,
+      historyNavigatorLastPreviewRequestAt: 0,
+      historyPendingJumpTargetIndex: 12,
+      historyPendingJumpAlign: 'center',
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: {
+        entryId: 'assistant:10',
+        topOffsetPx: 8,
+        absoluteIndex: 9,
+      },
+      pendingHistoryLayoutAnchor: {
+        entryId: 'assistant:11',
+        topOffsetPx: 10,
+        absoluteIndex: 10,
+      },
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(() => createMockDomNode()),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    render.scrollHistoryToBottom('s1');
+
+    expect(state.historyAutoScrollPinned).toBe(true);
+    expect(state.historyNavigatorMode).toBe('follow-live');
+    expect(state.historyNavigatorDragTargetIndex).toBeNull();
+    expect(state.historyViewportSyncPending).toBe(false);
+    expect(state.historyViewportSyncForcePending).toBe(false);
+    expect(state.historyViewportSyncQueuedDuringRefresh).toBe(false);
+    expect(state.historyViewportSyncSuppressUntil).toBe(0);
+    expect(state.pendingHistoryPrependAnchor).toBeNull();
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    expect(state.historyLastVoidSyncScrollTop).toBeNull();
+    expect(viewport.scrollTo).toHaveBeenCalledWith({
+      top: viewport.scrollHeight,
+      behavior: 'auto',
+    });
+  });
+
   it('renders history metadata as timestamp-only text for every row kind', async () => {
     const { formatHistoryMeta, shouldHideStatusInMeta } = await import('./index');
 
