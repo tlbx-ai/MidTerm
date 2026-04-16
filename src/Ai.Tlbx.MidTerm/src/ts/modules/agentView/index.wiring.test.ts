@@ -149,7 +149,8 @@ describe('agent view Lens wiring', () => {
 
   it('keeps the progress navigator stateful in layout and expands its touch target on mobile', () => {
     expect(historyRenderSource).not.toContain('host.hidden = historyCount <= 0;');
-    expect(viewShellSource).not.toContain('progressNav.hidden &&');
+    expect(viewShellSource).not.toContain('repairAgentViewSkeleton(');
+    expect(viewShellSource).not.toContain('history-index-scroll');
     expect(css).toContain(".agent-history-progress-nav[data-ready='false'] {");
     expect(css).toContain(".agent-history-progress-nav[data-ready='false'] .agent-history-progress-thumb {");
     expect(css).toContain('opacity: 0;');
