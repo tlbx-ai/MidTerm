@@ -44,8 +44,10 @@ export function ensureAgentViewSkeleton(
               class="agent-history-progress-nav"
               data-agent-field="history-progress-nav"
               role="scrollbar"
-              tabindex="0"
+              data-ready="false"
+              tabindex="-1"
               aria-label="${lensText('lens.history.indexScroll', 'History navigation scrollbar')}"
+              aria-disabled="true"
               aria-valuemin="1"
               aria-valuemax="1"
               aria-valuenow="1"
@@ -128,12 +130,14 @@ function repairAgentViewSkeleton(panel: HTMLDivElement): void {
     progressNav = document.createElement('div');
     progressNav.className = 'agent-history-progress-nav';
     progressNav.dataset.agentField = 'history-progress-nav';
-    progressNav.tabIndex = 0;
+    progressNav.dataset.ready = 'false';
+    progressNav.tabIndex = -1;
     progressNav.setAttribute('role', 'scrollbar');
     progressNav.setAttribute(
       'aria-label',
       lensText('lens.history.indexScroll', 'History navigation scrollbar'),
     );
+    progressNav.setAttribute('aria-disabled', 'true');
     progressNav.setAttribute('aria-valuemin', '1');
     progressNav.setAttribute('aria-valuemax', '1');
     progressNav.setAttribute('aria-valuenow', '1');
@@ -168,6 +172,14 @@ function repairAgentViewSkeleton(panel: HTMLDivElement): void {
     thumb.dataset.agentField = 'history-progress-thumb';
     progressNav.append(thumb);
   }
+
+  if (typeof progressNav.removeAttribute === 'function') {
+    progressNav.removeAttribute('hidden');
+  }
+  progressNav.hidden = false;
+  progressNav.dataset.ready = history.childNodes.length > 0 ? 'true' : 'false';
+  progressNav.tabIndex = history.childNodes.length > 0 ? 0 : -1;
+  progressNav.setAttribute('aria-disabled', history.childNodes.length > 0 ? 'false' : 'true');
 
   if (!panel.querySelector('[data-agent-field="scroll-to-bottom"]')) {
     const scrollButton = document.createElement('button');

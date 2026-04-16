@@ -618,8 +618,21 @@ function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined)
 
   const snapshot = state.snapshot;
   const historyCount = Math.max(snapshot?.historyCount ?? 0, state.historyEntries.length);
-  host.hidden = historyCount <= 0;
+  if (typeof host.removeAttribute === 'function') {
+    host.removeAttribute('hidden');
+  }
+  host.hidden = false;
+  host.dataset.ready = historyCount > 0 ? 'true' : 'false';
+  host.tabIndex = historyCount > 0 ? 0 : -1;
+  host.setAttribute('aria-disabled', historyCount > 0 ? 'false' : 'true');
   if (historyCount <= 0) {
+    thumb.style.height = '';
+    thumb.style.top = `${HISTORY_PROGRESS_THUMB_INSET_PX}px`;
+    host.dataset.mode = 'browse';
+    host.setAttribute('aria-valuemin', '0');
+    host.setAttribute('aria-valuemax', '0');
+    host.setAttribute('aria-valuenow', '0');
+    host.setAttribute('aria-valuetext', lensText('lens.history.navigator.empty', 'No history'));
     return;
   }
 

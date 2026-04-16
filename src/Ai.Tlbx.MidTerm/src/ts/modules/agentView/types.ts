@@ -19,6 +19,7 @@ export interface SessionLensViewState {
   historyWindowCount: number;
   historyWindowTargetCount: number;
   historyViewportSyncPending: boolean;
+  historyViewportSyncForcePending: boolean;
   historyViewportSyncQueuedDuringRefresh: boolean;
   disconnectStream: (() => void) | null;
   streamConnected: boolean;

@@ -234,7 +234,7 @@ const historyRender = createAgentHistoryRender({
       return;
     }
 
-    queueHistoryWindowViewportSync(sessionId, state);
+    queueUrgentHistoryWindowViewportSync(sessionId, state);
   },
 });
 
@@ -437,6 +437,7 @@ export function showLensDebugScenario(sessionId: string, scenario = 'mixed'): bo
   state.streamConnected = true;
   state.refreshInFlight = false;
   state.historyViewportSyncPending = false;
+  state.historyViewportSyncForcePending = false;
   state.activationState = 'ready';
   state.activationDetail = 'Lens debug scenario loaded.';
   state.activationTrace = [];
@@ -698,6 +699,7 @@ function getOrCreateViewState(sessionId: string, panel: HTMLDivElement): Session
     historyWindowCount: initialHistoryWindowCount,
     historyWindowTargetCount: initialHistoryWindowCount,
     historyViewportSyncPending: false,
+    historyViewportSyncForcePending: false,
     historyViewportSyncQueuedDuringRefresh: false,
     disconnectStream: null,
     streamConnected: false,
@@ -1051,6 +1053,7 @@ function enterHistoryFollowLive(sessionId: string, state: SessionLensViewState):
   state.historyPendingJumpTargetIndex = null;
   state.historyPendingJumpAlign = null;
   state.historyViewportSyncPending = false;
+  state.historyViewportSyncForcePending = false;
   state.historyViewportSyncQueuedDuringRefresh = false;
   state.historyNavigatorMode = 'follow-live';
   state.historyNavigatorDragTargetIndex = null;
@@ -1073,6 +1076,12 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
   state.historyProgressThumb = state.panel.querySelector<HTMLDivElement>(
     '[data-agent-field="history-progress-thumb"]',
   );
+  if (state.historyProgressNav) {
+    if (typeof state.historyProgressNav.removeAttribute === 'function') {
+      state.historyProgressNav.removeAttribute('hidden');
+    }
+    state.historyProgressNav.hidden = false;
+  }
   if (!viewport) {
     return;
   }
@@ -1617,6 +1626,7 @@ function releaseHiddenLensRenderState(state: SessionLensViewState): void {
   state.historyNavigatorMode = state.historyAutoScrollPinned ? 'follow-live' : 'browse';
   state.historyLastVirtualWindowKey = null;
   state.historyViewportSyncPending = false;
+  state.historyViewportSyncForcePending = false;
   state.renderDirty = true;
 
   const historyHost = state.panel.querySelector<HTMLElement>('[data-agent-field="history"]');
@@ -1833,9 +1843,26 @@ async function loadLatestLensHistoryWindow(
 }
 
 function queueHistoryWindowViewportSync(sessionId: string, state: SessionLensViewState): void {
+  queueHistoryWindowViewportSyncInternal(sessionId, state, false);
+}
+
+function queueUrgentHistoryWindowViewportSync(
+  sessionId: string,
+  state: SessionLensViewState,
+): void {
+  queueHistoryWindowViewportSyncInternal(sessionId, state, true);
+}
+
+function queueHistoryWindowViewportSyncInternal(
+  sessionId: string,
+  state: SessionLensViewState,
+  forceRequest: boolean,
+): void {
   if (state.historyNavigatorMode === 'drag-preview') {
     return;
   }
+
+  state.historyViewportSyncForcePending ||= forceRequest;
 
   if (state.historyViewportSyncPending) {
     return;
@@ -1856,7 +1883,9 @@ function flushQueuedRefreshViewportSync(sessionId: string, state: SessionLensVie
     state.historyNavigatorMode !== 'drag-preview'
   ) {
     state.historyViewportSyncQueuedDuringRefresh = false;
-    void syncHistoryWindowToViewport(sessionId, state, true);
+    const forceRequest = state.historyViewportSyncForcePending;
+    state.historyViewportSyncForcePending = false;
+    void syncHistoryWindowToViewport(sessionId, state, forceRequest);
     return true;
   }
 
@@ -1876,8 +1905,10 @@ function flushPendingHistoryWindowViewportSync(
   }
 
   state.historyViewportSyncPending = false;
+  const forceRequest = state.historyViewportSyncForcePending;
+  state.historyViewportSyncForcePending = false;
   if (!state.historyAutoScrollPinned) {
-    void syncHistoryWindowToViewport(sessionId, state, true);
+    void syncHistoryWindowToViewport(sessionId, state, forceRequest);
   }
 }
 
@@ -1889,6 +1920,7 @@ async function syncHistoryWindowToViewport(
 ): Promise<void> {
   if (state.refreshInFlight || !state.snapshot) {
     state.historyViewportSyncPending = true;
+    state.historyViewportSyncForcePending ||= forceRequest;
     return;
   }
 

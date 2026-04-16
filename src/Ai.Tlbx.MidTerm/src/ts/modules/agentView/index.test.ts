@@ -2115,7 +2115,6 @@ describe('agentView dev errors', () => {
     await vi.waitFor(() => {
       expect(getLensHistoryWindow).toHaveBeenCalledTimes(1);
     });
-
     const wheelHandler = historyHost.addEventListener.mock.calls.find(
       ([eventName]: [string]) => eventName === 'wheel',
     )?.[1] as ((event: { deltaY: number }) => void) | undefined;
@@ -2149,6 +2148,32 @@ describe('agentView dev errors', () => {
       expect(requestedWindows[2].startIndex).toBeTypeOf('number');
       expect((requestedWindows[2].count ?? 0) > 0).toBe(true);
     }
+  });
+
+  it('does not request a viewport-centered refetch when a short retained window already covers full history', async () => {
+    const { resolveViewportCenteredWindowRequest } = await import('../../utils/virtualizer');
+
+    const request = resolveViewportCenteredWindowRequest({
+      items: Array.from({ length: 29 }, (_value, index) => ({
+        id: `row-${index + 1}`,
+        heightPx: 96,
+      })),
+      viewportMetrics: {
+        scrollTop: 3508,
+        clientHeight: 629,
+        clientWidth: 920,
+      },
+      retainedWindow: {
+        windowStart: 0,
+        windowEnd: 29,
+        totalCount: 29,
+      },
+      fetchAheadItems: 20,
+      resolveItemSize: (item) => item.heightPx,
+      observedSizes: [],
+    });
+
+    expect(request).toBeNull();
   });
 
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
@@ -6223,6 +6248,10 @@ describe('agentView dev errors', () => {
 
     render.renderActivationView('s1', panel, state, entries);
 
+    expect(progressNav.hidden).toBe(false);
+    expect(progressNav.dataset.ready).toBe('true');
+    expect(progressNav.tabIndex).toBe(0);
+    expect(progressNav.setAttribute).toHaveBeenCalledWith('aria-disabled', 'false');
     expect(String(progressThumb.style.height)).not.toBe('');
     expect(String(progressThumb.style.top)).not.toBe('');
 

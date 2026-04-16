@@ -107,6 +107,15 @@ export function computeHistoryVirtualWindow(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryVirtualWindow {
+  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
+    return {
+      start: 0,
+      end: entries.length,
+      topSpacerPx: 0,
+      bottomSpacerPx: 0,
+    };
+  }
+
   const resolveHeight =
     resolveEntryHeight ??
     ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));

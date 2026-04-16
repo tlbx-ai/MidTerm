@@ -13,6 +13,7 @@ const lensDesign = readFileSync(
 const indexSource = readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 const historyContentSource = readFileSync(path.join(__dirname, 'historyContent.ts'), 'utf8');
 const historyDomSource = readFileSync(path.join(__dirname, 'historyDom.ts'), 'utf8');
+const historyRenderSource = readFileSync(path.join(__dirname, 'historyRender.ts'), 'utf8');
 const historyProcessingSource = readFileSync(path.join(__dirname, 'historyProcessing.ts'), 'utf8');
 const focusReclaimSource = readFileSync(
   path.join(__dirname, '../terminal/focusReclaim.ts'),
@@ -143,6 +144,25 @@ describe('agent view Lens wiring', () => {
     expect(deactivateBlock?.[0]).not.toContain("setHistoryScrollMode(state, 'follow');");
     expect(indexSource).toContain(
       "void refreshLensSnapshot(sessionId, { latestWindow: state.historyAutoScrollPinned });",
+    );
+  });
+
+  it('keeps the progress navigator stateful in layout and expands its touch target on mobile', () => {
+    expect(historyRenderSource).not.toContain('host.hidden = historyCount <= 0;');
+    expect(viewShellSource).not.toContain('progressNav.hidden &&');
+    expect(css).toContain(".agent-history-progress-nav[data-ready='false'] {");
+    expect(css).toContain(".agent-history-progress-nav[data-ready='false'] .agent-history-progress-thumb {");
+    expect(css).toContain('opacity: 0;');
+    expect(css).toMatch(/@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?flex: 0 0 44px;/s);
+    expect(css).toMatch(/@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-thumb \{[\s\S]*?min-height: 56px;/s);
+    expect(lensDesign).toContain(
+      'The progress navigator should remain a persistent Lens-owned rail in layout.',
+    );
+    expect(lensDesign).toContain(
+      'On touch-sized viewports, the progress navigator should expose at least a 44px touch target',
+    );
+    expect(lensDesign).toContain(
+      'the progress navigator now stays in layout as a stateful Lens rail instead of relying on `hidden` attribute toggles for visibility',
     );
   });
 

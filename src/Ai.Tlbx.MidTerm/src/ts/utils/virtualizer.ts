@@ -468,6 +468,10 @@ export function resolveViewportCenteredWindowRequest<TItem>(args: {
     return null;
   }
 
+  if (retainedWindow.windowStart <= 0 && retainedWindow.windowEnd >= retainedWindow.totalCount) {
+    return null;
+  }
+
   const windowMetrics = resolveRetainedWindowViewportMetrics({
     items,
     viewportMetrics,

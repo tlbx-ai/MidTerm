@@ -183,6 +183,7 @@ The canonical history contract must satisfy the following:
   - a dedicated progress navigator for global history seeking in canonical index space
   - the history pane itself as the native local pixel scroller for the currently materialized kernel
 - The progress navigator must not derive its range or thumb position from rendered DOM height. Its behavior should feel the same whether the session has 100 items or 10,000,000 items.
+- The progress navigator should remain a persistent Lens-owned rail in layout. Its ready/not-ready state should come from explicit navigator state, not from toggling the element out of layout with stale `hidden` attributes on reused panel DOM.
 - Direct progress-nav drags should map to canonical history progress, land on a tiny centered preview window around the latest target, and only then hydrate into a normal browse window after drag idle. Lens must not try to materialize the entire traversed span during a large scrub.
 - The materialized browse kernel should remain contiguous around the visible region and should grow outward as the user locally scrolls. Trimming older/newer materialized rows must preserve the visible reader anchor by stable item identity and pixel offset.
 - Placeholder blocks may represent buffered or far-off ranges, but the viewport must not settle into placeholder-only or empty estimated space. If no concrete row intersects the viewport, Lens should urgently materialize the nearest canonical rows.
@@ -197,6 +198,7 @@ The canonical history contract must satisfy the following:
 
 - Lens must remain fully usable on mobile-sized viewports.
 - Mobile Lens should preserve history hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal history reading.
+- On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb clearly themed and visually distinct from the history background.
 - Responsive behavior must be designed, not treated as desktop shrinkage.
 
 ### 8. Internationalized MidTerm UI copy
@@ -649,7 +651,11 @@ Status in this branch/work item:
 - implemented: long Lens histories no longer collapse everything outside the active corridor into two blind spacers; the timeline now keeps segmented placeholder blocks in the DOM for buffered/off-window ranges and triggers an urgent viewport-centered history-window sync whenever the viewport has no intersecting concrete rows, so mobile and browse-mode recovery do not settle into black voids
 - implemented: Lens now exposes a separate top-right virtualizer debug overlay with total history count, current placeholder-block count, visible absolute item span with edge IDs, and the last ten history-window fetches so spacer/void regressions can be inspected live without polluting the timeline
 - implemented: Lens history navigation now uses a dedicated progress navigator keyed directly to canonical item indexes instead of DOM height or a synthetic total-height scroll host
+- implemented: the separate progress navigator now keeps a visible thumb/track treatment even when accent variables or advanced color functions are unavailable, so the Lens-owned scrollbar does not disappear into a transparent rail
+- implemented: the progress navigator now stays in layout as a stateful Lens rail instead of relying on `hidden` attribute toggles for visibility, which prevents reused session shells from collapsing the navigator out of existence
+- implemented: touch-sized Lens layouts now widen the progress navigator to a 44px-class hit target with a stronger mobile rail treatment so direct scrubbing does not require precision taps
 - implemented: the history pane itself is again the native local pixel scroller for the currently materialized kernel, while browse-mode retained-window growth and trims preserve the reader anchor
+- implemented: ordinary local pane scrolling no longer force-refreshes the already loaded history window when no window shift is needed; forced same-window refetch is reserved for urgent void-recovery cases where the viewport has lost all intersecting concrete rows
 - implemented: direct progress-nav scrubs now jump to a tiny centered preview window first and then hydrate into a normal browse window after drag idle, so large jumps do not try to materialize the traversed span
 - implemented gap: canonical interactive request/question flows now have a dedicated frontend interview widget, but the backend model still represents them as request summaries rather than a first-class canonical `interview` item type
 
