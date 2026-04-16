@@ -6284,6 +6284,26 @@ describe('agentView dev errors', () => {
     expect(unadjustedRange.start).toBe(43);
   });
 
+  it('resolves the actual visible history slice even when the retained window stays below the DOM virtualization threshold', async () => {
+    const { computeHistoryVisibleRange } = await import('./historyViewport');
+
+    const entries = Array.from({ length: 35 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    const visibleRange = computeHistoryVisibleRange(entries, 1800, 600, 900, () => 100);
+
+    expect(visibleRange.start).toBe(18);
+    expect(visibleRange.end).toBe(24);
+  });
+
   it('caps the viewport-aligned off-window top spacer when estimates exceed the current scroll offset', async () => {
     const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
 
@@ -6566,12 +6586,12 @@ describe('agentView dev errors', () => {
     expect(progressNav.tabIndex).toBe(0);
     expect(progressNav.setAttribute).toHaveBeenCalledWith('aria-disabled', 'false');
     expect(String(progressThumb.style.height)).not.toBe('');
-    expect(String(progressThumb.style.top)).not.toBe('');
+    expect(String(progressThumb.style.top)).toBe('6px');
 
-    historyViewport.scrollTop = 1000;
+    historyViewport.scrollTop = 4000;
     render.syncViewportOffset('s1');
 
-    expect(String(progressThumb.style.top)).not.toBe('');
+    expect(String(progressThumb.style.top)).not.toBe('6px');
   });
 
   it('realigns browse-mode history when every rendered row drifts outside the viewport', async () => {

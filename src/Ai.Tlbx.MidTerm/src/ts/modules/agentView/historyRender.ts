@@ -50,6 +50,7 @@ const HISTORY_PROGRESS_THUMB_DESKTOP_MIN_PX = 40;
 const HISTORY_PROGRESS_THUMB_DESKTOP_MAX_PX = 72;
 const HISTORY_PROGRESS_THUMB_TOUCH_MIN_PX = 44;
 const HISTORY_PROGRESS_THUMB_TOUCH_MAX_PX = 84;
+const HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX = 1;
 
 function resolveHistoryEntryHeight(
   entry: LensHistoryEntry,
@@ -507,9 +508,10 @@ function readHistoryScrollMetrics(
   };
 }
 
-function resolveHistoryNavigatorVisibleMidpoint(
+function resolveHistoryNavigatorVisibleAnchorIndex(
   state: SessionLensViewState,
   viewport: HTMLDivElement,
+  totalCount: number,
 ): number | null {
   if (state.historyEntries.length === 0) {
     return null;
@@ -535,6 +537,18 @@ function resolveHistoryNavigatorVisibleMidpoint(
 
   const visibleStart = Math.max(0, firstVisibleEntry.order - 1);
   const visibleEnd = Math.max(visibleStart, lastVisibleEntry.order - 1);
+
+  if (visibleStart <= 0 && metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+    return 0;
+  }
+
+  if (
+    visibleRange.end >= state.historyEntries.length &&
+    visibleEnd >= Math.max(0, totalCount - 1)
+  ) {
+    return Math.max(0, totalCount - 1);
+  }
+
   return (visibleStart + visibleEnd) / 2;
 }
 
@@ -561,9 +575,13 @@ function resolveHistoryNavigatorAnchorIndex(
     return retainedWindow.totalCount - 1;
   }
 
-  const visibleMidpoint = resolveHistoryNavigatorVisibleMidpoint(state, viewport);
-  if (visibleMidpoint !== null && Number.isFinite(visibleMidpoint)) {
-    return clampHistoryAbsoluteIndex(visibleMidpoint, retainedWindow.totalCount);
+  const visibleAnchorIndex = resolveHistoryNavigatorVisibleAnchorIndex(
+    state,
+    viewport,
+    retainedWindow.totalCount,
+  );
+  if (visibleAnchorIndex !== null && Number.isFinite(visibleAnchorIndex)) {
+    return clampHistoryAbsoluteIndex(visibleAnchorIndex, retainedWindow.totalCount);
   }
 
   return clampHistoryAbsoluteIndex(

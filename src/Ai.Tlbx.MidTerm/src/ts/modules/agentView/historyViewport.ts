@@ -135,13 +135,6 @@ export function computeHistoryVisibleRange(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryIndexRange {
-  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
-    return {
-      start: 0,
-      end: entries.length,
-    };
-  }
-
   const resolveHeight =
     resolveEntryHeight ??
     ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));

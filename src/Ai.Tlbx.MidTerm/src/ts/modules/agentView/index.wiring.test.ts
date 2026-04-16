@@ -151,6 +151,8 @@ describe('agent view Lens wiring', () => {
     expect(historyRenderSource).not.toContain('host.hidden = historyCount <= 0;');
     expect(viewShellSource).not.toContain('repairAgentViewSkeleton(');
     expect(viewShellSource).not.toContain('history-index-scroll');
+    expect(css).toContain('flex: 0 0 12px;');
+    expect(css).toContain('width: 3px;');
     expect(css).toContain(".agent-history-progress-nav[data-ready='false'] {");
     expect(css).toContain(".agent-history-progress-nav[data-ready='false'] .agent-history-progress-thumb {");
     expect(css).toContain('opacity: 0;');
@@ -161,6 +163,15 @@ describe('agent view Lens wiring', () => {
     );
     expect(lensDesign).toContain(
       'On touch-sized viewports, the progress navigator should expose at least a 44px touch target',
+    );
+    expect(lensDesign).toContain(
+      'On desktop, the progress navigator should stay visually recessive: a thin low-chrome rail with a darker thumb',
+    );
+    expect(lensDesign).toContain(
+      'The visible progress thumb should top-clamp when the pane itself is top-clamped on the first canonical history item',
+    );
+    expect(lensDesign).toContain(
+      'Any browser-side visible-range math that feeds navigator position, fetch policy, or tracing must resolve the actual on-screen slice',
     );
     expect(lensDesign).toContain(
       'the progress navigator now stays in layout as a stateful Lens rail instead of relying on `hidden` attribute toggles for visibility',
