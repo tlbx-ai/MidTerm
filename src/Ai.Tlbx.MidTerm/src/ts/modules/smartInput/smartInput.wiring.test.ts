@@ -218,8 +218,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('font-weight: var(--terminal-font-weight, normal);');
     expect(css).toContain('letter-spacing: var(--terminal-letter-spacing, 0px);');
     expect(css).toContain("--smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);");
+    expect(css).toContain("--smart-input-textarea-collapsed-height: var(--smart-input-control-height);");
     expect(css).toContain('--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);');
-    expect(css).not.toContain("--smart-input-textarea-single-line-padding-y:");
+    expect(css).toContain('var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px');
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
     expect(css).toContain('var(--terminal-line-height, 1)');
     expect(css).toContain('font-kerning: none;');

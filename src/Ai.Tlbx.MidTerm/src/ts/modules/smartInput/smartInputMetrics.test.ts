@@ -137,7 +137,7 @@ describe('smartInputMetrics', () => {
     expect(textarea.scrollTop).toBe(72);
   });
 
-  it('marks collapsed prompts as single-line so CSS can vertically center them', () => {
+  it('keeps collapsed prompts pinned to the control height without overflow', () => {
     const textarea = createTextarea(26);
     vi.stubGlobal('getComputedStyle', (target: HTMLTextAreaElement) =>
       ({

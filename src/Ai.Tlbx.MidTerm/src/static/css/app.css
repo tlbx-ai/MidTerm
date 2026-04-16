@@ -15916,13 +15916,21 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-textarea {
-  --smart-input-textarea-min-height: var(--smart-input-control-height);
+  --smart-input-textarea-collapsed-height: var(--smart-input-control-height);
+  --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
   --smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);
   --smart-input-textarea-max-visible-lines: 8;
   --smart-input-textarea-line-height: calc(
     var(--terminal-font-size, 16px) * var(--terminal-line-height, 1)
   );
-  --smart-input-textarea-multiline-padding-y: 8px;
+  --smart-input-textarea-multiline-padding-y: max(
+    0px,
+    calc(
+      (
+          var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px
+        ) / 2
+    )
+  );
   --smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);
   width: 100%;
   min-height: var(--smart-input-textarea-min-height);
@@ -16964,7 +16972,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
 
   .smart-input-textarea {
-    --smart-input-textarea-min-height: 46px;
+    --smart-input-textarea-collapsed-height: 46px;
+    --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
   }
 
   .smart-input-textarea-shell {
