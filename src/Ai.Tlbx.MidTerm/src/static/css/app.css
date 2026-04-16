@@ -11550,6 +11550,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   user-select: none;
   outline: none;
   --agent-history-progress-accent: var(--agent-accent, var(--accent-blue));
+  --agent-history-progress-surface: var(--surface-0, var(--btn-secondary));
   transition: opacity 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
@@ -11576,11 +11577,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   width: 8px;
   min-height: 40px;
   background: var(--btn-secondary);
-  background: color-mix(in srgb, var(--agent-history-progress-accent) 22%, var(--surface-0) 78%);
+  background: color-mix(
+    in srgb,
+    var(--agent-history-progress-accent) 22%,
+    var(--agent-history-progress-surface) 78%
+  );
   box-shadow: 0 0 0 1px var(--accent-blue-15);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--agent-history-progress-accent) 12%, transparent),
-    0 4px 12px color-mix(in srgb, var(--surface-0) 24%, transparent);
+    0 4px 12px color-mix(in srgb, var(--agent-history-progress-surface) 24%, transparent);
   will-change: top;
   transition: opacity 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
@@ -11600,7 +11605,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-progress-nav[data-mode='drag-preview'] .agent-history-progress-thumb {
-  background: color-mix(in srgb, var(--agent-history-progress-accent) 30%, var(--surface-0) 70%);
+  background: color-mix(
+    in srgb,
+    var(--agent-history-progress-accent) 30%,
+    var(--agent-history-progress-surface) 70%
+  );
   box-shadow: 0 0 0 1px var(--accent-blue-25);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--agent-history-progress-accent) 16%, transparent),
@@ -11613,7 +11622,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-history-progress-nav:focus-visible .agent-history-progress-thumb {
-  background: color-mix(in srgb, var(--agent-history-progress-accent) 32%, var(--surface-0) 68%);
+  background: color-mix(
+    in srgb,
+    var(--agent-history-progress-accent) 32%,
+    var(--agent-history-progress-surface) 68%
+  );
   box-shadow: 0 0 0 2px var(--accent-blue-25);
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--agent-history-progress-accent) 18%, transparent),
@@ -11637,7 +11650,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
       );
     box-shadow:
       inset 0 0 0 1px color-mix(in srgb, var(--agent-history-progress-accent) 12%, transparent),
-      inset 0 10px 22px color-mix(in srgb, var(--surface-0) 14%, transparent);
+      inset 0 10px 22px color-mix(in srgb, var(--agent-history-progress-surface) 14%, transparent);
   }
 
   .agent-history-progress-track {
@@ -11651,7 +11664,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   .agent-history-progress-thumb {
     width: 18px;
     min-height: 56px;
-    background: color-mix(in srgb, var(--agent-history-progress-accent) 28%, var(--surface-0) 72%);
+    background: color-mix(
+      in srgb,
+      var(--agent-history-progress-accent) 28%,
+      var(--agent-history-progress-surface) 72%
+    );
     box-shadow: 0 0 0 1px var(--accent-blue-25);
     box-shadow:
       0 0 0 1px color-mix(in srgb, var(--agent-history-progress-accent) 18%, transparent),

@@ -153,6 +153,8 @@ describe('agent view Lens wiring', () => {
     expect(viewShellSource).not.toContain('history-index-scroll');
     expect(css).toContain('flex: 0 0 12px;');
     expect(css).toContain('width: 3px;');
+    expect(css).toContain('--agent-history-progress-surface: var(--surface-0, var(--btn-secondary));');
+    expect(css).toContain('var(--agent-history-progress-surface) 78%');
     expect(css).toContain(".agent-history-progress-nav[data-ready='false'] {");
     expect(css).toContain(".agent-history-progress-nav[data-ready='false'] .agent-history-progress-thumb {");
     expect(css).toContain('opacity: 0;');
