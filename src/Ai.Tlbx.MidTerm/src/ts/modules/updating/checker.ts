@@ -216,7 +216,7 @@ export function bindFooterUpdateLink(): void {
         return;
       }
       openSettings();
-      switchSettingsTab('general');
+      switchSettingsTab('updates');
     });
   }
 }

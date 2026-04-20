@@ -730,6 +730,103 @@ public sealed class SessionLensHostRuntimeServiceTests
     }
 
     [Fact]
+    public async Task SessionLensRuntimeService_CanRecoverCodexLensHistoryWhenRestartedSessionLooksLikeShell()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-codex-shell-recovery-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(settingsRoot);
+        var instanceIdentity = MidTermInstanceIdentity.Load(settingsRoot, 4041);
+        const string prompt = "Persist Codex Lens history while the terminal looks like shell after restart.";
+        var initialSession = new SessionInfoDto
+        {
+            Id = "session-runtime-codex-shell-recovery-1",
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        try
+        {
+            await using var initialHostRuntime = new SessionLensHostRuntimeService(
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "codex");
+            await using var initialSessionManager = new TtyHostSessionManager();
+            var profileService = new AiCliProfileService();
+            await using var initialRuntime = new SessionLensRuntimeService(
+                initialSessionManager,
+                profileService,
+                initialHostRuntime);
+
+            Assert.True(await initialRuntime.EnsureAttachedAsync(initialSession.Id, initialSession));
+            var turn = await initialRuntime.StartTurnAsync(
+                initialSession.Id,
+                new LensTurnRequest
+                {
+                    Text = prompt,
+                    Attachments = []
+                });
+
+            Assert.Equal("accepted", turn.Status);
+            var initialSnapshot = await WaitForSnapshotAsync(
+                initialRuntime,
+                initialSession.Id,
+                current => current.CurrentTurn.State == "completed" &&
+                           current.Streams.AssistantText.Contains(prompt, StringComparison.Ordinal));
+            Assert.NotNull(initialSnapshot);
+
+            await using var restartedHostRuntime = new SessionLensHostRuntimeService(
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "codex");
+            await using var restartedSessionManager = new TtyHostSessionManager();
+            await using var restartedRuntime = new SessionLensRuntimeService(
+                restartedSessionManager,
+                profileService,
+                restartedHostRuntime);
+
+            var shellLikeSession = new SessionInfoDto
+            {
+                Id = initialSession.Id,
+                CurrentDirectory = fakeCodex.Root,
+                ShellType = "Pwsh",
+                ForegroundName = "pwsh",
+                ForegroundCommandLine = "pwsh",
+                ForegroundProcessIdentity = "shell"
+            };
+
+            var attached = await restartedRuntime.EnsureAttachedAsync(shellLikeSession.Id, shellLikeSession);
+
+            Assert.True(attached);
+            var recoveredSnapshot = await WaitForSnapshotAsync(
+                restartedRuntime,
+                shellLikeSession.Id,
+                current => current.CurrentTurn.State == "completed" &&
+                           current.Streams.AssistantText.Contains(prompt, StringComparison.Ordinal));
+            Assert.NotNull(recoveredSnapshot);
+            Assert.Equal(initialSnapshot!.Thread.ThreadId, recoveredSnapshot!.Thread.ThreadId);
+
+            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(shellLikeSession.Id, 0, 200);
+            Assert.NotNull(fullHistorySnapshot);
+            Assert.Contains(
+                fullHistorySnapshot!.History,
+                entry => entry.ItemType == "user_message" &&
+                         entry.Body.Contains(prompt, StringComparison.Ordinal));
+
+            await restartedRuntime.DetachAsync(shellLikeSession.Id);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(settingsRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
     public async Task SessionLensHostRuntimeService_Forget_KillsRecoveredMtAgentHostProcess()
     {
         var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-kill-tests", Guid.NewGuid().ToString("N"));
@@ -943,6 +1040,5 @@ public sealed class SessionLensHostRuntimeServiceTests
         return found ? args[1] : null;
     }
 }
-
 
 

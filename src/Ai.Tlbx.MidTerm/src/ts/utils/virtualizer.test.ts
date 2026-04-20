@@ -110,6 +110,31 @@ describe('virtualizer', () => {
     expect(metrics.scrollTop).toBe(0);
   });
 
+  it('targets the absolute viewport position when the reader is still inside unseen older-history space', () => {
+    const request = resolveViewportCenteredWindowRequest({
+      items: Array.from({ length: 10 }, (_, index) => ({ id: `row-${index}` })),
+      viewportMetrics: {
+        scrollTop: 240,
+        clientHeight: 600,
+        clientWidth: 900,
+      },
+      retainedWindow: {
+        windowStart: 50,
+        windowEnd: 60,
+        totalCount: 100,
+      },
+      fetchAheadItems: 5,
+      observedSizes: [100, 102, 98, 101, 99],
+      resolveItemSize: () => 220,
+      resolveEstimatedItemSize: () => 210,
+    });
+
+    expect(request).toEqual({
+      startIndex: 0,
+      count: 12,
+    });
+  });
+
   it('computes scroll compensation from size changes above the current browse anchor', () => {
     const delta = resolveScrollCompensationDelta({
       anchorAbsoluteIndex: 25,

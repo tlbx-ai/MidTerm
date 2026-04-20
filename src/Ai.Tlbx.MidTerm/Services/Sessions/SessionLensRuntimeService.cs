@@ -33,8 +33,8 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable, ISessionLensHe
             return true;
         }
 
-        var profile = _profileService.NormalizeProfile(null, session);
-        if (profile is not AiCliProfileService.CodexProfile and not AiCliProfileService.ClaudeProfile)
+        var profile = ResolveAttachProfile(session);
+        if (!IsAttachableProfile(profile))
         {
             return false;
         }
@@ -74,7 +74,7 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable, ISessionLensHe
         {
             ct.ThrowIfCancellationRequested();
 
-            var profile = _profileService.NormalizeProfile(null, session);
+            var profile = ResolveAttachProfile(session);
             if (!_hostRuntime.IsEnabledFor(profile) || !_hostRuntime.MayHaveRecoverableHost(session.Id))
             {
                 continue;
@@ -264,6 +264,30 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable, ISessionLensHe
 
         return string.IsNullOrWhiteSpace(historyWindow.CurrentTurn.State) &&
                IsWorkingSessionState(historyWindow.Session.State);
+    }
+
+    private string ResolveAttachProfile(SessionInfoDto session)
+    {
+        var detectedProfile = _profileService.NormalizeProfile(null, session);
+        if (IsAttachableProfile(detectedProfile))
+        {
+            return detectedProfile;
+        }
+
+        var attachPointProfile = _profileService.NormalizeProfile(session.AgentAttachPoint?.Provider);
+        if (IsAttachableProfile(attachPointProfile))
+        {
+            return attachPointProfile;
+        }
+
+        return _hostRuntime.TryResolveRecoverableProfile(session.Id, out var recoverableProfile)
+            ? recoverableProfile
+            : detectedProfile;
+    }
+
+    private static bool IsAttachableProfile(string? profile)
+    {
+        return profile is AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile;
     }
 
     private static bool IsWorkingTurnState(string? state)

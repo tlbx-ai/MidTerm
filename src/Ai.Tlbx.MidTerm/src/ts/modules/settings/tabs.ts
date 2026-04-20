@@ -7,26 +7,28 @@
 import { startLatencyMeasurement, stopLatencyMeasurement } from '../diagnostics';
 
 export type SettingsTab =
-  | 'general'
-  | 'hub'
+  | 'updates'
+  | 'sessions'
   | 'appearance'
-  | 'command-bay'
+  | 'workflow'
   | 'terminal'
-  | 'agent'
+  | 'ai-agents'
   | 'security'
-  | 'diagnostics';
+  | 'connected-hosts'
+  | 'advanced';
 
 const STORAGE_KEY = 'settings-tab';
-const DEFAULT_TAB: SettingsTab = 'general';
+const DEFAULT_TAB: SettingsTab = 'updates';
 const VALID_TABS: SettingsTab[] = [
-  'general',
-  'hub',
+  'updates',
+  'sessions',
   'appearance',
-  'command-bay',
+  'workflow',
   'terminal',
-  'agent',
+  'ai-agents',
   'security',
-  'diagnostics',
+  'connected-hosts',
+  'advanced',
 ];
 
 let activeTab: SettingsTab = DEFAULT_TAB;
@@ -60,7 +62,7 @@ export function switchSettingsTab(tab: SettingsTab): void {
     panel.classList.toggle('hidden', !isActive);
   });
 
-  if (tab === 'diagnostics') {
+  if (tab === 'advanced') {
     startLatencyMeasurement();
   } else {
     stopLatencyMeasurement();
@@ -97,10 +99,26 @@ export function normalizeStoredSettingsTab(tab: string | null): SettingsTab | nu
   switch (tab) {
     case null:
       return null;
-    case 'behavior':
+    case 'general':
+      return 'updates';
+    case 'hub':
+      return 'connected-hosts';
+    case 'appearance':
+      return 'appearance';
+    case 'command-bay':
+      return 'workflow';
+    case 'terminal':
       return 'terminal';
+    case 'agent':
+      return 'ai-agents';
+    case 'security':
+      return 'security';
+    case 'diagnostics':
+      return 'advanced';
+    case 'behavior':
+      return 'workflow';
     case 'agent-ui':
-      return 'agent';
+      return 'ai-agents';
     default:
       return tab && isValidTab(tab) ? tab : null;
   }

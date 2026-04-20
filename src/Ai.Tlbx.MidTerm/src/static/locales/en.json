@@ -79,8 +79,8 @@
   "sidebar.noMatchingTerminals": "No terminals match the current filter",
   "sidebar.hide": "Hide sidebar",
   "sidebar.show": "Show sidebar",
-  "sidebar.claimMainBrowser": "Become the leading browser \u2014 terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead.",
-  "sidebar.leadingBrowser": "This browser is leading \u2014 terminals auto-resize to fit this window",
+  "sidebar.claimMainBrowser": "Become the leading browser — terminals will auto-resize to fit this window. Other browsers will use CSS scaling instead.",
+  "sidebar.leadingBrowser": "This browser is leading — terminals auto-resize to fit this window",
   "sidebar.followingBrowser": "Following browser (scale only)",
   "terminal.scaledContent": "Scaled content",
   "terminal.scaledTo": "Scaled to",
@@ -88,7 +88,6 @@
   "terminal.makeReferenceScaleBrowser": "Make this the reference scale browser",
   "terminal.resizeToThisViewport": "Resize this terminal to this viewport",
   "sidebar.rename": "Rename",
-
   "sidebar.updateAvailable": "Update Available",
   "sidebar.quickUpdate": "Quick Update",
   "sidebar.showChangelog": "Show Changelog",
@@ -98,7 +97,6 @@
   "sidebar.saveWorkTerminalsClose": "Save your work - terminals will close",
   "sidebar.updateDismiss": "Dismiss",
   "sidebar.footerUpdateAvailable": "Update available",
-
   "sidebar.voiceAssistant": "Voice Assistant",
   "sidebar.voiceStartStop": "Start/Stop",
   "sidebar.voiceTestConnection": "Test Voice Server Connection",
@@ -265,30 +263,25 @@
   "sessionLauncher.loadFailed": "Failed to load directories.",
   "sessionLauncher.createFailed": "Session launch failed",
   "sessionLauncher.settingsUnavailable": "Settings are not loaded yet. Try again in a moment.",
-
   "sidebar.networkRemoteAccess": "Network & Remote Access",
   "sidebar.trustCertificate": "Trust Certificate",
   "sidebar.trustCertificateHint": "Trust certificate on this or other devices",
   "sidebar.shareAccess": "Share Access...",
   "sidebar.shareAccessHint": "Share connection info via email",
-
   "security.warning": "No password set. Anyone on the network can access your terminals.",
   "security.setPassword": "Set Password",
-
   "chat.title": "Voice Chat",
   "chat.hide": "Hide chat panel",
   "chat.toolCall": "tool call",
   "chat.toolCalls": "tool calls",
   "chat.toolRequest": "Request",
   "chat.toolResponse": "Response",
-
   "topbar.sessions": "Sessions",
   "topbar.fullscreen": "Fullscreen",
   "topbar.sendCtrlC": "Send Ctrl+C",
   "topbar.closeTerminal": "Close terminal",
   "topbar.showTouchBar": "Show touch bar",
   "topbar.hideTouchBar": "Hide touch bar",
-
   "terminal.search": "Search...",
   "terminal.searchPrevious": "Previous (Shift+Enter)",
   "terminal.searchNext": "Next (Enter)",
@@ -298,7 +291,6 @@
   "terminal.noTerminals": "No terminals open",
   "terminal.createTerminal": "Create Session",
   "terminal.createHint": "Press <kbd>Alt</kbd>+<kbd>T</kbd> to create a new session",
-
   "settings.general": "Updates / Info",
   "settings.appearance": "Appearance",
   "settings.commandBay": "Command Bay",
@@ -309,7 +301,6 @@
   "settings.security": "Security",
   "settings.hub": "MidTerm Hub",
   "settings.diagnostics": "Diagnostics",
-
   "settings.general.title": "Updates / Info",
   "settings.general.aboutUpdates": "About & Updates",
   "settings.general.server": "Server",
@@ -336,7 +327,6 @@
   "settings.general.loading": "Loading...",
   "settings.general.ossLicenses": "Open Source Licenses",
   "settings.general.ossHint": "MidTerm uses the following open source components:",
-
   "settings.hub.title": "MidTerm Hub",
   "settings.hub.description": "Connect your other MidTerm hosts here so you can manage agents across your Mac, Linux PC, Raspberry Pi, or server from one frontend. Add each host URL and its credentials to get started.",
   "settings.hub.addMachine": "Add Machine",
@@ -385,7 +375,6 @@
   "settings.hub.updateAvailable": "Update available",
   "settings.hub.noUpdate": "No update",
   "settings.hub.noMachinesConfigured": "No machines configured",
-
   "settings.appearance.title": "Appearance",
   "settings.appearance.terminalAppearance": "Terminal Appearance",
   "settings.appearance.language": "Language",
@@ -423,7 +412,6 @@
   "settings.appearance.browserTabTitle": "Browser Tab Title",
   "settings.appearance.minimumContrast": "Minimum Contrast",
   "settings.appearance.terminalScrollbar": "Terminal Scrollbar",
-
   "settings.commandBay.title": "Command Bay",
   "settings.commandBay.commandBay": "Command Bay",
   "settings.commandBay.enableLigatures": "Enable Ligatures",
@@ -483,7 +471,6 @@
   "settings.agentUi.claudeEnv": "Claude Environment Variables",
   "settings.agentUi.agentEnvHint": "One KEY=value pair per line",
   "settings.agentUi.agentEnvInvalid": "Environment variables must use KEY=value format",
-
   "settings.security.title": "Security",
   "settings.security.authentication": "Authentication",
   "settings.security.password": "Password",
@@ -584,7 +571,6 @@
   "settings.diagnostics.restartingServer": "Server is restarting...",
   "settings.diagnostics.restartFailed": "Server may not have restarted. Try refreshing the page.",
   "settings.diagnostics.retryConnection": "Refresh",
-
   "settings.options.cursorBar": "Bar",
   "settings.options.cursorBlock": "Block",
   "settings.options.cursorUnderline": "Underline",
@@ -637,7 +623,6 @@
   "settings.options.terminalEnterDefault": "Off",
   "settings.options.terminalEnterShiftLineFeed": "On",
   "settings.options.shellNotFound": "(not found)",
-
   "modal.changelog": "Changelog",
   "modal.changePassword": "Change Password",
   "modal.setPassword": "Set Password",
@@ -648,7 +633,6 @@
   "modal.save": "Save",
   "modal.saving": "Saving...",
   "modal.file": "File",
-
   "fileViewer.dockToRight": "Dock to right",
   "fileViewer.fullscreen": "Fullscreen",
   "fileViewer.download": "Download",
@@ -666,7 +650,6 @@
   "fileViewer.downloadHint": "Use the download button to save this file.",
   "fileViewer.save": "Save",
   "fileViewer.loadMore": "Load remaining content...",
-
   "git.title": "Git",
   "git.notARepo": "Not a git repository",
   "git.notARepoHint": "Navigate to a git repository to see status",
@@ -680,7 +663,6 @@
   "git.workingTreeClean": "Working tree clean",
   "git.cleanShort": "Clean",
   "git.noRepoShort": "No repo",
-
   "commands.title": "Commands",
   "commands.stop": "Stop",
   "commands.run": "Run",
@@ -696,7 +678,6 @@
   "commands.create": "Create",
   "commands.cancel": "Cancel",
   "commands.close": "Close",
-
   "changelog.loading": "Loading changelog...",
   "changelog.noReleases": "No releases found.",
   "changelog.loadOlder": "Load older releases",
@@ -705,7 +686,6 @@
   "changelog.viewOnGithub": "View on GitHub",
   "changelog.noNotes": "No release notes.",
   "changelog.dontShowAgain": "Don't show after updates",
-
   "session.terminal": "Terminal",
   "session.split": "SPLIT",
   "session.splitTooltip": "Session is in a split layout",
@@ -719,10 +699,8 @@
   "session.injectGuidancePrompt.claude": "You are running inside MidTerm, a web terminal multiplexer. MidTerm keeps .midterm/ fresh in this working directory. This terminal can use MidTerm browser-control, split-pane, and DOM-inspection helpers. Read .midterm/CLAUDE.md now. MidTerm CLI helpers are available in .midterm/mtcli.sh and .midterm/mtcli.ps1.",
   "session.removeFromLayout": "Remove from split layout",
   "session.actions": "Actions",
-
   "network.enableClipboard": "Click to enable clipboard & secure features",
   "network.notTrusted": " (not trusted)",
-
   "fileDrop.httpsRequired": "Clipboard requires trusted HTTPS",
   "fileDrop.browserBlocks": "Your browser blocks clipboard access on untrusted connections.",
   "fileDrop.trustCertificate": "Trust Certificate →",
@@ -741,9 +719,7 @@
   "fileDrop.uploadingToLens": "Uploading for Lens...",
   "fileDrop.transferringToLens": "Sending into Lens...",
   "fileDrop.transferringTextLens": "Sending text into Lens...",
-
   "fileLinks.notFound": "File not found",
-
   "history.quickLaunch": "Quick Launch",
   "history.noHistory": "No history yet",
   "history.pinned": "Pinned",
@@ -752,7 +728,6 @@
   "history.star": "Star",
   "history.remove": "Remove",
   "history.deleteStarred": "Delete starred item?",
-
   "managerBar.addButton": "Add automation",
   "managerBar.more": "More automations",
   "managerBar.disableHint": "Disable in Settings → Command Bay",
@@ -825,7 +800,6 @@
   "managerBar.modal.save": "Save action",
   "managerBar.modal.errorPromptRequired": "Add at least one prompt before saving.",
   "managerBar.modal.errorScheduleRequired": "Add at least one schedule entry before saving.",
-
   "sessionTabs.files": "Files",
   "sessionTabs.agent": "Lens",
   "sessionTabs.lens": "Lens",
@@ -886,14 +860,12 @@
   "webPreview.noTarget": "Enter a URL to preview",
   "webPreview.agentHint": "Hint agent about browser control",
   "webPreview.clearCookies": "Clear all cookies and reload",
-
   "fileBrowser.unableToLoad": "Unable to load directory",
   "fileBrowser.selectFile": "Select a file to preview",
   "fileBrowser.loading": "Loading...",
   "fileBrowser.unknownSize": "Unknown size",
   "fileBrowser.failedToLoad": "Failed to load file",
   "fileBrowser.download": "Download",
-
   "update.checking": "Checking...",
   "update.updating": "Updating...",
   "update.restarting": "Restarting...",
@@ -917,7 +889,6 @@
   "update.copyLog": "Copy Log",
   "badges.overflow": "Output overflow",
   "badges.pasting": "Pasting...",
-
   "auth.login": "Login",
   "auth.loggingIn": "Logging in...",
   "auth.passwordRequired": "Password required",
@@ -930,7 +901,6 @@
   "auth.certVerifyHint": "Verify this matches across devices. See Settings → Security for details.",
   "auth.certFrom": "From",
   "auth.certUntil": "Until",
-
   "share.failedToLoad": "Failed to load connection info",
   "share.failedToGenerate": "Failed to generate share info",
   "share.noEmailClient": "No email client detected.",
@@ -954,14 +924,12 @@
   "share.dialog.terminate": "Terminate",
   "share.dialog.terminating": "Terminating...",
   "share.shared.invalid": "This shared session link is invalid or has expired.",
-
   "touch.ctrl": "Ctrl",
   "touch.alt": "Alt",
   "touch.shift": "Shft",
   "touch.nav": "Nav",
   "touch.sym": "Sym",
   "touch.fn": "Fn",
-
   "trust.title": "Trust This Server",
   "trust.subtitle": "MidTerm Terminal Multiplexer",
   "trust.step1": "Step 1: Verify Fingerprint",
@@ -982,13 +950,11 @@
   "trust.backToMidTerm": "← Back to MidTerm",
   "trust.securityWarning": "Never enter passwords or sensitive information until you have verified the fingerprint matches. If your browser shows a certificate warning after previously working, re-verify the fingerprint before proceeding.",
   "trust.errorLoading": "Error loading certificate info",
-
   "error.newPasswordRequired": "New password is required",
   "error.passwordsNoMatch": "Passwords do not match",
   "error.passwordTooShort": "Password must be at least 4 characters",
   "error.passwordChangeFailed": "Failed to change password",
   "error.connectionError": "Connection error",
-
   "dialog.confirm": "Confirm",
   "dialog.info": "Info",
   "dialog.ok": "OK",
@@ -1026,5 +992,50 @@
   "smartInput.keysShow": "Show keys",
   "smartInput.keysHide": "Hide keys",
   "smartInput.expandComposer": "Expand composer",
-  "smartInput.collapseComposer": "Collapse composer"
+  "smartInput.collapseComposer": "Collapse composer",
+  "settings.updatesAbout": "Updates & About",
+  "settings.updatesAbout.title": "Updates & About",
+  "settings.updatesAbout.tooltip": "Versions, updates, trust status, install details, and open-source notices.",
+  "settings.updatesAbout.updatePreferences": "Update Preferences",
+  "settings.updatesAbout.updateActions": "Update Actions",
+  "settings.updatesAbout.versionsTrust": "Versions & Trust",
+  "settings.terminal.tooltip": "Fonts, colors, cursor, scrollback, and terminal interaction.",
+  "settings.terminal.typographyTheme": "Typography & Theme",
+  "settings.terminal.layoutCursor": "Layout & Cursor",
+  "settings.terminal.drawingTransparency": "Drawing & Transparency",
+  "settings.aiAgents": "AI Agents",
+  "settings.aiAgents.title": "AI Agents",
+  "settings.aiAgents.tooltip": "Defaults for non-terminal AI sessions and how agent history is shown.",
+  "settings.aiAgents.conversationView": "Conversation View",
+  "settings.aiAgents.codexDefaults": "Codex Defaults",
+  "settings.aiAgents.claudeDefaults": "Claude Defaults",
+  "settings.workflowGit": "Workflow & Git",
+  "settings.workflowGit.title": "Workflow & Git",
+  "settings.workflowGit.tooltip": "Navigation, Automation Bar, file linking, bookmarks, tab naming, and Git/worktree workflow.",
+  "settings.workflowGit.workflowControls": "Workflow Controls",
+  "settings.workflowGit.gitWorktrees": "Git & Worktrees",
+  "settings.workflowGit.navigationDiscovery": "Navigation & Discovery",
+  "settings.appearance.tooltip": "Theme, language, wallpaper, and global UI atmosphere.",
+  "settings.appearance.themeLanguage": "Theme & Language",
+  "settings.appearance.motionTransparency": "Motion & Transparency",
+  "settings.sessionsStartup": "Sessions & Startup",
+  "settings.sessionsStartup.title": "Sessions & Startup",
+  "settings.sessionsStartup.tooltip": "Defaults for new terminals, session resume, runtime behavior, and browser-size ownership.",
+  "settings.sessionsStartup.newSessions": "New Sessions",
+  "settings.sessionsStartup.runtime": "Session Runtime",
+  "settings.sessionsStartup.browserOwnership": "Browser Ownership",
+  "settings.securityAccess": "Security & Access",
+  "settings.securityAccess.title": "Security & Access",
+  "settings.securityAccess.tooltip": "Passwords, API keys, certificates, firewall, and terminal process identity.",
+  "settings.connectedHosts": "Connected Hosts",
+  "settings.connectedHosts.title": "Connected Hosts",
+  "settings.connectedHosts.tooltip": "Remote MidTerm hosts, shared trust, and host-oriented integrations.",
+  "settings.advancedDiagnostics": "Advanced & Diagnostics",
+  "settings.advancedDiagnostics.title": "Advanced & Diagnostics",
+  "settings.advancedDiagnostics.tooltip": "Latency, transport internals, file paths, reload/restart, and developer diagnostics.",
+  "settings.diagnostics.terminalKeyLog": "Terminal Key Log",
+  "settings.diagnostics.terminalKeyLogHint": "Capture terminal Enter and modifier events so remap failures are directly visible.",
+  "settings.diagnostics.terminalKeyLogEnabled": "Enable terminal key log",
+  "settings.diagnostics.terminalKeyLogClear": "Clear log",
+  "settings.diagnostics.terminalKeyLogEmpty": "Enable terminal key log to capture Enter and modifier events."
 }

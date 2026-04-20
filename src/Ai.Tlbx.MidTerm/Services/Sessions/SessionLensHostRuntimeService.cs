@@ -81,6 +81,44 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         };
     }
 
+    internal bool TryResolveRecoverableProfile(string sessionId, [NotNullWhen(true)] out string? profile)
+    {
+        profile = null;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return false;
+        }
+
+        if (_states.TryGetValue(sessionId, out var state))
+        {
+            var connectedProfile = NormalizeRecoverableProfile(state.Profile);
+            if (connectedProfile is not null)
+            {
+                profile = connectedProfile;
+                return true;
+            }
+
+            var cachedHistoryProfile = NormalizeRecoverableProfile(state.CachedHistoryWindow?.Provider);
+            if (cachedHistoryProfile is not null)
+            {
+                profile = cachedHistoryProfile;
+                return true;
+            }
+        }
+
+        var recordedProfile = _ownershipRegistry.GetSessions()
+            .Where(record => string.Equals(record.SessionId, sessionId, StringComparison.Ordinal))
+            .Select(record => NormalizeRecoverableProfile(record.Profile))
+            .FirstOrDefault(candidate => candidate is not null);
+        if (recordedProfile is not null)
+        {
+            profile = recordedProfile;
+            return true;
+        }
+
+        return false;
+    }
+
     public bool OwnsSession(string sessionId)
     {
         return _states.TryGetValue(sessionId, out var state) &&
@@ -293,6 +331,14 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         return string.Equals(session.AgentAttachPoint.Provider, profile, StringComparison.OrdinalIgnoreCase)
             ? session.AgentAttachPoint
             : null;
+    }
+
+    private string? NormalizeRecoverableProfile(string? profile)
+    {
+        var normalized = string.IsNullOrWhiteSpace(profile)
+            ? null
+            : profile.Trim().ToLowerInvariant();
+        return IsEnabledFor(normalized) ? normalized : null;
     }
 
     public async Task<bool> TrySendPromptAsync(
@@ -2080,7 +2126,6 @@ internal sealed class SubscriptionState
         }
     }
 }
-
 
 
 

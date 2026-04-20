@@ -244,6 +244,143 @@ function estimateOffWindowSpacerPx<TItem>(args: {
   return Math.max(0, Math.round(averageSize * args.unseenItemCount));
 }
 
+function resolveSpacerAverageItemSize(spacerPx: number, itemCount: number): number | null {
+  if (itemCount <= 0 || spacerPx <= 0) {
+    return null;
+  }
+
+  return Math.max(1, spacerPx / itemCount);
+}
+
+function resolveAbsoluteIndexAtOffset(args: {
+  offsetPx: number;
+  retainedWindow: VirtualizerRetainedWindowDescriptor;
+  retainedTopPx: number;
+  retainedBottomPx: number;
+  totalEstimatedHeightPx: number;
+  retainedLayout: LayoutModel;
+  topSpacerAverageItemSize: number | null;
+  bottomSpacerAverageItemSize: number | null;
+}): number {
+  const {
+    offsetPx,
+    retainedWindow,
+    retainedTopPx,
+    retainedBottomPx,
+    totalEstimatedHeightPx,
+    retainedLayout,
+    topSpacerAverageItemSize,
+    bottomSpacerAverageItemSize,
+  } = args;
+  const clampedOffset = Math.max(0, Math.min(totalEstimatedHeightPx, offsetPx));
+  const offWindowTopCount = Math.max(0, retainedWindow.windowStart);
+  const offWindowBottomCount = Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd);
+
+  if (clampedOffset < retainedTopPx && offWindowTopCount > 0 && topSpacerAverageItemSize !== null) {
+    return Math.max(
+      0,
+      Math.min(
+        retainedWindow.windowStart - 1,
+        Math.floor(clampedOffset / topSpacerAverageItemSize),
+      ),
+    );
+  }
+
+  if (clampedOffset < retainedBottomPx) {
+    const retainedOffset = Math.max(0, clampedOffset - retainedTopPx);
+    return Math.max(
+      retainedWindow.windowStart,
+      Math.min(
+        retainedWindow.totalCount - 1,
+        retainedWindow.windowStart +
+          findFirstIntersectingIndex(retainedLayout.prefixSizes, retainedOffset),
+      ),
+    );
+  }
+
+  if (
+    offWindowBottomCount > 0 &&
+    bottomSpacerAverageItemSize !== null &&
+    retainedWindow.windowEnd < retainedWindow.totalCount
+  ) {
+    return Math.max(
+      retainedWindow.windowEnd,
+      Math.min(
+        retainedWindow.totalCount - 1,
+        retainedWindow.windowEnd +
+          Math.floor((clampedOffset - retainedBottomPx) / bottomSpacerAverageItemSize),
+      ),
+    );
+  }
+
+  return Math.max(0, retainedWindow.totalCount - 1);
+}
+
+function resolveAbsoluteEndIndexAtOffset(args: {
+  offsetPx: number;
+  retainedWindow: VirtualizerRetainedWindowDescriptor;
+  retainedTopPx: number;
+  retainedBottomPx: number;
+  totalEstimatedHeightPx: number;
+  retainedLayout: LayoutModel;
+  topSpacerAverageItemSize: number | null;
+  bottomSpacerAverageItemSize: number | null;
+}): number {
+  const {
+    offsetPx,
+    retainedWindow,
+    retainedTopPx,
+    retainedBottomPx,
+    totalEstimatedHeightPx,
+    retainedLayout,
+    topSpacerAverageItemSize,
+    bottomSpacerAverageItemSize,
+  } = args;
+  const clampedOffset = Math.max(0, Math.min(totalEstimatedHeightPx, offsetPx));
+  const offWindowTopCount = Math.max(0, retainedWindow.windowStart);
+  const offWindowBottomCount = Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd);
+
+  if (
+    clampedOffset <= retainedTopPx &&
+    offWindowTopCount > 0 &&
+    topSpacerAverageItemSize !== null
+  ) {
+    return Math.max(
+      0,
+      Math.min(retainedWindow.windowStart, Math.ceil(clampedOffset / topSpacerAverageItemSize)),
+    );
+  }
+
+  if (clampedOffset <= retainedBottomPx) {
+    const retainedOffset = Math.max(0, clampedOffset - retainedTopPx);
+    return Math.max(
+      retainedWindow.windowStart,
+      Math.min(
+        retainedWindow.totalCount,
+        retainedWindow.windowStart +
+          findFirstEndAtOrAfter(retainedLayout.prefixSizes, retainedOffset),
+      ),
+    );
+  }
+
+  if (
+    offWindowBottomCount > 0 &&
+    bottomSpacerAverageItemSize !== null &&
+    retainedWindow.windowEnd < retainedWindow.totalCount
+  ) {
+    return Math.max(
+      retainedWindow.windowEnd,
+      Math.min(
+        retainedWindow.totalCount,
+        retainedWindow.windowEnd +
+          Math.ceil((clampedOffset - retainedBottomPx) / bottomSpacerAverageItemSize),
+      ),
+    );
+  }
+
+  return retainedWindow.totalCount;
+}
+
 export function resolveVirtualizerMeasurementWidthBucket(clientWidth: number): number {
   return Math.max(
     VIRTUALIZER_MEASUREMENT_MIN_WIDTH_PX,
@@ -480,23 +617,57 @@ export function resolveViewportCenteredWindowRequest<TItem>(args: {
     resolveItemSize,
     resolveEstimatedItemSize,
   });
-  const visibleRange = computeVisibleRange({
-    items,
-    scrollTop: windowMetrics.scrollTop,
-    clientHeight: windowMetrics.clientHeight,
-    overscanItems: 0,
-    resolveItemSize,
+  const retainedLayout = buildLayoutModel(items, resolveItemSize);
+  const retainedTopPx = windowMetrics.offWindowTopSpacerPx;
+  const retainedBottomPx = retainedTopPx + retainedLayout.totalSize;
+  const totalEstimatedHeightPx = retainedBottomPx + windowMetrics.offWindowBottomSpacerPx;
+  const viewportTopPx = Math.max(0, Math.min(totalEstimatedHeightPx, viewportMetrics.scrollTop));
+  const viewportBottomPx = Math.max(
+    viewportTopPx + 1,
+    Math.min(
+      totalEstimatedHeightPx,
+      viewportMetrics.scrollTop + Math.max(1, viewportMetrics.clientHeight),
+    ),
+  );
+  const topSpacerAverageItemSize = resolveSpacerAverageItemSize(
+    windowMetrics.offWindowTopSpacerPx,
+    retainedWindow.windowStart,
+  );
+  const bottomSpacerAverageItemSize = resolveSpacerAverageItemSize(
+    windowMetrics.offWindowBottomSpacerPx,
+    Math.max(0, retainedWindow.totalCount - retainedWindow.windowEnd),
+  );
+  const absoluteVisibleStart = resolveAbsoluteIndexAtOffset({
+    offsetPx: viewportTopPx,
+    retainedWindow,
+    retainedTopPx,
+    retainedBottomPx,
+    totalEstimatedHeightPx,
+    retainedLayout,
+    topSpacerAverageItemSize,
+    bottomSpacerAverageItemSize,
   });
-  const absoluteVisibleStart = retainedWindow.windowStart + visibleRange.start;
-  const absoluteVisibleEnd = retainedWindow.windowStart + visibleRange.end;
+  const absoluteVisibleEnd = Math.max(
+    absoluteVisibleStart + 1,
+    resolveAbsoluteEndIndexAtOffset({
+      offsetPx: viewportBottomPx,
+      retainedWindow,
+      retainedTopPx,
+      retainedBottomPx,
+      totalEstimatedHeightPx,
+      retainedLayout,
+      topSpacerAverageItemSize,
+      bottomSpacerAverageItemSize,
+    }),
+  );
+  const visibleCount = Math.max(1, absoluteVisibleEnd - absoluteVisibleStart);
   const marginItems = Math.max(0, fetchAheadItems);
   const safeStart = retainedWindow.windowStart + marginItems;
   const safeEnd = retainedWindow.windowEnd - marginItems;
   const needsShift =
     absoluteVisibleStart < safeStart ||
     absoluteVisibleEnd > safeEnd ||
-    retainedWindow.windowEnd - retainedWindow.windowStart >
-      Math.max(1, visibleRange.end - visibleRange.start) + marginItems * 2;
+    retainedWindow.windowEnd - retainedWindow.windowStart > visibleCount + marginItems * 2;
   if (!needsShift) {
     return null;
   }
