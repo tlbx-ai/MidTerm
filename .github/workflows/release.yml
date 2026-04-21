@@ -632,7 +632,7 @@ jobs:
           foreach ($file in $files) {
             $signature = Get-AuthenticodeSignature $file
             if ($signature.Status -ne 'Valid') {
-              throw "Authenticode verification failed for $file: $($signature.StatusMessage)"
+              throw "Authenticode verification failed for ${file}: $($signature.StatusMessage)"
             }
           }
 
