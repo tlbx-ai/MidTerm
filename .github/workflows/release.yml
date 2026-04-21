@@ -43,18 +43,69 @@ jobs:
           NOTES=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
           PRERELEASE=""
           [[ "${{ github.ref_name }}" == *"-dev"* ]] && PRERELEASE="--prerelease"
-          RELEASE_NOTES="## What's Changed
-          ${NOTES}"
+          MAX_RELEASE_BODY=124000
+          export NOTES MAX_RELEASE_BODY
+          RELEASE_NOTES=$(python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          max_len = int(os.environ["MAX_RELEASE_BODY"])
+          prefix = "## What's Changed\n"
+          notes = os.environ.get("NOTES", "").rstrip("\n")
+
+          if not notes:
+              sys.stdout.write(prefix.rstrip("\n"))
+              raise SystemExit
+
+          full = prefix + notes
+          if len(full) <= max_len:
+              sys.stdout.write(full)
+              raise SystemExit
+
+          paragraphs = [part for part in re.split(r"\n{2,}", notes) if part]
+          grouped_notice = "[Older release notes omitted to stay within GitHub's release size limit: {count} older sections omitted.]\n\n"
+
+          if len(paragraphs) > 1:
+              kept = []
+              for idx in range(len(paragraphs) - 1, -1, -1):
+                  candidate = [paragraphs[idx]] + kept
+                  omitted = len(paragraphs) - len(candidate)
+                  notice = grouped_notice.format(count=omitted) if omitted else ""
+                  candidate_text = prefix + notice + "\n\n".join(candidate)
+                  if len(candidate_text) <= max_len:
+                      kept = candidate
+                  elif kept:
+                      break
+                  else:
+                      raise SystemExit("Latest release-note section exceeds the GitHub release body limit by itself.")
+
+              omitted = len(paragraphs) - len(kept)
+              notice = grouped_notice.format(count=omitted) if omitted else ""
+              sys.stdout.write(prefix + notice + "\n\n".join(kept))
+              raise SystemExit
+
+          fallback_notice = "[Release notes truncated to stay within GitHub's release size limit.]\n\n"
+          budget = max_len - len(prefix) - len(fallback_notice)
+          if budget <= 0:
+              raise SystemExit("Configured GitHub release body limit is too small.")
+
+          sys.stdout.write(prefix + fallback_notice + notes[-budget:])
+          PY
+          )
+          RELEASE_NOTES_FILE=$(mktemp)
+          trap 'rm -f "$RELEASE_NOTES_FILE"' EXIT
+          printf '%s' "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
           if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
             gh release edit ${{ github.ref_name }} \
               $PRERELEASE \
               --title "$TITLE" \
-              --notes "$RELEASE_NOTES"
+              --notes-file "$RELEASE_NOTES_FILE"
           else
             gh release create ${{ github.ref_name }} \
               $PRERELEASE \
               --title "$TITLE" \
-              --notes "$RELEASE_NOTES"
+              --notes-file "$RELEASE_NOTES_FILE"
           fi
 
   # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────

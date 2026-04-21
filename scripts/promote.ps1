@@ -41,6 +41,97 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$githubPrBodyMaxChars = 65536
+$githubReleaseNotesMaxChars = 125000
+$githubBodySafetyMarginChars = 512
+$githubReleaseHeading = "## What's Changed`n"
+
+function Get-ChangelogMarkdownBlock {
+    param(
+        [Parameter(Mandatory=$true)]
+        [psobject]$Entry
+    )
+
+    $block = "`n### $($Entry.Tag) - $($Entry.Title)`n"
+    foreach ($note in $Entry.Notes) {
+        $block += "$note`n"
+    }
+
+    return $block
+}
+
+function Get-ChangelogPlainTextBlock {
+    param(
+        [Parameter(Mandatory=$true)]
+        [psobject]$Entry
+    )
+
+    $block = "$($Entry.Tag): $($Entry.Title)`n"
+    foreach ($note in $Entry.Notes) {
+        $block += "$note`n"
+    }
+
+    return $block + "`n"
+}
+
+function Join-RecentBlocksWithinLimit {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Prefix,
+
+        [Parameter(Mandatory=$true)]
+        [string[]]$Blocks,
+
+        [Parameter(Mandatory=$true)]
+        [int]$MaxLength,
+
+        [string]$TruncationNoticeFormat = ""
+    )
+
+    $keptBlocks = [System.Collections.Generic.List[string]]::new()
+    $keptLength = 0
+
+    for ($i = $Blocks.Count - 1; $i -ge 0; $i--) {
+        $block = [string]$Blocks[$i]
+        $candidateKeptCount = $keptBlocks.Count + 1
+        $omittedCount = $Blocks.Count - $candidateKeptCount
+        $notice = ""
+        if ($omittedCount -gt 0 -and -not [string]::IsNullOrEmpty($TruncationNoticeFormat)) {
+            $notice = [string]::Format($TruncationNoticeFormat, $omittedCount)
+        }
+
+        $candidateLength = $Prefix.Length + $notice.Length + $keptLength + $block.Length
+        if ($candidateLength -le $MaxLength) {
+            $keptBlocks.Insert(0, $block)
+            $keptLength += $block.Length
+            continue
+        }
+
+        if ($keptBlocks.Count -eq 0) {
+            throw "The newest release-note block exceeds the configured GitHub size limit by itself."
+        }
+
+        break
+    }
+
+    $omittedCount = $Blocks.Count - $keptBlocks.Count
+    $notice = ""
+    if ($omittedCount -gt 0 -and -not [string]::IsNullOrEmpty($TruncationNoticeFormat)) {
+        $notice = [string]::Format($TruncationNoticeFormat, $omittedCount)
+    }
+
+    $text = $Prefix + $notice + ($keptBlocks -join "")
+    if ($text.Length -gt $MaxLength) {
+        throw "Trimmed release notes still exceed the configured GitHub size limit."
+    }
+
+    return [pscustomobject]@{
+        Text         = $text
+        OmittedCount = $omittedCount
+        KeptCount    = $keptBlocks.Count
+        TotalCount   = $Blocks.Count
+    }
+}
 
 # Ensure we're on dev branch
 $currentBranch = git branch --show-current
@@ -173,48 +264,88 @@ if ($ReleaseNotes.Count -eq 0) {
 
 # --- Build PR body (markdown, grouped by dev release) ---
 
-$prBody = "## Summary`n"
-$prBody += "Promoting ``$devVersion`` to stable ``$stableVersion`` - includes $($changelog.Count) dev releases since $lastStableTag.`n`n"
-$prBody += "## Changelog`n"
-foreach ($entry in $changelog) {
-    $prBody += "`n### $($entry.Tag) - $($entry.Title)`n"
-    foreach ($note in $entry.Notes) {
-        $prBody += "$note`n"
-    }
+$prBodyPrefix = "## Summary`n"
+$prBodyPrefix += "Promoting ``$devVersion`` to stable ``$stableVersion`` - includes $($changelog.Count) dev releases since $lastStableTag.`n`n"
+$prBodyPrefix += "## Changelog`n"
+$prBlocks = @($changelog | ForEach-Object { Get-ChangelogMarkdownBlock -Entry $_ })
+$prBodyResult = Join-RecentBlocksWithinLimit `
+    -Prefix $prBodyPrefix `
+    -Blocks $prBlocks `
+    -MaxLength ($githubPrBodyMaxChars - $githubBodySafetyMarginChars) `
+    -TruncationNoticeFormat "> Older prerelease entries omitted to stay within GitHub PR body limits ({0} older releases omitted).`n`n"
+$prBody = $prBodyResult.Text
+if ($prBodyResult.OmittedCount -gt 0) {
+    Write-Host "  Truncated PR body to newest $($prBodyResult.KeptCount) of $($prBodyResult.TotalCount) prerelease sections." -ForegroundColor Yellow
 }
 
-# --- Build commit/tag message (plain text, grouped by dev release) ---
+# --- Build commit/tag message (plain text, keeping newest release blocks when needed) ---
 
+$tagBodyLimit = $githubReleaseNotesMaxChars - $githubReleaseHeading.Length - $githubBodySafetyMarginChars
 $commitMsg = "$ReleaseTitle`n`n"
 if ($autoGathered) {
-    $commitMsg += "All changes since $($lastStableTag):`n`n"
-    foreach ($entry in $changelog) {
-        $commitMsg += "$($entry.Tag): $($entry.Title)`n"
-        foreach ($note in $entry.Notes) {
-            $commitMsg += "$note`n"
-        }
-        $commitMsg += "`n"
-    }
+    $tagBodyPrefix = "All changes since $($lastStableTag):`n`n"
+    $tagBlocks = @($changelog | ForEach-Object { Get-ChangelogPlainTextBlock -Entry $_ })
+    $tagBodyResult = Join-RecentBlocksWithinLimit `
+        -Prefix $tagBodyPrefix `
+        -Blocks $tagBlocks `
+        -MaxLength $tagBodyLimit `
+        -TruncationNoticeFormat "[Older prerelease entries omitted to stay within GitHub release note limits: {0} older releases omitted.]`n`n"
 } else {
-    foreach ($note in $ReleaseNotes) {
-        $commitMsg += "- $note`n"
-    }
+    $manualBlocks = @($ReleaseNotes | ForEach-Object { "- $_`n" })
+    $tagBodyResult = Join-RecentBlocksWithinLimit `
+        -Prefix "" `
+        -Blocks $manualBlocks `
+        -MaxLength $tagBodyLimit `
+        -TruncationNoticeFormat "[Older release notes omitted to stay within GitHub release note limits: {0} older entries omitted.]`n`n"
 }
+
+if ($tagBodyResult.OmittedCount -gt 0) {
+    Write-Host "  Truncated stable tag notes to newest $($tagBodyResult.KeptCount) of $($tagBodyResult.TotalCount) blocks." -ForegroundColor Yellow
+}
+
+$commitMsg += $tagBodyResult.Text
 
 # Create PR from dev to main
 Write-Host "Creating PR from dev to main..." -ForegroundColor Gray
 
-$prUrl = gh pr create --base main --head dev --title $ReleaseTitle --body $prBody 2>&1
-if ($LASTEXITCODE -ne 0) {
-    # PR might already exist
-    if ($prUrl -match "already exists") {
-        Write-Host "  PR already exists, finding it..." -ForegroundColor Yellow
-        $prUrl = gh pr list --head dev --base main --json url --jq '.[0].url' 2>&1
+$prBodyPath = [System.IO.Path]::GetTempFileName()
+$prOutputPath = [System.IO.Path]::GetTempFileName()
+$prListOutputPath = [System.IO.Path]::GetTempFileName()
+$prUrl = ""
+
+try {
+    Set-Content -LiteralPath $prBodyPath -Value $prBody -Encoding utf8
+    gh pr create --base main --head dev --title $ReleaseTitle --body-file $prBodyPath *> $prOutputPath
+    $prCreateOutput = (Get-Content -LiteralPath $prOutputPath -Raw).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        # PR might already exist
+        if ($prCreateOutput -match "already exists") {
+            Write-Host "  PR already exists, finding it..." -ForegroundColor Yellow
+            gh pr list --head dev --base main --json url --jq '.[0].url' *> $prListOutputPath
+            if ($LASTEXITCODE -ne 0) {
+                $prListOutput = (Get-Content -LiteralPath $prListOutputPath -Raw).Trim()
+                Write-Host "ERROR: Failed to locate existing PR: $prListOutput" -ForegroundColor Red
+                exit 1
+            }
+
+            $prUrl = (Get-Content -LiteralPath $prListOutputPath -Raw).Trim()
+        } else {
+            Write-Host "ERROR: Failed to create PR: $prCreateOutput" -ForegroundColor Red
+            exit 1
+        }
     } else {
-        Write-Host "ERROR: Failed to create PR: $prUrl" -ForegroundColor Red
-        exit 1
+        $prUrl = $prCreateOutput
     }
 }
+finally {
+    Remove-Item -LiteralPath $prBodyPath, $prOutputPath, $prListOutputPath -ErrorAction SilentlyContinue
+}
+
+if ([string]::IsNullOrWhiteSpace($prUrl)) {
+    Write-Host "ERROR: Failed to resolve promote PR URL." -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "  PR: $prUrl" -ForegroundColor Gray
 
 # Merge the PR
