@@ -88,6 +88,7 @@ public sealed class FileTreeEntry
     public bool IsDirectory { get; set; }
     public long? Size { get; set; }
     public string? MimeType { get; set; }
+    public bool? IsText { get; set; }
     public string? GitStatus { get; set; }
 }
 

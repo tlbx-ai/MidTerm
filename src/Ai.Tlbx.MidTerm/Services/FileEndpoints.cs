@@ -535,14 +535,20 @@ public static class FileEndpoints
 
                     try
                     {
-                        var fileInfo = new FileInfo(file);
+                        var fileInfo = FileService.GetFileInfo(file);
+                        if (!fileInfo.Exists || fileInfo.IsDirectory)
+                        {
+                            continue;
+                        }
+
                         entries.Add(new FileTreeEntry
                         {
                             Name = fileName,
                             FullPath = file,
                             IsDirectory = false,
-                            Size = fileInfo.Length,
-                            MimeType = FileService.GetMimeType(fileName),
+                            Size = fileInfo.Size,
+                            MimeType = fileInfo.MimeType,
+                            IsText = fileInfo.IsText,
                             GitStatus = gitStatusMap is not null
                                 && gitStatusMap.TryGetValue(Path.GetRelativePath(repoRoot!, file).Replace('\\', '/'), out var badge)
                                 ? badge

@@ -244,7 +244,7 @@ export function getLineCount(text: string): number {
   return Math.max(text.split('\n').length, 1);
 }
 
-export function formatBinaryDump(bytes: Uint8Array): string {
+export function formatBinaryDump(bytes: Uint8Array, startOffset = 0): string {
   if (bytes.length === 0) {
     return '';
   }
@@ -260,7 +260,8 @@ export function formatBinaryDump(bytes: Uint8Array): string {
       value >= 0x20 && value <= 0x7e ? String.fromCharCode(value) : '.',
     ).join('');
 
-    lines.push(`${offset.toString(16).toUpperCase().padStart(8, '0')}  ${hex}  ${ascii}`);
+    const absoluteOffset = startOffset + offset;
+    lines.push(`${absoluteOffset.toString(16).toUpperCase().padStart(8, '0')}  ${hex}  ${ascii}`);
   }
 
   return lines.join('\n');

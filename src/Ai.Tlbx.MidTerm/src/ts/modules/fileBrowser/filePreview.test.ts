@@ -107,7 +107,11 @@ const renderingMocks = vi.hoisted(() => {
       children: [] as any[],
       classList: {
         add: (...tokens: string[]) => {
-          const values = new Set(String(element.className ?? '').split(/\s+/).filter(Boolean));
+          const values = new Set(
+            String(element.className ?? '')
+              .split(/\s+/)
+              .filter(Boolean),
+          );
           for (const token of tokens) {
             values.add(token);
           }
@@ -184,6 +188,13 @@ const renderingMocks = vi.hoisted(() => {
   };
 });
 
+const sharedMocks = vi.hoisted(() => ({
+  resolveFilePreviewKindMock: vi.fn(() => 'text' as const),
+  copyFileToClipboardMock: vi.fn(),
+  downloadFileMock: vi.fn(),
+  loadBinaryPreviewPageMock: vi.fn(),
+}));
+
 vi.mock('../logging', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -203,15 +214,18 @@ vi.mock('../fileViewer/rendering', () => ({
   formatViewerHeaderSubtitle: (path: string, metadata?: string | null) =>
     metadata ? `${path} | ${metadata}` : path,
   highlightCode: (text: string) => `highlight:${text}`,
-  isTextFile: renderingMocks.isTextFileMock,
-  isImageFile: () => false,
-  isVideoFile: () => false,
-  isAudioFile: () => false,
   buildViewUrl: (path: string, sessionId: string) =>
     `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`,
   createLineNumberedEditor: renderingMocks.createLineNumberedEditorMock,
   createLineNumberedViewer: renderingMocks.createLineNumberedViewerMock,
   formatBinaryDump: renderingMocks.formatBinaryDumpMock,
+}));
+
+vi.mock('../fileViewer/shared', () => ({
+  copyFileToClipboard: sharedMocks.copyFileToClipboardMock,
+  downloadFile: sharedMocks.downloadFileMock,
+  loadBinaryPreviewPage: sharedMocks.loadBinaryPreviewPageMock,
+  resolveFilePreviewKind: sharedMocks.resolveFilePreviewKindMock,
 }));
 
 async function flushPromises(): Promise<void> {
@@ -241,6 +255,17 @@ describe('filePreview', () => {
     renderingMocks.createLineNumberedEditorMock.mockClear();
     renderingMocks.createLineNumberedViewerMock.mockClear();
     renderingMocks.formatBinaryDumpMock.mockClear();
+    sharedMocks.resolveFilePreviewKindMock.mockReset();
+    sharedMocks.resolveFilePreviewKindMock.mockReturnValue('text');
+    sharedMocks.copyFileToClipboardMock.mockReset();
+    sharedMocks.downloadFileMock.mockReset();
+    sharedMocks.loadBinaryPreviewPageMock.mockReset();
+    sharedMocks.loadBinaryPreviewPageMock.mockResolvedValue({
+      bytes: new Uint8Array([0x41, 0x42]),
+      startOffset: 0,
+      endOffsetExclusive: 2,
+      hasMore: false,
+    });
   });
 
   it('opens markdown files in editor mode with a save button', async () => {
@@ -262,11 +287,13 @@ describe('filePreview', () => {
     const textarea = container.querySelector('textarea');
     const saveBtn = container.querySelector('.preview-save-btn');
     const editBtn = container.querySelector('.preview-editor-btn');
+    const actionBtn = container.querySelector('.preview-toolbar-action-btn');
 
     expect(textarea).not.toBeNull();
     expect(saveBtn?.style.display).toBe('');
     expect(saveBtn?.disabled).toBe(true);
     expect(editBtn?.style.display).toBe('none');
+    expect(actionBtn).not.toBeNull();
   });
 
   it('saves edited markdown content through the file save endpoint', async () => {
@@ -319,11 +346,7 @@ describe('filePreview', () => {
   });
 
   it('renders binary files through the shared line-numbered viewer', async () => {
-    renderingMocks.isTextFileMock.mockReturnValue(false);
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([0x41, 0x42]).buffer,
-    } as Response);
+    sharedMocks.resolveFilePreviewKindMock.mockReturnValue('binary');
 
     const container = new FakeElement('div');
     const entry = {
@@ -337,11 +360,88 @@ describe('filePreview', () => {
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
     await flushPromises();
 
-    expect(renderingMocks.formatBinaryDumpMock).toHaveBeenCalledWith(new Uint8Array([0x41, 0x42]));
-    expect(renderingMocks.createLineNumberedViewerMock).toHaveBeenCalledWith('binary:2', ['file-viewer-binary-shell']);
+    expect(sharedMocks.loadBinaryPreviewPageMock).toHaveBeenCalledWith({
+      viewUrl: '/api/files/view?path=Q%3A%5Crepos%5CMidTerm%5Carchive.bin&sessionId=session-1',
+      fileSize: 2,
+    });
+    expect(renderingMocks.formatBinaryDumpMock).toHaveBeenCalledWith(
+      new Uint8Array([0x41, 0x42]),
+      0,
+    );
+    expect(renderingMocks.createLineNumberedViewerMock).toHaveBeenCalledWith('binary:2', [
+      'file-viewer-binary-shell',
+    ]);
     expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('archive.bin');
     expect(container.querySelector('.preview-toolbar-subtitle')?.textContent).toBe(
       'Q:\\repos\\MidTerm\\archive.bin | application/octet-stream | 2',
     );
+  });
+
+  it('shows a load-more button for paged binary previews and replaces the dump on click', async () => {
+    sharedMocks.resolveFilePreviewKindMock.mockReturnValue('binary');
+    sharedMocks.loadBinaryPreviewPageMock
+      .mockResolvedValueOnce({
+        bytes: new Uint8Array([0x41, 0x42]),
+        startOffset: 0,
+        endOffsetExclusive: 2,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        bytes: new Uint8Array([0x43, 0x44]),
+        startOffset: 2,
+        endOffsetExclusive: 4,
+        hasMore: false,
+      });
+
+    const container = new FakeElement('div');
+    const entry = {
+      name: 'archive.bin',
+      fullPath: 'Q:\\repos\\MidTerm\\archive.bin',
+      isDirectory: false,
+      mimeType: 'application/octet-stream',
+      size: 4,
+    };
+
+    renderPreview(container as unknown as HTMLElement, entry, 'session-1');
+    await flushPromises();
+
+    const loadMoreBtn = container.querySelector('.file-viewer-load-more');
+    expect(loadMoreBtn?.textContent).toBe('fileViewer.loadMore (4)');
+
+    loadMoreBtn?.click();
+    await flushPromises();
+
+    expect(sharedMocks.loadBinaryPreviewPageMock).toHaveBeenNthCalledWith(2, {
+      viewUrl: '/api/files/view?path=Q%3A%5Crepos%5CMidTerm%5Carchive.bin&sessionId=session-1',
+      startOffset: 2,
+      fileSize: 4,
+    });
+    expect(renderingMocks.formatBinaryDumpMock).toHaveBeenNthCalledWith(
+      2,
+      new Uint8Array([0x43, 0x44]),
+      2,
+    );
+    expect(renderingMocks.createLineNumberedViewerMock.mock.results[0]?.value.pre.textContent).toBe(
+      'binary:2',
+    );
+  });
+
+  it('renders image previews inside the shared shell with toolbar actions', async () => {
+    sharedMocks.resolveFilePreviewKindMock.mockReturnValue('image');
+
+    const container = new FakeElement('div');
+    const entry = {
+      name: 'diagram.png',
+      fullPath: 'Q:\\repos\\MidTerm\\diagram.png',
+      isDirectory: false,
+      mimeType: 'image/png',
+      size: 128,
+    };
+
+    renderPreview(container as unknown as HTMLElement, entry, 'session-1');
+
+    expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('diagram.png');
+    expect(container.querySelector('.preview-text-body')?.innerHTML).toContain('preview-image');
+    expect(container.querySelector('.preview-toolbar-action-btn')).not.toBeNull();
   });
 });

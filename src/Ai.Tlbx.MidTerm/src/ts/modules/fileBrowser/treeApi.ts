@@ -10,6 +10,7 @@ export interface FileTreeEntry {
   isDirectory: boolean;
   size?: number;
   mimeType?: string;
+  isText?: boolean | null;
   gitStatus?: string;
 }
 

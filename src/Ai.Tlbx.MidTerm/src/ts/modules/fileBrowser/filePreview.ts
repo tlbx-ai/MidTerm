@@ -14,15 +14,17 @@ import {
   getExtension,
   formatViewerHeaderSubtitle,
   highlightCode,
-  isTextFile,
-  isImageFile,
-  isVideoFile,
-  isAudioFile,
   buildViewUrl,
   createLineNumberedEditor,
   createLineNumberedViewer,
   formatBinaryDump,
 } from '../fileViewer/rendering';
+import {
+  copyFileToClipboard,
+  downloadFile,
+  loadBinaryPreviewPage,
+  resolveFilePreviewKind,
+} from '../fileViewer/shared';
 
 const log = createLogger('filePreview');
 
@@ -88,6 +90,61 @@ function createPreviewShell(
   return { shell, body, actions };
 }
 
+function createPreviewIconButton(
+  className: string,
+  title: string,
+  svgMarkup: string,
+): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `btn-icon ${className}`;
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.innerHTML = svgMarkup;
+  return button;
+}
+
+function appendPreviewFileActions(
+  actions: HTMLDivElement,
+  entry: FileTreeEntry,
+  sessionId: string,
+  getCurrentText?: (() => string) | null,
+): void {
+  const downloadBtn = createPreviewIconButton(
+    'preview-toolbar-action-btn',
+    t('fileViewer.download'),
+    `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z" />
+      <path d="M2 13h12v1H2v-1z" />
+    </svg>`,
+  );
+  downloadBtn.addEventListener('click', () => {
+    downloadFile(entry.fullPath, sessionId);
+  });
+
+  const copyBtn = createPreviewIconButton(
+    'preview-toolbar-action-btn',
+    t('trust.copy'),
+    `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M5 2h7a2 2 0 0 1 2 2v7h-1V4a1 1 0 0 0-1-1H5V2z" />
+      <path d="M3 5h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H3z" />
+    </svg>`,
+  );
+  copyBtn.addEventListener('click', () => {
+    void copyFileToClipboard({
+      path: entry.fullPath,
+      sessionId,
+      mimeType: entry.mimeType,
+      size: entry.size ?? null,
+      isText: entry.isText ?? null,
+      currentText: getCurrentText?.() ?? null,
+    });
+  });
+
+  actions.appendChild(copyBtn);
+  actions.appendChild(downloadBtn);
+}
+
 export function renderPreview(
   container: HTMLElement,
   entry: FileTreeEntry,
@@ -103,30 +160,48 @@ export function renderPreview(
   const ext = getExtension(entry.name).toLowerCase();
   const mime = entry.mimeType ?? '';
   const viewUrl = buildViewUrl(entry.fullPath, sessionId);
+  const previewKind = resolveFilePreviewKind(entry.fullPath, mime, entry.isText);
 
-  if (isImageFile(entry.name, mime)) {
-    container.innerHTML = `<div class="preview-image-container"><img class="preview-image" src="${escapeHtml(viewUrl)}" alt="${escapeHtml(entry.name)}" /></div>`;
+  if (previewKind === 'image') {
+    const { shell, body, actions } = createPreviewShell(entry);
+    appendPreviewFileActions(actions, entry, sessionId);
+    body.innerHTML = `<div class="preview-image-container"><img class="preview-image" src="${escapeHtml(viewUrl)}" alt="${escapeHtml(entry.name)}" /></div>`;
+    container.appendChild(shell);
     return;
   }
 
-  if (isVideoFile(entry.name, mime)) {
-    container.innerHTML = `<video class="preview-video" controls src="${escapeHtml(viewUrl)}"></video>`;
+  if (previewKind === 'video') {
+    const { shell, body, actions } = createPreviewShell(entry);
+    appendPreviewFileActions(actions, entry, sessionId);
+    body.innerHTML = `<video class="preview-video" controls src="${escapeHtml(viewUrl)}"></video>`;
+    container.appendChild(shell);
     return;
   }
 
-  if (isAudioFile(entry.name, mime)) {
-    container.innerHTML = `<audio class="preview-audio" controls src="${escapeHtml(viewUrl)}"></audio>`;
+  if (previewKind === 'audio') {
+    const { shell, body, actions } = createPreviewShell(entry);
+    appendPreviewFileActions(actions, entry, sessionId);
+    body.innerHTML = `<audio class="preview-audio" controls src="${escapeHtml(viewUrl)}"></audio>`;
+    container.appendChild(shell);
     return;
   }
 
-  if (isTextFile(ext, mime) || !mime) {
+  if (previewKind === 'pdf') {
+    const { shell, body, actions } = createPreviewShell(entry);
+    appendPreviewFileActions(actions, entry, sessionId);
+    body.innerHTML = `<iframe class="preview-pdf" src="${escapeHtml(viewUrl)}"></iframe>`;
+    container.appendChild(shell);
+    return;
+  }
+
+  if (previewKind === 'text') {
     container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
     void fetchAndRenderText(container, viewUrl, entry, sessionId, ext);
     return;
   }
 
   container.innerHTML = `<div class="preview-loading">${t('fileBrowser.loading')}</div>`;
-  void fetchAndRenderBinary(container, viewUrl, entry);
+  void fetchAndRenderBinary(container, viewUrl, entry, sessionId);
 }
 
 async function fetchAndRenderText(
@@ -156,22 +231,63 @@ async function fetchAndRenderBinary(
   container: HTMLElement,
   url: string,
   entry: FileTreeEntry,
+  sessionId: string,
 ): Promise<void> {
   try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      container.innerHTML = `<div class="preview-error">${t('fileBrowser.failedToLoad')} (${res.status})</div>`;
-      return;
-    }
-
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    const { shell, body } = createPreviewShell(entry, formatBinaryPreviewMetadata(entry));
+    const { shell, body, actions } = createPreviewShell(entry, formatBinaryPreviewMetadata(entry));
+    appendPreviewFileActions(actions, entry, sessionId);
     const stack = document.createElement('div');
     stack.className = 'file-viewer-code-stack';
-    const viewer = createLineNumberedViewer(formatBinaryDump(bytes), ['file-viewer-binary-shell']);
+    const initialPage = await loadBinaryPreviewPage({ viewUrl: url, fileSize: entry.size ?? null });
+    const viewer = createLineNumberedViewer(
+      formatBinaryDump(initialPage.bytes, initialPage.startOffset),
+      ['file-viewer-binary-shell'],
+    );
     viewer.pre.classList.add('file-viewer-binary-text');
 
+    let nextOffset = initialPage.endOffsetExclusive;
     stack.appendChild(viewer.root);
+
+    if (initialPage.hasMore) {
+      const loadMoreBtn = document.createElement('button');
+      loadMoreBtn.className = 'file-viewer-load-more';
+      loadMoreBtn.textContent =
+        entry.size != null
+          ? `${t('fileViewer.loadMore')} (${formatSize(entry.size)})`
+          : t('fileViewer.loadMore');
+      loadMoreBtn.addEventListener('click', () => {
+        loadMoreBtn.textContent = t('fileViewer.loading');
+        loadMoreBtn.disabled = true;
+        void loadBinaryPreviewPage({
+          viewUrl: url,
+          startOffset: nextOffset,
+          fileSize: entry.size ?? null,
+        })
+          .then((page) => {
+            viewer.setText(formatBinaryDump(page.bytes, page.startOffset));
+            nextOffset = page.endOffsetExclusive;
+            if (page.hasMore) {
+              loadMoreBtn.textContent =
+                entry.size != null
+                  ? `${t('fileViewer.loadMore')} (${formatSize(entry.size)})`
+                  : t('fileViewer.loadMore');
+              loadMoreBtn.disabled = false;
+            } else {
+              loadMoreBtn.remove();
+            }
+          })
+          .catch((error: unknown) => {
+            log.error(() => `Failed to load binary preview page: ${String(error)}`);
+            loadMoreBtn.textContent =
+              entry.size != null
+                ? `${t('fileViewer.loadMore')} (${formatSize(entry.size)})`
+                : t('fileViewer.loadMore');
+            loadMoreBtn.disabled = false;
+          });
+      });
+      stack.appendChild(loadMoreBtn);
+    }
+
     body.appendChild(stack);
 
     container.innerHTML = '';
@@ -195,6 +311,7 @@ function renderTextContent(
   let isDirty = false;
 
   const { shell, body, actions } = createPreviewShell(entry);
+  appendPreviewFileActions(actions, entry, sessionId, () => currentText);
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
