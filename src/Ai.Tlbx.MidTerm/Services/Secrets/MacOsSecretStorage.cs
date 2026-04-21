@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
@@ -43,7 +44,7 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
             if (status != ErrSecSuccess)
             {
-                Log.Error(() => $"Keychain read failed for '{key}' with status {status}");
+                Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"Keychain read failed for '{key}' with status {status}"));
                 return null;
             }
 
@@ -97,8 +98,8 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
             if (status != ErrSecSuccess)
             {
-                Log.Error(() => $"Keychain write failed for '{key}' with status {status}");
-                throw new InvalidOperationException($"Failed to store secret in Keychain: status {status}");
+                Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"Keychain write failed for '{key}' with status {status}"));
+                throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture, $"Failed to store secret in Keychain: status {status}"));
             }
         }
         finally
@@ -126,7 +127,7 @@ public sealed class MacOsSecretStorage : ISecretStorage
 
             if (status != ErrSecSuccess)
             {
-                Log.Error(() => $"Keychain delete failed for '{key}' with status {status}");
+                Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"Keychain delete failed for '{key}' with status {status}"));
             }
         }
         finally

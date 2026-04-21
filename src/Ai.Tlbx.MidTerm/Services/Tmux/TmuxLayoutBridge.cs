@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
@@ -172,23 +172,4 @@ public sealed class TmuxLayoutBridge
             node = node.Children[^1];
         }
     }
-}
-
-/// <summary>
-/// Layout tree node received from the frontend. "leaf" nodes hold a session,
-/// "split" nodes hold children with a direction ("horizontal" or "vertical").
-/// </summary>
-public sealed class LayoutNode
-{
-    [JsonPropertyName("type")]
-    public string Type { get; set; } = "";
-
-    [JsonPropertyName("sessionId")]
-    public string? SessionId { get; set; }
-
-    [JsonPropertyName("direction")]
-    public string? Direction { get; set; }
-
-    [JsonPropertyName("children")]
-    public List<LayoutNode>? Children { get; set; }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO.Compression;
 using System.Reflection;
 using System.Security;
@@ -26,11 +27,12 @@ public sealed partial class UpdateService : IDisposable
         : Path.Combine("/var/lib/midterm", "localrelease");
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(2);
+    private static readonly HttpClient SharedHttpClient = new();
 
     private readonly HttpClient _httpClient;
     private readonly SettingsService _settingsService;
     private readonly SessionLensHostRuntimeService? _lensHostRuntime;
-    private readonly ConcurrentDictionary<string, Action<UpdateInfo>> _updateListeners = new();
+    private readonly ConcurrentDictionary<string, Action<UpdateInfo>> _updateListeners = new(StringComparer.Ordinal);
     private readonly Timer _checkTimer;
     private readonly string _currentVersion;
     private readonly VersionManifest _installedManifest;
@@ -53,8 +55,7 @@ public sealed partial class UpdateService : IDisposable
     {
         _settingsService = settingsService;
         _lensHostRuntime = lensHostRuntime;
-        _httpClient = new HttpClient();
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "MidTerm-UpdateCheck");
+        _httpClient = SharedHttpClient;
 
         _currentVersion = GetCurrentVersion();
         _installedManifest = ReadInstalledManifest();
@@ -68,8 +69,13 @@ public sealed partial class UpdateService : IDisposable
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
 
         // Strip git hash suffix (e.g., "2.10.0+abc123" -> "2.10.0")
-        var plusIndex = version.IndexOf('+');
+        var plusIndex = version.IndexOf('+', StringComparison.Ordinal);
         return plusIndex > 0 ? version[..plusIndex] : version;
+    }
+
+    static UpdateService()
+    {
+        SharedHttpClient.DefaultRequestHeaders.Add("User-Agent", "MidTerm-UpdateCheck");
     }
 
     internal static VersionManifest ReadInstalledManifest()
@@ -179,7 +185,7 @@ public sealed partial class UpdateService : IDisposable
             var release = selection.Release;
             var latestVersion = release.TagName!.TrimStart('v');
             var comparison = CompareVersions(latestVersion, _currentVersion);
-            Console.Error.WriteLine($"[UpdateCheck] latest={latestVersion}, comparison={comparison}, downgrade={selection.IsDowngrade}");
+            Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"[UpdateCheck] latest={latestVersion}, comparison={comparison}, downgrade={selection.IsDowngrade}"));
 
             var releaseManifest = await FetchReleaseManifestAsync(release.TagName!);
             var updateType = DetermineUpdateType(_installedManifest, releaseManifest);
@@ -571,7 +577,7 @@ public sealed partial class UpdateService : IDisposable
             // Security: Validate path stays within extract directory (prevent path traversal)
             var fullPath = Path.GetFullPath(filePath);
             var fullExtractDir = Path.GetFullPath(extractDir);
-            if (!fullPath.StartsWith(fullExtractDir + Path.DirectorySeparatorChar) &&
+            if (!fullPath.StartsWith(fullExtractDir + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
                 fullPath != fullExtractDir)
             {
                 throw new SecurityException($"Path traversal detected in archive: {name}");
@@ -588,7 +594,7 @@ public sealed partial class UpdateService : IDisposable
                 const long maxExtractFileSize = 500 * 1024 * 1024;
                 if (size < 0 || size > maxExtractFileSize)
                 {
-                    throw new InvalidOperationException($"Tar entry too large: {size}");
+                    throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture, $"Tar entry too large: {size}"));
                 }
 
                 var dir = Path.GetDirectoryName(filePath);
@@ -648,7 +654,7 @@ public sealed partial class UpdateService : IDisposable
 
     private static (string baseVersion, string? prerelease) ParseVersionWithPrerelease(string version)
     {
-        var dashIndex = version.IndexOf('-');
+        var dashIndex = version.IndexOf('-', StringComparison.Ordinal);
         if (dashIndex < 0)
         {
             return (version, null);
@@ -658,8 +664,8 @@ public sealed partial class UpdateService : IDisposable
 
     private static int CompareBaseVersions(string v1, string v2)
     {
-        var v1Parts = v1.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
-        var v2Parts = v2.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        var v1Parts = v1.Split('.').Select(s => int.TryParse(s, CultureInfo.InvariantCulture, out var n) ? n : 0).ToArray();
+        var v2Parts = v2.Split('.').Select(s => int.TryParse(s, CultureInfo.InvariantCulture, out var n) ? n : 0).ToArray();
 
         for (var i = 0; i < Math.Max(v1Parts.Length, v2Parts.Length); i++)
         {
@@ -675,7 +681,7 @@ public sealed partial class UpdateService : IDisposable
         return 0;
     }
 
-    [GeneratedRegex(@"\.(\d+)$")]
+    [GeneratedRegex(@"\.(\d+)$", RegexOptions.None, 1000)]
     private static partial Regex PrereleaseNumberRegex();
 
     private static int ComparePrereleases(string pre1, string pre2)
@@ -686,13 +692,13 @@ public sealed partial class UpdateService : IDisposable
 
         if (match1.Success && match2.Success)
         {
-            var num1 = int.Parse(match1.Groups[1].Value);
-            var num2 = int.Parse(match2.Groups[1].Value);
+            var num1 = int.Parse(match1.Groups[1].Value, CultureInfo.InvariantCulture);
+            var num2 = int.Parse(match2.Groups[1].Value, CultureInfo.InvariantCulture);
             return num1 - num2;
         }
 
         // Fallback to string comparison
-        return string.Compare(pre1, pre2, StringComparison.OrdinalIgnoreCase);
+        return string.Compare(pre1, pre2, StringComparison.Ordinal);
     }
 
     private static bool IsNewerVersion(string latest, string current)
@@ -793,7 +799,7 @@ public sealed partial class UpdateService : IDisposable
                         artifacts.LogPath,
                         terminatedHosts == 0
                             ? "No owned mtagenthost runtimes were active before the full update."
-                            : $"Closed {terminatedHosts} owned mtagenthost runtime(s) before the full update.");
+                            : string.Create(CultureInfo.InvariantCulture, $"Closed {terminatedHosts} owned mtagenthost runtime(s) before the full update."));
                 }
                 catch (Exception ex)
                 {
@@ -1280,7 +1286,7 @@ public sealed partial class UpdateService : IDisposable
                 Directory.CreateDirectory(directory);
             }
 
-            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}{Environment.NewLine}";
+            var line = string.Create(CultureInfo.InvariantCulture, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}{Environment.NewLine}");
             File.AppendAllText(logPath, line);
         }
         catch
@@ -1297,7 +1303,7 @@ public sealed partial class UpdateService : IDisposable
                 Success = success,
                 Message = message,
                 Details = details,
-                Timestamp = DateTime.UtcNow.ToString("O"),
+                Timestamp = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
                 LogFile = artifacts.LogPath
             };
 
@@ -1496,17 +1502,25 @@ public sealed partial class UpdateService : IDisposable
         AppendUpdateLog(artifacts.LogPath, $"Refreshed macOS launcher shim at {launcherPath}");
     }
 
+    internal static string GetAgentHostFallbackPath(string settingsDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsDirectory);
+        return Path.Combine(settingsDirectory, AgentHostBinaryName);
+    }
+
     internal static string GetMacOsLauncherScriptContents(string settingsDirectory, string updateLogPath)
     {
         var installDir = Path.GetDirectoryName(GetCurrentBinaryPath()) ?? "/usr/local/bin";
         var stagingDir = Path.Combine(settingsDirectory, "update-staging");
         var resultPath = Path.Combine(settingsDirectory, "update-result.json");
         var backupDir = Path.Combine(settingsDirectory, "update-backup");
+        var agentHostFallbackPath = GetAgentHostFallbackPath(settingsDirectory);
         return $@"#!/bin/bash
 set -euo pipefail
 
 CONFIG_DIR='{EscapeForBash(settingsDirectory)}'
 INSTALL_DIR='{EscapeForBash(installDir)}'
+CONFIG_AGENTHOST='{EscapeForBash(agentHostFallbackPath)}'
 STAGING='{EscapeForBash(stagingDir)}'
 LOG_FILE='{EscapeForBash(updateLogPath)}'
 RESULT_FILE='{EscapeForBash(resultPath)}'
@@ -1535,6 +1549,23 @@ write_result() {{
   ""logFile"": ""$LOG_FILE""
 }}
 RESULT_EOF
+}}
+
+staged_update_is_web_only() {{
+    local manifest_path=""$STAGING/version.json""
+    [[ -f ""$manifest_path"" ]] && grep -Eq '""webOnly""[[:space:]]*:[[:space:]]*true' ""$manifest_path""
+}}
+
+resolve_agenthost_target() {{
+    local primary=""$INSTALL_DIR/{AgentHostBinaryName}""
+    if [[ -f ""$primary"" ]]; then
+        echo ""$primary""
+        return 0
+    fi
+
+    mkdir -p ""$(dirname ""$CONFIG_AGENTHOST"")"" 2>/dev/null || true
+    log ""System install is missing {AgentHostBinaryName}; using writable fallback at $CONFIG_AGENTHOST"" >&2
+    echo ""$CONFIG_AGENTHOST""
 }}
 
 apply_file() {{
@@ -1574,25 +1605,40 @@ rollback() {{
     log ""Rolling back staged macOS update"" ""WARN""
     [[ -f ""$BACKUP_DIR/mt.bak"" ]] && cat ""$BACKUP_DIR/mt.bak"" > ""$INSTALL_DIR/mt"" && chmod +x ""$INSTALL_DIR/mt"" || true
     [[ -f ""$BACKUP_DIR/mthost.bak"" ]] && cat ""$BACKUP_DIR/mthost.bak"" > ""$INSTALL_DIR/mthost"" && chmod +x ""$INSTALL_DIR/mthost"" || true
-    [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]] && cat ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" > ""$INSTALL_DIR/{AgentHostBinaryName}"" && chmod +x ""$INSTALL_DIR/{AgentHostBinaryName}"" || true
+    if [[ -f ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" ]]; then
+        cat ""$BACKUP_DIR/{AgentHostBinaryName}.bak"" > ""${{AGENTHOST_DST:-$INSTALL_DIR/{AgentHostBinaryName}}}"" && chmod +x ""${{AGENTHOST_DST:-$INSTALL_DIR/{AgentHostBinaryName}}}"" || true
+    elif [[ -n ""${{AGENTHOST_DST:-}}"" ]] && [[ ""$AGENTHOST_DST"" != ""$INSTALL_DIR/{AgentHostBinaryName}"" ]]; then
+        rm -f ""$AGENTHOST_DST"" 2>/dev/null || true
+    fi
     [[ -f ""$BACKUP_DIR/version.json.bak"" ]] && cat ""$BACKUP_DIR/version.json.bak"" > ""$INSTALL_DIR/version.json"" || true
 }}
 
 if [[ -d ""$STAGING"" ]] && [[ -f ""$STAGING/mt"" ]]; then
+    STAGED_IS_WEB_ONLY=false
+    if staged_update_is_web_only; then
+        STAGED_IS_WEB_ONLY=true
+    fi
+
     rm -rf ""$BACKUP_DIR"" 2>/dev/null || true
     mkdir -p ""$BACKUP_DIR""
     rm -f ""$RESULT_FILE"" 2>/dev/null || true
 
     log ""Applying staged macOS update from $STAGING""
+    log ""Staged update type: $(if [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]]; then echo 'WebOnly'; else echo 'Full'; fi)""
+
+    AGENTHOST_DST=""$INSTALL_DIR/{AgentHostBinaryName}""
+    if [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]]; then
+        AGENTHOST_DST=""$(resolve_agenthost_target)""
+    fi
 
     [[ -f ""$INSTALL_DIR/mt"" ]] && cp -f ""$INSTALL_DIR/mt"" ""$BACKUP_DIR/mt.bak""
-    [[ -f ""$INSTALL_DIR/mthost"" ]] && cp -f ""$INSTALL_DIR/mthost"" ""$BACKUP_DIR/mthost.bak""
-    [[ -f ""$INSTALL_DIR/{AgentHostBinaryName}"" ]] && cp -f ""$INSTALL_DIR/{AgentHostBinaryName}"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
+    [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$INSTALL_DIR/mthost"" ]] && cp -f ""$INSTALL_DIR/mthost"" ""$BACKUP_DIR/mthost.bak""
+    [[ ""$STAGED_IS_WEB_ONLY"" == ""false"" ]] && [[ -f ""$AGENTHOST_DST"" ]] && cp -f ""$AGENTHOST_DST"" ""$BACKUP_DIR/{AgentHostBinaryName}.bak""
     [[ -f ""$INSTALL_DIR/version.json"" ]] && cp -f ""$INSTALL_DIR/version.json"" ""$BACKUP_DIR/version.json.bak""
 
     if apply_file ""$STAGING/mt"" ""$INSTALL_DIR/mt"" ""mt"" true \
-        && {{ [[ ! -f ""$STAGING/mthost"" ]] || apply_file ""$STAGING/mthost"" ""$INSTALL_DIR/mthost"" ""mthost"" true; }} \
-        && apply_file ""$STAGING/{AgentHostBinaryName}"" ""$INSTALL_DIR/{AgentHostBinaryName}"" ""{AgentHostBinaryName}"" true \
+        && {{ [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]] || apply_file ""$STAGING/mthost"" ""$INSTALL_DIR/mthost"" ""mthost"" true; }} \
+        && {{ [[ ""$STAGED_IS_WEB_ONLY"" == ""true"" ]] || apply_file ""$STAGING/{AgentHostBinaryName}"" ""$AGENTHOST_DST"" ""{AgentHostBinaryName}"" true; }} \
         && apply_file ""$STAGING/version.json"" ""$INSTALL_DIR/version.json"" ""version.json"" false; then
         write_result true ""Update applied""
         rm -rf ""$STAGING"" ""$BACKUP_DIR"" 2>/dev/null || true
@@ -1610,7 +1656,7 @@ exec ""$INSTALL_DIR/mt"" ""$@""
 
     private static string EscapeForBash(string value)
     {
-        return value.Replace("'", "'\\''");
+        return value.Replace("'", "'\\''", StringComparison.Ordinal);
     }
 
     private static void TrySpawnReplacementProcess()
@@ -1637,7 +1683,7 @@ exec ""$INSTALL_DIR/mt"" ""$@""
                 psi.ArgumentList.Add(arg);
             }
 
-            var process = System.Diagnostics.Process.Start(psi);
+            using var process = System.Diagnostics.Process.Start(psi);
             if (process is not null)
             {
                 try { process.StandardInput.Close(); } catch { }
@@ -1695,7 +1741,6 @@ exec ""$INSTALL_DIR/mt"" ""$@""
 
         _disposed = true;
         _checkTimer.Dispose();
-        _httpClient.Dispose();
         _updateListeners.Clear();
     }
 }

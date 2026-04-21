@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Principal;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Security;
@@ -44,7 +45,7 @@ public sealed class WindowsFirewallService
             return status;
         }
 
-        var expectedPort = _bindingInfo.Port.ToString();
+        var expectedPort = _bindingInfo.Port.ToString(CultureInfo.InvariantCulture);
         var currentProgramPath = GetCurrentProgramPath();
 
         return new FirewallRuleStatusResponse
@@ -184,6 +185,7 @@ $appFilter = Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule |
     {
         var ruleName = EscapeForPowerShell(ManagedRuleName);
         var programPath = EscapeForPowerShell(GetCurrentProgramPath());
+        var localPort = _bindingInfo.Port.ToString(CultureInfo.InvariantCulture);
         return $$"""
 $ErrorActionPreference = 'Stop'
 Import-Module NetSecurity -ErrorAction Stop
@@ -195,7 +197,7 @@ New-NetFirewallRule `
   -Enabled True `
   -Profile Any `
   -Protocol TCP `
-  -LocalPort {{_bindingInfo.Port}} `
+  -LocalPort {{localPort}} `
   -Program '{{programPath}}' `
   -Description 'Allows inbound HTTPS access to MidTerm.' | Out-Null
 """;

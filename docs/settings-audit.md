@@ -77,7 +77,9 @@ This audit now has a matching code registry in `src/ts/modules/settings/registry
 | `backgroundImageEnabled` | Settings panel checkbox, upload/delete endpoints | `applyBackgroundAppearance()` | Immediate | UI background only; file metadata comes from special endpoints. |
 | `backgroundImageFileName` | Upload/delete endpoints | `applyBackgroundAppearance()` / preview UI | Read-only metadata | Returned in GET/bootstrap; ignored on normal PUT. |
 | `backgroundImageRevision` | Upload/delete endpoints | Cache-busting for background image URL | Read-only metadata | Returned in GET/bootstrap; ignored on normal PUT. |
-| `backgroundImageFit` | Settings panel select | `applyBackgroundAppearance()` | Immediate | UI background only. |
+| `backgroundKenBurnsEnabled` | Settings panel checkbox | `applyBackgroundAppearance()` | Immediate | Enables or disables the animated background orbit for wallpaper images. |
+| `backgroundKenBurnsZoomPercent` | Settings panel range input | `applyBackgroundAppearance()` | Immediate | Controls the wallpaper zoom factor from 150% to 300%. |
+| `backgroundKenBurnsSpeedPxPerSecond` | Settings panel range input | `applyBackgroundAppearance()` | Immediate | Controls the wallpaper orbit speed in pixels per second. |
 | `uiTransparency` | Settings panel range input | `applyBackgroundAppearance()` | Immediate | Already had live slider preview before save. |
 | `tabTitleMode` | Settings panel select | `updateTabTitle()` / `modules/tabTitle.ts` | Immediate | Applies to browser tab title logic. |
 | `minimumContrastRatio` | Settings panel select | xterm option update in `applySettingsToTerminals()` | Immediate | Terminal text contrast only. |

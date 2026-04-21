@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Models.Auth;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Settings;
@@ -29,7 +30,11 @@ public static class AuthEndpoints
             {
                 var remaining = authService.GetRemainingLockout(ip);
                 return Results.Json(
-                    new AuthResponse { Success = false, Error = $"Too many attempts. Try again in {remaining?.TotalSeconds:0} seconds." },
+                    new AuthResponse
+                    {
+                        Success = false,
+                        Error = string.Create(CultureInfo.InvariantCulture, $"Too many attempts. Try again in {remaining?.TotalSeconds:0} seconds.")
+                    },
                     AppJsonContext.Default.AuthResponse,
                     statusCode: 429);
             }

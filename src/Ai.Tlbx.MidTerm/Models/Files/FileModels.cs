@@ -13,7 +13,7 @@ public sealed class FileCheckRequest
 /// </summary>
 public sealed class FileCheckResponse
 {
-    public Dictionary<string, FilePathInfo> Results { get; set; } = new();
+    public Dictionary<string, FilePathInfo> Results { get; set; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -88,6 +88,7 @@ public sealed class FileTreeEntry
     public bool IsDirectory { get; set; }
     public long? Size { get; set; }
     public string? MimeType { get; set; }
+    public bool? IsText { get; set; }
     public string? GitStatus { get; set; }
 }
 
@@ -106,6 +107,8 @@ public sealed class FileSaveResponse
 public sealed class LauncherPathResponse
 {
     public string Path { get; set; } = string.Empty;
+    public string HomePath { get; set; } = string.Empty;
+    public string StartPath { get; set; } = string.Empty;
 }
 
 public sealed class LauncherDirectoryEntry
@@ -120,4 +123,27 @@ public sealed class LauncherDirectoryListResponse
     public string Path { get; set; } = string.Empty;
     public string? ParentPath { get; set; }
     public LauncherDirectoryEntry[] Entries { get; set; } = [];
+}
+
+public sealed class LauncherDirectoryAccessResponse
+{
+    public string Path { get; set; } = string.Empty;
+    public bool CanWrite { get; set; }
+}
+
+public sealed class LauncherCreateDirectoryRequest
+{
+    public string ParentPath { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class LauncherCloneRepositoryRequest
+{
+    public string ParentPath { get; set; } = string.Empty;
+    public string RepositoryUrl { get; set; } = string.Empty;
+}
+
+public sealed class LauncherDirectoryMutationResponse
+{
+    public string Path { get; set; } = string.Empty;
 }

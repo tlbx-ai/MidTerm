@@ -21,11 +21,69 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MidTerm" />
+    <script src="/js/appRefreshBootstrap.js?v=__MIDTERM_ASSET_VERSION__"></script>
+    <style>
+      html.midterm-app-refreshing,
+      html.midterm-app-refreshing body {
+        background: #0d0e14;
+      }
+
+      html.midterm-app-refreshing body {
+        margin: 0;
+        overflow: hidden;
+      }
+
+      html.midterm-app-refreshing body > * {
+        visibility: hidden;
+      }
+
+      html.midterm-app-refreshing body::before {
+        content: 'Updating MidTerm...';
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f3f6fb;
+        font:
+          600 15px/1.4 'Segoe UI',
+          sans-serif;
+        letter-spacing: 0.02em;
+      }
+
+      html.midterm-app-refreshing body::after {
+        content: '';
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 28px;
+        height: 28px;
+        margin-left: -14px;
+        margin-top: 20px;
+        border: 3px solid rgba(255, 255, 255, 0.18);
+        border-top-color: #8adf9a;
+        border-radius: 50%;
+        animation: midterm-refresh-spin 0.8s linear infinite;
+      }
+
+      @keyframes midterm-refresh-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
 
     <!-- Preload terminal fonts for instant availability -->
     <link
       rel="preload"
       href="/fonts/CascadiaCode-Regular.woff2?v=__MIDTERM_ASSET_VERSION__"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/CascadiaCode-SemiBold.woff2?v=__MIDTERM_ASSET_VERSION__"
       as="font"
       type="font/woff2"
       crossorigin
@@ -91,7 +149,25 @@
           <button class="sidebar-nav-btn" id="btn-settings">
             <span class="icon">&#xe991;</span><span data-i18n="sidebar.settings">Settings</span>
           </button>
-          <button class="sidebar-nav-btn btn-history" id="btn-history">
+          <button class="sidebar-nav-btn btn-spaces" id="btn-spaces">
+            <span class="icon icon-svg"
+              ><svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" /></svg></span
+            ><span data-i18n="spaces.title">Spaces</span>
+          </button>
+          <button class="sidebar-nav-btn btn-history btn-bookmarks" id="btn-bookmarks">
             <span class="icon icon-svg"
               ><svg
                 viewBox="0 0 24 24"
@@ -568,85 +644,170 @@
               <nav class="settings-tabs" role="tablist">
                 <button
                   class="settings-tab active"
-                  data-tab="general"
+                  data-tab="updates"
                   role="tab"
                   aria-selected="true"
+                  data-i18n-title="settings.updatesAbout.tooltip"
+                  title="Versions, updates, trust status, install details, and open-source notices."
                 >
                   <span class="icon">&#xea0c;</span>
-                  <span class="tab-label" data-i18n="settings.general">Updates / Info</span>
-                </button>
-                <button class="settings-tab" data-tab="appearance" role="tab" aria-selected="false">
-                  <span class="icon">&#xe90d;</span>
-                  <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
-                </button>
-                <button class="settings-tab" data-tab="behavior" role="tab" aria-selected="false">
-                  <span class="icon">&#xe993;</span>
-                  <span class="tab-label" data-i18n="settings.behavior">Behaviour</span>
-                </button>
-                <button class="settings-tab" data-tab="agent-ui" role="tab" aria-selected="false">
-                  <span class="icon">&#xe925;</span>
-                  <span class="tab-label" data-i18n="settings.agentUi">Agent UI</span>
-                </button>
-                <button class="settings-tab" data-tab="security" role="tab" aria-selected="false">
-                  <span class="icon">&#xe908;</span>
-                  <span class="tab-label" data-i18n="settings.security">Security</span>
-                </button>
-                <button class="settings-tab" data-tab="hub" role="tab" aria-selected="false">
-                  <span class="icon">&#xe925;</span>
-                  <span class="tab-label" data-i18n="settings.hub">Multi Server</span>
+                  <span class="tab-label" data-i18n="settings.updatesAbout">
+                    Updates &amp; About
+                  </span>
                 </button>
                 <button
                   class="settings-tab"
-                  data-tab="diagnostics"
+                  data-tab="terminal"
                   role="tab"
                   aria-selected="false"
+                  data-i18n-title="settings.terminal.tooltip"
+                  title="Fonts, colors, cursor, scrollback, and terminal interaction."
+                >
+                  <span class="icon icon-svg" aria-hidden="true">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="1em"
+                      height="1em"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect>
+                      <path d="M7 9l3 3-3 3"></path>
+                      <path d="M13 15h4"></path>
+                    </svg>
+                  </span>
+                  <span class="tab-label" data-i18n="settings.terminal">Terminal</span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="ai-agents"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.aiAgents.tooltip"
+                  title="Defaults for non-terminal AI sessions and how agent history is shown."
+                >
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.aiAgents">AI Agents</span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="workflow"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.workflowGit.tooltip"
+                  title="Navigation, Automation Bar, file linking, bookmarks, tab naming, and Git/worktree workflow."
+                >
+                  <span class="icon">&#xe993;</span>
+                  <span class="tab-label" data-i18n="settings.workflowGit">Workflow &amp; Git</span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="appearance"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.appearance.tooltip"
+                  title="Theme, language, wallpaper, and global UI atmosphere."
+                >
+                  <span class="icon">&#xe90d;</span>
+                  <span class="tab-label" data-i18n="settings.appearance">Appearance</span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="sessions"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.sessionsStartup.tooltip"
+                  title="Defaults for new terminals, session resume, runtime behavior, and browser-size ownership."
+                >
+                  <span class="icon">&#xea0c;</span>
+                  <span class="tab-label" data-i18n="settings.sessionsStartup">
+                    Sessions &amp; Startup
+                  </span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="security"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.securityAccess.tooltip"
+                  title="Passwords, API keys, certificates, firewall, and terminal process identity."
+                >
+                  <span class="icon">&#xe908;</span>
+                  <span class="tab-label" data-i18n="settings.securityAccess">
+                    Security &amp; Access
+                  </span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="connected-hosts"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.connectedHosts.tooltip"
+                  title="Remote MidTerm hosts, shared trust, and host-oriented integrations."
+                >
+                  <span class="icon">&#xe925;</span>
+                  <span class="tab-label" data-i18n="settings.connectedHosts">
+                    Connected Hosts
+                  </span>
+                </button>
+                <button
+                  class="settings-tab"
+                  data-tab="advanced"
+                  role="tab"
+                  aria-selected="false"
+                  data-i18n-title="settings.advancedDiagnostics.tooltip"
+                  title="Latency, transport internals, file paths, reload/restart, and developer diagnostics."
                 >
                   <span class="icon">&#xe9ce;</span>
-                  <span class="tab-label" data-i18n="settings.diagnostics">Diagnostics</span>
+                  <span class="tab-label" data-i18n="settings.advancedDiagnostics">
+                    Advanced &amp; Diagnostics
+                  </span>
                 </button>
               </nav>
 
               <!-- Right: Content Area -->
               <div class="settings-content" role="tabpanel">
-                <!-- General Panel -->
-                <section class="settings-panel" data-panel="general">
-                  <h2 data-i18n="settings.general.title">Updates / Info</h2>
+                <section class="settings-panel" data-panel="updates">
+                  <h2 data-i18n="settings.updatesAbout.title">Updates &amp; About</h2>
 
-                  <!-- About & Updates -->
                   <div class="settings-section">
-                    <h3 data-i18n="settings.general.aboutUpdates">About & Updates</h3>
+                    <h3 data-i18n="settings.updatesAbout.updatePreferences">Update Preferences</h3>
                     <div class="setting-row">
-                      <label data-i18n="settings.general.server">Server</label>
-                      <span class="version-value" id="version-server" title="mt.exe binary version"
-                        >-</span
+                      <label
+                        for="setting-show-update-notification"
+                        data-i18n="settings.general.showUpdateNotification"
+                        >Show updates prominently in sidebar</label
                       >
-                    </div>
-                    <div class="setting-row">
-                      <label data-i18n="settings.general.frontend">Frontend</label>
-                      <span
-                        class="version-value"
-                        id="version-frontend"
-                        title="JavaScript build version"
-                        >-</span
-                      >
+                      <input type="checkbox" id="setting-show-update-notification" checked />
                     </div>
                     <div class="setting-row">
-                      <label data-i18n="settings.general.host">Host</label>
-                      <span
-                        class="version-value"
-                        id="version-host"
-                        title="mthost.exe binary version"
-                        >-</span
+                      <label for="setting-update-channel" data-i18n="settings.general.updateChannel"
+                        >Update channel</label
                       >
+                      <select id="setting-update-channel">
+                        <option value="stable" data-i18n="settings.general.updateChannelStable">
+                          Stable
+                        </option>
+                        <option value="dev" data-i18n="settings.general.updateChannelDev">
+                          Dev (pre-release)
+                        </option>
+                      </select>
                     </div>
-                    <div class="setting-row" id="dev-environment-row" style="display: none">
-                      <label data-i18n="settings.general.environment">Environment</label>
-                      <span class="version-value dev-badge" id="dev-environment-name">-</span>
+                    <div class="setting-row">
+                      <label
+                        for="setting-changelog-after-update"
+                        data-i18n="settings.behavior.changelogAfterUpdate"
+                        >Show changelog after update</label
+                      >
+                      <input type="checkbox" id="setting-changelog-after-update" checked />
                     </div>
-                    <div class="setting-row" id="code-signing-row">
-                      <label data-i18n="settings.general.codeSigning">Code Signing</label>
-                      <span class="version-value" id="code-signing-value">-</span>
-                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.updatesAbout.updateActions">Update Actions</h3>
                     <div class="setting-row">
                       <label data-i18n="settings.general.updates">Updates</label>
                       <div class="update-actions-inline">
@@ -682,31 +843,64 @@
                     </div>
                     <div id="update-cards" class="update-cards"></div>
                     <div id="update-result" class="update-result hidden"></div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-show-update-notification"
-                        data-i18n="settings.general.showUpdateNotification"
-                        >Show updates prominently in sidebar</label
+                    <div class="setting-row hidden" id="pwa-install-row">
+                      <label data-i18n="settings.behavior.installAsApp">Install as App</label>
+                      <button
+                        id="btn-install-pwa"
+                        class="btn-secondary"
+                        data-i18n="settings.behavior.install"
                       >
-                      <input type="checkbox" id="setting-show-update-notification" checked />
-                    </div>
-                    <div class="setting-row">
-                      <label for="setting-update-channel" data-i18n="settings.general.updateChannel"
-                        >Update channel</label
-                      >
-                      <select id="setting-update-channel">
-                        <option value="stable" data-i18n="settings.general.updateChannelStable">
-                          Stable
-                        </option>
-                        <option value="dev" data-i18n="settings.general.updateChannelDev">
-                          Dev (pre-release)
-                        </option>
-                      </select>
+                        Install
+                      </button>
                     </div>
                     <div id="reinstall-hint" class="reinstall-hint hidden"></div>
                   </div>
 
-                  <!-- Server -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.updatesAbout.versionsTrust">Versions &amp; Trust</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.server">Server</label>
+                      <span class="version-value" id="version-server" title="mt.exe binary version"
+                        >-</span
+                      >
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.frontend">Frontend</label>
+                      <span
+                        class="version-value"
+                        id="version-frontend"
+                        title="JavaScript build version"
+                        >-</span
+                      >
+                    </div>
+                    <div class="setting-row">
+                      <label data-i18n="settings.general.host">Host</label>
+                      <span
+                        class="version-value"
+                        id="version-host"
+                        title="mthost.exe binary version"
+                        >-</span
+                      >
+                    </div>
+                    <div class="setting-row" id="dev-environment-row" style="display: none">
+                      <label data-i18n="settings.general.environment">Environment</label>
+                      <span class="version-value dev-badge" id="dev-environment-name">-</span>
+                    </div>
+                    <div class="setting-row" id="code-signing-row">
+                      <label data-i18n="settings.general.codeSigning">Code Signing</label>
+                      <span class="version-value" id="code-signing-value">-</span>
+                    </div>
+                  </div>
+
+                  <div class="settings-section system-status-section">
+                    <h3 data-i18n="settings.general.systemStatus">System Status</h3>
+                    <div id="system-status-content">
+                      <div class="status-loading" data-i18n="settings.general.loading">
+                        Loading...
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="settings-section">
                     <h3 data-i18n="settings.general.serverSection">Server</h3>
                     <p class="setting-hint" data-i18n="settings.general.serverHint">
@@ -721,17 +915,6 @@
                     </div>
                   </div>
 
-                  <!-- System Status -->
-                  <div class="settings-section system-status-section">
-                    <h3 data-i18n="settings.general.systemStatus">System Status</h3>
-                    <div id="system-status-content">
-                      <div class="status-loading" data-i18n="settings.general.loading">
-                        Loading...
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- OSS Licenses -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.general.ossLicenses">Open Source Licenses</h3>
                     <p class="setting-hint" data-i18n="settings.general.ossHint">
@@ -940,157 +1123,31 @@
                   </div>
                 </section>
 
-                <!-- Hub Panel -->
-                <section class="settings-panel hidden" data-panel="hub">
-                  <h2 data-i18n="settings.hub.title">Multi Server</h2>
+                <section class="settings-panel hidden" data-panel="terminal">
+                  <h2 data-i18n="settings.terminal.title">Terminal</h2>
 
                   <div class="settings-section">
-                    <div class="hub-toolbar">
-                      <div>
-                        <h3 data-i18n="settings.hub.configuredMachines">Configured Machines</h3>
-                        <p class="setting-hint hub-setting-status" id="hub-settings-status"></p>
-                      </div>
-                      <div class="hub-toolbar-actions">
-                        <button
-                          id="btn-hub-control-updates"
-                          class="btn-secondary"
-                          data-i18n="settings.hub.controlUpdates"
-                        >
-                          Control Updates
-                        </button>
-                        <button
-                          id="btn-hub-open-machine-modal"
-                          class="hub-add-machine-button"
-                          type="button"
-                          title="Add host"
-                          aria-label="Add host"
-                          data-i18n-title="settings.hub.addHost"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                    <div id="hub-machine-list" class="hub-machine-list"></div>
-                  </div>
-
-                  <div id="hub-machine-modal" class="modal hidden">
-                    <div class="modal-backdrop"></div>
-                    <div class="modal-content hub-machine-modal-content">
-                      <div class="modal-header">
-                        <h3 id="hub-machine-modal-title" data-i18n="settings.hub.addHost">
-                          Add Host
-                        </h3>
-                        <button id="btn-close-hub-machine-modal" class="modal-close">
-                          &times;
-                        </button>
-                      </div>
-                      <div class="modal-body hub-machine-modal-body">
-                        <input id="hub-machine-id" type="hidden" />
-                        <div class="hub-machine-modal-grid">
-                          <div class="hub-machine-modal-field">
-                            <label for="hub-machine-url" data-i18n="settings.hub.machineUrl"
-                              >URL</label
-                            >
-                            <input
-                              id="hub-machine-url"
-                              type="text"
-                              placeholder="https://192.168.1.24:2000"
-                              data-i18n-placeholder="settings.hub.machineUrlPlaceholder"
-                            />
-                          </div>
-                          <div class="hub-machine-modal-field">
-                            <label for="hub-machine-api-key" data-i18n="settings.hub.apiKey"
-                              >API Key</label
-                            >
-                            <input
-                              id="hub-machine-api-key"
-                              type="text"
-                              placeholder="mtk_..."
-                              data-i18n-placeholder="settings.hub.apiKeyPlaceholder"
-                            />
-                          </div>
-                          <div class="hub-machine-modal-field">
-                            <label for="hub-machine-password" data-i18n="settings.hub.password"
-                              >Password</label
-                            >
-                            <input
-                              id="hub-machine-password"
-                              type="password"
-                              placeholder="Optional fallback"
-                              data-i18n-placeholder="settings.hub.passwordPlaceholder"
-                            />
-                            <p
-                              class="setting-hint hub-machine-modal-hint"
-                              data-i18n="settings.hub.passwordHint"
-                            >
-                              Used if the API key is missing or rejected.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div class="modal-footer">
-                        <button
-                          id="btn-cancel-hub-machine-modal"
-                          class="btn-secondary"
-                          data-i18n="modal.cancel"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          id="btn-save-hub-machine-modal"
-                          class="btn-primary"
-                          data-i18n="settings.hub.saveHost"
-                        >
-                          Save Host
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <!-- Appearance Panel -->
-                <section class="settings-panel hidden" data-panel="appearance">
-                  <h2 data-i18n="settings.appearance.title">Appearance</h2>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.appearance.terminalAppearance">Terminal Appearance</h3>
+                    <h3 data-i18n="settings.terminal.typographyTheme">Typography &amp; Theme</h3>
                     <div class="setting-row">
-                      <label for="setting-language" data-i18n="settings.appearance.language"
-                        >Language</label
+                      <label for="setting-font-size" data-i18n="settings.appearance.fontSize"
+                        >Font Size</label
                       >
-                      <select id="setting-language">
-                        <option value="auto" data-i18n="settings.appearance.languageAuto">
-                          Auto (browser default)
-                        </option>
-                        <option value="en">English</option>
-                        <option value="zh">中文</option>
-                        <option value="es">Español</option>
-                        <option value="hi">हिन्दी</option>
-                        <option value="fr">Français</option>
-                        <option value="bn">বাংলা</option>
-                        <option value="pt">Português</option>
-                        <option value="ru">Русский</option>
-                        <option value="ja">日本語</option>
-                        <option value="de">Deutsch</option>
-                      </select>
+                      <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
+                        <input type="number" id="setting-font-size" min="8" max="24" value="14" />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
                     </div>
                     <div class="setting-row">
-                      <label for="setting-theme" data-i18n="settings.appearance.theme">Theme</label>
-                      <select id="setting-theme">
-                        <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
-                        <option value="light" data-i18n="settings.options.themeLight">Light</option>
-                        <option
-                          value="solarizedDark"
-                          data-i18n="settings.options.themeSolarizedDark"
-                        >
-                          Solarized Dark
-                        </option>
-                        <option
-                          value="solarizedLight"
-                          data-i18n="settings.options.themeSolarizedLight"
-                        >
-                          Solarized Light
-                        </option>
+                      <label for="setting-font-family" data-i18n="settings.appearance.font"
+                        >Font</label
+                      >
+                      <select id="setting-font-family">
+                        <option value="Cascadia Code">Cascadia Code</option>
+                        <option value="Cascadia Code SemiBold">Cascadia Code SemiBold</option>
+                        <option value="JetBrains Mono">JetBrains Mono</option>
+                        <option value="Terminus">Terminus</option>
                       </select>
                     </div>
                     <div class="setting-row">
@@ -1219,26 +1276,17 @@
                       </div>
                     </details>
                     <div class="setting-row">
-                      <label for="setting-font-size" data-i18n="settings.appearance.fontSize"
-                        >Font Size</label
+                      <label
+                        for="setting-terminal-ligatures-enabled"
+                        data-i18n="settings.appearance.enableLigatures"
+                        >Enable Ligatures</label
                       >
-                      <div class="text-input-wrapper" data-setting="fontSize" data-type="number">
-                        <input type="number" id="setting-font-size" min="8" max="24" value="14" />
-                        <button type="button" class="inline-save-btn" title="Save">
-                          <span class="icon">&#xe90f;</span>
-                        </button>
-                      </div>
+                      <input type="checkbox" id="setting-terminal-ligatures-enabled" />
                     </div>
-                    <div class="setting-row">
-                      <label for="setting-font-family" data-i18n="settings.appearance.font"
-                        >Font</label
-                      >
-                      <select id="setting-font-family">
-                        <option value="Cascadia Code">Cascadia Code</option>
-                        <option value="JetBrains Mono">JetBrains Mono</option>
-                        <option value="Terminus">Terminus</option>
-                      </select>
-                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.terminal.layoutCursor">Layout &amp; Cursor</h3>
                     <div class="setting-row">
                       <label for="setting-line-height" data-i18n="settings.appearance.lineHeight"
                         >Line Height</label
@@ -1273,7 +1321,7 @@
                           id="setting-letter-spacing"
                           min="-2"
                           max="10"
-                          step="0.1"
+                          step="0.05"
                           value="0"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
@@ -1286,17 +1334,9 @@
                         >Font Weight</label
                       >
                       <select id="setting-font-weight">
-                        <option value="100">100</option>
-                        <option value="200">200</option>
-                        <option value="300">300</option>
                         <option value="normal" data-i18n="settings.options.fontWeightNormal">
                           Normal
                         </option>
-                        <option value="500">500</option>
-                        <option value="600">600</option>
-                        <option value="700">700</option>
-                        <option value="800">800</option>
-                        <option value="900">900</option>
                         <option value="bold" data-i18n="settings.options.fontWeightBold">
                           Bold
                         </option>
@@ -1309,44 +1349,11 @@
                         >Bold Font Weight</label
                       >
                       <select id="setting-font-weight-bold">
-                        <option value="100">100</option>
-                        <option value="200">200</option>
-                        <option value="300">300</option>
                         <option value="normal" data-i18n="settings.options.fontWeightNormal">
                           Normal
                         </option>
-                        <option value="500">500</option>
-                        <option value="600">600</option>
-                        <option value="700">700</option>
-                        <option value="800">800</option>
-                        <option value="900">900</option>
                         <option value="bold" data-i18n="settings.options.fontWeightBold">
                           Bold
-                        </option>
-                      </select>
-                    </div>
-                    <div class="setting-row">
-                      <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle"
-                        >Browser Tab Title</label
-                      >
-                      <select id="setting-tab-title">
-                        <option value="hostname" data-i18n="settings.options.tabHostname">
-                          Hostname
-                        </option>
-                        <option value="static" data-i18n="settings.options.tabStatic">
-                          Just MidTerm
-                        </option>
-                        <option value="sessionName" data-i18n="settings.options.tabSessionName">
-                          Session Name
-                        </option>
-                        <option value="terminalTitle" data-i18n="settings.options.tabTerminalTitle">
-                          Terminal Title
-                        </option>
-                        <option
-                          value="foregroundProcess"
-                          data-i18n="settings.options.tabForegroundProcess"
-                        >
-                          Foreground Process
                         </option>
                       </select>
                     </div>
@@ -1408,119 +1415,64 @@
                         </option>
                       </select>
                     </div>
-                    <div class="setting-row">
-                      <label for="setting-contrast" data-i18n="settings.appearance.minimumContrast"
-                        >Minimum Contrast</label
-                      >
-                      <select id="setting-contrast">
-                        <option value="1" data-i18n="settings.options.contrastOff">Off</option>
-                        <option value="4.5" data-i18n="settings.options.contrastAA">
-                          WCAG AA (4.5:1)
-                        </option>
-                        <option value="7" data-i18n="settings.options.contrastAAA">
-                          WCAG AAA (7:1)
-                        </option>
-                        <option value="21" data-i18n="settings.options.contrastMax">
-                          Maximum (21:1)
-                        </option>
-                      </select>
-                    </div>
                   </div>
 
                   <div class="settings-section">
-                    <h3 data-i18n="settings.appearance.backgroundTitle">
-                      Background &amp; Transparency
+                    <h3 data-i18n="settings.terminal.drawingTransparency">
+                      Drawing &amp; Transparency
                     </h3>
-                    <div class="setting-row setting-row-align-start">
-                      <label
-                        for="setting-background-upload"
-                        data-i18n="settings.appearance.backgroundImage"
-                        >Background Image</label
-                      >
-                      <div class="background-image-controls">
-                        <div class="background-image-actions">
-                          <button
-                            type="button"
-                            class="settings-action-btn"
-                            id="btn-background-upload"
-                            data-i18n="settings.appearance.backgroundUpload"
-                          >
-                            Upload Image
-                          </button>
-                          <button
-                            type="button"
-                            class="settings-action-btn"
-                            id="btn-background-remove"
-                            data-i18n="settings.appearance.backgroundRemove"
-                          >
-                            Remove
-                          </button>
-                          <input
-                            type="file"
-                            id="setting-background-upload"
-                            accept=".png,.jpg,.jpeg,image/png,image/jpeg"
-                            hidden
-                          />
-                        </div>
-                        <div class="background-image-preview-frame">
-                          <img
-                            id="background-image-preview"
-                            class="background-image-preview hidden"
-                            alt=""
-                          />
-                          <div
-                            id="background-image-empty"
-                            class="background-image-empty"
-                            data-i18n="settings.appearance.backgroundNone"
-                          >
-                            No image uploaded
-                          </div>
-                        </div>
-                        <div id="background-image-name" class="background-image-name"></div>
-                        <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
-                          Uploads a PNG or JPG and stores it beside the MidTerm logs.
-                        </div>
-                      </div>
-                    </div>
                     <div class="setting-row">
                       <label
-                        for="setting-background-image-enabled"
-                        data-i18n="settings.appearance.backgroundEnabled"
-                        >Show Background Image</label
+                        for="setting-custom-glyphs"
+                        data-i18n="settings.appearance.boxDrawingMode"
+                        >Box Drawing</label
                       >
-                      <input type="checkbox" id="setting-background-image-enabled" />
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-background-fit"
-                        data-i18n="settings.appearance.backgroundFit"
-                        >Image Fit</label
-                      >
-                      <select id="setting-background-fit">
-                        <option value="cover" data-i18n="settings.options.backgroundFitCover">
-                          Cover
+                      <select id="setting-custom-glyphs">
+                        <option value="custom" data-i18n="settings.options.boxDrawingCustom">
+                          Custom Glyphs
                         </option>
-                        <option value="contain" data-i18n="settings.options.backgroundFitContain">
-                          Contain
+                        <option value="font" data-i18n="settings.options.boxDrawingFont">
+                          Use Font
                         </option>
                       </select>
                     </div>
                     <div class="setting-row">
                       <label
-                        for="setting-ui-transparency"
-                        data-i18n="settings.appearance.uiTransparency"
-                        >UI Transparency</label
+                        for="setting-box-drawing-style"
+                        data-i18n="settings.appearance.boxDrawingStyle"
+                        >Box Drawing Style</label
                       >
-                      <div class="transparency-slider-row">
+                      <select id="setting-box-drawing-style">
+                        <option value="classic" data-i18n="settings.options.boxDrawingStyleClassic">
+                          Classic
+                        </option>
+                        <option value="rounded" data-i18n="settings.options.boxDrawingStyleRounded">
+                          Rounded
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-box-drawing-scale"
+                        data-i18n="settings.appearance.boxDrawingScale"
+                        >Box Stroke Scale</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="boxDrawingScale"
+                        data-type="number"
+                      >
                         <input
-                          type="range"
-                          id="setting-ui-transparency"
-                          min="0"
-                          max="100"
-                          step="5"
-                          value="0"
+                          type="number"
+                          id="setting-box-drawing-scale"
+                          min="0.5"
+                          max="2"
+                          step="0.05"
+                          value="1"
                         />
-                        <span id="setting-ui-transparency-value" class="slider-value">0%</span>
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
                       </div>
                     </div>
                     <div class="setting-row">
@@ -1543,101 +1495,30 @@
                         >
                       </div>
                     </div>
-                  </div>
-                </section>
-
-                <!-- Agent UI Panel -->
-                <section class="settings-panel hidden" data-panel="agent-ui">
-                  <h2 data-i18n="settings.agentUi.title">Agent UI</h2>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.agentUi.agentDefaults">Agent Defaults</h3>
                     <div class="setting-row">
                       <label
-                        for="setting-codex-yolo-default"
-                        data-i18n="settings.agentUi.codexYoloDefault"
-                        >Enable Codex --yolo by default</label
+                        for="setting-terminal-cell-background-transparency"
+                        data-i18n="settings.appearance.terminalCellBackgroundTransparency"
+                        >Terminal Cell Background Transparency</label
                       >
-                      <input type="checkbox" id="setting-codex-yolo-default" />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-codex-env" data-i18n="settings.agentUi.codexEnv"
-                        >Codex Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-codex-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-claude-dangerously-skip-permissions-default"
-                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
-                        >Enable Claude --dangerously-skip-permissions by default</label
-                      >
-                      <input
-                        type="checkbox"
-                        id="setting-claude-dangerously-skip-permissions-default"
-                      />
-                    </div>
-                    <div class="setting-row setting-row-stack">
-                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
-                        >Claude Environment Variables</label
-                      >
-                      <textarea
-                        id="setting-claude-env"
-                        class="settings-textarea"
-                        rows="5"
-                        spellcheck="false"
-                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
-                        placeholder="KEY=value"
-                      ></textarea>
-                    </div>
-                  </div>
-                </section>
-
-                <!-- Behavior Panel -->
-                <section class="settings-panel hidden" data-panel="behavior">
-                  <h2 data-i18n="settings.behavior.title">Behaviour</h2>
-
-                  <!-- Session Defaults -->
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.behavior.sessionDefaults">Session Defaults</h3>
-                    <div class="setting-row">
-                      <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
-                        >Default Shell</label
-                      >
-                      <select id="setting-default-shell">
-                        <option value="Pwsh">PowerShell 7</option>
-                        <option value="PowerShell">Windows PowerShell</option>
-                        <option value="Cmd">Command Prompt</option>
-                      </select>
-                    </div>
-                    <div class="setting-row">
-                      <label
-                        for="setting-working-dir"
-                        data-i18n="settings.behavior.defaultWorkingDir"
-                        >Default Working Directory</label
-                      >
-                      <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
+                      <div class="transparency-slider-row">
                         <input
-                          type="text"
-                          id="setting-working-dir"
-                          data-i18n-placeholder="settings.behavior.defaultWorkingDirHint"
-                          placeholder="Leave empty for home directory"
+                          type="range"
+                          id="setting-terminal-cell-background-transparency"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value="0"
                         />
-                        <button type="button" class="inline-save-btn" title="Save">
-                          <span class="icon">&#xe90f;</span>
-                        </button>
+                        <span
+                          id="setting-terminal-cell-background-transparency-value"
+                          class="slider-value"
+                          >0%</span
+                        >
                       </div>
                     </div>
                   </div>
 
-                  <!-- Terminal Behavior -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.behavior.terminalBehavior">Terminal Behavior</h3>
                     <div class="setting-row">
@@ -1691,6 +1572,14 @@
                         >GPU Rendering (WebGL)</label
                       >
                       <input type="checkbox" id="setting-webgl" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-smooth-scrolling"
+                        data-i18n="settings.behavior.smoothScrolling"
+                        >Smooth Scrolling</label
+                      >
+                      <input type="checkbox" id="setting-smooth-scrolling" />
                     </div>
                     <div class="setting-row">
                       <label for="setting-bell-style" data-i18n="settings.behavior.bellStyle"
@@ -1759,12 +1648,125 @@
                     </div>
                     <div class="setting-row">
                       <label
-                        for="setting-smooth-scrolling"
-                        data-i18n="settings.behavior.smoothScrolling"
-                        >Smooth Scrolling</label
+                        for="setting-scrollback-protection"
+                        data-i18n="settings.behavior.scrollbackProtection"
+                        >Claude Code scrollback glitch protection</label
                       >
-                      <input type="checkbox" id="setting-smooth-scrolling" />
+                      <input type="checkbox" id="setting-scrollback-protection" />
                     </div>
+                  </div>
+                </section>
+
+                <section class="settings-panel hidden" data-panel="ai-agents">
+                  <h2 data-i18n="settings.aiAgents.title">AI Agents</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.aiAgents.conversationView">Conversation View</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-agent-message-font-family"
+                        data-i18n="settings.agentUi.messageFont"
+                        >Message Font</label
+                      >
+                      <select id="setting-agent-message-font-family">
+                        <option value="default" data-i18n="settings.options.agentMessageFontDefault">
+                          Default
+                        </option>
+                        <option value="sans" data-i18n="settings.options.agentMessageFontSans">
+                          Sans
+                        </option>
+                        <option value="serif" data-i18n="settings.options.agentMessageFontSerif">
+                          Serif
+                        </option>
+                        <option value="Segoe UI">Segoe UI</option>
+                        <option value="Helvetica Neue">Helvetica Neue</option>
+                        <option value="Arial">Arial</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Tahoma">Tahoma</option>
+                        <option value="Trebuchet MS">Trebuchet MS</option>
+                        <option value="Cascadia Code">Cascadia Code</option>
+                        <option value="Cascadia Code SemiBold">Cascadia Code SemiBold</option>
+                        <option value="JetBrains Mono">JetBrains Mono</option>
+                        <option value="Terminus">Terminus</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-show-agent-message-timestamps"
+                        data-i18n="settings.agentUi.showMessageTimestamps"
+                        >Show Timestamps On Agent Messages</label
+                      >
+                      <input type="checkbox" id="setting-show-agent-message-timestamps" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-show-unknown-agent-messages"
+                        data-i18n="settings.agentUi.showUnknownAgentMessages"
+                        >Show Unknown Agent Messages</label
+                      >
+                      <input type="checkbox" id="setting-show-unknown-agent-messages" />
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.aiAgents.codexDefaults">Codex Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-yolo-default"
+                        data-i18n="settings.agentUi.codexYoloDefault"
+                        >Enable Codex --yolo by default</label
+                      >
+                      <input type="checkbox" id="setting-codex-yolo-default" />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-codex-env" data-i18n="settings.agentUi.codexEnv"
+                        >Codex Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-codex-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.aiAgents.claudeDefaults">Claude Defaults</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-claude-dangerously-skip-permissions-default"
+                        data-i18n="settings.agentUi.claudeDangerouslySkipPermissionsDefault"
+                        >Enable Claude --dangerously-skip-permissions by default</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-claude-dangerously-skip-permissions-default"
+                      />
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-claude-env" data-i18n="settings.agentUi.claudeEnv"
+                        >Claude Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-claude-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.agentUi.agentEnvHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settings-panel hidden" data-panel="workflow">
+                  <h2 data-i18n="settings.workflowGit.title">Workflow &amp; Git</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.workflowGit.workflowControls">Workflow Controls</h3>
                     <div class="setting-row">
                       <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
                         >Input Mode</label
@@ -1780,49 +1782,91 @@
                       </select>
                     </div>
                     <p class="setting-hint" data-i18n="settings.behavior.inputModeHint">
-                      Smart Input uses a floating text box instead of direct keyboard input. Ideal
-                      for mobile — prevents the on-screen keyboard from appearing.
+                      Smart Input uses a text box instead of direct keyboard input. Both mode docks
+                      the input bar below the terminal.
                     </p>
                     <div class="setting-row">
-                      <label
-                        for="setting-scrollback-protection"
-                        data-i18n="settings.behavior.scrollbackProtection"
-                        >Claude Code scrollback glitch protection</label
+                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
+                        >Automation Bar</label
                       >
-                      <input type="checkbox" id="setting-scrollback-protection" />
+                      <input type="checkbox" id="setting-manager-bar" />
                     </div>
                     <div class="setting-row">
                       <label
-                        for="setting-disable-auto-main-browser-promotion"
-                        data-i18n="settings.behavior.disableAutoMainBrowserPromotion"
-                        >Disable auto-promotion to main browser</label
+                        for="setting-command-bay-ligatures-enabled"
+                        data-i18n="settings.commandBay.enableLigatures"
+                        >Enable Ligatures</label
                       >
-                      <input type="checkbox" id="setting-disable-auto-main-browser-promotion" />
+                      <input type="checkbox" id="setting-command-bay-ligatures-enabled" />
                     </div>
-                    <p
-                      class="setting-hint"
-                      data-i18n="settings.behavior.disableAutoMainBrowserPromotionHint"
-                    >
-                      Keeps the current main browser until another browser explicitly claims it.
-                    </p>
-                    <div class="setting-row">
-                      <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
-                        >Keep computer awake while sessions exist</label
-                      >
-                      <input type="checkbox" id="setting-keep-system-awake" />
-                    </div>
-                    <p class="setting-hint" data-i18n="settings.behavior.keepAwakeHint">
-                      Prevents sleep or standby while MidTerm has at least one live session. The
-                      display may still turn off.
-                    </p>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.workflowGit.gitWorktrees">Git &amp; Worktrees</h3>
                     <div class="setting-row">
                       <label
-                        for="setting-file-radar"
-                        title="Detects file paths in terminal output and makes them clickable. Click to view files remotely."
-                        data-i18n="settings.behavior.fileRadar"
-                        >File Radar</label
+                        for="setting-worktree-root-dir"
+                        data-i18n="settings.behavior.worktreeRootDirectory"
+                        >Worktree Root Directory</label
                       >
-                      <input type="checkbox" id="setting-file-radar" />
+                      <div class="text-input-wrapper" data-setting="worktreeRootDirectory">
+                        <input
+                          type="text"
+                          id="setting-worktree-root-dir"
+                          data-i18n-placeholder="settings.behavior.worktreeRootDirectoryHint"
+                          placeholder="Leave empty to use MidTerm's default worktree folder"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.workflowGit.navigationDiscovery">
+                      Navigation &amp; Discovery
+                    </h3>
+                    <div class="setting-row">
+                      <label for="setting-tab-title" data-i18n="settings.appearance.browserTabTitle"
+                        >Browser Tab Title</label
+                      >
+                      <select id="setting-tab-title">
+                        <option value="hostname" data-i18n="settings.options.tabHostname">
+                          Hostname
+                        </option>
+                        <option value="static" data-i18n="settings.options.tabStatic">
+                          Just MidTerm
+                        </option>
+                        <option value="sessionName" data-i18n="settings.options.tabSessionName">
+                          Session Name
+                        </option>
+                        <option value="terminalTitle" data-i18n="settings.options.tabTerminalTitle">
+                          Terminal Title
+                        </option>
+                        <option
+                          value="foregroundProcess"
+                          data-i18n="settings.options.tabForegroundProcess"
+                        >
+                          Foreground Process
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-show-bookmarks"
+                        data-i18n="settings.behavior.showBookmarks"
+                        >Show Bookmarks</label
+                      >
+                      <input type="checkbox" id="setting-show-bookmarks" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-allow-adhoc-session-bookmarks"
+                        data-i18n="settings.behavior.adHocSessionBookmarks"
+                        >Ad-hoc Session Bookmarks</label
+                      >
+                      <input type="checkbox" id="setting-allow-adhoc-session-bookmarks" />
                     </div>
                     <div class="setting-row">
                       <label
@@ -1833,52 +1877,326 @@
                       <input type="checkbox" id="setting-show-sidebar-session-filter" />
                     </div>
                     <div class="setting-row">
-                      <label for="setting-manager-bar" data-i18n="settings.behavior.managerBar"
-                        >Middle Manager Bar</label
-                      >
-                      <input type="checkbox" id="setting-manager-bar" />
-                    </div>
-                    <div class="setting-row">
                       <label
-                        for="setting-changelog-after-update"
-                        data-i18n="settings.behavior.changelogAfterUpdate"
-                        >Show changelog after update</label
+                        for="setting-file-radar"
+                        title="Detects file paths in terminal output and makes them clickable. Click to view files remotely."
+                        data-i18n="settings.behavior.fileRadar"
+                        >File Radar</label
                       >
-                      <input type="checkbox" id="setting-changelog-after-update" checked />
-                    </div>
-                    <div class="setting-row hidden" id="pwa-install-row">
-                      <label data-i18n="settings.behavior.installAsApp">Install as App</label>
-                      <button
-                        id="btn-install-pwa"
-                        class="btn-secondary"
-                        data-i18n="settings.behavior.install"
-                      >
-                        Install
-                      </button>
+                      <input type="checkbox" id="setting-file-radar" />
                     </div>
                   </div>
-                  <!-- Integrations -->
+                </section>
+
+                <section class="settings-panel hidden" data-panel="appearance">
+                  <h2 data-i18n="settings.appearance.title">Appearance</h2>
+
                   <div class="settings-section">
-                    <h3 data-i18n="settings.behavior.integrations">Integrations</h3>
+                    <h3 data-i18n="settings.appearance.themeLanguage">Theme &amp; Language</h3>
+                    <div class="setting-row">
+                      <label for="setting-theme" data-i18n="settings.appearance.theme">Theme</label>
+                      <select id="setting-theme">
+                        <option value="dark" data-i18n="settings.options.themeDark">Dark</option>
+                        <option value="light" data-i18n="settings.options.themeLight">Light</option>
+                        <option
+                          value="solarizedDark"
+                          data-i18n="settings.options.themeSolarizedDark"
+                        >
+                          Solarized Dark
+                        </option>
+                        <option
+                          value="solarizedLight"
+                          data-i18n="settings.options.themeSolarizedLight"
+                        >
+                          Solarized Light
+                        </option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-language" data-i18n="settings.appearance.language"
+                        >Language</label
+                      >
+                      <select id="setting-language">
+                        <option value="auto" data-i18n="settings.appearance.languageAuto">
+                          Auto (browser default)
+                        </option>
+                        <option value="en">English</option>
+                        <option value="zh">中文</option>
+                        <option value="es">Español</option>
+                        <option value="hi">हिन्दी</option>
+                        <option value="fr">Français</option>
+                        <option value="bn">বাংলা</option>
+                        <option value="pt">Português</option>
+                        <option value="ru">Русский</option>
+                        <option value="ja">日本語</option>
+                        <option value="de">Deutsch</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.appearance.backgroundImage">Background Image</h3>
+                    <div class="setting-row setting-row-align-start">
+                      <label
+                        for="setting-background-upload"
+                        data-i18n="settings.appearance.backgroundImage"
+                        >Background Image</label
+                      >
+                      <div class="background-image-controls">
+                        <div class="background-image-actions">
+                          <label
+                            class="settings-action-btn settings-file-upload-btn"
+                            id="btn-background-upload"
+                          >
+                            <span data-i18n="settings.appearance.backgroundUpload">
+                              Upload Image
+                            </span>
+                            <input
+                              type="file"
+                              id="setting-background-upload"
+                              class="settings-file-upload-input"
+                              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                              aria-label="Upload background image"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            class="settings-action-btn"
+                            id="btn-background-remove"
+                            data-i18n="settings.appearance.backgroundRemove"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div class="background-image-preview-frame">
+                          <img
+                            id="background-image-preview"
+                            class="background-image-preview hidden"
+                            alt=""
+                          />
+                          <div
+                            id="background-image-empty"
+                            class="background-image-empty"
+                            data-i18n="settings.appearance.backgroundNone"
+                          >
+                            No image uploaded
+                          </div>
+                        </div>
+                        <div id="background-image-name" class="background-image-name"></div>
+                        <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
+                          Uploads a PNG or JPG and stores it beside the MidTerm logs.
+                        </div>
+                      </div>
+                    </div>
                     <div class="setting-row">
                       <label
-                        for="setting-tmux-compatibility"
-                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)."
-                        data-i18n="settings.behavior.tmuxCompatibility"
-                        >Tmux Compatibility</label
+                        for="setting-background-image-enabled"
+                        data-i18n="settings.appearance.backgroundEnabled"
+                        >Show Background Image</label
                       >
-                      <input type="checkbox" id="setting-tmux-compatibility" />
+                      <input type="checkbox" id="setting-background-image-enabled" />
                     </div>
-                    <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
-                      Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
-                      into remote hosts that run real tmux. Requires restart.
+                    <div class="setting-row">
+                      <label
+                        for="setting-hide-background-image-on-mobile"
+                        data-i18n="settings.appearance.backgroundHideOnMobile"
+                        >Hide Background On Mobile</label
+                      >
+                      <input type="checkbox" id="setting-hide-background-image-on-mobile" />
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.appearance.motionTransparency">
+                      Motion &amp; Transparency
+                    </h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-enabled"
+                        data-i18n="settings.appearance.backgroundKenBurns"
+                        >Animated Ken Burns</label
+                      >
+                      <input type="checkbox" id="setting-background-ken-burns-enabled" />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-zoom-percent"
+                        data-i18n="settings.appearance.backgroundKenBurnsZoom"
+                        >Ken Burns Zoom</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-background-ken-burns-zoom-percent"
+                          min="150"
+                          max="300"
+                          step="5"
+                          value="150"
+                        />
+                        <span
+                          id="setting-background-ken-burns-zoom-percent-value"
+                          class="slider-value"
+                        >
+                          150%
+                        </span>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-background-ken-burns-speed"
+                        data-i18n="settings.appearance.backgroundKenBurnsSpeed"
+                        >Ken Burns Speed</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-background-ken-burns-speed"
+                          min="0"
+                          max="120"
+                          step="1"
+                          value="12"
+                        />
+                        <span id="setting-background-ken-burns-speed-value" class="slider-value">
+                          12 px/s
+                        </span>
+                      </div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-ui-transparency"
+                        data-i18n="settings.appearance.uiTransparency"
+                        >UI Transparency</label
+                      >
+                      <div class="transparency-slider-row">
+                        <input
+                          type="range"
+                          id="setting-ui-transparency"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value="0"
+                        />
+                        <span id="setting-ui-transparency-value" class="slider-value">0%</span>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settings-panel hidden" data-panel="sessions">
+                  <h2 data-i18n="settings.sessionsStartup.title">Sessions &amp; Startup</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.sessionsStartup.newSessions">New Sessions</h3>
+                    <div class="setting-row">
+                      <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
+                        >Default Shell</label
+                      >
+                      <select id="setting-default-shell">
+                        <option value="Pwsh">PowerShell 7</option>
+                        <option value="PowerShell">Windows PowerShell</option>
+                        <option value="Cmd">Command Prompt</option>
+                      </select>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-working-dir"
+                        data-i18n="settings.behavior.defaultWorkingDir"
+                        >New Session Start Location</label
+                      >
+                      <div class="text-input-wrapper" data-setting="defaultWorkingDirectory">
+                        <input
+                          type="text"
+                          id="setting-working-dir"
+                          data-i18n-placeholder="settings.behavior.defaultWorkingDirHint"
+                          placeholder="Leave empty for the run-as home directory"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="setting-row setting-row-stack">
+                      <label for="setting-terminal-env" data-i18n="settings.terminal.env"
+                        >Terminal Environment Variables</label
+                      >
+                      <textarea
+                        id="setting-terminal-env"
+                        class="settings-textarea"
+                        rows="5"
+                        spellcheck="false"
+                        data-i18n-placeholder="settings.terminal.envHint"
+                        placeholder="KEY=value"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.sessionsStartup.runtime">Session Runtime</h3>
+                    <div class="setting-row">
+                      <label for="setting-resume-mode" data-i18n="settings.behavior.resumeMode"
+                        >Session Resume Mode</label
+                      >
+                      <select id="setting-resume-mode">
+                        <option
+                          value="fullReplay"
+                          data-i18n="settings.options.resumeModeFullReplay"
+                        >
+                          Full Replay (Default)
+                        </option>
+                        <option
+                          value="quickResume"
+                          data-i18n="settings.options.resumeModeQuickResume"
+                        >
+                          Quick Resume (Better for More Sessions)
+                        </option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.resumeModeHint">
+                      Quick Resume keeps hidden sessions lighter by catching them up with a smaller
+                      replay burst when you revisit them. Visible sessions remain live, and the heat
+                      indicator still reflects real terminal activity.
+                    </p>
+                    <div class="setting-row">
+                      <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
+                        >Keep computer awake while sessions exist</label
+                      >
+                      <input type="checkbox" id="setting-keep-system-awake" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.keepAwakeHint">
+                      Prevents sleep or standby while MidTerm has at least one live session. The
+                      display may still turn off. On Mac laptops, closing the lid still puts the
+                      computer to sleep.
+                    </p>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.sessionsStartup.browserOwnership">
+                      Browser Ownership
+                    </h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-disable-auto-main-browser-promotion"
+                        data-i18n="settings.behavior.disableAutoMainBrowserPromotion"
+                        >Disable auto-promotion to main browser</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-disable-auto-main-browser-promotion"
+                      />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.disableAutoMainBrowserPromotionHint"
+                    >
+                      Prevents a different browser from taking over as main just because it was the
+                      only active tab for a while. Use the terminal badge to claim main browser
+                      explicitly when you want to resize from that device.
                     </p>
                   </div>
                 </section>
 
-                <!-- Security Panel -->
                 <section class="settings-panel hidden" data-panel="security" id="security-section">
-                  <h2 data-i18n="settings.security.title">Security</h2>
+                  <h2 data-i18n="settings.securityAccess.title">Security &amp; Access</h2>
 
                   <div class="settings-section">
                     <h3 data-i18n="settings.security.authentication">Authentication</h3>
@@ -2062,11 +2380,145 @@
                   </div>
                 </section>
 
-                <!-- Diagnostics Panel -->
-                <section class="settings-panel hidden" data-panel="diagnostics">
-                  <h2 data-i18n="settings.diagnostics.title">Diagnostics</h2>
+                <section class="settings-panel hidden" data-panel="connected-hosts">
+                  <h2 data-i18n="settings.connectedHosts.title">Connected Hosts</h2>
 
-                  <!-- Latency -->
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.hub.title">MidTerm Hub</h3>
+                    <p class="setting-hint" data-i18n="settings.hub.description">
+                      Connect your other MidTerm hosts here so you can manage agents across your
+                      Mac, Linux PC, Raspberry Pi, or server from one frontend. Add each host URL
+                      and its credentials to get started.
+                    </p>
+                    <div class="hub-toolbar">
+                      <div>
+                        <h3 data-i18n="settings.hub.configuredMachines">Configured Machines</h3>
+                        <p class="setting-hint hub-setting-status" id="hub-settings-status"></p>
+                      </div>
+                      <div class="hub-toolbar-actions">
+                        <button
+                          id="btn-hub-control-updates"
+                          class="btn-secondary"
+                          data-i18n="settings.hub.controlUpdates"
+                        >
+                          Control Updates
+                        </button>
+                        <button
+                          id="btn-hub-open-machine-modal"
+                          class="hub-add-machine-button"
+                          type="button"
+                          title="Add host"
+                          aria-label="Add host"
+                          data-i18n-title="settings.hub.addHost"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div id="hub-machine-list" class="hub-machine-list"></div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.integrations">Integrations</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-tmux-compatibility"
+                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)."
+                        data-i18n="settings.behavior.tmuxCompatibility"
+                        >Tmux Compatibility</label
+                      >
+                      <input type="checkbox" id="setting-tmux-compatibility" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
+                      Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
+                      into remote hosts that run real tmux. Requires restart.
+                    </p>
+                  </div>
+
+                  <div id="hub-machine-modal" class="modal hidden">
+                    <div class="modal-backdrop"></div>
+                    <div class="modal-content hub-machine-modal-content">
+                      <div class="modal-header">
+                        <h3 id="hub-machine-modal-title" data-i18n="settings.hub.addHost">
+                          Add Host
+                        </h3>
+                        <button id="btn-close-hub-machine-modal" class="modal-close">
+                          &times;
+                        </button>
+                      </div>
+                      <form id="hub-machine-form">
+                        <div class="modal-body hub-machine-modal-body">
+                          <input id="hub-machine-id" type="hidden" />
+                          <div class="hub-machine-modal-grid">
+                            <div class="hub-machine-modal-field">
+                              <label for="hub-machine-url" data-i18n="settings.hub.machineUrl"
+                                >URL</label
+                              >
+                              <input
+                                id="hub-machine-url"
+                                type="text"
+                                placeholder="https://192.168.1.24:2000"
+                                data-i18n-placeholder="settings.hub.machineUrlPlaceholder"
+                              />
+                            </div>
+                            <div class="hub-machine-modal-field">
+                              <label for="hub-machine-api-key" data-i18n="settings.hub.apiKey"
+                                >API Key</label
+                              >
+                              <input
+                                id="hub-machine-api-key"
+                                type="text"
+                                placeholder="mtk_..."
+                                data-i18n-placeholder="settings.hub.apiKeyPlaceholder"
+                              />
+                            </div>
+                            <div class="hub-machine-modal-field">
+                              <label for="hub-machine-password" data-i18n="settings.hub.password"
+                                >Password</label
+                              >
+                              <input
+                                id="hub-machine-password"
+                                type="password"
+                                placeholder="Optional fallback"
+                                data-i18n-placeholder="settings.hub.passwordPlaceholder"
+                              />
+                              <p
+                                class="setting-hint hub-machine-modal-hint"
+                                data-i18n="settings.hub.passwordHint"
+                              >
+                                Used if the API key is missing or rejected.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="modal-footer">
+                          <button
+                            type="button"
+                            id="btn-cancel-hub-machine-modal"
+                            class="btn-secondary"
+                            data-i18n="modal.cancel"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            id="btn-save-hub-machine-modal"
+                            class="btn-primary"
+                            data-i18n="settings.hub.saveHost"
+                          >
+                            Save Host
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settings-panel hidden" data-panel="advanced">
+                  <h2 data-i18n="settings.advancedDiagnostics.title">
+                    Advanced &amp; Diagnostics
+                  </h2>
+
                   <div class="settings-section">
                     <h3 data-i18n="settings.diagnostics.latency">Latency</h3>
                     <div class="setting-row">
@@ -2106,7 +2558,6 @@
                     </div>
                   </div>
 
-                  <!-- Terminal Transport -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.diagnostics.terminalTransport">Terminal Transport</h3>
                     <div class="setting-row">
@@ -2159,7 +2610,6 @@
                     </div>
                   </div>
 
-                  <!-- Paths -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.diagnostics.filePaths">File Paths</h3>
                     <div class="setting-row">
@@ -2169,6 +2619,7 @@
                         <button
                           id="btn-reload-settings"
                           class="btn-icon"
+                          data-i18n-title="settings.diagnostics.reloadSettings"
                           title="Reload settings from file"
                         >
                           <span class="icon">&#xe9bd;</span>
@@ -2189,24 +2640,6 @@
                     </div>
                   </div>
 
-                  <!-- Server -->
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.diagnostics.server">Server</h3>
-                    <div class="setting-row">
-                      <label data-i18n="settings.diagnostics.restartServerDesc"
-                        >Restart the server process. All clients will temporarily disconnect.</label
-                      >
-                      <button
-                        id="btn-restart-server"
-                        class="btn-danger"
-                        data-i18n="settings.diagnostics.restartServer"
-                      >
-                        Restart Server
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Frontend Logging -->
                   <div class="settings-section">
                     <h3 data-i18n="settings.diagnostics.frontendLogging">Frontend Logging</h3>
                     <p class="diag-help-text">
@@ -2228,23 +2661,51 @@
                   </div>
 
                   <div class="settings-section">
-                    <h3>Terminal Key Log</h3>
-                    <p class="diag-help-text">
+                    <h3 data-i18n="settings.diagnostics.terminalKeyLog">Terminal Key Log</h3>
+                    <p class="diag-help-text" data-i18n="settings.diagnostics.terminalKeyLogHint">
                       Capture terminal Enter and modifier events so remap failures are directly
                       visible.
                     </p>
                     <div class="setting-row">
-                      <label for="diag-terminal-key-log-toggle">Enable terminal key log</label>
+                      <label
+                        for="diag-terminal-key-log-toggle"
+                        data-i18n="settings.diagnostics.terminalKeyLogEnabled"
+                        >Enable terminal key log</label
+                      >
                       <input type="checkbox" id="diag-terminal-key-log-toggle" />
                     </div>
                     <div class="diag-log-actions">
-                      <button id="btn-clear-terminal-key-log" class="btn-secondary">
+                      <button
+                        id="btn-clear-terminal-key-log"
+                        class="btn-secondary"
+                        data-i18n="settings.diagnostics.terminalKeyLogClear"
+                      >
                         Clear log
                       </button>
                     </div>
-                    <pre id="diag-terminal-key-log" class="diag-log-output">
+                    <pre
+                      id="diag-terminal-key-log"
+                      class="diag-log-output"
+                      data-i18n="settings.diagnostics.terminalKeyLogEmpty"
+                    >
 Enable terminal key log to capture Enter and modifier events.</pre
                     >
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.server">Server</h3>
+                    <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.restartServerDesc"
+                        >Restart the server process. All clients will temporarily disconnect.</label
+                      >
+                      <button
+                        id="btn-restart-server"
+                        class="btn-danger"
+                        data-i18n="settings.diagnostics.restartServer"
+                      >
+                        Restart Server
+                      </button>
+                    </div>
                   </div>
                 </section>
               </div>
@@ -2253,18 +2714,47 @@ Enable terminal key log to capture Enter and modifier events.</pre
         </div>
 
         <div id="manager-bar-queue" class="manager-bar-queue hidden" aria-live="polite"></div>
+        <div id="adaptive-footer-reserve" class="adaptive-footer-reserve" aria-hidden="true"></div>
 
-        <!-- Middle Manager Bar -->
-        <div id="manager-bar" class="manager-bar">
-          <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
-          <button
-            class="manager-bar-add"
-            id="manager-bar-add"
-            data-i18n-title="managerBar.addButton"
-            title="Add button"
-          >
-            +
-          </button>
+        <div id="adaptive-footer-dock" class="adaptive-footer-dock" hidden>
+          <div
+            id="adaptive-footer-primary"
+            class="adaptive-footer-rail adaptive-footer-primary"
+            hidden
+          ></div>
+          <div
+            id="adaptive-footer-context"
+            class="adaptive-footer-rail adaptive-footer-context"
+            hidden
+          ></div>
+
+          <!-- Automation Bar -->
+          <div id="manager-bar" class="manager-bar adaptive-footer-rail hidden">
+            <div class="manager-bar-buttons" id="manager-bar-buttons"></div>
+            <button
+              class="manager-bar-overflow"
+              id="manager-bar-overflow"
+              data-i18n-title="managerBar.more"
+              title="More automations"
+              hidden
+            >
+              <span class="icon">&#xe910;</span>
+            </button>
+            <button
+              class="manager-bar-add"
+              id="manager-bar-add"
+              data-i18n-title="managerBar.addButton"
+              title="Add automation"
+            >
+              +
+            </button>
+          </div>
+
+          <div
+            id="adaptive-footer-status"
+            class="adaptive-footer-rail adaptive-footer-status"
+            hidden
+          ></div>
         </div>
 
         <!-- File Viewer Dock Panel -->
@@ -2280,7 +2770,25 @@ Enable terminal key log to capture Enter and modifier events.</pre
                   />
                 </svg>
               </button>
-              <button class="btn-icon" id="dock-download" title="Download">
+              <button
+                class="btn-icon"
+                id="dock-copy"
+                data-i18n-title="trust.copy"
+                title="Copy to clipboard"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M5 2h7a2 2 0 0 1 2 2v7h-1V4a1 1 0 0 0-1-1H5V2z" />
+                  <path
+                    d="M3 5h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H3z"
+                  />
+                </svg>
+              </button>
+              <button
+                class="btn-icon"
+                id="dock-download"
+                data-i18n-title="fileViewer.download"
+                title="Download"
+              >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z" />
                   <path d="M2 13h12v1H2v-1z" />
@@ -2403,7 +2911,7 @@ Enable terminal key log to capture Enter and modifier events.</pre
               type="url"
               id="web-preview-url-input"
               data-i18n-placeholder="webPreview.urlPlaceholder"
-              placeholder="https://localhost:3000"
+              placeholder="type URL here"
               spellcheck="false"
             />
             <span
@@ -2417,6 +2925,12 @@ Enable terminal key log to capture Enter and modifier events.</pre
             >
             <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
           </div>
+          <div
+            class="web-preview-action-message hidden"
+            id="web-preview-action-message"
+            role="status"
+            aria-live="polite"
+          ></div>
           <div class="web-preview-dock-body">
             <div id="web-preview-iframe-host"></div>
           </div>
@@ -2612,7 +3126,25 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 />
               </svg>
             </button>
-            <button id="file-viewer-download" class="btn-icon" title="Download">
+            <button
+              id="file-viewer-copy"
+              class="btn-icon"
+              data-i18n-title="trust.copy"
+              title="Copy to clipboard"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M5 2h7a2 2 0 0 1 2 2v7h-1V4a1 1 0 0 0-1-1H5V2z" />
+                <path
+                  d="M3 5h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 1a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H3z"
+                />
+              </svg>
+            </button>
+            <button
+              id="file-viewer-download"
+              class="btn-icon"
+              data-i18n-title="fileViewer.download"
+              title="Download"
+            >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M8 12l-4-4h2.5V3h3v5H12L8 12z" />
                 <path d="M2 13h12v1H2v-1z" />
@@ -2632,7 +3164,7 @@ Enable terminal key log to capture Enter and modifier events.</pre
       <div class="modal-content manager-action-modal-content">
         <div class="modal-header">
           <h3 id="manager-action-modal-title" data-i18n="managerBar.modal.title">
-            Setup Middle Manager Action
+            Setup Automation
           </h3>
           <button id="btn-close-manager-action" class="modal-close">&times;</button>
         </div>

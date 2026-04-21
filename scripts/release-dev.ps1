@@ -4,13 +4,14 @@
     Creates a dev/prerelease by bumping version, committing, tagging, and pushing.
 
 .DESCRIPTION
-    Similar to release.ps1 but creates prerelease tags (v6.10.30-dev.1) on the dev branch.
-    The -dev.N suffix auto-increments based on existing dev tags for the base version.
+    Similar to release.ps1 but creates prerelease tags (v6.10.30-dev) on the dev branch.
+    The script refuses to reuse a version that already exists as a tag or in fetched version
+    history, and it re-checks remote state immediately before commit/tag to avoid races during
+    long-running preflight verification.
 
 .PARAMETER Bump
     Version bump type: major, minor, or patch.
-    Only applies when starting a new base version. If continuing dev builds on the same
-    base version, the -dev.N suffix increments automatically.
+    The selected bump must produce a new, unused dev version after remote and tag validation.
 
 .PARAMETER ReleaseTitle
     A concise title for this release (one line, no version number).
@@ -19,7 +20,29 @@
     MANDATORY: Array of detailed changelog entries for this release.
 
 .PARAMETER mthostUpdate
-    MANDATORY: Does this release require updating mthost? (yes/no)
+    MANDATORY: Is this a low-level runtime refresh? (yes/no)
+
+    This is intentionally a single release decision. There is no separate
+    mtagenthost release switch.
+
+    Answer 'yes' if ANY of these are true:
+      - Changed Ai.Tlbx.MidTerm.TtyHost/ code
+      - Changed Ai.Tlbx.MidTerm.AgentHost/ in a way that must ship to running installs
+      - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol/runtime code)
+      - Changed mux WebSocket binary protocol format
+      - Changed named pipe protocol between mt and mthost
+      - Changed Lens runtime IPC/attach contracts
+      - Changed any IPC mechanism
+
+    Answer 'no' if ONLY these changed:
+      - TypeScript/frontend code
+      - CSS/HTML
+      - REST API endpoints
+      - Web-only C# code
+      - Lens/UI changes that do not require refreshing installed host binaries
+
+    When 'yes': Full update. Running installs refresh both mthost and mtagenthost.
+    When 'no':  Web-only update. Running installs preserve their current mthost and mtagenthost.
 
 .EXAMPLE
     .\release-dev.ps1 -Bump patch -ReleaseTitle "Test new feature" -ReleaseNotes @(
@@ -46,6 +69,134 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$recentTagRefreshCount = 5
+
+function Get-WebVersionFromGitRef {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RefName
+    )
+
+    try {
+        $json = git show "${RefName}:src/version.json" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
+            return $null
+        }
+
+        return (($json | ConvertFrom-Json).web)
+    } catch {
+        return $null
+    }
+}
+
+function Test-GitTagExists {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TagName
+    )
+
+    git rev-parse -q --verify "refs/tags/$TagName" 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
+function Test-WebVersionExistsInHistory {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version
+    )
+
+    $pattern = '"web"\s*:\s*"' + [regex]::Escape($Version) + '"'
+    $hits = @(git log --all --format="%H" --pickaxe-regex -G $pattern -- src/version.json 2>$null)
+    return $hits.Count -gt 0
+}
+
+function Assert-VersionIsAvailable {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version,
+
+        [string[]]$RefsToCheck = @()
+    )
+
+    $tagName = "v$Version"
+    if (Test-GitTagExists -TagName $tagName) {
+        throw "Target version '$Version' is already tagged as '$tagName'."
+    }
+
+    foreach ($ref in $RefsToCheck) {
+        $refVersion = Get-WebVersionFromGitRef -RefName $ref
+        if ($refVersion -eq $Version) {
+            throw "Target version '$Version' is already present in $ref:src/version.json."
+        }
+    }
+
+    if (Test-WebVersionExistsInHistory -Version $Version) {
+        throw "Target version '$Version' already appears in fetched src/version.json history. Choose a new version instead of reusing it."
+    }
+}
+
+function Assert-RemoteDidNotChange {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RemoteRef,
+
+        [Parameter(Mandatory=$true)]
+        [string]$ExpectedCommit
+    )
+
+    $currentRemoteCommit = git rev-parse $RemoteRef 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentRemoteCommit)) {
+        throw "Could not resolve $RemoteRef while verifying release safety."
+    }
+
+    if ($currentRemoteCommit -ne $ExpectedCommit) {
+        throw "Remote $RemoteRef changed during release verification ($ExpectedCommit -> $currentRemoteCommit). Re-run the release script from the updated branch tip."
+    }
+}
+
+function Get-RecentRemoteTagNames {
+    param(
+        [Parameter(Mandatory=$true)]
+        [int]$Count
+    )
+
+    $tagRefs = @(git ls-remote --tags --refs --sort="-version:refname" origin "v*" 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not list remote tags."
+    }
+
+    $tagNames = foreach ($tagRef in $tagRefs) {
+        if ($tagRef -match 'refs/tags/(?<name>\S+)$') {
+            $Matches.name
+        }
+    }
+
+    return @($tagNames | Select-Object -First $Count)
+}
+
+function Refresh-RemoteState {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string[]]$BranchRefs,
+
+        [int]$RecentTagCount = 5
+    )
+
+    $refspecs = @()
+    foreach ($branchRef in $BranchRefs) {
+        $refspecs += "refs/heads/$branchRef" + ":refs/remotes/origin/$branchRef"
+    }
+
+    $recentTagNames = Get-RecentRemoteTagNames -Count $RecentTagCount
+    foreach ($tagName in $recentTagNames) {
+        $refspecs += "+refs/tags/${tagName}:refs/tags/${tagName}"
+    }
+
+    git fetch origin @refspecs 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not refresh remote branches and recent tags."
+    }
+}
 
 # Ensure we're on dev branch
 $currentBranch = git branch --show-current
@@ -77,8 +228,10 @@ if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[
 
 # Ensure we're up to date with remote
 Write-Host "Checking remote status..." -ForegroundColor Cyan
-git fetch origin 2>$null
-if ($LASTEXITCODE -ne 0) {
+try {
+    Refresh-RemoteState -BranchRefs @("dev", "main") -RecentTagCount $recentTagRefreshCount
+}
+catch {
     Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
 }
 
@@ -105,6 +258,8 @@ if ($localCommit -ne $remoteCommit) {
         exit 1
     }
 }
+
+$releaseRemoteCommit = git rev-parse origin/dev 2>$null
 
 # Files to update
 $versionJsonPath = "$PSScriptRoot\..\src\version.json"
@@ -143,12 +298,21 @@ switch ($Bump) {
 $newVersion = "$major.$minor.$patch-dev"
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
+try {
+    Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main")
+} catch {
+    Write-Host ""
+    Write-Host "ERROR: Unsafe prerelease version selection." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    exit 1
+}
+
 # Determine release type
 $isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
-    Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
+    Write-Host "Release type: FULL runtime refresh (running installs replace mthost + mtagenthost)" -ForegroundColor Yellow
 } else {
-    Write-Host "Release type: Web-only updater (release archives still include mthost; running installs keep their current host)" -ForegroundColor Green
+    Write-Host "Release type: Web-only updater (running installs preserve mthost + mtagenthost; archives may still include host binaries)" -ForegroundColor Green
 }
 
 # Update version.json
@@ -170,6 +334,7 @@ if ($isPtyBreaking) {
     } catch {
         # mainJson may not exist if main fetch failed
     }
+    # Mark as web-only so running installs preserve the currently installed host runtimes.
     $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
@@ -185,39 +350,56 @@ Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 if ($isPtyBreaking) {
     Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  TtyHost: binary still ships in release archives; updater remains web-only" -ForegroundColor DarkGray
+    Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
+}
+
+# Clean frontend preflight (fresh npm install + frontend build in a clean snapshot)
+# before we commit or tag anything.
+Write-Host ""
+Write-Host "Running clean frontend preflight..." -ForegroundColor Cyan
+$frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
+try {
+    & $frontendPreflightScript -Version $newVersion -DevRelease
+    Write-Host "Frontend preflight succeeded." -ForegroundColor Green
+}
+catch {
+    Write-Host ""
+    Write-Host "ERROR: Frontend preflight failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
+    exit 1
 }
 
 # Pre-release build verification (catches ESLint, TypeScript, C# errors before committing)
 Write-Host ""
-Write-Host "Running build verification..." -ForegroundColor Cyan
-$buildResult = dotnet build "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj" -c Release 2>&1
-$buildExitCode = $LASTEXITCODE
-$buildLines = @($buildResult | ForEach-Object { "$_" })
-$hasReinvokeSentinel = $buildLines | Where-Object { $_ -match '_REINVOKE_SUCCESS_' }
-$realErrorLines = $buildLines | Where-Object { $_ -match ':\s*error\b' -and $_ -notmatch '_REINVOKE_SUCCESS_' }
-$reinvokeOnlyFailure = $buildExitCode -ne 0 -and $hasReinvokeSentinel -and $realErrorLines.Count -eq 0
-if ($buildExitCode -ne 0 -and -not $reinvokeOnlyFailure) {
+Write-Host "Running .NET test suite..." -ForegroundColor Cyan
+$dotnetTestSuiteScript = Join-Path $PSScriptRoot "run-dotnet-test-suite.ps1"
+$runtimeBuildVerificationScript = Join-Path $PSScriptRoot "run-runtime-build-verification.ps1"
+try {
+    & $dotnetTestSuiteScript -Configuration Release -WarnAsError
+    Write-Host ".NET tests succeeded." -ForegroundColor Green
+
     Write-Host ""
-    Write-Host "ERROR: Build failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "Running runtime build verification..." -ForegroundColor Cyan
+    & $runtimeBuildVerificationScript -Configuration Release -WarnAsError
+    Write-Host "Runtime build verification succeeded." -ForegroundColor Green
+}
+catch {
     Write-Host ""
-    Write-Host "Build output:" -ForegroundColor Yellow
-    $buildLines | ForEach-Object { Write-Host "  $_" }
-    Write-Host ""
-    Write-Host "Fix the build errors and try again." -ForegroundColor Yellow
-    # Revert version changes
+    Write-Host "ERROR: Release verification failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
     git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
     exit 1
-}
-if ($reinvokeOnlyFailure) {
-    Write-Host "Build succeeded via frontend reinvoke." -ForegroundColor Green
-} else {
-Write-Host "Build succeeded." -ForegroundColor Green
 }
 
 # Git operations
 Write-Host ""
 Write-Host "Committing and tagging..." -ForegroundColor Cyan
+
+Refresh-RemoteState -BranchRefs @("dev", "main") -RecentTagCount $recentTagRefreshCount
+
+Assert-RemoteDidNotChange -RemoteRef "origin/dev" -ExpectedCommit $releaseRemoteCommit
+Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main")
 
 git add -A
 if ($LASTEXITCODE -ne 0) { throw "git add failed" }

@@ -29,9 +29,14 @@ public sealed class BackgroundImageService
 
     public string GetDirectory()
     {
+        return LogPaths.GetBackgroundDirectory(_settingsService.SettingsDirectory);
+    }
+
+    internal string GetLegacyDirectory()
+    {
         var isWindowsService = _settingsService.IsRunningAsService && OperatingSystem.IsWindows();
         var isUnixService = _settingsService.IsRunningAsService && !OperatingSystem.IsWindows();
-        return LogPaths.GetBackgroundDirectory(isWindowsService, isUnixService);
+        return LogPaths.GetLegacyBackgroundDirectory(isWindowsService, isUnixService);
     }
 
     public string? GetCurrentImagePath(MidTermSettings settings)
@@ -42,7 +47,13 @@ public sealed class BackgroundImageService
         }
 
         var path = Path.Combine(GetDirectory(), settings.BackgroundImageFileName);
-        return File.Exists(path) ? path : null;
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        var legacyPath = Path.Combine(GetLegacyDirectory(), settings.BackgroundImageFileName);
+        return File.Exists(legacyPath) ? legacyPath : null;
     }
 
     public BackgroundImageInfoResponse GetInfo(MidTermSettings settings)

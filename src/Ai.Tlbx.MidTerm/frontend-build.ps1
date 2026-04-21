@@ -20,6 +20,7 @@
 param(
     [switch]$Publish,        # Enable Brotli compression for publish builds
     [switch]$DevRelease,     # Include source maps in publish (for dev/prerelease builds)
+    [switch]$SkipVerify,     # Skip npm verify/lint/typecheck gates when another job already owns them
     [string]$Version = "dev" # Version to inject into BUILD_VERSION
 )
 
@@ -77,7 +78,7 @@ function Get-MissingFrontendDeps {
             $missing += $dep.Name
         }
     }
-    return $missing
+    return @($missing)
 }
 
 function Get-AssetFingerprint {
@@ -109,7 +110,27 @@ function Get-AssetFingerprint {
     return [Convert]::ToHexString($hash).ToLowerInvariant().Substring(0, 12)
 }
 
-$missingDeps = Get-MissingFrontendDeps -Deps $requiredNodeDeps
+function Invoke-NpmScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $false)][string]$Label = $Name
+    )
+
+    Write-Host $Label -ForegroundColor Cyan
+    Push-Location $PSScriptRoot
+    try {
+        & npm run $Name
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error ("npm run {0} failed" -f $Name)
+            exit $LASTEXITCODE
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+$missingDeps = @(Get-MissingFrontendDeps -Deps $requiredNodeDeps)
 if ($missingDeps.Count -gt 0) {
     Write-Host ("Missing frontend npm dependencies: {0}" -f ($missingDeps -join ", ")) -ForegroundColor Yellow
     Write-Host ("Attempting automatic install: npm ci --include=dev (project dir: {0})" -f $PSScriptRoot) -ForegroundColor Cyan
@@ -127,7 +148,7 @@ if ($missingDeps.Count -gt 0) {
         exit $LASTEXITCODE
     }
 
-    $missingAfterInstall = Get-MissingFrontendDeps -Deps $requiredNodeDeps
+    $missingAfterInstall = @(Get-MissingFrontendDeps -Deps $requiredNodeDeps)
     if ($missingAfterInstall.Count -gt 0) {
         Write-Error ("Frontend dependencies still missing after npm ci: {0}" -f ($missingAfterInstall -join ", "))
         exit 1
@@ -195,81 +216,19 @@ $AssetVersion = Get-AssetFingerprint -Paths @(
 Write-Host "Asset fingerprint: $AssetVersion" -ForegroundColor DarkGray
 
 # ===========================================
-# PHASE 1+2: TypeScript type-check + ESLint (parallel)
+# PHASE 1+2: Static verification
 # ===========================================
-Write-Host "Type-checking and linting (parallel)..." -ForegroundColor Cyan
-
-$tscPath = Join-Path $NodeModulesRoot "typescript/lib/tsc.js"
-$tsconfigPath = Join-Path $PSScriptRoot "tsconfig.json"
-
-# Run tsc and ESLint concurrently when background jobs are available.
-# On some Linux ARM64 pwsh installs, Start-Job fails to launch the helper process.
-$tscResult = $null
-$eslintResult = $null
-$tscJob = $null
-$eslintJob = $null
-
-try {
-    $tscJob = Start-Job -ScriptBlock {
-        param($tscPath, $tsconfigPath)
-        $out = & node $tscPath --noEmit --pretty false --project $tsconfigPath 2>&1
-        [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
-    } -ArgumentList $tscPath, $tsconfigPath
-
-    $eslintJob = Start-Job -ScriptBlock {
-        param($TsSource)
-        $out = & npx eslint $TsSource 2>&1
-        [PSCustomObject]@{ Output = $out; ExitCode = $LASTEXITCODE }
-    } -ArgumentList $TsSource
-
-    $tscResult = $tscJob | Wait-Job | Receive-Job
-    $eslintResult = $eslintJob | Wait-Job | Receive-Job
-}
-catch {
-    Write-Host "Background jobs unavailable; running type-check and lint sequentially..." -ForegroundColor Yellow
-
-    if ($null -ne $tscJob) {
-        Remove-Job $tscJob -Force -ErrorAction SilentlyContinue
+if ($Publish) {
+    if ($SkipVerify) {
+        Write-Host "Skipping publish TypeScript/lint/test gate..." -ForegroundColor Yellow
     }
-    if ($null -ne $eslintJob) {
-        Remove-Job $eslintJob -Force -ErrorAction SilentlyContinue
-    }
-
-    $tscOutput = & node $tscPath --noEmit --pretty false --project $tsconfigPath 2>&1
-    $tscResult = [PSCustomObject]@{
-        Output = $tscOutput
-        ExitCode = $LASTEXITCODE
-    }
-
-    $eslintOutput = & npx eslint $TsSource 2>&1
-    $eslintResult = [PSCustomObject]@{
-        Output = $eslintOutput
-        ExitCode = $LASTEXITCODE
+    else {
+        Invoke-NpmScript -Name "verify" -Label "Running publish TypeScript/lint/test gate..."
     }
 }
-finally {
-    if ($null -ne $tscJob) {
-        Remove-Job $tscJob -Force -ErrorAction SilentlyContinue
-    }
-    if ($null -ne $eslintJob) {
-        Remove-Job $eslintJob -Force -ErrorAction SilentlyContinue
-    }
-}
-
-if ($tscResult.Output) {
-    Write-Host "::group::TypeScript type-check output"
-    Write-Host ($tscResult.Output | Out-String).TrimEnd()
-    Write-Host "::endgroup::"
-}
-if ($eslintResult.Output) { Write-Host ($eslintResult.Output | Out-String).TrimEnd() }
-
-if ($tscResult.ExitCode -ne 0) {
-    Write-Error "TypeScript type check failed"
-    exit $tscResult.ExitCode
-}
-if ($eslintResult.ExitCode -ne 0) {
-    Write-Error "ESLint failed"
-    exit $eslintResult.ExitCode
+else {
+    Invoke-NpmScript -Name "typecheck" -Label "Running production TypeScript type-check..."
+    Invoke-NpmScript -Name "lint" -Label "Running production lint..."
 }
 
 # ===========================================
@@ -345,12 +304,12 @@ foreach ($file in $compressibleBinaries) {
 # Copy non-compressible binaries
 foreach ($spec in $nonCompressibleBinaries) {
     $pattern = Join-Path $StaticSource $spec.Pattern
-    $exclude = if ($spec.Exclude) { $spec.Exclude } else { @() }
+    $exclude = if ($spec.ContainsKey('Exclude')) { @($spec['Exclude']) } else { @() }
 
     Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $exclude } | ForEach-Object {
-        $dstDir = if ($spec.Dst) { Join-Path $WwwRoot $spec.Dst } else { $WwwRoot }
+        $dstDir = if ($spec['Dst']) { Join-Path $WwwRoot $spec['Dst'] } else { $WwwRoot }
         Copy-Item $_.FullName -Destination $dstDir -Force
-        $relPath = if ($spec.Dst) { "$($spec.Dst)/$($_.Name)" } else { $_.Name }
+        $relPath = if ($spec['Dst']) { "$($spec['Dst'])/$($_.Name)" } else { $_.Name }
         Write-Host "  $relPath" -ForegroundColor DarkGray
     }
 }

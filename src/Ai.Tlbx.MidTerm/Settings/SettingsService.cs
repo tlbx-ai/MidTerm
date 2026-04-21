@@ -14,7 +14,7 @@ public sealed class SettingsService
     private readonly ISecretStorage _secretStorage;
     private MidTermSettings? _cached;
     private readonly Lock _lock = new();
-    private readonly ConcurrentDictionary<string, Action<MidTermSettings>> _settingsListeners = new();
+    private readonly ConcurrentDictionary<string, Action<MidTermSettings>> _settingsListeners = new(StringComparer.Ordinal);
 
     public SettingsLoadStatus LoadStatus { get; private set; } = SettingsLoadStatus.Default;
     public string? LoadError { get; private set; }
@@ -22,6 +22,11 @@ public sealed class SettingsService
     public string SettingsDirectory => Path.GetDirectoryName(_settingsPath)!;
     public bool IsRunningAsService { get; }
     public ISecretStorage SecretStorage => _secretStorage;
+
+    public string GetEffectiveWorktreeRootDirectory()
+    {
+        return ResolveEffectiveWorktreeRootDirectory(Load(), ensureExists: true);
+    }
 
     public SettingsService()
     {
@@ -88,6 +93,29 @@ public sealed class SettingsService
         return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideDirectory.Trim()));
     }
 
+    public static string ResolveEffectiveWorktreeRootDirectory(
+        MidTermSettings settings,
+        bool ensureExists = false)
+    {
+        var effective = !string.IsNullOrWhiteSpace(settings.WorktreeRootDirectory)
+            ? NormalizeDirectoryPath(settings.WorktreeRootDirectory)
+            : ResolveDefaultWorktreeRootDirectory(settings);
+
+        if (ensureExists)
+        {
+            try
+            {
+                Directory.CreateDirectory(effective);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(() => $"Failed to ensure worktree root exists at '{effective}': {ex.Message}");
+            }
+        }
+
+        return effective;
+    }
+
     private static bool DetectServiceMode()
     {
         if (OperatingSystem.IsWindows())
@@ -136,6 +164,42 @@ public sealed class SettingsService
         {
             return false;
         }
+    }
+
+    private static string ResolveDefaultWorktreeRootDirectory(MidTermSettings settings)
+    {
+        var overrideDirectory = GetSettingsDirectoryOverride();
+        if (!string.IsNullOrWhiteSpace(overrideDirectory))
+        {
+            return Path.Combine(
+                overrideDirectory,
+                OperatingSystem.IsWindows() ? "Worktrees" : "worktrees");
+        }
+
+        if (settings.IsServiceInstall)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                return Path.Combine(programData, "MidTerm", "Worktrees");
+            }
+
+            return "/usr/local/etc/midterm/worktrees";
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (OperatingSystem.IsWindows())
+        {
+            return Path.Combine(home, ".midTerm", "Worktrees");
+        }
+
+        return Path.Combine(home, ".midterm", "worktrees");
+    }
+
+    private static string NormalizeDirectoryPath(string path)
+    {
+        var fullPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(path.Trim()));
+        return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 
 
@@ -290,6 +354,16 @@ public sealed class SettingsService
             settings.UseWebGL = true;
         }
 
+        if (!json.Contains("\"customGlyphs\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.CustomGlyphs = true;
+        }
+
+        if (!json.Contains("\"terminalLigaturesEnabled\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalLigaturesEnabled = true;
+        }
+
         if (!json.Contains("\"cursorBlink\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.CursorBlink = true;
@@ -305,9 +379,24 @@ public sealed class SettingsService
             settings.FileRadar = true;
         }
 
+        if (!json.Contains("\"showBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.ShowBookmarks = true;
+        }
+
+        if (!json.Contains("\"allowAdHocSessionBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.AllowAdHocSessionBookmarks = true;
+        }
+
         if (!json.Contains("\"managerBarEnabled\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.ManagerBarEnabled = true;
+        }
+
+        if (!json.Contains("\"commandBayLigaturesEnabled\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.CommandBayLigaturesEnabled = true;
         }
 
         if (!json.Contains("\"tmuxCompatibility\"", StringComparison.OrdinalIgnoreCase))
@@ -333,6 +422,11 @@ public sealed class SettingsService
         if (!json.Contains("\"terminalTransparency\"", StringComparison.OrdinalIgnoreCase))
         {
             settings.TerminalTransparency = settings.UiTransparency;
+        }
+
+        if (!json.Contains("\"terminalCellBackgroundTransparency\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalCellBackgroundTransparency = settings.TerminalTransparency;
         }
     }
 
@@ -442,12 +536,18 @@ public sealed class SettingsService
         current.DefaultCols = old.DefaultCols;
         current.DefaultRows = old.DefaultRows;
         current.DefaultWorkingDirectory = old.DefaultWorkingDirectory;
+        current.TerminalEnvironmentVariables = old.TerminalEnvironmentVariables;
         current.CodexYoloDefault = old.CodexYoloDefault;
+        current.CodexDefaultLensModel = old.CodexDefaultLensModel;
         current.CodexEnvironmentVariables = old.CodexEnvironmentVariables;
         current.ClaudeDangerouslySkipPermissionsDefault = old.ClaudeDangerouslySkipPermissionsDefault;
+        current.ClaudeDefaultLensModel = old.ClaudeDefaultLensModel;
         current.ClaudeEnvironmentVariables = old.ClaudeEnvironmentVariables;
         current.FontSize = old.FontSize;
         current.FontFamily = old.FontFamily;
+        current.CustomGlyphs = old.CustomGlyphs;
+        current.BoxDrawingStyle = old.BoxDrawingStyle;
+        current.BoxDrawingScale = old.BoxDrawingScale;
         current.CursorStyle = old.CursorStyle;
         current.CursorBlink = old.CursorBlink;
         current.CursorInactiveStyle = old.CursorInactiveStyle;
@@ -457,8 +557,12 @@ public sealed class SettingsService
         current.BackgroundImageEnabled = old.BackgroundImageEnabled;
         current.BackgroundImageFileName = old.BackgroundImageFileName;
         current.BackgroundImageRevision = old.BackgroundImageRevision;
-        current.BackgroundImageFit = old.BackgroundImageFit;
+        current.BackgroundKenBurnsEnabled = old.BackgroundKenBurnsEnabled;
+        current.BackgroundKenBurnsZoomPercent = old.BackgroundKenBurnsZoomPercent;
+        current.BackgroundKenBurnsSpeedPxPerSecond = old.BackgroundKenBurnsSpeedPxPerSecond;
         current.UiTransparency = old.UiTransparency;
+        current.TerminalTransparency = old.TerminalTransparency;
+        current.TerminalCellBackgroundTransparency = old.TerminalCellBackgroundTransparency;
         current.TabTitleMode = old.TabTitleMode;
         current.MinimumContrastRatio = old.MinimumContrastRatio;
         current.SmoothScrolling = old.SmoothScrolling;
@@ -483,6 +587,16 @@ public sealed class SettingsService
         current.ShowUpdateNotification = old.ShowUpdateNotification;
         current.UpdateChannel = old.UpdateChannel;
         current.Language = old.Language;
+
+        if (oldJson.Contains("\"showBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            current.ShowBookmarks = old.ShowBookmarks;
+        }
+
+        if (oldJson.Contains("\"allowAdHocSessionBookmarks\"", StringComparison.OrdinalIgnoreCase))
+        {
+            current.AllowAdHocSessionBookmarks = old.AllowAdHocSessionBookmarks;
+        }
 
         // Restore security/installer fields (these come from the installer, not the user)
         current.RunAsUser = runAsUser;

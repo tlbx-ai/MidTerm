@@ -44,6 +44,8 @@ class MockClassList {
 }
 
 const originalDocument = globalThis.document;
+const originalWindow = globalThis.window;
+const originalNavigator = globalThis.navigator;
 
 function createSettings(
   partial: Partial<
@@ -53,9 +55,12 @@ function createSettings(
       | 'uiTransparency'
       | 'terminalTransparency'
       | 'backgroundImageEnabled'
+      | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
       | 'backgroundImageRevision'
-      | 'backgroundImageFit'
+      | 'backgroundKenBurnsEnabled'
+      | 'backgroundKenBurnsZoomPercent'
+      | 'backgroundKenBurnsSpeedPxPerSecond'
     >
   >,
 ): MidTermSettingsPublic {
@@ -64,9 +69,12 @@ function createSettings(
     uiTransparency: 0,
     terminalTransparency: 0,
     backgroundImageEnabled: false,
+    hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
     backgroundImageRevision: 0,
-    backgroundImageFit: 'cover',
+    backgroundKenBurnsEnabled: false,
+    backgroundKenBurnsZoomPercent: 150,
+    backgroundKenBurnsSpeedPxPerSecond: 12,
     ...partial,
   } as MidTermSettingsPublic;
 }
@@ -95,11 +103,40 @@ beforeEach(() => {
     configurable: true,
     writable: true,
   });
+
+  Object.defineProperty(globalThis, 'window', {
+    value: {
+      innerWidth: 1280,
+      innerHeight: 720,
+      matchMedia: () => ({ matches: false }),
+      addEventListener: () => undefined,
+    },
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { maxTouchPoints: 0 },
+    configurable: true,
+    writable: true,
+  });
 });
 
 afterEach(() => {
   Object.defineProperty(globalThis, 'document', {
     value: originalDocument,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'window', {
+    value: originalWindow,
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: originalNavigator,
     configurable: true,
     writable: true,
   });
@@ -138,6 +175,9 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-active-opaque')).toBe('#363A50');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#242735');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#161821');
+    expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#1C1E2A');
+    expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#1C1E2A');
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
@@ -149,20 +189,57 @@ describe('backgroundAppearance', () => {
         backgroundImageEnabled: true,
         backgroundImageFileName: 'paper.jpg',
         backgroundImageRevision: 12,
-        backgroundImageFit: 'contain',
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
       }),
     );
 
     expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
       'url("/api/settings/background-image?v=12")',
     );
-    expect(rootStyle.getPropertyValue('--app-background-size')).toBe('contain');
+    expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
+    expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
+      'translate3d(0px, 0px, 0) scale(1.800)',
+    );
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-scale')).toBe('1.800');
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe('19.200%');
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe('12.800%');
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toMatch(
+      /^midterm-app-background-ken-burns \d+\.\d{3}s linear infinite$/,
+    );
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#EAE2D8');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#FEFCF9');
     expect(rootStyle.getPropertyValue('--bg-dropdown-opaque')).toBe('#FEFCF9');
+    expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#DDD4C8');
+    expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#D5CBBD');
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(bodyClassList.contains('has-app-background')).toBe(true);
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
+  });
+
+  it('does not restart Ken Burns when the same settings are reapplied', () => {
+    const settings = createSettings({
+      backgroundImageEnabled: true,
+      backgroundImageFileName: 'paper.jpg',
+      backgroundImageRevision: 12,
+      backgroundKenBurnsEnabled: true,
+      backgroundKenBurnsZoomPercent: 180,
+      backgroundKenBurnsSpeedPxPerSecond: 24,
+    });
+
+    applyBackgroundAppearance(settings);
+
+    const firstAnimation = rootStyle.getPropertyValue('--app-background-animation');
+    const firstPanX = rootStyle.getPropertyValue('--app-background-ken-burns-pan-x');
+    const firstPanY = rootStyle.getPropertyValue('--app-background-ken-burns-pan-y');
+
+    applyBackgroundAppearance(settings);
+
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe(firstAnimation);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe(firstPanX);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe(firstPanY);
   });
 
   it('allows the UI transparency slider to reach a fully transparent UI shell', () => {
@@ -181,5 +258,99 @@ describe('backgroundAppearance', () => {
       'rgba(28, 30, 42, 0.400)',
     );
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
+  });
+
+  it('resets Ken Burns transform tokens when the effect is disabled', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(
+      'translate3d(0px, 0px, 0) scale(1.000)',
+    );
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
+  });
+
+  it('suppresses the background image on mobile when the mobile wallpaper toggle is enabled', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: () => ({ matches: true }),
+    });
+
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        hideBackgroundImageOnMobile: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--app-background-image')).toBe('none');
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
+    expect(bodyClassList.contains('has-app-background')).toBe(false);
+    expect(bodyClassList.contains('hide-app-background-on-mobile')).toBe(true);
+  });
+
+  it('forces opaque ui surfaces on mobile even when transparency is enabled in settings', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: () => ({ matches: true }),
+    });
+
+    applyBackgroundAppearance(
+      createSettings({
+        uiTransparency: 100,
+        terminalTransparency: 100,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 1.000)');
+    expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(5, 5, 10, 1.000)',
+    );
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
+  });
+
+  it('does not depend on resize-time keyframe regeneration', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
+      }),
+    );
+
+    const firstAnimation = rootStyle.getPropertyValue('--app-background-animation');
+    const firstPanX = rootStyle.getPropertyValue('--app-background-ken-burns-pan-x');
+    const firstPanY = rootStyle.getPropertyValue('--app-background-ken-burns-pan-y');
+
+    Object.assign(globalThis.window, {
+      innerWidth: 900,
+      innerHeight: 900,
+    });
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--app-background-animation')).toBe(firstAnimation);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe(firstPanX);
+    expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe(firstPanY);
   });
 });

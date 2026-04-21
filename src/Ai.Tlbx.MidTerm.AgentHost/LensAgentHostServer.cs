@@ -3,6 +3,7 @@ using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Common.Ipc;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
@@ -12,12 +13,11 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
     private readonly string? _ownerInstanceId;
     private readonly string? _ownerToken;
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly Lock _eventLock = new();
-    private readonly List<LensPulseEvent> _events = [];
+    private readonly TtyHostSessionManager _historySessions = new();
+    private readonly SessionLensHistoryService _history;
     private readonly Lock _clientLock = new();
     private ConnectionState? _currentClient;
     private ILensAgentRuntime? _runtime;
-    private long _nextSequence;
     private readonly List<Task> _connectionTasks = [];
 
     public LensAgentHostServer(string? syntheticProvider, string? ownerInstanceId = null, string? ownerToken = null)
@@ -27,17 +27,15 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             : syntheticProvider.Trim().ToLowerInvariant();
         _ownerInstanceId = string.IsNullOrWhiteSpace(ownerInstanceId) ? null : ownerInstanceId;
         _ownerToken = string.IsNullOrWhiteSpace(ownerToken) ? null : ownerToken;
+        _history = new SessionLensHistoryService(sessionManager: _historySessions);
     }
 
     public async Task RunStdioAsync()
     {
-        using var reader = new StreamReader(Console.OpenStandardInput());
-        using var writer = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
-        using var connection = new ConnectionState(reader, writer, null, _shutdown.Token);
+        using var connection = ConnectionState.CreateStdioOwned(_shutdown.Token);
 
         PromoteCurrentClient(connection);
-        await EnqueueHelloAsync(connection).ConfigureAwait(false);
-        await ProcessIncomingAsync(connection, requireOwnership: false, promoteOnAttach: false).ConfigureAwait(false);
+        await ProcessConnectionAsync(connection, requireOwnership: false, promoteOnAttach: false).ConfigureAwait(false);
     }
 
     public async Task RunIpcAsync(string endpoint)
@@ -46,15 +44,11 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
 
         while (!_shutdown.IsCancellationRequested)
         {
-            IIpcClientConnection? client = null;
             try
             {
-                client = await server.AcceptAsync(_shutdown.Token).ConfigureAwait(false);
-                var stream = client.Stream;
-                var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: false);
-                var writer = new StreamWriter(stream, System.Text.Encoding.UTF8, bufferSize: 1024, leaveOpen: false) { AutoFlush = true };
-                var connection = new ConnectionState(reader, writer, client, _shutdown.Token);
-                var task = Task.Run(() => ProcessConnectionAsync(connection), CancellationToken.None);
+#pragma warning disable IDISP004
+                var task = ProcessAcceptedConnectionAsync(await server.AcceptAsync(_shutdown.Token).ConfigureAwait(false));
+#pragma warning restore IDISP004
                 lock (_connectionTasks)
                 {
                     _connectionTasks.Add(task);
@@ -74,12 +68,10 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                client?.Dispose();
                 break;
             }
             catch
             {
-                client?.Dispose();
                 await Task.Delay(100, _shutdown.Token).ConfigureAwait(false);
             }
         }
@@ -125,19 +117,32 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         _shutdown.Dispose();
     }
 
-    private async Task ProcessConnectionAsync(ConnectionState connection)
+    private async Task ProcessAcceptedConnectionAsync(IIpcClientConnection client)
     {
-        using (connection)
+        using var connection = ConnectionState.CreateOwned(client.Stream, _shutdown.Token);
+        await ProcessConnectionAsync(connection, requireOwnership: true, promoteOnAttach: true).ConfigureAwait(false);
+    }
+
+    private async Task ProcessConnectionAsync(ConnectionState connection, bool requireOwnership, bool promoteOnAttach)
+    {
+        try
         {
             await EnqueueHelloAsync(connection).ConfigureAwait(false);
-            await ProcessIncomingAsync(connection, requireOwnership: true, promoteOnAttach: true).ConfigureAwait(false);
+            await ProcessIncomingAsync(connection, requireOwnership, promoteOnAttach).ConfigureAwait(false);
         }
+        finally
+        {
+            ClearCurrentClient(connection);
+        }
+    }
 
+    private void ClearCurrentClient(ConnectionState connection)
+    {
         lock (_clientLock)
         {
             if (ReferenceEquals(_currentClient, connection))
             {
-                _currentClient = null;
+                Interlocked.CompareExchange(ref _currentClient, null, connection);
             }
         }
     }
@@ -198,6 +203,14 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                 }
             }
 
+            if (!connection.TryBindSession(command.SessionId))
+            {
+                await EnqueueRejectedAsync(connection, command, "mtagenthost only serves one Lens session per connection.").ConfigureAwait(false);
+                break;
+            }
+
+            EnsureHistoryPatchForwarder(connection, command.SessionId);
+
             HostCommandOutcome outcome;
             try
             {
@@ -217,15 +230,11 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                 };
             }
 
-            foreach (var envelope in outcome.Events)
+            foreach (var lensEvent in outcome.Events)
             {
-                StoreRuntimeEvent(envelope);
+                StoreRuntimeEvent(lensEvent);
             }
             await EnqueueAsync(connection, outcome.Result, LensHostJsonContext.Default.LensHostCommandResultEnvelope).ConfigureAwait(false);
-            foreach (var envelope in outcome.Events)
-            {
-                ForwardRuntimeEvent(envelope);
-            }
         }
     }
 
@@ -233,7 +242,7 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
     {
         ValidateCommand(command);
 
-        if (string.Equals(command.Type, "events.get", StringComparison.Ordinal))
+        if (string.Equals(command.Type, "history.window.get", StringComparison.Ordinal))
         {
             return new HostCommandOutcome
             {
@@ -242,14 +251,32 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                     CommandId = command.CommandId,
                     SessionId = command.SessionId,
                     Status = "accepted",
-                    Events = GetEvents(command.SessionId, command.EventsRequest?.AfterSequence ?? 0)
+                    HistoryWindow = GetHistoryWindow(
+                        command.SessionId,
+                        command.HistoryWindow?.StartIndex,
+                        command.HistoryWindow?.Count,
+                        command.HistoryWindow?.ViewportWidth)
                 }
             };
+        }
+
+        if (command.AttachRuntime is not null)
+        {
+            _historySessions.SetWorkingDirectory(command.SessionId, command.AttachRuntime.WorkingDirectory);
         }
 
         var runtime = await GetRuntimeAsync(command).ConfigureAwait(false);
         var outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false);
         return MaybeAppendSubmittedUserMessage(command, outcome, runtime.Provider);
+    }
+
+    private LensHistoryWindowResponse? GetHistoryWindow(
+        string sessionId,
+        int? startIndex,
+        int? count,
+        int? viewportWidth)
+    {
+        return _history.GetSnapshotWindow(sessionId, startIndex, count, viewportWidth);
     }
 
     private static HostCommandOutcome MaybeAppendSubmittedUserMessage(
@@ -273,27 +300,23 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         }
 
         var events = outcome.Events.ToList();
-        events.Insert(0, new LensHostEventEnvelope
+        events.Insert(0, new LensProviderEvent
         {
+            EventId = $"evt-user-{Guid.NewGuid():N}",
             SessionId = command.SessionId,
-            Event = new LensPulseEvent
+            Provider = turnStarted.Provider,
+            ThreadId = turnStarted.ThreadId,
+            TurnId = turnStarted.TurnId,
+            ItemId = $"user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Type = "item.completed",
+            Item = new LensProviderItemPayload
             {
-                EventId = $"evt-user-{Guid.NewGuid():N}",
-                SessionId = command.SessionId,
-                Provider = turnStarted.Provider,
-                ThreadId = turnStarted.ThreadId,
-                TurnId = turnStarted.TurnId,
-                ItemId = $"user:{turnStarted.TurnId ?? Guid.NewGuid().ToString("N")}",
-                CreatedAt = DateTimeOffset.UtcNow,
-                Type = "item.completed",
-                Item = new LensPulseItemPayload
-                {
-                    ItemType = "user_message",
-                    Status = "completed",
-                    Title = "User message",
-                    Detail = request.Text,
-                    Attachments = CloneAttachments(request.Attachments)
-                }
+                ItemType = "user_message",
+                Status = "completed",
+                Title = "User message",
+                Detail = request.Text,
+                Attachments = CloneAttachments(request.Attachments)
             }
         });
 
@@ -302,23 +325,6 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             Result = outcome.Result,
             Events = events
         };
-    }
-
-    private LensPulseEventListResponse GetEvents(string sessionId, long afterSequence)
-    {
-        lock (_eventLock)
-        {
-            return new LensPulseEventListResponse
-            {
-                SessionId = sessionId,
-                LatestSequence = _nextSequence,
-                Events = _events
-                    .Where(lensEvent => lensEvent.Sequence > afterSequence &&
-                                        string.Equals(lensEvent.SessionId, sessionId, StringComparison.Ordinal))
-                    .Select(CloneEvent)
-                    .ToList()
-            };
-        }
     }
 
     private void PromoteCurrentClient(ConnectionState nextClient)
@@ -368,7 +374,8 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                     "turn.interrupt",
                     "request.resolve",
                     "user-input.resolve",
-                    "events.get"
+                    "history.window.get",
+                    "history.patch"
                 ]
             },
             LensHostJsonContext.Default.LensHostHello).ConfigureAwait(false);
@@ -431,54 +438,56 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         }
     }
 
-    private void EmitRuntimeEvent(LensHostEventEnvelope envelope)
+    private void EmitRuntimeEvent(LensProviderEvent lensEvent)
     {
-        StoreRuntimeEvent(envelope);
-        ForwardRuntimeEvent(envelope);
+        StoreRuntimeEvent(lensEvent);
     }
 
-    private void StoreRuntimeEvent(LensHostEventEnvelope envelope)
+    private void StoreRuntimeEvent(LensProviderEvent lensEvent)
     {
-        ArgumentNullException.ThrowIfNull(envelope);
-        ArgumentNullException.ThrowIfNull(envelope.Event);
-
-        var lensEvent = LensEventCompaction.CloneForRetention(envelope.Event);
-        lock (_eventLock)
-        {
-            lensEvent.Sequence = ++_nextSequence;
-            _events.Add(lensEvent);
-        }
-
-        envelope.Event = CloneEvent(lensEvent);
+        ArgumentNullException.ThrowIfNull(lensEvent);
+        _history.Append(CloneEvent(lensEvent));
     }
 
-    private void ForwardRuntimeEvent(LensHostEventEnvelope envelope)
+    private void EnsureHistoryPatchForwarder(ConnectionState connection, string sessionId)
     {
-        ConnectionState? current;
-        lock (_clientLock)
-        {
-            current = _currentClient;
-        }
-
-        if (current is null || current.Token.IsCancellationRequested)
+        if (connection.HistoryPatchForwarderStarted)
         {
             return;
         }
 
-        current.Outbound.Writer.TryWrite(
-            JsonSerializer.Serialize(
-                new LensHostEventEnvelope
+        connection.HistoryPatchForwarderStarted = true;
+        connection.HistoryPatchForwarder = Task.Run(
+            async () =>
+            {
+                using var subscription = _history.SubscribeHistoryPatches(sessionId, connection.Token);
+                try
                 {
-                    ProtocolVersion = envelope.ProtocolVersion,
-                    SessionId = envelope.SessionId,
-                    Event = CloneEvent(envelope.Event)
-                },
-                LensHostJsonContext.Default.LensHostEventEnvelope));
+                    await foreach (var delta in subscription.Reader.ReadAllAsync(connection.Token).ConfigureAwait(false))
+                    {
+                        connection.Outbound.Writer.TryWrite(
+                            JsonSerializer.Serialize(
+                                new LensHostHistoryPatchEnvelope
+                                {
+                                    SessionId = sessionId,
+                                    Patch = delta
+                                },
+                                LensHostJsonContext.Default.LensHostHistoryPatchEnvelope));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch
+                {
+                }
+            },
+            CancellationToken.None);
     }
 
-    private static LensPulseEvent CloneEvent(LensPulseEvent lensEvent)
+    private static LensProviderEvent CloneEvent(LensProviderEvent lensEvent)
     {
-        return new LensPulseEvent
+        return new LensProviderEvent
         {
             Sequence = lensEvent.Sequence,
             EventId = lensEvent.EventId,
@@ -490,54 +499,54 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             RequestId = lensEvent.RequestId,
             CreatedAt = lensEvent.CreatedAt,
             Type = lensEvent.Type,
-            Raw = lensEvent.Raw is null ? null : new LensPulseEventRaw
+            Raw = lensEvent.Raw is null ? null : new LensProviderEventRaw
             {
                 Source = lensEvent.Raw.Source,
                 Method = lensEvent.Raw.Method,
                 PayloadJson = lensEvent.Raw.PayloadJson
             },
-            SessionState = lensEvent.SessionState is null ? null : new LensPulseSessionStatePayload
+            SessionState = lensEvent.SessionState is null ? null : new LensProviderSessionStatePayload
             {
                 State = lensEvent.SessionState.State,
                 StateLabel = lensEvent.SessionState.StateLabel,
                 Reason = lensEvent.SessionState.Reason
             },
-            ThreadState = lensEvent.ThreadState is null ? null : new LensPulseThreadStatePayload
+            ThreadState = lensEvent.ThreadState is null ? null : new LensProviderThreadStatePayload
             {
                 State = lensEvent.ThreadState.State,
                 StateLabel = lensEvent.ThreadState.StateLabel,
                 ProviderThreadId = lensEvent.ThreadState.ProviderThreadId
             },
-            TurnStarted = lensEvent.TurnStarted is null ? null : new LensPulseTurnStartedPayload
+            TurnStarted = lensEvent.TurnStarted is null ? null : new LensProviderTurnStartedPayload
             {
                 Model = lensEvent.TurnStarted.Model,
                 Effort = lensEvent.TurnStarted.Effort
             },
-            TurnCompleted = lensEvent.TurnCompleted is null ? null : new LensPulseTurnCompletedPayload
+            TurnCompleted = lensEvent.TurnCompleted is null ? null : new LensProviderTurnCompletedPayload
             {
                 State = lensEvent.TurnCompleted.State,
                 StateLabel = lensEvent.TurnCompleted.StateLabel,
                 StopReason = lensEvent.TurnCompleted.StopReason,
                 ErrorMessage = lensEvent.TurnCompleted.ErrorMessage
             },
-            ContentDelta = lensEvent.ContentDelta is null ? null : new LensPulseContentDeltaPayload
+            ContentDelta = lensEvent.ContentDelta is null ? null : new LensProviderContentDeltaPayload
             {
                 StreamKind = lensEvent.ContentDelta.StreamKind,
                 Delta = lensEvent.ContentDelta.Delta
             },
-            PlanDelta = lensEvent.PlanDelta is null ? null : new LensPulsePlanDeltaPayload
+            PlanDelta = lensEvent.PlanDelta is null ? null : new LensProviderPlanDeltaPayload
             {
                 Delta = lensEvent.PlanDelta.Delta
             },
-            PlanCompleted = lensEvent.PlanCompleted is null ? null : new LensPulsePlanCompletedPayload
+            PlanCompleted = lensEvent.PlanCompleted is null ? null : new LensProviderPlanCompletedPayload
             {
                 PlanMarkdown = lensEvent.PlanCompleted.PlanMarkdown
             },
-            DiffUpdated = lensEvent.DiffUpdated is null ? null : new LensPulseDiffUpdatedPayload
+            DiffUpdated = lensEvent.DiffUpdated is null ? null : new LensProviderDiffUpdatedPayload
             {
                 UnifiedDiff = lensEvent.DiffUpdated.UnifiedDiff
             },
-            Item = lensEvent.Item is null ? null : new LensPulseItemPayload
+            Item = lensEvent.Item is null ? null : new LensProviderItemPayload
             {
                 ItemType = lensEvent.Item.ItemType,
                 Status = lensEvent.Item.Status,
@@ -545,33 +554,33 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                 Detail = lensEvent.Item.Detail,
                 Attachments = CloneAttachments(lensEvent.Item.Attachments)
             },
-            QuickSettingsUpdated = lensEvent.QuickSettingsUpdated is null ? null : new LensPulseQuickSettingsPayload
+            QuickSettingsUpdated = lensEvent.QuickSettingsUpdated is null ? null : new LensQuickSettingsPayload
             {
                 Model = lensEvent.QuickSettingsUpdated.Model,
                 Effort = lensEvent.QuickSettingsUpdated.Effort,
                 PlanMode = LensQuickSettings.NormalizePlanMode(lensEvent.QuickSettingsUpdated.PlanMode),
                 PermissionMode = LensQuickSettings.NormalizePermissionMode(lensEvent.QuickSettingsUpdated.PermissionMode)
             },
-            RequestOpened = lensEvent.RequestOpened is null ? null : new LensPulseRequestOpenedPayload
+            RequestOpened = lensEvent.RequestOpened is null ? null : new LensProviderRequestOpenedPayload
             {
                 RequestType = lensEvent.RequestOpened.RequestType,
                 RequestTypeLabel = lensEvent.RequestOpened.RequestTypeLabel,
                 Detail = lensEvent.RequestOpened.Detail
             },
-            RequestResolved = lensEvent.RequestResolved is null ? null : new LensPulseRequestResolvedPayload
+            RequestResolved = lensEvent.RequestResolved is null ? null : new LensProviderRequestResolvedPayload
             {
                 RequestType = lensEvent.RequestResolved.RequestType,
                 Decision = lensEvent.RequestResolved.Decision
             },
-            UserInputRequested = lensEvent.UserInputRequested is null ? null : new LensPulseUserInputRequestedPayload
+            UserInputRequested = lensEvent.UserInputRequested is null ? null : new LensProviderUserInputRequestedPayload
             {
                 Questions = lensEvent.UserInputRequested.Questions.Select(CloneQuestion).ToList()
             },
-            UserInputResolved = lensEvent.UserInputResolved is null ? null : new LensPulseUserInputResolvedPayload
+            UserInputResolved = lensEvent.UserInputResolved is null ? null : new LensProviderUserInputResolvedPayload
             {
                 Answers = lensEvent.UserInputResolved.Answers.Select(CloneAnsweredQuestion).ToList()
             },
-            RuntimeMessage = lensEvent.RuntimeMessage is null ? null : new LensPulseRuntimeMessagePayload
+            RuntimeMessage = lensEvent.RuntimeMessage is null ? null : new LensProviderRuntimeMessagePayload
             {
                 Message = lensEvent.RuntimeMessage.Message,
                 Detail = lensEvent.RuntimeMessage.Detail
@@ -597,15 +606,15 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         }).ToList();
     }
 
-    private static LensPulseQuestion CloneQuestion(LensPulseQuestion source)
+    private static LensQuestion CloneQuestion(LensQuestion source)
     {
-        return new LensPulseQuestion
+        return new LensQuestion
         {
             Id = source.Id,
             Header = source.Header,
             Question = source.Question,
             MultiSelect = source.MultiSelect,
-            Options = source.Options.Select(static option => new LensPulseQuestionOption
+            Options = source.Options.Select(static option => new LensQuestionOption
             {
                 Label = option.Label,
                 Description = option.Description
@@ -613,9 +622,9 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         };
     }
 
-    private static LensPulseAnsweredQuestion CloneAnsweredQuestion(LensPulseAnsweredQuestion source)
+    private static LensAnsweredQuestion CloneAnsweredQuestion(LensAnsweredQuestion source)
     {
-        return new LensPulseAnsweredQuestion
+        return new LensAnsweredQuestion
         {
             QuestionId = source.QuestionId,
             Answers = [.. source.Answers]
@@ -635,16 +644,23 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         private readonly CancellationTokenSource _cts;
         private bool _disposed;
 
-        public ConnectionState(
-            StreamReader reader,
-            StreamWriter writer,
-            IIpcClientConnection? connection,
+        public static ConnectionState CreateStdioOwned(CancellationToken shutdownToken)
+        {
+            return new ConnectionState(Console.OpenStandardInput(), Console.OpenStandardOutput(), shutdownToken);
+        }
+
+        public static ConnectionState CreateOwned(
+            Stream stream,
             CancellationToken shutdownToken)
         {
-            Reader = reader;
-            Writer = writer;
-            Connection = connection;
+            return new ConnectionState(stream, stream, shutdownToken);
+        }
+
+        private ConnectionState(Stream inputStream, Stream outputStream, CancellationToken shutdownToken)
+        {
             _cts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            Reader = new StreamReader(inputStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: false);
+            Writer = new StreamWriter(outputStream, System.Text.Encoding.UTF8, bufferSize: 1024, leaveOpen: false) { AutoFlush = true };
             Outbound = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
             {
                 SingleReader = true,
@@ -655,11 +671,24 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
 
         public StreamReader Reader { get; }
         public StreamWriter Writer { get; }
-        public IIpcClientConnection? Connection { get; }
         public Channel<string> Outbound { get; }
         public Task WriterTask { get; }
         public CancellationToken Token => _cts.Token;
         public bool OwnerValidated { get; set; }
+        public string? SessionId { get; private set; }
+        public bool HistoryPatchForwarderStarted { get; set; }
+        public Task? HistoryPatchForwarder { get; set; }
+
+        public bool TryBindSession(string sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(SessionId))
+            {
+                SessionId = sessionId;
+                return true;
+            }
+
+            return string.Equals(SessionId, sessionId, StringComparison.Ordinal);
+        }
 
         private static async Task WriteLoopAsync(ConnectionState state)
         {
@@ -690,9 +719,27 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
             Outbound.Writer.TryComplete();
             try { Writer.Dispose(); } catch { }
             try { Reader.Dispose(); } catch { }
-            try { Connection?.Dispose(); } catch { }
-            try { WriterTask.Wait(250); } catch { }
+            try { HistoryPatchForwarder?.WaitAsync(TimeSpan.FromMilliseconds(250), CancellationToken.None).GetAwaiter().GetResult(); } catch { }
+            try { WriterTask.WaitAsync(TimeSpan.FromMilliseconds(250), CancellationToken.None).GetAwaiter().GetResult(); } catch { }
             _cts.Dispose();
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -426,6 +426,8 @@ public sealed class SessionInfo
     private int? _foregroundPid;
     private string? _foregroundName;
     private string? _foregroundCommandLine;
+    private string? _foregroundDisplayName;
+    private string? _foregroundProcessIdentity;
     private SessionAgentAttachPoint? _agentAttachPoint;
     private byte _order;
     private TtyHostTransportInfo? _transport;
@@ -449,6 +451,8 @@ public sealed class SessionInfo
     public int? ForegroundPid { get => Lock(() => _foregroundPid); set => Lock(() => _foregroundPid = value); }
     public string? ForegroundName { get => Lock(() => _foregroundName); set => Lock(() => _foregroundName = value); }
     public string? ForegroundCommandLine { get => Lock(() => _foregroundCommandLine); set => Lock(() => _foregroundCommandLine = value); }
+    public string? ForegroundDisplayName { get => Lock(() => _foregroundDisplayName); set => Lock(() => _foregroundDisplayName = value); }
+    public string? ForegroundProcessIdentity { get => Lock(() => _foregroundProcessIdentity); set => Lock(() => _foregroundProcessIdentity = value); }
     public SessionAgentAttachPoint? AgentAttachPoint { get => Lock(() => _agentAttachPoint); set => Lock(() => _agentAttachPoint = value); }
     public byte Order { get => Lock(() => _order); set => Lock(() => _order = value); }
     public TtyHostTransportInfo? Transport { get => Lock(() => _transport); set => Lock(() => _transport = value); }
@@ -553,7 +557,8 @@ public enum TerminalReplayReason
     BrowserPendingOverflow = 3,
     IpcTimeoutReconnect = 4,
     BufferRefreshTailReplay = 5,
-    ReconnectTailReplay = 6
+    ReconnectTailReplay = 6,
+    QuickResumeTailReplay = 7
 }
 
 [JsonSerializable(typeof(SessionInfo))]

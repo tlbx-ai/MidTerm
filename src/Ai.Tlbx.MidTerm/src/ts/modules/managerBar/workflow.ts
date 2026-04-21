@@ -53,6 +53,11 @@ const VALID_SCHEDULE_REPEATS = new Set<ManagerScheduleRepeat>(['daily', 'weekday
 export const MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD = 0.25;
 export const MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS = 5000;
 
+export interface ManagerBarCooldownEvaluation {
+  ready: boolean;
+  awaitingHeatRise: boolean;
+}
+
 export function createDefaultManagerButton(): NormalizedManagerButton {
   return {
     id: '',
@@ -80,24 +85,8 @@ export function normalizeManagerBarButton(
   button: Partial<ManagerButton> | null | undefined,
 ): NormalizedManagerButton {
   const defaults = createDefaultManagerButton();
-  const prompts = (button?.prompts ?? [])
-    .map((prompt) => normalizePrompt(prompt))
-    .filter((prompt) => prompt.length > 0);
-  const legacyText = normalizePrompt(button?.text);
-  const actionType = VALID_ACTION_TYPES.has(button?.actionType as ManagerActionType)
-    ? (button?.actionType as ManagerActionType)
-    : 'single';
-
-  if (prompts.length === 0 && legacyText.length > 0) {
-    prompts.push(legacyText);
-  }
-  if (prompts.length === 0 && typeof button?.label === 'string' && button.label.trim().length > 0) {
-    prompts.push(button.label.trim());
-  }
-  if (prompts.length === 0) {
-    prompts.push('');
-  }
-
+  const actionType = normalizeActionType(button?.actionType);
+  const prompts = buildNormalizedPrompts(button, actionType);
   const normalizedPrompts = actionType === 'single' ? [prompts[0] ?? ''] : prompts;
   const label = (button?.label ?? '').trim() || buildFallbackLabel(normalizedPrompts[0] ?? '');
 
@@ -109,6 +98,36 @@ export function normalizeManagerBarButton(
     prompts: normalizedPrompts,
     trigger: normalizeTrigger(button?.trigger, defaults.trigger),
   };
+}
+
+function normalizeActionType(actionType: string | undefined): ManagerActionType {
+  return VALID_ACTION_TYPES.has(actionType as ManagerActionType)
+    ? (actionType as ManagerActionType)
+    : 'single';
+}
+
+function buildNormalizedPrompts(
+  button: Partial<ManagerButton> | null | undefined,
+  actionType: ManagerActionType,
+): string[] {
+  const prompts = (button?.prompts ?? [])
+    .map((prompt) => normalizePrompt(prompt))
+    .filter((prompt) => prompt.length > 0);
+  const legacyText = normalizePrompt(button?.text);
+  const labelPrompt =
+    typeof button?.label === 'string' && button.label.trim().length > 0 ? button.label.trim() : '';
+
+  if (prompts.length === 0 && legacyText.length > 0) {
+    prompts.push(legacyText);
+  }
+  if (prompts.length === 0 && labelPrompt.length > 0) {
+    prompts.push(labelPrompt);
+  }
+  if (prompts.length === 0) {
+    prompts.push('');
+  }
+
+  return actionType === 'single' ? [prompts[0] ?? ''] : prompts;
 }
 
 export function isImmediateManagerAction(button: NormalizedManagerButton): boolean {
@@ -139,6 +158,37 @@ export function isManagerBarCooldownReady(
   }
 
   return currentHeat <= MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD;
+}
+
+export function evaluateManagerBarCooldown(
+  currentHeat: number,
+  nowMs: number,
+  ignoreHeatUntilMs: number | null,
+  awaitingHeatRise: boolean,
+): ManagerBarCooldownEvaluation {
+  let nextAwaitingHeatRise = awaitingHeatRise;
+  if (nextAwaitingHeatRise && currentHeat > MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD) {
+    nextAwaitingHeatRise = false;
+  }
+
+  if (!isManagerBarCooldownReady(currentHeat, nowMs, ignoreHeatUntilMs)) {
+    return {
+      ready: false,
+      awaitingHeatRise: nextAwaitingHeatRise,
+    };
+  }
+
+  if (nextAwaitingHeatRise) {
+    return {
+      ready: false,
+      awaitingHeatRise: true,
+    };
+  }
+
+  return {
+    ready: true,
+    awaitingHeatRise: false,
+  };
 }
 
 export function intervalToMs(trigger: ManagerBarTrigger): number {

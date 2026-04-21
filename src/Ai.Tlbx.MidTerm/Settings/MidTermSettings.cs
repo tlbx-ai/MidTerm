@@ -11,16 +11,28 @@ public sealed class MidTermSettings
     public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
     public const int MinScrollbackBytes = 64 * 1024;
     public const int MaxScrollbackBytes = 10 * 1024 * 1024;
+    public const int MinBackgroundKenBurnsZoomPercent = 150;
+    public const int DefaultBackgroundKenBurnsZoomPercent = 150;
+    public const int MaxBackgroundKenBurnsZoomPercent = 300;
+    public const int MinBackgroundKenBurnsSpeedPxPerSecond = 0;
+    public const int DefaultBackgroundKenBurnsSpeedPxPerSecond = 12;
+    public const int MaxBackgroundKenBurnsSpeedPxPerSecond = 120;
 
     // Session Defaults
     public ShellType DefaultShell { get; set; } = GetPlatformDefaultShell();
     public int DefaultCols { get; set; } = 120;
     public int DefaultRows { get; set; } = 30;
     public string DefaultWorkingDirectory { get; set; } = "";
+    public string TerminalEnvironmentVariables { get; set; } = "";
     public bool CodexYoloDefault { get; set; } = false;
+    public string CodexDefaultLensModel { get; set; } = "";
     public string CodexEnvironmentVariables { get; set; } = "";
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
+    public string ClaudeDefaultLensModel { get; set; } = "";
     public string ClaudeEnvironmentVariables { get; set; } = "";
+    public string AgentMessageFontFamily { get; set; } = "default";
+    public bool ShowAgentMessageTimestamps { get; set; } = false;
+    public bool ShowUnknownAgentMessages { get; set; } = true;
 
     private static ShellType GetPlatformDefaultShell()
     {
@@ -38,10 +50,14 @@ public sealed class MidTermSettings
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code";
+    public bool TerminalLigaturesEnabled { get; set; } = true;
     public double LineHeight { get; set; } = 1;
     public double LetterSpacing { get; set; } = 0;
     public string FontWeight { get; set; } = "normal";
     public string FontWeightBold { get; set; } = "bold";
+    public bool CustomGlyphs { get; set; } = true;
+    public string BoxDrawingStyle { get; set; } = "classic";
+    public double BoxDrawingScale { get; set; } = 1;
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
@@ -49,11 +65,15 @@ public sealed class MidTermSettings
     public string TerminalColorScheme { get; set; } = "auto";
     public List<TerminalColorSchemeDefinition> TerminalColorSchemes { get; set; } = [];
     public bool BackgroundImageEnabled { get; set; } = false;
+    public bool HideBackgroundImageOnMobile { get; set; } = true;
     public string? BackgroundImageFileName { get; set; }
     public long BackgroundImageRevision { get; set; } = 0;
-    public string BackgroundImageFit { get; set; } = "cover";
+    public bool BackgroundKenBurnsEnabled { get; set; } = false;
+    public int BackgroundKenBurnsZoomPercent { get; set; } = DefaultBackgroundKenBurnsZoomPercent;
+    public int BackgroundKenBurnsSpeedPxPerSecond { get; set; } = DefaultBackgroundKenBurnsSpeedPxPerSecond;
     public int UiTransparency { get; set; } = 0;
     public int TerminalTransparency { get; set; } = 0;
+    public int TerminalCellBackgroundTransparency { get; set; } = 0;
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
@@ -71,6 +91,7 @@ public sealed class MidTermSettings
     public bool ScrollbackProtection { get; set; } = false;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
+    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
     public string InputMode { get; set; } = "keyboard";
@@ -78,11 +99,21 @@ public sealed class MidTermSettings
     // File Radar - Detects file paths in terminal output and makes them clickable
     public bool FileRadar { get; set; } = true;
 
+    // Controls whether the bookmarks UI is visible in the sidebar
+    public bool ShowBookmarks { get; set; } = true;
+
+    // Restores bookmark pinning for local ad-hoc sessions only
+    public bool AllowAdHocSessionBookmarks { get; set; } = true;
+
     // Sidebar session filter - Shows the sidebar filter input for narrowing visible sessions
     public bool ShowSidebarSessionFilter { get; set; } = false;
 
+    // Linked worktree root - when empty, MidTerm falls back to an OS-specific managed default directory
+    public string WorktreeRootDirectory { get; set; } = "";
+
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;
+    public bool CommandBayLigaturesEnabled { get; set; } = true;
     public List<ManagerBarButton> ManagerBarButtons { get; set; } =
     [
         new()

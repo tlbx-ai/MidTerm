@@ -426,6 +426,41 @@ interface VoiceMessage {
   requiresConfirmation?: boolean;
 }
 
+function addVoiceChatMessage(msg: VoiceMessage): void {
+  if (!msg.role || msg.content === undefined) {
+    return;
+  }
+
+  const chatMsg = {
+    role: msg.role,
+    content: msg.content,
+    timestamp: msg.timestamp || new Date().toISOString(),
+  };
+  if (msg.toolName) {
+    addChatMessage({ ...chatMsg, toolName: msg.toolName });
+    return;
+  }
+
+  addChatMessage(chatMsg);
+}
+
+function clearPendingVoiceAudio(): void {
+  if (window.stopAudioPlayback) {
+    void window.stopAudioPlayback();
+  }
+}
+
+function handleVoiceToolRequestMessage(msg: VoiceMessage): void {
+  if (msg.requestId && msg.tool) {
+    void handleToolRequest(
+      msg.requestId,
+      msg.tool,
+      msg.args ?? {},
+      msg.requiresConfirmation ?? false,
+    );
+  }
+}
+
 /**
  * Handle messages from the voice server
  */
@@ -444,40 +479,17 @@ function handleVoiceMessage(msg: VoiceMessage): void {
       setVoiceStatus('Listening...');
       break;
     case 'chat':
-      // Handle chat message
-      if (msg.role && msg.content !== undefined) {
-        const chatMsg = {
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.timestamp || new Date().toISOString(),
-        };
-        // Only add toolName if it's defined (exactOptionalPropertyTypes)
-        if (msg.toolName) {
-          addChatMessage({ ...chatMsg, toolName: msg.toolName });
-        } else {
-          addChatMessage(chatMsg);
-        }
-      }
+      addVoiceChatMessage(msg);
       break;
     case 'clear_audio':
-      // Server requests audio queue clear - stop any pending playback
-      if (window.stopAudioPlayback) {
-        void window.stopAudioPlayback();
-      }
+      clearPendingVoiceAudio();
       break;
     case 'error':
       log.error(() => `[MSG] Server error: ${msg.message || 'unknown'}`);
       setVoiceStatus('Server error');
       break;
     case 'tool_request':
-      if (msg.requestId && msg.tool) {
-        void handleToolRequest(
-          msg.requestId,
-          msg.tool,
-          msg.args ?? {},
-          msg.requiresConfirmation ?? false,
-        );
-      }
+      handleVoiceToolRequestMessage(msg);
       break;
     default:
       log.info(() => `[MSG] Unhandled message type: ${msg.type}`);

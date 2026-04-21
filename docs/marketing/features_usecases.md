@@ -36,7 +36,7 @@ Your terminal, anywhere. No BS edition.
 20. **4 themes** — Dark, Light, Solarized Dark, Solarized Light
 21. **3 cursor styles** — bar, block, underline (with optional blink)
 22. **Font size 8-24px** — your eyes, your rules
-23. **3 font families** — Cascadia Code, JetBrains Mono, Terminus
+23. **4 font families** — Cascadia Code, Cascadia Code SemiBold, JetBrains Mono, Terminus
 24. **Bell options** — desktop notification, sound, visual flash, or off
 25. **Copy-on-select** — highlight = copied, like God intended
 26. **Right-click paste** — terminal veteran muscle memory respected

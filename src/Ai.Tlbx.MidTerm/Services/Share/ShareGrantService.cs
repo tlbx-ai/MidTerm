@@ -130,7 +130,7 @@ public sealed class ShareGrantService
             return false;
         }
 
-        var separator = cookieValue.IndexOf('.');
+        var separator = cookieValue.IndexOf('.', StringComparison.Ordinal);
         if (separator <= 0 || separator == cookieValue.Length - 1)
         {
             return false;
@@ -139,6 +139,39 @@ public sealed class ShareGrantService
         var grantId = cookieValue[..separator];
         var secret = cookieValue[(separator + 1)..];
         return TryResolveGrant(grantId, secret, out access);
+    }
+
+    public IReadOnlyList<ShareGrantSummary> GetActiveGrants(int maxCount = int.MaxValue)
+    {
+        if (maxCount <= 0)
+        {
+            return [];
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        lock (_lock)
+        {
+            var store = LoadStoreNoLock();
+            CleanupExpiredNoLock(store, now);
+
+            var grants = store.Grants
+                .Where(grant => grant.RevokedAtUtc is null && grant.ExpiresAtUtc > now)
+                .OrderByDescending(grant => grant.CreatedAtUtc)
+                .Take(maxCount)
+                .Select(grant => new ShareGrantSummary
+                {
+                    GrantId = grant.GrantId,
+                    SessionId = grant.SessionId,
+                    Mode = grant.Mode,
+                    CreatedAtUtc = grant.CreatedAtUtc,
+                    ExpiresAtUtc = grant.ExpiresAtUtc
+                })
+                .ToArray();
+
+            SaveStoreNoLock(store);
+            return grants;
+        }
     }
 
     public void RevokeBySession(string sessionId)
@@ -176,6 +209,40 @@ public sealed class ShareGrantService
         {
             OnGrantRevoked?.Invoke(revokedGrantId);
         }
+    }
+
+    public bool RevokeGrant(string grantId)
+    {
+        if (string.IsNullOrWhiteSpace(grantId))
+        {
+            return false;
+        }
+
+        string? revokedGrantId = null;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        lock (_lock)
+        {
+            var store = LoadStoreNoLock();
+            CleanupExpiredNoLock(store, now);
+
+            var grant = store.Grants.FirstOrDefault(existing =>
+                existing.RevokedAtUtc is null &&
+                string.Equals(existing.GrantId, grantId, StringComparison.Ordinal));
+
+            if (grant is null)
+            {
+                SaveStoreNoLock(store);
+                return false;
+            }
+
+            grant.RevokedAtUtc = now;
+            revokedGrantId = grant.GrantId;
+            SaveStoreNoLock(store);
+        }
+
+        OnGrantRevoked?.Invoke(revokedGrantId);
+        return true;
     }
 
     public static bool CanWrite(ShareAccessContext access)

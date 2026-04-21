@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -9,6 +10,8 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MtAgentHostRealCodexSmokeTests
 {
+    private static readonly HttpClient ReadyClient = new();
+
     [Fact]
     [Trait("Category", "RealCodex")]
     public async Task MtAgentHost_CanAttachAndCompleteRealCodexTurn()
@@ -23,7 +26,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         Directory.CreateDirectory(workdir);
 
         using var process = StartAgentHost(hostDll);
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
         var marker = "MIDTERM_REAL_CODEX_SMOKE_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
         try
@@ -45,16 +48,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-real");
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real");
             Assert.Equal("accepted", attachResult.Status);
 
-            var attachEvents = await LensHostTestClient.ReadUntilAsync(
+            _ = await WaitForReadyWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "session.ready",
-                maxEvents: 8);
-            Assert.Contains(attachEvents, envelope => envelope.Event.Type == "thread.started");
-            Assert.Contains(attachEvents, envelope => envelope.Event.Type == "session.ready");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex");
 
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
@@ -68,22 +69,20 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-real");
+            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real");
             Assert.Equal("accepted", turnResult.Status);
             Assert.NotNull(turnResult.TurnStarted);
 
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 40);
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.started");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.completed");
-            Assert.Contains(
-                turnEvents,
-                envelope => envelope.Event.Type == "content.delta" ||
-                            envelope.Event.Type == "item.started" ||
-                            envelope.Event.Type == "item.completed");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex",
+                "completed");
+            Assert.Contains(marker, LensHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
+            Assert.True(
+                turnWindow.History.Any(item => item.Streaming || item.ItemType is not null),
+                "Expected canonical history items in the completed real Codex turn.");
         }
         finally
         {
@@ -119,10 +118,10 @@ public sealed class MtAgentHostRealCodexSmokeTests
         var workdir = Path.Combine(Path.GetTempPath(), "midterm-real-codex-remote-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workdir);
         var port = GetFreePort();
-        var appServerEndpoint = $"ws://127.0.0.1:{port}";
+        var appServerEndpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{port}");
         using var appServer = StartCodexAppServer(appServerEndpoint);
         using var process = StartAgentHost(hostDll);
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
         var marker = "MIDTERM_REAL_CODEX_REMOTE_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
         try
@@ -154,14 +153,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-real-remote");
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-remote");
             Assert.Equal("accepted", attachResult.Status);
 
-            _ = await LensHostTestClient.ReadUntilAsync(
+            _ = await WaitForReadyWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "session.ready",
-                maxEvents: 8);
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-remote");
 
             await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
             {
@@ -175,21 +174,16 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-real-remote");
+            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-remote");
             Assert.Equal("accepted", turnResult.Status);
 
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 40);
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.started");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.completed");
-            Assert.Contains(
-                turnEvents,
-                envelope => envelope.Event.Type == "content.delta" ||
-                            envelope.Event.Type == "item.started" ||
-                            envelope.Event.Type == "item.completed");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-remote",
+                "completed");
+            Assert.Contains(marker, LensHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
         }
         finally
         {
@@ -252,7 +246,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         await InitializeGitWorkspaceAsync(workdir);
 
         using var process = StartAgentHost(hostDll);
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
 
         try
         {
@@ -273,16 +267,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-real-rich");
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-rich");
             Assert.Equal("accepted", attachResult.Status);
 
-            var attachEvents = await LensHostTestClient.ReadUntilAsync(
+            _ = await WaitForReadyWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "session.ready",
-                maxEvents: 8);
-            Assert.Contains(attachEvents, envelope => envelope.Event.Type == "thread.started");
-            Assert.Contains(attachEvents, envelope => envelope.Event.Type == "session.ready");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-rich");
 
             var richPrompt = $$"""
             You are inside a temporary git repository.
@@ -311,46 +303,26 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-real-rich");
+            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-rich");
             Assert.Equal("accepted", turnResult.Status);
             Assert.NotNull(turnResult.TurnStarted);
 
-            var turnEvents = await LensHostTestClient.ReadUntilAsync(
+            var turnWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 600);
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.started");
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "turn.completed");
-            Assert.Contains(
-                turnEvents,
-                envelope => envelope.Event.Type == "content.delta" &&
-                            envelope.Event.ContentDelta?.StreamKind == "assistant_text" &&
-                            !string.IsNullOrWhiteSpace(envelope.Event.ContentDelta.Delta));
-            Assert.Contains(
-                turnEvents,
-                envelope => envelope.Event.Type == "content.delta" &&
-                            (envelope.Event.ContentDelta?.StreamKind == "command_output" ||
-                             envelope.Event.ContentDelta?.StreamKind == "file_change_output"));
-            Assert.Contains(turnEvents, envelope => envelope.Event.Type == "diff.updated");
-            Assert.Contains(
-                turnEvents,
-                envelope => envelope.Event.Type == "item.started" &&
-                            envelope.Event.Item?.ItemType is "command_execution" or "file_change");
-            Assert.Contains(
-                turnEvents,
-                envelope => envelope.Event.Type == "item.completed" &&
-                            envelope.Event.Item?.ItemType is "command_execution" or "file_change");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-rich",
+                "completed");
+            Assert.False(string.IsNullOrWhiteSpace(turnWindow.Streams.CommandOutput) &&
+                         string.IsNullOrWhiteSpace(turnWindow.Streams.FileChangeOutput));
+            Assert.False(string.IsNullOrWhiteSpace(turnWindow.Streams.UnifiedDiff));
+            Assert.Contains(turnWindow.History, item => item.ItemType is "command_execution" or "file_change");
 
             var reportText = await File.ReadAllTextAsync(Path.Combine(workdir, "report.md"), Encoding.UTF8);
             Assert.Contains("DONE", reportText, StringComparison.Ordinal);
             Assert.Contains(marker, reportText, StringComparison.Ordinal);
 
-            var assistantText = string.Concat(
-                turnEvents
-                    .Where(envelope => envelope.Event.Type == "content.delta" &&
-                                       envelope.Event.ContentDelta?.StreamKind == "assistant_text")
-                    .Select(envelope => envelope.Event.ContentDelta?.Delta ?? string.Empty));
+            var assistantText = LensHostTestClient.CollectAssistantText(turnWindow);
             Assert.Contains(marker, assistantText, StringComparison.Ordinal);
             Assert.Contains("alpha", assistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("|", assistantText, StringComparison.Ordinal);
@@ -407,7 +379,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Encoding.UTF8);
 
         using var process = StartAgentHost(hostDll);
-        var pendingEvents = new Queue<LensHostEventEnvelope>();
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
 
         try
         {
@@ -428,14 +400,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-attach-real-question");
+            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-question");
             Assert.Equal("accepted", attachResult.Status);
 
-            _ = await LensHostTestClient.ReadUntilAsync(
+            _ = await WaitForReadyWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "session.ready",
-                maxEvents: 8);
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-question");
 
             var questionPrompt = """
             You are in a temporary workspace.
@@ -456,22 +428,18 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-real-question");
+            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-question");
             Assert.Equal("accepted", turnResult.Status);
             Assert.NotNull(turnResult.TurnStarted);
 
-            var questionEvents = await LensHostTestClient.ReadUntilAsync(
+            var questionWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 180);
-            Assert.Contains(questionEvents, envelope => envelope.Event.Type == "turn.completed");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-question",
+                "completed");
 
-            var questionAssistantText = string.Concat(
-                questionEvents
-                    .Where(envelope => envelope.Event.Type == "content.delta" &&
-                                       envelope.Event.ContentDelta?.StreamKind == "assistant_text")
-                    .Select(envelope => envelope.Event.ContentDelta?.Delta ?? string.Empty));
+            var questionAssistantText = LensHostTestClient.CollectAssistantText(questionWindow);
             Assert.Contains("SAFE", questionAssistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("FAST", questionAssistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("?", questionAssistantText, StringComparison.Ordinal);
@@ -496,29 +464,22 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var followUpResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingEvents, "cmd-turn-real-follow-up");
+            var followUpResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-follow-up");
             Assert.Equal("accepted", followUpResult.Status);
             Assert.NotNull(followUpResult.TurnStarted);
 
-            var completionEvents = await LensHostTestClient.ReadUntilAsync(
+            var completionWindow = await WaitForTurnStateWindowAsync(
                 process.StandardOutput,
-                pendingEvents,
-                envelope => envelope.Event.Type == "turn.completed",
-                maxEvents: 600);
-            Assert.Contains(completionEvents, envelope => envelope.Event.Type == "turn.completed");
-            Assert.Contains(
-                completionEvents,
-                envelope => envelope.Event.Type == "item.completed" &&
-                            envelope.Event.Item?.ItemType is "file_change" or "command_execution");
+                process.StandardInput,
+                pendingPatches,
+                "session-real-codex-question",
+                "completed");
+            Assert.Contains(completionWindow.History, item => item.ItemType is "file_change" or "command_execution");
 
             var modeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8);
             Assert.Contains($"selected-mode=safe {marker}", modeText, StringComparison.OrdinalIgnoreCase);
 
-            var assistantText = string.Concat(
-                completionEvents
-                    .Where(envelope => envelope.Event.Type == "content.delta" &&
-                                       envelope.Event.ContentDelta?.StreamKind == "assistant_text")
-                    .Select(envelope => envelope.Event.ContentDelta?.Delta ?? string.Empty));
+            var assistantText = LensHostTestClient.CollectAssistantText(completionWindow);
             Assert.Contains(marker, assistantText, StringComparison.Ordinal);
             Assert.Contains("safe", assistantText, StringComparison.OrdinalIgnoreCase);
             Assert.True(
@@ -634,16 +595,49 @@ public sealed class MtAgentHostRealCodexSmokeTests
         return process;
     }
 
+    private static async Task<LensHistoryWindowResponse> WaitForReadyWindowAsync(
+        StreamReader reader,
+        StreamWriter writer,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        string sessionId)
+    {
+        return await LensHostTestClient.WaitForHistoryWindowAsync(
+            reader,
+            writer,
+            pendingPatches,
+            sessionId,
+            window => string.Equals(window.Session.State, "ready", StringComparison.Ordinal),
+            TimeSpan.FromSeconds(20),
+            count: 160);
+    }
+
+    private static async Task<LensHistoryWindowResponse> WaitForTurnStateWindowAsync(
+        StreamReader reader,
+        StreamWriter writer,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        string sessionId,
+        string state)
+    {
+        return await LensHostTestClient.WaitForHistoryWindowAsync(
+            reader,
+            writer,
+            pendingPatches,
+            sessionId,
+            window => string.Equals(window.CurrentTurn.State, state, StringComparison.Ordinal),
+            TimeSpan.FromSeconds(120),
+            count: 320);
+    }
+
     private static async Task WaitForCodexAppServerReadyAsync(int port)
     {
-        using var client = new HttpClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         while (true)
         {
             cts.Token.ThrowIfCancellationRequested();
             try
             {
-                using var response = await client.GetAsync($"http://127.0.0.1:{port}/readyz", cts.Token);
+                var readyUrl = string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/readyz");
+                using var response = await ReadyClient.GetAsync(readyUrl, cts.Token);
                 if (response.IsSuccessStatusCode)
                 {
                     return;
@@ -691,21 +685,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
 
         Assert.True(
             process.ExitCode == 0,
-            $"Command '{fileName} {arguments}' failed in '{workingDirectory}' with exit code {process.ExitCode}.{Environment.NewLine}STDOUT:{Environment.NewLine}{stdout}{Environment.NewLine}STDERR:{Environment.NewLine}{stderr}");
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Command '{fileName} {arguments}' failed in '{workingDirectory}' with exit code {process.ExitCode}.{Environment.NewLine}STDOUT:{Environment.NewLine}{stdout}{Environment.NewLine}STDERR:{Environment.NewLine}{stderr}"));
     }
 
     private static string ResolveAgentHostDll()
     {
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var candidates = new[]
-        {
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "mtagenthost.dll"),
-            Path.Combine(repoRoot, "src", "Ai.Tlbx.MidTerm.AgentHost", "bin", "Debug", "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
-        };
-
-        return candidates.First(File.Exists);
+        return MtAgentHostTestPathResolver.ResolveAgentHostDll(AppContext.BaseDirectory);
     }
 
     private static int GetFreePort()

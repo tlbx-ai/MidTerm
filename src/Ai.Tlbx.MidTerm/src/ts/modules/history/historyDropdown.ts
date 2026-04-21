@@ -16,6 +16,7 @@ import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
+import { formatHistoryDirectoryDisplay } from './historyPathDisplay';
 import { getHistoryModeBadgeText, getHistoryModeDisplayText } from './launchMode';
 
 const log = createLogger('history-dropdown');
@@ -120,7 +121,7 @@ function createDropdownElement(): void {
   dropdownEl.className = 'history-dropdown';
   dropdownEl.innerHTML = `
     <div class="history-dropdown-header">
-      <span>${t('history.quickLaunch')}</span>
+      <span>${t('sidebar.loadBookmarked')}</span>
     </div>
     <div class="history-dropdown-content"></div>
     <div class="history-dropdown-empty">${t('history.noHistory')}</div>
@@ -135,7 +136,7 @@ function createDropdownElement(): void {
 function positionDropdown(): void {
   if (!dropdownEl) return;
 
-  const trigger = document.getElementById('btn-history');
+  const trigger = document.getElementById('btn-bookmarks');
   const sidebar = document.getElementById('sidebar');
   if (!(trigger instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
     return;
@@ -159,8 +160,11 @@ function renderDropdownContent(): void {
   const empty = dropdownEl.querySelector('.history-dropdown-empty');
   if (!content || !empty) return;
 
-  const pinnedEntries = cachedEntries.filter((e) => e.isStarred);
-  const recentEntries = cachedEntries.filter((e) => !e.isStarred).slice(0, 5);
+  const adHocEntries = cachedEntries.filter(
+    (entry) => (entry.launchOrigin ?? '').toLowerCase() !== 'space',
+  );
+  const pinnedEntries = adHocEntries.filter((e) => e.isStarred);
+  const recentEntries = adHocEntries.filter((e) => !e.isStarred).slice(0, 5);
 
   if (pinnedEntries.length === 0 && recentEntries.length === 0) {
     content.classList.add('hidden');
@@ -179,7 +183,7 @@ function renderDropdownContent(): void {
     content.appendChild(pinnedHeader);
 
     const pinnedContainer = document.createElement('div');
-    pinnedContainer.className = 'history-pinned-list';
+    pinnedContainer.className = 'history-entry-list history-pinned-list';
     pinnedEntries.forEach((entry) => {
       pinnedContainer.appendChild(createHistoryItem(entry, true));
     });
@@ -194,9 +198,12 @@ function renderDropdownContent(): void {
     recentHeader.textContent = '\ud83d\udd70 ' + t('history.recent');
     content.appendChild(recentHeader);
 
+    const recentContainer = document.createElement('div');
+    recentContainer.className = 'history-entry-list';
     recentEntries.forEach((entry) => {
-      content.appendChild(createHistoryItem(entry, false));
+      recentContainer.appendChild(createHistoryItem(entry, false));
     });
+    content.appendChild(recentContainer);
   }
 }
 
@@ -212,25 +219,33 @@ function createHistoryItem(entry: LaunchEntry, isPinned: boolean): HTMLDivElemen
   const infoDiv = document.createElement('div');
   infoDiv.className = 'history-item-info';
 
+  const primaryRow = document.createElement('div');
+  primaryRow.className = 'history-item-primary';
+
   const modeSpan = document.createElement('span');
   modeSpan.className = 'history-item-mode';
   modeSpan.textContent = getHistoryModeBadgeText(entry);
   modeSpan.title = getHistoryModeDisplayText(entry);
-  infoDiv.appendChild(modeSpan);
+  primaryRow.appendChild(modeSpan);
 
   if (entry.label) {
     const labelSpan = document.createElement('span');
     labelSpan.className = 'history-item-label';
     labelSpan.textContent = entry.label;
-    infoDiv.appendChild(labelSpan);
+    primaryRow.appendChild(labelSpan);
   }
+  infoDiv.appendChild(primaryRow);
 
+  const runtime = getHistoryRuntimeSummary(entry);
+  const secondaryRow = document.createElement('div');
+  secondaryRow.className = 'history-item-secondary';
   const fgIndicator = createForegroundIndicator(
-    entry.workingDirectory,
-    entry.commandLine,
-    entry.executable,
+    runtime.cwd,
+    runtime.commandLine,
+    runtime.processName,
   );
-  infoDiv.appendChild(fgIndicator);
+  secondaryRow.appendChild(fgIndicator);
+  infoDiv.appendChild(secondaryRow);
 
   item.appendChild(infoDiv);
 
@@ -353,7 +368,7 @@ function createForegroundIndicator(
 
   const cwdSpan = document.createElement('span');
   cwdSpan.className = 'fg-cwd';
-  cwdSpan.textContent = cwd;
+  cwdSpan.textContent = formatHistoryDirectoryDisplay(cwd);
   container.appendChild(cwdSpan);
 
   const separator = document.createElement('span');
@@ -367,6 +382,23 @@ function createForegroundIndicator(
   container.appendChild(processSpan);
 
   return container;
+}
+
+export function getHistoryRuntimeSummary(
+  entry: Pick<
+    LaunchEntry,
+    | 'workingDirectory'
+    | 'commandLine'
+    | 'executable'
+    | 'foregroundProcessCommandLine'
+    | 'foregroundProcessName'
+  >,
+): { cwd: string; commandLine: string | null; processName: string } {
+  return {
+    cwd: entry.workingDirectory,
+    commandLine: entry.foregroundProcessCommandLine ?? entry.commandLine ?? null,
+    processName: entry.foregroundProcessName ?? entry.executable,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +643,7 @@ function handleOutsideClick(e: MouseEvent): void {
   if (!dropdownEl) return;
 
   const target = e.target as Element;
-  if (!dropdownEl.contains(target) && !target.closest('.btn-history')) {
+  if (!dropdownEl.contains(target) && !target.closest('#btn-bookmarks')) {
     closeHistoryDropdown();
   }
 }

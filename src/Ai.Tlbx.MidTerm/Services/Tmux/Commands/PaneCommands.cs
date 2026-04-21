@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -162,8 +163,8 @@ public sealed class PaneCommands
         }
 
         var session = _sessionManager.GetSession(sessionId);
-        var cols = widthStr is not null && int.TryParse(widthStr, out var w) ? w : session?.Cols ?? 80;
-        var rows = heightStr is not null && int.TryParse(heightStr, out var h) ? h : session?.Rows ?? 24;
+        var cols = widthStr is not null && int.TryParse(widthStr, CultureInfo.InvariantCulture, out var w) ? w : session?.Cols ?? 80;
+        var rows = heightStr is not null && int.TryParse(heightStr, CultureInfo.InvariantCulture, out var h) ? h : session?.Rows ?? 24;
 
         await _sessionManager.ResizeSessionAsync(sessionId, cols, rows, ct).ConfigureAwait(false);
         return TmuxResult.Ok();
@@ -213,7 +214,7 @@ public sealed class PaneCommands
         }
 
         var command = ShellQuote(positional);
-        TmuxLog.Command("(exec)", null, new Dictionary<string, string?>(), [command]);
+        TmuxLog.Command("(exec)", null, new Dictionary<string, string?>(StringComparer.Ordinal), [command]);
 
         var data = Encoding.UTF8.GetBytes(command + "\r");
         await _sessionManager.SendInputAsync(sessionId, data, ct).ConfigureAwait(false);
@@ -241,7 +242,7 @@ public sealed class PaneCommands
             else
             {
                 sb.Append('\'');
-                sb.Append(arg.Replace("'", "'\\''"));
+                sb.Append(arg.Replace("'", "'\\''", StringComparison.Ordinal));
                 sb.Append('\'');
             }
         }

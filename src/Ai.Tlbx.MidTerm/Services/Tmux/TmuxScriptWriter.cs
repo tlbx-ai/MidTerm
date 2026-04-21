@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
@@ -35,6 +36,7 @@ public static class TmuxScriptWriter
     private static void WriteUnixScript(int port)
     {
         var dir = "/tmp/midterm-bin";
+        var endpointUrl = string.Create(CultureInfo.InvariantCulture, $"https://localhost:{port}/api/tmux");
 
         try
         {
@@ -45,7 +47,7 @@ public static class TmuxScriptWriter
                 #!/bin/sh
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
-                  "https://localhost:{port}/api/tmux" 2>/dev/null
+                  "{endpointUrl}" 2>/dev/null
                 """;
 
             File.WriteAllText(scriptPath, script);
@@ -59,7 +61,7 @@ public static class TmuxScriptWriter
             }
 
             _scriptDirectory = dir;
-            Log.Info(() => $"TmuxScriptWriter: Created tmux script at {scriptPath}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TmuxScriptWriter: Created tmux script at {scriptPath}"));
         }
         catch (Exception ex)
         {
@@ -70,6 +72,7 @@ public static class TmuxScriptWriter
     private static void WriteWindowsScript(int port)
     {
         var dir = Path.Combine(Path.GetTempPath(), "midterm-bin");
+        var endpointUrl = string.Create(CultureInfo.InvariantCulture, $"https://localhost:{port}/api/tmux");
 
         try
         {
@@ -86,7 +89,7 @@ public static class TmuxScriptWriter
                 $tmp = Join-Path $env:TEMP "mt-tmux-$PID.bin"
                 [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
                 try {
-                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "https://localhost:{{port}}/api/tmux" 2>$null
+                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "{endpointUrl}" 2>$null
                 } finally {
                     Remove-Item $tmp -ErrorAction SilentlyContinue
                 }
@@ -107,12 +110,12 @@ public static class TmuxScriptWriter
                 #!/bin/sh
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
-                  "https://localhost:{port}/api/tmux" 2>/dev/null
+                  "{endpointUrl}" 2>/dev/null
                 """;
-            File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n"));
+            File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n", StringComparison.Ordinal));
 
             _scriptDirectory = dir;
-            Log.Info(() => $"TmuxScriptWriter: Created tmux scripts at {dir}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TmuxScriptWriter: Created tmux scripts at {dir}"));
         }
         catch (Exception ex)
         {
@@ -135,7 +138,7 @@ public static class TmuxScriptWriter
             if (Directory.Exists(_scriptDirectory))
             {
                 Directory.Delete(_scriptDirectory, recursive: true);
-                Log.Info(() => $"TmuxScriptWriter: Cleaned up {_scriptDirectory}");
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TmuxScriptWriter: Cleaned up {_scriptDirectory}"));
             }
         }
         catch

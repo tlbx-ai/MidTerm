@@ -5,10 +5,19 @@ import { shouldUseWebglRenderer } from './webglSupport';
 
 function createSettings(
   partial: Partial<
-    Pick<MidTermSettingsPublic, 'useWebGL'>
+    Pick<
+      MidTermSettingsPublic,
+      | 'terminalTransparency'
+      | 'terminalCellBackgroundTransparency'
+      | 'uiTransparency'
+      | 'useWebGL'
+    >
   >,
 ): MidTermSettingsPublic {
   return {
+    terminalTransparency: 0,
+    terminalCellBackgroundTransparency: 0,
+    uiTransparency: 0,
     useWebGL: true,
     ...partial,
   } as MidTermSettingsPublic;
@@ -23,15 +32,27 @@ describe('webglSupport', () => {
     expect(shouldUseWebglRenderer(createSettings({ useWebGL: false }))).toBe(false);
   });
 
-  it('ignores transparency and wallpaper settings when WebGL stays enabled', () => {
+  it('keeps WebGL enabled when terminal-controlled cell backgrounds are transparent', () => {
     expect(
       shouldUseWebglRenderer({
         ...createSettings({}),
         terminalTransparency: 35,
+        terminalCellBackgroundTransparency: 35,
         uiTransparency: 25,
         backgroundImageEnabled: true,
         backgroundImageFileName: 'wallpaper.png',
       } as MidTermSettingsPublic),
+    ).toBe(true);
+  });
+
+  it('keeps WebGL enabled when only the terminal surface is transparent', () => {
+    expect(
+      shouldUseWebglRenderer(
+        createSettings({
+          terminalTransparency: 35,
+          terminalCellBackgroundTransparency: 0,
+        }),
+      ),
     ).toBe(true);
   });
 });

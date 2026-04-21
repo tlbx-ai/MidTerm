@@ -11,10 +11,10 @@ public class EndpointSetupTests
     {
         var script = EndpointSetup.BuildWindowsServiceRestartScript("MidTerm");
 
-        Assert.Contains("$serviceName = 'MidTerm'", script);
-        Assert.Contains("Get-Service -Name $serviceName -ErrorAction SilentlyContinue", script);
-        Assert.Contains("[System.ServiceProcess.ServiceControllerStatus]::Stopped", script);
-        Assert.Contains("Start-Service -Name $serviceName -ErrorAction Stop", script);
+        Assert.Contains("$serviceName = 'MidTerm'", script, StringComparison.Ordinal);
+        Assert.Contains("Get-Service -Name $serviceName -ErrorAction SilentlyContinue", script, StringComparison.Ordinal);
+        Assert.Contains("[System.ServiceProcess.ServiceControllerStatus]::Stopped", script, StringComparison.Ordinal);
+        Assert.Contains("Start-Service -Name $serviceName -ErrorAction Stop", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -33,6 +33,6 @@ public class EndpointSetupTests
     {
         var script = EndpointSetup.BuildWindowsServiceRestartScript("Mid'Term");
 
-        Assert.Contains("$serviceName = 'Mid''Term'", script);
+        Assert.Contains("$serviceName = 'Mid''Term'", script, StringComparison.Ordinal);
     }
 }

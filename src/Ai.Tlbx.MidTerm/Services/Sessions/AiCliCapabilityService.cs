@@ -362,8 +362,8 @@ public sealed class AiCliCapabilityService
             return new ProbeResult(false, ex.Message);
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
         try
         {

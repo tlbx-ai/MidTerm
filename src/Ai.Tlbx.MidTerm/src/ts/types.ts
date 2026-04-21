@@ -24,6 +24,7 @@ export type {
   AuthStatusResponse,
   UpdateInfo,
   LocalUpdateInfo,
+  UpdateType,
   UpdateResult,
   SystemHealth,
   FirewallRuleStatusResponse,
@@ -99,12 +100,16 @@ export interface TerminalState {
   enterOverrideHandler?: (e: KeyboardEvent) => void;
   hasWebgl?: boolean;
   webglAddon?: WebglAddon | null;
+  ligatureJoinerId?: number | null;
+  richBackgroundTransparencyAlpha?: number | null;
+  richBackgroundTransparencyDisposable?: { dispose: () => void } | undefined;
   disposables?: Array<{ dispose: () => void }>;
   mouseMoveHandler?: () => void;
   mouseLeaveHandler?: () => void;
   earlyDataDisposable?: { dispose: () => void };
   cursorHideTimer?: number | null;
   burstCursorRestoreTimer?: number | null;
+  burstCursorRestoreDueAtMs?: number | null;
   lastBurstOutputAtMs?: number | null;
   lastLocalInputAtMs?: number | null;
   remoteCursorVisible?: boolean;
@@ -465,6 +470,67 @@ export interface LayoutSplit {
 /** Root layout for the display (null = single standalone session) */
 export interface DisplayLayout {
   root: LayoutNode | null;
+}
+
+// =============================================================================
+// Manager Bar Queue Types
+// =============================================================================
+
+export interface ManagerBarQueueScheduleEntry {
+  timeOfDay: string;
+  repeat: 'daily' | 'weekdays' | 'weekends';
+}
+
+export interface ManagerBarQueueAttachment {
+  kind: string;
+  path: string;
+  mimeType?: string | null;
+  displayName?: string | null;
+}
+
+export interface ManagerBarQueueTurn {
+  text?: string | null;
+  model?: string | null;
+  effort?: string | null;
+  planMode?: string | null;
+  permissionMode?: string | null;
+  attachments: ManagerBarQueueAttachment[];
+}
+
+export interface ManagerBarQueueTrigger {
+  kind: 'fireAndForget' | 'onCooldown' | 'repeatCount' | 'repeatInterval' | 'schedule';
+  repeatCount: number;
+  repeatEveryValue: number;
+  repeatEveryUnit: 'seconds' | 'minutes' | 'hours' | 'days';
+  schedule: ManagerBarQueueScheduleEntry[];
+}
+
+export interface ManagerBarQueueAction {
+  id: string;
+  label: string;
+  text: string;
+  actionType: 'single' | 'chain';
+  prompts: string[];
+  trigger: ManagerBarQueueTrigger;
+}
+
+export interface ManagerBarQueueEntry {
+  queueId: string;
+  sessionId: string;
+  kind: 'automation' | 'prompt';
+  action?: ManagerBarQueueAction | null;
+  turn?: ManagerBarQueueTurn | null;
+  phase:
+    | 'pendingImmediate'
+    | 'pendingCooldown'
+    | 'chainCooldown'
+    | 'pendingInterval'
+    | 'pendingSchedule';
+  nextPromptIndex: number;
+  completedCycles: number;
+  nextRunAt: string | null;
+  ignoreHeatUntil: string | null;
+  awaitingHeatRise: boolean;
 }
 
 // =============================================================================

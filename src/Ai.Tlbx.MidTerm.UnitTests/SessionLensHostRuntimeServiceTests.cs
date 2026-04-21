@@ -17,14 +17,58 @@ public sealed class SessionLensHostRuntimeServiceTests
     private static SettingsService CreateSettingsService(string directory) => new(directory);
 
     [Fact]
+    public void ResolveDevHostDllPath_PrefersCurrentBuildConfiguration()
+    {
+        var repoRoot = Path.Combine(Path.GetTempPath(), "midterm-agenthost-resolver-tests", Guid.NewGuid().ToString("N"));
+        var releaseHost = Path.Combine(
+            repoRoot,
+            "Ai.Tlbx.MidTerm.AgentHost",
+            "bin",
+            "Release",
+            "net10.0",
+            "win-x64",
+            "mtagenthost.dll");
+        var debugHost = Path.Combine(
+            repoRoot,
+            "Ai.Tlbx.MidTerm.AgentHost",
+            "bin",
+            "Debug",
+            "net10.0",
+            "win-x64",
+            "mtagenthost.dll");
+        var releaseBaseDir = Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.UnitTests", "bin", "Release", "net10.0");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(releaseHost)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(debugHost)!);
+        Directory.CreateDirectory(releaseBaseDir);
+        File.WriteAllText(debugHost, "debug");
+        File.WriteAllText(releaseHost, "release");
+
+        try
+        {
+            var resolved = SessionLensHostRuntimeService.ResolveDevHostDllPath(releaseBaseDir);
+
+            Assert.Equal(releaseHost, resolved);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(repoRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
     public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostSyntheticMode()
     {
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "synthetic");
+        await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "synthetic");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
-        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
         var session = new SessionInfoDto
         {
@@ -36,7 +80,6 @@ public sealed class SessionLensHostRuntimeServiceTests
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(session.Id));
-        Assert.NotNull(pulse.GetSnapshot(session.Id));
 
         var turn = await runtime.StartTurnAsync(
             session.Id,
@@ -59,17 +102,8 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         Assert.Equal("accepted", resolved.Status);
 
-        var events = await WaitForEventsAsync(
-            pulse,
-            session.Id,
-            current => current.Events.Any(lensEvent => lensEvent.Type == "request.resolved"));
-        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "session.ready");
-        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "turn.started");
-        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "request.opened");
-        Assert.Contains(events.Events, lensEvent => lensEvent.Type == "request.resolved");
-
         var snapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
             current => current.Requests.Any(request => request.Kind == "approval" && request.Decision == "accept"));
         Assert.NotNull(snapshot);
@@ -77,7 +111,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("Synthetic codex reply for: Inspect the workspace.", snapshot.Streams.AssistantText);
         Assert.Contains(snapshot.Requests, request => request.Kind == "approval" && request.Decision == "accept");
 
-        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+        Assert.True(runtime.TryGetRuntimeSummary(session.Id, out var runtimeSnapshot));
         Assert.Equal("mtagenthost-ipc", runtimeSnapshot.TransportKey);
         Assert.Equal("running", runtimeSnapshot.Status);
         Assert.Equal("Synthetic codex reply for: Inspect the workspace.", runtimeSnapshot.AssistantText);
@@ -87,12 +121,10 @@ public sealed class SessionLensHostRuntimeServiceTests
     public async Task SessionLensRuntimeService_CanDelegateToMtAgentHostCodexMode()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
-        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
         var imagePath = Path.Combine(fakeCodex.Root, "sample.png");
         await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
@@ -107,7 +139,6 @@ public sealed class SessionLensHostRuntimeServiceTests
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
         Assert.True(runtime.IsAttached(session.Id));
-        Assert.NotNull(pulse.GetSnapshot(session.Id));
 
         var turn = await runtime.StartTurnAsync(
             session.Id,
@@ -129,7 +160,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("accepted", turn.Status);
 
         var requestSnapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
             current => current.Requests.Any(request => request.Kind == "command_execution_approval" && request.State == "open"));
         Assert.NotNull(requestSnapshot);
@@ -146,7 +177,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("accepted", resolved.Status);
 
         var snapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
             current => current.CurrentTurn.State == "completed" &&
                        current.Requests.Any(request => request.Kind == "command_execution_approval" && request.Decision == "accept"));
@@ -159,7 +190,7 @@ public sealed class SessionLensHostRuntimeServiceTests
                     item.Attachments.Count == 1 &&
                     string.Equals(item.Attachments[0].DisplayName, "sample.png", StringComparison.Ordinal));
 
-        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+        Assert.True(runtime.TryGetRuntimeSummary(session.Id, out var runtimeSnapshot));
         Assert.Equal("mtagenthost-ipc", runtimeSnapshot.TransportKey);
         Assert.Equal("ready", runtimeSnapshot.Status);
         Assert.Contains("images=1", runtimeSnapshot.AssistantText ?? string.Empty, StringComparison.Ordinal);
@@ -179,12 +210,10 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         try
         {
-            var pulse = new SessionLensPulseService();
-            var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, settingsService, mode: "codex");
+            await using var hostRuntime = new SessionLensHostRuntimeService(settingsService, mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
-            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
             var attachmentPath = Path.Combine(fakeClaude.Root, "notes.txt");
             await File.WriteAllTextAsync(attachmentPath, "attached text file");
@@ -215,10 +244,12 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.Equal("accepted", firstTurn.Status);
 
             var firstSnapshot = await WaitForSnapshotAsync(
-                pulse,
+                runtime,
                 session.Id,
                 current => current.CurrentTurn.State == "completed" &&
-                           current.Streams.AssistantText.Contains("attachments=1", StringComparison.Ordinal));
+                           current.Streams.AssistantText.Contains("attachments=1", StringComparison.Ordinal) &&
+                           current.Streams.AssistantText.Contains("danger=true", StringComparison.Ordinal) &&
+                           current.Streams.AssistantText.Contains("env=applied", StringComparison.Ordinal));
             Assert.NotNull(firstSnapshot);
             Assert.Equal("claude", firstSnapshot!.Provider);
             Assert.Contains("danger=true", firstSnapshot.Streams.AssistantText, StringComparison.Ordinal);
@@ -236,13 +267,13 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.Equal(firstSnapshot.Thread.ThreadId, secondTurn.ThreadId);
 
             var secondSnapshot = await WaitForSnapshotAsync(
-                pulse,
+                runtime,
                 session.Id,
                 current => current.CurrentTurn.State == "completed" &&
                            current.Streams.AssistantText.Contains("resumed=true", StringComparison.Ordinal));
             Assert.NotNull(secondSnapshot);
 
-            Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+            Assert.True(runtime.TryGetRuntimeSummary(session.Id, out var runtimeSnapshot));
             Assert.Equal("mtagenthost-ipc", runtimeSnapshot.TransportKey);
             Assert.Equal("mtagenthost owned IPC", runtimeSnapshot.TransportLabel);
         }
@@ -262,12 +293,10 @@ public sealed class SessionLensHostRuntimeServiceTests
     public async Task SessionLensRuntimeService_KeepsExistingCodexLensAttachAfterTerminalReturnsToShell()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
-        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
         var sessionId = "session-runtime-codex-shell-return-1";
         var codexSession = new SessionInfoDto
@@ -303,7 +332,7 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("accepted", turn.Status);
 
         var snapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             sessionId,
             current => string.Equals(current.CurrentTurn.State, "completed", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(snapshot);
@@ -314,12 +343,10 @@ public sealed class SessionLensHostRuntimeServiceTests
     public async Task SessionLensRuntimeService_CanResolveMtAgentHostCodexUserInput()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
-        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
         var session = new SessionInfoDto
         {
@@ -330,8 +357,6 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
-        Assert.NotNull(pulse.GetSnapshot(session.Id));
-
         _ = await runtime.StartTurnAsync(
             session.Id,
             new LensTurnRequest
@@ -341,11 +366,11 @@ public sealed class SessionLensHostRuntimeServiceTests
             });
 
         var requestSnapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
-            current => current.Requests.Any(request => request.Kind == "tool_user_input" && request.State == "open"));
+            current => current.Requests.Any(request => request.Kind == "interview" && request.State == "open"));
         Assert.NotNull(requestSnapshot);
-        var pendingRequest = Assert.Single(requestSnapshot!.Requests, request => request.Kind == "tool_user_input" && request.State == "open");
+        var pendingRequest = Assert.Single(requestSnapshot!.Requests, request => request.Kind == "interview" && request.State == "open");
 
         var resolved = await runtime.ResolveUserInputAsync(
             session.Id,
@@ -354,7 +379,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             {
                 Answers =
                 [
-                    new LensPulseAnsweredQuestion
+                    new LensAnsweredQuestion
                     {
                         QuestionId = "choice",
                         Answers = ["Safe"]
@@ -365,16 +390,16 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("accepted", resolved.Status);
 
         var snapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
             current => current.CurrentTurn.State == "completed" &&
-                       current.Requests.Any(request => request.Kind == "tool_user_input" &&
+                       current.Requests.Any(request => request.Kind == "interview" &&
                                                        request.Answers.Any(answer => answer.QuestionId == "choice" &&
                                                                                     answer.Answers.Contains("Safe", StringComparer.Ordinal))));
         Assert.NotNull(snapshot);
         Assert.Contains(
             snapshot!.Requests,
-            request => request.Kind == "tool_user_input" &&
+            request => request.Kind == "interview" &&
                        request.Answers.Any(answer => answer.QuestionId == "choice" &&
                                                     answer.Answers.Contains("Safe", StringComparer.Ordinal)));
     }
@@ -383,12 +408,10 @@ public sealed class SessionLensHostRuntimeServiceTests
     public async Task SessionLensRuntimeService_CanInterruptMtAgentHostCodexTurn()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+        await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "codex");
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
-        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
         var session = new SessionInfoDto
         {
@@ -399,8 +422,6 @@ public sealed class SessionLensHostRuntimeServiceTests
 
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
         Assert.True(attached);
-        Assert.NotNull(pulse.GetSnapshot(session.Id));
-
         _ = await runtime.StartTurnAsync(
             session.Id,
             new LensTurnRequest
@@ -410,7 +431,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             });
 
         var startedSnapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
             current => !string.IsNullOrWhiteSpace(current.CurrentTurn.TurnId) &&
                        string.Equals(current.CurrentTurn.State, "running", StringComparison.OrdinalIgnoreCase));
@@ -426,20 +447,11 @@ public sealed class SessionLensHostRuntimeServiceTests
         Assert.Equal("accepted", interrupted.Status);
 
         var finalSnapshot = await WaitForSnapshotAsync(
-            pulse,
+            runtime,
             session.Id,
             current => string.Equals(current.CurrentTurn.State, "interrupted", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(finalSnapshot);
         Assert.Equal("Interrupted", finalSnapshot!.CurrentTurn.StateLabel);
-
-        var events = await WaitForEventsAsync(
-            pulse,
-            session.Id,
-            current => current.Events.Any(lensEvent => lensEvent.Type == "turn.aborted"));
-        Assert.Contains(
-            events.Events,
-            lensEvent => lensEvent.Type == "turn.aborted" &&
-                         string.Equals(lensEvent.TurnCompleted?.StopReason, "interrupt", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -450,12 +462,10 @@ public sealed class SessionLensHostRuntimeServiceTests
         Environment.SetEnvironmentVariable("PATH", string.Empty);
         try
         {
-            var pulse = new SessionLensPulseService();
-            var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+            await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
-            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
             var session = new SessionInfoDto
             {
@@ -469,7 +479,6 @@ public sealed class SessionLensHostRuntimeServiceTests
 
             Assert.True(attached);
             Assert.True(runtime.IsAttached(session.Id));
-            Assert.NotNull(pulse.GetSnapshot(session.Id));
         }
         finally
         {
@@ -487,12 +496,10 @@ public sealed class SessionLensHostRuntimeServiceTests
         Environment.SetEnvironmentVariable("PATH", string.Empty);
         try
         {
-            var pulse = new SessionLensPulseService();
-            var ingress = new SessionLensHostIngressService(pulse);
-            var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, CreateSettingsService(), mode: "codex");
+            await using var hostRuntime = new SessionLensHostRuntimeService(CreateSettingsService(), mode: "codex");
             await using var sessionManager = new TtyHostSessionManager();
             var profileService = new AiCliProfileService();
-            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+            await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
             var session = new SessionInfoDto
             {
@@ -528,13 +535,13 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.Equal("thread-remote-1", turn.ThreadId);
 
             var snapshot = await WaitForSnapshotAsync(
-                pulse,
+                runtime,
                 session.Id,
                 current => string.Equals(current.CurrentTurn.State, "completed", StringComparison.OrdinalIgnoreCase));
             Assert.NotNull(snapshot);
             Assert.Equal("Remote Codex shared-runtime reply.", snapshot!.Streams.AssistantText);
 
-            Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
+            Assert.True(runtime.TryGetRuntimeSummary(session.Id, out var runtimeSnapshot));
             Assert.Equal(SessionAgentAttachPoint.CodexAppServerWebSocketTransport, runtimeSnapshot.TransportKey);
             Assert.Equal("Codex app-server websocket", runtimeSnapshot.TransportLabel);
         }
@@ -545,14 +552,10 @@ public sealed class SessionLensHostRuntimeServiceTests
     }
 
     [Fact]
-    public async Task SessionLensRuntimeService_FallsBackToLegacyCodexWhenMtAgentHostColdAttachThrows()
+    public async Task SessionLensRuntimeService_DoesNotFallbackWhenMtAgentHostColdAttachThrows()
     {
         using var fakeCodex = FakeCodexPathScope.Create();
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(
-            ingress,
-            pulse,
+        await using var hostRuntime = new SessionLensHostRuntimeService(
             CreateSettingsService(),
             instanceIdentity: null,
             mode: "codex",
@@ -573,50 +576,31 @@ public sealed class SessionLensHostRuntimeServiceTests
             });
         await using var sessionManager = new TtyHostSessionManager();
         var profileService = new AiCliProfileService();
-        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, pulse, hostRuntime);
+        await using var runtime = new SessionLensRuntimeService(sessionManager, profileService, hostRuntime);
 
         var session = new SessionInfoDto
         {
-            Id = "session-runtime-codex-host-fallback-1",
+            Id = "session-runtime-codex-host-attach-failure-1",
             CurrentDirectory = fakeCodex.Root,
             ForegroundName = "codex"
         };
 
         var attached = await runtime.EnsureAttachedAsync(session.Id, session);
 
-        Assert.True(attached);
-        Assert.True(runtime.IsAttached(session.Id));
-        Assert.True(runtime.TryGetSnapshot(session.Id, out var runtimeSnapshot));
-        Assert.Equal("codex-app-server", runtimeSnapshot.TransportKey);
-        Assert.Equal("Codex app-server runtime", runtimeSnapshot.TransportLabel);
-        Assert.Equal("ready", runtimeSnapshot.Status);
+        Assert.False(attached);
+        Assert.False(runtime.IsAttached(session.Id));
+        Assert.False(runtime.TryGetRuntimeSummary(session.Id, out _));
 
-        var turn = await runtime.StartTurnAsync(
-            session.Id,
-            new LensTurnRequest
-            {
-                Text = "Confirm the fallback runtime keeps turn ids on transcript events.",
-                Attachments = []
-            });
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            runtime.StartTurnAsync(
+                session.Id,
+                new LensTurnRequest
+                {
+                    Text = "Host attach failed, so Lens must not invent a second Codex runtime.",
+                    Attachments = []
+                }));
 
-        Assert.Equal("accepted", turn.Status);
-        Assert.NotNull(turn.TurnId);
-
-        var events = await WaitForEventsAsync(
-            pulse,
-            session.Id,
-            current => current.Events.Any(lensEvent => lensEvent.Type == "content.delta"));
-
-        Assert.Contains(
-            events.Events,
-            lensEvent => lensEvent.Type == "item.completed" &&
-                         string.Equals(lensEvent.ItemId, $"local-user:{turn.TurnId}", StringComparison.Ordinal) &&
-                         string.Equals(lensEvent.TurnId, turn.TurnId, StringComparison.Ordinal));
-        Assert.Contains(
-            events.Events,
-            lensEvent => lensEvent.Type == "content.delta" &&
-                         string.Equals(lensEvent.TurnId, turn.TurnId, StringComparison.Ordinal) &&
-                         string.Equals(lensEvent.ContentDelta?.StreamKind, "assistant_text", StringComparison.Ordinal));
+        Assert.Equal("Lens runtime is not attached.", error.Message);
     }
 
     [Fact]
@@ -634,14 +618,9 @@ public sealed class SessionLensHostRuntimeServiceTests
             ProfileHint = "codex"
         };
 
-        SessionLensHostRuntimeService? initialRuntime = null;
-        SessionLensHostRuntimeService? restartedRuntime = null;
         try
         {
-            var initialPulse = new SessionLensPulseService();
-            initialRuntime = new SessionLensHostRuntimeService(
-                new SessionLensHostIngressService(initialPulse),
-                initialPulse,
+            await using var initialRuntime = new SessionLensHostRuntimeService(
                 CreateSettingsService(settingsRoot),
                 instanceIdentity,
                 mode: "synthetic");
@@ -649,10 +628,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.True(await initialRuntime.EnsureAttachedAsync(session.Id, "codex", session));
             var hostPid = await WaitForHostPidAsync(instanceIdentity, session.Id);
 
-            var restartedPulse = new SessionLensPulseService();
-            restartedRuntime = new SessionLensHostRuntimeService(
-                new SessionLensHostIngressService(restartedPulse),
-                restartedPulse,
+            await using var restartedRuntime = new SessionLensHostRuntimeService(
                 CreateSettingsService(settingsRoot),
                 instanceIdentity,
                 mode: "synthetic");
@@ -667,16 +643,6 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
         finally
         {
-            if (restartedRuntime is not null)
-            {
-                await restartedRuntime.DisposeAsync();
-            }
-
-            if (initialRuntime is not null)
-            {
-                await initialRuntime.DisposeAsync();
-            }
-
             try
             {
                 Directory.Delete(settingsRoot, recursive: true);
@@ -702,14 +668,9 @@ public sealed class SessionLensHostRuntimeServiceTests
             ProfileHint = "codex"
         };
 
-        SessionLensHostRuntimeService? initialRuntime = null;
-        SessionLensHostRuntimeService? restartedRuntime = null;
         try
         {
-            var initialPulse = new SessionLensPulseService();
-            initialRuntime = new SessionLensHostRuntimeService(
-                new SessionLensHostIngressService(initialPulse),
-                initialPulse,
+            await using var initialRuntime = new SessionLensHostRuntimeService(
                 CreateSettingsService(settingsRoot),
                 instanceIdentity,
                 mode: "synthetic");
@@ -727,16 +688,13 @@ public sealed class SessionLensHostRuntimeServiceTests
 
             Assert.Equal("accepted", turn.Status);
             var initialSnapshot = await WaitForSnapshotAsync(
-                initialPulse,
+                initialRuntime,
                 session.Id,
                 current => current.CurrentTurn.State == "completed" &&
                            current.Streams.AssistantText.Contains("Persist this Lens conversation across restart.", StringComparison.Ordinal));
             Assert.NotNull(initialSnapshot);
 
-            var restartedPulse = new SessionLensPulseService();
-            restartedRuntime = new SessionLensHostRuntimeService(
-                new SessionLensHostIngressService(restartedPulse),
-                restartedPulse,
+            await using var restartedRuntime = new SessionLensHostRuntimeService(
                 CreateSettingsService(settingsRoot),
                 instanceIdentity,
                 mode: "synthetic");
@@ -745,37 +703,119 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.True(recovered);
 
             var recoveredSnapshot = await WaitForSnapshotAsync(
-                restartedPulse,
+                restartedRuntime,
                 session.Id,
                 current => current.CurrentTurn.State == "completed" &&
                            current.Streams.AssistantText.Contains("Persist this Lens conversation across restart.", StringComparison.Ordinal));
             Assert.NotNull(recoveredSnapshot);
-            var recoveredEvents = restartedPulse.GetEvents(session.Id);
-            Assert.Contains(
-                recoveredEvents.Events,
-                lensEvent => lensEvent.Type == "item.completed" &&
-                             string.Equals(lensEvent.Item?.ItemType, "user_message", StringComparison.Ordinal));
-            var fullHistorySnapshot = restartedPulse.GetSnapshotWindow(session.Id, 0, 200);
+            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(session.Id, 0, 200);
             Assert.NotNull(fullHistorySnapshot);
             Assert.Contains(
-                fullHistorySnapshot!.Transcript,
+                fullHistorySnapshot!.History,
                 entry => entry.ItemType == "user_message" &&
                          entry.Body.Contains("Persist this Lens conversation across restart.", StringComparison.Ordinal));
             Assert.Equal(initialSnapshot!.Streams.AssistantText, recoveredSnapshot.Streams.AssistantText);
+            await restartedRuntime.DetachAsync(session.Id);
         }
         finally
         {
-            if (restartedRuntime is not null)
+            try
             {
-                await restartedRuntime.DetachAsync(session.Id);
-                await restartedRuntime.DisposeAsync();
+                Directory.Delete(settingsRoot, recursive: true);
             }
-
-            if (initialRuntime is not null)
+            catch
             {
-                await initialRuntime.DisposeAsync();
             }
+        }
+    }
 
+    [Fact]
+    public async Task SessionLensRuntimeService_CanRecoverCodexLensHistoryWhenRestartedSessionLooksLikeShell()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var settingsRoot = Path.Combine(Path.GetTempPath(), "midterm-lens-codex-shell-recovery-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(settingsRoot);
+        var instanceIdentity = MidTermInstanceIdentity.Load(settingsRoot, 4041);
+        const string prompt = "Persist Codex Lens history while the terminal looks like shell after restart.";
+        var initialSession = new SessionInfoDto
+        {
+            Id = "session-runtime-codex-shell-recovery-1",
+            CurrentDirectory = fakeCodex.Root,
+            ForegroundName = "codex"
+        };
+
+        try
+        {
+            await using var initialHostRuntime = new SessionLensHostRuntimeService(
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "codex");
+            await using var initialSessionManager = new TtyHostSessionManager();
+            var profileService = new AiCliProfileService();
+            await using var initialRuntime = new SessionLensRuntimeService(
+                initialSessionManager,
+                profileService,
+                initialHostRuntime);
+
+            Assert.True(await initialRuntime.EnsureAttachedAsync(initialSession.Id, initialSession));
+            var turn = await initialRuntime.StartTurnAsync(
+                initialSession.Id,
+                new LensTurnRequest
+                {
+                    Text = prompt,
+                    Attachments = []
+                });
+
+            Assert.Equal("accepted", turn.Status);
+            var initialSnapshot = await WaitForSnapshotAsync(
+                initialRuntime,
+                initialSession.Id,
+                current => current.CurrentTurn.State == "completed" &&
+                           current.Streams.AssistantText.Contains(prompt, StringComparison.Ordinal));
+            Assert.NotNull(initialSnapshot);
+
+            await using var restartedHostRuntime = new SessionLensHostRuntimeService(
+                CreateSettingsService(settingsRoot),
+                instanceIdentity,
+                mode: "codex");
+            await using var restartedSessionManager = new TtyHostSessionManager();
+            await using var restartedRuntime = new SessionLensRuntimeService(
+                restartedSessionManager,
+                profileService,
+                restartedHostRuntime);
+
+            var shellLikeSession = new SessionInfoDto
+            {
+                Id = initialSession.Id,
+                CurrentDirectory = fakeCodex.Root,
+                ShellType = "Pwsh",
+                ForegroundName = "pwsh",
+                ForegroundCommandLine = "pwsh",
+                ForegroundProcessIdentity = "shell"
+            };
+
+            var attached = await restartedRuntime.EnsureAttachedAsync(shellLikeSession.Id, shellLikeSession);
+
+            Assert.True(attached);
+            var recoveredSnapshot = await WaitForSnapshotAsync(
+                restartedRuntime,
+                shellLikeSession.Id,
+                current => current.CurrentTurn.State == "completed" &&
+                           current.Streams.AssistantText.Contains(prompt, StringComparison.Ordinal));
+            Assert.NotNull(recoveredSnapshot);
+            Assert.Equal(initialSnapshot!.Thread.ThreadId, recoveredSnapshot!.Thread.ThreadId);
+
+            var fullHistorySnapshot = await restartedRuntime.GetHistoryWindowAsync(shellLikeSession.Id, 0, 200);
+            Assert.NotNull(fullHistorySnapshot);
+            Assert.Contains(
+                fullHistorySnapshot!.History,
+                entry => entry.ItemType == "user_message" &&
+                         entry.Body.Contains(prompt, StringComparison.Ordinal));
+
+            await restartedRuntime.DetachAsync(shellLikeSession.Id);
+        }
+        finally
+        {
             try
             {
                 Directory.Delete(settingsRoot, recursive: true);
@@ -801,14 +841,9 @@ public sealed class SessionLensHostRuntimeServiceTests
             ProfileHint = "codex"
         };
 
-        SessionLensHostRuntimeService? initialRuntime = null;
-        SessionLensHostRuntimeService? recoveredRuntime = null;
         try
         {
-            var initialPulse = new SessionLensPulseService();
-            initialRuntime = new SessionLensHostRuntimeService(
-                new SessionLensHostIngressService(initialPulse),
-                initialPulse,
+            await using var initialRuntime = new SessionLensHostRuntimeService(
                 CreateSettingsService(settingsRoot),
                 instanceIdentity,
                 mode: "synthetic");
@@ -819,10 +854,7 @@ public sealed class SessionLensHostRuntimeServiceTests
             Assert.True(hostPid > 0);
             Assert.True(ProcessExists(hostPid));
 
-            var recoveredPulse = new SessionLensPulseService();
-            recoveredRuntime = new SessionLensHostRuntimeService(
-                new SessionLensHostIngressService(recoveredPulse),
-                recoveredPulse,
+            await using var recoveredRuntime = new SessionLensHostRuntimeService(
                 CreateSettingsService(settingsRoot),
                 instanceIdentity,
                 mode: "synthetic");
@@ -836,16 +868,6 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
         finally
         {
-            if (recoveredRuntime is not null)
-            {
-                await recoveredRuntime.DisposeAsync();
-            }
-
-            if (initialRuntime is not null)
-            {
-                await initialRuntime.DisposeAsync();
-            }
-
             try
             {
                 Directory.Delete(settingsRoot, recursive: true);
@@ -856,33 +878,15 @@ public sealed class SessionLensHostRuntimeServiceTests
         }
     }
 
-    private static async Task<LensPulseEventListResponse> WaitForEventsAsync(
-        SessionLensPulseService pulse,
+    private static async Task<LensHistoryWindowResponse?> WaitForSnapshotAsync(
+        SessionLensRuntimeService runtime,
         string sessionId,
-        Func<LensPulseEventListResponse, bool> predicate)
+        Func<LensHistoryWindowResponse, bool> predicate)
     {
         for (var i = 0; i < 80; i++)
         {
-            var events = pulse.GetEvents(sessionId);
-            if (predicate(events))
-            {
-                return events;
-            }
-
-            await Task.Delay(25);
-        }
-
-        return pulse.GetEvents(sessionId);
-    }
-
-    private static async Task<LensPulseSnapshotResponse?> WaitForSnapshotAsync(
-        SessionLensPulseService pulse,
-        string sessionId,
-        Func<LensPulseSnapshotResponse, bool> predicate)
-    {
-        for (var i = 0; i < 80; i++)
-        {
-            var snapshot = pulse.GetSnapshot(sessionId);
+            runtime.TryGetCachedHistoryWindow(sessionId, out var snapshot);
+            snapshot ??= await runtime.GetHistoryWindowAsync(sessionId);
             if (snapshot is not null && predicate(snapshot))
             {
                 return snapshot;
@@ -891,7 +895,29 @@ public sealed class SessionLensHostRuntimeServiceTests
             await Task.Delay(25);
         }
 
-        return pulse.GetSnapshot(sessionId);
+        return await runtime.GetHistoryWindowAsync(sessionId).ConfigureAwait(false) ??
+               (runtime.TryGetCachedHistoryWindow(sessionId, out var finalSnapshot) ? finalSnapshot : null);
+    }
+
+    private static async Task<LensHistoryWindowResponse?> WaitForSnapshotAsync(
+        SessionLensHostRuntimeService hostRuntime,
+        string sessionId,
+        Func<LensHistoryWindowResponse, bool> predicate)
+    {
+        for (var i = 0; i < 80; i++)
+        {
+            hostRuntime.TryGetCachedHistoryWindow(sessionId, out var snapshot);
+            snapshot ??= await hostRuntime.GetHistoryWindowAsync(sessionId);
+            if (snapshot is not null && predicate(snapshot))
+            {
+                return snapshot;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return await hostRuntime.GetHistoryWindowAsync(sessionId).ConfigureAwait(false) ??
+               (hostRuntime.TryGetCachedHistoryWindow(sessionId, out var finalSnapshot) ? finalSnapshot : null);
     }
 
     private static async Task<int> WaitForHostPidAsync(MidTermInstanceIdentity instanceIdentity, string sessionId)
@@ -907,8 +933,10 @@ public sealed class SessionLensHostRuntimeServiceTests
                 using var document = JsonDocument.Parse(await File.ReadAllTextAsync(registryPath));
                 if (document.RootElement.TryGetProperty("Sessions", out var sessions))
                 {
-                    foreach (var entry in sessions.EnumerateArray())
+                    using var entries = sessions.EnumerateArray();
+                    while (entries.MoveNext())
                     {
+                        var entry = entries.Current;
                         if (!entry.TryGetProperty("SessionId", out var sessionIdProperty) ||
                             !string.Equals(sessionIdProperty.GetString(), sessionId, StringComparison.Ordinal))
                         {
@@ -1012,3 +1040,5 @@ public sealed class SessionLensHostRuntimeServiceTests
         return found ? args[1] : null;
     }
 }
+
+

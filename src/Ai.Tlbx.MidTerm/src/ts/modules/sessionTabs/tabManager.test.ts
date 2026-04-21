@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const focusSpy = vi.fn();
 const refreshTerminalPresentationSpy = vi.fn();
@@ -15,6 +15,7 @@ const terminalContainer = {
 } as HTMLDivElement;
 
 const visibleTabs = new Map<string, Set<string>>();
+const localStorageData = new Map<string, string>();
 
 function createMockElement(): HTMLDivElement {
   return {
@@ -25,6 +26,7 @@ function createMockElement(): HTMLDivElement {
     },
     children: [] as any[],
     innerHTML: '',
+    remove: vi.fn(),
     appendChild(child: any) {
       this.children.push(child);
       return child;
@@ -116,7 +118,33 @@ vi.mock('../terminal/scaling', () => ({
   refreshTerminalPresentation: refreshTerminalPresentationSpy,
 }));
 
+let destroySessionWrapper: typeof import('./tabManager').destroySessionWrapper;
+let ensureSessionWrapper: typeof import('./tabManager').ensureSessionWrapper;
+let getActiveTab: typeof import('./tabManager').getActiveTab;
+let getTabLabelForSession: typeof import('./tabManager').getTabLabelForSession;
+let getTabPanel: typeof import('./tabManager').getTabPanel;
+let isTabAvailable: typeof import('./tabManager').isTabAvailable;
+let onTabActivated: typeof import('./tabManager').onTabActivated;
+let onTabDeactivated: typeof import('./tabManager').onTabDeactivated;
+let setSessionLensAvailability: typeof import('./tabManager').setSessionLensAvailability;
+let switchTab: typeof import('./tabManager').switchTab;
+
 describe('tabManager', () => {
+  beforeAll(async () => {
+    ({
+      destroySessionWrapper,
+      ensureSessionWrapper,
+      getActiveTab,
+      getTabLabelForSession,
+      getTabPanel,
+      isTabAvailable,
+      onTabActivated,
+      onTabDeactivated,
+      setSessionLensAvailability,
+      switchTab,
+    } = await import('./tabManager'));
+  });
+
   beforeEach(() => {
     focusSpy.mockReset();
     refreshTerminalPresentationSpy.mockReset();
@@ -134,9 +162,19 @@ describe('tabManager', () => {
     ];
     terminalContainer.children.length = 0;
     visibleTabs.clear();
-    vi.resetModules();
+    localStorageData.clear();
+    destroySessionWrapper('s1');
     vi.stubGlobal('document', {
       createElement: () => createMockElement(),
+    });
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => localStorageData.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        localStorageData.set(key, value);
+      }),
+      removeItem: vi.fn((key: string) => {
+        localStorageData.delete(key);
+      }),
     });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -145,18 +183,17 @@ describe('tabManager', () => {
   });
 
   it('keeps the terminal container inside the terminal panel while files view is active', async () => {
-    const { ensureSessionWrapper, getTabPanel, switchTab, getActiveTab } =
-      await import('./tabManager');
-
-    ensureSessionWrapper('s1');
+    const wrapper = ensureSessionWrapper('s1');
     const terminalPanel = getTabPanel('s1', 'terminal');
     const filesPanel = getTabPanel('s1', 'files');
 
+    expect(wrapper.wrapper.dataset.activeTab).toBe('terminal');
     expect(terminalPanel?.children).toContain(terminalContainer);
 
     switchTab('s1', 'files');
 
     expect(getActiveTab('s1')).toBe('files');
+    expect(wrapper.wrapper.dataset.activeTab).toBe('files');
     expect(terminalPanel?.children).toContain(terminalContainer);
     expect(filesPanel?.children).not.toContain(terminalContainer);
     expect(terminalPanel?.classList.remove).toHaveBeenCalledWith('active');
@@ -165,6 +202,7 @@ describe('tabManager', () => {
     switchTab('s1', 'terminal');
 
     expect(getActiveTab('s1')).toBe('terminal');
+    expect(wrapper.wrapper.dataset.activeTab).toBe('terminal');
     expect(refreshTerminalPresentationSpy).toHaveBeenCalledWith('s1', expect.anything());
     expect(applyTerminalScalingSyncSpy).toHaveBeenCalledWith(expect.anything());
     expect(fitSessionToScreenSpy).not.toHaveBeenCalled();
@@ -173,8 +211,6 @@ describe('tabManager', () => {
 
   it('refits standalone terminals when the main browser shows the terminal tab', async () => {
     isMainBrowser = true;
-    const { ensureSessionWrapper, switchTab } = await import('./tabManager');
-
     ensureSessionWrapper('s1');
     switchTab('s1', 'files');
     switchTab('s1', 'terminal');
@@ -184,9 +220,6 @@ describe('tabManager', () => {
   });
 
   it('keeps terminal sessions terminal-only and ignores hidden agent switches', async () => {
-    const { ensureSessionWrapper, switchTab, getActiveTab, isTabAvailable } =
-      await import('./tabManager');
-
     ensureSessionWrapper('s1');
 
     expect(isTabAvailable('s1', 'agent')).toBe(false);
@@ -208,9 +241,6 @@ describe('tabManager', () => {
         supervisor: { profile: 'codex' },
       },
     ];
-    const { ensureSessionWrapper, getActiveTab, getTabLabelForSession, isTabAvailable } =
-      await import('./tabManager');
-
     ensureSessionWrapper('s1');
 
     expect(isTabAvailable('s1', 'agent')).toBe(true);
@@ -229,7 +259,6 @@ describe('tabManager', () => {
         supervisor: { profile: 'codex' },
       },
     ];
-    const { ensureSessionWrapper, onTabActivated } = await import('./tabManager');
     const activated = vi.fn();
 
     onTabActivated('agent', activated);
@@ -240,9 +269,6 @@ describe('tabManager', () => {
   });
 
   it('does not expose Lens for ordinary terminal sessions even if Lens availability is forced', async () => {
-    const { ensureSessionWrapper, getActiveTab, isTabAvailable, setSessionLensAvailability } =
-      await import('./tabManager');
-
     ensureSessionWrapper('s1');
 
     setSessionLensAvailability('s1', true);
@@ -252,10 +278,14 @@ describe('tabManager', () => {
     expect(isTabAvailable('s1', 'agent')).toBe(false);
   });
 
-  it('invokes every registered callback for tab activation and deactivation', async () => {
-    const { ensureSessionWrapper, onTabActivated, onTabDeactivated, switchTab } =
-      await import('./tabManager');
+  it('restores the remembered files tab after a shell refresh', async () => {
+    localStorageData.set('midterm.sessionTab.s1', 'files');
+    ensureSessionWrapper('s1');
 
+    expect(getActiveTab('s1')).toBe('files');
+  });
+
+  it('invokes every registered callback for tab activation and deactivation', async () => {
     const activatedA = vi.fn();
     const activatedB = vi.fn();
     const deactivatedA = vi.fn();
@@ -295,8 +325,6 @@ describe('tabManager', () => {
         supervisor: { profile: 'claude' },
       },
     ];
-    const { ensureSessionWrapper, isTabAvailable, getActiveTab } = await import('./tabManager');
-
     ensureSessionWrapper('s1');
 
     expect(isTabAvailable('s1', 'agent')).toBe(false);

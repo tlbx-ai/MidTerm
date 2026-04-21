@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   closeWebSocket: vi.fn(),
@@ -28,8 +28,10 @@ const mocks = vi.hoisted(() => ({
   syncActiveWebPreview: vi.fn().mockResolvedValue(undefined),
   isSessionInLayout: vi.fn(() => false),
   restoreLayoutFromStorage: vi.fn(),
+  applyServerLayoutState: vi.fn(),
   dockSession: vi.fn(),
   swapLayoutSessions: vi.fn(),
+  markLayoutPersistenceReady: vi.fn(),
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
   checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
@@ -127,8 +129,10 @@ vi.mock('../share', () => ({
 
 vi.mock('../layout/layoutStore', () => ({
   restoreLayoutFromStorage: mocks.restoreLayoutFromStorage,
+  applyServerLayoutState: mocks.applyServerLayoutState,
   dockSession: mocks.dockSession,
   isSessionInLayout: mocks.isSessionInLayout,
+  markLayoutPersistenceReady: mocks.markLayoutPersistenceReady,
   swapLayoutSessions: mocks.swapLayoutSessions,
 }));
 
@@ -160,10 +164,29 @@ class MockWebSocket {
   }
 }
 
+let stores: typeof import('../../stores');
+let state: typeof import('../../state');
+let connectStateWebSocket: typeof import('./stateChannel').connectStateWebSocket;
+let handleStateUpdate: typeof import('./stateChannel').handleStateUpdate;
+let resetStateChannelRuntimeForTests: typeof import('./stateChannel').resetStateChannelRuntimeForTests;
+let setSelectSessionCallback: typeof import('./stateChannel').setSelectSessionCallback;
+const stateChannelModulePromise = import('./stateChannel');
+const stateModulePromise = import('../../state');
+const storesModulePromise = import('../../stores');
+
 async function loadHarness() {
-  vi.resetModules();
   MockWebSocket.instances = [];
   vi.stubGlobal('WebSocket', MockWebSocket);
+  const localStorageData = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => localStorageData.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      localStorageData.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      localStorageData.delete(key);
+    }),
+  });
 
   Object.values(mocks).forEach((value) => {
     if ('mockReset' in value && typeof value.mockReset === 'function') {
@@ -180,33 +203,43 @@ async function loadHarness() {
       previewName?.trim() ? previewName.trim() : 'default',
   );
   mocks.syncActiveWebPreview.mockResolvedValue(undefined);
+  mocks.checkVersionAndReload.mockResolvedValue(undefined);
 
-  const stores = await import('../../stores');
+  resetStateChannelRuntimeForTests();
   stores.$activeSessionId.set('user1234');
   stores.$settingsOpen.set(false);
   stores.$webPreviewUrl.set(null);
   stores.$stateWsConnected.set(false);
   stores.$sessions.set({});
 
-  const state = await import('../../state');
   state.setStateWs(null);
   state.sessionTerminals.clear();
   state.hiddenSessionIds.clear();
   state.newlyCreatedSessions.clear();
 
-  const stateChannel = await import('./stateChannel');
-  stateChannel.setSelectSessionCallback(mocks.selectSession);
-  stateChannel.connectStateWebSocket();
+  setSelectSessionCallback(mocks.selectSession);
+  connectStateWebSocket();
 
   const ws = MockWebSocket.instances[0];
   if (!ws) {
     throw new Error('Mock WebSocket was not created');
   }
 
-  return { stores, ws };
+  return { stores, ws, localStorageData };
 }
 
 describe('stateChannel browser-ui handling', () => {
+  beforeAll(async () => {
+    stores = await storesModulePromise;
+    state = await stateModulePromise;
+    ({
+      connectStateWebSocket,
+      handleStateUpdate,
+      resetStateChannelRuntimeForTests,
+      setSelectSessionCallback,
+    } = await stateChannelModulePromise);
+  });
+
   beforeEach(() => {
     vi.useRealTimers();
   });
@@ -258,6 +291,37 @@ describe('stateChannel browser-ui handling', () => {
       active: true,
       targetRevision: 1,
     });
+  });
+
+  it('does not switch sessions when browser open explicitly disables activation', async () => {
+    const { stores, ws } = await loadHarness();
+    mocks.setWebPreviewTarget.mockResolvedValue({
+      sessionId: 'agent5678',
+      previewName: 'default',
+      routeKey: 'route-1',
+      url: 'http://localhost:3000',
+      active: true,
+      targetRevision: 1,
+    });
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        activateSession: false,
+      }),
+    } as MessageEvent<string>);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.selectSession).not.toHaveBeenCalled();
+    expect(stores.$activeSessionId.get()).toBe('user1234');
+    expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+    expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
   });
 
   it('checks frontend version on state websocket reconnect', async () => {
@@ -316,8 +380,7 @@ describe('stateChannel browser-ui handling', () => {
   it('skips proactive terminal creation for lens-only sessions', async () => {
     await loadHarness();
 
-    const stateChannel = await import('./stateChannel');
-    stateChannel.handleStateUpdate([
+    handleStateUpdate([
       {
         id: 'lens-1',
         cols: 120,
@@ -331,5 +394,91 @@ describe('stateChannel browser-ui handling', () => {
     ]);
 
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
+  });
+
+  it('restores the remembered active session when reconnecting after a refresh', async () => {
+    const { stores, localStorageData } = await loadHarness();
+    localStorageData.set('midterm.activeSessionId', 'session-b');
+    stores.$activeSessionId.set(null);
+
+    handleStateUpdate([
+      {
+        id: 'session-a',
+        cols: 120,
+        rows: 30,
+        lensOnly: false,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+      {
+        id: 'session-b',
+        cols: 120,
+        rows: 30,
+        lensOnly: false,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ]);
+
+    expect(mocks.selectSession).toHaveBeenCalledWith('session-b', {
+      closeSettingsPanel: false,
+    });
+  });
+
+  it('applies server layout snapshots from state updates', async () => {
+    await loadHarness();
+
+    handleStateUpdate(
+      [
+        {
+          id: 'session-a',
+          cols: 120,
+          rows: 30,
+          lensOnly: false,
+          foregroundPid: null,
+          foregroundName: null,
+          foregroundCommandLine: null,
+          currentDirectory: 'Q:/repos/MidTerm',
+        } as any,
+        {
+          id: 'session-b',
+          cols: 120,
+          rows: 30,
+          lensOnly: false,
+          foregroundPid: null,
+          foregroundName: null,
+          foregroundCommandLine: null,
+          currentDirectory: 'Q:/repos/MidTerm',
+        } as any,
+      ],
+      {
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'leaf', sessionId: 'session-a' },
+            { type: 'leaf', sessionId: 'session-b' },
+          ],
+        },
+        focusedSessionId: 'session-b',
+      },
+    );
+
+    expect(mocks.applyServerLayoutState).toHaveBeenCalledWith({
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', sessionId: 'session-a' },
+          { type: 'leaf', sessionId: 'session-b' },
+        ],
+      },
+      focusedSessionId: 'session-b',
+    });
+    expect(mocks.markLayoutPersistenceReady).toHaveBeenCalled();
   });
 });

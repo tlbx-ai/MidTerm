@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,7 +14,7 @@ using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
 namespace Ai.Tlbx.MidTerm.Services;
 
-public sealed class HistoryService
+public sealed class HistoryService : IDisposable
 {
     private const int MaxRecentEntries = 50;
     private static readonly TimeSpan SaveDebounceDelay = TimeSpan.FromMilliseconds(250);
@@ -23,6 +24,7 @@ public sealed class HistoryService
     private readonly Timer _saveTimer;
     private LaunchHistory _history = new();
     private bool _savePending;
+    private bool _disposed;
 
     public HistoryService(SettingsService settingsService)
     {
@@ -59,6 +61,8 @@ public sealed class HistoryService
 
     private void ScheduleSave()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         lock (_lock)
         {
             _savePending = true;
@@ -125,7 +129,13 @@ public sealed class HistoryService
             LastUsed = entry.LastUsed,
             Order = entry.Order,
             LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
-            Profile = NormalizeProfile(entry.Profile)
+            Profile = NormalizeProfile(entry.Profile),
+            LaunchOrigin = NormalizeLaunchOrigin(entry.LaunchOrigin),
+            SurfaceType = NormalizeSurfaceType(entry.SurfaceType, entry.LaunchMode, entry.Profile),
+            ForegroundProcessName = entry.ForegroundProcessName,
+            ForegroundProcessCommandLine = entry.ForegroundProcessCommandLine,
+            ForegroundProcessDisplayName = entry.ForegroundProcessDisplayName,
+            ForegroundProcessIdentity = entry.ForegroundProcessIdentity
         };
     }
 
@@ -137,11 +147,19 @@ public sealed class HistoryService
         string? label = null,
         string? dedupeKey = null,
         string? launchMode = null,
-        string? profile = null)
+        string? profile = null,
+        string? launchOrigin = null,
+        string? surfaceType = null,
+        string? foregroundProcessName = null,
+        string? foregroundProcessCommandLine = null,
+        string? foregroundProcessDisplayName = null,
+        string? foregroundProcessIdentity = null)
     {
         var normalizedLaunchMode = NormalizeLaunchMode(launchMode);
         var normalizedProfile = NormalizeProfile(profile);
-        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}");
+        var normalizedLaunchOrigin = NormalizeLaunchOrigin(launchOrigin);
+        var normalizedSurfaceType = NormalizeSurfaceType(surfaceType, normalizedLaunchMode, normalizedProfile);
+        Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}, launchOrigin={normalizedLaunchOrigin}, surfaceType={normalizedSurfaceType}");
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -177,6 +195,12 @@ public sealed class HistoryService
                 existing.LastUsed = DateTime.UtcNow;
                 existing.LaunchMode = normalizedLaunchMode;
                 existing.Profile = normalizedProfile;
+                existing.LaunchOrigin = normalizedLaunchOrigin;
+                existing.SurfaceType = normalizedSurfaceType;
+                existing.ForegroundProcessName = foregroundProcessName;
+                existing.ForegroundProcessCommandLine = foregroundProcessCommandLine;
+                existing.ForegroundProcessDisplayName = foregroundProcessDisplayName;
+                existing.ForegroundProcessIdentity = foregroundProcessIdentity;
                 if (!string.IsNullOrWhiteSpace(label))
                 {
                     existing.Label = label;
@@ -195,7 +219,13 @@ public sealed class HistoryService
                     Label = string.IsNullOrWhiteSpace(label) ? null : label,
                     LastUsed = DateTime.UtcNow,
                     LaunchMode = normalizedLaunchMode,
-                    Profile = normalizedProfile
+                    Profile = normalizedProfile,
+                    LaunchOrigin = normalizedLaunchOrigin,
+                    SurfaceType = normalizedSurfaceType,
+                    ForegroundProcessName = foregroundProcessName,
+                    ForegroundProcessCommandLine = foregroundProcessCommandLine,
+                    ForegroundProcessDisplayName = foregroundProcessDisplayName,
+                    ForegroundProcessIdentity = foregroundProcessIdentity
                 };
                 _history.Entries.Add(entry);
             }
@@ -249,7 +279,13 @@ public sealed class HistoryService
                 LastUsed = entry.LastUsed,
                 Order = entry.Order,
                 LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
-                Profile = NormalizeProfile(entry.Profile)
+                Profile = NormalizeProfile(entry.Profile),
+                LaunchOrigin = NormalizeLaunchOrigin(entry.LaunchOrigin),
+                SurfaceType = NormalizeSurfaceType(entry.SurfaceType, entry.LaunchMode, entry.Profile),
+                ForegroundProcessName = entry.ForegroundProcessName,
+                ForegroundProcessCommandLine = entry.ForegroundProcessCommandLine,
+                ForegroundProcessDisplayName = entry.ForegroundProcessDisplayName,
+                ForegroundProcessIdentity = entry.ForegroundProcessIdentity
             };
         }
     }
@@ -379,7 +415,7 @@ public sealed class HistoryService
         if (snapshot is not null)
         {
             PersistSnapshot(snapshot);
-            Log.Info(() => $"Migrated {migratedCount} starred history entries with sequential order");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Migrated {migratedCount} starred history entries with sequential order"));
         }
     }
 
@@ -440,5 +476,59 @@ public sealed class HistoryService
             "claude" => "claude",
             _ => null
         };
+    }
+
+    private static string? NormalizeLaunchOrigin(string? launchOrigin)
+    {
+        return SessionLaunchOrigins.Normalize(launchOrigin);
+    }
+
+    private static string NormalizeSurfaceType(string? surfaceType, string? launchMode, string? profile)
+    {
+        var normalized = surfaceType?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            HistorySurfaceTypes.Terminal => HistorySurfaceTypes.Terminal,
+            HistorySurfaceTypes.Codex => HistorySurfaceTypes.Codex,
+            HistorySurfaceTypes.Claude => HistorySurfaceTypes.Claude,
+            _ => NormalizeLaunchMode(launchMode) == LaunchEntryLaunchModes.Lens
+                ? NormalizeProfile(profile) == "claude"
+                    ? HistorySurfaceTypes.Claude
+                    : HistorySurfaceTypes.Codex
+                : HistorySurfaceTypes.Terminal
+        };
+    }
+
+    public void Dispose()
+    {
+        LaunchHistory? snapshot = null;
+
+        lock (_lock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            if (_savePending)
+            {
+                _savePending = false;
+                snapshot = CloneHistory(_history);
+            }
+        }
+
+        try
+        {
+            _saveTimer.Dispose();
+        }
+        catch
+        {
+        }
+
+        if (snapshot is not null)
+        {
+            PersistSnapshot(snapshot);
+        }
     }
 }

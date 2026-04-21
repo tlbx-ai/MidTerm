@@ -32,7 +32,12 @@ public static class LogPaths
         return Path.Combine(userDir, ".midterm", "logs");
     }
 
-    public static string GetBackgroundDirectory(bool isWindowsService, bool isUnixService = false)
+    public static string GetBackgroundDirectory(string settingsDirectory)
+    {
+        return Path.Combine(settingsDirectory, "backgrounds");
+    }
+
+    public static string GetLegacyBackgroundDirectory(bool isWindowsService, bool isUnixService = false)
     {
         if (!OperatingSystem.IsWindows() && isUnixService)
         {

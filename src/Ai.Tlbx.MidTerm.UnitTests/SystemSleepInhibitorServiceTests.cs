@@ -9,7 +9,7 @@ public sealed class SystemSleepInhibitorServiceTests
     [Fact]
     public void UpdateSessionCount_ActivatesOnlyWhenEnabledAndSessionsExist()
     {
-        var backend = new FakeSystemSleepInhibitorBackend();
+        using var backend = new FakeSystemSleepInhibitorBackend();
         using var service = new SystemSleepInhibitorService(backend);
 
         service.UpdateSessionCount(1);
@@ -28,7 +28,7 @@ public sealed class SystemSleepInhibitorServiceTests
     [Fact]
     public void UpdateEnabled_False_DisablesActiveInhibitor()
     {
-        var backend = new FakeSystemSleepInhibitorBackend();
+        using var backend = new FakeSystemSleepInhibitorBackend();
         using var service = new SystemSleepInhibitorService(backend);
 
         service.UpdateEnabled(true);
@@ -42,13 +42,21 @@ public sealed class SystemSleepInhibitorServiceTests
     [Fact]
     public void Dispose_DeactivatesBackendOnce()
     {
-        var backend = new FakeSystemSleepInhibitorBackend();
-        var service = new SystemSleepInhibitorService(backend);
+        using var backend = new FakeSystemSleepInhibitorBackend();
+        SystemSleepInhibitorService? service = new(backend);
 
-        service.UpdateEnabled(true);
-        service.UpdateSessionCount(1);
-        service.Dispose();
-        service.Dispose();
+        try
+        {
+            service.UpdateEnabled(true);
+            service.UpdateSessionCount(1);
+            var ownedService = service;
+            service = null;
+            ownedService.Dispose();
+        }
+        finally
+        {
+            service?.Dispose();
+        }
 
         Assert.Equal(1, backend.ActivateCalls);
         Assert.Equal(1, backend.DeactivateCalls);
@@ -77,6 +85,7 @@ public sealed class SystemSleepInhibitorServiceTests
         public int ActivateCalls { get; private set; }
         public int DeactivateCalls { get; private set; }
         public int DisposeCalls { get; private set; }
+        private bool _disposed;
 
         public bool Activate()
         {
@@ -91,7 +100,14 @@ public sealed class SystemSleepInhibitorServiceTests
 
         public void Dispose()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
             DisposeCalls++;
         }
     }
+
 }

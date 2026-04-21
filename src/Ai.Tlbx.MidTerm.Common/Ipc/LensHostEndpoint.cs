@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Ai.Tlbx.MidTerm.Common.Ipc;
 
 public static class LensHostEndpoint
@@ -17,7 +19,7 @@ public static class LensHostEndpoint
 
     public static string BuildEndpointName(string instanceId, string sessionId, int pid)
     {
-        return $"{Prefix}{instanceId}-{sessionId}-{pid}";
+        return string.Create(CultureInfo.InvariantCulture, $"{Prefix}{instanceId}-{sessionId}-{pid}");
     }
 
     public static (string? instanceId, string sessionId, int pid)? ParseEndpoint(string endpointName)
@@ -35,7 +37,7 @@ public static class LensHostEndpoint
 
         var remainder = name[Prefix.Length..];
         var segments = remainder.Split('-', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length != 3 || !int.TryParse(segments[2], out var pid))
+        if (segments.Length != 3 || !int.TryParse(segments[2], CultureInfo.InvariantCulture, out var pid))
         {
             return null;
         }

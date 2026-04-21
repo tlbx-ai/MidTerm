@@ -12,6 +12,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
+    private const int CodexStderrBlockFlushDelayMs = 175;
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {
@@ -21,7 +22,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         "cancel"
     };
 
-    private readonly Action<LensHostEventEnvelope> _emit;
+    private readonly Action<LensProviderEvent> _emit;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonRpcReply>> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingCodexApproval> _pendingApprovals = new(StringComparer.Ordinal);
@@ -43,7 +44,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private long _sequence;
     private int _nextRequestId;
 
-    public CodexLensAgentRuntime(Action<LensHostEventEnvelope> emit)
+    public CodexLensAgentRuntime(Action<LensProviderEvent> emit)
     {
         _emit = emit;
     }
@@ -80,7 +81,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch
@@ -94,12 +95,12 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         if (_readerTask is not null)
         {
-            await Task.WhenAny(_readerTask, Task.Delay(250)).ConfigureAwait(false);
+            await Task.WhenAny(_readerTask, Task.Delay(250, CancellationToken.None)).ConfigureAwait(false);
         }
 
         if (_errorTask is not null)
         {
-            await Task.WhenAny(_errorTask, Task.Delay(250)).ConfigureAwait(false);
+            await Task.WhenAny(_errorTask, Task.Delay(250, CancellationToken.None)).ConfigureAwait(false);
         }
 
         _shutdown.Dispose();
@@ -200,11 +201,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         _providerThreadId = providerThreadId;
-        var events = new List<LensHostEventEnvelope>
+        var events = new List<LensProviderEvent>
         {
             CreateEvent("session.ready", null, null, null, "codex.app-server", "thread/start", threadResult, lensEvent =>
             {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
+                lensEvent.SessionState = new LensProviderSessionStatePayload
                 {
                     State = "ready",
                     StateLabel = "Ready",
@@ -217,7 +218,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             }),
             CreateEvent("thread.started", null, null, null, "codex.app-server", "thread/start", threadResult, lensEvent =>
             {
-                lensEvent.ThreadState = new LensPulseThreadStatePayload
+                lensEvent.ThreadState = new LensProviderThreadStatePayload
                 {
                     State = "active",
                     StateLabel = "Active",
@@ -354,7 +355,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             [
                 CreateEvent("request.resolved", pending.TurnId, pending.ItemId, requestId, "midterm.lens", "item/requestApproval/decision", default, lensEvent =>
                 {
-                    lensEvent.RequestResolved = new LensPulseRequestResolvedPayload
+                    lensEvent.RequestResolved = new LensProviderRequestResolvedPayload
                     {
                         RequestType = pending.RequestType,
                         Decision = decision
@@ -387,9 +388,9 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             [
                 CreateEvent("user-input.resolved", pending.TurnId, pending.ItemId, resolution.RequestId, "midterm.lens", "item/tool/requestUserInput/answered", default, lensEvent =>
                 {
-                    lensEvent.UserInputResolved = new LensPulseUserInputResolvedPayload
+                    lensEvent.UserInputResolved = new LensProviderUserInputResolvedPayload
                     {
-                        Answers = answers.Select(pair => new LensPulseAnsweredQuestion
+                        Answers = answers.Select(pair => new LensAnsweredQuestion
                         {
                             QuestionId = pair.Key,
                             Answers = [.. pair.Value.Answers]
@@ -441,19 +442,72 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         try
         {
+            var stderrBlockLines = new List<string>();
+            var pendingBlankLine = false;
             while (!ct.IsCancellationRequested && _process is { HasExited: false })
             {
-                var line = await _error!.ReadLineAsync(ct).ConfigureAwait(false);
+                var readTask = _error!.ReadLineAsync(ct).AsTask();
+                if (stderrBlockLines.Count > 0)
+                {
+                    var completed = await Task.WhenAny(
+                        readTask,
+                        Task.Delay(CodexStderrBlockFlushDelayMs, ct)).ConfigureAwait(false);
+                    if (!ReferenceEquals(completed, readTask))
+                    {
+                        FlushCodexErrorBlock(stderrBlockLines);
+                        pendingBlankLine = false;
+                        continue;
+                    }
+                }
+
+                var line = await readTask.ConfigureAwait(false);
                 if (line is null)
                 {
                     break;
                 }
 
-                if (!string.IsNullOrWhiteSpace(line))
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0)
                 {
-                    EmitRuntimeMessage("runtime.warning", line.Trim(), line.Trim());
+                    if (stderrBlockLines.Count > 0)
+                    {
+                        pendingBlankLine = true;
+                    }
+
+                    continue;
                 }
+
+                if (stderrBlockLines.Count == 0)
+                {
+                    if (IsCodexStderrSeverityHeader(trimmed))
+                    {
+                        stderrBlockLines.Add(trimmed);
+                        pendingBlankLine = false;
+                        continue;
+                    }
+
+                    EmitRuntimeMessage("runtime.warning", trimmed, trimmed);
+                    continue;
+                }
+
+                if (pendingBlankLine)
+                {
+                    if (IsCodexStderrSeverityHeader(trimmed))
+                    {
+                        FlushCodexErrorBlock(stderrBlockLines);
+                        stderrBlockLines.Add(trimmed);
+                        pendingBlankLine = false;
+                        continue;
+                    }
+
+                    stderrBlockLines.Add(string.Empty);
+                    pendingBlankLine = false;
+                }
+
+                stderrBlockLines.Add(trimmed);
             }
+
+            FlushCodexErrorBlock(stderrBlockLines);
         }
         catch (OperationCanceledException)
         {
@@ -536,7 +590,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             _emit(CreateEvent("user-input.requested", turnId, itemId, requestId, "codex.app-server.request", method, payload, lensEvent =>
             {
-                lensEvent.UserInputRequested = new LensPulseUserInputRequestedPayload
+                lensEvent.UserInputRequested = new LensProviderUserInputRequestedPayload
                 {
                     Questions = questions
                 };
@@ -569,7 +623,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             _emit(CreateEvent("request.opened", turnId, itemId, requestId, "codex.app-server.request", method, payload, lensEvent =>
             {
-                lensEvent.RequestOpened = new LensPulseRequestOpenedPayload
+                lensEvent.RequestOpened = new LensProviderRequestOpenedPayload
                 {
                     RequestType = requestType,
                     RequestTypeLabel = requestTypeLabel,
@@ -596,11 +650,72 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("thread.started", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.ThreadState = new LensPulseThreadStatePayload
+                    lensEvent.ThreadState = new LensProviderThreadStatePayload
                     {
                         State = "active",
                         StateLabel = "Active",
                         ProviderThreadId = providerThreadId
+                    };
+                }));
+                break;
+            }
+
+            case "thread/status/changed":
+            case "thread/archived":
+            case "thread/unarchived":
+            case "thread/closed":
+            case "thread/compacted":
+            {
+                var providerThreadId = GetString(payload, "thread", "id") ?? GetString(payload, "threadId") ?? _providerThreadId;
+                if (!string.IsNullOrWhiteSpace(providerThreadId))
+                {
+                    _providerThreadId = providerThreadId;
+                }
+
+                var threadState = ResolveCodexThreadState(method, payload);
+                _emit(CreateEvent("thread.state.changed", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.ThreadState = new LensProviderThreadStatePayload
+                    {
+                        State = threadState.State,
+                        StateLabel = threadState.StateLabel,
+                        ProviderThreadId = providerThreadId
+                    };
+                    if (!string.IsNullOrWhiteSpace(threadState.Detail))
+                    {
+                        lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                        {
+                            Message = threadState.Message,
+                            Detail = threadState.Detail
+                        };
+                    }
+                }));
+                break;
+            }
+
+            case "thread/name/updated":
+            {
+                var threadName = GetString(payload, "threadName") ?? GetString(payload, "thread", "name");
+                _emit(CreateEvent("thread.metadata.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex thread metadata updated.",
+                        Detail = string.IsNullOrWhiteSpace(threadName) ? "The thread metadata changed." : $"Renamed to {threadName.Trim()}."
+                    };
+                }));
+                break;
+            }
+
+            case "thread/tokenUsage/updated":
+            {
+                var detail = BuildCodexTokenUsageDetail(payload);
+                _emit(CreateEvent("thread.token-usage.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex context window updated.",
+                        Detail = detail
                     };
                 }));
                 break;
@@ -612,7 +727,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 _activeTurnId = turnId;
                 _emit(CreateEvent("session.state.changed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = "running",
                         StateLabel = "Running",
@@ -621,7 +736,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 _emit(CreateEvent("turn.started", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.TurnStarted = new LensPulseTurnStartedPayload
+                    lensEvent.TurnStarted = new LensProviderTurnStartedPayload
                     {
                         Model = GetString(payload, "turn", "model"),
                         Effort = GetString(payload, "turn", "effort")
@@ -642,7 +757,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("turn.completed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                    lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                     {
                         State = turnState,
                         StateLabel = HumanizeTurnState(turnState),
@@ -651,7 +766,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 _emit(CreateEvent("session.state.changed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = string.Equals(turnState, "failed", StringComparison.OrdinalIgnoreCase) ? "error" : "ready",
                         StateLabel = string.Equals(turnState, "failed", StringComparison.OrdinalIgnoreCase) ? "Error" : "Ready",
@@ -671,7 +786,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
                 _emit(CreateEvent("turn.aborted", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                    lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                     {
                         State = "interrupted",
                         StateLabel = "Interrupted",
@@ -680,7 +795,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 _emit(CreateEvent("session.state.changed", turnId, null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.SessionState = new LensPulseSessionStatePayload
+                    lensEvent.SessionState = new LensProviderSessionStatePayload
                     {
                         State = "ready",
                         StateLabel = "Ready",
@@ -697,7 +812,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("plan.completed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                     {
-                        lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                        lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
                         {
                             PlanMarkdown = planText
                         };
@@ -711,7 +826,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var diff = GetString(payload, "unifiedDiff") ?? GetString(payload, "diff") ?? GetString(payload, "patch") ?? string.Empty;
                 _emit(CreateEvent("diff.updated", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.DiffUpdated = new LensPulseDiffUpdatedPayload
+                    lensEvent.DiffUpdated = new LensProviderDiffUpdatedPayload
                     {
                         UnifiedDiff = diff
                     };
@@ -746,7 +861,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 {
                     _emit(CreateEvent("plan.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
                     {
-                        lensEvent.PlanDelta = new LensPulsePlanDeltaPayload
+                        lensEvent.PlanDelta = new LensProviderPlanDeltaPayload
                         {
                             Delta = delta
                         };
@@ -762,7 +877,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var itemType = NormalizeCodexItemType(GetString(payload, "item", "type") ?? GetString(payload, "type"));
                 _emit(CreateEvent("item.started", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
@@ -786,7 +901,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     : BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
@@ -821,12 +936,130 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 var detail = GetString(payload, "summary") ?? BuildCodexItemDetail(payload);
                 _emit(CreateEvent("item.updated", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType,
                         Status = "in_progress",
                         Title = title,
                         Detail = detail
+                    };
+                }));
+                break;
+            }
+
+            case "codex/event/task_started":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
+                if (string.IsNullOrWhiteSpace(taskId))
+                {
+                    break;
+                }
+
+                var taskType = GetString(payload, "msg", "collaboration_mode_kind");
+                var detail = GetString(payload, "msg", "text")
+                             ?? GetString(payload, "msg", "summary")
+                             ?? GetString(payload, "msg", "last_agent_message")
+                             ?? "Codex started a task.";
+                EmitCodexTaskStarted(turnId, taskId, taskType, detail, method, payload);
+                break;
+            }
+
+            case "codex/event/agent_reasoning":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
+                var detail = GetString(payload, "msg", "text");
+                if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(detail))
+                {
+                    break;
+                }
+
+                EmitCodexTaskProgress(
+                    turnId,
+                    taskId,
+                    taskType: null,
+                    description: detail,
+                    summary: detail,
+                    status: "in_progress",
+                    method,
+                    payload);
+                break;
+            }
+
+            case "codex/event/background_terminal_wait":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
+                var detail = GetString(payload, "msg", "text")
+                             ?? GetString(payload, "msg", "summary")
+                             ?? BuildCodexItemDetail(payload);
+                if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(detail))
+                {
+                    break;
+                }
+
+                EmitCodexTaskProgress(
+                    turnId,
+                    taskId,
+                    taskType: null,
+                    description: detail,
+                    summary: detail,
+                    status: "waiting",
+                    method,
+                    payload,
+                    lastToolName: ExtractBackgroundTerminalCommand(detail));
+                break;
+            }
+
+            case "codex/event/task_complete":
+            {
+                var turnId = ResolveTurnId(payload);
+                var taskId = ResolveCodexTaskId(payload) ?? turnId;
+                var taskType = GetString(payload, "msg", "collaboration_mode_kind");
+                var summary = GetString(payload, "msg", "last_agent_message")
+                              ?? GetString(payload, "msg", "text")
+                              ?? "Codex completed a task.";
+                var status = NormalizeTaskCompletedStatus(
+                    GetString(payload, "msg", "status") ??
+                    GetString(payload, "status"));
+                if (!string.IsNullOrWhiteSpace(taskId))
+                {
+                    EmitCodexTaskCompleted(turnId, taskId, taskType, status, summary, method, payload);
+                }
+
+                var proposedPlan = ExtractProposedPlanMarkdown(summary);
+                if (!string.IsNullOrWhiteSpace(proposedPlan))
+                {
+                    _emit(CreateEvent("plan.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+                    {
+                        lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
+                        {
+                            PlanMarkdown = proposedPlan
+                        };
+                    }));
+                }
+
+                break;
+            }
+
+            case "codex/event/reasoning_content_delta":
+            {
+                var delta = GetString(payload, "msg", "delta");
+                if (string.IsNullOrWhiteSpace(delta))
+                {
+                    break;
+                }
+
+                var streamKind = Traverse(payload, "msg", "summary_index") is JsonElement { ValueKind: JsonValueKind.Number }
+                    ? "reasoning_summary_text"
+                    : "reasoning_text";
+                _emit(CreateEvent("content.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.eventmsg", method, payload, lensEvent =>
+                {
+                    lensEvent.ContentDelta = new LensProviderContentDeltaPayload
+                    {
+                        StreamKind = streamKind,
+                        Delta = delta
                     };
                 }));
                 break;
@@ -849,7 +1082,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     {
                         _emit(CreateEvent("plan.completed", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                         {
-                            lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                            lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
                             {
                                 PlanMarkdown = detail
                             };
@@ -864,7 +1097,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     : $"{PrettifyToolKind(itemType)} completed";
                 _emit(CreateEvent("item.completed", turnId, itemId, null, "codex.app-server.notification", method, payload, lensEvent =>
                 {
-                    lensEvent.Item = new LensPulseItemPayload
+                    lensEvent.Item = new LensProviderItemPayload
                     {
                         ItemType = itemType is "agent_message" ? "assistant_message" : itemType,
                         Status = "completed",
@@ -874,6 +1107,154 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 }));
                 break;
             }
+
+            case "model/rerouted":
+            {
+                var fromModel = GetString(payload, "fromModel") ?? "unknown";
+                var toModel = GetString(payload, "toModel") ?? "unknown";
+                var reason = GetString(payload, "reason");
+                _emit(CreateEvent("model.rerouted", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = $"Codex rerouted the model from {fromModel} to {toModel}.",
+                        Detail = reason
+                    };
+                }));
+                break;
+            }
+
+            case "deprecationNotice":
+            {
+                _emit(CreateEvent("deprecation.notice", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = GetString(payload, "summary") ?? "Codex reported a deprecation notice.",
+                        Detail = GetString(payload, "details")
+                    };
+                }));
+                break;
+            }
+
+            case "configWarning":
+            {
+                _emit(CreateEvent("config.warning", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = GetString(payload, "summary") ?? "Codex reported a configuration warning.",
+                        Detail = JoinNonEmpty(
+                            GetString(payload, "details"),
+                            GetString(payload, "path"))
+                    };
+                }));
+                break;
+            }
+
+            case "account/updated":
+            {
+                _emit(CreateEvent("account.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex account details updated.",
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "account/rateLimits/updated":
+            {
+                _emit(CreateEvent("account.rate-limits.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex rate limits updated.",
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "mcpServer/oauthLogin/completed":
+            {
+                var success = GetBoolean(payload, "success");
+                var name = GetString(payload, "name");
+                var error = GetString(payload, "error");
+                _emit(CreateEvent("mcp.oauth.completed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = success ? "MCP sign-in completed." : "MCP sign-in failed.",
+                        Detail = JoinNonEmpty(name, error)
+                    };
+                }));
+                break;
+            }
+
+            case "mcpServer/startupStatus/updated":
+            {
+                var serverName = GetString(payload, "name") ?? "MCP server";
+                var status = GetString(payload, "status");
+                var error = GetScalarString(payload, "error")
+                            ?? GetString(payload, "error", "message");
+                var hasError = !string.IsNullOrWhiteSpace(error);
+                _emit(CreateEvent(
+                    hasError ? "agent.error" : "agent.state",
+                    ResolveTurnId(payload),
+                    null,
+                    null,
+                    "codex.app-server.notification",
+                    method,
+                    payload,
+                    lensEvent =>
+                    {
+                        lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                        {
+                            Message = BuildCodexMcpStartupStatusMessage(serverName, status, error),
+                            Detail = hasError ? error : null
+                        };
+                    }));
+                break;
+            }
+
+            case "thread/realtime/started":
+            case "thread/realtime/itemAdded":
+            case "thread/realtime/outputAudio/delta":
+            case "thread/realtime/error":
+            case "thread/realtime/closed":
+            {
+                _emit(CreateEvent(MapRealtimeEventType(method), ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = HumanizeRealtimeEvent(method),
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "error":
+            {
+                var message = GetString(payload, "error", "message") ?? "Codex runtime error";
+                var willRetry = GetBoolean(payload, "willRetry");
+                _emit(CreateEvent(willRetry ? "runtime.warning" : "runtime.error", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = message,
+                        Detail = willRetry ? "Codex reported that it will retry." : message
+                    };
+                }));
+                break;
+            }
+
+            default:
+                EmitUnknownCodexNotificationFallback(method, payload);
+                break;
         }
     }
 
@@ -887,12 +1268,51 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         _emit(CreateEvent("content.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
         {
-            lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+            lensEvent.ContentDelta = new LensProviderContentDeltaPayload
             {
                 StreamKind = streamKind,
                 Delta = delta
             };
         }));
+    }
+
+    private void EmitUnknownCodexNotificationFallback(string method, JsonElement payload)
+    {
+        _emit(CreateEvent(
+            "item.updated",
+            ResolveUnknownCodexTurnId(payload),
+            null,
+            null,
+            method.StartsWith("codex/event/", StringComparison.Ordinal)
+                ? "codex.eventmsg"
+                : "codex.app-server.notification",
+            method,
+            payload,
+            lensEvent =>
+            {
+                lensEvent.Item = new LensProviderItemPayload
+                {
+                    ItemType = "unknown_agent_message",
+                    Status = "completed",
+                    Title = "Unknown agent message",
+                    Detail = BuildUnknownCodexFallbackDetail(method, payload)
+                };
+            }));
+    }
+
+    private string? ResolveUnknownCodexTurnId(JsonElement payload)
+    {
+        return ResolveTurnId(payload)
+               ?? GetString(payload, "msg", "turn_id")
+               ?? GetString(payload, "msg", "turnId");
+    }
+
+    private static string BuildUnknownCodexFallbackDetail(string method, JsonElement payload)
+    {
+        var rawPayload = BuildCompactJsonDetail(payload);
+        return string.IsNullOrWhiteSpace(rawPayload)
+            ? $"Method: {method}"
+            : $"Method: {method}\n{rawPayload}";
     }
 
     private string? ResolveTurnId(JsonElement payload, string? fallbackTurnId = null)
@@ -915,7 +1335,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         _emit(CreateEvent(eventType, null, null, null, "mtagenthost.codex", eventType, default, lensEvent =>
         {
-            lensEvent.SessionState = new LensPulseSessionStatePayload
+            lensEvent.SessionState = new LensProviderSessionStatePayload
             {
                 State = state,
                 StateLabel = stateLabel,
@@ -928,7 +1348,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         _emit(CreateEvent(eventType, _activeTurnId, null, null, "mtagenthost.codex", eventType, default, lensEvent =>
         {
-            lensEvent.RuntimeMessage = new LensPulseRuntimeMessagePayload
+            lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
             {
                 Message = message,
                 Detail = detail
@@ -936,7 +1356,109 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }));
     }
 
-    private LensHostEventEnvelope CreateEvent(
+    private void FlushCodexErrorBlock(List<string> blockLines)
+    {
+        if (blockLines.Count == 0)
+        {
+            return;
+        }
+
+        var eventType = ClassifyCodexStderrEventType(blockLines);
+        var message = BuildCodexStderrBlockMessage(blockLines);
+        blockLines.Clear();
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        EmitRuntimeMessage(eventType, message, null);
+    }
+
+    private static bool IsCodexStderrSeverityHeader(string line)
+    {
+        return line.Trim() switch
+        {
+            "ERROR" or "WARNING" or "WARN" or "INFO" => true,
+            _ => false
+        };
+    }
+
+    private static string ClassifyCodexStderrEventType(IReadOnlyList<string> blockLines)
+    {
+        foreach (var line in blockLines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            return trimmed switch
+            {
+                "ERROR" => "agent.error",
+                "WARN" or "WARNING" => "runtime.warning",
+                _ when trimmed.Contains("error", StringComparison.OrdinalIgnoreCase) => "agent.error",
+                _ => "runtime.warning"
+            };
+        }
+
+        return "runtime.warning";
+    }
+
+    private static string BuildCodexStderrBlockMessage(IReadOnlyList<string> blockLines)
+    {
+        var normalized = blockLines.ToList();
+        while (normalized.Count > 0 && string.IsNullOrWhiteSpace(normalized[0]))
+        {
+            normalized.RemoveAt(0);
+        }
+
+        while (normalized.Count > 0 && string.IsNullOrWhiteSpace(normalized[^1]))
+        {
+            normalized.RemoveAt(normalized.Count - 1);
+        }
+
+        if (normalized.Count > 0 && IsCodexStderrSeverityHeader(normalized[0]))
+        {
+            normalized.RemoveAt(0);
+            while (normalized.Count > 0 && string.IsNullOrWhiteSpace(normalized[0]))
+            {
+                normalized.RemoveAt(0);
+            }
+        }
+
+        if (normalized.Count == 0)
+        {
+            normalized = blockLines
+                .Where(static line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+        }
+
+        return string.Join("\n", normalized);
+    }
+
+    private static string BuildCodexMcpStartupStatusMessage(
+        string serverName,
+        string? status,
+        string? error)
+    {
+        var name = string.IsNullOrWhiteSpace(serverName) ? "MCP server" : serverName.Trim();
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            return string.IsNullOrWhiteSpace(status)
+                ? string.Create(CultureInfo.InvariantCulture, $"{name} reported a startup error.")
+                : string.Create(CultureInfo.InvariantCulture, $"{name} {status.Trim()}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{name} updated its startup status.");
+        }
+
+        return string.Create(CultureInfo.InvariantCulture, $"{name} {status.Trim()}.");
+    }
+
+    private LensProviderEvent CreateEvent(
         string type,
         string? turnId,
         string? itemId,
@@ -944,10 +1466,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         string rawSource,
         string? rawMethod,
         JsonElement payload,
-        Action<LensPulseEvent> configure)
+        Action<LensProviderEvent> configure)
     {
         var nextSequence = Interlocked.Increment(ref _sequence);
-        var lensEvent = new LensPulseEvent
+        var lensEvent = new LensProviderEvent
         {
             Sequence = nextSequence,
             EventId = "lens-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
@@ -959,7 +1481,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             RequestId = requestId,
             CreatedAt = DateTimeOffset.UtcNow,
             Type = type,
-            Raw = new LensPulseEventRaw
+            Raw = new LensProviderEventRaw
             {
                 Source = rawSource,
                 Method = rawMethod,
@@ -968,11 +1490,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         };
 
         configure(lensEvent);
-        return new LensHostEventEnvelope
-        {
-            SessionId = _sessionId ?? string.Empty,
-            Event = lensEvent
-        };
+        return lensEvent;
     }
 
     private void EnsureAttached()
@@ -1017,7 +1535,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         await _input!.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
-        await _input.FlushAsync().ConfigureAwait(false);
+        await _input.FlushAsync(ct).ConfigureAwait(false);
     }
 
     private void EnsureAttachedOrStarting()
@@ -1048,23 +1566,15 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             if (_process is { HasExited: false } process)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch
         {
         }
 
-        try { _input?.Dispose(); } catch { }
-        try { _output?.Dispose(); } catch { }
-        try { _error?.Dispose(); } catch { }
-        try { _process?.Dispose(); } catch { }
-
-        _process = null;
-        _input = null;
-        _output = null;
-        _error = null;
-        _webSocket = null;
+        DisposeOwnedProcessHandles();
+        DisposeOwnedWebSocket();
         _readerTask = null;
         _errorTask = null;
         _remoteEndpoint = null;
@@ -1074,6 +1584,47 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     {
         return _webSocket is { State: WebSocketState.Open } ||
                (_process is { HasExited: false } && _input is not null);
+    }
+
+    private void AttachOwnedWebSocket(ClientWebSocket webSocket)
+    {
+        try { _webSocket?.Dispose(); } catch { }
+        _webSocket = null;
+        _webSocket = webSocket;
+    }
+
+    private void DisposeOwnedWebSocket()
+    {
+        try { _webSocket?.Dispose(); } catch { }
+        _webSocket = null;
+    }
+
+    private void AttachOwnedProcess(Process process)
+    {
+        try { _input?.Dispose(); } catch { }
+        try { _output?.Dispose(); } catch { }
+        try { _error?.Dispose(); } catch { }
+        try { _process?.Dispose(); } catch { }
+        _process = null;
+        _input = null;
+        _output = null;
+        _error = null;
+        _process = process;
+        _output = process.StandardOutput;
+        _error = process.StandardError;
+        _input = process.StandardInput;
+    }
+
+    private void DisposeOwnedProcessHandles()
+    {
+        try { _input?.Dispose(); } catch { }
+        try { _output?.Dispose(); } catch { }
+        try { _error?.Dispose(); } catch { }
+        try { _process?.Dispose(); } catch { }
+        _process = null;
+        _input = null;
+        _output = null;
+        _error = null;
     }
 
     private bool IsAttachSatisfied(SessionAgentAttachPoint? attachPoint)
@@ -1112,7 +1663,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         var webSocket = new ClientWebSocket();
         await webSocket.ConnectAsync(endpoint, ct).ConfigureAwait(false);
-        _webSocket = webSocket;
+        AttachOwnedWebSocket(webSocket);
     }
 
     private void StartSpawnedProcess(string binaryPath, string workingDirectory, string? userProfileDirectory)
@@ -1130,10 +1681,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             throw new InvalidOperationException("Codex app-server could not be started.");
         }
 
-        _process = process;
-        _output = process.StandardOutput;
-        _error = process.StandardError;
-        _input = process.StandardInput;
+        AttachOwnedProcess(process);
         process.Exited += (_, _) =>
         {
             EmitRuntimeMessage(
@@ -1188,13 +1736,24 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return null;
         }
 
-        var threadIds = data.EnumerateArray()
-            .Where(static element => element.ValueKind == JsonValueKind.String)
-            .Select(static element => element.GetString())
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .Take(2)
-            .ToList();
+        var threadIds = new List<string>(capacity: 2);
+        using (var threadItems = data.EnumerateArray())
+        {
+            while (threadItems.MoveNext() && threadIds.Count < 2)
+            {
+                var element = threadItems.Current;
+                if (element.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var value = element.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    threadIds.Add(value);
+                }
+            }
+        }
 
         if (threadIds.Count > 1)
         {
@@ -1244,7 +1803,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         string commandId,
         string sessionId,
         LensCommandAcceptedResponse? accepted = null,
-        IReadOnlyList<LensHostEventEnvelope>? events = null)
+        IReadOnlyList<LensProviderEvent>? events = null)
     {
         return new HostCommandOutcome
         {
@@ -1578,7 +2137,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
         return LensQuickSettings.CreateSummary(
-            null,
+            LensProviderRuntimeConfiguration.GetCodexDefaultModel(),
             null,
             LensQuickSettings.PlanModeOff,
             defaultPermissionMode,
@@ -1591,7 +2150,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
         return LensQuickSettings.CreateSummary(
-            request.Model,
+            request.Model ?? LensProviderRuntimeConfiguration.GetCodexDefaultModel(),
             request.Effort,
             request.PlanMode,
             request.PermissionMode,
@@ -1617,7 +2176,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
     }
 
-    private LensHostEventEnvelope CreateQuickSettingsUpdatedEvent(
+    private LensProviderEvent CreateQuickSettingsUpdatedEvent(
         LensQuickSettingsSummary quickSettings,
         string source,
         string? method,
@@ -1691,7 +2250,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
     private static IReadOnlyDictionary<string, CodexQuestionAnswer> ToCodexQuestionAnswers(
         PendingCodexUserInput pending,
-        IReadOnlyList<LensPulseAnsweredQuestion> answers)
+        IReadOnlyList<LensAnsweredQuestion> answers)
     {
         var answerMap = answers
             .Where(static answer => !string.IsNullOrWhiteSpace(answer.QuestionId))
@@ -1874,8 +2433,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         var chunks = new List<string>();
-        foreach (var part in content.EnumerateArray())
+        using var contentItems = content.EnumerateArray();
+        while (contentItems.MoveNext())
         {
+            var part = contentItems.Current;
             var text = GetString(part, "text");
             if (!string.IsNullOrWhiteSpace(text))
             {
@@ -1917,8 +2478,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             payload.TryGetProperty("plan", out var planElement) &&
             planElement.ValueKind == JsonValueKind.Array)
         {
-            foreach (var step in planElement.EnumerateArray())
+            using var planItems = planElement.EnumerateArray();
+            while (planItems.MoveNext())
             {
+                var step = planItems.Current;
                 var stepText = GetString(step, "step");
                 if (string.IsNullOrWhiteSpace(stepText))
                 {
@@ -1943,6 +2506,304 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         return builder.ToString().Trim();
+    }
+
+    private static string? ExtractProposedPlanMarkdown(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        const string startTag = "<proposed_plan>";
+        const string endTag = "</proposed_plan>";
+        var startIndex = value.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+        if (startIndex < 0)
+        {
+            return null;
+        }
+
+        startIndex += startTag.Length;
+        var endIndex = value.IndexOf(endTag, startIndex, StringComparison.OrdinalIgnoreCase);
+        if (endIndex < 0)
+        {
+            return null;
+        }
+
+        var extracted = value[startIndex..endIndex].Trim();
+        return extracted.Length == 0 ? null : extracted;
+    }
+
+    private void EmitCodexTaskStarted(
+        string? turnId,
+        string taskId,
+        string? taskType,
+        string description,
+        string method,
+        JsonElement payload)
+    {
+        var itemType = ResolveCodexTaskItemType(taskType);
+        var title = itemType == "plan" ? "Planning" : "Reasoning";
+
+        _emit(CreateEvent("task.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Task = new LensProviderTaskPayload
+            {
+                TaskId = taskId,
+                Status = "started",
+                TaskType = taskType,
+                Description = description
+            };
+        }));
+
+        _emit(CreateEvent("item.started", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Item = new LensProviderItemPayload
+            {
+                ItemType = itemType,
+                Status = "in_progress",
+                Title = title,
+                Detail = description
+            };
+        }));
+    }
+
+    private void EmitCodexTaskProgress(
+        string? turnId,
+        string taskId,
+        string? taskType,
+        string description,
+        string? summary,
+        string status,
+        string method,
+        JsonElement payload,
+        string? lastToolName = null)
+    {
+        var itemType = ResolveCodexTaskItemType(taskType);
+        var normalizedStatus = string.Equals(status, "waiting", StringComparison.OrdinalIgnoreCase)
+            ? "waiting"
+            : "in_progress";
+        var title = normalizedStatus == "waiting"
+            ? "Waiting for background terminal"
+            : itemType == "plan"
+                ? "Planning"
+                : "Reasoning";
+
+        _emit(CreateEvent("task.progress", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Task = new LensProviderTaskPayload
+            {
+                TaskId = taskId,
+                Status = normalizedStatus,
+                TaskType = taskType,
+                Description = description,
+                Summary = summary,
+                LastToolName = lastToolName
+            };
+        }));
+
+        _emit(CreateEvent("item.updated", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Item = new LensProviderItemPayload
+            {
+                ItemType = itemType,
+                Status = "in_progress",
+                Title = title,
+                Detail = description
+            };
+        }));
+    }
+
+    private void EmitCodexTaskCompleted(
+        string? turnId,
+        string taskId,
+        string? taskType,
+        string status,
+        string summary,
+        string method,
+        JsonElement payload)
+    {
+        var normalizedStatus = NormalizeTaskCompletedStatus(status);
+        var itemType = ResolveCodexTaskItemType(taskType);
+        var itemStatus = normalizedStatus switch
+        {
+            "failed" => "failed",
+            "stopped" => "stopped",
+            _ => "completed"
+        };
+        var title = itemType == "plan"
+            ? normalizedStatus switch
+            {
+                "failed" => "Plan failed",
+                "stopped" => "Plan stopped",
+                _ => "Plan completed"
+            }
+            : normalizedStatus switch
+            {
+                "failed" => "Reasoning failed",
+                "stopped" => "Reasoning stopped",
+                _ => "Reasoning completed"
+            };
+
+        _emit(CreateEvent("task.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Task = new LensProviderTaskPayload
+            {
+                TaskId = taskId,
+                Status = normalizedStatus,
+                TaskType = taskType,
+                Summary = summary
+            };
+        }));
+
+        _emit(CreateEvent("item.completed", turnId, taskId, null, "codex.eventmsg", method, payload, lensEvent =>
+        {
+            lensEvent.Item = new LensProviderItemPayload
+            {
+                ItemType = itemType,
+                Status = itemStatus,
+                Title = title,
+                Detail = summary
+            };
+        }));
+    }
+
+    private static string? ResolveCodexTaskId(JsonElement payload)
+    {
+        return GetString(payload, "id") ??
+               GetString(payload, "msg", "task_id") ??
+               GetString(payload, "msg", "taskId") ??
+               GetString(payload, "msg", "turn_id") ??
+               GetString(payload, "msg", "turnId");
+    }
+
+    private static string NormalizeTaskCompletedStatus(string? status)
+    {
+        return status?.Trim().ToLowerInvariant() switch
+        {
+            "failed" => "failed",
+            "stopped" => "stopped",
+            "cancelled" => "stopped",
+            _ => "completed"
+        };
+    }
+
+    private static string? ExtractBackgroundTerminalCommand(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        const string marker = "background terminal";
+        var markerIndex = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        var command = message[(markerIndex + marker.Length)..].Trim();
+        return string.IsNullOrWhiteSpace(command) ? null : command;
+    }
+
+    private static string ResolveCodexTaskItemType(string? taskType)
+    {
+        return string.Equals(taskType, "plan", StringComparison.OrdinalIgnoreCase)
+            ? "plan"
+            : "reasoning";
+    }
+
+    private static (string State, string StateLabel, string Message, string? Detail) ResolveCodexThreadState(string method, JsonElement payload)
+    {
+        var state = method switch
+        {
+            "thread/archived" => "archived",
+            "thread/unarchived" => "active",
+            "thread/closed" => "closed",
+            "thread/compacted" => "compacted",
+            _ => GetString(payload, "thread", "state") ?? GetString(payload, "state") ?? "active"
+        };
+
+        return state switch
+        {
+            "idle" => ("idle", "Idle", "Codex thread is idle.", null),
+            "archived" => ("archived", "Archived", "Codex thread archived.", null),
+            "closed" => ("closed", "Closed", "Codex thread closed.", null),
+            "compacted" => ("compacted", "Compacted", "Codex compacted the thread context.", null),
+            "error" => ("error", "Error", "Codex thread entered an error state.", BuildCompactJsonDetail(payload)),
+            _ => ("active", "Active", "Codex thread is active.", null)
+        };
+    }
+
+    private static string BuildCodexTokenUsageDetail(JsonElement payload)
+    {
+        var usage = GetObject(payload, "tokenUsage") ?? payload;
+        var total = GetLong(usage, "total", "total_tokens")
+                    ?? GetLong(usage, "total", "totalTokens")
+                    ?? GetLong(usage, "last", "total_tokens")
+                    ?? GetLong(usage, "last", "totalTokens");
+        var input = GetLong(usage, "last", "input_tokens") ?? GetLong(usage, "last", "inputTokens");
+        var output = GetLong(usage, "last", "output_tokens") ?? GetLong(usage, "last", "outputTokens");
+        var max = GetLong(usage, "model_context_window") ?? GetLong(usage, "modelContextWindow");
+
+        var parts = new List<string>();
+        if (total.HasValue)
+        {
+            parts.Add($"Used {total.Value.ToString(CultureInfo.InvariantCulture)} tokens");
+        }
+
+        if (max.HasValue)
+        {
+            parts.Add($"window {max.Value.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        if (input.HasValue || output.HasValue)
+        {
+            parts.Add($"last turn in/out {input.GetValueOrDefault().ToString(CultureInfo.InvariantCulture)}/{output.GetValueOrDefault().ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        return parts.Count == 0 ? BuildCompactJsonDetail(payload) ?? "Token usage changed." : string.Join(", ", parts);
+    }
+
+    private static string? BuildCompactJsonDetail(JsonElement payload)
+    {
+        var raw = payload.ValueKind == JsonValueKind.Undefined ? null : payload.GetRawText();
+        return string.IsNullOrWhiteSpace(raw) ? null : raw;
+    }
+
+    private static string? JoinNonEmpty(params string?[] values)
+    {
+        var filtered = values
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value!.Trim())
+            .ToList();
+        return filtered.Count == 0 ? null : string.Join(" | ", filtered);
+    }
+
+    private static string MapRealtimeEventType(string method)
+    {
+        return method switch
+        {
+            "thread/realtime/started" => "thread.realtime.started",
+            "thread/realtime/itemAdded" => "thread.realtime.item-added",
+            "thread/realtime/outputAudio/delta" => "thread.realtime.audio.delta",
+            "thread/realtime/error" => "thread.realtime.error",
+            "thread/realtime/closed" => "thread.realtime.closed",
+            _ => "runtime.warning"
+        };
+    }
+
+    private static string HumanizeRealtimeEvent(string method)
+    {
+        return method switch
+        {
+            "thread/realtime/started" => "Codex realtime session started.",
+            "thread/realtime/itemAdded" => "Codex realtime item added.",
+            "thread/realtime/outputAudio/delta" => "Codex realtime audio updated.",
+            "thread/realtime/error" => "Codex realtime session reported an error.",
+            "thread/realtime/closed" => "Codex realtime session closed.",
+            _ => "Codex realtime update."
+        };
     }
 
     private static string NormalizeCodexItemType(string? value)
@@ -1992,12 +2853,16 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return "Codex is waiting for user input.";
         }
 
-        foreach (var question in questions.EnumerateArray())
+        using (var questionItems = questions.EnumerateArray())
         {
-            var prompt = GetString(question, "question");
-            if (!string.IsNullOrWhiteSpace(prompt))
+            while (questionItems.MoveNext())
             {
-                return prompt;
+                var question = questionItems.Current;
+                var prompt = GetString(question, "question");
+                if (!string.IsNullOrWhiteSpace(prompt))
+                {
+                    return prompt;
+                }
             }
         }
 
@@ -2014,8 +2879,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return ids;
         }
 
-        foreach (var question in questions.EnumerateArray())
+        using var questionIdItems = questions.EnumerateArray();
+        while (questionIdItems.MoveNext())
         {
+            var question = questionIdItems.Current;
             var id = GetString(question, "id");
             if (!string.IsNullOrWhiteSpace(id))
             {
@@ -2026,9 +2893,9 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return ids;
     }
 
-    private static List<LensPulseQuestion> ReadCodexQuestions(JsonElement payload)
+    private static List<LensQuestion> ReadCodexQuestions(JsonElement payload)
     {
-        var questions = new List<LensPulseQuestion>();
+        var questions = new List<LensQuestion>();
         if (payload.ValueKind != JsonValueKind.Object ||
             !payload.TryGetProperty("questions", out var questionArray) ||
             questionArray.ValueKind != JsonValueKind.Array)
@@ -2036,9 +2903,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return questions;
         }
 
-        foreach (var question in questionArray.EnumerateArray())
+        using var questionItems = questionArray.EnumerateArray();
+        while (questionItems.MoveNext())
         {
-            var item = new LensPulseQuestion
+            var question = questionItems.Current;
+            var item = new LensQuestion
             {
                 Id = GetString(question, "id") ?? string.Empty,
                 Header = GetString(question, "header") ?? string.Empty,
@@ -2048,9 +2917,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             if (question.TryGetProperty("options", out var options) && options.ValueKind == JsonValueKind.Array)
             {
-                foreach (var option in options.EnumerateArray())
+                using var optionItems = options.EnumerateArray();
+                while (optionItems.MoveNext())
                 {
-                    item.Options.Add(new LensPulseQuestionOption
+                    var option = optionItems.Current;
+                    item.Options.Add(new LensQuestionOption
                     {
                         Label = GetString(option, "label") ?? string.Empty,
                         Description = GetString(option, "description") ?? string.Empty
@@ -2082,7 +2953,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             "command_execution_approval" => "Command approval",
             "file_read_approval" => "File read approval",
             "file_change_approval" => "File change approval",
-            "tool_user_input" => "User input",
+            "interview" => "Interview",
             _ => requestType
         };
     }
@@ -2095,10 +2966,44 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             : null;
     }
 
+    private static string? GetScalarString(JsonElement element, params string[] path)
+    {
+        var current = Traverse(element, path);
+        if (current is not JsonElement value)
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => bool.TrueString,
+            JsonValueKind.False => bool.FalseString,
+            _ => null
+        };
+    }
+
     private static bool GetBoolean(JsonElement element, params string[] path)
     {
         var current = Traverse(element, path);
         return current is { ValueKind: JsonValueKind.True } || current is { ValueKind: JsonValueKind.False } value && value.GetBoolean();
+    }
+
+    private static long? GetLong(JsonElement element, params string[] path)
+    {
+        var current = Traverse(element, path);
+        if (current is not JsonElement value)
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt64(out var number) => number,
+            JsonValueKind.String when long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
     }
 
     private static JsonElement? GetObject(JsonElement element, params string[] path)
@@ -2162,3 +3067,17 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         public string? Detail { get; set; }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

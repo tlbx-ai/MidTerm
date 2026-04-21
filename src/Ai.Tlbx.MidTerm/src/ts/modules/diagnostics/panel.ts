@@ -21,6 +21,7 @@ import {
 import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
 import { createLogger } from '../logging';
+import { beginServerRestartLifecycle, reloadAppShell } from '../updating';
 
 const log = createLogger('diagnostics');
 type TerminalTransportDiagnostics = NonNullable<SessionStateResponse['terminalTransport']>;
@@ -141,33 +142,37 @@ function bindOverlayToggle(): void {
   }
 }
 
-function updateTerminalTransportDiagnostics(
-  sessionId: string,
+function setBaseTerminalTransportDiagnostics(
   transport: TerminalTransportDiagnostics | null,
+  browser: ReturnType<typeof getBrowserTransportSnapshot>,
 ): void {
-  const browser = getBrowserTransportSnapshot(sessionId);
-
   setDiagValue('diag-source-seq', transport?.sourceSeq ?? '-');
   setDiagValue('diag-mux-received-seq', transport?.muxReceivedSeq ?? '-');
   setDiagValue('diag-browser-received-seq', formatSequence(browser?.receivedSeq ?? null));
   setDiagValue('diag-browser-rendered-seq', formatSequence(browser?.renderedSeq ?? null));
   setDiagValue('diag-mthost-ipc-queued-seq', transport?.mthostIpcQueuedSeq ?? '-');
   setDiagValue('diag-mthost-ipc-flushed-seq', transport?.mthostIpcFlushedSeq ?? '-');
+}
 
-  if (transport) {
-    const backlog = `${transport.ipcBacklogFrames}f, ${transport.ipcBacklogBytes}b, age ${transport.oldestBacklogAgeMs}ms`;
-    const replayReason = transport.lastReplayReason ?? 'none';
-    const replay = `${transport.lastReplayBytes}b (${replayReason})`;
-    const lossReason = browser?.lastDataLossReason ?? transport.lastDataLossReason ?? 'none';
-    const lossCount = Math.max(browser?.dataLossCount ?? 0, transport.dataLossCount);
+function setLiveTransportDiagnostics(
+  transport: TerminalTransportDiagnostics,
+  browser: ReturnType<typeof getBrowserTransportSnapshot>,
+): void {
+  const backlog = `${transport.ipcBacklogFrames}f, ${transport.ipcBacklogBytes}b, age ${transport.oldestBacklogAgeMs}ms`;
+  const replayReason = transport.lastReplayReason ?? 'none';
+  const replay = `${transport.lastReplayBytes}b (${replayReason})`;
+  const lossReason = browser?.lastDataLossReason ?? transport.lastDataLossReason ?? 'none';
+  const lossCount = Math.max(browser?.dataLossCount ?? 0, transport.dataLossCount);
 
-    setDiagValue('diag-ipc-backlog', backlog);
-    setDiagValue('diag-last-replay', replay);
-    setDiagValue('diag-reconnect-count', `${transport.reconnectCount}`);
-    setDiagValue('diag-data-loss', `${lossCount} (${lossReason})`);
-    return;
-  }
+  setDiagValue('diag-ipc-backlog', backlog);
+  setDiagValue('diag-last-replay', replay);
+  setDiagValue('diag-reconnect-count', `${transport.reconnectCount}`);
+  setDiagValue('diag-data-loss', `${lossCount} (${lossReason})`);
+}
 
+function setBrowserOnlyTransportDiagnostics(
+  browser: ReturnType<typeof getBrowserTransportSnapshot>,
+): void {
   setDiagValue('diag-ipc-backlog', '-');
   setDiagValue(
     'diag-last-replay',
@@ -178,6 +183,22 @@ function updateTerminalTransportDiagnostics(
     'diag-data-loss',
     browser ? `${browser.dataLossCount} (${browser.lastDataLossReason ?? 'none'})` : '-',
   );
+}
+
+function updateTerminalTransportDiagnostics(
+  sessionId: string,
+  transport: TerminalTransportDiagnostics | null,
+): void {
+  const browser = getBrowserTransportSnapshot(sessionId);
+
+  setBaseTerminalTransportDiagnostics(transport, browser);
+
+  if (transport) {
+    setLiveTransportDiagnostics(transport, browser);
+    return;
+  }
+
+  setBrowserOnlyTransportDiagnostics(browser);
 }
 
 function clearTerminalTransportDiagnostics(): void {
@@ -218,7 +239,7 @@ function bindReloadSettingsButton(): void {
       try {
         const { response } = await reloadSettings();
         if (response.ok) {
-          window.location.reload();
+          reloadAppShell();
         }
       } catch (e) {
         log.error(() => `Failed to reload settings: ${String(e)}`);
@@ -250,44 +271,9 @@ function bindRestartButton(): void {
         // Server may have already shut down before responding — that's expected
       }
 
-      showRestartOverlay();
+      beginServerRestartLifecycle('restart');
     })();
   });
-}
-
-function showRestartOverlay(): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'restart-overlay';
-  overlay.innerHTML = `
-    <div class="spinner"></div>
-    <div>${t('settings.diagnostics.restartingServer')}</div>
-  `;
-  document.body.appendChild(overlay);
-
-  let attempts = 0;
-  const maxAttempts = 30; // 30 × 2s = 60s timeout
-
-  const poll = setInterval(async () => {
-    attempts++;
-    try {
-      const resp = await fetch('/api/health', { cache: 'no-store' });
-      if (resp.ok) {
-        clearInterval(poll);
-        window.location.reload();
-        return;
-      }
-    } catch {
-      // Server still down — keep polling
-    }
-
-    if (attempts >= maxAttempts) {
-      clearInterval(poll);
-      overlay.innerHTML = `
-        <div>${t('settings.diagnostics.restartFailed')}</div>
-        <button class="btn-primary" onclick="window.location.reload()">${t('settings.diagnostics.retryConnection')}</button>
-      `;
-    }
-  }, 2000);
 }
 
 function bindGitOverlayToggle(): void {

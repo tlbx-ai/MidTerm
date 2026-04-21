@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.WebPreview;
@@ -10,12 +12,13 @@ public static partial class WebPreviewEndpoints
     public static void MapWebPreviewEndpoints(
         WebApplication app,
         WebPreviewService webPreviewService,
-        TtyHostSessionManager sessionManager)
+        TtyHostSessionManager sessionManager,
+        BrowserCommandService browserCommandService)
     {
         MapPreviewSessionEndpoints(app, webPreviewService);
         MapTargetEndpoints(app, webPreviewService, sessionManager);
         MapCookieEndpoints(app, webPreviewService);
-        MapActionEndpoints(app, webPreviewService, sessionManager);
+        MapActionEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapProxyLogEndpoints(app, webPreviewService);
     }
 
@@ -119,7 +122,11 @@ public static partial class WebPreviewEndpoints
         });
     }
 
-    private static void MapActionEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
+    private static void MapActionEndpoints(
+        WebApplication app,
+        WebPreviewService service,
+        TtyHostSessionManager sessionManager,
+        BrowserCommandService browserCommandService)
     {
         app.MapPost("/api/webpreview/state/clear", (string sessionId, string? previewName) =>
         {
@@ -137,20 +144,48 @@ public static partial class WebPreviewEndpoints
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
-        app.MapPost("/api/webpreview/reload", (WebPreviewReloadRequest request) =>
+        app.MapPost("/api/webpreview/reload", async (WebPreviewReloadRequest request, CancellationToken cancellationToken) =>
         {
-            if (request.Mode.Equals("hard", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(request.SessionId))
             {
-                if (string.IsNullOrWhiteSpace(request.SessionId) || !service.HardReload(request.SessionId, request.PreviewName))
+                return Results.BadRequest("sessionId required");
+            }
+
+            var mode = NormalizeReloadMode(request.Mode);
+            if (mode == "hard")
+            {
+                if (!service.HardReload(request.SessionId, request.PreviewName))
                 {
                     return Results.BadRequest("No active target.");
                 }
             }
+
+            if (mode is "soft" or "force" or "hard")
+            {
+                try
+                {
+                    await browserCommandService.ExecuteCommandAsync(
+                        new BrowserCommandRequest
+                        {
+                            Command = "reload",
+                            Value = mode,
+                            SessionId = request.SessionId,
+                            PreviewName = request.PreviewName
+                        },
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+            }
+
             return Results.Ok();
         });
 
         app.MapPost("/api/webpreview/snapshot", async (
-            WebPreviewSnapshotRequest request) =>
+            WebPreviewSnapshotRequest request,
+            CancellationToken cancellationToken) =>
         {
             var session = sessionManager.GetSession(request.SessionId);
             if (session is null)
@@ -160,17 +195,17 @@ public static partial class WebPreviewEndpoints
             if (string.IsNullOrEmpty(cwd) || !Directory.Exists(cwd))
                 return Results.BadRequest("Session has no valid working directory");
 
-            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
             var cssDir = Path.Combine(snapshotDir, "css");
             Directory.CreateDirectory(cssDir);
 
             // Process HTML — strip proxy artifacts, decode ext URLs
-            var html = StripProxyArtifacts(request.Html);
-            html = DecodeExtUrls(html);
+            var html = WebPreviewHtmlSnapshotSanitizer.StripProxyArtifacts(request.Html);
+            html = WebPreviewHtmlSnapshotSanitizer.DecodeExtUrls(html);
 
             // Download CSS files and rewrite hrefs
-            foreach (var cssUrl in request.CssUrls.Distinct())
+            foreach (var cssUrl in request.CssUrls.Distinct(StringComparer.Ordinal))
             {
                 if (!TryExtractProxyPath(cssUrl, out var routeKey, out var proxyPath))
                     continue;
@@ -201,14 +236,14 @@ public static partial class WebPreviewEndpoints
                 var counter = 1;
                 while (File.Exists(Path.Combine(cssDir, finalFileName)))
                 {
-                    finalFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_{counter}.css";
+                    finalFileName = string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileNameWithoutExtension(fileName)}_{counter}.css");
                     counter++;
                 }
 
                 try
                 {
-                    var cssContent = await service.GetHttpClient(routeKey).GetStringAsync(upstreamUrl);
-                    await File.WriteAllTextAsync(Path.Combine(cssDir, finalFileName), cssContent);
+                    var cssContent = await service.GetHttpClient(routeKey).GetStringAsync(upstreamUrl, cancellationToken);
+                    await File.WriteAllTextAsync(Path.Combine(cssDir, finalFileName), cssContent, cancellationToken);
 
                     html = html.Replace(cssUrl, $"css/{finalFileName}", StringComparison.Ordinal);
 
@@ -222,7 +257,7 @@ public static partial class WebPreviewEndpoints
                 }
             }
 
-            await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html);
+            await File.WriteAllTextAsync(Path.Combine(snapshotDir, "index.html"), html, cancellationToken);
 
             return Results.Json(
                 new WebPreviewSnapshotResponse { SnapshotPath = snapshotDir },
@@ -242,30 +277,6 @@ public static partial class WebPreviewEndpoints
         {
             service.ClearLog(sessionId, previewName);
             return Results.Ok();
-        });
-    }
-
-    /// <summary>
-    /// Removes proxy-injected artifacts from the captured DOM HTML:
-    /// the <base> tag, the MT proxy script, and any blob: script tags.
-    /// </summary>
-    private static string StripProxyArtifacts(string html)
-    {
-        html = BaseTagRegex().Replace(html, "");
-        html = ProxyScriptRegex().Replace(html, "");
-        html = BlobScriptRegex().Replace(html, "");
-        return html;
-    }
-
-    /// <summary>
-    /// Replaces /_ext?u=ENCODED proxy URLs with the decoded original URLs.
-    /// </summary>
-    private static string DecodeExtUrls(string html)
-    {
-        return ExtUrlRegex().Replace(html, m =>
-        {
-            try { return Uri.UnescapeDataString(m.Groups[1].Value); }
-            catch { return m.Value; }
         });
     }
 
@@ -338,19 +349,19 @@ public static partial class WebPreviewEndpoints
         return string.IsNullOrEmpty(result) ? "style" : result;
     }
 
-    // Strips <base href="..."> or <base target="..."> tags
-    [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase)]
-    private static partial Regex BaseTagRegex();
+    private static string NormalizeReloadMode(string? mode)
+    {
+        if (string.Equals(mode, "hard", StringComparison.OrdinalIgnoreCase))
+        {
+            return "hard";
+        }
 
-    // Strips the MT proxy shim script (the minified IIFE containing window.__mtProxy)
-    [GeneratedRegex(@"<script>\(function\(\)\{.*?window\.__mtProxy.*?</script>", RegexOptions.Singleline)]
-    private static partial Regex ProxyScriptRegex();
+        if (string.Equals(mode, "force", StringComparison.OrdinalIgnoreCase))
+        {
+            return "force";
+        }
 
-    // Strips <script src="blob:..."> tags injected at runtime (e.g. by html2canvas loader)
-    [GeneratedRegex(@"<script[^>]+src=[""']blob:[^""'>]+[""'][^>]*></script>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex BlobScriptRegex();
+        return "soft";
+    }
 
-    // Matches /_ext?u=ENCODED_URL patterns for decoding
-    [GeneratedRegex(@"/_ext\?u=([^&""'\s>]+)")]
-    private static partial Regex ExtUrlRegex();
 }

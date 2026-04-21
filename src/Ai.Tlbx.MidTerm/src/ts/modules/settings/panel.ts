@@ -25,6 +25,7 @@ import {
 import { showAlert, showConfirm } from '../../utils/dialog';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { beginServerRestartLifecycle } from '../updating';
 
 const log = createLogger('settings');
 let releaseBackButtonLayer: (() => void) | null = null;
@@ -288,7 +289,7 @@ function bindRegenerateCertButton(): void {
         // Server may shut down before responding
       }
 
-      showRestartOverlay();
+      beginServerRestartLifecycle('certificate');
     })();
   });
 }
@@ -423,39 +424,4 @@ function bindFirewallButtons(): void {
       }
     })();
   });
-}
-
-function showRestartOverlay(): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'restart-overlay';
-  overlay.innerHTML = `
-    <div class="spinner"></div>
-    <div>${t('settings.diagnostics.restartingServer')}</div>
-  `;
-  document.body.appendChild(overlay);
-
-  let attempts = 0;
-  const maxAttempts = 30;
-
-  const poll = setInterval(async () => {
-    attempts++;
-    try {
-      const resp = await fetch('/api/health', { cache: 'no-store' });
-      if (resp.ok) {
-        clearInterval(poll);
-        window.location.reload();
-        return;
-      }
-    } catch {
-      // Server still down
-    }
-
-    if (attempts >= maxAttempts) {
-      clearInterval(poll);
-      overlay.innerHTML = `
-        <div>${t('settings.diagnostics.restartFailed')}</div>
-        <button class="btn-primary" onclick="window.location.reload()">${t('settings.diagnostics.retryConnection')}</button>
-      `;
-    }
-  }, 2000);
 }

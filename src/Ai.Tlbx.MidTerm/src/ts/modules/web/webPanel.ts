@@ -33,7 +33,9 @@ import {
   sanitizePreviewDisplayUrl,
   stripInternalPreviewQueryParams,
 } from './previewProxyUrl';
+import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
+  DEFAULT_PREVIEW_NAME,
   getActiveDockedClient,
   getActivePreview,
   getActivePreviewName,
@@ -95,12 +97,17 @@ let urlInput: HTMLInputElement | null = null;
 let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
 let statusIndicator: HTMLElement | null = null;
+let actionMessage: HTMLElement | null = null;
+let screenshotButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
+let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 let statusRefreshTimer: number | null = null;
+let screenshotInFlight = false;
+type PreviewReloadMode = 'soft' | 'force' | 'hard';
 
 const FRAME_ALLOW_ATTR = `
   camera *;
@@ -118,9 +125,21 @@ export function getLoadedUrl(): string | null {
   return loadedUrl;
 }
 
+function createForceReloadToken(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Register a callback for preview tab selection. */
 export function setPreviewTabSelectHandler(handler: (previewName: string) => void): void {
   previewTabSelectHandler = handler;
+}
+
+export function setPreviewTabCloseHandler(handler: (previewName: string) => void): void {
+  previewTabCloseHandler = handler;
 }
 
 /** Render the active session's named preview tabs. */
@@ -138,24 +157,46 @@ export function renderPreviewTabs(): void {
   }
 
   for (const preview of listSessionPreviews(sessionId)) {
+    const tab = document.createElement('div');
+    tab.className = 'web-preview-tab-shell';
+    tab.dataset.previewName = preview.previewName;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'web-preview-tab';
     if (preview.previewName === selectedPreviewName) {
-      button.classList.add('active');
+      tab.classList.add('active');
     }
     if (preview.mode === 'detached') {
-      button.classList.add('detached');
+      tab.classList.add('detached');
     }
     if (!preview.url) {
-      button.classList.add('empty');
+      tab.classList.add('empty');
     }
-    button.textContent = preview.previewName;
-    button.dataset.previewName = preview.previewName;
+    const label = buildPreviewTabLabel(preview.url);
+    button.textContent = label;
+    button.title = preview.url?.trim() || label;
+    button.setAttribute('aria-label', `Preview tab ${label}`);
     button.addEventListener('click', () => {
       previewTabSelectHandler?.(preview.previewName);
     });
-    previewTabs.appendChild(button);
+    tab.appendChild(button);
+
+    if (preview.previewName !== DEFAULT_PREVIEW_NAME) {
+      const closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'web-preview-tab-close';
+      closeButton.textContent = '×';
+      closeButton.title = `Close ${label}`;
+      closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
+      closeButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        previewTabCloseHandler?.(preview.previewName);
+      });
+      tab.appendChild(closeButton);
+    }
+
+    previewTabs.appendChild(tab);
   }
 }
 
@@ -165,10 +206,11 @@ export function initWebPanel(): void {
   iframeHost = document.getElementById('web-preview-iframe-host');
   previewTabs = document.getElementById('web-preview-tabs');
   statusIndicator = document.getElementById('web-preview-status-indicator');
+  actionMessage = document.getElementById('web-preview-action-message');
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
-  const screenshotBtn = document.getElementById('web-preview-screenshot');
+  screenshotButton = document.getElementById('web-preview-screenshot') as HTMLButtonElement | null;
 
   applyIframeSandbox();
   renderPreviewTabs();
@@ -184,9 +226,9 @@ export function initWebPanel(): void {
   });
   refreshBtn?.addEventListener('click', (e: MouseEvent) => {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
-    void handleRefresh(hard ? 'hard' : 'soft');
+    void handleRefresh(hard ? 'hard' : 'force');
   });
-  screenshotBtn?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
+  screenshotButton?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     void handleClearCookies();
   });
@@ -482,10 +524,7 @@ function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
 function replacePreviewIframe(frameKey: string): HTMLIFrameElement | null {
   const existing = previewFrames.get(frameKey);
   if (existing) {
-    existing.name = '';
-    existing.src = 'about:blank';
-    existing.remove();
-    previewFrames.delete(frameKey);
+    destroyPreviewFrameByKey(frameKey, existing);
   }
 
   if (activeFrameKey === frameKey) {
@@ -498,6 +537,30 @@ function replacePreviewIframe(frameKey: string): HTMLIFrameElement | null {
 function ensurePreviewIframe(sessionId: string, previewName: string): HTMLIFrameElement | null {
   const frameKey = getPreviewFrameKey(sessionId, previewName);
   return previewFrames.get(frameKey) ?? createPreviewIframe(frameKey);
+}
+
+function destroyPreviewFrameByKey(
+  frameKey: string,
+  frame: HTMLIFrameElement | null = previewFrames.get(frameKey) ?? null,
+): void {
+  if (!frame) {
+    return;
+  }
+
+  frame.name = '';
+  frame.src = 'about:blank';
+  frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+  frame.remove();
+  previewFrames.delete(frameKey);
+
+  if (activeFrameKey === frameKey) {
+    activeFrameKey = null;
+    loadedUrl = null;
+  }
+}
+
+export function destroyPreviewFrame(sessionId: string, previewName: string): void {
+  destroyPreviewFrameByKey(getPreviewFrameKey(sessionId, previewName));
 }
 
 function shouldRemountPreviewFrame(
@@ -550,14 +613,9 @@ function postCookieBridgeResponse(
   target.postMessage(message, '*');
 }
 
-async function handleCookieBridgeRequest(
-  event: MessageEvent<unknown>,
+function createCookieBridgeResponseMessage(
   request: PreviewCookieRequestMessage,
-): Promise<void> {
-  const target = event.source as WindowProxy | null;
-  const activePreview = getActivePreview();
-  const routeKey = activePreview?.routeKey ?? getActiveDockedClient()?.routeKey ?? null;
-
+): PreviewCookieResponseMessage {
   const responseMessage: PreviewCookieResponseMessage = {
     type: 'mt-cookie-response',
     requestId: request.requestId,
@@ -574,6 +632,43 @@ async function handleCookieBridgeRequest(
   if (typeof request.previewName === 'string') {
     responseMessage.previewName = request.previewName;
   }
+  return responseMessage;
+}
+
+function buildCookieBridgeUrl(routeKey: string, upstreamUrl?: string | null): URL {
+  const url = new URL(getCookieBridgePath(routeKey), window.location.origin);
+  if (upstreamUrl) {
+    url.searchParams.set('u', upstreamUrl);
+  }
+  return url;
+}
+
+async function fetchCookieBridge(
+  request: PreviewCookieRequestMessage,
+  routeKey: string,
+): Promise<Response> {
+  const upstreamUrl =
+    typeof request.upstreamUrl === 'string' ? request.upstreamUrl : getActiveUrl();
+  const url = buildCookieBridgeUrl(routeKey, upstreamUrl);
+  if (request.action === 'set') {
+    return fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: request.raw ?? '' }),
+    });
+  }
+
+  return fetch(url.toString(), { method: 'GET' });
+}
+
+async function handleCookieBridgeRequest(
+  event: MessageEvent<unknown>,
+  request: PreviewCookieRequestMessage,
+): Promise<void> {
+  const target = event.source as WindowProxy | null;
+  const activePreview = getActivePreview();
+  const routeKey = activePreview?.routeKey ?? getActiveDockedClient()?.routeKey ?? null;
+  const responseMessage = createCookieBridgeResponseMessage(request);
 
   if (!routeKey) {
     responseMessage.error = 'No active preview route';
@@ -581,22 +676,8 @@ async function handleCookieBridgeRequest(
     return;
   }
 
-  const upstreamUrl =
-    typeof request.upstreamUrl === 'string' ? request.upstreamUrl : getActiveUrl();
-  const url = new URL(getCookieBridgePath(routeKey), window.location.origin);
-  if (upstreamUrl) {
-    url.searchParams.set('u', upstreamUrl);
-  }
-
   try {
-    const response =
-      request.action === 'set'
-        ? await fetch(url.toString(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ raw: request.raw ?? '' }),
-          })
-        : await fetch(url.toString(), { method: 'GET' });
+    const response = await fetchCookieBridge(request, routeKey);
 
     if (!response.ok) {
       responseMessage.error = `Cookie bridge failed: ${response.status}`;
@@ -613,12 +694,24 @@ async function handleCookieBridgeRequest(
   postCookieBridgeResponse(target, responseMessage);
 }
 
-/** Load the current active named preview into the iframe. */
-export async function loadPreview(): Promise<void> {
-  if (!iframeHost) {
-    return;
-  }
+function clearActivePreviewFrame(): void {
+  setVisiblePreviewFrame(null);
+  loadedUrl = null;
+  hideStatusIndicator();
+}
 
+function isStillActivePreviewSession(sessionId: string, previewName: string): boolean {
+  return $activeSessionId.get() === sessionId && getActivePreviewName() === previewName;
+}
+
+async function resolvePreviewLoadContext(): Promise<{
+  sessionId: string;
+  previewName: string;
+  currentUrl: string;
+  currentTargetRevision: number;
+  frameKey: string;
+  previewClient: BrowserPreviewClientResponse;
+} | null> {
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   const currentPreview = getActivePreview();
@@ -626,29 +719,62 @@ export async function loadPreview(): Promise<void> {
   const currentTargetRevision = currentPreview?.targetRevision ?? 0;
 
   if (!currentUrl || !sessionId) {
-    setVisiblePreviewFrame(null);
-    loadedUrl = null;
-    hideStatusIndicator();
-    return;
+    clearActivePreviewFrame();
+    return null;
   }
-
-  const frameKey = getPreviewFrameKey(sessionId, previewName);
 
   const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
-  if ($activeSessionId.get() !== sessionId || getActivePreviewName() !== previewName) {
-    return;
+  if (!isStillActivePreviewSession(sessionId, previewName)) {
+    return null;
   }
-
   if (!previewClient) {
     setVisiblePreviewFrame(null);
     log.warn(() => `Failed to create browser preview client for ${sessionId}/${previewName}`);
     await refreshBrowserPreviewStatus();
+    return null;
+  }
+
+  return {
+    sessionId,
+    previewName,
+    currentUrl,
+    currentTargetRevision,
+    frameKey: getPreviewFrameKey(sessionId, previewName),
+    previewClient,
+  };
+}
+
+function ensurePreviewLoadFrame(sessionId: string, previewName: string): HTMLIFrameElement | null {
+  const frame = ensurePreviewIframe(sessionId, previewName);
+  if (!frame) {
+    log.warn(() => `Failed to allocate dock iframe for ${sessionId}/${previewName}`);
+    return null;
+  }
+  return frame;
+}
+
+function resetBrokenPreviewFrame(frame: HTMLIFrameElement): void {
+  frame.name = '';
+  frame.src = 'about:blank';
+  frame.classList.add('hidden');
+  frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+}
+
+/** Load the current active named preview into the iframe. */
+export async function loadPreview(reloadToken?: string): Promise<void> {
+  if (!iframeHost) {
     return;
   }
 
-  const initialFrame = ensurePreviewIframe(sessionId, previewName);
+  const context = await resolvePreviewLoadContext();
+  if (!context) {
+    return;
+  }
+
+  const { sessionId, previewName, currentUrl, currentTargetRevision, frameKey, previewClient } =
+    context;
+  const initialFrame = ensurePreviewLoadFrame(sessionId, previewName);
   if (!initialFrame) {
-    log.warn(() => `Failed to allocate dock iframe for ${sessionId}/${previewName}`);
     return;
   }
 
@@ -672,6 +798,7 @@ export async function loadPreview(): Promise<void> {
       previewClient,
       currentTargetRevision,
       previewClient.origin ?? window.location.origin,
+      reloadToken,
     );
     if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {
       if (frame.src === proxyUrl) {
@@ -687,15 +814,12 @@ export async function loadPreview(): Promise<void> {
     loadedUrl = currentUrl;
     await refreshBrowserPreviewStatus();
   } catch {
-    frame.name = '';
-    frame.src = 'about:blank';
-    frame.classList.add('hidden');
-    frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
+    resetBrokenPreviewFrame(frame);
     await refreshBrowserPreviewStatus();
   }
 }
 
-async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
+async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   if (!sessionId) {
@@ -713,11 +837,21 @@ async function handleRefresh(mode: 'soft' | 'hard' = 'soft'): Promise<void> {
       log.warn(() => 'Failed to refresh web preview target');
       return;
     }
+    upsertSessionPreview(result);
     setCurrentPreviewUrl(currentUrl, false);
   }
 
-  await reloadWebPreview(sessionId, previewName, mode);
-  await loadPreview();
+  if (mode === 'soft') {
+    await reloadWebPreview(sessionId, previewName, mode);
+    await loadPreview();
+    return;
+  }
+
+  if (mode === 'hard') {
+    await reloadWebPreview(sessionId, previewName, mode);
+  }
+
+  await loadPreview(createForceReloadToken());
 }
 
 /**
@@ -840,64 +974,135 @@ function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
   }
 }
 
+function setActionMessage(severity: 'info' | 'error', message: string | null): void {
+  if (!actionMessage) {
+    return;
+  }
+
+  if (!message) {
+    actionMessage.textContent = '';
+    actionMessage.classList.add('hidden');
+    actionMessage.dataset.severity = '';
+    return;
+  }
+
+  actionMessage.textContent = message;
+  actionMessage.dataset.severity = severity;
+  actionMessage.classList.remove('hidden');
+}
+
+function setScreenshotButtonBusy(active: boolean): void {
+  if (!screenshotButton) {
+    return;
+  }
+
+  const idleGlyph = screenshotButton.dataset.idleGlyph ?? screenshotButton.innerHTML;
+  screenshotButton.dataset.idleGlyph = idleGlyph;
+  const idleTitle = screenshotButton.dataset.idleTitle ?? screenshotButton.title;
+  screenshotButton.dataset.idleTitle = idleTitle;
+
+  if (active) {
+    screenshotButton.disabled = true;
+    screenshotButton.setAttribute('aria-busy', 'true');
+    screenshotButton.classList.add('web-preview-action-working');
+    screenshotButton.innerHTML = '&#x21bb;';
+    screenshotButton.title = 'Capturing screenshot...';
+    return;
+  }
+
+  screenshotButton.disabled = false;
+  screenshotButton.setAttribute('aria-busy', 'false');
+  screenshotButton.classList.remove('web-preview-action-working');
+  screenshotButton.innerHTML = idleGlyph;
+  screenshotButton.title = idleTitle;
+}
+
 /**
  * Capture a screenshot of the active named web preview.
  */
 async function handleScreenshot(download = false): Promise<void> {
+  if (screenshotInFlight) {
+    return;
+  }
+
   const sessionId = $activeSessionId.get();
   const previewName = getActivePreviewName();
   const iframe = getActiveIframe();
   if (!sessionId || !iframe || iframe.src === 'about:blank') {
+    setActionMessage('error', 'Screenshot failed: there is no active browser preview to capture.');
     return;
   }
 
-  const previewId = getActiveDockedClient()?.previewId;
+  screenshotInFlight = true;
+  setActionMessage('info', null);
+  setScreenshotButtonBusy(true);
+
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
 
-  const dataUrl = await captureBrowserScreenshotRaw(sessionId, previewId, previewName);
-  if (!dataUrl) {
-    log.warn(() => 'Browser screenshot capture failed');
-    return;
-  }
-
-  const blob = decodeScreenshotDataUrl(dataUrl);
-  if (!blob) {
-    log.warn(() => 'Failed to decode browser screenshot');
-    return;
-  }
-
-  if (download) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-    log.info(() => 'Screenshot downloaded');
-    return;
-  }
-
-  const file = new File([blob], filename, { type: 'image/png' });
-  const formData = new FormData();
-  formData.append('file', file);
-
   try {
+    const dataUrl = await captureBrowserScreenshotRaw(sessionId, undefined, previewName);
+    if (!dataUrl) {
+      setActionMessage(
+        'error',
+        'Screenshot failed: MidTerm did not receive image data back from the dev browser.',
+      );
+      log.warn(() => 'Browser screenshot capture failed');
+      return;
+    }
+
+    const blob = decodeScreenshotDataUrl(dataUrl);
+    if (!blob) {
+      setActionMessage('error', 'Screenshot failed: the returned image data could not be decoded.');
+      log.warn(() => 'Failed to decode browser screenshot');
+      return;
+    }
+
+    if (download) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      setActionMessage('info', null);
+      log.info(() => 'Screenshot downloaded');
+      return;
+    }
+
+    const file = new File([blob], filename, { type: 'image/png' });
+    const formData = new FormData();
+    formData.append('file', file);
+
     const resp = await fetch(`/api/sessions/${sessionId}/upload`, {
       method: 'POST',
       body: formData,
     });
     if (!resp.ok) {
+      setActionMessage(
+        'error',
+        `Screenshot failed: MidTerm could not upload it to the session (${resp.status}).`,
+      );
       log.warn(() => `Screenshot upload failed: ${resp.status}`);
       return;
     }
     const result = (await resp.json()) as UploadResponse;
     if (result.path) {
-      void pasteToTerminal(sessionId, result.path, true);
+      await pasteToTerminal(sessionId, result.path, true);
+      setActionMessage('info', null);
       log.info(() => 'Screenshot pasted to terminal');
+      return;
     }
+    setActionMessage(
+      'error',
+      'Screenshot failed: the upload completed but MidTerm did not return a usable file path.',
+    );
   } catch (err) {
+    setActionMessage('error', `Screenshot failed: ${String(err)}`);
     log.warn(() => `Screenshot upload error: ${String(err)}`);
+  } finally {
+    screenshotInFlight = false;
+    setScreenshotButtonBusy(false);
   }
 }
 
@@ -936,12 +1141,7 @@ async function handleClearState(): Promise<void> {
   upsertSessionPreview(cleared);
   setCurrentPreviewUrl(cleared.url);
 
-  const browserResult = await runBrowserCommand(
-    'clearstate',
-    sessionId,
-    previewName,
-    getActiveDockedClient()?.previewId,
-  );
+  const browserResult = await runBrowserCommand('clearstate', sessionId, previewName);
 
   if (!browserResult?.success) {
     const error =
@@ -1028,11 +1228,7 @@ async function refreshBrowserPreviewStatus(): Promise<void> {
     return;
   }
 
-  const status = await getBrowserPreviewStatus(
-    sessionId,
-    previewName,
-    getActiveDockedClient()?.previewId,
-  );
+  const status = await getBrowserPreviewStatus(sessionId, previewName);
 
   if (!status) {
     setStatusIndicatorMessage(

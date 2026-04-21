@@ -61,7 +61,7 @@ public sealed class SessionAgentVibeService
             tailText = BuildTailText(snapshot?.Data, tailLines);
         }
 
-        if (_lensRuntime.TryGetSnapshot(sessionId, out var runtimeSnapshot))
+        if (_lensRuntime.TryGetRuntimeSummary(sessionId, out var runtimeSummary))
         {
             return BuildNativeVibe(
                 sessionId,
@@ -72,7 +72,7 @@ public sealed class SessionAgentVibeService
                 activity,
                 tailLines,
                 tailText,
-                runtimeSnapshot,
+                runtimeSummary,
                 now);
         }
 
@@ -139,10 +139,10 @@ public sealed class SessionAgentVibeService
         SessionActivityResponse activity,
         int tailLines,
         string terminalTailText,
-        LensRuntimeSnapshot runtimeSnapshot,
+        LensRuntimeSummary runtimeSummary,
         DateTimeOffset now)
     {
-        var transportSummary = $"{runtimeSnapshot.TransportLabel} is attached as the native Lens runtime. Lens remains provider-owned and separate from any terminal surface.";
+        var transportSummary = $"{runtimeSummary.TransportLabel} is attached as the native Lens runtime. Lens remains provider-owned and separate from any terminal surface.";
         var chips = new List<AgentSessionVibeChip>
         {
             new()
@@ -152,8 +152,8 @@ public sealed class SessionAgentVibeService
             },
             new()
             {
-                Text = runtimeSnapshot.StatusLabel,
-                Tone = runtimeSnapshot.Status == "error" ? "attention" : runtimeSnapshot.Status == "running" ? "positive" : "info"
+                Text = runtimeSummary.StatusLabel,
+                Tone = runtimeSummary.Status == "error" ? "attention" : runtimeSummary.Status == "running" ? "positive" : "info"
             },
             new()
             {
@@ -162,7 +162,7 @@ public sealed class SessionAgentVibeService
             }
         };
 
-        if (!string.IsNullOrWhiteSpace(runtimeSnapshot.PendingQuestion))
+        if (!string.IsNullOrWhiteSpace(runtimeSummary.PendingQuestion))
         {
             chips.Add(new AgentSessionVibeChip
             {
@@ -179,7 +179,7 @@ public sealed class SessionAgentVibeService
                     Label = capabilityItem.Label,
                     Status = "live",
                     StatusLabel = "Live",
-                    Detail = runtimeSnapshot.TransportLabel + " is actively feeding Lens for this session."
+                    Detail = runtimeSummary.TransportLabel + " is actively feeding Lens for this session."
                 }
                 : capabilityItem.Key == "terminal"
                     ? new AgentSessionVibeCapability
@@ -193,10 +193,10 @@ public sealed class SessionAgentVibeService
                     : capabilityItem)
             .ToList();
 
-        var nativeTail = !string.IsNullOrWhiteSpace(runtimeSnapshot.AssistantText)
-            ? runtimeSnapshot.AssistantText
-            : !string.IsNullOrWhiteSpace(runtimeSnapshot.UnifiedDiff)
-                ? runtimeSnapshot.UnifiedDiff
+        var nativeTail = !string.IsNullOrWhiteSpace(runtimeSummary.AssistantText)
+            ? runtimeSummary.AssistantText
+            : !string.IsNullOrWhiteSpace(runtimeSummary.UnifiedDiff)
+                ? runtimeSummary.UnifiedDiff
                 : terminalTailText;
 
         return new AgentSessionVibeResponse
@@ -207,38 +207,38 @@ public sealed class SessionAgentVibeService
             Header = new AgentSessionVibeHeader
             {
                 Title = providerLabel,
-                Subtitle = $"{providerLabel} • {runtimeSnapshot.StatusLabel}",
+                Subtitle = $"{providerLabel} • {runtimeSummary.StatusLabel}",
                 Provider = profile,
                 ProviderLabel = providerLabel,
-                State = runtimeSnapshot.Status,
-                StateLabel = runtimeSnapshot.StatusLabel,
-                NeedsAttention = runtimeSnapshot.Status == "error" || supervisor.NeedsAttention,
-                AttentionReason = runtimeSnapshot.LastError ?? supervisor.AttentionReason,
+                State = runtimeSummary.Status,
+                StateLabel = runtimeSummary.StatusLabel,
+                NeedsAttention = runtimeSummary.Status == "error" || supervisor.NeedsAttention,
+                AttentionReason = runtimeSummary.LastError ?? supervisor.AttentionReason,
                 TransportSummary = transportSummary,
                 Chips = chips
             },
             Lane = new AgentSessionVibeLane
             {
                 Mode = "native-live",
-                Tone = runtimeSnapshot.Status == "error" ? "attention" : runtimeSnapshot.Status == "running" ? "positive" : "info",
+                Tone = runtimeSummary.Status == "error" ? "attention" : runtimeSummary.Status == "running" ? "positive" : "info",
                 Label = "Native Lens",
                 Detail = transportSummary
             },
             Capabilities = capabilities,
             Overview = new AgentSessionVibeOverview
             {
-                StateValue = runtimeSnapshot.StatusLabel,
-                StateMeta = runtimeSnapshot.PendingQuestion is null ? "Native runtime active" : "Waiting for input",
-                ActivityValue = $"{runtimeSnapshot.Activities.Count.ToString(CultureInfo.InvariantCulture)} events",
-                ActivityMeta = runtimeSnapshot.TransportLabel,
-                LastOutputValue = FormatRelativeTime(runtimeSnapshot.LastEventAt, now),
-                LastOutputMeta = FormatAbsoluteTime(runtimeSnapshot.LastEventAt),
+                StateValue = runtimeSummary.StatusLabel,
+                StateMeta = runtimeSummary.PendingQuestion is null ? "Native runtime active" : "Waiting for input",
+                ActivityValue = $"{runtimeSummary.Activities.Count.ToString(CultureInfo.InvariantCulture)} events",
+                ActivityMeta = runtimeSummary.TransportLabel,
+                LastOutputValue = FormatRelativeTime(runtimeSummary.LastEventAt, now),
+                LastOutputMeta = FormatAbsoluteTime(runtimeSummary.LastEventAt),
                 BellsValue = activity.TotalBellCount.ToString(CultureInfo.InvariantCulture),
                 BellsMeta = activity.LastBellAt is null
                     ? "No recent terminal bell"
                     : $"Last bell {FormatRelativeTime(activity.LastBellAt, now)}"
             },
-            Activities = runtimeSnapshot.Activities,
+            Activities = runtimeSummary.Activities,
             Heatmap = activity.Heatmap,
             Terminal = new AgentSessionVibeTerminal
             {

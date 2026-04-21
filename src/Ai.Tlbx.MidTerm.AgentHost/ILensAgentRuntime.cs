@@ -13,5 +13,5 @@ internal sealed class HostCommandOutcome
 {
     public required LensHostCommandResultEnvelope Result { get; init; }
 
-    public IReadOnlyList<LensHostEventEnvelope> Events { get; init; } = [];
+    public IReadOnlyList<LensProviderEvent> Events { get; init; } = [];
 }

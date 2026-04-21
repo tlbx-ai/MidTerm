@@ -183,7 +183,7 @@ public class MuxProtocolTests
 
         var result = MuxProtocol.TryParseFrame(frame, out _, out var parsedId, out _);
         Assert.True(result);
-        Assert.StartsWith("abc", parsedId);
+        Assert.StartsWith("abc", parsedId, StringComparison.Ordinal);
         Assert.Equal(8, parsedId.Length);
     }
 
@@ -212,6 +212,31 @@ public class MuxProtocolTests
         var (reason, droppedBytes) = MuxProtocol.ParseDataLossPayload(payload);
         Assert.Equal(TerminalReplayReason.MuxOverflow, reason);
         Assert.Equal(1234, droppedBytes);
+    }
+
+    [Fact]
+    public void CreateBufferRequestFrame_RoundTrips_QuickResumeMode()
+    {
+        var frame = MuxProtocol.CreateBufferRequestFrame("session1", quickResume: true);
+
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
+        Assert.Equal(MuxProtocol.TypeBufferRequest, type);
+        Assert.Equal("session1", sessionId);
+        Assert.True(MuxProtocol.ParseBufferRequestQuickResume(payload));
+    }
+
+    [Fact]
+    public void CreateVisibleSessionsHintFrame_RoundTrips_SessionIds()
+    {
+        var frame = MuxProtocol.CreateVisibleSessionsHintFrame(["sess0001", "sess0002"]);
+
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out _, out var payload));
+        Assert.Equal(MuxProtocol.TypeVisibleSessionsHint, type);
+
+        var sessionIds = MuxProtocol.ParseVisibleSessionsHintPayload(payload);
+        Assert.Equal(2, sessionIds.Count);
+        Assert.Contains("sess0001", sessionIds);
+        Assert.Contains("sess0002", sessionIds);
     }
 
 }

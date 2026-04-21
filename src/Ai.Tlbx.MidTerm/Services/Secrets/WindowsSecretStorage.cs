@@ -78,7 +78,7 @@ public sealed class WindowsSecretStorage : ISecretStorage
             return;
         }
 
-        _cache = new Dictionary<string, string>();
+        _cache = new Dictionary<string, string>(StringComparer.Ordinal);
 
         if (!File.Exists(_secretsPath))
         {

@@ -8,6 +8,47 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class LensHostEnvironmentResolverTests
 {
     [Fact]
+    public void ApplyProfileEnvironment_PopulatesEnvironmentAndCollectsExistingPathEntries()
+    {
+        var profileDirectory = Path.Combine(Path.GetTempPath(), $"midterm-profile-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(profileDirectory);
+
+        try
+        {
+            var expectedPathEntries = AiCliCommandLocator.GetUserCommandDirectories(profileDirectory)
+                .Where(Directory.Exists)
+                .ToList();
+            var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["PATH"] = @"C:\Windows\System32"
+            };
+            var pathPrependEntries = new List<string>();
+
+            LensHostEnvironmentResolver.ApplyProfileEnvironment(
+                environment,
+                profileDirectory,
+                pathPrependEntries);
+
+            Assert.Equal(profileDirectory, environment["USERPROFILE"]);
+            Assert.Equal(profileDirectory, environment["HOME"]);
+            Assert.Equal(Path.Combine(profileDirectory, ".codex"), environment["CODEX_HOME"]);
+            Assert.Equal(Path.Combine(profileDirectory, "AppData", "Roaming"), environment["APPDATA"]);
+            Assert.Equal(Path.Combine(profileDirectory, "AppData", "Local"), environment["LOCALAPPDATA"]);
+            Assert.Equal(expectedPathEntries, pathPrependEntries);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(profileDirectory, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
     public void ApplyUserProfileEnvironment_DoesNothing_WhenRunAsUserMissing()
     {
         var startInfo = new ProcessStartInfo();
@@ -53,6 +94,25 @@ public sealed class LensHostEnvironmentResolverTests
 
         Assert.NotNull(profileDirectory);
         Assert.EndsWith(Path.Combine("Users", "johan"), profileDirectory!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ResolveWindowsProfileDirectory_DoesNotFallbackToSystemProfileParent()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(
+            @"ATURIS\johannes.schmidt",
+            userSid: null);
+
+        Assert.NotNull(profileDirectory);
+        Assert.DoesNotContain(
+            Path.Combine("system32", "config"),
+            profileDirectory!,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

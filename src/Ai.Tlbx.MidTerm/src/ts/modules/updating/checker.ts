@@ -5,67 +5,121 @@
  * and applying updates with server restart.
  */
 
-import type { UpdateInfo, UpdateResult } from '../../api/types';
-import { $updateInfo, $currentSettings } from '../../stores';
+import type { UpdateInfo, UpdateResult, UpdateType } from '../../api/types';
+import { $frontendRefreshState, $updateInfo, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
 import {
   applyUpdate as apiApplyUpdate,
   checkUpdate,
-  getVersion,
   getUpdateResult,
   deleteUpdateResult,
   getUpdateLog,
 } from '../../api/client';
 import { openSettings, switchSettingsTab } from '../settings';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
+import { beginServerRestartLifecycle, requestFrontendRefresh } from './runtime';
 
 const log = createLogger('updating');
 
-const MAX_RELOAD_ATTEMPTS = 30;
-const RELOAD_INTERVAL_MS = 2000;
-const INITIAL_RESTART_DELAY_MS = 3000;
-
 const DISMISSED_VERSION_KEY = 'mt-dismissed-update-version';
+let updateUiInitialized = false;
 
-/**
- * Render the update panel based on current update info
- */
-export function renderUpdatePanel(): void {
-  const panel = document.getElementById('update-panel');
-  if (!panel) return;
-
-  const info = $updateInfo.get();
-  if (!info || !info.available) {
-    panel.classList.add('hidden');
-    renderUpdateFooterHint();
+export function initUpdateUi(): void {
+  if (updateUiInitialized) {
     return;
   }
 
-  const settings = $currentSettings.get();
-  // Master toggle in settings — if explicitly disabled, never show
-  if (settings?.showUpdateNotification === false) {
-    panel.classList.add('hidden');
-    renderUpdateFooterHint();
-    return;
-  }
+  updateUiInitialized = true;
+  $updateInfo.subscribe(() => {
+    renderUpdatePanel();
+  });
+  $currentSettings.subscribe(() => {
+    renderUpdatePanel();
+  });
+  $frontendRefreshState.subscribe(() => {
+    renderUpdatePanel();
+  });
+}
 
-  // Version-specific dismiss — only suppresses the specific version the user dismissed
-  const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
-  if (dismissedVersion === info.latestVersion) {
-    panel.classList.add('hidden');
-    renderUpdateFooterHint();
+function renderRefreshStatePanel(panel: HTMLElement): void {
+  const refreshState = $frontendRefreshState.get();
+  if (!refreshState) {
     return;
   }
 
   panel.classList.remove('hidden');
-  renderUpdateFooterHint();
+
+  const dismissBtn = panel.querySelector<HTMLButtonElement>('#update-dismiss-btn');
+  const headerEl = panel.querySelector('.update-header');
+  const currentEl = panel.querySelector('.update-current');
+  const latestEl = panel.querySelector('.update-latest');
+  const noteEl = panel.querySelector('.update-note');
+  const btn = panel.querySelector<HTMLButtonElement>('.update-btn');
+  const changelogEl = panel.querySelector<HTMLElement>('#update-changelog-link');
+
+  if (dismissBtn) {
+    dismissBtn.hidden = refreshState.status === 'required';
+  }
+  if (headerEl) {
+    headerEl.textContent =
+      refreshState.status === 'required' ? t('update.refreshRequired') : t('update.refreshReady');
+  }
+  if (currentEl) currentEl.textContent = refreshState.clientVersion;
+  if (latestEl) latestEl.textContent = refreshState.serverVersion;
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = t('update.refreshUi');
+  }
+  if (noteEl) {
+    noteEl.textContent =
+      refreshState.status === 'required'
+        ? t('update.refreshRequiredNote')
+        : t('update.refreshWhenConvenient');
+    noteEl.classList.add('update-note-safe');
+    noteEl.classList.remove('update-note-warning');
+  }
+  if (changelogEl) {
+    changelogEl.hidden = true;
+  }
+}
+
+function shouldHideUpdatePanel(info: UpdateInfo | null): boolean {
+  if (!info || !info.available) {
+    return true;
+  }
+
+  const settings = $currentSettings.get();
+  if (settings?.showUpdateNotification === false) {
+    return true;
+  }
+
+  const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
+  return dismissedVersion === info.latestVersion;
+}
+
+function renderAvailableUpdatePanel(panel: HTMLElement, info: UpdateInfo): void {
+  panel.classList.remove('hidden');
 
   const currentEl = panel.querySelector('.update-current');
   const latestEl = panel.querySelector('.update-latest');
   const noteEl = panel.querySelector('.update-note');
   const headerEl = panel.querySelector('.update-header');
+  const dismissBtn = panel.querySelector<HTMLButtonElement>('#update-dismiss-btn');
+  const changelogEl = panel.querySelector<HTMLElement>('#update-changelog-link');
+  const btn = panel.querySelector<HTMLButtonElement>('.update-btn');
+
+  if (dismissBtn) {
+    dismissBtn.hidden = false;
+  }
+  if (changelogEl) {
+    changelogEl.hidden = false;
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = t('sidebar.updateRestart');
+  }
 
   if (currentEl) currentEl.textContent = info.currentVersion;
   if (latestEl) latestEl.textContent = info.latestVersion;
@@ -77,19 +131,59 @@ export function renderUpdatePanel(): void {
       noteEl.classList.add('update-note-safe');
       noteEl.classList.remove('update-note-warning');
     }
-  } else {
-    if (headerEl) headerEl.textContent = t('sidebar.updateAvailable');
-    if (noteEl) {
-      noteEl.textContent = t('sidebar.saveWorkTerminalsClose');
-      noteEl.classList.add('update-note-warning');
-      noteEl.classList.remove('update-note-safe');
-    }
+    return;
   }
+
+  if (headerEl) headerEl.textContent = t('sidebar.updateAvailable');
+  if (noteEl) {
+    noteEl.textContent = t('sidebar.saveWorkTerminalsClose');
+    noteEl.classList.add('update-note-warning');
+    noteEl.classList.remove('update-note-safe');
+  }
+}
+
+/**
+ * Render the update panel based on current update info
+ */
+export function renderUpdatePanel(): void {
+  const panel = document.getElementById('update-panel');
+  if (!panel) return;
+
+  if ($frontendRefreshState.get()) {
+    renderRefreshStatePanel(panel);
+    renderUpdateFooterHint();
+    return;
+  }
+
+  const info = $updateInfo.get();
+  if (shouldHideUpdatePanel(info)) {
+    panel.classList.add('hidden');
+    renderUpdateFooterHint();
+    return;
+  }
+  if (!info) {
+    panel.classList.add('hidden');
+    renderUpdateFooterHint();
+    return;
+  }
+
+  renderAvailableUpdatePanel(panel, info);
+  renderUpdateFooterHint();
 }
 
 function renderUpdateFooterHint(): void {
   const hint = document.getElementById('footer-update-hint');
+  const link = document.getElementById('footer-update-link');
   if (!hint) return;
+
+  const refreshState = $frontendRefreshState.get();
+  if (refreshState) {
+    if (link) {
+      link.textContent = t('update.refreshUi');
+    }
+    hint.classList.add('hidden');
+    return;
+  }
 
   const info = $updateInfo.get();
   const settings = $currentSettings.get();
@@ -99,6 +193,9 @@ function renderUpdateFooterHint(): void {
 
   // Show footer hint when update exists but panel is hidden (dismissed or master off)
   if (info?.available && (masterDisabled || versionDismissed)) {
+    if (link) {
+      link.textContent = t('sidebar.footerUpdateAvailable');
+    }
     hint.classList.remove('hidden');
   } else {
     hint.classList.add('hidden');
@@ -114,8 +211,12 @@ export function bindFooterUpdateLink(): void {
   const link = document.getElementById('footer-update-link');
   if (link) {
     link.addEventListener('click', () => {
+      if ($frontendRefreshState.get()) {
+        requestFrontendRefresh();
+        return;
+      }
       openSettings();
-      switchSettingsTab('general');
+      switchSettingsTab('updates');
     });
   }
 }
@@ -154,7 +255,7 @@ export function applyUpdate(): void {
     .then(({ response }) => {
       if (response.ok) {
         if (btn) btn.textContent = t('update.restarting');
-        waitForServerAndReload();
+        waitForServerAndReload(info.type, info.latestVersion);
       } else {
         if (btn) {
           btn.disabled = false;
@@ -173,29 +274,13 @@ export function applyUpdate(): void {
 }
 
 /**
- * Wait for the server to restart after an update, then reload the page
+ * Start the coordinated server restart lifecycle after an update.
  */
-export function waitForServerAndReload(): void {
-  let attempts = 0;
-
-  function checkServer(): void {
-    attempts++;
-    getVersion()
-      .then(({ response }) => {
-        if (response.ok) {
-          location.reload();
-        } else if (attempts < MAX_RELOAD_ATTEMPTS) {
-          setTimeout(checkServer, RELOAD_INTERVAL_MS);
-        }
-      })
-      .catch(() => {
-        if (attempts < MAX_RELOAD_ATTEMPTS) {
-          setTimeout(checkServer, RELOAD_INTERVAL_MS);
-        }
-      });
-  }
-
-  setTimeout(checkServer, INITIAL_RESTART_DELAY_MS);
+export function waitForServerAndReload(
+  updateType: UpdateType | null = null,
+  expectedServerVersion: string | null = null,
+): void {
+  beginServerRestartLifecycle('update', { updateType, expectedServerVersion });
 }
 
 /**
@@ -239,6 +324,46 @@ export function checkForUpdates(e?: MouseEvent): void {
     });
 }
 
+function setNoUpdatesStatusVisibility(statusNone: HTMLElement | null, hidden: boolean): void {
+  statusNone?.classList.toggle('hidden', hidden);
+}
+
+function appendUpdateCard(container: HTMLElement, options: UpdateCardOptions | null): void {
+  if (!options) {
+    return;
+  }
+
+  container.appendChild(createUpdateCard(options));
+}
+
+function createGitHubUpdateCard(update: UpdateInfo | null): UpdateCardOptions | null {
+  if (!update?.available) {
+    return null;
+  }
+
+  return {
+    type: 'github',
+    title: 'GitHub Release',
+    version: update.latestVersion,
+    sessionsPreserved: update.sessionsPreserved,
+    onApply: applyUpdate,
+  };
+}
+
+function createLocalUpdateCard(update: UpdateInfo | null): UpdateCardOptions | null {
+  if (!update?.environment || !update.localUpdate?.available) {
+    return null;
+  }
+
+  return {
+    type: 'local',
+    title: 'Local Build',
+    version: update.localUpdate.version,
+    sessionsPreserved: update.localUpdate.sessionsPreserved,
+    onApply: applyLocalUpdate,
+  };
+}
+
 /**
  * Render both GitHub and Local update cards
  */
@@ -251,45 +376,22 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
 
   // Error state
   if (error) {
-    if (statusNone) statusNone.classList.add('hidden');
+    setNoUpdatesStatusVisibility(statusNone, true);
     container.innerHTML = `<div class="update-status-error">${error}</div>`;
     return;
   }
 
-  const hasGitHub = update?.available ?? false;
-  const hasLocal = update?.environment && update.localUpdate?.available;
+  const gitHubCard = createGitHubUpdateCard(update);
+  const localCard = createLocalUpdateCard(update);
 
-  // No updates available
-  if (!hasGitHub && !hasLocal) {
-    if (statusNone) statusNone.classList.remove('hidden');
+  if (!gitHubCard && !localCard) {
+    setNoUpdatesStatusVisibility(statusNone, false);
     return;
   }
 
-  if (statusNone) statusNone.classList.add('hidden');
-
-  // GitHub update card
-  if (hasGitHub && update) {
-    const card = createUpdateCard({
-      type: 'github',
-      title: 'GitHub Release',
-      version: update.latestVersion,
-      sessionsPreserved: update.sessionsPreserved,
-      onApply: applyUpdate,
-    });
-    container.appendChild(card);
-  }
-
-  // Local update card (only in dev environment)
-  if (hasLocal && update.localUpdate) {
-    const card = createUpdateCard({
-      type: 'local',
-      title: 'Local Build',
-      version: update.localUpdate.version,
-      sessionsPreserved: update.localUpdate.sessionsPreserved,
-      onApply: applyLocalUpdate,
-    });
-    container.appendChild(card);
-  }
+  setNoUpdatesStatusVisibility(statusNone, true);
+  appendUpdateCard(container, gitHubCard);
+  appendUpdateCard(container, localCard);
 }
 
 interface UpdateCardOptions {
@@ -342,9 +444,11 @@ export function applyLocalUpdate(): void {
   apiApplyUpdate('local')
     .then(({ response }) => {
       const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
+      const updateType = $updateInfo.get()?.localUpdate?.type ?? null;
+      const expectedServerVersion = $updateInfo.get()?.localUpdate?.version ?? null;
       if (response.ok) {
         if (btn) btn.textContent = 'Restarting...';
-        waitForServerAndReload();
+        waitForServerAndReload(updateType, expectedServerVersion);
       } else {
         if (btn) {
           btn.disabled = false;
@@ -370,6 +474,15 @@ export function handleUpdateInfo(update: UpdateInfo): void {
   $updateInfo.set(update);
   renderUpdatePanel();
   renderUpdateCards(update);
+}
+
+export function handlePrimaryUpdateAction(): void {
+  if ($frontendRefreshState.get()) {
+    requestFrontendRefresh();
+    return;
+  }
+
+  applyUpdate();
 }
 
 const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';

@@ -4,7 +4,7 @@ import SwiftUI
 struct MidTermConnectorApp: App {
     var body: some Scene {
         WindowGroup {
-            ServerListView()
+            LaunchView()
                 .preferredColorScheme(.dark)
         }
     }

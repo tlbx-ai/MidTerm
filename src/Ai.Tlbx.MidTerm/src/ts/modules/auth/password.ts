@@ -73,50 +73,70 @@ function hidePasswordModal(): void {
   }
 }
 
+interface PasswordFormFields {
+  currentPasswordInput: HTMLInputElement | null;
+  newPasswordInput: HTMLInputElement | null;
+  confirmPasswordInput: HTMLInputElement | null;
+  saveButton: HTMLButtonElement | null;
+}
+
+function getPasswordFormFields(): PasswordFormFields {
+  return {
+    currentPasswordInput: document.getElementById('current-password') as HTMLInputElement | null,
+    newPasswordInput: document.getElementById('new-password') as HTMLInputElement | null,
+    confirmPasswordInput: document.getElementById('confirm-password') as HTMLInputElement | null,
+    saveButton: document.getElementById('btn-save-password') as HTMLButtonElement | null,
+  };
+}
+
+function validateNewPassword(newPassword: string, confirmPassword: string): string | null {
+  if (!newPassword) {
+    return t('error.newPasswordRequired');
+  }
+
+  if (newPassword !== confirmPassword) {
+    return t('error.passwordsNoMatch');
+  }
+
+  if (newPassword.length < 4) {
+    return t('error.passwordTooShort');
+  }
+
+  return null;
+}
+
+function setPasswordSaveButtonState(saveButton: HTMLButtonElement | null, pending: boolean): void {
+  if (!saveButton) {
+    return;
+  }
+
+  saveButton.disabled = pending;
+  saveButton.textContent = pending ? t('modal.saving') : t('modal.save');
+}
+
 /**
  * Handle password form submission
  */
 export async function handlePasswordSubmit(e: Event): Promise<void> {
   e.preventDefault();
 
-  const currentPw = document.getElementById('current-password') as HTMLInputElement | null;
-  const newPw = document.getElementById('new-password') as HTMLInputElement | null;
-  const confirmPw = document.getElementById('confirm-password') as HTMLInputElement | null;
-  const saveBtn = document.getElementById('btn-save-password') as HTMLButtonElement | null;
-
-  const newPassword = newPw?.value ?? '';
-  const confirmPassword = confirmPw?.value ?? '';
-
-  if (!newPassword) {
-    showPasswordError(t('error.newPasswordRequired'));
+  const fields = getPasswordFormFields();
+  const newPassword = fields.newPasswordInput?.value ?? '';
+  const confirmPassword = fields.confirmPasswordInput?.value ?? '';
+  const validationError = validateNewPassword(newPassword, confirmPassword);
+  if (validationError) {
+    showPasswordError(validationError);
     return;
   }
 
-  if (newPassword !== confirmPassword) {
-    showPasswordError(t('error.passwordsNoMatch'));
-    return;
-  }
-
-  if (newPassword.length < 4) {
-    showPasswordError(t('error.passwordTooShort'));
-    return;
-  }
-
-  const currentPassword = passwordModalHasPassword && currentPw ? currentPw.value : null;
-
-  if (saveBtn) {
-    saveBtn.disabled = true;
-    saveBtn.textContent = t('modal.saving');
-  }
+  const currentPassword =
+    passwordModalHasPassword && fields.currentPasswordInput
+      ? fields.currentPasswordInput.value
+      : null;
+  setPasswordSaveButtonState(fields.saveButton, true);
 
   try {
     const { data, response } = await changePassword(currentPassword, newPassword);
-
-    if (saveBtn) {
-      saveBtn.disabled = false;
-      saveBtn.textContent = t('modal.save');
-    }
-
     if (response.ok && data?.success) {
       hidePasswordModal();
       void checkAuthStatus();
@@ -124,11 +144,9 @@ export async function handlePasswordSubmit(e: Event): Promise<void> {
       showPasswordError(data?.error ?? t('error.passwordChangeFailed'));
     }
   } catch {
-    if (saveBtn) {
-      saveBtn.disabled = false;
-      saveBtn.textContent = t('modal.save');
-    }
     showPasswordError(t('error.connectionError'));
+  } finally {
+    setPasswordSaveButtonState(fields.saveButton, false);
   }
 }
 

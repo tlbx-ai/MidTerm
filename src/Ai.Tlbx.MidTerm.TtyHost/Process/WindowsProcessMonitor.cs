@@ -40,7 +40,9 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         if (_disposed) throw new ObjectDisposedException(nameof(WindowsProcessMonitor));
 
         _shellPid = shellPid;
+        var previousTimer = _timer;
         _timer = new Timer(_ => Poll(), null, 0, 500);
+        previousTimer?.Dispose();
     }
 
     public void StopMonitoring()
@@ -230,7 +232,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
             if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, 0x30, out _))
                 return null;
 
-            var procParamsPtr = (IntPtr)BitConverter.ToInt64(pebData, 0x20);
+            var procParamsPtr = checked((IntPtr)BitConverter.ToInt64(pebData, 0x20));
             if (procParamsPtr == IntPtr.Zero) return null;
 
             var paramsData = ParamsBuffer;
@@ -238,7 +240,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                 return null;
 
             var cwdLength = BitConverter.ToUInt16(paramsData, 0x38);
-            var cwdBufferPtr = (IntPtr)BitConverter.ToInt64(paramsData, 0x38 + 8);
+            var cwdBufferPtr = checked((IntPtr)BitConverter.ToInt64(paramsData, 0x38 + 8));
             if (cwdLength == 0 || cwdBufferPtr == IntPtr.Zero) return null;
 
             var buffer = ArrayPool<byte>.Shared.Rent(cwdLength);
@@ -281,7 +283,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
             if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, pebData, 0x30, out _))
                 return null;
 
-            var procParamsPtr = (IntPtr)BitConverter.ToInt64(pebData, 0x20);
+            var procParamsPtr = checked((IntPtr)BitConverter.ToInt64(pebData, 0x20));
             if (procParamsPtr == IntPtr.Zero) return null;
 
             var paramsData = ParamsBuffer;
@@ -289,7 +291,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                 return null;
 
             var cmdLength = BitConverter.ToUInt16(paramsData, 0x70);
-            var cmdBufferPtr = (IntPtr)BitConverter.ToInt64(paramsData, 0x70 + 8);
+            var cmdBufferPtr = checked((IntPtr)BitConverter.ToInt64(paramsData, 0x70 + 8));
             if (cmdLength == 0 || cmdBufferPtr == IntPtr.Zero) return null;
 
             var buffer = ArrayPool<byte>.Shared.Rent(cmdLength);

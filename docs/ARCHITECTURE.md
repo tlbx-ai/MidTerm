@@ -10,7 +10,7 @@ The important architectural point is that MidTerm is not only a terminal rendere
 Browser
 ├─ xterm.js terminals
 ├─ sidebar, layout engine, files/git/commands panels
-├─ smart input, touch/mobile shell, diagnostics
+├─ Command Bay (smart input, automation bar, touch/mobile shell), diagnostics
 ├─ web preview iframe or detached preview window
 ├─ /ws/mux       binary terminal I/O
 ├─ /ws/state     JSON session/update state
@@ -83,7 +83,7 @@ The browser shell includes:
 - layout modules for split panes and dock overlays
 - session wrappers that add Files tabs plus web, commands, share, git, and experimental Lens surfaces per session
 - feature panels for files, git, commands, and web preview
-- manager bar, smart input, chat, touch controller, PWA, and diagnostics modules
+- Command Bay modules for smart input, the automation bar, touch controller, Lens quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
 
 State is split between:
 
@@ -128,15 +128,23 @@ MidTerm tracks foreground cwd, process, command line, and terminal title. That d
 ### Terminal Resize Principle
 
 MidTerm intentionally does **not** auto-resize existing sessions just because another client connected or a page reloaded.
+MidTerm also treats terminal size ownership as a **manual** decision, not something the system should guess.
 
 The model is:
 
-1. New sessions are created at the best size for the creating viewport.
-2. Existing sessions keep their server-side dimensions.
-3. Secondary browsers CSS-scale terminals locally instead of sending resize commands.
-4. Users explicitly claim a new size with a manual fit action when they want one.
+1. One browser is the explicit leading browser for terminal sizing.
+2. Only the leading browser may send authoritative server-side `cols`/`rows`.
+3. New sessions are created at the best size for the leading browser's viewport, never from a follower's viewport.
+4. Existing sessions keep their server-side dimensions until the leading browser explicitly changes them.
+5. Secondary browsers CSS-scale terminals locally instead of sending resize commands.
+6. Users explicitly claim size ownership from another browser when they want a different screen to become authoritative.
+7. Disconnects, reconnects, inactivity, focus changes, visibility changes, or device changes must not automatically transfer size ownership.
 
 This is what makes multi-device usage predictable instead of having one client constantly break another client's layout.
+The engineering goal is therefore twofold:
+
+- keep the leading browser's sizing path reliable for all relevant UI changes such as window resizes, panel open/close, layout changes, session switches, and new session creation
+- keep follower browsers strictly non-authoritative even when they render a different viewport more cleanly
 
 ### Host Reconnect and Updates
 
@@ -173,30 +181,41 @@ The sidebar is a full control surface, not just a tab strip. It handles:
 - update notices, voice controls, network/share helpers, and footer telemetry
 - mobile open/close behavior and desktop collapse/resize persistence
 
-The layout subsystem stores split trees in browser storage and reattaches sessions into panes without resizing them behind the user's back.
+The layout subsystem stores split trees in backend state and reattaches sessions into panes without resizing them behind the user's back.
 
 ### Files, Git, and Commands
 
 Each session wrapper adds:
 
 - a Files tab with a cwd-rooted tree, previews, syntax-highlighted text viewing, and inline save
-- git status summaries with sectioned file lists, hierarchical trees, and diff overlays
+- git status summaries with sectioned file lists, hierarchical trees, dock-native diff/commit inspection, and terminal command handoff for write actions
 - a commands panel for saved scripts that run in hidden backing sessions
 
-### Manager Bar
+### Command Bay
 
-The manager bar is a user-defined quick-action bar below the terminal area. Buttons are stored in settings and send prebuilt text plus Enter to the active session. The same actions are exposed in the mobile action menu.
-
-### Smart Input, Voice, Touch, and Mobile Shell
-
-MidTerm has a second input model in addition to direct terminal focus:
-
-- Smart Input can replace or complement terminal typing
-- when Lens is active, the same Smart Input infrastructure relocates into the conversation composer lane instead of staying as separate terminal chrome
-- voice capture and chat hooks connect to MidTerm.Voice, with the Smart Input mic affordance currently kept behind dev mode and the voice credential path while that workflow is still experimental
-- the touch controller provides terminal-friendly virtual keys
-- the mobile action menu exposes common terminal operations
-- document Picture-in-Picture can show a miniature live terminal when the app backgrounds on supported mobile browsers
+The Command Bay is the shared active-session footer system beneath Terminal and Lens.
+It is the superset that now contains the old Smart Input composer, the old automation bar (formerly the middle manager bar), the old Lens quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
+It exists because MidTerm no longer treats those pieces as unrelated bars stacked under the pane.
+- the primary rail hosts Smart Input / the composer when input is visible
+- the automation rail hosts the old automation bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands; on cramped mobile Terminal layouts it may collapse visible action chips into overflow-first chrome rather than spending a full inline row on them
+- the Command Bay queue is backend-owned and persists queued work per session so follow-up prompts and Automation Bar items survive browser disconnects or reconnects
+- Terminal queue draining is heat-gated: one queued item may dispatch when heat falls below 25%, then the session must rearm above that threshold before the next queued item can drain
+- explicit Lens queue draining is turn-gated: one queued item may dispatch only after the current provider turn has settled back to the user
+- the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal, including the collapsed special-keys toggle when the full key row is hidden
+- the status rail hosts Lens model / effort / plan / permission awareness or other compact terminal state pills without forcing a dedicated extra row just to reopen special keys
+- mobile Terminal keeps the compact status rail above the expanded special-keys grid so the keys toggle and automation proxies stay on the same header row while the key grid opens beneath them
+- Lens always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode
+- Lens keeps model / effort / plan awareness visible at all times even when the editable controls collapse on mobile
+- desktop Terminal assumes a hardware keyboard and therefore does not surface cursor-key buttons in the Command Bay
+- mobile Terminal may expand or collapse terminal special keys without changing Terminal size ownership rules
+- desktop glass styling follows terminal transparency; mobile Command Bay stays solid for contrast and touch reliability
+- the Command Bay itself must reserve space beneath Terminal or Lens instead of floating over session content
+- only the prompt textbox's extra multiline growth may overflow upward over the pane; command-bay rails and visible command-bay panels must not hide session content underneath
+- on Android and iOS, the Command Bay must stay attached to the visual viewport above the on-screen keyboard; when space gets tight it should compress and scroll internally instead of slipping under the OSK
+- voice capture still hangs off the Smart Input mic affordance, with the current experimental gating unchanged
+- the mobile action menu still mirrors common quick actions, but the Command Bay is the primary active-session interaction shell
+- mobile Lens uses automation above context controls; other permutations keep the default primary -> context -> automation -> status flow
+- document Picture-in-Picture remains separate from the Command Bay and can still show a miniature live terminal when the app backgrounds on supported mobile browsers
 
 ### Agent Conversation Surface
 
@@ -260,6 +279,68 @@ Lens sync is now owned by a dedicated `/ws/lens` channel rather than REST snapsh
 - Lens history is synchronized as a windowed read model, not as a full-history replay on every reconnect
 - reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
 - the frontend stays provider-neutral and does not reconstruct Lens state from PTY output or provider-specific raw transports
+
+### Lens History Ownership And Byte Budget
+
+Provider-backed Lens runtimes can emit huge amounts of low-value transport noise: repetitive progress chatter, superseded intermediate states, raw command stdout, and full file bodies that are far larger than any useful on-screen view.
+
+Lens must therefore enforce a strict ownership and byte-budget model:
+
+- `mtagenthost` and MidTerm own the in-flight provider reduction path plus the canonical derived Lens history
+- the browser does not own full Lens history and must not accumulate the full provider event stream in memory
+- the browser consumes a bounded view window over canonical history, not an unbounded raw-event feed
+- multiple browsers may view the same Lens session concurrently, but each browser owns only its own local viewport/window state
+- browser scrolling is a read-window operation against MidTerm-owned canonical history, not a request for provider raw-event replay
+
+This leads to the following transport rules:
+
+- raw provider payloads are transient reducer inputs, not retained Lens history
+- giant file bodies, giant command stdout blobs, and repetitive transport chatter must be summarized, windowed, or suppressed before they become canonical history rows
+- the canonical Lens history should preserve what a human needs to understand the work, not every raw provider emission
+- `/ws/lens` should transport only:
+  - the currently materialized history slice
+  - stable total-count/window metadata
+  - live deltas that affect rows already in or near the active slice
+  - explicit older/newer window fetch results when requested
+- scrolling one browser must not force all other browsers to download the same older slices
+- hidden/background browsers should collapse back to a latest anchored slice and stop retaining wide browser-side history windows
+
+The architectural target is:
+
+- one canonical history store in MidTerm
+- MidTerm durability uses canonical reduced Lens state, not appended provider-shaped event logs
+- one bounded visible history window per browser/session view
+- deterministic fetches for arbitrary older/newer portions of that history
+- minimal duplicated byte transfer across reconnects and across multiple browsers
+
+### Lens History Reduction Policy
+
+MidTerm needs an explicit reduction layer between raw provider events and canonical Lens history.
+
+Canonical history should keep:
+
+- user prompts and durable assistant output
+- stable tool identity and meaningful tool lifecycle state
+- compact command invocations plus bounded output summaries
+- compact file-read/file-change summaries and working diffs
+- approvals, plan-mode questions, user-input requests, and their resolutions
+- durable runtime notices that materially affect operator understanding
+
+Canonical history should usually reduce or suppress:
+
+- repetitive in-progress status chatter that conveys no new operator value
+- duplicate final content that only restates already-streamed material
+- full raw command/file payloads when a bounded summary or excerpt is sufficient
+- transport-level noise that exists only because of provider protocol granularity
+- superseded intermediate states once the canonical row has settled
+- any content that is neither shown later nor required to determine what is shown later
+
+Where giant payloads exist, MidTerm should prefer:
+
+- command invocation + bounded tail/head window + omitted-line markers
+- file-read path + excerpt policy + compact preview, not full file body
+- summarized tool output for timeline rendering instead of hidden retained raw payloads
+- canonical identity-preserving row updates instead of spawning many noisy sibling rows
 
 ### Lens Screen Logs
 
@@ -365,7 +446,7 @@ MidTerm uses a mix of server-side and browser-side storage:
 | Secrets                      | platform-specific secret storage              |
 | Certificates and keys        | settings directory plus protected key storage |
 | History and share data       | server-side files/services                    |
-| Split layout                 | browser `localStorage`                        |
+| Split layout                 | server-side `session-layout.json`            |
 | Sidebar width/collapse       | cookies                                       |
 | Smart Input/chat/touch prefs | browser `localStorage`                        |
 | Preview snapshots            | `.midterm/snapshot_*` under the working tree  |

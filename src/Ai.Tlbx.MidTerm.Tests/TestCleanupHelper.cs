@@ -4,6 +4,7 @@ namespace Ai.Tlbx.MidTerm.Tests;
 
 public static class TestCleanupHelper
 {
+    private static readonly HashSet<int> BaselineHostProcessIds = CaptureHostProcessIds();
     private static readonly string[] TestBuildPathPatterns =
     [
         @"\bin\Debug\",
@@ -16,20 +17,31 @@ public static class TestCleanupHelper
     {
         var orphans = new List<Process>();
 
-        foreach (var proc in Process.GetProcessesByName("mthost")
-            .Concat(Process.GetProcessesByName("mmttyhost")))
+        foreach (var proc in GetCandidateHostProcesses())
         {
+            var keepProcess = false;
             try
             {
-                var path = proc.MainModule?.FileName;
-                if (path is not null && IsTestBuildPath(path))
+                if (!BaselineHostProcessIds.Contains(proc.Id))
                 {
-                    orphans.Add(proc);
+                    var path = proc.MainModule?.FileName;
+                    if (path is not null && IsTestBuildPath(path))
+                    {
+                        orphans.Add(proc);
+                        keepProcess = true;
+                    }
                 }
             }
             catch
             {
                 // Access denied or process exited - skip
+            }
+            finally
+            {
+                if (!keepProcess)
+                {
+                    proc.Dispose();
+                }
             }
         }
 
@@ -60,5 +72,29 @@ public static class TestCleanupHelper
     {
         return TestBuildPathPatterns.Any(pattern =>
             path.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static HashSet<int> CaptureHostProcessIds()
+    {
+        var ids = new HashSet<int>();
+        foreach (var proc in GetCandidateHostProcesses())
+        {
+            try
+            {
+                ids.Add(proc.Id);
+            }
+            finally
+            {
+                proc.Dispose();
+            }
+        }
+
+        return ids;
+    }
+
+    private static IEnumerable<Process> GetCandidateHostProcesses()
+    {
+        return Process.GetProcessesByName("mthost")
+            .Concat(Process.GetProcessesByName("mmttyhost"));
     }
 }

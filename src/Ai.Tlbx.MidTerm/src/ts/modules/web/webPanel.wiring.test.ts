@@ -1,0 +1,24 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '../../../..');
+const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
+const source = readFileSync(path.join(projectRoot, 'src/ts/modules/web/webPanel.ts'), 'utf8');
+
+describe('web preview screenshot wiring', () => {
+  it('renders a dedicated action message region for screenshot failures', () => {
+    expect(html).toContain('id="web-preview-action-message"');
+    expect(html).toContain('aria-live="polite"');
+  });
+
+  it('keeps the screenshot button busy while capture is in progress and surfaces explicit failures', () => {
+    expect(source).toContain('let screenshotInFlight = false;');
+    expect(source).toContain("screenshotButton.classList.add('web-preview-action-working');");
+    expect(source).toContain("setActionMessage('error', 'Screenshot failed:");
+    expect(source).toContain("setActionMessage('info', null);");
+  });
+});

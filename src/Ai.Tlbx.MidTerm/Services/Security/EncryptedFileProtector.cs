@@ -197,7 +197,7 @@ public sealed partial class EncryptedFileProtector : ICertificateProtector
         return Environment.MachineName;
     }
 
-    [GeneratedRegex(@"Hardware UUID:\s*([A-F0-9-]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"Hardware UUID:\s*([A-F0-9-]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex HardwareUuidRegex();
 
     private static void SetUnixFilePermissions(string path)

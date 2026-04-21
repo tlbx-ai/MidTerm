@@ -17,36 +17,25 @@ import {
   handleStateUpdate,
   setSelectSessionCallback,
   sendInput,
-  sendActiveSessionHint,
-  setSessionBytesCallback,
+  requestBufferRefresh,
+  updateTerminalVisibility,
   setSuppressHeatCallback,
   reportBrowserActivity,
 } from './modules/comms';
 import { initBadges } from './modules/badges';
 import {
-  applyTerminalScalingSync,
-  createTerminalForSession,
-  destroyTerminalForSession,
   preloadTerminalFont,
   initCalibrationTerminal,
   setShowBellCallback,
   setupResizeObserver,
   setupVisualViewport,
   bindSearchEvents,
-  scrollToBottom,
   focusActiveTerminal,
-  refreshTerminalPresentation,
   setupGlobalFocusReclaim,
-  calculateOptimalDimensions,
-  fitSessionToScreen,
-  getEffectiveTerminalFontSize,
   handleClipboardPaste,
-  pasteToTerminal,
   initMobilePiP,
-  recordMobilePiPBytes,
-  isTerminalViewingScrollback,
+  resolveLaunchDimensions,
 } from './modules/terminal';
-import { getConfiguredTerminalFontFamily } from './modules/terminal/fontConfig';
 import {
   getSessionDisplayName,
   setSessionListCallbacks,
@@ -66,6 +55,7 @@ import {
   initHeatIndicator,
   suppressAllHeat,
   renderSessionList,
+  syncSidebarNavButtons,
   updateEmptyState,
   updateMobileTitle,
 } from './modules/sidebar';
@@ -73,11 +63,10 @@ import { initI18n, t } from './modules/i18n';
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
-import { toggleSettings, closeSettings } from './modules/settings';
+import { toggleSettings } from './modules/settings';
 import { bindAuthEvents } from './modules/auth';
 import { fetchBootstrap, getBootstrapData } from './modules/bootstrap';
 import {
-  applyUpdate,
   checkForUpdates,
   showChangelog,
   closeChangelog,
@@ -85,24 +74,24 @@ import {
   showUpdateLog,
   dismissUpdateNotification,
   bindFooterUpdateLink,
+  clearPendingAppRefreshMarker,
+  handlePrimaryUpdateAction,
+  initAppShellStatePersistence,
+  initUpdateRuntime,
+  initUpdateUi,
 } from './modules/updating';
 import { initDiagnosticsPanel } from './modules/diagnostics';
 import {
+  animateBookmarkSaveSuccess,
+  closeHistoryDropdown,
+  getBookmarkSurfaceType,
   initHistoryDropdown,
   toggleHistoryDropdown,
-  createHistoryEntry,
-  fetchHistory,
-  refreshHistory,
   type LaunchEntry,
 } from './modules/history';
-import {
-  isLensHistoryEntry,
-  normalizeHistoryLensProfile,
-  resolveSessionHistoryMode,
-} from './modules/history/launchMode';
+import { isLensHistoryEntry, normalizeHistoryLensProfile } from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
-import { getInjectGuidancePromptKey } from './modules/midtermGuidance';
-import { buildProcessCwdTuple, buildReplayCommand } from './modules/sidebar/processDisplay';
+import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
   initTouchController,
   dismissTouchController,
@@ -113,7 +102,6 @@ import { initManagerBar } from './modules/managerBar';
 import {
   initLayoutRenderer,
   initDockOverlay,
-  handleSessionClosed,
   dockSession,
   getLayoutSessionIds,
   isSessionInLayout,
@@ -122,43 +110,33 @@ import {
   initLayoutPersistence,
   getLayoutRoot,
 } from './modules/layout';
-import {
-  initSessionTabs,
-  ensureSessionWrapper,
-  destroySessionWrapper,
-  getActiveTab,
-  getTabLabelForSession,
-  isTabAvailable,
-  reparentTerminalContainer,
-  setSessionLensAvailability,
-  switchTab,
-} from './modules/sessionTabs';
+import { initSessionTabs, setSessionLensAvailability, switchTab } from './modules/sessionTabs';
 import {
   initAgentView,
-  destroyAgentView,
   getLensDebugScenarioNames,
   showLensDebugScenario,
 } from './modules/agentView';
+import {
+  activateMobileTab,
+  bindMobileActionsMenu,
+  closeMobileActionsMenu,
+  syncMobileTabActionState,
+} from './modules/sessionTabs/mobileActions';
 import { openSessionLauncher, type SessionLauncherSelection } from './modules/sessionLauncher';
-import { initFileBrowser, destroyFileBrowser } from './modules/fileBrowser';
-import { initGitPanel, connectGitWebSocket, destroyGitSession } from './modules/git';
-import { initCommandsPanel, destroyCommandsSession } from './modules/commands';
+import { initFileBrowser } from './modules/fileBrowser';
+import { initGitPanel, connectGitWebSocket } from './modules/git';
+import { initCommandsPanel } from './modules/commands';
 import { initWebPreview } from './modules/web';
 import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
-  attachHubChannel,
   bindHubSettings,
-  deleteRemoteSession,
-  detachHubChannel,
-  getFirstHubSessionId,
-  getHubSession,
-  getHubSessionRecord,
+  createRemoteSession,
   initHubRuntime,
   isHubSessionId,
   refreshHubState,
-  renameRemoteSession,
   renderHubSettings,
   subscribeHubState,
+  toHubCompositeId,
 } from './modules/hub';
 import {
   initSessionShareButton,
@@ -168,8 +146,11 @@ import {
   applySharedSessionMode,
   showSharedSessionError,
 } from './modules/share';
-import { initDockState, removeSessionDockState } from './modules/dockState';
-import { initSmartInput, removeSmartInputSessionState } from './modules/smartInput';
+import { initDockState } from './modules/dockState';
+import { initSmartInput, setLensResumeConversationHandler } from './modules/smartInput';
+import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
+import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
+import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -184,33 +165,58 @@ import {
   $stateWsConnected,
   $muxWsConnected,
   $activeSessionId,
-  $isMainBrowser,
+  $settingsOpen,
   $sessionList,
   $currentSettings,
+  $layout,
   setSession,
   removeSession,
   getSession,
   setProcessState,
-  setPendingRename,
-  clearPendingRename,
 } from './stores';
 import type { Session } from './types';
-import { MIN_TERMINAL_COLS, MIN_TERMINAL_ROWS } from './constants';
 import { bindClick, getOrCreateClientId } from './utils';
 import { showAlert } from './utils/dialog';
+import { createSessionActionHandlers } from './sessionActions';
+import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
 import {
   createSession as apiCreateSession,
   bootstrapWorker,
-  deleteSession as apiDeleteSession,
-  renameSession as apiRenameSession,
-  patchHistoryEntry,
   setSessionBookmark,
-  setSessionControl as apiSetSessionControl,
 } from './api/client';
 import type { ShellType } from './api/types';
 
 // Create logger for main module
 const log = createLogger('main');
+
+function attachBookmarkToSession(
+  sessionId: string,
+  bookmarkId: string | null,
+  label: string | null,
+): void {
+  if (!bookmarkId && !label) {
+    return;
+  }
+
+  const applyBookmark = (): void => {
+    const session = getSession(sessionId);
+    if (!session) {
+      window.setTimeout(applyBookmark, 100);
+      return;
+    }
+
+    if (bookmarkId) {
+      setSession({ ...session, bookmarkId });
+      setSessionBookmark(sessionId, bookmarkId).catch(() => {});
+    }
+
+    if (label) {
+      renameSession(sessionId, label);
+    }
+  };
+
+  applyBookmark();
+}
 
 // Debug export for console access (typed in types/xterm-extensions.d.ts)
 window.mmDebug = {
@@ -265,6 +271,7 @@ window.mmDebug = {
 // =============================================================================
 
 initThemeFromCookie();
+clearPendingAppRefreshMarker();
 
 document.addEventListener('DOMContentLoaded', () => {
   const path = window.location.pathname;
@@ -286,10 +293,10 @@ async function init(): Promise<void> {
 
   cacheDOMElements();
   await initI18n();
+  initUpdateUi();
+  initUpdateRuntime();
+  initAppShellStatePersistence();
   initTrafficIndicator();
-  setSessionBytesCallback((sessionId, bytes) => {
-    recordMobilePiPBytes(sessionId, bytes);
-  });
   setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
@@ -303,15 +310,61 @@ async function init(): Promise<void> {
   initLayoutRenderer();
   initLayoutPersistence();
   initDockOverlay();
+  syncSidebarNavButtons($currentSettings.get());
   initHistoryDropdown(
     (entry) => {
       void spawnFromHistory(entry);
     },
     (entryId, newLabel) => {
-      const session = $sessionList.get().find((s) => s.bookmarkId === entryId);
-      if (session) renameSession(session.id, newLabel || null);
+      const session = $sessionList.get().find((candidate) => candidate.bookmarkId === entryId);
+      if (session) {
+        renameSession(session.id, newLabel || null);
+      }
     },
   );
+  const spacesRuntimeOptions = {
+    resolveLaunchDimensions: resolveNewSessionDimensions,
+    resolveShell: resolveLauncherShell,
+    onOpenLocalSession: (session: Session, surface: SpaceSurface) => {
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      if (surface !== 'terminal') {
+        setSessionLensAvailability(session.id, true);
+      }
+
+      selectSession(session.id);
+      if (surface !== 'terminal') {
+        requestAnimationFrame(() => {
+          switchTab(session.id, 'agent');
+        });
+      }
+    },
+    onOpenRemoteSession: async (machineId: string, sessionId: string, surface: SpaceSurface) => {
+      await refreshHubState();
+      const compositeId = toHubCompositeId(machineId, sessionId);
+      newlyCreatedSessions.add(compositeId);
+      selectSession(compositeId);
+      if (surface !== 'terminal') {
+        requestAnimationFrame(() => {
+          switchTab(compositeId, 'agent');
+        });
+      }
+    },
+    onSelectLocalSession: (sessionId: string) => {
+      selectSession(sessionId);
+    },
+    onSelectRemoteSession: (machineId: string, sessionId: string) => {
+      selectSession(toHubCompositeId(machineId, sessionId));
+    },
+    onLaunchRecent: (machineId: string | null, entry: LaunchEntry) => {
+      void spawnFromHistory(entry, machineId);
+    },
+  };
+  initSpacesRuntime(spacesRuntimeOptions);
+  initSpacesDropdown(spacesRuntimeOptions);
+  $currentSettings.subscribe((settings) => {
+    syncSidebarNavButtons(settings);
+  });
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -321,6 +374,7 @@ async function init(): Promise<void> {
 
   registerCallbacks();
   getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
+  bindTerminalVisibilitySync();
   connectStateWebSocket();
   connectMuxWebSocket();
   connectSettingsWebSocket();
@@ -391,6 +445,9 @@ async function initShared(): Promise<void> {
 
   cacheDOMElements();
   await initI18n();
+  initUpdateUi();
+  initUpdateRuntime();
+  initAppShellStatePersistence();
 
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
@@ -403,6 +460,7 @@ async function initShared(): Promise<void> {
   });
 
   initSessionTabs();
+  bindTerminalVisibilitySync();
   bindSearchEvents();
   setupGlobalFocusReclaim();
   syncAppModeClasses();
@@ -427,6 +485,65 @@ async function initShared(): Promise<void> {
   log.info(() => 'MidTerm shared frontend initialized');
 }
 
+function getVisibleTerminalSessionIds(): string[] {
+  if ($settingsOpen.get()) {
+    return [];
+  }
+
+  if (!isLayoutActive() || getLayoutRoot()?.classList.contains('hidden')) {
+    return [];
+  }
+
+  return getLayoutSessionIds().filter((sessionId) => !isHubSessionId(sessionId));
+}
+
+function syncMuxTerminalVisibility(): void {
+  updateTerminalVisibility($activeSessionId.get(), getVisibleTerminalSessionIds());
+}
+
+function refreshHiddenSessionsForFullReplay(): void {
+  const activeSessionId = $activeSessionId.get();
+  const visibleSessionIds = new Set(getVisibleTerminalSessionIds());
+
+  sessionTerminals.forEach((_state, sessionId) => {
+    if (
+      isHubSessionId(sessionId) ||
+      sessionId === activeSessionId ||
+      visibleSessionIds.has(sessionId)
+    ) {
+      return;
+    }
+
+    requestBufferRefresh(sessionId);
+  });
+}
+
+function bindTerminalVisibilitySync(): void {
+  syncMuxTerminalVisibility();
+
+  $activeSessionId.subscribe(() => {
+    syncMuxTerminalVisibility();
+  });
+
+  $layout.subscribe(() => {
+    syncMuxTerminalVisibility();
+  });
+
+  $settingsOpen.subscribe(() => {
+    syncMuxTerminalVisibility();
+  });
+
+  let lastResumeMode = $currentSettings.get()?.resumeMode ?? null;
+  $currentSettings.subscribe((settings) => {
+    const nextResumeMode = settings?.resumeMode ?? null;
+    if (lastResumeMode === 'quickResume' && nextResumeMode === 'fullReplay') {
+      refreshHiddenSessionsForFullReplay();
+    }
+    lastResumeMode = nextResumeMode;
+    syncMuxTerminalVisibility();
+  });
+}
+
 // =============================================================================
 // Callback Registration
 // =============================================================================
@@ -449,6 +566,9 @@ function registerCallbacks(): void {
     },
     onEnableMidtermFeatures: (sessionId: string) => {
       void enableMidtermFeatures(sessionId);
+    },
+    onLaunchRecent: (machineId, entry) => {
+      void spawnFromHistory(entry, machineId);
     },
     onCloseSidebar: closeSidebar,
   });
@@ -530,37 +650,7 @@ function setupVisibilityChangeHandler(): void {
 // =============================================================================
 
 async function resolveNewSessionDimensions(): Promise<{ cols: number; rows: number }> {
-  const settings = $currentSettings.get();
-  let cols = settings?.defaultCols ?? 120;
-  let rows = settings?.defaultRows ?? 30;
-
-  // Only the leading browser is allowed to claim a new server-side terminal size
-  // from its viewport. Followers create sessions at the configured defaults and
-  // then scale locally until they explicitly claim main browser.
-  if (!$isMainBrowser.get()) {
-    return { cols, rows };
-  }
-
-  if (dom.terminalsArea) {
-    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
-    const logId = 'launcher-' + crypto.randomUUID().slice(0, 8);
-    const dims = await calculateOptimalDimensions(
-      dom.terminalsArea,
-      fontSize,
-      getConfiguredTerminalFontFamily(),
-      settings?.lineHeight ?? 1,
-      settings?.letterSpacing ?? 0,
-      settings?.fontWeight ?? 'normal',
-      settings?.fontWeightBold ?? 'bold',
-      logId,
-    );
-    if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
-      cols = dims.cols;
-      rows = dims.rows;
-    }
-  }
-
-  return { cols, rows };
+  return resolveLaunchDimensions($currentSettings.get(), 'launcher');
 }
 
 function createPendingSession(cols: number, rows: number): string {
@@ -597,9 +687,14 @@ function createPendingSession(cols: number, rows: number): string {
     order: Date.now(),
     parentSessionId: null,
     bookmarkId: null,
+    spaceId: null,
+    workspacePath: null,
+    surface: null,
+    isAdHoc: true,
     agentControlled: false,
     lensOnly: false,
     profileHint: null,
+    lensResumeThreadId: null,
     hasLensHistory: false,
     agentAttachPoint: null,
   };
@@ -632,20 +727,36 @@ function resolveLauncherShell(): ShellType | null {
   return 'Bash';
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isLensOnlySession(session: Session | null | undefined): boolean {
   return session?.lensOnly === true;
 }
+
+const {
+  deleteSession,
+  enableMidtermFeatures,
+  pinSessionToHistory,
+  promptRenameSession,
+  renameSession,
+  selectSession,
+  startInlineRename,
+  toggleAgentControl,
+} = createSessionActionHandlers({
+  animateBookmarkSaveSuccess,
+  buildLensHistoryDedupeKey,
+  closeMobileActionsMenu,
+  getBookmarkSurfaceType,
+  isLensOnlySession,
+});
+setLensResumeConversationHandler((args) => {
+  void resumeLensConversationFromCommandBay(args);
+});
 
 async function createSession(): Promise<void> {
   let selection: SessionLauncherSelection | null;
   try {
     selection = await openSessionLauncher();
   } catch (error) {
-    void showAlert(getErrorMessage(error), {
+    void showAlert(getSessionLaunchErrorMessage(error), {
       title: t('sessionLauncher.loadFailed'),
     });
     return;
@@ -658,15 +769,45 @@ async function createSession(): Promise<void> {
   const { cols, rows } = await resolveNewSessionDimensions();
   const tempId = createPendingSession(cols, rows);
   const shell = resolveLauncherShell();
+  const workingDirectory = selection.workingDirectory?.trim() || undefined;
+  const createSessionRequest = {
+    cols,
+    rows,
+    shell,
+    ...(workingDirectory ? { workingDirectory } : {}),
+  };
   closeSidebar();
 
+  const target = selection.target;
+  if (target.kind === 'hub') {
+    if (selection.provider !== 'terminal') {
+      clearPendingSession(tempId);
+      void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
+        title: t('sessionLauncher.createFailed'),
+      });
+      return;
+    }
+
+    createRemoteSession(target.machineId, createSessionRequest)
+      .then(async (session) => {
+        await refreshHubState();
+        clearPendingSession(tempId);
+        const compositeId = toHubCompositeId(target.machineId, session.id);
+        newlyCreatedSessions.add(compositeId);
+        selectSession(compositeId);
+      })
+      .catch((e: unknown) => {
+        clearPendingSession(tempId);
+        log.error(() => `Failed to create remote session: ${String(e)}`);
+        void showAlert(getSessionLaunchErrorMessage(e), {
+          title: t('sessionLauncher.createFailed'),
+        });
+      });
+    return;
+  }
+
   if (selection.provider === 'terminal') {
-    apiCreateSession({
-      cols,
-      rows,
-      shell,
-      workingDirectory: selection.workingDirectory,
-    })
+    apiCreateSession(createSessionRequest)
       .then(({ data }) => {
         clearPendingSession(tempId);
         if (!data) {
@@ -680,19 +821,17 @@ async function createSession(): Promise<void> {
       .catch((e: unknown) => {
         clearPendingSession(tempId);
         log.error(() => `Failed to create session: ${String(e)}`);
-        void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+        showSessionLaunchFailure(e);
       });
     return;
   }
 
   bootstrapWorker({
-    cols,
-    rows,
-    shell,
-    workingDirectory: selection.workingDirectory,
+    ...createSessionRequest,
     agentControlled: false,
     injectGuidance: true,
     profile: selection.provider,
+    resumeThreadId: selection.resumeThreadId ?? null,
     lensOnly: true,
     launchDelayMs: 0,
     slashCommands: [],
@@ -716,562 +855,46 @@ async function createSession(): Promise<void> {
     .catch((e: unknown) => {
       clearPendingSession(tempId);
       log.error(() => `Failed to create worker session: ${String(e)}`);
-      void showAlert(getErrorMessage(e), { title: t('sessionLauncher.createFailed') });
+      showSessionLaunchFailure(e);
     });
 }
 
-function selectSession(sessionId: string, options?: { closeSettingsPanel?: boolean }): void {
-  closeMobileActionsMenu();
-
-  // Only close settings if explicitly requested (e.g., user clicked a session)
-  // Auto-selection from state updates should NOT close settings
-  if (options?.closeSettingsPanel !== false) {
-    closeSettings();
-  }
-
-  if (isHubSessionId(sessionId)) {
-    const sessionInfo = getHubSession(sessionId);
-    if (!sessionInfo) {
-      return;
-    }
-
-    detachHubChannel();
-    sessionTerminals.forEach((state, id) => {
-      if (!isSessionInLayout(id)) {
-        state.container.classList.add('hidden');
-      }
-    });
-
-    $activeSessionId.set(sessionId);
-    suppressAllHeat(1500);
-
-    const state = createTerminalForSession(sessionId, sessionInfo);
-    const tabState = ensureSessionWrapper(sessionId);
-    reparentTerminalContainer(sessionId, state.container);
-    if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
-      dom.terminalsArea.appendChild(tabState.wrapper);
-    }
-
-    dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
-      (w as HTMLElement).classList.toggle(
-        'hidden',
-        w.getAttribute('data-session-id') !== sessionId,
-      );
-    });
-
-    state.container.classList.remove('hidden');
-    if (isLayoutActive()) {
-      getLayoutRoot()?.classList.add('hidden');
-    }
-
-    attachHubChannel(sessionId);
-
-    requestAnimationFrame(() => {
-      refreshTerminalPresentation(sessionId, state);
-      state.terminal.focus();
-      if (!isTerminalViewingScrollback(state)) {
-        scrollToBottom(sessionId);
-      }
-    });
-
-    dom.emptyState?.classList.add('hidden');
-    return;
-  }
-
-  detachHubChannel();
-
-  // If session is in layout, focus it there instead of switching to standalone
-  if (isSessionInLayout(sessionId)) {
-    suppressAllHeat(1500);
-    focusLayoutSession(sessionId);
-    sendActiveSessionHint(sessionId);
-    const sessionInfo = getSession(sessionId);
-    if (!isLensOnlySession(sessionInfo)) {
-      createTerminalForSession(sessionId, sessionInfo);
-    }
-    // Re-show layout (may have been hidden for standalone viewing)
-    getLayoutRoot()?.classList.remove('hidden');
-    sessionTerminals.forEach((s, id) => {
-      if (!isSessionInLayout(id)) s.container.classList.add('hidden');
-    });
-    return;
-  }
-
-  // Standalone mode - hide all terminals except selected
-  sessionTerminals.forEach((state, id) => {
-    // Don't hide terminals that are in the layout
-    if (!isSessionInLayout(id)) {
-      state.container.classList.add('hidden');
-    }
-  });
-
-  $activeSessionId.set(sessionId);
-  suppressAllHeat(1500);
-  sendActiveSessionHint(sessionId);
-
-  const sessionInfo = getSession(sessionId);
-  const lensOnly = isLensOnlySession(sessionInfo);
-  const state = lensOnly ? null : createTerminalForSession(sessionId, sessionInfo);
-  const isNewlyCreated = newlyCreatedSessions.has(sessionId);
-  const activeTab = getActiveTab(sessionId);
-
-  // Ensure session wrapper with tabs (standalone mode only)
-  const tabState = ensureSessionWrapper(sessionId);
-  if (state) {
-    reparentTerminalContainer(sessionId, state.container);
-  }
-  if (dom.terminalsArea && !dom.terminalsArea.contains(tabState.wrapper)) {
-    dom.terminalsArea.appendChild(tabState.wrapper);
-  }
-  // Hide all other wrappers
-  dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((w) => {
-    (w as HTMLElement).classList.toggle('hidden', w.getAttribute('data-session-id') !== sessionId);
-  });
-
-  if (state) {
-    state.container.classList.remove('hidden');
-  }
-  if (isLayoutActive()) {
-    getLayoutRoot()?.classList.add('hidden');
-  }
-
-  if (lensOnly && activeTab === 'terminal') {
-    switchTab(sessionId, 'agent');
-  }
-
-  requestAnimationFrame(() => {
-    if (state) {
-      refreshTerminalPresentation(sessionId, state);
-      if (activeTab === 'terminal') {
-        // Only the leading browser is allowed to change the server-side viewport.
-        // Followers may restyle/scalе locally, but must not send a resize.
-        if ($isMainBrowser.get()) {
-          fitSessionToScreen(sessionId);
-        } else {
-          applyTerminalScalingSync(state);
-        }
-      }
-      if (activeTab !== 'agent') {
-        state.terminal.focus();
-      }
-      if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
-        scrollToBottom(sessionId);
-      }
-    }
-
-    if (isNewlyCreated) {
-      newlyCreatedSessions.delete(sessionId);
-    }
-  });
-
-  // Subscription handles renderSessionList and updateMobileTitle via $activeSessionId change
-  dom.emptyState?.classList.add('hidden');
-}
-
-function deleteSession(sessionId: string): void {
-  if (isHubSessionId(sessionId)) {
-    const record = getHubSessionRecord(sessionId);
-    destroySessionWrapper(sessionId);
-    destroyTerminalForSession(sessionId);
-    if ($activeSessionId.get() === sessionId) {
-      $activeSessionId.set(null);
-    }
-    detachHubChannel(sessionId);
-    if (record) {
-      deleteRemoteSession(record.machineId, record.remoteSessionId)
-        .then(() => refreshHubState())
-        .catch((e: unknown) => {
-          log.error(() => `Failed to delete remote session ${sessionId}: ${String(e)}`);
-        });
-    }
-
-    const nextLocal = $sessionList.get()[0]?.id ?? getFirstHubSessionId();
-    if (nextLocal) {
-      selectSession(nextLocal, { closeSettingsPanel: false });
-    }
-    return;
-  }
-
-  // Remove from layout if present
-  handleSessionClosed(sessionId);
-
-  // Remove session tab wrapper, feature panels, and dock state
-  removeSessionDockState(sessionId);
-  removeSmartInputSessionState(sessionId);
-  destroyAgentView(sessionId);
-  destroyFileBrowser(sessionId);
-  destroyGitSession(sessionId);
-  destroyCommandsSession(sessionId);
-  destroySessionWrapper(sessionId);
-
-  // Optimistic UI: remove session immediately for better UX
-  destroyTerminalForSession(sessionId);
-
-  // Remove from sessions store
-  removeSession(sessionId);
-
-  // If this was the active session, select another (but don't close settings panel)
-  if ($activeSessionId.get() === sessionId) {
-    $activeSessionId.set(null);
-    const sessions = $sessionList.get();
-    const firstSession = sessions[0];
-    if (firstSession?.id) {
-      selectSession(firstSession.id, { closeSettingsPanel: false });
-    }
-  }
-
-  // Subscription handles renderSessionList, updateEmptyState, updateMobileTitle via store change
-
-  // Send delete request to server
-  apiDeleteSession(sessionId).catch((e: unknown) => {
-    log.error(() => `Failed to delete session ${sessionId}: ${String(e)}`);
-  });
-}
-
-async function enableMidtermFeatures(sessionId: string): Promise<void> {
-  if (isHubSessionId(sessionId)) {
-    return;
-  }
-
-  try {
-    const fg = getForegroundInfo(sessionId);
-    await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
-  } catch (e: unknown) {
-    log.error(() => `Failed to enable MidTerm features for ${sessionId}: ${String(e)}`);
-  }
-}
-
-function renameSession(sessionId: string, newName: string | null): void {
-  if (isHubSessionId(sessionId)) {
-    const record = getHubSessionRecord(sessionId);
-    if (!record) return;
-
-    const trimmedName = (newName || '').trim();
-    renameRemoteSession(record.machineId, record.remoteSessionId, { name: trimmedName })
-      .then(() => refreshHubState())
-      .catch((e: unknown) => {
-        log.error(() => `Failed to rename remote session ${sessionId}: ${String(e)}`);
-      });
-    return;
-  }
-
-  const session = getSession(sessionId);
-  if (!session) return;
-
-  const trimmedName = (newName || '').trim();
-  const nameToSend = trimmedName === '' || trimmedName === session.shellType ? '' : trimmedName;
-
-  // Store previous values for rollback
-  const previousName = session.name;
-  const wasManuallyNamed = session.manuallyNamed;
-
-  // Mark as pending to protect from server overwrites until confirmed
-  setPendingRename(sessionId, nameToSend);
-
-  // Optimistic UI update via store
-  setSession({ ...session, name: nameToSend, manuallyNamed: true });
-  // Subscription handles renderSessionList and updateMobileTitle via store change
-
-  apiRenameSession(sessionId, nameToSend)
-    .then(() => {
-      void patchPinnedHistoryLabelIfMatchingTuple(sessionId, nameToSend);
-    })
-    .catch((e: unknown) => {
-      // Clear pending and rollback on error
-      clearPendingRename(sessionId);
-      const currentSession = getSession(sessionId);
-      if (currentSession) {
-        setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
-      }
-      // Subscription handles renderSessionList and updateMobileTitle via store change
-      log.error(() => `Failed to rename session ${sessionId}: ${String(e)}`);
-    });
-}
-
-function getSessionFamilyIds(sessionId: string): string[] {
-  const sessions = $sessionList.get();
-  const session = sessions.find((item) => item.id === sessionId);
-  if (!session) {
-    return [];
-  }
-
-  const rootSessionId = session.parentSessionId ?? session.id;
-  return sessions
-    .filter((item) => item.id === rootSessionId || item.parentSessionId === rootSessionId)
-    .map((item) => item.id)
-    .filter((id): id is string => !!id);
-}
-
-function toggleAgentControl(sessionId: string): void {
-  if (isHubSessionId(sessionId)) {
-    return;
-  }
-
-  const session = getSession(sessionId);
-  if (!session) return;
-
-  const nextAgentControlled = !session.agentControlled;
-  const sessionFamilyIds = getSessionFamilyIds(sessionId);
-  const previousSnapshots = sessionFamilyIds
-    .map((id) => getSession(id))
-    .filter((item): item is Session => !!item)
-    .map((item) => ({ ...item }));
-
-  for (const snapshot of previousSnapshots) {
-    setSession({
-      ...snapshot,
-      agentControlled: nextAgentControlled,
-    });
-  }
-
-  apiSetSessionControl(sessionId, nextAgentControlled).catch((e: unknown) => {
-    for (const snapshot of previousSnapshots) {
-      setSession(snapshot);
-    }
-
-    log.error(() => `Failed to toggle agent control for ${sessionId}: ${String(e)}`);
-  });
-}
-
-async function patchPinnedHistoryLabelIfMatchingTuple(
-  sessionId: string,
-  nameToSend: string,
+async function spawnFromHistory(
+  entry: LaunchEntry,
+  machineId: string | null = null,
 ): Promise<void> {
-  const currentSession = getSession(sessionId);
-  const bookmarkId = currentSession?.bookmarkId;
-  if (!bookmarkId) return;
-
-  if (currentSession.lensOnly) {
-    patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
-    return;
-  }
-
-  const fgInfo = getForegroundInfo(sessionId);
-  const currentTuple = buildProcessCwdTuple(
-    fgInfo.name,
-    fgInfo.commandLine,
-    fgInfo.cwd,
-    fgInfo.processIdentity,
-  );
-  if (!currentTuple) return;
-
-  let entries: LaunchEntry[];
-  try {
-    entries = await fetchHistory();
-  } catch {
-    return;
-  }
-
-  const linkedEntry = entries.find((e) => e.id === bookmarkId);
-  if (!linkedEntry) return;
-
-  const linkedTuple = buildProcessCwdTuple(
-    linkedEntry.executable,
-    linkedEntry.commandLine ?? null,
-    linkedEntry.workingDirectory,
-  );
-
-  if (!linkedTuple || linkedTuple !== currentTuple) {
-    log.verbose(() => `Skip bookmark label patch for ${sessionId}: tuple moved`);
-    return;
-  }
-
-  patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
-}
-
-function startInlineRename(sessionId: string): void {
-  const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
-  if (!item) return;
-
-  const renameAnchor =
-    item.querySelector('.session-title') ||
-    item.querySelector('.process-title') ||
-    item.querySelector('.session-title-row');
-  if (!renameAnchor) return;
-
-  const session = getSession(sessionId);
-  const currentName = session ? session.name || session.shellType : '';
-
-  // Position overlay input on top of the title content.
-  const rect = renameAnchor.getBoundingClientRect();
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'session-rename-input';
-  input.value = currentName;
-  input.style.position = 'fixed';
-  input.style.left = `${rect.left}px`;
-  input.style.top = `${rect.top}px`;
-  input.style.width = `${rect.width + 20}px`;
-  input.style.height = `${rect.height}px`;
-  input.style.zIndex = '10000';
-
-  document.body.appendChild(input);
-
-  let committed = false;
-  function finishRename(): void {
-    if (committed) return;
-    committed = true;
-    const newName = input.value;
-    input.remove();
-    renameSession(sessionId, newName);
-  }
-
-  function cancelRename(): void {
-    if (committed) return;
-    committed = true;
-    input.remove();
-  }
-
-  input.addEventListener('blur', finishRename);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      input.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelRename();
-    }
-  });
-
-  input.focus();
-  input.select();
-}
-
-function promptRenameSession(sessionId: string): void {
-  const session = getSession(sessionId);
-  if (!session) return;
-
-  const currentName = session.name || session.shellType;
-  const newName = prompt('Rename terminal:', currentName);
-
-  if (newName !== null) {
-    renameSession(sessionId, newName);
-  }
-}
-
-async function pinSessionToHistory(sessionId: string): Promise<void> {
-  const session = getSession(sessionId);
-  if (!session) {
-    log.warn(() => `pinSessionToHistory: session ${sessionId} not found`);
-    return;
-  }
-
-  const historyMode = resolveSessionHistoryMode(session);
-  const fgInfo = getForegroundInfo(sessionId);
-  const trimmedName = (session.name || '').trim();
-  const label = trimmedName && trimmedName !== session.shellType ? trimmedName : null;
-  const previousBookmarkId = session.bookmarkId ?? null;
-  let executable: string;
-  let commandLine: string | null;
-  let workingDirectory: string;
-  let dedupeKey: string | null;
-
-  if (historyMode.launchMode === 'lens' && historyMode.profile) {
-    workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
-    if (!workingDirectory) {
-      log.info(
-        () => `pinSessionToHistory: missing working directory for lens session ${sessionId}`,
-      );
-      return;
-    }
-
-    executable = historyMode.profile;
-    commandLine = null;
-    dedupeKey = buildLensHistoryDedupeKey(historyMode.profile, workingDirectory);
-  } else {
-    const tupleKey = buildProcessCwdTuple(
-      fgInfo.name,
-      fgInfo.commandLine,
-      fgInfo.cwd,
-      fgInfo.processIdentity,
-    );
-    if (!fgInfo.name || !tupleKey) {
-      log.info(() => `pinSessionToHistory: missing process tuple for ${sessionId}`);
-      return;
-    }
-
-    executable = fgInfo.name;
-    commandLine = fgInfo.commandLine;
-    workingDirectory = fgInfo.cwd ?? '';
-    dedupeKey = tupleKey;
-  }
-
-  const id = await createHistoryEntry({
-    shellType: session.shellType,
-    executable,
-    commandLine,
-    workingDirectory,
-    isStarred: true,
-    label,
-    dedupeKey,
-    launchMode: historyMode.launchMode,
-    profile: historyMode.profile,
-  });
-
-  if (id) {
-    const current = getSession(sessionId) ?? session;
-    const bookmarkChanged = current.bookmarkId !== id;
-
-    if (bookmarkChanged) {
-      setSession({ ...current, bookmarkId: id });
-      setSessionBookmark(sessionId, id).catch(() => {});
-    }
-
-    refreshHistory();
-    if (previousBookmarkId && previousBookmarkId !== id) {
-      log.info(() => `Pinned to history (new tuple): ${fgInfo.name} (id=${id})`);
-    } else if (previousBookmarkId === id) {
-      log.info(() => `Pinned to history (updated existing tuple): ${fgInfo.name} (id=${id})`);
-    } else {
-      log.info(() => `Pinned to history: ${fgInfo.name} (id=${id})`);
-    }
-  }
-}
-
-async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
-  const settings = $currentSettings.get();
-  let cols = settings?.defaultCols ?? 120;
-  let rows = settings?.defaultRows ?? 30;
-
-  if (dom.terminalsArea) {
-    const fontSize = getEffectiveTerminalFontSize(settings?.fontSize ?? 14);
-    const logId = 'history-' + crypto.randomUUID().slice(0, 8);
-    const dims = await calculateOptimalDimensions(
-      dom.terminalsArea,
-      fontSize,
-      getConfiguredTerminalFontFamily(),
-      settings?.lineHeight ?? 1,
-      settings?.letterSpacing ?? 0,
-      settings?.fontWeight ?? 'normal',
-      settings?.fontWeightBold ?? 'bold',
-      logId,
-    );
-    if (dims && dims.cols > MIN_TERMINAL_COLS && dims.rows > MIN_TERMINAL_ROWS) {
-      cols = dims.cols;
-      rows = dims.rows;
-    }
-  }
+  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
 
   closeSidebar();
 
-  const attachBookmarkToSession = (sessionId: string): void => {
-    const applyBookmark = (): void => {
-      const session = getSession(sessionId);
-      if (!session) {
-        setTimeout(applyBookmark, 100);
-        return;
-      }
-      setSession({ ...session, bookmarkId: entry.id });
-      if (entry.id) {
-        setSessionBookmark(sessionId, entry.id).catch(() => {});
-      }
-      if (entry.label) {
-        renameSession(sessionId, entry.label);
-      }
-    };
-    applyBookmark();
-  };
+  if (machineId) {
+    if (isLensHistoryEntry(entry)) {
+      void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
+        title: t('sessionLauncher.createFailed'),
+      });
+      return;
+    }
+
+    createRemoteSession(machineId, {
+      cols,
+      rows,
+      shell: entry.shellType || null,
+      workingDirectory: entry.workingDirectory || null,
+    })
+      .then(async (session) => {
+        await refreshHubState();
+        const compositeId = toHubCompositeId(machineId, session.id);
+        newlyCreatedSessions.add(compositeId);
+        selectSession(compositeId);
+      })
+      .catch((e: unknown) => {
+        log.error(() => `Failed to spawn remote recent: ${String(e)}`);
+        void showAlert(getSessionLaunchErrorMessage(e), {
+          title: t('sessionLauncher.createFailed'),
+        });
+      });
+    return;
+  }
 
   if (isLensHistoryEntry(entry)) {
     const profile = normalizeHistoryLensProfile(entry.profile);
@@ -1302,10 +925,11 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
           requestAnimationFrame(() => {
             switchTab(session.id, 'agent');
           });
-          attachBookmarkToSession(session.id);
+          attachBookmarkToSession(session.id, entry.id, entry.label ?? null);
         })
         .catch((e: unknown) => {
           log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
+          showSessionLaunchFailure(e);
         });
       return;
     }
@@ -1322,7 +946,7 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-      attachBookmarkToSession(data.id);
+      attachBookmarkToSession(data.id, entry.id, entry.label ?? null);
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);
@@ -1333,6 +957,69 @@ async function spawnFromHistory(entry: LaunchEntry): Promise<void> {
     })
     .catch((e: unknown) => {
       log.error(() => `Failed to spawn from history: ${String(e)}`);
+      showSessionLaunchFailure(e);
+    });
+}
+
+async function resumeLensConversationFromCommandBay(args: {
+  sessionId: string;
+  provider: ResumeProvider;
+  workingDirectory: string;
+}): Promise<void> {
+  const sourceSession = getSession(args.sessionId);
+  if (!sourceSession) {
+    return;
+  }
+
+  const candidate = await openProviderResumePicker({
+    provider: args.provider,
+    workingDirectory: args.workingDirectory,
+    initialScope: 'current',
+  });
+  if (!candidate) {
+    return;
+  }
+
+  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
+  const tempId = createPendingSession(cols, rows);
+
+  bootstrapWorker({
+    cols,
+    rows,
+    shell: resolveLauncherShell(),
+    workingDirectory: args.workingDirectory,
+    agentControlled: false,
+    injectGuidance: true,
+    profile: args.provider,
+    resumeThreadId: candidate.sessionId,
+    spaceId: sourceSession.spaceId ?? null,
+    workspacePath: sourceSession.workspacePath ?? args.workingDirectory,
+    surface: args.provider,
+    lensOnly: true,
+    launchDelayMs: 0,
+    slashCommands: [],
+    slashCommandDelayMs: 350,
+  })
+    .then(({ data }) => {
+      clearPendingSession(tempId);
+      const session = data?.session;
+      if (!session) {
+        return;
+      }
+
+      setSession(session);
+      newlyCreatedSessions.add(session.id);
+      setSessionLensAvailability(session.id, true);
+      selectSession(session.id);
+      requestAnimationFrame(() => {
+        switchTab(session.id, 'agent');
+      });
+      attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
+    })
+    .catch((e: unknown) => {
+      clearPendingSession(tempId);
+      log.error(() => `Failed to resume provider conversation from Command Bay: ${String(e)}`);
+      showSessionLaunchFailure(e);
     });
 }
 
@@ -1527,158 +1214,6 @@ function clickActiveSessionTabBarControl(selector: string): void {
   control?.click();
 }
 
-function syncMobileTabActionState(): void {
-  const activeSessionId = $activeSessionId.get();
-  const activeTab = activeSessionId ? getActiveTab(activeSessionId) : null;
-  const agentVisible = activeSessionId ? isTabAvailable(activeSessionId, 'agent') : false;
-  const strip = document.getElementById('mobile-tab-strip');
-  const topbar = document.getElementById('mobile-topbar');
-  const title = document.getElementById('mobile-title');
-
-  const syncButton = (
-    elementId: string,
-    options: {
-      active: boolean;
-      hidden?: boolean;
-      label?: string;
-    },
-  ): void => {
-    const button = document.getElementById(elementId) as HTMLButtonElement | null;
-    if (!button) {
-      return;
-    }
-
-    button.classList.toggle('active', options.active);
-    if (typeof options.hidden === 'boolean') {
-      button.toggleAttribute('hidden', options.hidden);
-    }
-
-    if (typeof options.label === 'string') {
-      button.title = options.label;
-      button.setAttribute('aria-label', options.label);
-      const labelNode = button.querySelector<HTMLElement>('.mobile-actions-label, span');
-      if (labelNode) {
-        labelNode.textContent = options.label;
-      }
-    }
-  };
-
-  const terminalLabel = activeSessionId
-    ? getTabLabelForSession(activeSessionId, 'terminal')
-    : t('session.terminal');
-  const agentLabel = activeSessionId
-    ? getTabLabelForSession(activeSessionId, 'agent')
-    : t('sessionTabs.agent');
-
-  strip?.toggleAttribute('hidden', !activeSessionId);
-  title?.toggleAttribute('hidden', Boolean(activeSessionId));
-  topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));
-  syncButton('btn-mobile-tab-terminal', {
-    active: activeTab === 'terminal',
-    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
-    label: terminalLabel,
-  });
-  syncButton('btn-mobile-tab-agent', {
-    active: activeTab === 'agent',
-    hidden: !agentVisible,
-    label: agentLabel,
-  });
-  syncButton('btn-mobile-tab-files', {
-    active: activeTab === 'files',
-    label: t('sessionTabs.files'),
-  });
-  syncButton('btn-mobile-strip-terminal', {
-    active: activeTab === 'terminal',
-    hidden: activeSessionId ? !isTabAvailable(activeSessionId, 'terminal') : true,
-    label: terminalLabel,
-  });
-  syncButton('btn-mobile-strip-agent', {
-    active: activeTab === 'agent',
-    hidden: !agentVisible,
-    label: agentLabel,
-  });
-  syncButton('btn-mobile-strip-files', {
-    active: activeTab === 'files',
-    label: t('sessionTabs.files'),
-  });
-}
-
-function activateMobileTab(tab: 'terminal' | 'agent' | 'files'): void {
-  const activeId = $activeSessionId.get();
-  if (!activeId) {
-    return;
-  }
-
-  if (tab === 'agent' && !isTabAvailable(activeId, 'agent')) {
-    return;
-  }
-
-  switchTab(activeId, tab);
-  syncMobileTabActionState();
-}
-
-function closeMobileActionsMenu(): void {
-  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
-  const dropdown = document.getElementById('mobile-actions-dropdown');
-  if (!toggleBtn || !dropdown) return;
-
-  dropdown.setAttribute('hidden', '');
-  toggleBtn.setAttribute('aria-expanded', 'false');
-}
-
-function toggleMobileActionsMenu(): void {
-  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
-  const dropdown = document.getElementById('mobile-actions-dropdown');
-  if (!toggleBtn || !dropdown) return;
-
-  const isOpen = !dropdown.hasAttribute('hidden');
-  if (isOpen) {
-    closeMobileActionsMenu();
-    return;
-  }
-
-  syncMobileTabActionState();
-  dropdown.removeAttribute('hidden');
-  toggleBtn.setAttribute('aria-expanded', 'true');
-}
-
-function bindMobileActionsMenu(): void {
-  const toggleBtn = document.getElementById('btn-mobile-actions-menu');
-  const dropdown = document.getElementById('mobile-actions-dropdown');
-  const actions = document.getElementById('topbar-actions');
-  if (!toggleBtn || !dropdown || !actions) return;
-
-  // Ensure deterministic closed state on startup/hot reload.
-  closeMobileActionsMenu();
-
-  toggleBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleMobileActionsMenu();
-  });
-
-  dropdown.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('button')) {
-      closeMobileActionsMenu();
-    }
-  });
-
-  document.addEventListener('click', (e) => {
-    const target = e.target as Node | null;
-    if (target && !actions.contains(target)) {
-      closeMobileActionsMenu();
-    }
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeMobileActionsMenu();
-    }
-  });
-
-  window.addEventListener('orientationchange', closeMobileActionsMenu);
-}
-
 // =============================================================================
 // Event Binding
 // =============================================================================
@@ -1723,11 +1258,11 @@ function bindEvents(): void {
   });
   bindClick('btn-rename-mobile', () => {
     const activeId = $activeSessionId.get();
-    if (activeId) promptRenameSession(activeId);
+    if (activeId) void promptRenameSession(activeId);
   });
   bindClick('btn-rename-titlebar', () => {
     const activeId = $activeSessionId.get();
-    if (activeId) promptRenameSession(activeId);
+    if (activeId) void promptRenameSession(activeId);
   });
   bindClick('btn-close-mobile', () => {
     const activeId = $activeSessionId.get();
@@ -1793,9 +1328,9 @@ function bindEvents(): void {
     dom.settingsBtn.addEventListener('click', toggleSettings);
   }
 
-  bindClick('update-btn', applyUpdate);
+  bindClick('update-btn', handlePrimaryUpdateAction);
   bindClick('btn-check-updates', checkForUpdates);
-  bindClick('btn-apply-update', applyUpdate);
+  bindClick('btn-apply-update', handlePrimaryUpdateAction);
   bindClick('btn-show-changelog', () => {
     showChangelog();
   });
@@ -1815,7 +1350,14 @@ function bindEvents(): void {
     changelogBackdrop.addEventListener('click', closeChangelog);
   }
 
-  bindClick('btn-history', toggleHistoryDropdown);
+  bindClick('btn-spaces', () => {
+    closeHistoryDropdown();
+    toggleSpacesDropdown();
+  });
+  bindClick('btn-bookmarks', () => {
+    closeSpacesDropdown();
+    toggleHistoryDropdown();
+  });
 
   // Global keyboard shortcut: Alt+T to create new terminal
   document.addEventListener('keydown', (e) => {

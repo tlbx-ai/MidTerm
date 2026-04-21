@@ -14,6 +14,15 @@ public static class ShareEndpointDefinitions
             handler.CreateShareLink(request))
             .Produces<CreateShareLinkResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapGet("/api/share/active", (int? limit, IShareHandler handler) =>
+            handler.GetActiveShares(limit))
+            .Produces<ActiveShareGrantListResponse>(StatusCodes.Status200OK, "application/json");
+
+        app.MapDelete("/api/share/{grantId}", (string grantId, IShareHandler handler) =>
+            handler.RevokeShare(grantId))
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
+
         app.MapPost("/api/share/claim", (ClaimShareRequest request, IShareHandler handler) =>
             handler.ClaimShareLink(request))
             .Produces<ClaimShareResponse>(StatusCodes.Status200OK, "application/json");

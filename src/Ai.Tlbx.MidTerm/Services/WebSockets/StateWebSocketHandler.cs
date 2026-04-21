@@ -26,38 +26,44 @@ public sealed class StateWebSocketHandler
 {
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionSupervisorService _sessionSupervisor;
-    private readonly SessionLensPulseService _lensPulse;
+    private readonly SessionLensRuntimeService _lensRuntime;
     private readonly UpdateService _updateService;
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
     private readonly MainBrowserService _mainBrowserService;
+    private readonly SessionLayoutStateService _sessionLayoutStateService;
+    private readonly ManagerBarQueueService _managerBarQueueService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
     private readonly BrowserUiBridge? _browserUiBridge;
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
+        SessionLayoutStateService sessionLayoutStateService,
+        ManagerBarQueueService managerBarQueueService,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
         _sessionManager = sessionManager;
         _sessionSupervisor = sessionSupervisor;
-        _lensPulse = lensPulse;
+        _lensRuntime = lensRuntime;
         _updateService = updateService;
         _settingsService = settingsService;
         _authService = authService;
         _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
         _mainBrowserService = mainBrowserService;
+        _sessionLayoutStateService = sessionLayoutStateService;
+        _managerBarQueueService = managerBarQueueService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
         _browserUiBridge = browserUiBridge;
     }
@@ -90,19 +96,21 @@ public sealed class StateWebSocketHandler
         Timer? expiryTimer = null;
         Action<string>? revokeHandler = null;
         UpdateInfo? lastUpdate = null;
+        var shutdownToken = _shutdownService.Token;
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
             if (ws.State != WebSocketState.Open) return;
-            await sendLock.WaitAsync();
+            await sendLock.WaitAsync(shutdownToken);
             try
             {
                 if (ws.State != WebSocketState.Open) return;
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken);
             }
             catch (WebSocketException) { }
             catch (ObjectDisposedException) { }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 Log.Verbose(() => $"[StateWS] SendJsonAsync failed: {ex.GetType().Name}: {ex.Message}");
@@ -125,7 +133,13 @@ public sealed class StateWebSocketHandler
             var state = new StateUpdate
             {
                 Sessions = sessionList,
-                Update = shareAccess is null ? lastUpdate : null
+                Update = shareAccess is null ? lastUpdate : null,
+                Layout = shareAccess is null
+                    ? _sessionLayoutStateService.GetSnapshot(sessionList.Sessions.Select(s => s.Id))
+                    : null,
+                ManagerBarQueue = shareAccess is null
+                    ? _managerBarQueueService.GetSnapshot(sessionList.Sessions.Select(s => s.Id)).ToList()
+                    : []
             };
             await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
         }
@@ -136,7 +150,7 @@ public sealed class StateWebSocketHandler
             foreach (var session in response.Sessions)
             {
                 session.Supervisor = _sessionSupervisor.Describe(session);
-                session.HasLensHistory = _lensPulse.HasHistory(session.Id);
+                session.HasLensHistory = _lensRuntime.HasHistory(session.Id);
             }
 
             return response;
@@ -166,7 +180,7 @@ public sealed class StateWebSocketHandler
                 }
                 catch (WebSocketException) when (attempt < 2)
                 {
-                    await Task.Delay(100);
+                    await Task.Delay(100, shutdownToken);
                 }
                 catch (Exception ex)
                 {
@@ -184,6 +198,16 @@ public sealed class StateWebSocketHandler
         void OnUpdateAvailable(UpdateInfo update)
         {
             lastUpdate = update;
+            _ = SendStateWithRetryAsync();
+        }
+
+        void OnLayoutChanged()
+        {
+            _ = SendStateWithRetryAsync();
+        }
+
+        void OnManagerBarQueueChanged()
+        {
             _ = SendStateWithRetryAsync();
         }
 
@@ -207,7 +231,8 @@ public sealed class StateWebSocketHandler
 
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
-        var shutdownToken = _shutdownService.Token;
+        _sessionLayoutStateService.OnChanged += OnLayoutChanged;
+        _managerBarQueueService.OnChanged += OnManagerBarQueueChanged;
         var browserUiListenerId = Guid.NewGuid().ToString("N");
 
         void OnDockRequested(string newSessionId, string relativeToSessionId, string position)
@@ -371,7 +396,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, connectionToken, shareAccess);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, connectionToken, shareAccess, shutdownToken);
                         }
                     }
                 }
@@ -389,6 +414,8 @@ public sealed class StateWebSocketHandler
         {
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
+            _sessionLayoutStateService.OnChanged -= OnLayoutChanged;
+            _managerBarQueueService.OnChanged -= OnManagerBarQueueChanged;
             if (shareAccess is null)
             {
                 _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
@@ -439,7 +466,8 @@ public sealed class StateWebSocketHandler
         Func<string, bool, object?, string?, Task> sendResponse,
         string browserId,
         object connectionToken,
-        ShareAccessContext? shareAccess)
+        ShareAccessContext? shareAccess,
+        CancellationToken ct)
     {
         WsCommand? cmd;
         try
@@ -467,15 +495,15 @@ public sealed class StateWebSocketHandler
             switch (cmd.Action)
             {
                 case "session.create":
-                    await HandleSessionCreateAsync(cmd, sendResponse);
+                    await HandleSessionCreateAsync(cmd, sendResponse, ct);
                     break;
 
                 case "session.close":
-                    await HandleSessionCloseAsync(cmd, sendResponse);
+                    await HandleSessionCloseAsync(cmd, sendResponse, ct);
                     break;
 
                 case "session.rename":
-                    await HandleSessionRenameAsync(cmd, sendResponse);
+                    await HandleSessionRenameAsync(cmd, sendResponse, ct);
                     break;
 
                 case "session.reorder":
@@ -513,21 +541,32 @@ public sealed class StateWebSocketHandler
         }
     }
 
-    private async Task HandleSessionCreateAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionCreateAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        CancellationToken ct)
     {
         var payload = cmd.Payload;
         var cols = payload?.Cols ?? 80;
         var rows = payload?.Rows ?? 24;
         var workingDir = payload?.WorkingDirectory;
 
-        var session = await _sessionManager.CreateSessionAsync(payload?.Shell, cols, rows, workingDir);
+        var creation = await _sessionManager.CreateSessionDetailedAsync(payload?.Shell, cols, rows, workingDir, ct);
 
-        if (session is null)
+        if (!creation.Succeeded)
         {
-            await sendResponse(cmd.Id, false, null, "Failed to create session");
+            var failure = creation.Failure;
+            var error = failure?.Message ?? "Failed to create session";
+            if (!string.IsNullOrWhiteSpace(failure?.Detail))
+            {
+                error += $"\n\n{failure.Detail}";
+            }
+            await sendResponse(cmd.Id, false, null, error);
             return;
         }
 
+        var session = creation.Session!;
+        _sessionManager.SetLaunchOrigin(session.Id, SessionLaunchOrigins.AdHoc);
         var data = new WsSessionCreatedData
         {
             Id = session.Id,
@@ -538,7 +577,10 @@ public sealed class StateWebSocketHandler
         await sendResponse(cmd.Id, true, data, null);
     }
 
-    private async Task HandleSessionCloseAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionCloseAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        CancellationToken ct)
     {
         var sessionId = cmd.Payload?.SessionId;
         if (string.IsNullOrEmpty(sessionId))
@@ -547,11 +589,14 @@ public sealed class StateWebSocketHandler
             return;
         }
 
-        var closed = await _sessionManager.CloseSessionAsync(sessionId);
+        var closed = await _sessionManager.CloseSessionAsync(sessionId, ct);
         await sendResponse(cmd.Id, closed, null, closed ? null : "Session not found");
     }
 
-    private async Task HandleSessionRenameAsync(WsCommand cmd, Func<string, bool, object?, string?, Task> sendResponse)
+    private async Task HandleSessionRenameAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        CancellationToken ct)
     {
         var sessionId = cmd.Payload?.SessionId;
         if (string.IsNullOrEmpty(sessionId))
@@ -562,7 +607,7 @@ public sealed class StateWebSocketHandler
 
         var name = cmd.Payload?.Name;
         var isManual = cmd.Payload?.Auto != true;
-        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual);
+        var renamed = await _sessionManager.SetSessionNameAsync(sessionId, name, isManual, ct);
         await sendResponse(cmd.Id, renamed, null, renamed ? null : "Session not found");
     }
 

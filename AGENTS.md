@@ -9,7 +9,7 @@ Do not run release, tag, publish, promote, or merge-to-main workflows unless the
 
 - Midterm is programmed in c# and typescript -> all major data processing/protocol logic/business logic shall be handled in c#, the typescript frontend shall be held as lean as possible.
 - Use best practices for maintainable memory efficient code that uses the newest available .net features >= .net 10
-- Suggest removing dead code after feature changes 
+- We do not have a big team continuously revisiting code quality, and we cannot afford to come back later to clean up avoidable leftovers. If a feature change or refactor supersedes logic, helpers, types, config, branches, or APIs, remove that dead code in the same change. Do not leave cleanup debt behind on the assumption that someone will revisit it later.
 - always search if somthing exist first before implementing new features/api surfaces 
 - Midterm is in production, it is used by large teams and needs to be stable and performant 
 
@@ -29,6 +29,15 @@ Rules:
 
 - Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
 - In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.
+
+## Terminal Size Ownership
+
+- Treat terminal row/column size ownership as a manual, user-controlled decision.
+- Do not add automatic ownership handoff heuristics based on reconnects, inactivity, visibility, focus, device class, viewport size, or "last active" guesses.
+- If a phone or tablet claimed ownership earlier, that ownership must persist across disconnects and later reconnects until the user explicitly claims ownership from another browser.
+- Only the leading browser may send or imply authoritative terminal `cols`/`rows`, including for new sessions, fit actions, panel/layout changes, session switches, and viewport resizes.
+- Non-leading browsers may scale locally for presentation, but they must never dictate server-side terminal dimensions.
+- When fixing resize bugs, preserve this principle: improve the leading browser's reliability, not the follower's authority.
 
 ## Session Surface Boundary
 
@@ -54,10 +63,20 @@ Rules:
 - Keep provider-specific plumbing deep in the C# runtime/host layer. Codex and Claude may expose completely different transports, event schemas, and lifecycle details, but the TypeScript Lens UI should consume a mostly provider-neutral canonical event model rather than branching on provider quirks.
 - When expanding Lens capabilities, prefer adapting provider events into MidTerm-owned canonical concepts such as turns, streams, items, requests, diffs, and task/tool progress instead of leaking raw provider event shapes into the frontend.
 - Preserve the surface boundary while improving Lens: making Codex or Claude work better in Lens must never break, hijack, or reclassify ordinary terminal sessions.
+- MidTerm is in production. Do not invent, fake, or hand-wave Codex or Claude Lens behavior when the exact provider/runtime contract is not known.
+- Before implementing or extending a Codex or Claude Lens capability, verify the exact request, event, and response shape from provider documentation, trusted reference implementations, direct observation of provider/runtime logs and message traces, or exploratory experiments and integration tests before assuming capability shape.
+- When documentation is incomplete or ambiguous, use trial-and-error, exploratory experiments, exploratory integration tests, and concrete inspection of logs/message logs as required sources of truth before declaring the capability unsupported.
+- If the exact Lens/provider contract cannot be verified, say so clearly and leave the capability unsupported or stubbed with an honest note. Do not ship guessed protocol bridges, fake success paths, or speculative code in Lens or elsewhere.
 
 ## Lens Design Documentation
 
 - The visual and interaction design contract for Lens lives in [docs/LensDesign.md](docs/LensDesign.md).
-- Read that document before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, or hierarchy changes.
+- Read that document into working context before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, hierarchy, virtualization, or history-window changes.
+- Do not make Lens feature changes from memory or from nearby code alone; load [docs/LensDesign.md](docs/LensDesign.md) first in the same turn so design-contract drift is visible while implementing.
 - Treat `docs/LensDesign.md` as a maintained design contract, not a one-off note.
 - Any future Lens UI change that affects fundamentals must update `docs/LensDesign.md` in the same work so the current design understanding remains traceable for future sessions.
+
+## Command Bay Naming
+
+- In user-facing MidTerm UI and docs, prefer `Automation Bar` over the old `Middle Manager Bar` name.
+- `middle manager bar` may still appear in older code identifiers and APIs, but new visible labels and architectural descriptions should use `Automation Bar`.

@@ -9,7 +9,7 @@ namespace Ai.Tlbx.MidTerm.Services.Tmux.Commands;
 public sealed class MiscCommands
 {
     private readonly PaneCommands _paneCommands;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _waitChannels = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _waitChannels = new(StringComparer.Ordinal);
 
     public MiscCommands(PaneCommands paneCommands)
     {

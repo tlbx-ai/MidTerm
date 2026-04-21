@@ -72,7 +72,7 @@ public sealed class UpdateVerificationTests : IDisposable
 
         var manifest = new VersionManifest
         {
-            Checksums = new Dictionary<string, string>
+            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mt.exe"] = ComputeHash(filePath),
                 ["mtagenthost.exe"] = ComputeHash(agentHostPath)
@@ -89,7 +89,7 @@ public sealed class UpdateVerificationTests : IDisposable
     {
         var manifest = new VersionManifest
         {
-            Checksums = new Dictionary<string, string>
+            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["missing.bin"] = "abcd"
             }
@@ -108,7 +108,7 @@ public sealed class UpdateVerificationTests : IDisposable
 
         var manifest = new VersionManifest
         {
-            Checksums = new Dictionary<string, string>
+            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["version.json"] = "deadbeef"
             }
@@ -127,7 +127,7 @@ public sealed class UpdateVerificationTests : IDisposable
 
         var manifest = new VersionManifest
         {
-            Checksums = new Dictionary<string, string>
+            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mthost.exe"] = ComputeHash(filePath).ToUpperInvariant()
             }
@@ -146,7 +146,7 @@ public sealed class UpdateVerificationTests : IDisposable
 
         var manifest = new VersionManifest
         {
-            Checksums = new Dictionary<string, string>
+            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mt.exe"] = ComputeHash(filePath)
             },

@@ -19,8 +19,6 @@ import { sendInput } from '../comms/muxChannel';
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 10;
 const TAP_MAX_DURATION = 300;
-const MOMENTUM_FRICTION = 0.95;
-const MOMENTUM_MIN_VELOCITY = 0.5;
 const SWIPE_THRESHOLD = 80;
 const SWIPE_MAX_VERTICAL = 40;
 const SWIPE_MAX_TIME = 300;
@@ -38,9 +36,7 @@ interface TouchScrollState {
   startY: number;
   lastY: number;
   startTime: number;
-  velocity: number;
   lastMoveTime: number;
-  momentumRaf: number | null;
   scrollAccumulator: number;
   cellHeight: number;
   handlers: {
@@ -86,9 +82,7 @@ export function initTouchScrolling(
     startY: 0,
     lastY: 0,
     startTime: 0,
-    velocity: 0,
     lastMoveTime: 0,
-    momentumRaf: null,
     scrollAccumulator: 0,
     cellHeight: 0,
     handlers: {
@@ -121,7 +115,6 @@ export function teardownTouchScrolling(sessionId: string): void {
   if (!s) return;
 
   cancelLongPress(s);
-  cancelMomentum(s);
   removeDocumentListener(s);
 
   s.overlay.removeEventListener('touchstart', s.handlers.touchstart);
@@ -152,14 +145,11 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
   const touch = e.touches[0];
   if (!touch) return;
 
-  cancelMomentum(s);
-
   s.mode = 'pending';
   s.startX = touch.clientX;
   s.startY = touch.clientY;
   s.lastY = touch.clientY;
   s.startTime = Date.now();
-  s.velocity = 0;
   s.lastMoveTime = Date.now();
   s.scrollAccumulator = 0;
 
@@ -208,12 +198,6 @@ function handleTouchMove(sessionId: string, e: TouchEvent): void {
     e.preventDefault();
     const deltaY = s.lastY - touch.clientY;
     const now = Date.now();
-    const dt = now - s.lastMoveTime;
-
-    if (dt > 0) {
-      s.velocity = (deltaY / dt) * 16;
-    }
-
     s.lastY = touch.clientY;
     s.lastMoveTime = now;
     scrollViewport(s, deltaY);
@@ -243,7 +227,6 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
     s.mode = 'idle';
   } else if (mode === 'scrolling') {
     e.preventDefault();
-    startMomentum(s);
     s.mode = 'idle';
   } else if (mode === 'horizontal') {
     // Check for horizontal swipe (Ctrl+A / Ctrl+E)
@@ -317,35 +300,10 @@ function scrollViewport(s: TouchScrollState, deltaY: number): void {
   }
 }
 
-function startMomentum(s: TouchScrollState): void {
-  if (Math.abs(s.velocity) < MOMENTUM_MIN_VELOCITY) return;
-
-  let v = s.velocity;
-
-  const step = (): void => {
-    v *= MOMENTUM_FRICTION;
-    if (Math.abs(v) < MOMENTUM_MIN_VELOCITY) {
-      s.momentumRaf = null;
-      return;
-    }
-    scrollViewport(s, v);
-    s.momentumRaf = requestAnimationFrame(step);
-  };
-
-  s.momentumRaf = requestAnimationFrame(step);
-}
-
 function cancelLongPress(s: TouchScrollState): void {
   if (s.longPressTimer !== null) {
     window.clearTimeout(s.longPressTimer);
     s.longPressTimer = null;
-  }
-}
-
-function cancelMomentum(s: TouchScrollState): void {
-  if (s.momentumRaf !== null) {
-    cancelAnimationFrame(s.momentumRaf);
-    s.momentumRaf = null;
   }
 }
 

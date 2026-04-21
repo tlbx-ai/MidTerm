@@ -27,6 +27,26 @@ import {
 import { getHubSession, getHubSidebarSections, isHubSessionId } from '../hub/runtime';
 import { getPrimarySurfaceLabel, isAgentSurfaceSession } from '../sessionSurface';
 import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
+import { createSessionFilterController } from './sessionFilterController';
+import {
+  filterSessionsByQuery,
+  getSessionControlMode,
+  getSupervisorBadgeLabel,
+  getSupervisorState,
+  groupSessionsByController,
+  needsAttention,
+  shouldShowAgentControlAction,
+  syncSessionItemActiveStates,
+} from './sessionListLogic';
+import type { SessionControlMode, SessionGroup } from './sessionListLogic';
+
+export {
+  filterSessionsByQuery,
+  groupSessionsByController,
+  shouldShowAgentControlAction,
+  syncSessionItemActiveStates,
+} from './sessionListLogic';
+export type { SessionControlMode, SessionGroup } from './sessionListLogic';
 
 // =============================================================================
 // Helpers
@@ -89,56 +109,14 @@ export interface SessionListCallbacks {
 let callbacks: SessionListCallbacks | null = null;
 let mobileActionBackdrop: HTMLDivElement | null = null;
 let mobileMenuListenersBound = false;
-let sessionFilterListenersBound = false;
-let sessionFilterValue = '';
-let previousSessionFilterEnabled: boolean | null = null;
+let queuedProcessInfoFrameId: number | null = null;
+const queuedProcessInfoSessionIds = new Set<string>();
 const SESSION_GROUP_STORAGE_KEYS = {
   human: 'midterm.sidebar.humanSessionsCollapsed',
   agent: 'midterm.sidebar.agentSessionsCollapsed',
 } as const;
 const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
 const HUB_MACHINE_STORAGE_PREFIX = 'midterm.sidebar.hubMachineCollapsed.';
-
-export type SessionControlMode = 'human' | 'agent';
-
-export interface SessionGroup {
-  key: SessionControlMode;
-  label: string;
-  sessions: Session[];
-  collapsed: boolean;
-  showHeader: boolean;
-  attentionCount: number;
-}
-
-export function shouldShowAgentControlAction(controlMode: SessionControlMode): boolean {
-  return controlMode === 'agent';
-}
-
-function normalizeSessionFilterValue(value: string | null | undefined): string {
-  return (value ?? '').trim();
-}
-
-function getSessionFilterTerms(query: string): string[] {
-  const normalizedQuery = normalizeSessionFilterValue(query).toLowerCase();
-  return normalizedQuery === '' ? [] : normalizedQuery.split(/\s+/);
-}
-
-function buildSessionFilterHaystack(session: Session): string {
-  const foregroundInfo = getForegroundInfo(session.id);
-  return [
-    session.name,
-    session.terminalTitle,
-    session.shellType,
-    session.currentDirectory,
-    foregroundInfo.name,
-    foregroundInfo.displayName,
-    foregroundInfo.cwd,
-    foregroundInfo.commandLine,
-  ]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .join('\n')
-    .toLowerCase();
-}
 
 function isHubMachineCollapsed(machineId: string): boolean {
   return localStorage.getItem(`${HUB_MACHINE_STORAGE_PREFIX}${machineId}`) === 'true';
@@ -151,18 +129,18 @@ function toggleHubMachineCollapsed(section: HTMLElement, machineId: string): voi
 
 function loadStoredSessionFilter(): string {
   try {
-    return normalizeSessionFilterValue(localStorage.getItem(SESSION_FILTER_STORAGE_KEY));
+    return (localStorage.getItem(SESSION_FILTER_STORAGE_KEY) ?? '').trim();
   } catch {
     return '';
   }
 }
 
-function persistSessionFilter(): void {
+function persistSessionFilter(value: string): void {
   try {
-    if (sessionFilterValue === '') {
+    if (value === '') {
       localStorage.removeItem(SESSION_FILTER_STORAGE_KEY);
     } else {
-      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, sessionFilterValue);
+      localStorage.setItem(SESSION_FILTER_STORAGE_KEY, value);
     }
   } catch {
     // Ignore localStorage failures and keep the filter in memory.
@@ -172,116 +150,28 @@ function persistSessionFilter(): void {
 export function isSidebarSessionFilterEnabled(): boolean {
   return $currentSettings.get()?.showSidebarSessionFilter === true;
 }
-
-function syncSessionFilterControls(): void {
-  const filterEnabled = isSidebarSessionFilterEnabled();
-  dom.sessionFilterBar?.toggleAttribute('hidden', !filterEnabled);
-
-  const filterInput = dom.sessionFilterInput;
-  const visibleValue = filterEnabled ? sessionFilterValue : '';
-  if (filterInput && filterInput.value !== visibleValue) {
-    filterInput.value = visibleValue;
-  }
-
-  dom.sessionFilterClear?.toggleAttribute('hidden', !filterEnabled || sessionFilterValue === '');
-}
-
-function setSessionFilter(nextValue: string): void {
-  const normalizedValue = normalizeSessionFilterValue(nextValue);
-  if (normalizedValue === sessionFilterValue) {
-    syncSessionFilterControls();
-    return;
-  }
-
-  sessionFilterValue = normalizedValue;
-  persistSessionFilter();
-  syncSessionFilterControls();
-  renderSessionList();
-}
-
-function clearSessionFilter(focusInput: boolean = false): void {
-  setSessionFilter('');
-  if (focusInput) {
-    dom.sessionFilterInput?.focus();
-  }
-}
-
-function bindSessionFilterEvents(): void {
-  if (sessionFilterListenersBound) {
-    return;
-  }
-
-  const filterInput = dom.sessionFilterInput;
-  const clearButton = dom.sessionFilterClear;
-
-  if (filterInput) {
-    filterInput.setAttribute('aria-label', t('sidebar.filterTerminals'));
-    filterInput.addEventListener('input', () => {
-      setSessionFilter(filterInput.value);
-    });
-
-    filterInput.addEventListener('keydown', (event) => {
-      event.stopPropagation();
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        if (sessionFilterValue !== '') {
-          clearSessionFilter(true);
-        } else {
-          filterInput.blur();
-        }
-      }
-    });
-  }
-
-  if (clearButton) {
-    clearButton.setAttribute('aria-label', t('sidebar.clearTerminalFilter'));
-    clearButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      clearSessionFilter(true);
-    });
-  }
-
-  sessionFilterListenersBound = true;
-}
-
-export function filterSessionsByQuery(sessions: Session[], query: string): Session[] {
-  const terms = getSessionFilterTerms(query);
-  if (terms.length === 0) {
-    return sessions;
-  }
-
-  return sessions.filter((session) => {
-    const haystack = buildSessionFilterHaystack(session);
-    return terms.every((term) => haystack.includes(term));
-  });
-}
+const sessionFilterController = createSessionFilterController({
+  getElements: () => ({
+    filterBar: dom.sessionFilterBar,
+    filterInput: dom.sessionFilterInput,
+    filterClear: dom.sessionFilterClear,
+  }),
+  isEnabled: isSidebarSessionFilterEnabled,
+  areSettingsLoaded: () => $currentSettings.get() !== null,
+  loadStoredFilter: loadStoredSessionFilter,
+  persistFilter: persistSessionFilter,
+  render: () => {
+    renderSessionList();
+  },
+  translate: t,
+});
 
 export function isSessionFilterActive(): boolean {
-  return isSidebarSessionFilterEnabled() && sessionFilterValue !== '';
+  return sessionFilterController.isActive();
 }
 
 export function applySessionFilterSettingChange(): void {
-  const settingsLoaded = $currentSettings.get() !== null;
-  const filterEnabled = isSidebarSessionFilterEnabled();
-
-  if (!settingsLoaded) {
-    syncSessionFilterControls();
-    renderSessionList();
-    return;
-  }
-
-  const shouldClearStoredFilter = !filterEnabled && previousSessionFilterEnabled !== false;
-  previousSessionFilterEnabled = filterEnabled;
-
-  if (shouldClearStoredFilter && sessionFilterValue !== '') {
-    clearSessionFilter();
-    return;
-  }
-
-  syncSessionFilterControls();
-  renderSessionList();
+  sessionFilterController.applySettingChange();
 }
 
 // =============================================================================
@@ -293,9 +183,7 @@ export function applySessionFilterSettingChange(): void {
  */
 export function initializeSessionList(): void {
   addProcessStateListener(handleProcessStateChange);
-  sessionFilterValue = loadStoredSessionFilter();
-  syncSessionFilterControls();
-  bindSessionFilterEvents();
+  sessionFilterController.initialize();
 
   if (!mobileMenuListenersBound) {
     document.addEventListener('keydown', handleMobileMenuKeydown);
@@ -312,11 +200,31 @@ export function setSessionListCallbacks(cbs: SessionListCallbacks): void {
   callbacks = cbs;
 }
 
+function flushQueuedProcessInfoUpdates(): void {
+  queuedProcessInfoFrameId = null;
+  const sessionIds = Array.from(queuedProcessInfoSessionIds);
+  queuedProcessInfoSessionIds.clear();
+  for (const sessionId of sessionIds) {
+    updateSessionProcessInfo(sessionId);
+  }
+}
+
+function queueProcessInfoUpdate(sessionId: string): void {
+  queuedProcessInfoSessionIds.add(sessionId);
+  if (queuedProcessInfoFrameId !== null) {
+    return;
+  }
+
+  queuedProcessInfoFrameId = window.requestAnimationFrame(() => {
+    flushQueuedProcessInfoUpdates();
+  });
+}
+
 /**
  * Handle process state change and update the UI
  */
 function handleProcessStateChange(sessionId: string, _state: ProcessState): void {
-  updateSessionProcessInfo(sessionId);
+  queueProcessInfoUpdate(sessionId);
 }
 
 /**
@@ -362,13 +270,20 @@ function setActionButtonContent(
   button.setAttribute('aria-label', label);
 }
 
+function getProcessTitleFallback(sessionId: string): string {
+  const session = getSession(sessionId);
+  return session && isAgentSurfaceSession(session)
+    ? getPrimarySurfaceLabel(session)
+    : session?.shellType || t('session.terminal');
+}
+
 /**
  * Create the foreground process indicator element
  * Layout: ...directory> process...
  * - Directory ellipsis from left (end of path is most important)
  * - Process ellipsis from right (process name is most important)
  */
-function createForegroundIndicator(
+export function createForegroundIndicator(
   cwd: string | null | undefined,
   commandLine: string | null | undefined,
   processName: string,
@@ -400,11 +315,7 @@ function createForegroundIndicator(
   return container;
 }
 
-/**
- * Render cwd + process as the title row content for unnamed sessions
- */
-function renderProcessTitle(
-  titleRow: HTMLElement,
+function createForegroundTitleNode(
   fgInfo: {
     cwd?: string | null;
     name?: string | null;
@@ -412,7 +323,7 @@ function renderProcessTitle(
     displayName?: string | null;
   },
   sessionId: string,
-): void {
+): HTMLElement {
   if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
     const fgIndicator = createForegroundIndicator(
       fgInfo.cwd,
@@ -421,8 +332,10 @@ function renderProcessTitle(
       fgInfo.displayName,
     );
     fgIndicator.classList.add('process-title');
-    titleRow.appendChild(fgIndicator);
-  } else if (fgInfo.cwd) {
+    return fgIndicator;
+  }
+
+  if (fgInfo.cwd) {
     const cwdSpan = document.createElement('span');
     cwdSpan.className = 'session-foreground process-title';
     const cwdInner = document.createElement('span');
@@ -430,18 +343,89 @@ function renderProcessTitle(
     cwdInner.textContent = fgInfo.cwd;
     cwdSpan.appendChild(cwdInner);
     cwdSpan.title = fgInfo.cwd;
-    titleRow.appendChild(cwdSpan);
+    return cwdSpan;
+  }
+
+  const title = document.createElement('span');
+  title.className = 'session-title truncate';
+  title.textContent = getProcessTitleFallback(sessionId);
+  return title;
+}
+
+function createForegroundProcessInfoNode(
+  fgInfo: {
+    cwd?: string | null;
+    name?: string | null;
+    commandLine?: string | null;
+    displayName?: string | null;
+  },
+  sessionId: string,
+): HTMLElement | null {
+  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
+    return createForegroundIndicator(
+      fgInfo.cwd,
+      fgInfo.commandLine,
+      fgInfo.name,
+      fgInfo.displayName,
+    );
+  }
+
+  if (!fgInfo.cwd) {
+    return null;
+  }
+
+  const cwdSpan = document.createElement('span');
+  cwdSpan.className = 'session-foreground';
+  const cwdInner = document.createElement('span');
+  cwdInner.className = 'fg-cwd';
+  cwdInner.textContent = fgInfo.cwd;
+  cwdSpan.appendChild(cwdInner);
+  cwdSpan.title = fgInfo.cwd;
+  return cwdSpan;
+}
+
+function buildForegroundSignature(
+  sessionId: string,
+  mode: 'title' | 'row',
+  fgInfo: {
+    cwd?: string | null;
+    name?: string | null;
+    commandLine?: string | null;
+    displayName?: string | null;
+  },
+): string {
+  return [
+    mode,
+    fgInfo.cwd ?? '',
+    fgInfo.name ?? '',
+    fgInfo.commandLine ?? '',
+    fgInfo.displayName ?? '',
+    mode === 'title' ? getProcessTitleFallback(sessionId) : '',
+  ].join('\u001f');
+}
+
+function syncForegroundHost(
+  host: HTMLElement,
+  sessionId: string,
+  mode: 'title' | 'row',
+  fgInfo = getForegroundInfo(sessionId),
+): void {
+  const signature = buildForegroundSignature(sessionId, mode, fgInfo);
+  if (host.dataset.foregroundSignature === signature) {
+    return;
+  }
+
+  host.dataset.foregroundSignature = signature;
+  if (mode === 'title') {
+    host.replaceChildren(createForegroundTitleNode(fgInfo, sessionId));
+    return;
+  }
+
+  const content = createForegroundProcessInfoNode(fgInfo, sessionId);
+  if (content) {
+    host.replaceChildren(content);
   } else {
-    // Fallback: show shell type while process info is not yet available
-    const session = getSession(sessionId);
-    const fallback =
-      session && isAgentSurfaceSession(session)
-        ? getPrimarySurfaceLabel(session)
-        : session?.shellType || t('session.terminal');
-    const title = document.createElement('span');
-    title.className = 'session-title truncate';
-    title.textContent = fallback;
-    titleRow.appendChild(title);
+    host.replaceChildren();
   }
 }
 
@@ -453,6 +437,9 @@ export function applyPinButtonState(pinBtn: HTMLButtonElement, isPinned: boolean
   pinBtn.classList.toggle('pinned', isPinned);
   setActionButtonContent(pinBtn, label, isPinned ? '\u2605' : '\u2606', true);
   pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+  if (!isPinned) {
+    pinBtn.classList.remove('save-success');
+  }
 }
 
 /**
@@ -464,48 +451,18 @@ function updateSessionProcessInfo(sessionId: string): void {
   );
   if (!sessionItem) return;
 
-  const fgInfo = getForegroundInfo(sessionId);
-
   // Unnamed sessions: update the title row directly
   if (sessionItem.dataset.processAsTitle === '1') {
-    const titleRow = sessionItem.querySelector<HTMLElement>('.session-title-row');
-    if (!titleRow) return;
-    // Preserve badges, clear everything else
-    const layoutBadge = titleRow.querySelector('.layout-badge');
-    const roleBadge = titleRow.querySelector('.session-role-badge');
-    const stateBadge = titleRow.querySelector('.session-state-badge');
-    titleRow.innerHTML = '';
-    renderProcessTitle(titleRow, fgInfo, sessionId);
-    if (roleBadge) titleRow.appendChild(roleBadge);
-    if (stateBadge) titleRow.appendChild(stateBadge);
-    if (layoutBadge) titleRow.appendChild(layoutBadge);
+    const titleHost = sessionItem.querySelector<HTMLElement>('[data-foreground-host="title"]');
+    if (!titleHost) return;
+    syncForegroundHost(titleHost, sessionId, 'title');
     return;
   }
 
   // Named sessions: update the process info row
-  const processInfoEl = sessionItem.querySelector('.session-process-info');
+  const processInfoEl = sessionItem.querySelector<HTMLElement>('.session-process-info');
   if (!processInfoEl) return;
-
-  processInfoEl.innerHTML = '';
-
-  if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-    const fgIndicator = createForegroundIndicator(
-      fgInfo.cwd,
-      fgInfo.commandLine,
-      fgInfo.name,
-      fgInfo.displayName,
-    );
-    processInfoEl.appendChild(fgIndicator);
-  } else if (fgInfo.cwd) {
-    const cwdSpan = document.createElement('span');
-    cwdSpan.className = 'session-foreground';
-    const cwdInner = document.createElement('span');
-    cwdInner.className = 'fg-cwd';
-    cwdInner.textContent = fgInfo.cwd;
-    cwdSpan.appendChild(cwdInner);
-    cwdSpan.title = fgInfo.cwd;
-    processInfoEl.appendChild(cwdSpan);
-  }
+  syncForegroundHost(processInfoEl, sessionId, 'row');
 }
 
 // =============================================================================
@@ -642,37 +599,6 @@ export function getSessionDisplayName(session: Session): string {
   return info.primary;
 }
 
-function isAgentControlled(session: Session | null | undefined): boolean {
-  return session?.agentControlled === true;
-}
-
-function getSessionControlMode(session: Session): SessionControlMode {
-  return isAgentControlled(session) ? 'agent' : 'human';
-}
-
-function getSupervisorState(session: Session): string {
-  return session.supervisor?.state ?? 'unknown';
-}
-
-function getAttentionScore(session: Session): number {
-  return session.supervisor?.attentionScore ?? 0;
-}
-
-function needsAttention(session: Session): boolean {
-  return session.supervisor?.needsAttention === true;
-}
-
-function getSupervisorBadgeLabel(session: Session): string | null {
-  const state = getSupervisorState(session);
-  return state === 'unknown'
-    ? null
-    : state
-        .replace(/^busy-turn$/, 'busy')
-        .replace(/^idle-prompt$/, 'idle')
-        .replace(/-/g, ' ')
-        .toUpperCase();
-}
-
 function isSessionGroupCollapsed(group: SessionControlMode): boolean {
   return localStorage.getItem(SESSION_GROUP_STORAGE_KEYS[group]) === 'true';
 }
@@ -680,45 +606,6 @@ function isSessionGroupCollapsed(group: SessionControlMode): boolean {
 function toggleSessionGroup(section: HTMLElement, group: SessionControlMode): void {
   const collapsed = section.classList.toggle('collapsed');
   localStorage.setItem(SESSION_GROUP_STORAGE_KEYS[group], String(collapsed));
-}
-
-export function groupSessionsByController(sessions: Session[]): SessionGroup[] {
-  const humanSessions = sessions.filter((session) => getSessionControlMode(session) === 'human');
-  const agentSessions = sessions
-    .filter((session) => getSessionControlMode(session) === 'agent')
-    .sort((a, b) => {
-      const attentionDelta = Number(needsAttention(b)) - Number(needsAttention(a));
-      if (attentionDelta !== 0) return attentionDelta;
-      const scoreDelta = getAttentionScore(b) - getAttentionScore(a);
-      if (scoreDelta !== 0) return scoreDelta;
-      return a.order - b.order;
-    });
-  const groups: SessionGroup[] = [];
-  const showHeaders = agentSessions.length > 0;
-
-  if (humanSessions.length > 0) {
-    groups.push({
-      key: 'human',
-      label: t('sidebar.humanControlled'),
-      sessions: humanSessions,
-      collapsed: isSessionGroupCollapsed('human'),
-      showHeader: showHeaders,
-      attentionCount: 0,
-    });
-  }
-
-  if (agentSessions.length > 0) {
-    groups.push({
-      key: 'agent',
-      label: t('sidebar.agentControlled'),
-      sessions: agentSessions,
-      collapsed: isSessionGroupCollapsed('agent'),
-      showHeader: showHeaders,
-      attentionCount: agentSessions.filter((session) => needsAttention(session)).length,
-    });
-  }
-
-  return groups;
 }
 
 // =============================================================================
@@ -779,29 +666,263 @@ function createSessionFilterEmptyState(): HTMLDivElement {
   return emptyState;
 }
 
-export function syncSessionItemActiveStates(
-  root: ParentNode,
-  activeId: string | null,
-): HTMLElement | null {
-  root.querySelectorAll<HTMLElement>('.session-item.active').forEach((item) => {
-    item.classList.remove('active');
-    item.setAttribute('aria-current', 'false');
+function buildSessionItemClassName(
+  session: Session,
+  isActive: boolean,
+  isPending: boolean,
+  inLayout: boolean,
+  isChild: boolean,
+  controlMode: SessionControlMode,
+  supervisorState: string | null,
+): string {
+  return (
+    'session-item' +
+    (isActive ? ' active' : '') +
+    (isPending ? ' pending' : '') +
+    (inLayout ? ' in-layout' : '') +
+    (isChild ? ' tmux-child' : '') +
+    (controlMode === 'agent' ? ' agent-controlled' : '') +
+    (needsAttention(session) ? ' needs-attention' : '') +
+    (supervisorState ? ` supervisor-${supervisorState}` : '')
+  );
+}
+
+function bindSessionItemSelection(
+  item: HTMLDivElement,
+  sessionId: string,
+  isPending: boolean,
+): void {
+  if (isPending) {
+    return;
+  }
+
+  let lastImmediateSelectionAt = 0;
+  const selectSession = () => {
+    closeMobileActionMenu();
+    if (callbacks && sessionId) {
+      callbacks.onSelect(sessionId);
+      callbacks.onCloseSidebar();
+    }
+  };
+
+  item.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      event.button !== 0 ||
+      event.pointerType === 'touch' ||
+      target?.closest(
+        'button, a, input, select, textarea, [role="menu"], [role="menuitem"], .session-actions',
+      )
+    ) {
+      return;
+    }
+
+    lastImmediateSelectionAt = Date.now();
+    selectSession();
   });
 
-  if (!activeId) {
-    return null;
+  item.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'button, a, input, select, textarea, [role="menu"], [role="menuitem"], .session-actions',
+      )
+    ) {
+      return;
+    }
+
+    if (Date.now() - lastImmediateSelectionAt < 750) {
+      return;
+    }
+
+    selectSession();
+  });
+}
+
+function appendSessionTitleContent(
+  item: HTMLDivElement,
+  titleRow: HTMLDivElement,
+  _session: Session,
+  sessionId: string,
+  displayInfo: ReturnType<typeof getSessionDisplayInfo>,
+  controlMode: SessionControlMode,
+  stateBadge: HTMLSpanElement,
+  supervisorBadgeLabel: string | null,
+  agentBadge: HTMLSpanElement,
+  layoutBadge: HTMLSpanElement,
+): void {
+  if (displayInfo.useProcessAsTitle) {
+    item.dataset.processAsTitle = '1';
+    const titleHost = document.createElement('span');
+    titleHost.dataset.foregroundHost = 'title';
+    syncForegroundHost(titleHost, sessionId, 'title');
+    titleRow.appendChild(titleHost);
+    appendSessionTitleBadges(titleRow, controlMode, supervisorBadgeLabel, agentBadge, stateBadge);
+    titleRow.appendChild(layoutBadge);
+    return;
   }
 
-  const activeItem = root.querySelector<HTMLElement>(
-    `.session-item[data-session-id="${activeId}"]`,
+  const title = document.createElement('span');
+  title.className = 'session-title truncate';
+  title.textContent = displayInfo.primary;
+  titleRow.appendChild(title);
+  appendSessionTitleBadges(titleRow, controlMode, supervisorBadgeLabel, agentBadge, stateBadge);
+  titleRow.appendChild(layoutBadge);
+
+  if (displayInfo.secondary) {
+    item.classList.add('two-line');
+    const subtitle = document.createElement('span');
+    subtitle.className = 'session-subtitle truncate';
+    subtitle.textContent = displayInfo.secondary;
+    titleRow.appendChild(subtitle);
+  }
+}
+
+function appendSessionTitleBadges(
+  titleRow: HTMLDivElement,
+  controlMode: SessionControlMode,
+  supervisorBadgeLabel: string | null,
+  agentBadge: HTMLSpanElement,
+  stateBadge: HTMLSpanElement,
+): void {
+  if (controlMode !== 'agent') {
+    return;
+  }
+
+  titleRow.appendChild(agentBadge);
+  if (supervisorBadgeLabel) {
+    titleRow.appendChild(stateBadge);
+  }
+}
+
+function populateSessionProcessInfo(
+  processInfo: HTMLDivElement,
+  displayInfo: ReturnType<typeof getSessionDisplayInfo>,
+  sessionId: string,
+): void {
+  if (displayInfo.useProcessAsTitle) {
+    return;
+  }
+  syncForegroundHost(processInfo, sessionId, 'row');
+}
+
+function appendSessionActionButton(
+  actions: HTMLDivElement,
+  className: string,
+  label: string,
+  iconMarkup: string,
+  sessionId: string,
+  handler: (sessionId: string) => void,
+): void {
+  const button = document.createElement('button');
+  button.className = className;
+  setActionButtonContent(button, label, iconMarkup);
+  button.setAttribute('role', 'menuitem');
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    closeMobileActionMenu();
+    handler(sessionId);
+  });
+  actions.appendChild(button);
+}
+
+function appendSessionActions(
+  actions: HTMLDivElement,
+  sessionId: string,
+  isPending: boolean,
+  isRemoteSession: boolean,
+  controlMode: SessionControlMode,
+): void {
+  if (isPending || !sessionId) {
+    return;
+  }
+
+  if (!isRemoteSession && shouldShowAgentControlAction(controlMode)) {
+    const controlBtn = document.createElement('button');
+    controlBtn.className = 'session-control';
+    controlBtn.classList.add('active');
+    setActionButtonContent(controlBtn, t('session.markHumanControlled'), 'AI', true);
+    controlBtn.setAttribute('role', 'menuitem');
+    controlBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileActionMenu();
+      callbacks?.onToggleAgentControl(sessionId);
+    });
+    actions.appendChild(controlBtn);
+  }
+
+  if (!isRemoteSession) {
+    appendSessionActionButton(
+      actions,
+      'session-inject',
+      t('session.injectGuidance'),
+      icon('inject'),
+      sessionId,
+      (id) => callbacks?.onEnableMidtermFeatures?.(id),
+    );
+    appendSessionActionButton(
+      actions,
+      'session-undock',
+      t('session.removeFromLayout'),
+      icon('undock'),
+      sessionId,
+      undockSession,
+    );
+  }
+
+  appendSessionActionButton(
+    actions,
+    'session-rename',
+    t('session.rename'),
+    icon('rename'),
+    sessionId,
+    (id) => callbacks?.onRename(id),
   );
-  if (!activeItem) {
-    return null;
+  appendSessionActionButton(
+    actions,
+    'session-close',
+    t('session.close'),
+    icon('close'),
+    sessionId,
+    (id) => callbacks?.onDelete(id),
+  );
+}
+
+function appendSessionMenuButton(
+  item: HTMLDivElement,
+  actions: HTMLDivElement,
+  isPending: boolean,
+): void {
+  if (isPending) {
+    return;
   }
 
-  activeItem.classList.add('active');
-  activeItem.setAttribute('aria-current', 'true');
-  return activeItem;
+  const menuBtn = document.createElement('button');
+  menuBtn.className = 'session-menu-btn';
+  menuBtn.innerHTML = icon('menu');
+  menuBtn.title = t('session.actions');
+  menuBtn.setAttribute('aria-label', t('session.actions'));
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.setAttribute('aria-controls', actions.id);
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!isMobileSessionMenuEnabled()) {
+      return;
+    }
+
+    const isOpen = item.classList.contains('menu-open');
+    closeMobileActionMenu();
+    if (!isOpen) {
+      item.classList.add('menu-open');
+      menuBtn.setAttribute('aria-expanded', 'true');
+      showMobileBackdrop();
+      requestAnimationFrame(() => {
+        positionMobileActionMenu(item);
+      });
+    }
+  });
+  item.appendChild(menuBtn);
 }
 
 /**
@@ -819,15 +940,15 @@ function createSessionItem(
   const controlMode = getSessionControlMode(session);
   const supervisorState = getSupervisorState(session);
   const item = document.createElement('div');
-  item.className =
-    'session-item' +
-    (isActive ? ' active' : '') +
-    (isPending ? ' pending' : '') +
-    (inLayout ? ' in-layout' : '') +
-    (isChild ? ' tmux-child' : '') +
-    (controlMode === 'agent' ? ' agent-controlled' : '') +
-    (needsAttention(session) ? ' needs-attention' : '') +
-    (supervisorState ? ` supervisor-${supervisorState}` : '');
+  item.className = buildSessionItemClassName(
+    session,
+    isActive,
+    isPending,
+    inLayout,
+    isChild,
+    controlMode,
+    supervisorState,
+  );
   item.dataset.sessionId = sessionId;
   item.dataset.controlMode = controlMode;
   if (isChild) {
@@ -835,25 +956,7 @@ function createSessionItem(
   }
   item.setAttribute('aria-current', isActive ? 'true' : 'false');
   item.draggable = !isPending && !isChild && !isSessionFilterActive();
-
-  if (!isPending) {
-    item.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest(
-          'button, a, input, select, textarea, [role="menu"], [role="menuitem"], .session-actions',
-        )
-      ) {
-        return;
-      }
-
-      closeMobileActionMenu();
-      if (callbacks && sessionId) {
-        callbacks.onSelect(sessionId);
-        callbacks.onCloseSidebar();
-      }
-    });
-  }
+  bindSessionItemSelection(item, sessionId, isPending);
 
   const info = document.createElement('div');
   info.className = 'session-info';
@@ -889,39 +992,18 @@ function createSessionItem(
     stateBadge.title = session.supervisor.attentionReason;
   }
 
-  if (displayInfo.useProcessAsTitle) {
-    // Unnamed sessions: show cwd + process as the title row
-    item.dataset.processAsTitle = '1';
-    const fgInfo = getForegroundInfo(sessionId);
-    renderProcessTitle(titleRow, fgInfo, sessionId);
-    if (controlMode === 'agent') {
-      titleRow.appendChild(agentBadge);
-      if (supervisorBadgeLabel) {
-        titleRow.appendChild(stateBadge);
-      }
-    }
-    titleRow.appendChild(layoutBadge);
-  } else {
-    const title = document.createElement('span');
-    title.className = 'session-title truncate';
-    title.textContent = displayInfo.primary;
-    titleRow.appendChild(title);
-    if (controlMode === 'agent') {
-      titleRow.appendChild(agentBadge);
-      if (supervisorBadgeLabel) {
-        titleRow.appendChild(stateBadge);
-      }
-    }
-    titleRow.appendChild(layoutBadge);
-
-    if (displayInfo.secondary) {
-      item.classList.add('two-line');
-      const subtitle = document.createElement('span');
-      subtitle.className = 'session-subtitle truncate';
-      subtitle.textContent = displayInfo.secondary;
-      titleRow.appendChild(subtitle);
-    }
-  }
+  appendSessionTitleContent(
+    item,
+    titleRow,
+    session,
+    sessionId,
+    displayInfo,
+    controlMode,
+    stateBadge,
+    supervisorBadgeLabel,
+    agentBadge,
+    layoutBadge,
+  );
 
   info.appendChild(titleRow);
 
@@ -929,28 +1011,9 @@ function createSessionItem(
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
   processInfo.dataset.sessionId = sessionId;
+  processInfo.dataset.foregroundHost = 'row';
 
-  if (!displayInfo.useProcessAsTitle) {
-    const fgInfo = getForegroundInfo(sessionId);
-    if (fgInfo.name && fgInfo.name !== 'shell' && !isShellProcess(fgInfo.name, sessionId)) {
-      const fgIndicator = createForegroundIndicator(
-        fgInfo.cwd,
-        fgInfo.commandLine,
-        fgInfo.name,
-        fgInfo.displayName,
-      );
-      processInfo.appendChild(fgIndicator);
-    } else if (fgInfo.cwd) {
-      const cwdSpan = document.createElement('span');
-      cwdSpan.className = 'session-foreground';
-      const cwdInner = document.createElement('span');
-      cwdInner.className = 'fg-cwd';
-      cwdInner.textContent = fgInfo.cwd;
-      cwdSpan.appendChild(cwdInner);
-      cwdSpan.title = fgInfo.cwd;
-      processInfo.appendChild(cwdSpan);
-    }
-  }
+  populateSessionProcessInfo(processInfo, displayInfo, sessionId);
 
   // Always add processInfo container so updateSessionProcessInfo can find it later
   info.appendChild(processInfo);
@@ -960,127 +1023,17 @@ function createSessionItem(
   actions.id = `session-actions-${sessionId}`;
   actions.setAttribute('role', 'menu');
 
-  if (!isPending && sessionId) {
-    if (!isRemoteSession && shouldShowAgentControlAction(controlMode)) {
-      const controlBtn = document.createElement('button');
-      controlBtn.className = 'session-control';
-      controlBtn.classList.add('active');
-      setActionButtonContent(controlBtn, t('session.markHumanControlled'), 'AI', true);
-      controlBtn.setAttribute('role', 'menuitem');
-      controlBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeMobileActionMenu();
-        callbacks?.onToggleAgentControl(sessionId);
-      });
-      actions.appendChild(controlBtn);
-    }
+  appendSessionActions(actions, sessionId, isPending, isRemoteSession, controlMode);
 
-    const renameBtn = document.createElement('button');
-    renameBtn.className = 'session-rename';
-    setActionButtonContent(renameBtn, t('session.rename'), icon('rename'));
-    renameBtn.setAttribute('role', 'menuitem');
-    renameBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      if (callbacks) {
-        callbacks.onRename(sessionId);
-      }
-    });
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'session-close';
-    setActionButtonContent(closeBtn, t('session.close'), icon('close'));
-    closeBtn.setAttribute('role', 'menuitem');
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeMobileActionMenu();
-      if (callbacks) {
-        callbacks.onDelete(sessionId);
-      }
-    });
-
-    // Undock button (only shown when in layout)
-    if (!isRemoteSession) {
-      const pinBtn = document.createElement('button');
-      pinBtn.className = 'session-pin';
-      applyPinButtonState(pinBtn, !!session.bookmarkId);
-      pinBtn.setAttribute('role', 'menuitem');
-      pinBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeMobileActionMenu();
-        if (callbacks) {
-          callbacks.onPinToHistory(sessionId);
-        }
-      });
-
-      const enableFeaturesBtn = document.createElement('button');
-      enableFeaturesBtn.className = 'session-inject';
-      setActionButtonContent(enableFeaturesBtn, t('session.injectGuidance'), icon('inject'));
-      enableFeaturesBtn.setAttribute('role', 'menuitem');
-      enableFeaturesBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeMobileActionMenu();
-        if (callbacks?.onEnableMidtermFeatures) {
-          callbacks.onEnableMidtermFeatures(sessionId);
-        }
-      });
-
-      const undockBtn = document.createElement('button');
-      undockBtn.className = 'session-undock';
-      setActionButtonContent(undockBtn, t('session.removeFromLayout'), icon('undock'));
-      undockBtn.setAttribute('role', 'menuitem');
-      undockBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeMobileActionMenu();
-        undockSession(sessionId);
-      });
-
-      actions.appendChild(pinBtn);
-      actions.appendChild(enableFeaturesBtn);
-      actions.appendChild(undockBtn);
-    }
-
-    actions.appendChild(renameBtn);
-    actions.appendChild(closeBtn);
-  }
-
-  // Heat indicator canvas (left strip, shows byte activity as thermal color)
-  const heatCanvas = document.createElement('canvas');
-  heatCanvas.className = 'heat-canvas';
-  registerHeatCanvas(sessionId, heatCanvas);
-  item.prepend(heatCanvas);
+  // Heat indicator strip (left edge, driven by server-side session telemetry)
+  const heatIndicator = document.createElement('div');
+  heatIndicator.className = 'heat-canvas';
+  registerHeatCanvas(sessionId, heatIndicator);
+  item.prepend(heatIndicator);
 
   item.appendChild(info);
 
-  // Mobile menu button (toggles action bar visibility)
-  if (!isPending) {
-    const menuBtn = document.createElement('button');
-    menuBtn.className = 'session-menu-btn';
-    menuBtn.innerHTML = icon('menu');
-    menuBtn.title = t('session.actions');
-    menuBtn.setAttribute('aria-label', t('session.actions'));
-    menuBtn.setAttribute('aria-haspopup', 'menu');
-    menuBtn.setAttribute('aria-controls', actions.id);
-    menuBtn.setAttribute('aria-expanded', 'false');
-    menuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!isMobileSessionMenuEnabled()) {
-        return;
-      }
-
-      const isOpen = item.classList.contains('menu-open');
-      closeMobileActionMenu();
-      if (!isOpen) {
-        item.classList.add('menu-open');
-        menuBtn.setAttribute('aria-expanded', 'true');
-        showMobileBackdrop();
-        requestAnimationFrame(() => {
-          positionMobileActionMenu(item);
-        });
-      }
-    });
-    item.appendChild(menuBtn);
-  }
+  appendSessionMenuButton(item, actions, isPending);
 
   item.appendChild(actions);
   return item;
@@ -1253,9 +1206,14 @@ export function renderSessionList(): void {
   const displaySessions = getSidebarDisplaySessions();
   const filteredSessions = filterSessionsByQuery(
     displaySessions,
-    isSidebarSessionFilterEnabled() ? sessionFilterValue : '',
+    sessionFilterController.isEnabled() ? sessionFilterController.getFilterValue() : '',
+    getForegroundInfo,
   );
-  const groups = groupSessionsByController(filteredSessions);
+  const groups = groupSessionsByController(filteredSessions, {
+    humanLabel: t('sidebar.humanControlled'),
+    agentLabel: t('sidebar.agentControlled'),
+    isCollapsed: isSessionGroupCollapsed,
+  });
   const hubSections = getHubSidebarSections();
   pruneHeatSessions([
     ...displaySessions.map((session) => session.id),

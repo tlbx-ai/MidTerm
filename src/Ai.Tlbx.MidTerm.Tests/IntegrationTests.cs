@@ -22,11 +22,11 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Tests;
 
-public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
+public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
-    private readonly List<WebSocket> _webSockets = [];
+    private bool _disposed;
 
     public IntegrationTests(WebApplicationFactory<Program> factory)
     {
@@ -38,23 +38,26 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
     public async Task DisposeAsync()
     {
-        foreach (var ws in _webSockets)
+        await Task.CompletedTask;
+        Dispose();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
         {
-            if (ws.State == WebSocketState.Open)
-            {
-                try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); }
-                catch { }
-            }
-            ws.Dispose();
+            return;
         }
 
+        _disposed = true;
         _client.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
     public async Task Api_GetVersion_ReturnsVersion()
     {
-        var response = await _client.GetAsync("/api/version");
+        using var response = await _client.GetAsync("/api/version");
 
         response.EnsureSuccessStatusCode();
         var version = await response.Content.ReadAsStringAsync();
@@ -65,7 +68,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebSocket_Mux_ReceivesInitFrame()
     {
-        var ws = await ConnectWebSocketAsync("/ws/mux");
+        using var ws = await ConnectWebSocketAsync("/ws/mux");
 
         var buffer = new byte[1024];
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -79,7 +82,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task WebSocket_State_ReceivesInitialSessionList()
     {
-        var ws = await ConnectWebSocketAsync("/ws/state");
+        using var ws = await ConnectWebSocketAsync("/ws/state");
 
         var buffer = new byte[8192];
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -116,7 +119,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         try
         {
-            var ws = await ConnectWebSocketAsync("/ws/state");
+            using var ws = await ConnectWebSocketAsync("/ws/state");
 
             var buffer = new byte[8192];
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -141,7 +144,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     {
         const string sessionId = "session-a";
         const string previewName = "default";
-        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        using var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
         {
             SessionId = sessionId,
             PreviewName = previewName,
@@ -150,23 +153,23 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         targetRes.EnsureSuccessStatusCode();
 
         var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
-        var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
+        using var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
         {
             Raw = "theme=dark; Path=/"
         }, AppJsonContext.Default.WebPreviewCookieSetRequest);
         setRes.EnsureSuccessStatusCode();
 
-        var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
+        using var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
         getRes.EnsureSuccessStatusCode();
         var cookies = await getRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
         Assert.NotNull(cookies);
         Assert.Contains("theme=dark", cookies.Header, StringComparison.Ordinal);
 
-        var delRes = await _client.DeleteAsync($"/api/webpreview/cookies{previewQuery}&name=theme");
+        using var delRes = await _client.DeleteAsync($"/api/webpreview/cookies{previewQuery}&name=theme");
         delRes.EnsureSuccessStatusCode();
 
-        var afterDeleteRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
+        using var afterDeleteRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
         afterDeleteRes.EnsureSuccessStatusCode();
         var afterDelete = await afterDeleteRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
@@ -179,7 +182,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     {
         const string sessionId = "session-a";
         const string previewName = "default";
-        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        using var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
         {
             SessionId = sessionId,
             PreviewName = previewName,
@@ -188,13 +191,13 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         targetRes.EnsureSuccessStatusCode();
 
         var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
-        var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
+        using var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
         {
             Raw = "session=abc123; Path=/"
         }, AppJsonContext.Default.WebPreviewCookieSetRequest);
         setRes.EnsureSuccessStatusCode();
 
-        var reloadRes = await _client.PostAsJsonAsync("/api/webpreview/reload", new WebPreviewReloadRequest
+        using var reloadRes = await _client.PostAsJsonAsync("/api/webpreview/reload", new WebPreviewReloadRequest
         {
             SessionId = sessionId,
             PreviewName = previewName,
@@ -202,7 +205,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         }, AppJsonContext.Default.WebPreviewReloadRequest);
         reloadRes.EnsureSuccessStatusCode();
 
-        var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
+        using var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}");
         getRes.EnsureSuccessStatusCode();
         var cookies = await getRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
@@ -215,7 +218,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     {
         const string sessionId = "session-a";
         const string previewName = "default";
-        var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
+        using var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
         {
             SessionId = sessionId,
             PreviewName = previewName,
@@ -226,7 +229,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         Assert.NotNull(target);
 
         var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
-        var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
+        using var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
         {
             Raw = "session=abc123; Path=/; HttpOnly"
         }, AppJsonContext.Default.WebPreviewCookieSetRequest);
@@ -234,7 +237,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         using var bridgeRequest = new HttpRequestMessage(HttpMethod.Get, $"/webpreview/{target!.RouteKey}/_cookies");
         bridgeRequest.Headers.Referrer = new Uri($"https://localhost/webpreview/{target.RouteKey}/");
-        var bridgeRes = await _client.SendAsync(bridgeRequest);
+        using var bridgeRes = await _client.SendAsync(bridgeRequest);
         bridgeRes.EnsureSuccessStatusCode();
         var bridgeCookies = await bridgeRes.Content.ReadFromJsonAsync(
             AppJsonContext.Default.WebPreviewCookiesResponse);
@@ -246,7 +249,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     [Fact]
     public async Task BrowserPreviewClient_Create_ReturnsPreviewIdentity()
     {
-        var response = await _client.PostAsJsonAsync("/api/browser/preview-client", new BrowserPreviewClientRequest
+        using var response = await _client.PostAsJsonAsync("/api/browser/preview-client", new BrowserPreviewClientRequest
         {
             SessionId = "session-123"
         }, AppJsonContext.Default.BrowserPreviewClientRequest);
@@ -267,9 +270,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
         var uri = new Uri(_factory.Server.BaseAddress, path);
         var wsUri = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws" }.Uri;
 
-        var socket = await wsClient.ConnectAsync(wsUri, CancellationToken.None);
-        _webSockets.Add(socket);
-        return socket;
+        return await wsClient.ConnectAsync(wsUri, CancellationToken.None);
     }
 
     private static void SeedSession(TtyHostSessionManager manager, SessionInfo session, int order)

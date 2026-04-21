@@ -2313,6 +2313,60 @@
         }
       }
     },
+    "/api/share/active": {
+      "get": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveShareGrantListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/{grantId}": {
+      "delete": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/share/claim": {
       "post": {
         "tags": [
@@ -2774,6 +2828,53 @@
   },
   "components": {
     "schemas": {
+      "ActiveShareGrantInfo": {
+        "required": [
+          "grantId",
+          "sessionId",
+          "sessionName",
+          "mode",
+          "createdAtUtc",
+          "expiresAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "grantId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ShareAccessMode"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActiveShareGrantListResponse": {
+        "required": [
+          "shares"
+        ],
+        "type": "object",
+        "properties": {
+          "shares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveShareGrantInfo"
+            }
+          }
+        }
+      },
       "AgentSessionFeedResponse": {
         "required": [
           "sessionId",
@@ -3493,6 +3594,8 @@
           "totalConnectedClientCount",
           "connectedUiClientCount",
           "targetUrl",
+          "ownerBrowserId",
+          "ownerConnected",
           "defaultClient",
           "clients"
         ],
@@ -3545,6 +3648,15 @@
               "null",
               "string"
             ]
+          },
+          "ownerBrowserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerConnected": {
+            "type": "boolean"
           },
           "defaultClient": {
             "oneOf": [
@@ -3740,7 +3852,8 @@
           "executable",
           "workingDirectory",
           "isStarred",
-          "launchMode"
+          "launchMode",
+          "surfaceType"
         ],
         "type": "object",
         "properties": {
@@ -3782,6 +3895,39 @@
               "null",
               "string"
             ]
+          },
+          "launchOrigin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surfaceType": {
+            "type": "string"
+          },
+          "foregroundProcessName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessCommandLine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessDisplayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessIdentity": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -3807,6 +3953,24 @@
             ]
           },
           "workingDirectory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "spaceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspacePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surface": {
             "type": [
               "null",
               "string"
@@ -4323,7 +4487,13 @@
           "lastUsed",
           "order",
           "launchMode",
-          "profile"
+          "profile",
+          "launchOrigin",
+          "surfaceType",
+          "foregroundProcessName",
+          "foregroundProcessCommandLine",
+          "foregroundProcessDisplayName",
+          "foregroundProcessIdentity"
         ],
         "type": "object",
         "properties": {
@@ -4370,6 +4540,190 @@
               "null",
               "string"
             ]
+          },
+          "launchOrigin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surfaceType": {
+            "type": "string"
+          },
+          "foregroundProcessName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessCommandLine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessDisplayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "foregroundProcessIdentity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "required": [
+          "type",
+          "sessionId",
+          "direction",
+          "children"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "direction": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "children": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/LayoutNode"
+            }
+          }
+        }
+      },
+      "LensAttachmentReference": {
+        "required": [
+          "kind",
+          "path",
+          "mimeType",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LensTerminalReplayStep": {
+        "required": [
+          "kind",
+          "text",
+          "path",
+          "mimeType",
+          "useBracketedPaste"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "useBracketedPaste": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LensTurnRequest": {
+        "required": [
+          "attachments",
+          "terminalReplay"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "planMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "permissionMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensAttachmentReference"
+            }
+          },
+          "terminalReplay": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LensTerminalReplayStep"
+            }
           }
         }
       },
@@ -4551,6 +4905,81 @@
           }
         }
       },
+      "ManagerBarQueueEntryDto": {
+        "required": [
+          "queueId",
+          "sessionId",
+          "kind",
+          "action",
+          "turn",
+          "phase",
+          "nextPromptIndex",
+          "completedCycles",
+          "nextRunAt",
+          "ignoreHeatUntil",
+          "awaitingHeatRise"
+        ],
+        "type": "object",
+        "properties": {
+          "queueId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "action": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ManagerBarButton"
+              }
+            ]
+          },
+          "turn": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LensTurnRequest"
+              }
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "nextPromptIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "completedCycles": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRunAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "ignoreHeatUntil": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "awaitingHeatRise": {
+            "type": "boolean"
+          }
+        }
+      },
       "ManagerBarScheduleEntry": {
         "required": [
           "timeOfDay",
@@ -4604,16 +5033,26 @@
           "defaultCols",
           "defaultRows",
           "defaultWorkingDirectory",
+          "terminalEnvironmentVariables",
           "codexYoloDefault",
+          "codexDefaultLensModel",
           "codexEnvironmentVariables",
           "claudeDangerouslySkipPermissionsDefault",
+          "claudeDefaultLensModel",
           "claudeEnvironmentVariables",
+          "agentMessageFontFamily",
+          "showAgentMessageTimestamps",
+          "showUnknownAgentMessages",
           "fontSize",
           "fontFamily",
+          "terminalLigaturesEnabled",
           "lineHeight",
           "letterSpacing",
           "fontWeight",
           "fontWeightBold",
+          "customGlyphs",
+          "boxDrawingStyle",
+          "boxDrawingScale",
           "cursorStyle",
           "cursorBlink",
           "cursorInactiveStyle",
@@ -4621,11 +5060,15 @@
           "terminalColorScheme",
           "terminalColorSchemes",
           "backgroundImageEnabled",
+          "hideBackgroundImageOnMobile",
           "backgroundImageFileName",
           "backgroundImageRevision",
-          "backgroundImageFit",
+          "backgroundKenBurnsEnabled",
+          "backgroundKenBurnsZoomPercent",
+          "backgroundKenBurnsSpeedPxPerSecond",
           "uiTransparency",
           "terminalTransparency",
+          "terminalCellBackgroundTransparency",
           "tabTitleMode",
           "minimumContrastRatio",
           "smoothScrolling",
@@ -4641,11 +5084,16 @@
           "scrollbackProtection",
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
+          "resumeMode",
           "inputMode",
           "fileRadar",
+          "showBookmarks",
+          "allowAdHocSessionBookmarks",
           "showSidebarSessionFilter",
+          "worktreeRootDirectory",
           "tmuxCompatibility",
           "managerBarEnabled",
+          "commandBayLigaturesEnabled",
           "devMode",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
@@ -4681,8 +5129,14 @@
           "defaultWorkingDirectory": {
             "type": "string"
           },
+          "terminalEnvironmentVariables": {
+            "type": "string"
+          },
           "codexYoloDefault": {
             "type": "boolean"
+          },
+          "codexDefaultLensModel": {
+            "type": "string"
           },
           "codexEnvironmentVariables": {
             "type": "string"
@@ -4690,8 +5144,20 @@
           "claudeDangerouslySkipPermissionsDefault": {
             "type": "boolean"
           },
+          "claudeDefaultLensModel": {
+            "type": "string"
+          },
           "claudeEnvironmentVariables": {
             "type": "string"
+          },
+          "agentMessageFontFamily": {
+            "type": "string"
+          },
+          "showAgentMessageTimestamps": {
+            "type": "boolean"
+          },
+          "showUnknownAgentMessages": {
+            "type": "boolean"
           },
           "fontSize": {
             "type": "integer",
@@ -4699,6 +5165,9 @@
           },
           "fontFamily": {
             "type": "string"
+          },
+          "terminalLigaturesEnabled": {
+            "type": "boolean"
           },
           "lineHeight": {
             "type": "number",
@@ -4713,6 +5182,16 @@
           },
           "fontWeightBold": {
             "type": "string"
+          },
+          "customGlyphs": {
+            "type": "boolean"
+          },
+          "boxDrawingStyle": {
+            "type": "string"
+          },
+          "boxDrawingScale": {
+            "type": "number",
+            "format": "double"
           },
           "cursorStyle": {
             "$ref": "#/components/schemas/CursorStyleSetting"
@@ -4738,6 +5217,9 @@
           "backgroundImageEnabled": {
             "type": "boolean"
           },
+          "hideBackgroundImageOnMobile": {
+            "type": "boolean"
+          },
           "backgroundImageFileName": {
             "type": [
               "null",
@@ -4748,14 +5230,29 @@
             "type": "integer",
             "format": "int64"
           },
-          "backgroundImageFit": {
-            "type": "string"
+          "backgroundKenBurnsEnabled": {
+            "type": "boolean"
+          },
+          "backgroundKenBurnsZoomPercent": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "backgroundKenBurnsSpeedPxPerSecond": {
+            "type": "integer",
+            "format": "int32"
           },
           "uiTransparency": {
             "type": "integer",
             "format": "int32"
           },
           "terminalTransparency": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "terminalCellBackgroundTransparency": {
             "type": [
               "null",
               "integer"
@@ -4810,19 +5307,34 @@
           "keepSystemAwakeWithActiveSessions": {
             "type": "boolean"
           },
+          "resumeMode": {
+            "$ref": "#/components/schemas/TerminalResumeModeSetting"
+          },
           "inputMode": {
             "type": "string"
           },
           "fileRadar": {
             "type": "boolean"
           },
+          "showBookmarks": {
+            "type": "boolean"
+          },
+          "allowAdHocSessionBookmarks": {
+            "type": "boolean"
+          },
           "showSidebarSessionFilter": {
             "type": "boolean"
+          },
+          "worktreeRootDirectory": {
+            "type": "string"
           },
           "tmuxCompatibility": {
             "type": "boolean"
           },
           "managerBarEnabled": {
+            "type": "boolean"
+          },
+          "commandBayLigaturesEnabled": {
             "type": "boolean"
           },
           "devMode": {
@@ -5254,9 +5766,14 @@
           "order",
           "parentSessionId",
           "bookmarkId",
+          "spaceId",
+          "workspacePath",
+          "surface",
+          "isAdHoc",
           "agentControlled",
           "lensOnly",
           "profileHint",
+          "lensResumeThreadId",
           "hasLensHistory",
           "supervisor"
         ],
@@ -5372,6 +5889,27 @@
               "string"
             ]
           },
+          "spaceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspacePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surface": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isAdHoc": {
+            "type": "boolean"
+          },
           "agentControlled": {
             "type": "boolean"
           },
@@ -5379,6 +5917,12 @@
             "type": "boolean"
           },
           "profileHint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lensResumeThreadId": {
             "type": [
               "null",
               "string"
@@ -5437,6 +5981,36 @@
           },
           "literal": {
             "type": "boolean"
+          }
+        }
+      },
+      "SessionLayoutState": {
+        "required": [
+          "revision",
+          "root",
+          "focusedSessionId"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "root": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LayoutNode"
+              }
+            ]
+          },
+          "focusedSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -5785,7 +6359,9 @@
       "StateUpdate": {
         "required": [
           "sessions",
-          "update"
+          "update",
+          "layout",
+          "managerBarQueue"
         ],
         "type": "object",
         "properties": {
@@ -5808,6 +6384,25 @@
                 "$ref": "#/components/schemas/UpdateInfo"
               }
             ]
+          },
+          "layout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionLayoutState"
+              }
+            ]
+          },
+          "managerBarQueue": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManagerBarQueueEntryDto"
+            }
           }
         }
       },
@@ -6048,6 +6643,12 @@
         "enum": [
           "default",
           "shiftEnterLineFeed"
+        ]
+      },
+      "TerminalResumeModeSetting": {
+        "enum": [
+          "fullReplay",
+          "quickResume"
         ]
       },
       "TerminalTransportDiagnosticsDto": {
@@ -6780,6 +7381,12 @@
               "string"
             ]
           },
+          "resumeThreadId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "cols": {
             "type": "integer",
             "format": "int32"
@@ -6804,6 +7411,24 @@
             "type": "boolean"
           },
           "launchCommand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "spaceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspacePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "surface": {
             "type": [
               "null",
               "string"

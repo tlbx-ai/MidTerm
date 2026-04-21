@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -16,6 +17,7 @@ using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Microsoft.AspNetCore.Mvc;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class SessionApiEndpoints
@@ -50,15 +52,17 @@ public static partial class SessionApiEndpoints
     public static void MapSessionEndpoints(
         WebApplication app,
         TtyHostSessionManager sessionManager,
+        SessionLayoutStateService layoutStateService,
+        ManagerBarQueueService managerBarQueueService,
         ClipboardService clipboardService,
         UpdateService updateService,
         WebPreviewService webPreviewService,
         SessionTelemetryService sessionTelemetry,
         SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
         SessionLensRuntimeService lensRuntime,
         SessionCodexHandoffService codexHandoff,
+        ProviderResumeCatalogService providerResumeCatalog,
         SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry)
@@ -67,24 +71,99 @@ public static partial class SessionApiEndpoints
         {
             var response = new StateUpdate
             {
-                Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensPulse),
-                Update = updateService.LatestUpdate
+                Sessions = GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime),
+                Update = updateService.LatestUpdate,
+                Layout = layoutStateService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id)),
+                ManagerBarQueue = managerBarQueueService.GetSnapshot(sessionManager.GetAllSessions().Select(s => s.Id)).ToList()
             };
             return Results.Json(response, AppJsonContext.Default.StateUpdate);
         });
 
+        async Task<IResult> EnqueueCommandBayQueueItem(ManagerBarQueueEnqueueRequest request, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (sessionManager.GetSession(request.SessionId) is null)
+            {
+                return Results.NotFound();
+            }
+
+            ManagerBarQueueEntryDto? entry;
+            if (request.Action is not null)
+            {
+                var (accepted, queuedEntry) = await managerBarQueueService
+                    .SubmitActionAsync(request.SessionId, request.Action, ct)
+                    .ConfigureAwait(false);
+                if (!accepted)
+                {
+                    return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                }
+
+                if (queuedEntry is null)
+                {
+                    return Results.Ok();
+                }
+
+                entry = queuedEntry;
+            }
+            else if (request.Turn is not null)
+            {
+                var (accepted, queuedEntry) = await managerBarQueueService
+                    .SubmitPromptAsync(request.SessionId, request.Turn, ct)
+                    .ConfigureAwait(false);
+                if (!accepted)
+                {
+                    return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                }
+
+                if (queuedEntry is null)
+                {
+                    return Results.Ok();
+                }
+
+                entry = queuedEntry;
+            }
+            else
+            {
+                return Results.BadRequest("action or turn required");
+            }
+
+            if (entry is null)
+            {
+                return Results.BadRequest("Only queued command-bay items can be enqueued.");
+            }
+
+            return Results.Json(entry, AppJsonContext.Default.ManagerBarQueueEntryDto);
+        }
+
+        app.MapPost("/api/manager-bar/queue", EnqueueCommandBayQueueItem);
+        app.MapPost("/api/command-bay/queue", EnqueueCommandBayQueueItem);
+
+        IResult RemoveCommandBayQueueItem(string queueId)
+        {
+            return managerBarQueueService.Remove(queueId)
+                ? Results.Ok()
+                : Results.NotFound();
+        }
+
+        app.MapDelete("/api/manager-bar/queue/{queueId}", RemoveCommandBayQueueItem);
+        app.MapDelete("/api/command-bay/queue/{queueId}", RemoveCommandBayQueueItem);
+
         app.MapGet("/api/sessions", () =>
         {
-            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, lensPulse), AppJsonContext.Default.SessionListDto);
+            return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime), AppJsonContext.Default.SessionListDto);
         });
 
         app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
         {
-            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, lensPulse).Sessions, agentOnly);
+            var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime).Sessions, agentOnly);
             return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
-        app.MapPost("/api/sessions", async (CreateSessionRequest? request) =>
+        app.MapPost("/api/sessions", async (CreateSessionRequest? request, CancellationToken ct) =>
         {
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
@@ -95,28 +174,53 @@ public static partial class SessionApiEndpoints
                 shellType = parsed;
             }
 
-            var sessionInfo = await sessionManager.CreateSessionAsync(
-                shellType?.ToString(), cols, rows, request?.WorkingDirectory);
+            var creation = await sessionManager.CreateSessionDetailedAsync(
+                shellType?.ToString(), cols, rows, request?.WorkingDirectory, ct);
 
-            if (sessionInfo is null)
+            if (!creation.Succeeded)
             {
-                return Results.Problem("Failed to create session");
+                return CreateSessionLaunchProblem(creation.Failure);
             }
 
-            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
+            var sessionInfo = creation.Session!;
+            ApplySessionSpaceMetadata(
+                sessionManager,
+                sessionInfo.Id,
+                request?.SpaceId,
+                request?.WorkspacePath,
+                request?.Surface,
+                string.IsNullOrWhiteSpace(request?.SpaceId)
+                    ? SessionLaunchOrigins.AdHoc
+                    : SessionLaunchOrigins.Space);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
         app.MapPost("/api/workers/bootstrap", async (WorkerBootstrapRequest request, CancellationToken ct) =>
         {
-            var sessionInfo = await sessionManager.CreateSessionAsync(
-                request.Shell, request.Cols, request.Rows, request.WorkingDirectory, ct);
+            var creation = await sessionManager.CreateSessionDetailedAsync(
+                request.Shell,
+                request.Cols,
+                request.Rows,
+                request.WorkingDirectory,
+                applyTerminalEnvironmentVariables: false,
+                ct);
 
-            if (sessionInfo is null)
+            if (!creation.Succeeded)
             {
-                return Results.Problem("Failed to create worker session");
+                return CreateSessionLaunchProblem(creation.Failure, "Worker session launch failed");
             }
 
+            var sessionInfo = creation.Session!;
             var sessionId = sessionInfo.Id;
+            ApplySessionSpaceMetadata(
+                sessionManager,
+                sessionId,
+                request.SpaceId,
+                request.WorkspacePath,
+                request.Surface,
+                string.IsNullOrWhiteSpace(request.SpaceId)
+                    ? SessionLaunchOrigins.AdHoc
+                    : SessionLaunchOrigins.Space);
 
             if (request.AgentControlled)
             {
@@ -129,6 +233,11 @@ public static partial class SessionApiEndpoints
                 sessionManager.SetProfileHint(sessionId, requestedProfile);
             }
 
+            if (!string.IsNullOrWhiteSpace(request.ResumeThreadId))
+            {
+                sessionManager.SetLensResumeThreadId(sessionId, request.ResumeThreadId);
+            }
+
             if (request.LensOnly)
             {
                 sessionManager.SetLensOnly(sessionId, true);
@@ -139,7 +248,7 @@ public static partial class SessionApiEndpoints
                 await sessionManager.SetSessionNameAsync(sessionId, request.Name, isManual: true, ct);
             }
 
-            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+            var workerSession = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, workerSession);
             var launchCommand = request.LensOnly
                 ? null
@@ -185,7 +294,7 @@ public static partial class SessionApiEndpoints
                 guidanceInjected);
             foreach (var slashCommand in slashCommands)
             {
-                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+                var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
                 if (!TryBuildPromptExecutionPlan(
                         new SessionPromptRequest
                         {
@@ -207,13 +316,34 @@ public static partial class SessionApiEndpoints
 
             return Results.Json(new WorkerBootstrapResponse
             {
-                Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId),
                 Profile = resolvedProfile,
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
                 GuidanceInjected = guidanceInjected,
                 MidtermDir = midtermDir
             }, AppJsonContext.Default.WorkerBootstrapResponse);
+        });
+
+        app.MapGet("/api/providers/{provider}/resume-candidates", (
+            string provider,
+            string? workingDirectory,
+            string? scope,
+            CancellationToken ct) =>
+        {
+            var normalizedProvider = aiCliProfileService.NormalizeProfile(provider);
+            if (normalizedProvider is not AiCliProfileService.CodexProfile and not AiCliProfileService.ClaudeProfile)
+            {
+                return Results.BadRequest("Only Codex and Claude resume catalogs are supported.");
+            }
+
+            var includeAllDirectories = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
+            var candidates = providerResumeCatalog.GetCandidates(
+                normalizedProvider,
+                workingDirectory,
+                includeAllDirectories,
+                ct);
+            return Results.Json(candidates, AppJsonContext.Default.ListProviderResumeCatalogEntryDto);
         });
 
         app.MapPost("/api/sessions/reorder", (SessionReorderRequest request) =>
@@ -228,17 +358,17 @@ public static partial class SessionApiEndpoints
                 : Results.BadRequest("Invalid session IDs");
         });
 
-        app.MapDelete("/api/sessions/{id}", async (string id) =>
+        app.MapDelete("/api/sessions/{id}", async (string id, CancellationToken ct) =>
         {
             workerSessionRegistry.Forget(id);
             agentFeed.Forget(id);
-            await sessionManager.CloseSessionAsync(id);
+            await sessionManager.CloseSessionAsync(id, ct);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request) =>
+        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, CancellationToken ct) =>
         {
-            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows);
+            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, ct);
             if (!success)
             {
                 return Results.NotFound();
@@ -251,25 +381,25 @@ public static partial class SessionApiEndpoints
             }, AppJsonContext.Default.ResizeResponse);
         });
 
-        app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false) =>
+        app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            await sessionManager.GetSessionFreshAsync(id).ConfigureAwait(false);
+            await sessionManager.GetSessionFreshAsync(id, ct).ConfigureAwait(false);
 
             var response = new SessionStateResponse
             {
-                Session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id),
+                Session = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, id),
                 Previews = webPreviewService.ListPreviewSessions(id).Previews.ToArray(),
                 TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, id)
             };
 
             if (includeBuffer)
             {
-                var snapshot = await sessionManager.GetBufferAsync(id);
+                var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
                 if (snapshot is not null)
                 {
                     response.BufferByteLength = snapshot.Data.Length;
@@ -283,7 +413,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionStateResponse);
         });
 
-        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request) =>
+        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -295,11 +425,11 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request) =>
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -311,7 +441,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             agentFeed.NoteKeyInput(id, request);
             return Results.Ok();
         });
@@ -327,7 +457,7 @@ public static partial class SessionApiEndpoints
                 sessionManager,
                 sessionTelemetry,
                 sessionSupervisor,
-                lensPulse,
+                lensRuntime,
                 aiCliProfileService,
                 workerSessionRegistry,
                 id,
@@ -357,14 +487,14 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false) =>
+        app.MapGet("/api/sessions/{id}/buffer/text", async (string id, bool includeBase64 = false, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
             if (snapshot is null)
             {
                 return Results.NotFound();
@@ -381,14 +511,14 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionBufferTextResponse);
         });
 
-        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, int lines = 120, bool stripAnsi = true) =>
+        app.MapGet("/api/sessions/{id}/buffer/tail", async (string id, int lines = 120, bool stripAnsi = true, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ct);
             if (snapshot is null)
             {
                 return Results.NotFound();
@@ -445,9 +575,9 @@ public static partial class SessionApiEndpoints
             return Results.Json(feed, AppJsonContext.Default.AgentSessionFeedResponse);
         });
 
-        app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false) =>
+        app.MapPut("/api/sessions/{id}/name", async (string id, RenameSessionRequest request, bool auto = false, CancellationToken ct = default) =>
         {
-            if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto))
+            if (!await sessionManager.SetSessionNameAsync(id, request.Name, isManual: !auto, ct))
             {
                 return Results.NotFound();
             }
@@ -470,10 +600,10 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
-            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensPulse, id), AppJsonContext.Default.SessionInfoDto);
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, id), AppJsonContext.Default.SessionInfoDto);
         });
 
-        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file) =>
+        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -486,7 +616,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("No file provided");
             }
 
-            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
+            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file, ct);
 
             // To make Johannes happy
             if (!File.Exists(targetPath))
@@ -500,7 +630,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
 
-        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file) =>
+        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -513,7 +643,7 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("No file provided");
             }
 
-            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file);
+            var targetPath = await SaveUploadedFileAsync(sessionManager, id, file, ct);
 
             var success = await TrySetClipboardImageAsync(
                 sessionManager,
@@ -521,13 +651,14 @@ public static partial class SessionApiEndpoints
                 session,
                 id,
                 targetPath,
-                file.ContentType);
+                file.ContentType,
+                ct);
             if (!success)
             {
                 return Results.Problem("Failed to set clipboard");
             }
 
-            await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 });
+            await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 }, ct);
 
             return Results.Ok();
         }).DisableAntiforgery();
@@ -765,7 +896,7 @@ public static partial class SessionApiEndpoints
 
         var followupSubmitCount = request.FollowupSubmitCount;
         if (followupSubmitCount <= 0 &&
-            request.Text?.Contains('\n') == true &&
+            request.Text?.AsSpan().Contains("\n", StringComparison.Ordinal) == true &&
             aiCliProfileService.IsInteractiveAi(profile))
         {
             followupSubmitCount = 1;
@@ -800,46 +931,25 @@ public static partial class SessionApiEndpoints
         SessionPromptExecutionPlan plan,
         CancellationToken ct)
     {
-        if (plan.InterruptData is { Length: > 0 })
-        {
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.InterruptData, ct);
-            if (plan.InterruptDelayMs > 0)
-            {
-                await Task.Delay(plan.InterruptDelayMs, ct);
-            }
-        }
-
-        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.PromptData, ct);
-        if (plan.SubmitDelayMs > 0)
-        {
-            await Task.Delay(plan.SubmitDelayMs, ct);
-        }
-
-        await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
-
-        for (var i = 0; i < plan.FollowupSubmitCount; i++)
-        {
-            if (plan.FollowupSubmitDelayMs > 0)
-            {
-                await Task.Delay(plan.FollowupSubmitDelayMs, ct);
-            }
-
-            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, plan.SubmitData, ct);
-        }
+        await SessionPromptPlanExecutor.ExecuteAsync(
+            plan,
+            (data, cancellationToken) => SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, data, cancellationToken),
+            static (delayMs, cancellationToken) => Task.Delay(delayMs, cancellationToken),
+            ct).ConfigureAwait(false);
     }
 
     private static async Task<SessionInfoDto> EnsureWorkerReadyForPromptAsync(
         TtyHostSessionManager sessionManager,
         SessionTelemetryService sessionTelemetry,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry,
         string sessionId,
         SessionPromptRequest request,
         CancellationToken ct)
     {
-        var session = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+        var session = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
         if (session.Supervisor?.State != SessionSupervisorService.ShellState)
         {
             return session;
@@ -864,7 +974,7 @@ public static partial class SessionApiEndpoints
 
         foreach (var slashCommand in resumePlan.SlashCommands)
         {
-            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+            var currentSession = GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
             if (!TryBuildPromptExecutionPlan(
                     new SessionPromptRequest
                     {
@@ -884,7 +994,7 @@ public static partial class SessionApiEndpoints
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, sessionId, slashPlan, ct);
         }
 
-        return GetSessionDto(sessionManager, sessionSupervisor, lensPulse, sessionId);
+        return GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId);
     }
 
     internal static bool TryBuildWorkerAutoResumePlan(
@@ -972,12 +1082,12 @@ public static partial class SessionApiEndpoints
     }
 
     private static async Task<string> SaveUploadedFileAsync(
-        TtyHostSessionManager sessionManager, string sessionId, IFormFile file)
+        TtyHostSessionManager sessionManager, string sessionId, IFormFile file, CancellationToken ct = default)
     {
         var fileName = Path.GetFileName(file.FileName);
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            fileName = $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+            fileName = string.Create(CultureInfo.InvariantCulture, $"upload_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
         }
 
         var uploadDir = GetUploadDirectory(sessionManager, sessionId);
@@ -988,14 +1098,14 @@ public static partial class SessionApiEndpoints
         var extension = Path.GetExtension(fileName);
         while (File.Exists(targetPath))
         {
-            fileName = $"{baseName}_{counter}{extension}";
+            fileName = string.Create(CultureInfo.InvariantCulture, $"{baseName}_{counter}{extension}");
             targetPath = Path.Combine(uploadDir, fileName);
             counter++;
         }
 
         await using (var stream = File.Create(targetPath))
         {
-            await file.CopyToAsync(stream);
+            await file.CopyToAsync(stream, ct);
         }
 
         return targetPath;
@@ -1040,16 +1150,30 @@ public static partial class SessionApiEndpoints
     private static SessionListDto GetSessionListDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse)
+        SessionLensRuntimeService lensRuntime)
     {
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
             session.Supervisor = sessionSupervisor.Describe(session);
-            session.HasLensHistory = lensPulse.HasHistory(session.Id);
+            session.HasLensHistory = lensRuntime.HasHistory(session.Id);
         }
 
         return response;
+    }
+
+    private static void ApplySessionSpaceMetadata(
+        TtyHostSessionManager sessionManager,
+        string sessionId,
+        string? spaceId,
+        string? workspacePath,
+        string? surface,
+        string? launchOrigin)
+    {
+        sessionManager.SetLaunchOrigin(sessionId, launchOrigin);
+        sessionManager.SetSpaceId(sessionId, spaceId);
+        sessionManager.SetWorkspacePath(sessionId, workspacePath);
+        sessionManager.SetSurface(sessionId, surface);
     }
 
     private static TerminalTransportDiagnosticsDto BuildTerminalTransportDiagnostics(
@@ -1081,10 +1205,10 @@ public static partial class SessionApiEndpoints
     private static SessionInfoDto GetSessionDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         string sessionId)
     {
-        return GetSessionListDto(sessionManager, sessionSupervisor, lensPulse).Sessions.First(s => s.Id == sessionId);
+        return GetSessionListDto(sessionManager, sessionSupervisor, lensRuntime).Sessions.First(s => s.Id == sessionId);
     }
 
     internal sealed record SessionPromptExecutionPlan(
@@ -1095,4 +1219,38 @@ public static partial class SessionApiEndpoints
         int SubmitDelayMs,
         int FollowupSubmitCount,
         int FollowupSubmitDelayMs);
+
+    private static IResult CreateSessionLaunchProblem(
+        SessionLaunchFailure? failure,
+        string title = "Session launch failed")
+    {
+        var statusCode = failure?.Stage == "limits"
+            ? StatusCodes.Status409Conflict
+            : StatusCodes.Status500InternalServerError;
+        var problem = new ProblemDetails
+        {
+            Title = title,
+            Status = statusCode,
+            Detail = failure?.Message ?? "Failed to create session."
+        };
+
+        if (failure is not null)
+        {
+            problem.Extensions["errorStage"] = failure.Stage;
+            if (!string.IsNullOrWhiteSpace(failure.Detail))
+            {
+                problem.Extensions["errorDetails"] = failure.Detail;
+            }
+            if (!string.IsNullOrWhiteSpace(failure.ExceptionType))
+            {
+                problem.Extensions["exceptionType"] = failure.ExceptionType;
+            }
+            if (failure.NativeErrorCode is not null)
+            {
+                problem.Extensions["nativeErrorCode"] = failure.NativeErrorCode.Value;
+            }
+        }
+
+        return Results.Problem(problem);
+    }
 }

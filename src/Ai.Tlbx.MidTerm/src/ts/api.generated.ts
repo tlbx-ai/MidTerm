@@ -2671,6 +2671,85 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/share/active': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          limit?: number;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ActiveShareGrantListResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/share/{grantId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          grantId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/share/claim': {
     parameters: {
       query?: never;
@@ -3483,6 +3562,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ActiveShareGrantInfo: {
+      grantId: string;
+      sessionId: string;
+      sessionName: string;
+      mode: components['schemas']['ShareAccessMode'];
+      /** Format: date-time */
+      createdAtUtc: string;
+      /** Format: date-time */
+      expiresAtUtc: string;
+    };
+    ActiveShareGrantListResponse: {
+      shares: components['schemas']['ActiveShareGrantInfo'][];
+    };
     AgentSessionFeedResponse: {
       sessionId: string;
       source: string;
@@ -3662,6 +3754,8 @@ export interface components {
       /** Format: int32 */
       connectedUiClientCount: number;
       targetUrl: null | string;
+      ownerBrowserId: null | string;
+      ownerConnected: boolean;
       defaultClient: null | components['schemas']['BrowserClientInfo'];
       clients: components['schemas']['BrowserClientInfo'][];
     };
@@ -3719,6 +3813,12 @@ export interface components {
       label?: null | string;
       launchMode: string;
       profile?: null | string;
+      launchOrigin?: null | string;
+      surfaceType: string;
+      foregroundProcessName?: null | string;
+      foregroundProcessCommandLine?: null | string;
+      foregroundProcessDisplayName?: null | string;
+      foregroundProcessIdentity?: null | string;
     };
     CreateSessionRequest: {
       /** Format: int32 */
@@ -3727,6 +3827,9 @@ export interface components {
       rows: number;
       shell?: null | string;
       workingDirectory?: null | string;
+      spaceId?: null | string;
+      workspacePath?: null | string;
+      surface?: null | string;
     };
     CreateShareLinkRequest: {
       sessionId: string;
@@ -3862,6 +3965,40 @@ export interface components {
       order: number;
       launchMode: string;
       profile: null | string;
+      launchOrigin: null | string;
+      surfaceType: string;
+      foregroundProcessName: null | string;
+      foregroundProcessCommandLine: null | string;
+      foregroundProcessDisplayName: null | string;
+      foregroundProcessIdentity: null | string;
+    };
+    LayoutNode: {
+      type: string;
+      sessionId: null | string;
+      direction: null | string;
+      children: null | components['schemas']['LayoutNode'][];
+    };
+    LensAttachmentReference: {
+      kind: string;
+      path: string;
+      mimeType: null | string;
+      displayName: null | string;
+    };
+    LensTerminalReplayStep: {
+      kind: string;
+      text: null | string;
+      path: null | string;
+      mimeType: null | string;
+      useBracketedPaste: boolean;
+    };
+    LensTurnRequest: {
+      text?: null | string;
+      model?: null | string;
+      effort?: null | string;
+      planMode?: null | string;
+      permissionMode?: null | string;
+      attachments: components['schemas']['LensAttachmentReference'][];
+      terminalReplay: components['schemas']['LensTerminalReplayStep'][];
     };
     LocalUpdateInfo: {
       available: boolean;
@@ -3907,6 +4044,23 @@ export interface components {
       prompts: string[];
       trigger: components['schemas']['ManagerBarTrigger'];
     };
+    ManagerBarQueueEntryDto: {
+      queueId: string;
+      sessionId: string;
+      kind: string;
+      action: null | components['schemas']['ManagerBarButton'];
+      turn: null | components['schemas']['LensTurnRequest'];
+      phase: string;
+      /** Format: int32 */
+      nextPromptIndex: number;
+      /** Format: int32 */
+      completedCycles: number;
+      /** Format: date-time */
+      nextRunAt: null | string;
+      /** Format: date-time */
+      ignoreHeatUntil: null | string;
+      awaitingHeatRise: boolean;
+    };
     ManagerBarScheduleEntry: {
       timeOfDay: string;
       repeat: string;
@@ -3927,19 +4081,30 @@ export interface components {
       /** Format: int32 */
       defaultRows: number;
       defaultWorkingDirectory: string;
+      terminalEnvironmentVariables: string;
       codexYoloDefault: boolean;
+      codexDefaultLensModel: string;
       codexEnvironmentVariables: string;
       claudeDangerouslySkipPermissionsDefault: boolean;
+      claudeDefaultLensModel: string;
       claudeEnvironmentVariables: string;
+      agentMessageFontFamily: string;
+      showAgentMessageTimestamps: boolean;
+      showUnknownAgentMessages: boolean;
       /** Format: int32 */
       fontSize: number;
       fontFamily: string;
+      terminalLigaturesEnabled: boolean;
       /** Format: double */
       lineHeight: number;
       /** Format: double */
       letterSpacing: number;
       fontWeight: string;
       fontWeightBold: string;
+      customGlyphs: boolean;
+      boxDrawingStyle: string;
+      /** Format: double */
+      boxDrawingScale: number;
       cursorStyle: components['schemas']['CursorStyleSetting'];
       cursorBlink: boolean;
       cursorInactiveStyle: components['schemas']['CursorInactiveStyleSetting'];
@@ -3947,14 +4112,21 @@ export interface components {
       terminalColorScheme: string;
       terminalColorSchemes: components['schemas']['TerminalColorSchemeDefinition'][];
       backgroundImageEnabled: boolean;
+      hideBackgroundImageOnMobile: boolean;
       backgroundImageFileName: null | string;
       /** Format: int64 */
       backgroundImageRevision: number;
-      backgroundImageFit: string;
+      backgroundKenBurnsEnabled: boolean;
+      /** Format: int32 */
+      backgroundKenBurnsZoomPercent: number;
+      /** Format: int32 */
+      backgroundKenBurnsSpeedPxPerSecond: number;
       /** Format: int32 */
       uiTransparency: number;
       /** Format: int32 */
       terminalTransparency: null | number;
+      /** Format: int32 */
+      terminalCellBackgroundTransparency: null | number;
       tabTitleMode: components['schemas']['TabTitleModeSetting'];
       /** Format: double */
       minimumContrastRatio: number;
@@ -3973,11 +4145,16 @@ export interface components {
       scrollbackProtection: boolean;
       disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
+      resumeMode: components['schemas']['TerminalResumeModeSetting'];
       inputMode: string;
       fileRadar: boolean;
+      showBookmarks: boolean;
+      allowAdHocSessionBookmarks: boolean;
       showSidebarSessionFilter: boolean;
+      worktreeRootDirectory: string;
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
+      commandBayLigaturesEnabled: boolean;
       devMode: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
@@ -4121,9 +4298,14 @@ export interface components {
       order: number;
       parentSessionId: null | string;
       bookmarkId: null | string;
+      spaceId: null | string;
+      workspacePath: null | string;
+      surface: null | string;
+      isAdHoc: boolean;
       agentControlled: boolean;
       lensOnly: boolean;
       profileHint: null | string;
+      lensResumeThreadId: null | string;
       hasLensHistory: boolean;
       supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
@@ -4135,6 +4317,12 @@ export interface components {
     SessionKeyInputRequest: {
       keys: string[];
       literal: boolean;
+    };
+    SessionLayoutState: {
+      /** Format: int64 */
+      revision: number;
+      root: null | components['schemas']['LayoutNode'];
+      focusedSessionId: null | string;
     };
     SessionListDto: {
       sessions: components['schemas']['SessionInfoDto'][];
@@ -4222,6 +4410,8 @@ export interface components {
     StateUpdate: {
       sessions: null | components['schemas']['SessionListDto'];
       update: null | components['schemas']['UpdateInfo'];
+      layout: null | components['schemas']['SessionLayoutState'];
+      managerBarQueue: null | components['schemas']['ManagerBarQueueEntryDto'][];
     };
     SystemHealth: {
       healthy: boolean;
@@ -4291,6 +4481,8 @@ export interface components {
     };
     /** @enum {unknown} */
     TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
+    /** @enum {unknown} */
+    TerminalResumeModeSetting: 'fullReplay' | 'quickResume';
     TerminalTransportDiagnosticsDto: {
       sourceSeq: string;
       muxReceivedSeq: string;
@@ -4466,6 +4658,7 @@ export interface components {
       name?: null | string;
       shell?: null | string;
       workingDirectory?: null | string;
+      resumeThreadId?: null | string;
       /** Format: int32 */
       cols: number;
       /** Format: int32 */
@@ -4475,6 +4668,9 @@ export interface components {
       profile?: null | string;
       lensOnly: boolean;
       launchCommand?: null | string;
+      spaceId?: null | string;
+      workspacePath?: null | string;
+      surface?: null | string;
       /** Format: int32 */
       launchDelayMs: number;
       slashCommands: string[];

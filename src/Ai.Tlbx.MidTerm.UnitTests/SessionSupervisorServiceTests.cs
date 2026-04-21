@@ -31,7 +31,7 @@ public sealed class SessionSupervisorServiceTests
     {
         var telemetry = new SessionTelemetryService();
         telemetry.RecordOutput("busy1", Encoding.UTF8.GetBytes("thinking..."));
-        var service = CreateService(telemetry);
+        var service = CreateService(telemetry: telemetry);
         var session = new SessionInfoDto
         {
             Id = "busy1",
@@ -51,7 +51,7 @@ public sealed class SessionSupervisorServiceTests
     {
         var telemetry = new SessionTelemetryService();
         telemetry.RecordInput("blocked1", 42);
-        var service = CreateService(telemetry);
+        var service = CreateService(telemetry: telemetry);
         var session = new SessionInfoDto
         {
             Id = "blocked1",
@@ -75,7 +75,7 @@ public sealed class SessionSupervisorServiceTests
         telemetry.RecordInput("blocked1", 5);
         telemetry.RecordOutput("busy1", Encoding.UTF8.GetBytes("working"));
 
-        var service = CreateService(telemetry);
+        var service = CreateService(telemetry: telemetry);
         var sessions = new[]
         {
             new SessionInfoDto
@@ -104,10 +104,47 @@ public sealed class SessionSupervisorServiceTests
         Assert.Equal(["blocked1", "busy1"], result.Sessions.Select(item => item.Session.Id).ToArray());
     }
 
-    private static SessionSupervisorService CreateService(SessionTelemetryService? telemetry = null)
+    [Fact]
+    public void Describe_ReturnsBusyTurnForRunningLensTurnWithoutTerminalBytes()
     {
-        return new SessionSupervisorService(
+        var service = CreateService(
+            lensHeatSource: new FakeLensHeatSource(new SessionLensHeatSnapshot
+            {
+                CurrentHeat = 1,
+                LastActivityAt = DateTimeOffset.UtcNow.AddSeconds(-30)
+            }));
+        var session = new SessionInfoDto
+        {
+            Id = "lens1",
+            IsRunning = true,
+            ShellType = "pwsh",
+            ForegroundName = "codex"
+        };
+
+        var result = service.Describe(session);
+
+        Assert.Equal(SessionSupervisorService.BusyTurnState, result.State);
+        Assert.Equal(1, result.CurrentHeat);
+        Assert.NotNull(result.LastOutputAt);
+    }
+
+    private static SessionSupervisorService CreateService(
+        SessionTelemetryService? telemetry = null,
+        ISessionLensHeatSource? lensHeatSource = null)
+    {
+        var heatService = new SessionHeatService(
             telemetry ?? new SessionTelemetryService(),
+            lensHeatSource ?? new FakeLensHeatSource(SessionLensHeatSnapshot.Cold));
+
+        return new SessionSupervisorService(
+            heatService,
             new AiCliProfileService());
     }
+
+    private sealed class FakeLensHeatSource(SessionLensHeatSnapshot snapshot) : ISessionLensHeatSource
+    {
+        public SessionLensHeatSnapshot GetHeatSnapshot(string sessionId) => snapshot;
+    }
 }
+
+

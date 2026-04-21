@@ -30,6 +30,11 @@ import {
 } from '../terminal/scaling';
 import { t } from '../i18n';
 import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from '../sessionSurface';
+import {
+  clearRememberedSessionState,
+  getRememberedSessionTab,
+  persistSessionTab,
+} from '../updating/appShellState';
 
 const log = createLogger('tabManager');
 
@@ -83,6 +88,23 @@ function getTabDisplayLabel(session: Session | null | undefined, tab: SessionTab
   return t('session.terminal');
 }
 
+function resolveInitialTab(
+  sessionId: string,
+  session: Session | null | undefined,
+): Extract<SessionTabId, 'terminal' | 'agent' | 'files'> {
+  const rememberedTab = getRememberedSessionTab(sessionId);
+  if (rememberedTab === 'files') {
+    return 'files';
+  }
+
+  const primaryTab = resolvePrimaryTab(session);
+  if (rememberedTab === primaryTab) {
+    return rememberedTab;
+  }
+
+  return primaryTab;
+}
+
 /**
  * Lets feature modules attach tab-specific behavior without coupling those
  * modules to session-wrapper creation order or tab-bar DOM internals.
@@ -110,11 +132,12 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
   if (existing) return existing;
   const session = getSessionById(sessionId);
-  const defaultTab = resolvePrimaryTab(session);
+  const defaultTab = resolveInitialTab(sessionId, session);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'session-wrapper';
   wrapper.dataset.sessionId = sessionId;
+  wrapper.dataset.activeTab = defaultTab;
 
   const tabBar = createTabBar(
     sessionId,
@@ -161,6 +184,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
   };
 
   sessionTabStates.set(sessionId, state);
+  persistSessionTab(sessionId, defaultTab);
 
   const termState = sessionTerminals.get(sessionId);
   if (termState) {
@@ -189,6 +213,7 @@ export function destroySessionWrapper(sessionId: string): void {
 
   state.wrapper.remove();
   sessionTabStates.delete(sessionId);
+  clearRememberedSessionState(sessionId);
 }
 
 /**
@@ -311,8 +336,10 @@ export function switchTab(
   invokeTabDeactivated(sessionId, previousTab);
 
   state.activeTab = tab;
+  state.wrapper.dataset.activeTab = tab;
   state.panels[tab].classList.add('active');
   setActiveTab(state.tabBar, tab);
+  persistSessionTab(sessionId, tab);
 
   invokeTabActivated(sessionId, tab, state.panels[tab]);
 

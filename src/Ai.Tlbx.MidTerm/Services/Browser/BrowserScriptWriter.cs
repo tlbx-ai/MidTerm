@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
@@ -45,7 +46,7 @@ public static class BrowserScriptWriter
                 fi
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   --data-binary @- \
-                  "https://localhost:{{port}}/api/browser" 2>/dev/null
+                  "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}/api/browser" 2>/dev/null
                 """;
 
             File.WriteAllText(scriptPath, script);
@@ -59,7 +60,7 @@ public static class BrowserScriptWriter
             }
 
             _scriptDirectory = dir;
-            Log.Info(() => $"BrowserScriptWriter: Created mtbrowser script at {scriptPath}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"BrowserScriptWriter: Created mtbrowser script at {scriptPath}"));
         }
         catch (Exception ex)
         {
@@ -100,7 +101,7 @@ public static class BrowserScriptWriter
                 $tmp = Join-Path $env:TEMP "mt-browser-$PID.bin"
                 [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
                 try {
-                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" --data-binary "@$tmp" "https://localhost:{{port}}/api/browser" 2>$null
+                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" --data-binary "@$tmp" "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}/api/browser" 2>$null
                 } finally {
                     Remove-Item $tmp -ErrorAction SilentlyContinue
                 }
@@ -133,12 +134,12 @@ public static class BrowserScriptWriter
                 fi
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   --data-binary @- \
-                  "https://localhost:{{port}}/api/browser" 2>/dev/null
+                  "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}/api/browser" 2>/dev/null
                 """;
-            File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n"));
+            File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n", StringComparison.Ordinal));
 
             _scriptDirectory = dir;
-            Log.Info(() => $"BrowserScriptWriter: Created mtbrowser scripts at {dir}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"BrowserScriptWriter: Created mtbrowser scripts at {dir}"));
         }
         catch (Exception ex)
         {
@@ -162,7 +163,7 @@ public static class BrowserScriptWriter
                     File.Delete(path);
                 }
             }
-            Log.Info(() => $"BrowserScriptWriter: Cleaned up scripts from {_scriptDirectory}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"BrowserScriptWriter: Cleaned up scripts from {_scriptDirectory}"));
         }
         catch
         {

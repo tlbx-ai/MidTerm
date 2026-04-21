@@ -11,7 +11,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
     private string? _activeTurnId;
     private string? _pendingRequestId;
 
-    public SyntheticLensAgentRuntime(string provider, Action<LensHostEventEnvelope> emit)
+    public SyntheticLensAgentRuntime(string provider, Action<LensProviderEvent> emit)
     {
         _provider = provider;
     }
@@ -25,7 +25,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
 
     public Task<HostCommandOutcome> ExecuteAsync(LensHostCommandEnvelope command, CancellationToken ct)
     {
-        List<LensHostEventEnvelope> events = command.Type switch
+        List<LensProviderEvent> events = command.Type switch
         {
             "runtime.attach" => AttachRuntime(command),
             "turn.start" => StartTurn(command),
@@ -68,14 +68,14 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         });
     }
 
-    private List<LensHostEventEnvelope> AttachRuntime(LensHostCommandEnvelope command)
+    private List<LensProviderEvent> AttachRuntime(LensHostCommandEnvelope command)
     {
         _threadId = command.AttachRuntime?.ResumeThreadId ?? "thread-synthetic";
         return
         [
             Event(command.SessionId, "session.started", configure: lensEvent =>
             {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
+                lensEvent.SessionState = new LensProviderSessionStatePayload
                 {
                     State = "starting",
                     StateLabel = "Starting"
@@ -83,7 +83,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "session.ready", configure: lensEvent =>
             {
-                lensEvent.SessionState = new LensPulseSessionStatePayload
+                lensEvent.SessionState = new LensProviderSessionStatePayload
                 {
                     State = "ready",
                     StateLabel = "Ready"
@@ -91,7 +91,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "thread.started", configure: lensEvent =>
             {
-                lensEvent.ThreadState = new LensPulseThreadStatePayload
+                lensEvent.ThreadState = new LensProviderThreadStatePayload
                 {
                     State = "active",
                     StateLabel = "Active",
@@ -101,17 +101,17 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         ];
     }
 
-    private List<LensHostEventEnvelope> StartTurn(LensHostCommandEnvelope command)
+    private List<LensProviderEvent> StartTurn(LensHostCommandEnvelope command)
     {
         _threadId ??= "thread-synthetic";
-        _activeTurnId = $"turn-{_sequence + 1}";
+        _activeTurnId = string.Create(CultureInfo.InvariantCulture, $"turn-{_sequence + 1}");
         _pendingRequestId = "req-approval-1";
 
         return
         [
             Event(command.SessionId, "turn.started", _activeTurnId, configure: lensEvent =>
             {
-                lensEvent.TurnStarted = new LensPulseTurnStartedPayload
+                lensEvent.TurnStarted = new LensProviderTurnStartedPayload
                 {
                     Model = command.StartTurn?.Model ?? $"{_provider}-synthetic",
                     Effort = command.StartTurn?.Effort ?? "medium"
@@ -119,7 +119,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "content.delta", _activeTurnId, configure: lensEvent =>
             {
-                lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+                lensEvent.ContentDelta = new LensProviderContentDeltaPayload
                 {
                     StreamKind = "assistant_text",
                     Delta = $"Synthetic {_provider} reply for: {command.StartTurn?.Text ?? "(empty)"}"
@@ -127,7 +127,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "content.delta", _activeTurnId, configure: lensEvent =>
             {
-                lensEvent.ContentDelta = new LensPulseContentDeltaPayload
+                lensEvent.ContentDelta = new LensProviderContentDeltaPayload
                 {
                     StreamKind = "reasoning_text",
                     Delta = "Inspecting workspace and shaping the next step."
@@ -135,14 +135,14 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "plan.completed", _activeTurnId, configure: lensEvent =>
             {
-                lensEvent.PlanCompleted = new LensPulsePlanCompletedPayload
+                lensEvent.PlanCompleted = new LensProviderPlanCompletedPayload
                 {
                     PlanMarkdown = "1. Read the repo.\n2. Apply a focused patch.\n3. Verify the result."
                 };
             }),
             Event(command.SessionId, "item.started", _activeTurnId, itemId: "item-1", configure: lensEvent =>
             {
-                lensEvent.Item = new LensPulseItemPayload
+                lensEvent.Item = new LensProviderItemPayload
                 {
                     ItemType = "tool",
                     Status = "running",
@@ -152,7 +152,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "item.completed", _activeTurnId, itemId: "item-1", configure: lensEvent =>
             {
-                lensEvent.Item = new LensPulseItemPayload
+                lensEvent.Item = new LensProviderItemPayload
                 {
                     ItemType = "tool",
                     Status = "completed",
@@ -162,14 +162,14 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             }),
             Event(command.SessionId, "diff.updated", _activeTurnId, configure: lensEvent =>
             {
-                lensEvent.DiffUpdated = new LensPulseDiffUpdatedPayload
+                lensEvent.DiffUpdated = new LensProviderDiffUpdatedPayload
                 {
                     UnifiedDiff = "--- a/file.txt\n+++ b/file.txt\n@@\n-old\n+new\n"
                 };
             }),
             Event(command.SessionId, "request.opened", _activeTurnId, requestId: _pendingRequestId, configure: lensEvent =>
             {
-                lensEvent.RequestOpened = new LensPulseRequestOpenedPayload
+                lensEvent.RequestOpened = new LensProviderRequestOpenedPayload
                 {
                     RequestType = "approval",
                     RequestTypeLabel = "Approval",
@@ -179,13 +179,13 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         ];
     }
 
-    private List<LensHostEventEnvelope> InterruptTurn(LensHostCommandEnvelope command)
+    private List<LensProviderEvent> InterruptTurn(LensHostCommandEnvelope command)
     {
         return
         [
             Event(command.SessionId, "turn.aborted", _activeTurnId, configure: lensEvent =>
             {
-                lensEvent.TurnCompleted = new LensPulseTurnCompletedPayload
+                lensEvent.TurnCompleted = new LensProviderTurnCompletedPayload
                 {
                     State = "aborted",
                     StateLabel = "Aborted",
@@ -195,7 +195,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         ];
     }
 
-    private List<LensHostEventEnvelope> ResolveRequest(LensHostCommandEnvelope command)
+    private List<LensProviderEvent> ResolveRequest(LensHostCommandEnvelope command)
     {
         var requestId = command.ResolveRequest?.RequestId ?? _pendingRequestId ?? "req-approval-1";
         _pendingRequestId = null;
@@ -203,7 +203,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         [
             Event(command.SessionId, "request.resolved", _activeTurnId, requestId: requestId, configure: lensEvent =>
             {
-                lensEvent.RequestResolved = new LensPulseRequestResolvedPayload
+                lensEvent.RequestResolved = new LensProviderRequestResolvedPayload
                 {
                     RequestType = "approval",
                     Decision = command.ResolveRequest?.Decision ?? "accept"
@@ -212,14 +212,14 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         ];
     }
 
-    private List<LensHostEventEnvelope> ResolveUserInput(LensHostCommandEnvelope command)
+    private List<LensProviderEvent> ResolveUserInput(LensHostCommandEnvelope command)
     {
         var requestId = command.ResolveUserInput?.RequestId ?? "req-user-input-1";
         return
         [
             Event(command.SessionId, "user-input.resolved", _activeTurnId, requestId: requestId, configure: lensEvent =>
             {
-                lensEvent.UserInputResolved = new LensPulseUserInputResolvedPayload
+                lensEvent.UserInputResolved = new LensProviderUserInputResolvedPayload
                 {
                     Answers = command.ResolveUserInput?.Answers ?? []
                 };
@@ -227,16 +227,16 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         ];
     }
 
-    private LensHostEventEnvelope Event(
+    private LensProviderEvent Event(
         string sessionId,
         string type,
         string? turnId = null,
         string? itemId = null,
         string? requestId = null,
-        Action<LensPulseEvent>? configure = null)
+        Action<LensProviderEvent>? configure = null)
     {
         var nextSequence = Interlocked.Increment(ref _sequence);
-        var lensEvent = new LensPulseEvent
+        var lensEvent = new LensProviderEvent
         {
             Sequence = nextSequence,
             EventId = $"evt-{nextSequence.ToString(CultureInfo.InvariantCulture)}",
@@ -248,7 +248,7 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
             RequestId = requestId,
             CreatedAt = DateTimeOffset.UtcNow,
             Type = type,
-            Raw = new LensPulseEventRaw
+            Raw = new LensProviderEventRaw
             {
                 Source = "synthetic",
                 Method = type
@@ -256,10 +256,18 @@ internal sealed class SyntheticLensAgentRuntime : ILensAgentRuntime
         };
 
         configure?.Invoke(lensEvent);
-        return new LensHostEventEnvelope
-        {
-            SessionId = sessionId,
-            Event = lensEvent
-        };
+        return lensEvent;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

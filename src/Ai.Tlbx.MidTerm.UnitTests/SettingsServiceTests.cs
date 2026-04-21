@@ -43,6 +43,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.True(settings.ShowBookmarks);
+        Assert.True(settings.AllowAdHocSessionBookmarks);
         Assert.Equal(1, settings.LineHeight);
         Assert.Equal(0, settings.LetterSpacing);
         Assert.Equal("normal", settings.FontWeight);
@@ -53,7 +55,11 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(0, settings.TerminalTransparency);
+        Assert.Equal(string.Empty, settings.CodexDefaultLensModel);
+        Assert.Equal(string.Empty, settings.ClaudeDefaultLensModel);
     }
 
     [Fact]
@@ -93,6 +99,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.CursorBlink);
         Assert.True(settings.RightClickPaste);
         Assert.True(settings.FileRadar);
+        Assert.True(settings.ShowBookmarks);
+        Assert.True(settings.AllowAdHocSessionBookmarks);
         Assert.Equal(1, settings.LineHeight);
         Assert.Equal(0, settings.LetterSpacing);
         Assert.Equal("normal", settings.FontWeight);
@@ -103,6 +111,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(settings.ShowChangelogAfterUpdate);
         Assert.True(settings.ShowUpdateNotification);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(0, settings.TerminalTransparency);
     }
 
@@ -224,6 +234,8 @@ public sealed class SettingsServiceTests : IDisposable
           "cursorBlink": false,
           "rightClickPaste": false,
           "fileRadar": false,
+          "showBookmarks": false,
+          "allowAdHocSessionBookmarks": false,
           "showSidebarSessionFilter": false,
           "managerBarEnabled": false,
           "tmuxCompatibility": false,
@@ -240,6 +252,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.False(settings.CursorBlink);
         Assert.False(settings.RightClickPaste);
         Assert.False(settings.FileRadar);
+        Assert.False(settings.ShowBookmarks);
+        Assert.False(settings.AllowAdHocSessionBookmarks);
         Assert.False(settings.ShowSidebarSessionFilter);
         Assert.False(settings.ManagerBarEnabled);
         Assert.False(settings.TmuxCompatibility);
@@ -467,9 +481,13 @@ public sealed class SettingsServiceTests : IDisposable
             BackgroundImageEnabled = true,
             BackgroundImageFileName = "wallpaper.png",
             BackgroundImageRevision = 12345,
-            BackgroundImageFit = "contain",
+            BackgroundKenBurnsEnabled = true,
+            BackgroundKenBurnsZoomPercent = 225,
+            BackgroundKenBurnsSpeedPxPerSecond = 18,
             UiTransparency = 40,
             TerminalEnterMode = TerminalEnterModeSetting.ShiftEnterLineFeed,
+            ShowBookmarks = false,
+            AllowAdHocSessionBookmarks = false,
             CertificatePath = @"C:\legacy\midterm.pem",
             KeyProtection = KeyProtectionMethod.OsProtected
         };
@@ -486,11 +504,42 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(loaded.BackgroundImageEnabled);
         Assert.Equal("wallpaper.png", loaded.BackgroundImageFileName);
         Assert.Equal(12345, loaded.BackgroundImageRevision);
-        Assert.Equal("contain", loaded.BackgroundImageFit);
+        Assert.True(loaded.BackgroundKenBurnsEnabled);
+        Assert.Equal(225, loaded.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(18, loaded.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(40, loaded.UiTransparency);
         Assert.Equal(0, loaded.TerminalTransparency);
         Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, loaded.TerminalEnterMode);
+        Assert.False(loaded.ShowBookmarks);
+        Assert.False(loaded.AllowAdHocSessionBookmarks);
         Assert.Equal(@"C:\legacy\midterm.pem", loaded.CertificatePath);
+        Assert.False(File.Exists(oldPath));
+        Assert.Equal(SettingsLoadStatus.MigratedFromOld, service.LoadStatus);
+    }
+
+    [Fact]
+    public void Load_OldSettingsFile_WithoutBookmarkFlags_KeepsBookmarkDefaults()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var currentPath = Path.Combine(_tempDir, "settings.json");
+        var oldPath = currentPath + ".old";
+
+        File.WriteAllText(currentPath, "{}");
+        File.WriteAllText(oldPath, """
+        {
+          "fontSize": 20,
+          "rightClickPaste": false
+        }
+        """);
+
+        var service = new SettingsService(_tempDir);
+        var loaded = service.Load();
+
+        Assert.Equal(20, loaded.FontSize);
+        Assert.False(loaded.RightClickPaste);
+        Assert.True(loaded.ShowBookmarks);
+        Assert.True(loaded.AllowAdHocSessionBookmarks);
         Assert.False(File.Exists(oldPath));
         Assert.Equal(SettingsLoadStatus.MigratedFromOld, service.LoadStatus);
     }

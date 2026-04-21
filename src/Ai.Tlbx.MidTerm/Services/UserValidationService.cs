@@ -8,10 +8,10 @@ public static partial class UserValidationService
     private const int MaxUsernameLength = 32;
     private const int MaxWindowsAccountLength = 256;
 
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9._-]*$")]
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9._-]*$", RegexOptions.None, 1000)]
     private static partial Regex UnixUsernamePattern();
 
-    [GeneratedRegex(@"^S-1-[0-9]+-(\d+-)*\d+$")]
+    [GeneratedRegex(@"^S-1-[0-9]+-(\d+-)*\d+$", RegexOptions.None, 1000)]
     private static partial Regex WindowsSidPattern();
 
     public static bool IsValidUsernameFormat(string? username)

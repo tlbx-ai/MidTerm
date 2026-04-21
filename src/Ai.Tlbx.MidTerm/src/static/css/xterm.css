@@ -96,10 +96,7 @@
     overflow-y: scroll;
     cursor: default;
     position: absolute;
-    right: 0;
-    left: 0;
-    top: 0;
-    bottom: 0;
+    inset: 0;
 }
 
 .xterm .xterm-screen {
@@ -139,10 +136,7 @@
 .xterm .xterm-accessibility:not(.debug),
 .xterm .xterm-message {
     position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    right: 0;
+    inset: 0;
     z-index: 10;
     color: transparent;
     pointer-events: none;

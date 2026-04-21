@@ -24,20 +24,21 @@ import { closeGitDock } from '../git/gitDock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { escapeHtml } from '../../utils';
 import {
-  IMAGE_MIMES,
-  VIDEO_MIMES,
-  AUDIO_MIMES,
-  PDF_MIME,
   getFileName,
-  getExtension,
   joinPath,
   getFileIcon,
   formatSize,
-  isTextFile,
+  formatViewerHeaderSubtitle,
   formatBinaryDump,
   createLineNumberedEditor,
   createLineNumberedViewer,
 } from './rendering';
+import {
+  copyFileToClipboard,
+  downloadFile as triggerFileDownload,
+  loadBinaryPreviewPage,
+  resolveFilePreviewKind,
+} from './shared';
 
 const log = createLogger('fileViewer');
 
@@ -52,6 +53,8 @@ let lastVideoVolume = 0.15;
 let isDirty = false;
 let isFullContentLoaded = true;
 let currentContent = '';
+let currentContentIsPartial = false;
+let currentFileInfo: FilePathInfo | null = null;
 let releaseBackButtonLayer: (() => void) | null = null;
 
 export function initFileViewer(): void {
@@ -83,7 +86,12 @@ export function initFileViewer(): void {
     });
     dockPanel.querySelector('#dock-download')?.addEventListener('click', () => {
       const path = $dockedFilePath.get();
-      if (path) downloadFile(path);
+      if (path) {
+        triggerFileDownload(path, currentSessionId ?? $activeSessionId.get());
+      }
+    });
+    dockPanel.querySelector('#dock-copy')?.addEventListener('click', () => {
+      void copyCurrentFileToClipboard($dockedFilePath.get());
     });
     dockPanel.querySelector('#dock-save')?.addEventListener('click', () => void saveFile());
   }
@@ -114,7 +122,10 @@ function resetEditState(): void {
   isDirty = false;
   isFullContentLoaded = true;
   currentContent = '';
+  currentContentIsPartial = false;
+  currentFileInfo = null;
   updateSaveButtonVisibility(false);
+  updateFileActionButtons(null);
 }
 
 function toggleFullscreen(): void {
@@ -227,8 +238,9 @@ async function renderInDock(path: string): Promise<void> {
   const pathEl = dockPanel.querySelector('.file-viewer-dock-path');
   const bodyEl = dockPanel.querySelector('.file-viewer-dock-body');
 
-  if (titleEl) titleEl.textContent = getFileName(path);
-  if (pathEl) pathEl.textContent = path;
+  if (titleEl || pathEl) {
+    updateDockHeader(path);
+  }
   if (bodyEl)
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
@@ -239,8 +251,12 @@ async function renderInDock(path: string): Promise<void> {
   if (!info || !info.exists) {
     if (bodyEl)
       bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
+    updateFileActionButtons(null);
     return;
   }
+
+  currentFileInfo = info;
+  updateFileActionButtons(info);
 
   if (info.isDirectory) {
     if (bodyEl)
@@ -281,9 +297,11 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   const pathEl = modal.querySelector('.file-viewer-path');
   const bodyEl = modal.querySelector('.file-viewer-body');
   const downloadBtn = modal.querySelector<HTMLElement>('#file-viewer-download');
+  const copyBtn = modal.querySelector<HTMLElement>('#file-viewer-copy');
 
-  if (titleEl) titleEl.textContent = getFileName(path);
-  if (pathEl) pathEl.textContent = path;
+  if (titleEl || pathEl) {
+    updateModalHeader(path);
+  }
   if (bodyEl)
     bodyEl.innerHTML = `<div class="file-viewer-loading">${t('fileViewer.loading')}</div>`;
 
@@ -291,7 +309,12 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
 
   if (downloadBtn) {
     downloadBtn.onclick = () => {
-      downloadFile(path);
+      triggerFileDownload(path, currentSessionId ?? $activeSessionId.get());
+    };
+  }
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      void copyCurrentFileToClipboard(path);
     };
   }
 
@@ -302,8 +325,12 @@ export async function openFile(path: string, info?: FilePathInfo | null): Promis
   if (!info || !info.exists) {
     if (bodyEl)
       bodyEl.innerHTML = `<div class="file-viewer-error">${t('fileViewer.fileNotFound')}</div>`;
+    updateFileActionButtons(null);
     return;
   }
+
+  currentFileInfo = info;
+  updateFileActionButtons(info);
 
   if (!bodyEl) return;
 
@@ -432,15 +459,51 @@ function createCodeStack(): HTMLDivElement {
   return stack;
 }
 
+function updateModalHeader(path: string, metadata?: string | null): void {
+  if (!modal) {
+    return;
+  }
+
+  const titleEl = modal.querySelector('.file-viewer-title');
+  const pathEl = modal.querySelector('.file-viewer-path');
+  if (titleEl) titleEl.textContent = getFileName(path);
+  if (pathEl) pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+}
+
+function updateDockHeader(path: string, metadata?: string | null): void {
+  const dockPanel = document.getElementById('file-viewer-dock');
+  if (!dockPanel) {
+    return;
+  }
+
+  const titleEl = dockPanel.querySelector('.file-viewer-dock-title');
+  const pathEl = dockPanel.querySelector('.file-viewer-dock-path');
+  if (titleEl) titleEl.textContent = getFileName(path);
+  if (pathEl) pathEl.textContent = formatViewerHeaderSubtitle(path, metadata);
+}
+
+function updateViewerHeaders(path: string, metadata?: string | null): void {
+  updateModalHeader(path, metadata);
+  updateDockHeader(path, metadata);
+}
+
+function formatBinaryHeaderMetadata(info: FilePathInfo): string {
+  const parts = [info.mimeType || t('fileViewer.binaryFile')];
+  if (info.size != null) {
+    parts.push(formatSize(info.size));
+  }
+  return parts.join(' | ');
+}
+
 async function renderFile(path: string, info: FilePathInfo, container: Element): Promise<void> {
   const mime = info.mimeType || 'application/octet-stream';
-  const ext = getExtension(path).toLowerCase();
   const viewUrl = buildViewUrl(path);
+  const previewKind = resolveFilePreviewKind(path, mime, info.isText);
 
-  if (IMAGE_MIMES.includes(mime)) {
+  if (previewKind === 'image') {
     updateSaveButtonVisibility(false);
     container.innerHTML = `<img class="file-viewer-image" src="${viewUrl}" alt="${escapeHtml(getFileName(path))}" />`;
-  } else if (VIDEO_MIMES.includes(mime)) {
+  } else if (previewKind === 'video') {
     updateSaveButtonVisibility(false);
     const video = document.createElement('video');
     video.className = 'file-viewer-video';
@@ -466,13 +529,13 @@ async function renderFile(path: string, info: FilePathInfo, container: Element):
     );
     container.innerHTML = '';
     container.appendChild(video);
-  } else if (AUDIO_MIMES.includes(mime)) {
+  } else if (previewKind === 'audio') {
     updateSaveButtonVisibility(false);
     container.innerHTML = `<audio class="file-viewer-audio" controls src="${viewUrl}"></audio>`;
-  } else if (mime === PDF_MIME) {
+  } else if (previewKind === 'pdf') {
     updateSaveButtonVisibility(false);
     container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
-  } else if (isTextFile(ext, mime, info.isText)) {
+  } else if (previewKind === 'text') {
     await renderTextFile(path, info, container);
   } else {
     await renderBinaryContent(path, info, container);
@@ -490,9 +553,11 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
         headers: { Range: `bytes=0-${SIZE_LIMIT - 1}` },
       });
       isFullContentLoaded = false;
+      currentContentIsPartial = true;
     } else {
       resp = await fetch(viewUrl);
       isFullContentLoaded = true;
+      currentContentIsPartial = false;
     }
 
     if (!resp.ok && resp.status !== 206) {
@@ -531,6 +596,7 @@ async function renderTextFile(path: string, info: FilePathInfo, container: Eleme
             currentContent = fullText;
             isDirty = false;
             isFullContentLoaded = true;
+            currentContentIsPartial = false;
             updateSaveButtonVisibility(false);
             loadMoreBtn.remove();
           } else {
@@ -556,54 +622,53 @@ async function renderBinaryContent(
 ): Promise<void> {
   try {
     const viewUrl = buildViewUrl(path);
-    const fileSize = info.size ?? 0;
-
-    let resp: Response;
-    let partial = false;
-    if (fileSize > SIZE_LIMIT) {
-      resp = await fetch(viewUrl, { headers: { Range: `bytes=0-${SIZE_LIMIT - 1}` } });
-      partial = true;
-    } else {
-      resp = await fetch(viewUrl);
-    }
-
-    if (!resp.ok && resp.status !== 206) {
-      container.innerHTML = `<div class="file-viewer-error">${t('fileViewer.failedToLoadFile')}</div>`;
-      return;
-    }
-
-    const buffer = await resp.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
+    const fileSize = info.size ?? null;
+    const initialPage = await loadBinaryPreviewPage({ viewUrl, fileSize });
     const stack = createCodeStack();
-    const viewer = createLineNumberedViewer(formatBinaryDump(bytes), ['file-viewer-binary-shell']);
+    const viewer = createLineNumberedViewer(
+      formatBinaryDump(initialPage.bytes, initialPage.startOffset),
+      ['file-viewer-binary-shell'],
+    );
     viewer.pre.classList.add('file-viewer-binary-text');
+    updateViewerHeaders(path, formatBinaryHeaderMetadata(info));
 
     container.innerHTML = '';
-
-    const infoBar = document.createElement('div');
-    infoBar.className = 'file-viewer-binary-bar';
-    infoBar.textContent = `${info.mimeType || t('fileViewer.binaryFile')} \u2014 ${formatSize(fileSize)}`;
-    stack.appendChild(infoBar);
     stack.appendChild(viewer.root);
 
-    if (partial) {
+    let nextOffset = initialPage.endOffsetExclusive;
+
+    if (initialPage.hasMore) {
       const loadMoreBtn = document.createElement('button');
       loadMoreBtn.className = 'file-viewer-load-more';
-      loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
+      loadMoreBtn.textContent =
+        fileSize != null
+          ? `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`
+          : t('fileViewer.loadMore');
       loadMoreBtn.addEventListener('click', () => {
         loadMoreBtn.textContent = t('fileViewer.loading');
         loadMoreBtn.disabled = true;
-        void fetch(viewUrl).then(async (fullResp) => {
-          if (fullResp.ok) {
-            const fullBuffer = await fullResp.arrayBuffer();
-            const fullBytes = new Uint8Array(fullBuffer);
-            viewer.setText(formatBinaryDump(fullBytes));
-            loadMoreBtn.remove();
-          } else {
-            loadMoreBtn.textContent = `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`;
+        void loadBinaryPreviewPage({ viewUrl, startOffset: nextOffset, fileSize })
+          .then((page) => {
+            viewer.setText(formatBinaryDump(page.bytes, page.startOffset));
+            nextOffset = page.endOffsetExclusive;
+            if (page.hasMore) {
+              loadMoreBtn.textContent =
+                fileSize != null
+                  ? `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`
+                  : t('fileViewer.loadMore');
+              loadMoreBtn.disabled = false;
+            } else {
+              loadMoreBtn.remove();
+            }
+          })
+          .catch((error: unknown) => {
+            log.error(() => `Failed to load binary file page: ${String(error)}`);
+            loadMoreBtn.textContent =
+              fileSize != null
+                ? `${t('fileViewer.loadMore')} (${formatSize(fileSize)})`
+                : t('fileViewer.loadMore');
             loadMoreBtn.disabled = false;
-          }
-        });
+          });
       });
       stack.appendChild(loadMoreBtn);
     }
@@ -653,16 +718,38 @@ function updateSaveButtonVisibility(dirty: boolean): void {
   }
 }
 
-function downloadFile(path: string): void {
-  const sessionId = currentSessionId ?? $activeSessionId.get();
-  let url = `/api/files/download?path=${encodeURIComponent(path)}`;
-  if (sessionId) {
-    url += `&sessionId=${encodeURIComponent(sessionId)}`;
+function updateFileActionButtons(info: FilePathInfo | null): void {
+  const showFileActions = info?.exists === true && !info.isDirectory;
+
+  for (const selector of [
+    '#file-viewer-download',
+    '#file-viewer-copy',
+    '#dock-download',
+    '#dock-copy',
+  ]) {
+    const button = document.querySelector<HTMLElement>(selector);
+    if (!button) {
+      continue;
+    }
+
+    button.style.display = showFileActions ? '' : 'none';
   }
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = getFileName(path);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+}
+
+async function copyCurrentFileToClipboard(path?: string | null): Promise<void> {
+  const targetPath = path ?? currentPath;
+  if (!targetPath) {
+    return;
+  }
+
+  await copyFileToClipboard({
+    path: targetPath,
+    sessionId: currentSessionId ?? $activeSessionId.get(),
+    mimeType: currentFileInfo?.mimeType,
+    size: currentFileInfo?.size,
+    isText: currentFileInfo?.isText,
+    currentText: currentContent,
+    currentTextIsPartial: currentContentIsPartial,
+    currentTextIsDirty: isDirty,
+  });
 }

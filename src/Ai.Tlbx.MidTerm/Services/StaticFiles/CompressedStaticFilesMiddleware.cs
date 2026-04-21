@@ -108,12 +108,12 @@ public sealed class CompressedStaticFilesMiddleware
         {
             context.Response.Headers.ContentEncoding = "br";
             context.Response.ContentLength = fileInfo.Length;
-            await fileStream.CopyToAsync(context.Response.Body);
+            await fileStream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
         else
         {
             await using var brotliStream = new BrotliStream(fileStream, CompressionMode.Decompress);
-            await brotliStream.CopyToAsync(context.Response.Body);
+            await brotliStream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
     }
 }

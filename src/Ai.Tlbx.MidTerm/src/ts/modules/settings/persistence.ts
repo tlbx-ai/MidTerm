@@ -6,28 +6,11 @@
  */
 
 import type { TerminalState } from '../../types';
-import type {
-  MidTermSettingsPublic,
-  MidTermSettingsUpdate,
-  TerminalColorSchemeDefinition,
-  UserInfo,
-} from '../../api/types';
+import type { MidTermSettingsPublic, MidTermSettingsUpdate, UserInfo } from '../../api/types';
 import type { ITerminalOptions } from '@xterm/xterm';
 import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
-import {
-  BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS,
-  DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS,
-  TERMINAL_COLOR_SCHEME_FIELDS,
-  TERMINAL_COLOR_SCHEME_TEXT_PLACEHOLDERS,
-  type TerminalColorSchemeFieldKey,
-  findCustomTerminalColorScheme,
-  getBuiltInTerminalTheme,
-  isBuiltInTerminalColorSchemeName,
-  suggestCustomTerminalColorSchemeName,
-  themeToTerminalColorSchemeDefinition,
-} from '../theming/terminalColorSchemes';
 import {
   getEffectiveXtermThemeForSettings,
   syncEffectiveXtermThemeDomOverrides,
@@ -35,6 +18,7 @@ import {
 import { dom, sessionTerminals } from '../../state';
 import { $settingsOpen, $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
+import { showAlert } from '../../utils/dialog';
 import {
   getSettings,
   getUsers,
@@ -51,8 +35,13 @@ import {
   ensureTerminalFontLoaded,
   DEFAULT_TERMINAL_FONT_WEIGHT,
   DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  normalizeTerminalFontWeight,
+  normalizeTerminalLetterSpacing,
 } from '../terminal/fontConfig';
 import { refreshTerminalPresentation } from '../terminal/scaling';
+import { syncTerminalLigatureState } from '../terminal/ligatures';
+import { syncTerminalRgbBackgroundTransparency } from '../terminal/rgbBackgroundTransparency';
+import { syncWebglTerminalCellBackgroundAlpha } from '../terminal/webglCellBackgroundAlpha';
 import {
   applyTerminalScrollbarStyleClass,
   normalizeScrollbarStyle,
@@ -63,7 +52,12 @@ import { setLocale, t } from '../i18n';
 import { renderUpdatePanel } from '../updating/checker';
 import { createLogger } from '../logging';
 import { setDevMode } from '../sidebar/voiceSection';
+import { buildAgentMessageFontStack } from '../agentView/fontConfig';
 import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
+import {
+  bindTerminalColorSchemeEditor,
+  syncTerminalColorSchemeOptions,
+} from './terminalColorSchemeEditor';
 import {
   getSettingsRegistryControlEntries,
   getSettingsRegistryWritableEntries,
@@ -80,18 +74,45 @@ let terminalFontSettingsSaveTimer: number | null = null;
 let settingsFormHydrated = false;
 let settingsSaveArmed = false;
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
-type TerminalColorSchemeEditorGroup = 'Core' | 'Standard ANSI' | 'Bright ANSI' | 'Advanced';
 
-const TERMINAL_COLOR_SCHEME_EDITOR_GROUPS: readonly TerminalColorSchemeEditorGroup[] = [
-  'Core',
-  'Standard ANSI',
-  'Bright ANSI',
-  'Advanced',
-];
+const MAX_BACKGROUND_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+const DEFAULT_BOX_DRAWING_SCALE = 1;
+
+type MidTermWindow = Window &
+  typeof globalThis & {
+    __MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__?: number;
+    __MIDTERM_XTERM_BOX_DRAWING_STYLE__?: string;
+  };
+
+const DEFAULT_BOX_DRAWING_STYLE = 'classic';
+
+function normalizeBoxDrawingScale(value: number | null | undefined): number {
+  const numericValue =
+    typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_BOX_DRAWING_SCALE;
+  return Math.min(2, Math.max(0.5, Math.round(numericValue * 100) / 100));
+}
+
+function normalizeBoxDrawingStyle(value: string | null | undefined): string {
+  return value === 'rounded' ? 'rounded' : DEFAULT_BOX_DRAWING_STYLE;
+}
+
+function syncBoxDrawingScale(settingValue: number | null | undefined): void {
+  (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__ =
+    normalizeBoxDrawingScale(settingValue);
+}
+
+function syncBoxDrawingStyle(settingValue: string | null | undefined): void {
+  (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STYLE__ =
+    normalizeBoxDrawingStyle(settingValue);
+}
 
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
   $currentSettings.set(settings);
   applyCssTheme(settings.theme);
+  syncBoxDrawingStyle(settings.boxDrawingStyle);
+  syncBoxDrawingScale(settings.boxDrawingScale);
+  syncWebglTerminalCellBackgroundAlpha(settings);
   applySettingsToTerminals();
   updateTabTitle();
   void setLocale(settings.language);
@@ -100,6 +121,93 @@ function applySettingsLocally(settings: MidTermSettingsPublic): void {
   if ($settingsOpen.get() && dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
   }
+}
+
+function hasTerminalTypographyChanges(
+  state: TerminalState,
+  fontFamily: string,
+  fontSize: number,
+  lineHeight: number,
+  letterSpacing: number,
+  fontWeight: TerminalFontWeight,
+  fontWeightBold: TerminalFontWeight,
+): boolean {
+  return (
+    state.terminal.options.fontFamily !== fontFamily ||
+    state.terminal.options.fontSize !== fontSize ||
+    state.terminal.options.lineHeight !== lineHeight ||
+    state.terminal.options.letterSpacing !== letterSpacing ||
+    String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight ||
+    String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
+      fontWeightBold
+  );
+}
+
+function applyTerminalSettingsToState(args: {
+  sessionId: string;
+  state: TerminalState;
+  settings: MidTermSettingsPublic;
+  theme: ITerminalOptions['theme'] | undefined;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontWeight: TerminalFontWeight;
+  fontWeightBold: TerminalFontWeight;
+  customGlyphs: boolean;
+  contrastRatio: number;
+  scrollbarStyle: ReturnType<typeof normalizeScrollbarStyle>;
+}): boolean {
+  const {
+    sessionId,
+    state,
+    settings,
+    theme,
+    fontFamily,
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+    fontWeightBold,
+    customGlyphs,
+    contrastRatio,
+    scrollbarStyle,
+  } = args;
+
+  const hasTypographyChanges = hasTerminalTypographyChanges(
+    state,
+    fontFamily,
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    fontWeight,
+    fontWeightBold,
+  );
+
+  state.terminal.options.cursorBlink = settings.cursorBlink;
+  state.terminal.options.cursorStyle = settings.cursorStyle;
+  state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
+  state.terminal.options.fontFamily = fontFamily;
+  state.terminal.options.fontSize = fontSize;
+  state.terminal.options.lineHeight = lineHeight;
+  state.terminal.options.letterSpacing = letterSpacing;
+  state.terminal.options.fontWeight = fontWeight;
+  state.terminal.options.fontWeightBold = fontWeightBold;
+  state.terminal.options.customGlyphs = customGlyphs;
+  if (theme) {
+    state.terminal.options.theme = theme;
+  }
+  state.terminal.options.minimumContrastRatio = contrastRatio;
+  state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
+  state.terminal.options.scrollback = settings.scrollbackLines;
+  syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+  syncTerminalLigatureState(state, settings.terminalLigaturesEnabled);
+  syncTerminalRgbBackgroundTransparency(state, settings);
+
+  applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
+  refreshTerminalPresentation(sessionId, state);
+
+  return hasTypographyChanges;
 }
 
 /**
@@ -111,7 +219,31 @@ export function setElementValue(id: string, value: string | number): void {
     | HTMLSelectElement
     | HTMLTextAreaElement
     | null;
-  if (el) el.value = String(value);
+  if (!el) {
+    return;
+  }
+
+  const nextValue = String(value);
+  if (el instanceof HTMLSelectElement) {
+    Array.from(el.options)
+      .filter((option) => option.dataset.preservedValue === 'true' && option.value !== nextValue)
+      .forEach((option) => {
+        option.remove();
+      });
+
+    if (
+      nextValue.length > 0 &&
+      !Array.from(el.options).some((option) => option.value === nextValue)
+    ) {
+      const option = document.createElement('option');
+      option.value = nextValue;
+      option.textContent = nextValue;
+      option.dataset.preservedValue = 'true';
+      el.appendChild(option);
+    }
+  }
+
+  el.value = nextValue;
 }
 
 /**
@@ -171,8 +303,57 @@ function setRegistryControlValue(
     return;
   }
 
+  if (entry.controlType === 'boolean-select') {
+    setElementValue(entry.controlId, (value ?? entry.fallbackValue) ? 'custom' : 'font');
+    return;
+  }
+
   const fallback = getRegistryFallbackValue(entry);
   setElementValue(entry.controlId, (value ?? fallback) as string | number);
+}
+
+function readNumericRegistryControlValue(
+  rawValue: string,
+  entry: SettingsRegistryEntry,
+  parser: (value: string) => number,
+): number | string | boolean | null {
+  const parsed = parser(rawValue);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  const fallback = getRegistryFallbackValue(entry);
+  return typeof fallback === 'number' ? fallback : null;
+}
+
+function readTypedRegistryControlValue(entry: SettingsRegistryEntry, rawValue: string): unknown {
+  switch (entry.controlType) {
+    case undefined:
+      return rawValue;
+    case 'checkbox':
+      return rawValue === 'true';
+    case 'nullable-string':
+      return rawValue || null;
+    case 'int':
+      return readNumericRegistryControlValue(rawValue, entry, (value) =>
+        Number.parseInt(value, 10),
+      );
+    case 'float':
+      return readNumericRegistryControlValue(rawValue, entry, Number.parseFloat);
+    case 'shell-select':
+      return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
+        ? rawValue
+        : null;
+    case 'boolean-select':
+      return rawValue === 'custom';
+    case 'textarea':
+    case 'text':
+    case 'select':
+      return rawValue;
+  }
+
+  const unexpectedControlType: never = entry.controlType;
+  return unexpectedControlType;
 }
 
 function readRegistryControlValue(
@@ -192,28 +373,7 @@ function readRegistryControlValue(
   }
 
   const rawValue = getElementValue(entry.controlId, String(getRegistryFallbackValue(entry)));
-
-  switch (entry.controlType) {
-    case 'nullable-string':
-      return rawValue || null;
-    case 'int': {
-      const parsed = Number.parseInt(rawValue, 10);
-      return Number.isFinite(parsed) ? parsed : entry.fallbackValue;
-    }
-    case 'float': {
-      const parsed = Number.parseFloat(rawValue);
-      return Number.isFinite(parsed) ? parsed : entry.fallbackValue;
-    }
-    case 'shell-select':
-      return VALID_SETTING_SHELLS.includes(rawValue as (typeof VALID_SETTING_SHELLS)[number])
-        ? rawValue
-        : null;
-    case 'textarea':
-    case 'text':
-    case 'select':
-    default:
-      return rawValue;
-  }
+  return readTypedRegistryControlValue(entry, rawValue);
 }
 
 function buildSettingsUpdateFromRegistry(
@@ -224,6 +384,15 @@ function buildSettingsUpdateFromRegistry(
   getSettingsRegistryWritableEntries().forEach((entry) => {
     (result as Record<string, unknown>)[entry.key] = readRegistryControlValue(entry, prevSettings);
   });
+
+  result.letterSpacing = normalizeTerminalLetterSpacing(result.letterSpacing);
+  result.fontWeight = normalizeTerminalFontWeight(result.fontWeight, DEFAULT_TERMINAL_FONT_WEIGHT);
+  result.fontWeightBold = normalizeTerminalFontWeight(
+    result.fontWeightBold,
+    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  );
+  result.boxDrawingStyle = normalizeBoxDrawingStyle(result.boxDrawingStyle);
+  result.boxDrawingScale = normalizeBoxDrawingScale(result.boxDrawingScale);
 
   return result as MidTermSettingsUpdate;
 }
@@ -373,6 +542,20 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
     'setting-terminal-transparency-value',
     settings.terminalTransparency ?? settings.uiTransparency,
   );
+  updateTransparencyValue(
+    'setting-terminal-cell-background-transparency-value',
+    settings.terminalCellBackgroundTransparency ??
+      settings.terminalTransparency ??
+      settings.uiTransparency,
+  );
+  updatePercentageValue(
+    'setting-background-ken-burns-zoom-percent-value',
+    settings.backgroundKenBurnsZoomPercent,
+  );
+  updatePixelSpeedValue(
+    'setting-background-ken-burns-speed-value',
+    settings.backgroundKenBurnsSpeedPxPerSecond,
+  );
   updateBackgroundImageUi(settings);
   if (dom.settingsView) {
     syncInlineTextInputWrappers(dom.settingsView);
@@ -440,52 +623,68 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   const settings = settingsOverride ?? $currentSettings.get();
   if (!settings) return;
 
+  syncWebglTerminalCellBackgroundAlpha(settings);
   applyBackgroundAppearance(settings);
   syncEffectiveXtermThemeDomOverrides(settings);
   const theme = getEffectiveXtermThemeForSettings(settings);
   const fontFamily = buildTerminalFontStack(settings.fontFamily);
   const fontSize = getEffectiveTerminalFontSize(settings.fontSize);
   const lineHeight = settings.lineHeight;
-  const letterSpacing = settings.letterSpacing;
-  const fontWeight = settings.fontWeight as TerminalFontWeight;
-  const fontWeightBold = settings.fontWeightBold as TerminalFontWeight;
+  const letterSpacing = normalizeTerminalLetterSpacing(settings.letterSpacing);
+  const boxDrawingStyle = normalizeBoxDrawingStyle(settings.boxDrawingStyle);
+  const boxDrawingScale = normalizeBoxDrawingScale(settings.boxDrawingScale);
+  const fontWeight = normalizeTerminalFontWeight(
+    settings.fontWeight,
+    DEFAULT_TERMINAL_FONT_WEIGHT,
+  ) as TerminalFontWeight;
+  const fontWeightBold = normalizeTerminalFontWeight(
+    settings.fontWeightBold,
+    DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+  ) as TerminalFontWeight;
+  const customGlyphs = settings.customGlyphs;
   const contrastRatio = settings.minimumContrastRatio;
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
+  document.documentElement.style.setProperty('--terminal-font-size', `${fontSize}px`);
+  document.documentElement.style.setProperty('--terminal-font-family', fontFamily);
+  document.documentElement.style.setProperty('--terminal-line-height', String(lineHeight));
+  document.documentElement.style.setProperty('--terminal-letter-spacing', `${letterSpacing}px`);
+  document.documentElement.style.setProperty('--terminal-font-weight', String(fontWeight));
+  document.documentElement.style.setProperty(
+    '--agent-ui-font-family',
+    buildAgentMessageFontStack(settings.agentMessageFontFamily),
+  );
+  document.documentElement.dataset.commandBayLigatures = settings.commandBayLigaturesEnabled
+    ? 'true'
+    : 'false';
+  document.documentElement.dataset.agentShowMessageTimestamps = settings.showAgentMessageTimestamps
+    ? 'true'
+    : 'false';
   let hasFontChanges = false;
+  syncBoxDrawingStyle(boxDrawingStyle);
+  syncBoxDrawingScale(boxDrawingScale);
 
   const scrollbarStyle = normalizeScrollbarStyle(settings.scrollbarStyle);
 
   for (const [sessionId, state] of sessionTerminals.entries()) {
     if (
-      state.terminal.options.fontFamily !== fontFamily ||
-      state.terminal.options.fontSize !== fontSize ||
-      state.terminal.options.lineHeight !== lineHeight ||
-      state.terminal.options.letterSpacing !== letterSpacing ||
-      String(state.terminal.options.fontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT) !== fontWeight ||
-      String(state.terminal.options.fontWeightBold ?? DEFAULT_TERMINAL_FONT_WEIGHT_BOLD) !==
-        fontWeightBold
+      applyTerminalSettingsToState({
+        sessionId,
+        state,
+        settings,
+        theme,
+        fontFamily,
+        fontSize,
+        lineHeight,
+        letterSpacing,
+        fontWeight,
+        fontWeightBold,
+        customGlyphs,
+        contrastRatio,
+        scrollbarStyle,
+      })
     ) {
       hasFontChanges = true;
     }
-
-    state.terminal.options.cursorBlink = settings.cursorBlink;
-    state.terminal.options.cursorStyle = settings.cursorStyle;
-    state.terminal.options.cursorInactiveStyle = settings.cursorInactiveStyle;
-    state.terminal.options.fontFamily = fontFamily;
-    state.terminal.options.fontSize = fontSize;
-    state.terminal.options.lineHeight = lineHeight;
-    state.terminal.options.letterSpacing = letterSpacing;
-    state.terminal.options.fontWeight = fontWeight;
-    state.terminal.options.fontWeightBold = fontWeightBold;
-    state.terminal.options.theme = theme;
-    state.terminal.options.minimumContrastRatio = contrastRatio;
-    state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
-    state.terminal.options.scrollback = settings.scrollbackLines;
-    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
-
-    applyTerminalScrollbarStyleClass(state.container, scrollbarStyle);
-
-    refreshTerminalPresentation(sessionId, state);
   }
 
   if (hasFontChanges) {
@@ -675,6 +874,15 @@ export function bindSettingsAutoSave(): void {
     'setting-terminal-transparency-value',
     signal,
   );
+  const terminalCellBackgroundTransparencySlider = document.getElementById(
+    'setting-terminal-cell-background-transparency',
+  ) as HTMLInputElement | null;
+  bindTransparencyPreview(
+    terminalCellBackgroundTransparencySlider,
+    'setting-terminal-cell-background-transparency-value',
+    signal,
+  );
+  bindBackgroundKenBurnsPreview(signal);
 
   const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
   bindTerminalFontPreview(
@@ -692,29 +900,30 @@ export function bindSettingsAutoSave(): void {
     signal,
   );
 
+  const boxDrawingScaleInput = document.getElementById(
+    'setting-box-drawing-scale',
+  ) as HTMLInputElement | null;
+  bindTerminalFontPreview(
+    boxDrawingScaleInput,
+    (current, boxDrawingScale) => ({ ...current, boxDrawingScale }),
+    (value) => normalizeBoxDrawingScale(Number.parseFloat(value)),
+    signal,
+  );
+
   const letterSpacingInput = document.getElementById(
     'setting-letter-spacing',
   ) as HTMLInputElement | null;
   bindTerminalFontPreview(
     letterSpacingInput,
     (current, letterSpacing) => ({ ...current, letterSpacing }),
-    (value) => Number.parseFloat(value),
+    (value) => normalizeTerminalLetterSpacing(Number.parseFloat(value)),
     signal,
   );
 
   const uploadInput = document.getElementById(
     'setting-background-upload',
   ) as HTMLInputElement | null;
-  const uploadBtn = document.getElementById('btn-background-upload') as HTMLButtonElement | null;
   const removeBtn = document.getElementById('btn-background-remove') as HTMLButtonElement | null;
-
-  uploadBtn?.addEventListener(
-    'click',
-    () => {
-      uploadInput?.click();
-    },
-    { signal },
-  );
 
   uploadInput?.addEventListener(
     'change',
@@ -735,7 +944,7 @@ export function bindSettingsAutoSave(): void {
     { signal },
   );
 
-  bindTerminalColorSchemeEditor(signal);
+  bindTerminalColorSchemeEditor(signal, persistSettingsSnapshot);
 
   settingsView.querySelectorAll('.text-input-wrapper').forEach((wrapper) => {
     const input = wrapper.querySelector('input[type="text"], input[type="number"]');
@@ -871,9 +1080,16 @@ function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): Mid
   const terminalSlider = document.getElementById(
     'setting-terminal-transparency',
   ) as HTMLInputElement | null;
+  const terminalCellBackgroundSlider = document.getElementById(
+    'setting-terminal-cell-background-transparency',
+  ) as HTMLInputElement | null;
 
   const uiTransparency = Number.parseInt(uiSlider?.value ?? '', 10);
   const terminalTransparency = Number.parseInt(terminalSlider?.value ?? '', 10);
+  const terminalCellBackgroundTransparency = Number.parseInt(
+    terminalCellBackgroundSlider?.value ?? '',
+    10,
+  );
 
   return {
     ...current,
@@ -881,6 +1097,39 @@ function resolvePreviewTransparencySettings(current: MidTermSettingsPublic): Mid
     terminalTransparency: Number.isFinite(terminalTransparency)
       ? terminalTransparency
       : (current.terminalTransparency ?? current.uiTransparency),
+    terminalCellBackgroundTransparency: Number.isFinite(terminalCellBackgroundTransparency)
+      ? terminalCellBackgroundTransparency
+      : (current.terminalCellBackgroundTransparency ??
+        current.terminalTransparency ??
+        current.uiTransparency),
+  };
+}
+
+function resolvePreviewBackgroundKenBurnsSettings(
+  current: MidTermSettingsPublic,
+): MidTermSettingsPublic {
+  const enabled = document.getElementById(
+    'setting-background-ken-burns-enabled',
+  ) as HTMLInputElement | null;
+  const zoomSlider = document.getElementById(
+    'setting-background-ken-burns-zoom-percent',
+  ) as HTMLInputElement | null;
+  const speedSlider = document.getElementById(
+    'setting-background-ken-burns-speed',
+  ) as HTMLInputElement | null;
+
+  const zoomPercent = Number.parseInt(zoomSlider?.value ?? '', 10);
+  const speedPxPerSecond = Number.parseInt(speedSlider?.value ?? '', 10);
+
+  return {
+    ...current,
+    backgroundKenBurnsEnabled: enabled?.checked ?? current.backgroundKenBurnsEnabled,
+    backgroundKenBurnsZoomPercent: Number.isFinite(zoomPercent)
+      ? zoomPercent
+      : current.backgroundKenBurnsZoomPercent,
+    backgroundKenBurnsSpeedPxPerSecond: Number.isFinite(speedPxPerSecond)
+      ? speedPxPerSecond
+      : current.backgroundKenBurnsSpeedPxPerSecond,
   };
 }
 
@@ -902,513 +1151,81 @@ function updateTransparencyValue(labelId: string, value: number): void {
   }
 }
 
-function ensureTerminalColorSchemeEditorRendered(): void {
-  const host = document.getElementById('terminal-color-scheme-editor-fields');
-  if (!(host instanceof HTMLElement) || host.childElementCount > 0) {
-    return;
+function updatePercentageValue(labelId: string, value: number): void {
+  const label = document.getElementById(labelId);
+  if (label) {
+    label.textContent = `${String(value)}%`;
   }
+}
 
-  for (const groupName of TERMINAL_COLOR_SCHEME_EDITOR_GROUPS) {
-    const group = document.createElement('section');
-    group.className = 'terminal-color-scheme-editor-group';
+function updatePixelSpeedValue(labelId: string, value: number): void {
+  const label = document.getElementById(labelId);
+  if (label) {
+    label.textContent = `${String(value)} px/s`;
+  }
+}
 
-    const title = document.createElement('h4');
-    title.className = 'terminal-color-scheme-editor-group-title';
-    title.textContent = groupName;
-    group.appendChild(title);
+function bindBackgroundKenBurnsPreview(signal: AbortSignal): void {
+  const enabledCheckbox = document.getElementById(
+    'setting-background-ken-burns-enabled',
+  ) as HTMLInputElement | null;
+  const zoomSlider = document.getElementById(
+    'setting-background-ken-burns-zoom-percent',
+  ) as HTMLInputElement | null;
+  const speedSlider = document.getElementById(
+    'setting-background-ken-burns-speed',
+  ) as HTMLInputElement | null;
 
-    const grid = document.createElement('div');
-    grid.className = 'terminal-color-scheme-editor-grid';
-
-    for (const field of TERMINAL_COLOR_SCHEME_FIELDS.filter((entry) => entry.group === groupName)) {
-      const item = document.createElement('label');
-      item.className = 'terminal-color-scheme-editor-field';
-
-      const text = document.createElement('span');
-      text.className = 'terminal-color-scheme-editor-field-label';
-      text.textContent = field.label;
-      item.appendChild(text);
-
-      const input = document.createElement('input');
-      input.id = `terminal-color-scheme-field-${field.key}`;
-      input.setAttribute('data-terminal-color-scheme-field', field.key);
-      input.className =
-        field.input === 'color'
-          ? 'terminal-color-scheme-editor-input terminal-color-scheme-editor-color'
-          : 'terminal-color-scheme-editor-input';
-      input.type = field.input === 'color' ? 'color' : 'text';
-      input.spellcheck = false;
-
-      if (field.input === 'text') {
-        input.placeholder = field.label.includes('Scrollbar')
-          ? TERMINAL_COLOR_SCHEME_TEXT_PLACEHOLDERS.scrollbarColor
-          : '';
+  enabledCheckbox?.addEventListener(
+    'change',
+    () => {
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
       }
 
-      item.appendChild(input);
-      grid.appendChild(item);
-    }
-
-    group.appendChild(grid);
-    host.appendChild(group);
-  }
-}
-
-function getTerminalColorSchemeEditorFieldInput(
-  key: TerminalColorSchemeFieldKey,
-): HTMLInputElement | null {
-  const input = document.getElementById(`terminal-color-scheme-field-${key}`);
-  return input instanceof HTMLInputElement ? input : null;
-}
-
-function getTerminalColorSchemeEditorNameInput(): HTMLInputElement | null {
-  const input = document.getElementById('terminal-color-scheme-editor-name');
-  return input instanceof HTMLInputElement ? input : null;
-}
-
-function getTerminalColorSchemeEditorSourceSelect(): HTMLSelectElement | null {
-  const select = document.getElementById('terminal-color-scheme-editor-source');
-  return select instanceof HTMLSelectElement ? select : null;
-}
-
-function getTerminalColorSchemeEditorStatusElement(): HTMLElement | null {
-  const element = document.getElementById('terminal-color-scheme-editor-status');
-  return element instanceof HTMLElement ? element : null;
-}
-
-function getTerminalColorSchemeEditorRoot(): HTMLElement | null {
-  const element = document.getElementById('terminal-color-scheme-editor');
-  return element instanceof HTMLElement ? element : null;
-}
-
-function getTranslatedSettingLabel(key: string, fallback: string): string {
-  const translated = t(key);
-  return translated && translated !== key ? translated : fallback;
-}
-
-function appendTranslatedOption(
-  select: HTMLSelectElement,
-  value: string,
-  translationKey: string,
-  fallbackText: string,
-): void {
-  const option = document.createElement('option');
-  option.value = value;
-  option.setAttribute('data-i18n', translationKey);
-  option.textContent = getTranslatedSettingLabel(translationKey, fallbackText);
-  select.appendChild(option);
-}
-
-function getBuiltInTerminalColorSchemeLabel(value: string): string {
-  const option = BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS.find((entry) => entry.value === value);
-  return option ? getTranslatedSettingLabel(option.translationKey, option.fallbackText) : value;
-}
-
-function syncTerminalColorSchemeEditorSourceOptions(
-  settings: MidTermSettingsPublic | null | undefined,
-  selectedValue: string,
-): void {
-  const select = getTerminalColorSchemeEditorSourceSelect();
-  if (!select) {
-    return;
-  }
-
-  const preferredValue =
-    selectedValue === 'auto' ? (settings?.theme ?? 'dark') : selectedValue || 'dark';
-  const existingValue = select.value;
-
-  select.innerHTML = '';
-
-  const presetsGroup = document.createElement('optgroup');
-  presetsGroup.label = 'Presets';
-  for (const definition of BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS) {
-    const option = document.createElement('option');
-    option.value = definition.value;
-    option.textContent = getTranslatedSettingLabel(
-      definition.translationKey,
-      definition.fallbackText,
-    );
-    presetsGroup.appendChild(option);
-  }
-  select.appendChild(presetsGroup);
-
-  if ((settings?.terminalColorSchemes.length ?? 0) > 0) {
-    const customGroup = document.createElement('optgroup');
-    customGroup.label = 'Custom Schemes';
-    for (const definition of settings?.terminalColorSchemes ?? []) {
-      const option = document.createElement('option');
-      option.value = definition.name;
-      option.textContent = definition.name;
-      customGroup.appendChild(option);
-    }
-    select.appendChild(customGroup);
-  }
-
-  const nextValue = Array.from(select.options).some((option) => option.value === existingValue)
-    ? existingValue
-    : preferredValue;
-
-  select.value = Array.from(select.options).some((option) => option.value === nextValue)
-    ? nextValue
-    : 'dark';
-}
-
-function fillTerminalColorSchemeEditor(definition: TerminalColorSchemeDefinition): void {
-  const nameInput = getTerminalColorSchemeEditorNameInput();
-  if (nameInput) {
-    nameInput.value = definition.name;
-  }
-
-  for (const field of TERMINAL_COLOR_SCHEME_FIELDS) {
-    const input = getTerminalColorSchemeEditorFieldInput(field.key);
-    if (!input) {
-      continue;
-    }
-
-    input.value = definition[field.key];
-  }
-}
-
-function loadTerminalColorSchemeEditorFromSource(
-  settings: MidTermSettingsPublic | null | undefined,
-  sourceName: string,
-): void {
-  const editorRoot = getTerminalColorSchemeEditorRoot();
-  if (!editorRoot) {
-    return;
-  }
-
-  const builtInTheme = getBuiltInTerminalTheme(sourceName);
-  const customScheme = builtInTheme ? null : findCustomTerminalColorScheme(settings, sourceName);
-
-  let definition: TerminalColorSchemeDefinition | null = null;
-  if (builtInTheme) {
-    definition = themeToTerminalColorSchemeDefinition(
-      suggestCustomTerminalColorSchemeName(
-        getBuiltInTerminalColorSchemeLabel(sourceName),
-        settings,
-      ),
-      builtInTheme,
-    );
-    editorRoot.dataset.sourceKind = 'preset';
-  } else if (customScheme) {
-    definition = { ...customScheme };
-    editorRoot.dataset.sourceKind = 'custom';
-  }
-
-  if (!definition) {
-    const darkTheme = getBuiltInTerminalTheme('dark');
-    if (!darkTheme) {
-      return;
-    }
-
-    definition = themeToTerminalColorSchemeDefinition(
-      suggestCustomTerminalColorSchemeName('Custom Scheme', settings),
-      darkTheme,
-    );
-    editorRoot.dataset.sourceKind = 'blank';
-  }
-
-  editorRoot.dataset.initialized = 'true';
-  editorRoot.dataset.sourceName = sourceName;
-  fillTerminalColorSchemeEditor(definition);
-  syncTerminalColorSchemeEditorActions(settings);
-}
-
-function readTerminalColorSchemeEditorDefinition(): TerminalColorSchemeDefinition | null {
-  const nameInput = getTerminalColorSchemeEditorNameInput();
-  if (!nameInput) {
-    return null;
-  }
-
-  const definition: TerminalColorSchemeDefinition = {
-    name: nameInput.value.trim(),
-    ...DEFAULT_TERMINAL_COLOR_SCHEME_FALLBACKS,
-  };
-
-  for (const field of TERMINAL_COLOR_SCHEME_FIELDS) {
-    const input = getTerminalColorSchemeEditorFieldInput(field.key);
-    if (!input) {
-      return null;
-    }
-
-    definition[field.key] = input.value.trim();
-  }
-
-  return definition;
-}
-
-function getTerminalColorSchemeEditorValidation(
-  settings: MidTermSettingsPublic | null | undefined,
-): { valid: boolean; message: string; canDelete: boolean } {
-  const definition = readTerminalColorSchemeEditorDefinition();
-  if (!definition) {
-    return { valid: false, message: 'Editor is unavailable.', canDelete: false };
-  }
-
-  if (!definition.name) {
-    return { valid: false, message: 'Enter a custom scheme name before saving.', canDelete: false };
-  }
-
-  if (isBuiltInTerminalColorSchemeName(definition.name)) {
-    return {
-      valid: false,
-      message: 'Built-in presets are read-only. Save this under a new custom name.',
-      canDelete: false,
-    };
-  }
-
-  const missingField = TERMINAL_COLOR_SCHEME_FIELDS.find((field) => !definition[field.key]);
-  if (missingField) {
-    return {
-      valid: false,
-      message: `${missingField.label} cannot be empty.`,
-      canDelete: false,
-    };
-  }
-
-  const existingCustomScheme = findCustomTerminalColorScheme(settings, definition.name);
-  return {
-    valid: true,
-    message: existingCustomScheme
-      ? 'Saving will update this custom scheme.'
-      : 'Saving will create a new custom scheme.',
-    canDelete: existingCustomScheme !== null,
-  };
-}
-
-function syncTerminalColorSchemeEditorActions(
-  settings: MidTermSettingsPublic | null | undefined,
-): void {
-  const status = getTerminalColorSchemeEditorStatusElement();
-  const saveButton = document.getElementById(
-    'terminal-color-scheme-save',
-  ) as HTMLButtonElement | null;
-  const deleteButton = document.getElementById(
-    'terminal-color-scheme-delete',
-  ) as HTMLButtonElement | null;
-
-  const validation = getTerminalColorSchemeEditorValidation(settings);
-  if (status) {
-    status.textContent = validation.message;
-    status.classList.toggle('is-error', !validation.valid);
-  }
-
-  if (saveButton) {
-    saveButton.disabled = !validation.valid;
-  }
-
-  if (deleteButton) {
-    deleteButton.disabled = !validation.canDelete;
-  }
-}
-
-function saveTerminalColorSchemeEditor(): void {
-  const current = $currentSettings.get();
-  const definition = readTerminalColorSchemeEditorDefinition();
-  if (!current || !definition) {
-    return;
-  }
-
-  const validation = getTerminalColorSchemeEditorValidation(current);
-  if (!validation.valid) {
-    syncTerminalColorSchemeEditorActions(current);
-    return;
-  }
-
-  const existingIndex = current.terminalColorSchemes.findIndex(
-    (scheme) => scheme.name.trim().toLowerCase() === definition.name.trim().toLowerCase(),
-  );
-
-  const nextSchemes = [...current.terminalColorSchemes];
-  if (existingIndex >= 0) {
-    nextSchemes[existingIndex] = definition;
-  } else {
-    nextSchemes.push(definition);
-  }
-
-  const nextSettings: MidTermSettingsPublic = {
-    ...current,
-    terminalColorScheme: definition.name,
-    terminalColorSchemes: nextSchemes,
-  };
-
-  syncTerminalColorSchemeOptions(nextSettings);
-  const select = document.getElementById(
-    'setting-terminal-color-scheme',
-  ) as HTMLSelectElement | null;
-  if (select) {
-    select.value = definition.name;
-  }
-  loadTerminalColorSchemeEditorFromSource(nextSettings, definition.name);
-  persistSettingsSnapshot(current, nextSettings, nextSettings as MidTermSettingsUpdate);
-}
-
-function deleteTerminalColorSchemeEditorScheme(): void {
-  const current = $currentSettings.get();
-  const definition = readTerminalColorSchemeEditorDefinition();
-  if (!current || !definition) {
-    return;
-  }
-
-  const nextSchemes = current.terminalColorSchemes.filter(
-    (scheme) => scheme.name.trim().toLowerCase() !== definition.name.trim().toLowerCase(),
-  );
-
-  const nextSettings: MidTermSettingsPublic = {
-    ...current,
-    terminalColorSchemes: nextSchemes,
-    terminalColorScheme:
-      current.terminalColorScheme.trim().toLowerCase() === definition.name.trim().toLowerCase()
-        ? 'auto'
-        : current.terminalColorScheme,
-  };
-
-  syncTerminalColorSchemeOptions(nextSettings);
-  loadTerminalColorSchemeEditorFromSource(nextSettings, nextSettings.theme);
-  persistSettingsSnapshot(current, nextSettings, nextSettings as MidTermSettingsUpdate);
-}
-
-function bindTerminalColorSchemeEditor(signal: AbortSignal): void {
-  ensureTerminalColorSchemeEditorRendered();
-
-  const sourceSelect = getTerminalColorSchemeEditorSourceSelect();
-  const loadButton = document.getElementById('terminal-color-scheme-load');
-  const resetButton = document.getElementById('terminal-color-scheme-reset');
-  const saveButton = document.getElementById('terminal-color-scheme-save');
-  const deleteButton = document.getElementById('terminal-color-scheme-delete');
-  const nameInput = getTerminalColorSchemeEditorNameInput();
-  const mainSelect = document.getElementById(
-    'setting-terminal-color-scheme',
-  ) as HTMLSelectElement | null;
-
-  loadButton?.addEventListener(
-    'click',
-    () => {
-      const current = $currentSettings.get();
-      loadTerminalColorSchemeEditorFromSource(current, sourceSelect?.value ?? 'dark');
+      applyBackgroundAppearance(resolvePreviewBackgroundKenBurnsSettings(current));
     },
     { signal },
   );
 
-  resetButton?.addEventListener(
-    'click',
-    () => {
-      const current = $currentSettings.get();
-      loadTerminalColorSchemeEditorFromSource(current, '__blank__');
-    },
-    { signal },
-  );
-
-  saveButton?.addEventListener(
-    'click',
-    () => {
-      saveTerminalColorSchemeEditor();
-    },
-    { signal },
-  );
-
-  deleteButton?.addEventListener(
-    'click',
-    () => {
-      deleteTerminalColorSchemeEditorScheme();
-    },
-    { signal },
-  );
-
-  sourceSelect?.addEventListener(
-    'change',
-    () => {
-      syncTerminalColorSchemeEditorActions($currentSettings.get());
-    },
-    { signal },
-  );
-
-  nameInput?.addEventListener(
+  zoomSlider?.addEventListener(
     'input',
     () => {
-      syncTerminalColorSchemeEditorActions($currentSettings.get());
+      const nextZoomPercent = Number.parseInt(zoomSlider.value, 10);
+      updatePercentageValue(
+        'setting-background-ken-burns-zoom-percent-value',
+        Number.isFinite(nextZoomPercent) ? nextZoomPercent : 150,
+      );
+
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+
+      applyBackgroundAppearance(resolvePreviewBackgroundKenBurnsSettings(current));
     },
     { signal },
   );
 
-  for (const field of TERMINAL_COLOR_SCHEME_FIELDS) {
-    getTerminalColorSchemeEditorFieldInput(field.key)?.addEventListener(
-      'input',
-      () => {
-        syncTerminalColorSchemeEditorActions($currentSettings.get());
-      },
-      { signal },
-    );
-  }
-
-  mainSelect?.addEventListener(
-    'change',
+  speedSlider?.addEventListener(
+    'input',
     () => {
-      syncTerminalColorSchemeEditorSourceOptions($currentSettings.get(), mainSelect.value);
-      syncTerminalColorSchemeEditorActions($currentSettings.get());
+      const nextSpeed = Number.parseInt(speedSlider.value, 10);
+      updatePixelSpeedValue(
+        'setting-background-ken-burns-speed-value',
+        Number.isFinite(nextSpeed) ? nextSpeed : 12,
+      );
+
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+
+      applyBackgroundAppearance(resolvePreviewBackgroundKenBurnsSettings(current));
     },
     { signal },
   );
-}
-
-export function syncTerminalColorSchemeOptions(
-  settings: MidTermSettingsPublic | null | undefined = $currentSettings.get(),
-): void {
-  const select = document.getElementById(
-    'setting-terminal-color-scheme',
-  ) as HTMLSelectElement | null;
-  if (!select) {
-    return;
-  }
-
-  const requestedValue = (settings?.terminalColorScheme ?? select.value) || 'auto';
-  select.innerHTML = '';
-
-  appendTranslatedOption(
-    select,
-    'auto',
-    'settings.options.colorSchemeAuto',
-    'Auto (follows theme)',
-  );
-
-  for (const definition of BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS) {
-    appendTranslatedOption(
-      select,
-      definition.value,
-      definition.translationKey,
-      definition.fallbackText,
-    );
-  }
-
-  if ((settings?.terminalColorSchemes.length ?? 0) > 0) {
-    const group = document.createElement('optgroup');
-    group.label = 'Custom Schemes';
-
-    for (const definition of settings?.terminalColorSchemes ?? []) {
-      const option = document.createElement('option');
-      option.value = definition.name;
-      option.textContent = definition.name;
-      group.appendChild(option);
-    }
-
-    select.appendChild(group);
-  }
-
-  select.value = Array.from(select.options).some((option) => option.value === requestedValue)
-    ? requestedValue
-    : 'auto';
-
-  ensureTerminalColorSchemeEditorRendered();
-  syncTerminalColorSchemeEditorSourceOptions(settings, select.value);
-
-  const editorRoot = getTerminalColorSchemeEditorRoot();
-  if (editorRoot?.dataset.initialized !== 'true') {
-    const initialSource = select.value === 'auto' ? (settings?.theme ?? 'dark') : select.value;
-    loadTerminalColorSchemeEditorFromSource(settings, initialSource);
-  } else {
-    syncTerminalColorSchemeEditorActions(settings);
-  }
 }
 
 function updateBackgroundImageUi(settings: MidTermSettingsPublic): void {
@@ -1445,9 +1262,7 @@ function updateBackgroundImageUi(settings: MidTermSettingsPublic): void {
   }
   if (enabledCheckbox) {
     enabledCheckbox.disabled = !hasImage;
-    if (!hasImage) {
-      enabledCheckbox.checked = false;
-    }
+    enabledCheckbox.checked = hasImage && settings.backgroundImageEnabled;
   }
 }
 
@@ -1455,6 +1270,7 @@ const ENVIRONMENT_VARIABLE_LINE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=.*$/;
 
 function validateAgentEnvironmentInputs(): boolean {
   const textareas = [
+    document.getElementById('setting-terminal-env') as HTMLTextAreaElement | null,
     document.getElementById('setting-codex-env') as HTMLTextAreaElement | null,
     document.getElementById('setting-claude-env') as HTMLTextAreaElement | null,
   ];
@@ -1482,7 +1298,30 @@ function validateAgentEnvironmentInputs(): boolean {
   return true;
 }
 
+function validateBackgroundImageFile(file: File): string | null {
+  const extension = file.name.slice(Math.max(0, file.name.lastIndexOf('.'))).toLowerCase();
+  if (!ALLOWED_BACKGROUND_IMAGE_EXTENSIONS.has(extension)) {
+    return 'Only PNG and JPG images are supported.';
+  }
+
+  if (file.size > MAX_BACKGROUND_IMAGE_UPLOAD_BYTES) {
+    return 'Background image is too large. Maximum size is 10 MB.';
+  }
+
+  return null;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function handleBackgroundImageUpload(file: File): Promise<void> {
+  const validationError = validateBackgroundImageFile(file);
+  if (validationError) {
+    await showAlert(validationError, { title: t('settings.appearance.backgroundTitle') });
+    return;
+  }
+
   try {
     const info = await uploadBackgroundImage(file);
     const current = $currentSettings.get();
@@ -1500,6 +1339,7 @@ async function handleBackgroundImageUpload(file: File): Promise<void> {
     applySettingsToTerminals();
   } catch (e) {
     log.error(() => `Background image upload failed: ${String(e)}`);
+    await showAlert(getErrorMessage(e), { title: t('settings.appearance.backgroundTitle') });
   }
 }
 
@@ -1521,6 +1361,7 @@ async function handleBackgroundImageDelete(): Promise<void> {
     applySettingsToTerminals();
   } catch (e) {
     log.error(() => `Background image delete failed: ${String(e)}`);
+    await showAlert(getErrorMessage(e), { title: t('settings.appearance.backgroundTitle') });
   }
 }
 

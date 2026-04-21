@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
@@ -9,7 +11,7 @@ public sealed class TmuxPaneMapper
 {
     private readonly TtyHostSessionManager _sessionManager;
     private readonly Dictionary<int, string> _paneToSession = new();
-    private readonly Dictionary<string, int> _sessionToPane = new();
+    private readonly Dictionary<string, int> _sessionToPane = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
 
     public TmuxPaneMapper(TtyHostSessionManager sessionManager)
@@ -49,7 +51,7 @@ public sealed class TmuxPaneMapper
     public string? PaneIdToSessionId(string paneId)
     {
         var stripped = paneId.StartsWith('%') ? paneId[1..] : paneId;
-        if (!int.TryParse(stripped, out var index))
+        if (!int.TryParse(stripped, CultureInfo.InvariantCulture, out var index))
         {
             return null;
         }
@@ -68,7 +70,7 @@ public sealed class TmuxPaneMapper
         lock (_lock)
         {
             return _sessionToPane.TryGetValue(sessionId, out var index)
-                ? $"%{index}"
+                ? string.Create(CultureInfo.InvariantCulture, $"%{index}")
                 : null;
         }
     }

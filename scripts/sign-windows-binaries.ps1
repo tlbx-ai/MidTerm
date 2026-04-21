@@ -56,7 +56,7 @@ if ($hasMthost)
 }
 else
 {
-    Write-Host "mthost.exe not found (web-only release), signing mt.exe only" -ForegroundColor Yellow
+    Write-Host "mthost.exe not found (web-only release), continuing with the other Windows binaries" -ForegroundColor Yellow
 }
 
 if (Test-Path $mtagenthostPath)

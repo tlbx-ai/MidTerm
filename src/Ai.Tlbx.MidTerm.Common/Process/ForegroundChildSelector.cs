@@ -1,12 +1,12 @@
 namespace Ai.Tlbx.MidTerm.Common.Process;
 
-internal readonly record struct ForegroundChildCandidate(
+public readonly record struct ForegroundChildCandidate(
     int Pid,
     string? Name,
     bool HasVisibleWindow,
     DateTimeOffset? StartedAtUtc);
 
-internal static class ForegroundChildSelector
+public static class ForegroundChildSelector
 {
     private static readonly HashSet<string> ShellWrapperNames = new(StringComparer.OrdinalIgnoreCase)
     {

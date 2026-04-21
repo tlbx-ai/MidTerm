@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text;
 
@@ -9,6 +10,7 @@ var lastAssistant = string.Empty;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CAPTURE_PATH");
 var launchCapture = CreateLaunchCapture();
 PersistLaunchCapture(capturePath, launchCapture);
+await EmitStartupStderrBlockAsync().ConfigureAwait(false);
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 {
@@ -125,7 +127,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     RecordMethod(launchCapture, method);
                     PersistLaunchCapture(capturePath, launchCapture);
                     var (imageCount, hasFileRef, textValue) = GetInputStats(root);
-                    lastAssistant = $"Fake Codex reply. images={imageCount.ToString()} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
+                    lastAssistant = $"Fake Codex reply. images={imageCount.ToString(CultureInfo.InvariantCulture)} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
                     var requestUserInput = textValue.Contains("ask user", StringComparison.OrdinalIgnoreCase);
 
                     await WriteJsonAsync(new
@@ -395,6 +397,23 @@ static void PersistLaunchCapture(string? capturePath, FakeCodexLaunchCapture cap
     catch
     {
     }
+}
+
+static async Task EmitStartupStderrBlockAsync()
+{
+    var block = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_STARTUP_STDERR");
+    if (string.IsNullOrWhiteSpace(block))
+    {
+        return;
+    }
+
+    var normalized = block.Replace("\r\n", "\n", StringComparison.Ordinal);
+    foreach (var line in normalized.Split('\n'))
+    {
+        await Console.Error.WriteLineAsync(line).ConfigureAwait(false);
+    }
+
+    await Console.Error.FlushAsync().ConfigureAwait(false);
 }
 
 static async Task WriteJsonAsync<T>(T payload)

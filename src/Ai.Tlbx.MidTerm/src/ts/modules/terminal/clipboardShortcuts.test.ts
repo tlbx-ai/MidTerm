@@ -3,6 +3,7 @@ import {
   isCopyShortcut,
   isNativeImagePasteShortcut,
   isPasteShortcut,
+  resolveCopyShortcutAction,
   type ShortcutInput,
 } from './clipboardShortcuts';
 
@@ -54,5 +55,29 @@ describe('isCopyShortcut', () => {
   it('matches unix copy shortcuts only', () => {
     expect(isCopyShortcut(key('c', { ctrlKey: true, shiftKey: true }), 'unix')).toBe(true);
     expect(isCopyShortcut(key('c', { ctrlKey: true }), 'unix')).toBe(false);
+  });
+});
+
+describe('resolveCopyShortcutAction', () => {
+  it('copies locally only when there is a selection', () => {
+    expect(resolveCopyShortcutAction(key('c', { ctrlKey: true }), 'windows', true)).toBe('copy');
+    expect(resolveCopyShortcutAction(key('c', { ctrlKey: true, shiftKey: true }), 'unix', true)).toBe(
+      'copy',
+    );
+  });
+
+  it('passes copy shortcuts through to terminal input when nothing is selected', () => {
+    expect(resolveCopyShortcutAction(key('c', { ctrlKey: true }), 'windows', false)).toBe(
+      'sendKey',
+    );
+    expect(
+      resolveCopyShortcutAction(key('c', { ctrlKey: true, shiftKey: true }), 'unix', false),
+    ).toBe('sendKey');
+  });
+
+  it('ignores unrelated shortcuts', () => {
+    expect(resolveCopyShortcutAction(key('x', { ctrlKey: true }), 'windows', false)).toBe(
+      'ignore',
+    );
   });
 });

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
@@ -8,7 +9,18 @@ namespace Ai.Tlbx.MidTerm.Services.Git;
 
 internal static class GitCommandRunner
 {
+    internal sealed record GitRepositoryInfo(string RepoRoot, string GitDir, string CommonGitDir);
+    internal sealed record GitWorktreeInfo(
+        string Path,
+        string? Head,
+        string? Branch,
+        bool IsDetached,
+        bool IsLocked,
+        bool IsPrunable);
+
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CloneTimeout = TimeSpan.FromMinutes(10);
+    private const int MaxPatchOutputChars = 160_000;
     private static string? _runAsUser;
     private static bool _isServiceMode;
 
@@ -33,7 +45,7 @@ internal static class GitCommandRunner
                 ExitCode = exit,
                 Stdout = stdout.Length > 500 ? stdout[..500] + "..." : stdout,
                 Stderr = stderr.Length > 500 ? stderr[..500] + "..." : stderr,
-                Timestamp = ts.ToString("O")
+                Timestamp = ts.ToString("O", CultureInfo.InvariantCulture)
             };
         }
     }
@@ -85,6 +97,131 @@ internal static class GitCommandRunner
         return string.IsNullOrEmpty(root) ? null : root;
     }
 
+    internal static async Task<GitRepositoryInfo?> GetRepositoryInfoAsync(string workingDir)
+    {
+        var repoRoot = await GetRepoRootAsync(workingDir).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return null;
+        }
+
+        var gitDir = await GetResolvedGitPathAsync(workingDir, "rev-parse", "--git-dir").ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(gitDir))
+        {
+            return null;
+        }
+
+        var commonGitDir = await GetResolvedGitPathAsync(workingDir, "rev-parse", "--git-common-dir").ConfigureAwait(false)
+            ?? gitDir;
+
+        return new GitRepositoryInfo(
+            Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(gitDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(commonGitDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    internal static async Task<IReadOnlyList<GitWorktreeInfo>> ListWorktreesAsync(string workingDir)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(workingDir, "worktree", "list", "--porcelain");
+        if (exitCode != 0)
+        {
+            return [];
+        }
+
+        var result = new List<GitWorktreeInfo>();
+        string? path = null;
+        string? head = null;
+        string? branch = null;
+        var detached = false;
+        var locked = false;
+        var prunable = false;
+
+        void Flush()
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            result.Add(new GitWorktreeInfo(
+                Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                head,
+                branch,
+                detached,
+                locked,
+                prunable));
+            path = null;
+            head = null;
+            branch = null;
+            detached = false;
+            locked = false;
+            prunable = false;
+        }
+
+        foreach (var rawLine in stdout.Split('\n'))
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                Flush();
+                continue;
+            }
+
+            if (line.StartsWith("worktree ", StringComparison.Ordinal))
+            {
+                Flush();
+                path = line["worktree ".Length..];
+                continue;
+            }
+
+            if (line.StartsWith("HEAD ", StringComparison.Ordinal))
+            {
+                head = line["HEAD ".Length..];
+                continue;
+            }
+
+            if (line.StartsWith("branch ", StringComparison.Ordinal))
+            {
+                var fullRef = line["branch ".Length..];
+                branch = fullRef.StartsWith("refs/heads/", StringComparison.Ordinal)
+                    ? fullRef["refs/heads/".Length..]
+                    : fullRef;
+                continue;
+            }
+
+            if (string.Equals(line, "detached", StringComparison.Ordinal))
+            {
+                detached = true;
+                continue;
+            }
+
+            if (line.StartsWith("locked", StringComparison.Ordinal))
+            {
+                locked = true;
+                continue;
+            }
+
+            if (line.StartsWith("prunable", StringComparison.Ordinal))
+            {
+                prunable = true;
+            }
+        }
+
+        Flush();
+        return result;
+    }
+
+    internal static async Task<int> GetWorktreeChangeCountAsync(string workingDir)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(workingDir, "status", "--porcelain");
+        if (exitCode != 0)
+        {
+            return 0;
+        }
+
+        return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
     internal static async Task<GitStatusResponse> GetStatusAsync(string repoRoot)
     {
         var response = new GitStatusResponse { RepoRoot = repoRoot };
@@ -103,28 +240,28 @@ internal static class GitCommandRunner
 
         foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (line.StartsWith("# branch.head "))
+            if (line.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
                 response.Branch = line["# branch.head ".Length..];
             }
-            else if (line.StartsWith("# branch.ab "))
+            else if (line.StartsWith("# branch.ab ", StringComparison.Ordinal))
             {
                 var parts = line["# branch.ab ".Length..].Split(' ');
                 if (parts.Length >= 2)
                 {
-                    if (int.TryParse(parts[0], out var ahead)) response.Ahead = ahead;
-                    if (int.TryParse(parts[1], out var behind)) response.Behind = Math.Abs(behind);
+                    if (int.TryParse(parts[0], CultureInfo.InvariantCulture, out var ahead)) response.Ahead = ahead;
+                    if (int.TryParse(parts[1], CultureInfo.InvariantCulture, out var behind)) response.Behind = Math.Abs(behind);
                 }
             }
-            else if (line.StartsWith("1 ") || line.StartsWith("2 "))
+            else if (line.StartsWith("1 ", StringComparison.Ordinal) || line.StartsWith("2 ", StringComparison.Ordinal))
             {
                 ParseChangedEntry(line, staged, modified);
             }
-            else if (line.StartsWith("u "))
+            else if (line.StartsWith("u ", StringComparison.Ordinal))
             {
                 ParseUnmergedEntry(line, conflicted);
             }
-            else if (line.StartsWith("? "))
+            else if (line.StartsWith("? ", StringComparison.Ordinal))
             {
                 untracked.Add(new GitFileEntry
                 {
@@ -144,7 +281,8 @@ internal static class GitCommandRunner
     internal static async Task<GitLogEntry[]> GetLogAsync(string repoRoot, int count = 20)
     {
         var format = "%H%n%h%n%s%n%an%n%ai";
-        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "log", $"--format={format}", $"-{count}");
+        var countArgument = string.Create(CultureInfo.InvariantCulture, $"-{count}");
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "log", $"--format={format}", countArgument);
 
         if (exitCode != 0) return [];
 
@@ -174,6 +312,28 @@ internal static class GitCommandRunner
         return string.IsNullOrEmpty(trimmed) ? 0 : trimmed.Split('\n').Length;
     }
 
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> CloneAsync(
+        string workingDir,
+        string repositoryUrl,
+        string destinationDirectoryName)
+    {
+        return RunGitAsync(
+            workingDir,
+            ["clone", "--", repositoryUrl, destinationDirectoryName],
+            CloneTimeout);
+    }
+
+    internal static async Task<string[]> GetTrackedAndUntrackedPathsAsync(string repoRoot)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "ls-files", "-co", "--exclude-standard");
+        if (exitCode != 0)
+        {
+            return [];
+        }
+
+        return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
     internal static async Task<Dictionary<string, (int Additions, int Deletions)>> GetNumStatAsync(string repoRoot)
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.OrdinalIgnoreCase);
@@ -199,8 +359,8 @@ internal static class GitCommandRunner
             if (parts.Length < 3) continue;
             if (parts[0] == "-" || parts[1] == "-") continue;
 
-            if (!int.TryParse(parts[0], out var additions)) continue;
-            if (!int.TryParse(parts[1], out var deletions)) continue;
+            if (!int.TryParse(parts[0], CultureInfo.InvariantCulture, out var additions)) continue;
+            if (!int.TryParse(parts[1], CultureInfo.InvariantCulture, out var deletions)) continue;
 
             var path = parts[2];
             if (result.TryGetValue(path, out var existing))
@@ -223,6 +383,75 @@ internal static class GitCommandRunner
         return stdout;
     }
 
+    internal static async Task<(string Patch, bool IsTruncated)> GetDiffPatchAsync(
+        string repoRoot,
+        string path,
+        bool staged)
+    {
+        var args = staged
+            ? new[] { "diff", "--cached", "--find-renames", "--unified=3", "--no-color", "--", path }
+            : new[] { "diff", "--find-renames", "--unified=3", "--no-color", "--", path };
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, args);
+        if (exitCode != 0)
+        {
+            return (string.Empty, false);
+        }
+
+        return TrimOutput(stdout, MaxPatchOutputChars);
+    }
+
+    internal static async Task<GitCommitMetadata?> GetCommitMetadataAsync(string repoRoot, string hash)
+    {
+        const string format = "%H%x00%h%x00%s%x00%b%x00%an%x00%aI%x00%cI%x00%P";
+        var (exitCode, stdout, _) = await RunGitAsync(repoRoot, "show", "--no-patch", $"--format={format}", hash);
+        if (exitCode != 0)
+        {
+            return null;
+        }
+
+        var parts = stdout.TrimEnd('\r', '\n', '\0').Split('\0');
+        if (parts.Length < 8)
+        {
+            return null;
+        }
+
+        return new GitCommitMetadata
+        {
+            Hash = parts[0],
+            ShortHash = parts[1],
+            Subject = parts[2],
+            Body = parts[3].TrimEnd(),
+            Author = parts[4],
+            AuthoredDate = parts[5],
+            CommittedDate = parts[6],
+            ParentHashes = parts[7]
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        };
+    }
+
+    internal static async Task<(string Patch, bool IsTruncated)> GetCommitPatchAsync(string repoRoot, string hash)
+    {
+        var (exitCode, stdout, _) = await RunGitAsync(
+            repoRoot,
+            "show",
+            "--find-renames",
+            "--unified=3",
+            "--no-color",
+            "--format=",
+            hash);
+        if (exitCode != 0)
+        {
+            return (string.Empty, false);
+        }
+
+        return TrimOutput(stdout, MaxPatchOutputChars);
+    }
+
+    internal static Task<(int ExitCode, string Stdout, string Stderr)> RunGitInDirectoryAsync(string workingDir, params string[] args)
+    {
+        return RunGitAsync(workingDir, args);
+    }
+
     private static void ParseChangedEntry(string line, List<GitFileEntry> staged, List<GitFileEntry> modified)
     {
         var parts = line.Split(' ');
@@ -237,9 +466,9 @@ internal static class GitCommandRunner
         string? originalPath = null;
         string filePath;
 
-        if (line.StartsWith("2 "))
+        if (line.StartsWith("2 ", StringComparison.Ordinal))
         {
-            var tabIndex = line.IndexOf('\t');
+            var tabIndex = line.IndexOf('\t', StringComparison.Ordinal);
             if (tabIndex >= 0)
             {
                 var pathParts = line[tabIndex..].Split('\t');
@@ -300,13 +529,43 @@ internal static class GitCommandRunner
         _ => c.ToString()
     };
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
+    private static async Task<string?> GetResolvedGitPathAsync(string workingDir, params string[] args)
     {
-        var fullArgs = new string[args.Length + 1];
-        fullArgs[0] = "--no-optional-locks";
-        args.CopyTo(fullArgs, 1);
+        var (exitCode, stdout, _) = await RunGitAsync(workingDir, args).ConfigureAwait(false);
+        if (exitCode != 0)
+        {
+            return null;
+        }
 
-        using var cts = new CancellationTokenSource(CommandTimeout);
+        var rawPath = stdout.Trim();
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            return null;
+        }
+
+        return Path.IsPathRooted(rawPath)
+            ? rawPath
+            : Path.GetFullPath(Path.Combine(workingDir, rawPath));
+    }
+
+    private static Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(string workingDir, params string[] args)
+    {
+        return RunGitAsync(workingDir, args, CommandTimeout);
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunGitAsync(
+        string workingDir,
+        IReadOnlyList<string> args,
+        TimeSpan timeout)
+    {
+        var fullArgs = new string[args.Count + 1];
+        fullArgs[0] = "--no-optional-locks";
+        for (var i = 0; i < args.Count; i++)
+        {
+            fullArgs[i + 1] = args[i];
+        }
+
+        using var cts = new CancellationTokenSource(timeout);
 
         try
         {
@@ -370,5 +629,15 @@ internal static class GitCommandRunner
 
         RecordCommand(workingDir, args, process.ExitCode, stdout, stderr);
         return (process.ExitCode, stdout, stderr);
+    }
+
+    private static (string Text, bool IsTruncated) TrimOutput(string text, int maxChars)
+    {
+        if (text.Length <= maxChars)
+        {
+            return (text, false);
+        }
+
+        return (text[..maxChars], true);
     }
 }

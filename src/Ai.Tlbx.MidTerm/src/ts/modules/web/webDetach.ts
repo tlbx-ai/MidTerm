@@ -11,7 +11,7 @@ import {
   $webPreviewUrl,
   $webPreviewViewport,
 } from '../../stores';
-import { hideDetachedPlaceholder, loadPreview } from './webPanel';
+import { loadPreview } from './webPanel';
 import { createLogger } from '../logging';
 import {
   getActivePreviewName,
@@ -24,6 +24,7 @@ import {
 import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
+import { hideWebPreviewDockForDetach, openWebPreviewDock } from './webDock';
 
 const log = createLogger('webDetach');
 
@@ -77,6 +78,61 @@ function handleMessage(
   }
 }
 
+function getPreviewUrlForDetach(sessionId: string, previewName: string): string | null {
+  const preview = getSessionPreview(sessionId, previewName);
+  return (
+    preview?.url ??
+    (sessionId === $activeSessionId.get() && previewName === getActivePreviewName()
+      ? $webPreviewUrl.get()
+      : null)
+  );
+}
+
+function getActiveDetachedViewport(
+  sessionId: string,
+  previewName: string,
+): { width: number; height: number } | null {
+  return sessionId === $activeSessionId.get() && previewName === getActivePreviewName()
+    ? $webPreviewViewport.get()
+    : null;
+}
+
+function buildDetachedPopupUrl(args: {
+  sessionId: string;
+  previewName: string;
+  routeKey: string;
+  previewId: string;
+  previewToken: string;
+  origin: string | null;
+  url: string | null;
+  viewport: { width: number; height: number } | null;
+}): string {
+  return (
+    '/web-preview-popup.html' +
+    `?session=${encodeURIComponent(args.sessionId)}` +
+    `&preview=${encodeURIComponent(args.previewName)}` +
+    `&routeKey=${encodeURIComponent(args.routeKey)}` +
+    `&previewId=${encodeURIComponent(args.previewId)}` +
+    `&previewToken=${encodeURIComponent(args.previewToken)}` +
+    (args.origin ? `&origin=${encodeURIComponent(args.origin)}` : '') +
+    (args.viewport
+      ? `&viewportWidth=${encodeURIComponent(String(args.viewport.width))}` +
+        `&viewportHeight=${encodeURIComponent(String(args.viewport.height))}`
+      : '') +
+    (shouldSandboxPreviewFrame(args.url, isDevMode()) ? '&sandbox=1' : '') +
+    (args.url ? `&url=${encodeURIComponent(args.url)}` : '')
+  );
+}
+
+function syncDetachedStateToActiveDock(sessionId: string, previewName: string): void {
+  if (sessionId !== $activeSessionId.get() || previewName !== getActivePreviewName()) {
+    return;
+  }
+
+  $webPreviewDetached.set(true);
+  hideWebPreviewDockForDetach();
+}
+
 /** Open a named web preview in a chromeless popup window and hide the dock panel. */
 export async function detachPreview(
   sessionId?: string,
@@ -114,12 +170,7 @@ export async function detachPreview(
     // Ignore cross-origin or popup bootstrap access failures.
   }
 
-  const preview = getSessionPreview(targetSessionId, targetPreviewName);
-  const url =
-    preview?.url ??
-    (targetSessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()
-      ? $webPreviewUrl.get()
-      : null);
+  const url = getPreviewUrlForDetach(targetSessionId, targetPreviewName);
 
   const previewClient = await createBrowserPreviewClient(targetSessionId, targetPreviewName);
   if (!previewClient) {
@@ -131,25 +182,16 @@ export async function detachPreview(
   }
 
   setSessionDockedClient(targetSessionId, targetPreviewName, previewClient);
-  const activeViewport =
-    targetSessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()
-      ? $webPreviewViewport.get()
-      : null;
-
-  const popupUrl =
-    '/web-preview-popup.html' +
-    `?session=${encodeURIComponent(targetSessionId)}` +
-    `&preview=${encodeURIComponent(targetPreviewName)}` +
-    `&routeKey=${encodeURIComponent(previewClient.routeKey)}` +
-    `&previewId=${encodeURIComponent(previewClient.previewId)}` +
-    `&previewToken=${encodeURIComponent(previewClient.previewToken)}` +
-    (previewClient.origin ? `&origin=${encodeURIComponent(previewClient.origin)}` : '') +
-    (activeViewport
-      ? `&viewportWidth=${encodeURIComponent(String(activeViewport.width))}` +
-        `&viewportHeight=${encodeURIComponent(String(activeViewport.height))}`
-      : '') +
-    (shouldSandboxPreviewFrame(url, isDevMode()) ? '&sandbox=1' : '') +
-    (url ? `&url=${encodeURIComponent(url)}` : '');
+  const popupUrl = buildDetachedPopupUrl({
+    sessionId: targetSessionId,
+    previewName: targetPreviewName,
+    routeKey: previewClient.routeKey,
+    previewId: previewClient.previewId,
+    previewToken: previewClient.previewToken,
+    origin: previewClient.origin ?? null,
+    url,
+    viewport: getActiveDetachedViewport(targetSessionId, targetPreviewName),
+  });
 
   try {
     popup.location.replace(popupUrl);
@@ -166,15 +208,7 @@ export async function detachPreview(
   channels.set(key, ch);
 
   setSessionMode(targetSessionId, targetPreviewName, 'detached');
-
-  if (targetSessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()) {
-    $webPreviewDetached.set(true);
-    const dockPanel = document.getElementById('web-preview-dock');
-    if (dockPanel) {
-      dockPanel.classList.add('hidden');
-      dockPanel.style.width = '';
-    }
-  }
+  syncDetachedStateToActiveDock(targetSessionId, targetPreviewName);
 
   if (options?.suppressFocus) {
     try {
@@ -204,11 +238,7 @@ export function dockBack(sessionId?: string, previewName?: string): void {
 
   if (targetSessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()) {
     $webPreviewDetached.set(false);
-    hideDetachedPlaceholder();
-    const dockPanel = document.getElementById('web-preview-dock');
-    if (dockPanel) {
-      dockPanel.classList.remove('hidden');
-    }
+    openWebPreviewDock();
     void loadPreview();
     log.info(() => `Web preview docked back for ${targetSessionId}/${targetPreviewName}`);
   }
@@ -254,6 +284,13 @@ export function isDetachedOpenForSession(
     const popup = popups.get(key);
     return !!popup && !popup.closed;
   });
+}
+
+export function closeDetachedPreview(sessionId: string, previewName: string): void {
+  closePopupForPreview(sessionId, previewName);
+  if (sessionId === $activeSessionId.get() && previewName === getActivePreviewName()) {
+    $webPreviewDetached.set(false);
+  }
 }
 
 /** Apply a viewport override to an already-detached popup preview. */

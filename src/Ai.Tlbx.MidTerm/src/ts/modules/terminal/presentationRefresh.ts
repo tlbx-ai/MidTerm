@@ -25,13 +25,10 @@ export function isTerminalVisible(state: Pick<TerminalState, 'container'>): bool
   );
 }
 
-export function refreshTerminalRenderer(
-  state: Pick<TerminalState, 'terminal' | 'container'>,
-): void {
-  const terminal = state.terminal;
-  const privateTerminal = terminal as TerminalWithPrivateCore;
+export function remeasureTerminalCells(state: Pick<TerminalState, 'terminal' | 'container'>): void {
+  const privateTerminal = state.terminal as TerminalWithPrivateCore;
 
-  // Force layout so xterm remeasures against the now-visible terminal container.
+  // Force layout so xterm remeasures against the current container geometry.
   void state.container.offsetWidth;
 
   try {
@@ -39,6 +36,17 @@ export function refreshTerminalRenderer(
   } catch {
     // xterm internals are unavailable while the terminal is still initializing.
   }
+}
+
+export function refreshTerminalRenderer(
+  state: Pick<TerminalState, 'terminal' | 'container'>,
+  options?: {
+    preserveTextureAtlas?: boolean;
+  },
+): void {
+  const terminal = state.terminal;
+  const privateTerminal = terminal as TerminalWithPrivateCore;
+  remeasureTerminalCells(state);
 
   try {
     privateTerminal._core?._renderService?.clear();
@@ -47,10 +55,12 @@ export function refreshTerminalRenderer(
     // Renderer may not be ready yet.
   }
 
-  try {
-    terminal.clearTextureAtlas();
-  } catch {
-    // Non-WebGL renderers do not expose a texture atlas.
+  if (!options?.preserveTextureAtlas) {
+    try {
+      terminal.clearTextureAtlas();
+    } catch {
+      // Non-WebGL renderers do not expose a texture atlas.
+    }
   }
 
   try {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Services;
@@ -19,9 +20,9 @@ public static class CliCommands
             return true;
         }
 
-        if (args.Contains("--check-update"))
+        if (args.Contains("--check-update", StringComparer.Ordinal))
         {
-            var updateService = new UpdateService();
+            using var updateService = new UpdateService();
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
             if (update is not null && update.Available)
             {
@@ -32,20 +33,18 @@ public static class CliCommands
             {
                 Console.WriteLine($"You are running the latest version ({updateService.CurrentVersion})");
             }
-            updateService.Dispose();
             return true;
         }
 
-        if (args.Contains("--update") || args.Contains("--apply-update"))
+        if (args.Contains("--update", StringComparer.Ordinal) || args.Contains("--apply-update", StringComparer.Ordinal))
         {
-            var updateService = new UpdateService();
+            using var updateService = new UpdateService();
             Console.WriteLine("Checking for updates...");
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
 
             if (update is null || !update.Available)
             {
                 Console.WriteLine($"You are running the latest version ({updateService.CurrentVersion})");
-                updateService.Dispose();
                 return true;
             }
 
@@ -55,7 +54,6 @@ public static class CliCommands
             if (string.IsNullOrEmpty(extractedDir))
             {
                 Console.WriteLine("Failed to download update.");
-                updateService.Dispose();
                 return true;
             }
 
@@ -68,23 +66,22 @@ public static class CliCommands
                 update.Type);
             UpdateScriptGenerator.ExecuteUpdateScript(scriptPath);
             Console.WriteLine("Update script started. Exiting...");
-            updateService.Dispose();
             return true;
         }
 
-        if (args.Contains("--version") || args.Contains("-v"))
+        if (args.Contains("--version", StringComparer.Ordinal) || args.Contains("-v", StringComparer.Ordinal))
         {
             Console.WriteLine(GetVersion());
             return true;
         }
 
-        if (args.Contains("--help") || args.Contains("-h"))
+        if (args.Contains("--help", StringComparer.Ordinal) || args.Contains("-h", StringComparer.Ordinal))
         {
             PrintHelp();
             return true;
         }
 
-        if (args.Contains("--hash-password"))
+        if (args.Contains("--hash-password", StringComparer.Ordinal))
         {
             string password;
             if (Console.IsInputRedirected)
@@ -153,7 +150,7 @@ public static class CliCommands
                 Environment.Exit(1);
             }
 
-            var serviceMode = args.Contains("--service-mode");
+            var serviceMode = args.Contains("--service-mode", StringComparer.Ordinal);
             ISecretStorage secretStorage;
             if (serviceMode)
             {
@@ -180,10 +177,10 @@ public static class CliCommands
             return true;
         }
 
-        if (args.Contains("--generate-cert"))
+        if (args.Contains("--generate-cert", StringComparer.Ordinal))
         {
-            var force = args.Contains("--force");
-            var serviceMode = args.Contains("--service-mode");
+            var force = args.Contains("--force", StringComparer.Ordinal);
+            var serviceMode = args.Contains("--service-mode", StringComparer.Ordinal);
             CertificateSetup.GenerateCertificateCommand(force, serviceMode);
             return true;
         }
@@ -244,7 +241,7 @@ public static class CliCommands
 
     private static async Task<bool> WriteClipboardImageWindowsAsync(string filePath)
     {
-        var escapedPath = filePath.Replace("'", "''");
+        var escapedPath = filePath.Replace("'", "''", StringComparison.Ordinal);
         var script =
             "Add-Type -AssemblyName System.Windows.Forms; " +
             "Add-Type -AssemblyName System.Drawing; " +
@@ -269,7 +266,7 @@ public static class CliCommands
         }
 
         var error = string.IsNullOrWhiteSpace(result.Stderr)
-            ? (result.Started ? $"powershell.exe exited with code {result.ExitCode}" : result.Error)
+            ? (result.Started ? string.Create(CultureInfo.InvariantCulture, $"powershell.exe exited with code {result.ExitCode}") : result.Error)
             : result.Stderr.Trim();
         Console.Error.WriteLine(error);
         return false;
@@ -277,7 +274,7 @@ public static class CliCommands
 
     private static async Task<bool> WriteClipboardImageMacOsDirectAsync(string filePath)
     {
-        var escapedPath = filePath.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var escapedPath = filePath.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
         var script = $"set the clipboard to (read (POSIX file \"{escapedPath}\") as picture)";
         var result = await RunProcessCaptureAsync("/usr/bin/osascript", ["-e", script]);
         if (result.Started && result.ExitCode == 0)
@@ -286,7 +283,7 @@ public static class CliCommands
         }
 
         var error = string.IsNullOrWhiteSpace(result.Stderr)
-            ? (result.Started ? $"/usr/bin/osascript exited with code {result.ExitCode}" : result.Error)
+            ? (result.Started ? string.Create(CultureInfo.InvariantCulture, $"/usr/bin/osascript exited with code {result.ExitCode}") : result.Error)
             : result.Stderr.Trim();
         Console.Error.WriteLine(error);
         return false;
@@ -316,9 +313,9 @@ public static class CliCommands
             : !string.IsNullOrWhiteSpace(waylandResult.Stderr)
                 ? waylandResult.Stderr.Trim()
                 : xclipResult.Started
-                    ? $"xclip exited with code {xclipResult.ExitCode}"
+                    ? string.Create(CultureInfo.InvariantCulture, $"xclip exited with code {xclipResult.ExitCode}")
                     : waylandResult.Started
-                        ? $"wl-copy exited with code {waylandResult.ExitCode}"
+                        ? string.Create(CultureInfo.InvariantCulture, $"wl-copy exited with code {waylandResult.ExitCode}")
                         : xclipResult.Error;
         Console.Error.WriteLine(error);
         return false;
@@ -470,7 +467,7 @@ public static class CliCommands
         var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
 
-        var plusIndex = version.IndexOf('+');
+        var plusIndex = version.IndexOf('+', StringComparison.Ordinal);
         return plusIndex > 0 ? version[..plusIndex] : version;
     }
 }

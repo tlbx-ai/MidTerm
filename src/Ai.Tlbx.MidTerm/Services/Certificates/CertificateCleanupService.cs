@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
@@ -66,7 +67,9 @@ public static class CertificateCleanupService
         foreach (var cert in toRemove)
         {
             var reason = cert.NotAfter < DateTime.Now ? "expired" : "stale";
-            var msg = $"  Removing {reason} cert: {cert.Subject} {cert.Thumbprint[..8]}... (expires {cert.NotAfter:yyyy-MM-dd})";
+            var msg = string.Create(
+                CultureInfo.InvariantCulture,
+                $"  Removing {reason} cert: {cert.Subject} {cert.Thumbprint[..8]}... (expires {cert.NotAfter:yyyy-MM-dd})");
             Log.Info(() => msg);
             writeEventLog?.Invoke($"CertificateTrust: {msg}", false);
 
@@ -82,7 +85,9 @@ public static class CertificateCleanupService
 
         if (toRemove.Count > 0)
         {
-            var summary = $"CertificateTrust: Removed {toRemove.Count} old certificate(s) from Root store";
+            var summary = string.Create(
+                CultureInfo.InvariantCulture,
+                $"CertificateTrust: Removed {toRemove.Count} old certificate(s) from Root store");
             Log.Info(() => summary);
             writeEventLog?.Invoke(summary, false);
         }

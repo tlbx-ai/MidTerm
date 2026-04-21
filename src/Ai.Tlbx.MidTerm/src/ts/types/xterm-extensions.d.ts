@@ -6,7 +6,6 @@
  * (like CSSStyleDeclaration.zoom).
  */
 
-import type { Terminal } from '@xterm/xterm';
 import type { TerminalState, MidTermSettingsPublic } from '../types';
 
 // Extend Terminal with internal properties we access
@@ -25,6 +24,7 @@ declare global {
   }
 
   interface Window {
+    __MIDTERM_XTERM_WEBGL_CELL_BG_ALPHA__?: number;
     mmDebug?: {
       readonly terminals: Map<string, TerminalState>;
       readonly activeId: string | null;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -19,6 +20,7 @@ using Ai.Tlbx.MidTerm.Services.Share;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Services.Power;
 using Ai.Tlbx.MidTerm.Services.Hub;
+using Ai.Tlbx.MidTerm.Services.Spaces;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Ai.Tlbx.MidTerm.Startup;
@@ -70,6 +72,7 @@ public static class ServerSetup
 
             writeEventLog?.Invoke($"ConfigureKestrel: Certificate loaded - Subject={cert.Subject}, HasPrivateKey={cert.HasPrivateKey}", false);
 
+            LoadedCertificate?.Dispose();
             LoadedCertificate = cert;
 
             options.ConfigureHttpsDefaults(httpsOptions =>
@@ -135,17 +138,22 @@ public static class ServerSetup
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<SessionControlStateService>();
+        builder.Services.AddSingleton<SessionLayoutStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
+        builder.Services.AddSingleton<SessionHeatService>();
+        builder.Services.AddSingleton<IManagerBarQueueRuntime, ManagerBarQueueRuntime>();
+        builder.Services.AddSingleton<ManagerBarQueueService>();
         builder.Services.AddSingleton<AiCliProfileService>();
         builder.Services.AddSingleton<AiCliCapabilityService>();
         builder.Services.AddSingleton<SessionForegroundProcessService>();
         builder.Services.AddSingleton<SessionAgentFeedService>();
-        builder.Services.AddSingleton<SessionLensPulseService>();
-        builder.Services.AddSingleton<SessionLensHostIngressService>();
         builder.Services.AddSingleton<SessionLensHostRuntimeService>();
         builder.Services.AddSingleton<SessionSupervisorService>();
         builder.Services.AddSingleton<SessionLensRuntimeService>();
+        builder.Services.AddSingleton<ISessionLensHeatSource>(static services =>
+            services.GetRequiredService<SessionLensRuntimeService>());
         builder.Services.AddSingleton<SessionCodexHandoffService>();
+        builder.Services.AddSingleton<ProviderResumeCatalogService>();
         builder.Services.AddSingleton<SessionAgentVibeService>();
         builder.Services.AddSingleton<WorkerSessionRegistryService>();
         builder.Services.AddSingleton<TtyHostSessionManager>(_ =>
@@ -154,11 +162,13 @@ public static class ServerSetup
                 runAsUserSid: settings.RunAsUserSid,
                 isServiceMode: settingsService.IsRunningAsService,
                 sessionControlStateService: _.GetRequiredService<SessionControlStateService>(),
+                sessionLayoutStateService: _.GetRequiredService<SessionLayoutStateService>(),
                 instanceIdentity: _.GetRequiredService<MidTermInstanceIdentity>(),
                 foregroundProcessService: _.GetRequiredService<SessionForegroundProcessService>(),
                 settingsService: _.GetRequiredService<SettingsService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
+        builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();
         builder.Services.AddSingleton<CommandService>();
@@ -171,6 +181,7 @@ public static class ServerSetup
             return BrowserPreviewOriginService.Create(port, bindAddress);
         });
         builder.Services.AddSingleton<BrowserPreviewRegistry>();
+        builder.Services.AddSingleton<BrowserPreviewOwnerService>();
         builder.Services.AddSingleton<BrowserCommandService>();
         builder.Services.AddSingleton<BrowserUiBridge>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
@@ -195,6 +206,9 @@ public static class ServerSetup
     public static void ConfigureStaticFiles(WebApplication app)
     {
         var sourceDevMode = IsSourceDevLaunchMode();
+        var sourceDevAssetVersion = sourceDevMode
+            ? string.Create(CultureInfo.InvariantCulture, $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}")
+            : null;
 #if DEBUG
         var configuredSourceWebRoot = Environment.GetEnvironmentVariable("MIDTERM_SOURCE_WWWROOT");
         var wwwrootPath = !string.IsNullOrWhiteSpace(configuredSourceWebRoot)
@@ -264,16 +278,16 @@ public static class ServerSetup
 
                 await using var stream = fileInfo.CreateReadStream();
                 using var reader = new StreamReader(stream);
-                var html = await reader.ReadToEndAsync();
+                var html = await reader.ReadToEndAsync(context.RequestAborted);
                 var stampedHtml = StaticAssetCacheHeaders.StampHtmlAssetUrls(
                     html,
-                    $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+                    sourceDevAssetVersion ?? "dev");
 
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 context.Response.ContentType = "text/html; charset=utf-8";
                 context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
                 context.Response.Headers.Pragma = "no-cache";
-                await context.Response.WriteAsync(stampedHtml);
+                await context.Response.WriteAsync(stampedHtml, context.RequestAborted);
             });
         }
 

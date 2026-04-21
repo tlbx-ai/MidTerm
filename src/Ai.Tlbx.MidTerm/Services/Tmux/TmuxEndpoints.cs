@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Models.Sessions;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
@@ -13,12 +14,14 @@ public static class TmuxEndpoints
     public static void MapTmuxEndpoints(
         WebApplication app,
         TmuxCommandDispatcher dispatcher,
-        TmuxLayoutBridge layoutBridge)
+        TmuxLayoutBridge layoutBridge,
+        TtyHostSessionManager sessionManager,
+        SessionLayoutStateService layoutStateService)
     {
         app.MapPost("/api/tmux", async (HttpContext ctx) =>
         {
             using var ms = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(ms);
+            await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
             var body = ms.ToArray();
 
             var args = TmuxCommandParser.ParseNullDelimitedArgs(body);
@@ -46,7 +49,11 @@ public static class TmuxEndpoints
             {
                 var node = await ctx.Request.ReadFromJsonAsync<LayoutNode>(
                     TmuxJsonContext.Default.LayoutNode, ctx.RequestAborted);
-                layoutBridge.UpdateLayout(node);
+                var snapshot = layoutStateService.UpdateLayout(
+                    node,
+                    focusedSessionId: null,
+                    sessionManager.GetAllSessions().Select(s => s.Id));
+                layoutBridge.UpdateLayout(snapshot.Root);
                 return Results.Ok();
             }
             catch
@@ -71,7 +78,7 @@ public static class TmuxEndpoints
             }
 
             using var ms = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(ms);
+            await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
             var data = ms.ToArray();
 
             if (data.Length == 0)
@@ -83,14 +90,14 @@ public static class TmuxEndpoints
             return Results.Ok();
         });
 
-        app.MapGet("/api/sessions/{id}/buffer", async (string id) =>
+        app.MapGet("/api/sessions/{id}/buffer", async Task<IResult> (string id, HttpContext ctx) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
                 return Results.NotFound();
             }
 
-            var snapshot = await sessionManager.GetBufferAsync(id);
+            var snapshot = await sessionManager.GetBufferAsync(id, ct: ctx.RequestAborted);
             if (snapshot is null)
             {
                 return Results.NotFound();

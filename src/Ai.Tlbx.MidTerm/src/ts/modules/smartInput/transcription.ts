@@ -1,5 +1,5 @@
 /**
- * Transcription Client
+ * Historyion Client
  *
  * Records audio via webAudioAccess.js, then POSTs raw PCM16
  * to the MidTerm.Voice /api/transcribe REST endpoint.
@@ -13,27 +13,41 @@ const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
 
 let audioChunks: ArrayBuffer[] = [];
 let isRecording = false;
+let recordingStarted = false;
 let onCompletedCallback: ((text: string) => void) | null = null;
+let recordingToken = 0;
 
-export function startTranscription(
+export function startHistoryion(
   _onDelta: (text: string) => void,
   onCompleted: (text: string) => void,
 ): void {
   onCompletedCallback = onCompleted;
   audioChunks = [];
   isRecording = true;
+  recordingStarted = false;
+  const token = ++recordingToken;
 
   log.info(() => 'Starting push-to-talk recording');
 
   void (async () => {
-    if (window.initAudioWithUserInteraction) {
-      await window.initAudioWithUserInteraction();
-    }
+    try {
+      if (window.initAudioWithUserInteraction) {
+        await window.initAudioWithUserInteraction();
+        if (!isRecordingActive(token)) {
+          log.info(() => 'Push-to-talk start cancelled before audio initialization completed');
+          return;
+        }
+      }
 
-    if (window.startRecording) {
+      if (!window.startRecording) {
+        log.error(() => 'Recording API not available');
+        isRecording = false;
+        return;
+      }
+
       const success = await window.startRecording(
         (base64Audio: string) => {
-          if (!isRecording) return;
+          if (!isRecordingActive(token)) return;
           audioChunks.push(base64ToArrayBuffer(base64Audio));
         },
         500,
@@ -41,23 +55,44 @@ export function startTranscription(
         24000,
       );
 
+      if (!isRecordingActive(token)) {
+        if (success && window.stopRecording) {
+          await window.stopRecording();
+        }
+        log.info(() => 'Push-to-talk start completed after release; recording was stopped');
+        return;
+      }
+
       if (!success) {
         log.error(() => 'Recording failed to start');
         isRecording = false;
+        return;
       }
+
+      recordingStarted = true;
+    } catch (error) {
+      if (token !== recordingToken) {
+        return;
+      }
+      isRecording = false;
+      recordingStarted = false;
+      log.error(() => `Recording startup failed: ${String(error)}`);
     }
   })();
 }
 
-export async function stopTranscription(): Promise<void> {
+export async function stopHistoryion(): Promise<void> {
   if (!isRecording) return;
   isRecording = false;
+  recordingToken++;
 
-  if (window.stopRecording) {
+  if (recordingStarted && window.stopRecording) {
     await window.stopRecording();
   }
+  recordingStarted = false;
 
   if (audioChunks.length === 0) {
+    audioChunks = [];
     log.warn(() => 'No audio frames captured');
     return;
   }
@@ -83,7 +118,7 @@ export async function stopTranscription(): Promise<void> {
     });
 
     if (!response.ok) {
-      log.error(() => `Transcription failed: ${String(response.status)}`);
+      log.error(() => `Historyion failed: ${String(response.status)}`);
       return;
     }
 
@@ -92,8 +127,12 @@ export async function stopTranscription(): Promise<void> {
       onCompletedCallback(result.text);
     }
   } catch (e) {
-    log.error(() => `Transcription error: ${String(e)}`);
+    log.error(() => `Historyion error: ${String(e)}`);
   }
+}
+
+function isRecordingActive(token: number): boolean {
+  return isRecording && recordingToken === token;
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {

@@ -39,6 +39,7 @@ import { openFile } from '../fileViewer';
 import { createLogger } from '../logging';
 import { t } from '../i18n';
 import { $activeSessionId, $currentSettings } from '../../stores';
+import { sessionTerminals } from '../../state';
 import {
   UNIX_PATH_PATTERN,
   WIN_PATH_PATTERN,
@@ -233,6 +234,35 @@ function getOrCreateScanBuffer(sessionId: string): ScanBufferState {
   return state;
 }
 
+function isAsciiLetter(value: number): boolean {
+  return (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a);
+}
+
+function containsLikelyPathBytes(data: Uint8Array): boolean {
+  for (let i = 0; i < data.length; i += 1) {
+    const value = data[i] ?? -1;
+    if (value === 0x2f || value === 0x5c) {
+      return true;
+    }
+
+    if (
+      i + 2 < data.length &&
+      isAsciiLetter(value) &&
+      data[i + 1] === 0x3a &&
+      (data[i + 2] === 0x2f || data[i + 2] === 0x5c)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function shouldSkipSessionOutputScan(sessionId: string): boolean {
+  const state = sessionTerminals.get(sessionId);
+  return state?.terminal.modes.synchronizedOutputMode === true;
+}
+
 function queueScanFlush(sessionId: string): void {
   const state = getOrCreateScanBuffer(sessionId);
   if (state.timer !== null) return;
@@ -356,6 +386,14 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
     return;
   }
 
+  if (shouldSkipSessionOutputScan(sessionId)) {
+    return;
+  }
+
+  if (typeof data !== 'string' && !containsLikelyPathBytes(data)) {
+    return;
+  }
+
   // Decode if needed (reuse decoder to avoid allocation)
   const text = typeof data === 'string' ? data : textDecoder.decode(data);
 
@@ -387,7 +425,7 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
  */
 function performScan(sessionId: string, text: string): void {
   // Strip ANSI escape sequences before regex matching
-  /* eslint-disable no-control-regex */
+  /* eslint-disable no-control-regex -- Control-byte patterns are required to remove ANSI escape sequences before scanning terminal text. */
   const cleanText = text
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') // CSI sequences
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '') // OSC sequences
@@ -406,8 +444,9 @@ function performScan(sessionId: string, text: string): void {
       const normalized = normalizePathCandidate(path);
       if (!isValidPath(normalized)) continue;
 
-      addToAllowlist(allowlist, normalized);
-      detectedPaths.add(normalized);
+      if (addToAllowlist(allowlist, normalized)) {
+        detectedPaths.add(normalized);
+      }
     }
   };
 
@@ -422,13 +461,18 @@ function performScan(sessionId: string, text: string): void {
   }
 }
 
-function addToAllowlist(allowlist: Set<string>, path: string): void {
+function addToAllowlist(allowlist: Set<string>, path: string): boolean {
+  if (allowlist.has(path)) {
+    return false;
+  }
+
   if (allowlist.size >= MAX_ALLOWLIST_SIZE) {
     // FIFO eviction - remove oldest entry
     const firstKey = allowlist.values().next().value;
     if (firstKey) allowlist.delete(firstKey);
   }
   allowlist.add(path);
+  return true;
 }
 
 async function checkPathExists(path: string): Promise<FilePathInfo | null> {
@@ -574,17 +618,19 @@ function throttledResolveRelativePath(
 
   // Schedule delayed resolve - only show link if path exists
   const abort = new AbortController();
-  const timeout = window.setTimeout(async () => {
-    if (abort.signal.aborted) return;
+  const timeout = window.setTimeout(() => {
+    void (async () => {
+      if (abort.signal.aborted) return;
 
-    const result = await resolveRelativePath(sessionId, normalizedPath, false, abort.signal);
+      const result = await resolveRelativePath(sessionId, normalizedPath, false, abort.signal);
 
-    callback(result?.exists ? normalizedMatchText : undefined);
+      callback(result?.exists ? normalizedMatchText : undefined);
 
-    const pending = pendingResolves.get(sessionId);
-    if (pending?.abort === abort) {
-      pendingResolves.delete(sessionId);
-    }
+      const pending = pendingResolves.get(sessionId);
+      if (pending?.abort === abort) {
+        pendingResolves.delete(sessionId);
+      }
+    })();
   }, RESOLVE_HOVER_DELAY_MS);
 
   pendingResolves.set(sessionId, { abort, timeout, callback });
@@ -722,7 +768,7 @@ async function handleFolderPathClick(folderPath: string): Promise<void> {
 export function registerFileLinkProvider(terminal: Terminal, sessionId: string): void {
   if (!isFileRadarEnabled()) return;
 
-  /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any */
+  /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any -- xterm-link-provider still exposes legacy xterm typings, so this adapter cast is constrained to the registration boundary. */
   // xterm-link-provider references the old 'xterm' package types; cast required
   const term = terminal as any;
 

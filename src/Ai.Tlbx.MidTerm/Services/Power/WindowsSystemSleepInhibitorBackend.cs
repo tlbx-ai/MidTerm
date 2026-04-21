@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
@@ -27,8 +28,10 @@ internal sealed class WindowsSystemSleepInhibitorBackend : ISystemSleepInhibitor
                 return true;
             }
 
-            var readySignal = new ManualResetEventSlim(false);
-            var releaseSignal = new ManualResetEventSlim(false);
+            DisposeStaleWorkerStateLocked();
+
+            ManualResetEventSlim? readySignal = new(false);
+            ManualResetEventSlim? releaseSignal = new(false);
             var state = new WindowsSleepInhibitorThreadState(readySignal, releaseSignal);
             var workerThread = new Thread(ThreadMain)
             {
@@ -36,31 +39,39 @@ internal sealed class WindowsSystemSleepInhibitorBackend : ISystemSleepInhibitor
                 Name = "MidTerm Sleep Inhibitor"
             };
 
-            workerThread.Start(state);
-
-            if (!readySignal.Wait(TimeSpan.FromSeconds(2)))
+            try
             {
-                releaseSignal.Set();
-                workerThread.Join(TimeSpan.FromSeconds(1));
+                workerThread.Start(state);
+
+                if (!readySignal.Wait(TimeSpan.FromSeconds(2)))
+                {
+                    releaseSignal.Set();
+                    workerThread.Join(TimeSpan.FromSeconds(1));
+                    Log.Warn(() => "Timed out enabling Windows sleep inhibitor");
+                    return false;
+                }
+
                 readySignal.Dispose();
-                releaseSignal.Dispose();
-                Log.Warn(() => "Timed out enabling Windows sleep inhibitor");
-                return false;
+                readySignal = null;
+
+                if (!state.Succeeded)
+                {
+                    workerThread.Join(TimeSpan.FromSeconds(1));
+                    Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Windows sleep inhibitor failed with Win32 error {state.Win32Error}"));
+                    return false;
+                }
+
+                _workerThread = workerThread;
+                var previousReleaseSignal = Interlocked.Exchange(ref _releaseSignal, releaseSignal);
+                previousReleaseSignal?.Dispose();
+                releaseSignal = null;
+                return true;
             }
-
-            readySignal.Dispose();
-
-            if (!state.Succeeded)
+            finally
             {
-                workerThread.Join(TimeSpan.FromSeconds(1));
-                releaseSignal.Dispose();
-                Log.Warn(() => $"Windows sleep inhibitor failed with Win32 error {state.Win32Error}");
-                return false;
+                readySignal?.Dispose();
+                releaseSignal?.Dispose();
             }
-
-            _workerThread = workerThread;
-            _releaseSignal = releaseSignal;
-            return true;
         }
     }
 
@@ -71,10 +82,8 @@ internal sealed class WindowsSystemSleepInhibitorBackend : ISystemSleepInhibitor
 
         lock (_lock)
         {
-            workerThread = _workerThread;
-            releaseSignal = _releaseSignal;
-            _workerThread = null;
-            _releaseSignal = null;
+            workerThread = Interlocked.Exchange(ref _workerThread, null);
+            releaseSignal = Interlocked.Exchange(ref _releaseSignal, null);
         }
 
         if (releaseSignal is null)
@@ -130,7 +139,20 @@ internal sealed class WindowsSystemSleepInhibitorBackend : ISystemSleepInhibitor
         }
 
         state.ReleaseSignal.Wait();
-        SetThreadExecutionState(EsContinuous);
+        _ = SetThreadExecutionState(EsContinuous);
+    }
+
+    private void DisposeStaleWorkerStateLocked()
+    {
+        if (_workerThread is not null && _workerThread.IsAlive)
+        {
+            return;
+        }
+
+        _workerThread = null;
+
+        var staleReleaseSignal = Interlocked.Exchange(ref _releaseSignal, null);
+        staleReleaseSignal?.Dispose();
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]

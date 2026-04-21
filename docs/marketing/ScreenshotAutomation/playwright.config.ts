@@ -54,7 +54,5 @@ export default defineConfig({
   // Output directory (will be moved by test to run-x folder)
   outputDir: './test-results',
 
-  reporter: [
-    ['list'],
-  ],
+  reporter: [['list']],
 });

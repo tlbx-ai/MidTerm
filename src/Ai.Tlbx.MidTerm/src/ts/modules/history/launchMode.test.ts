@@ -53,4 +53,14 @@ describe('history launch mode helpers', () => {
       profile: 'codex',
     });
   });
+
+  it('prefers persisted surface type badges when present', async () => {
+    const { getHistoryModeBadgeText, getHistoryModeDisplayText } = await import('./launchMode');
+
+    expect(getHistoryModeBadgeText({ surfaceType: 'trm' })).toBe('TRM');
+    expect(getHistoryModeBadgeText({ surfaceType: 'cdx' })).toBe('CDX');
+    expect(getHistoryModeBadgeText({ surfaceType: 'cld' })).toBe('CLD');
+    expect(getHistoryModeDisplayText({ surfaceType: 'cdx' })).toBe('Lens · Codex');
+    expect(getHistoryModeDisplayText({ surfaceType: 'cld' })).toBe('Lens · Claude');
+  });
 });

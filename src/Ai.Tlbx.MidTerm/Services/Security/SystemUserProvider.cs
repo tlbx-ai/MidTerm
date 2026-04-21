@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Runtime.Versioning;
 using Ai.Tlbx.MidTerm.Models.System;
+using System.Globalization;
+
 namespace Ai.Tlbx.MidTerm.Services.Security;
 
 public static class SystemUserProvider
@@ -57,18 +59,18 @@ public static class SystemUserProvider
             }
 
             using var doc = System.Text.Json.JsonDocument.Parse(output);
-            var root = doc.RootElement;
-
-            if (root.ValueKind == System.Text.Json.JsonValueKind.Array)
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
             {
-                foreach (var user in root.EnumerateArray())
+                var users = doc.RootElement;
+                for (var index = 0; index < users.GetArrayLength(); index++)
                 {
+                    var user = users[index];
                     AddWindowsUser(usersByName, user.GetProperty("Name").GetString(), ReadSid(user));
                 }
             }
-            else if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+            else if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
             {
-                AddWindowsUser(usersByName, root.GetProperty("Name").GetString(), ReadSid(root));
+                AddWindowsUser(usersByName, doc.RootElement.GetProperty("Name").GetString(), ReadSid(doc.RootElement));
             }
         }
         catch
@@ -134,7 +136,7 @@ public static class SystemUserProvider
             normalized = normalized[(slashIndex + 1)..];
         }
 
-        var atIndex = normalized.IndexOf('@');
+        var atIndex = normalized.IndexOf('@', StringComparison.Ordinal);
         if (atIndex > 0)
         {
             normalized = normalized[..atIndex];
@@ -276,12 +278,12 @@ public static class SystemUserProvider
                         }
 
                         var username = parts[0];
-                        if (!int.TryParse(parts[^1], out var uid))
+                        if (!int.TryParse(parts[^1], CultureInfo.InvariantCulture, out var uid))
                         {
                             continue;
                         }
 
-                        if (uid < 500 || username == "nobody" || username == "daemon" || username.StartsWith("_"))
+                        if (uid < 500 || username == "nobody" || username == "daemon" || username.StartsWith("_", StringComparison.Ordinal))
                         {
                             continue;
                         }
@@ -313,7 +315,7 @@ public static class SystemUserProvider
                     var gidStr = parts[3];
                     var shell = parts[6];
 
-                    if (!int.TryParse(uidStr, out var uid) || !int.TryParse(gidStr, out var gid))
+                    if (!int.TryParse(uidStr, CultureInfo.InvariantCulture, out var uid) || !int.TryParse(gidStr, CultureInfo.InvariantCulture, out var gid))
                     {
                         continue;
                     }
@@ -323,12 +325,12 @@ public static class SystemUserProvider
                         continue;
                     }
 
-                    if (shell.Contains("nologin") || shell.Contains("false"))
+                    if (shell.Contains("nologin", StringComparison.Ordinal) || shell.Contains("false", StringComparison.Ordinal))
                     {
                         continue;
                     }
 
-                    if (username == "nobody" || username == "daemon" || username.StartsWith("_"))
+                    if (username == "nobody" || username == "daemon" || username.StartsWith("_", StringComparison.Ordinal))
                     {
                         continue;
                     }

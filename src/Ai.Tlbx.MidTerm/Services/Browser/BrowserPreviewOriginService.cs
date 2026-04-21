@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 
@@ -30,7 +31,7 @@ public sealed class BrowserPreviewOriginService
             return;
         }
 
-        app.Urls.Add($"https://{bindAddress}:{PreviewPort}");
+        app.Urls.Add(string.Create(CultureInfo.InvariantCulture, $"https://{bindAddress}:{PreviewPort}"));
     }
 
     public string? GetOrigin(HttpRequest request)
@@ -46,7 +47,7 @@ public sealed class BrowserPreviewOriginService
             return null;
         }
 
-        return $"{request.Scheme}://{host}:{PreviewPort}";
+        return string.Create(CultureInfo.InvariantCulture, $"{request.Scheme}://{host}:{PreviewPort}");
     }
 
     public bool IsPreviewRequest(HttpContext context)

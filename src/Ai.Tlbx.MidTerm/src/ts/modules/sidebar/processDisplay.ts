@@ -37,62 +37,80 @@ export function formatRuntimeDisplay(processName: string, commandLine: string | 
 
   const runtimeName = extractRuntimeName(processName);
   if (!runtimeName) {
-    const baseName = basename(processName).replace(/\.exe$/i, '');
-    if (commandLine) {
-      const firstToken = trimmed.split(/\s/)[0] ?? '';
-      const firstBase = basename(firstToken)
-        .replace(/\.exe$/i, '')
-        .toLowerCase();
-      if (firstBase !== baseName.toLowerCase()) {
-        // macOS/Linux: commandLine doesn't include the process name
-        const stripped = stripExePath(trimmed);
-        return stripped ? `${baseName} ${stripped}` : baseName;
-      }
-    }
-    return stripExePath(trimmed);
+    return formatNativeProcessDisplay(processName, commandLine, trimmed);
   }
 
   const tokens = tokenizeCommandLine(trimmed);
   if (tokens.length === 0) return stripExePath(trimmed);
 
-  let idx = 0;
+  return formatRuntimeWrappedProcess(runtimeName, tokens);
+}
 
-  // Skip the runtime exe token if present (Windows includes it, Linux/Mac don't)
-  if (isRuntimeToken(tokens[0] ?? '')) {
-    idx++;
+function formatNativeProcessDisplay(
+  processName: string,
+  commandLine: string | null,
+  trimmedCommand: string,
+): string {
+  const baseName = basename(processName).replace(/\.exe$/i, '');
+  if (!commandLine) {
+    return stripExePath(trimmedCommand);
   }
 
-  if (idx >= tokens.length) return runtimeName;
-
-  const current = tokens[idx] ?? '';
-
-  // Handle python -m <module>
-  if (runtimeName.startsWith('python') && current === '-m' && idx + 1 < tokens.length) {
-    const mod = tokens[idx + 1] ?? '';
-    const rest = filterDisplayArgs(tokens.slice(idx + 2));
-    return rest ? `${mod} ${rest}` : mod;
+  const firstToken = trimmedCommand.split(/\s/)[0] ?? '';
+  const firstBase = basename(firstToken)
+    .replace(/\.exe$/i, '')
+    .toLowerCase();
+  if (firstBase === baseName.toLowerCase()) {
+    return stripExePath(trimmedCommand);
   }
 
-  // Handle -e / -c (inline script)
+  const stripped = stripExePath(trimmedCommand);
+  return stripped ? `${baseName} ${stripped}` : baseName;
+}
+
+function formatRuntimeWrappedProcess(runtimeName: string, tokens: string[]): string {
+  const scriptIndex = findRuntimeScriptTokenIndex(tokens);
+  if (scriptIndex === null) {
+    return runtimeName;
+  }
+
+  const current = tokens[scriptIndex] ?? '';
+  if (runtimeName.startsWith('python') && current === '-m' && scriptIndex + 1 < tokens.length) {
+    const moduleName = tokens[scriptIndex + 1] ?? '';
+    const rest = filterDisplayArgs(tokens.slice(scriptIndex + 2));
+    return rest ? `${moduleName} ${rest}` : moduleName;
+  }
+
   if (current === '-e' || current === '-c') {
     return `${runtimeName} ${current} ...`;
   }
 
-  // Skip flags until we find the script path
-  while (idx < tokens.length && (tokens[idx] ?? '').startsWith('-')) {
-    idx++;
-  }
-
-  if (idx >= tokens.length) {
-    const startIdx = isRuntimeToken(tokens[0] ?? '') ? 1 : 0;
-    const flags = filterDisplayArgs(tokens.slice(startIdx));
+  if (current.startsWith('-')) {
+    const flags = filterDisplayArgs(tokens.slice(scriptIndex));
     return flags ? `${runtimeName} ${flags}` : runtimeName;
   }
 
-  const scriptPath = tokens[idx] ?? '';
-  const displayName = extractScriptDisplayName(scriptPath);
-  const rest = filterDisplayArgs(tokens.slice(idx + 1));
+  const displayName = extractScriptDisplayName(current);
+  const rest = filterDisplayArgs(tokens.slice(scriptIndex + 1));
   return rest ? `${displayName} ${rest}` : displayName;
+}
+
+function findRuntimeScriptTokenIndex(tokens: string[]): number | null {
+  let index = isRuntimeToken(tokens[0] ?? '') ? 1 : 0;
+  if (index >= tokens.length) {
+    return null;
+  }
+
+  const current = tokens[index] ?? '';
+  if (current === '-m' || current === '-e' || current === '-c') {
+    return index;
+  }
+
+  while (index < tokens.length && (tokens[index] ?? '').startsWith('-')) {
+    index += 1;
+  }
+
+  return index < tokens.length ? index : isRuntimeToken(tokens[0] ?? '') ? 1 : 0;
 }
 
 /**

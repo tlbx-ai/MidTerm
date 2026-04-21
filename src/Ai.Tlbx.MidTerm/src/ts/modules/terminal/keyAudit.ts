@@ -60,227 +60,368 @@ const KEYCODE_KEY_MAPPINGS: Record<number, [string, string]> = {
   222: ["'", '"'],
 };
 
-export function evaluateTerminalKeyAudit(
-  ev: TerminalKeyAuditInput,
-  applicationCursorMode: boolean,
-  isMac: boolean,
-  macOptionIsMeta: boolean,
-): TerminalKeyAuditResult {
-  const result: TerminalKeyAuditResult = {
+function createTerminalKeyAuditResult(): TerminalKeyAuditResult {
+  return {
     type: 'sendKey',
     cancel: false,
   };
-  const modifiers =
-    (ev.shiftKey ? 1 : 0) | (ev.altKey ? 2 : 0) | (ev.ctrlKey ? 4 : 0) | (ev.metaKey ? 8 : 0);
+}
 
+function resolveArrowKey(
+  direction: 'A' | 'B' | 'C' | 'D',
+  modifiers: number,
+  applicationCursorMode: boolean,
+  metaKey: boolean,
+): string | undefined {
+  if (metaKey) {
+    return undefined;
+  }
+
+  if (modifiers) {
+    return `${ESC}[1;${String(modifiers + 1)}${direction}`;
+  }
+
+  return applicationCursorMode ? `${ESC}O${direction}` : `${ESC}[${direction}`;
+}
+
+function resolveHomeEndKey(
+  suffix: 'F' | 'H',
+  modifiers: number,
+  applicationCursorMode: boolean,
+): string {
+  if (modifiers) {
+    return `${ESC}[1;${String(modifiers + 1)}${suffix}`;
+  }
+
+  return applicationCursorMode ? `${ESC}O${suffix}` : `${ESC}[${suffix}`;
+}
+
+function resolveFunctionKeySequence(modifiers: number, keyCode: number): string | undefined {
+  const baseSequences: Record<number, string> = {
+    112: `${ESC}OP`,
+    113: `${ESC}OQ`,
+    114: `${ESC}OR`,
+    115: `${ESC}OS`,
+    116: `${ESC}[15~`,
+    117: `${ESC}[17~`,
+    118: `${ESC}[18~`,
+    119: `${ESC}[19~`,
+    120: `${ESC}[20~`,
+    121: `${ESC}[21~`,
+    122: `${ESC}[23~`,
+    123: `${ESC}[24~`,
+  };
+  const modifiedSequences: Record<number, string> = {
+    112: `${ESC}[1;${String(modifiers + 1)}P`,
+    113: `${ESC}[1;${String(modifiers + 1)}Q`,
+    114: `${ESC}[1;${String(modifiers + 1)}R`,
+    115: `${ESC}[1;${String(modifiers + 1)}S`,
+    116: `${ESC}[15;${String(modifiers + 1)}~`,
+    117: `${ESC}[17;${String(modifiers + 1)}~`,
+    118: `${ESC}[18;${String(modifiers + 1)}~`,
+    119: `${ESC}[19;${String(modifiers + 1)}~`,
+    120: `${ESC}[20;${String(modifiers + 1)}~`,
+    121: `${ESC}[21;${String(modifiers + 1)}~`,
+    122: `${ESC}[23;${String(modifiers + 1)}~`,
+    123: `${ESC}[24;${String(modifiers + 1)}~`,
+  };
+
+  return modifiers ? modifiedSequences[keyCode] : baseSequences[keyCode];
+}
+
+function applyEditingKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  modifiers: number,
+): boolean {
   switch (ev.keyCode) {
     case 8:
       result.key = ev.ctrlKey ? BS : DEL;
       if (ev.altKey) {
         result.key = ESC + result.key;
       }
-      break;
+      return true;
     case 9:
-      if (ev.shiftKey) {
-        result.key = ESC + '[Z';
-        break;
-      }
-      result.key = HT;
+      result.key = ev.shiftKey ? `${ESC}[Z` : HT;
       result.cancel = true;
-      break;
+      return true;
     case 13:
       result.key = ev.altKey ? ESC + CR : CR;
       result.cancel = true;
-      break;
+      return true;
     case 27:
       result.key = ev.altKey ? ESC + ESC : ESC;
       result.cancel = true;
-      break;
-    case 37:
-      if (ev.metaKey) {
-        break;
-      }
-      if (modifiers) {
-        result.key = `${ESC}[1;${String(modifiers + 1)}D`;
-      } else if (applicationCursorMode) {
-        result.key = ESC + 'OD';
-      } else {
-        result.key = ESC + '[D';
-      }
-      break;
-    case 38:
-      if (ev.metaKey) {
-        break;
-      }
-      if (modifiers) {
-        result.key = `${ESC}[1;${String(modifiers + 1)}A`;
-      } else if (applicationCursorMode) {
-        result.key = ESC + 'OA';
-      } else {
-        result.key = ESC + '[A';
-      }
-      break;
-    case 39:
-      if (ev.metaKey) {
-        break;
-      }
-      if (modifiers) {
-        result.key = `${ESC}[1;${String(modifiers + 1)}C`;
-      } else if (applicationCursorMode) {
-        result.key = ESC + 'OC';
-      } else {
-        result.key = ESC + '[C';
-      }
-      break;
-    case 40:
-      if (ev.metaKey) {
-        break;
-      }
-      if (modifiers) {
-        result.key = `${ESC}[1;${String(modifiers + 1)}B`;
-      } else if (applicationCursorMode) {
-        result.key = ESC + 'OB';
-      } else {
-        result.key = ESC + '[B';
-      }
-      break;
+      return true;
     case 45:
       if (!ev.shiftKey && !ev.ctrlKey) {
-        result.key = ESC + '[2~';
+        result.key = `${ESC}[2~`;
       }
-      break;
+      return true;
     case 46:
-      result.key = modifiers ? `${ESC}[3;${String(modifiers + 1)}~` : ESC + '[3~';
-      break;
-    case 33:
-      if (ev.shiftKey) {
-        result.type = 'pageUp';
-      } else if (ev.ctrlKey) {
-        result.key = `${ESC}[5;${String(modifiers + 1)}~`;
-      } else {
-        result.key = ESC + '[5~';
-      }
-      break;
-    case 34:
-      if (ev.shiftKey) {
-        result.type = 'pageDown';
-      } else if (ev.ctrlKey) {
-        result.key = `${ESC}[6;${String(modifiers + 1)}~`;
-      } else {
-        result.key = ESC + '[6~';
-      }
-      break;
-    case 35:
-      result.key = modifiers
-        ? `${ESC}[1;${String(modifiers + 1)}F`
-        : applicationCursorMode
-          ? ESC + 'OF'
-          : ESC + '[F';
-      break;
-    case 36:
-      result.key = modifiers
-        ? `${ESC}[1;${String(modifiers + 1)}H`
-        : applicationCursorMode
-          ? ESC + 'OH'
-          : ESC + '[H';
-      break;
-    case 112:
-      result.key = modifiers ? `${ESC}[1;${String(modifiers + 1)}P` : ESC + 'OP';
-      break;
-    case 113:
-      result.key = modifiers ? `${ESC}[1;${String(modifiers + 1)}Q` : ESC + 'OQ';
-      break;
-    case 114:
-      result.key = modifiers ? `${ESC}[1;${String(modifiers + 1)}R` : ESC + 'OR';
-      break;
-    case 115:
-      result.key = modifiers ? `${ESC}[1;${String(modifiers + 1)}S` : ESC + 'OS';
-      break;
-    case 116:
-      result.key = modifiers ? `${ESC}[15;${String(modifiers + 1)}~` : ESC + '[15~';
-      break;
-    case 117:
-      result.key = modifiers ? `${ESC}[17;${String(modifiers + 1)}~` : ESC + '[17~';
-      break;
-    case 118:
-      result.key = modifiers ? `${ESC}[18;${String(modifiers + 1)}~` : ESC + '[18~';
-      break;
-    case 119:
-      result.key = modifiers ? `${ESC}[19;${String(modifiers + 1)}~` : ESC + '[19~';
-      break;
-    case 120:
-      result.key = modifiers ? `${ESC}[20;${String(modifiers + 1)}~` : ESC + '[20~';
-      break;
-    case 121:
-      result.key = modifiers ? `${ESC}[21;${String(modifiers + 1)}~` : ESC + '[21~';
-      break;
-    case 122:
-      result.key = modifiers ? `${ESC}[23;${String(modifiers + 1)}~` : ESC + '[23~';
-      break;
-    case 123:
-      result.key = modifiers ? `${ESC}[24;${String(modifiers + 1)}~` : ESC + '[24~';
-      break;
+      result.key = modifiers ? `${ESC}[3;${String(modifiers + 1)}~` : `${ESC}[3~`;
+      return true;
     default:
-      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey) {
-        if (ev.keyCode >= 65 && ev.keyCode <= 90) {
-          result.key = String.fromCharCode(ev.keyCode - 64);
-        } else if (ev.keyCode === 32) {
-          result.key = NUL;
-        } else if (ev.keyCode >= 51 && ev.keyCode <= 55) {
-          result.key = String.fromCharCode(ev.keyCode - 51 + 27);
-        } else if (ev.keyCode === 56) {
-          result.key = DEL;
-        } else if (ev.keyCode === 219) {
-          result.key = ESC;
-        } else if (ev.keyCode === 220) {
-          result.key = FS;
-        } else if (ev.keyCode === 221) {
-          result.key = GS;
-        }
-      } else if ((!isMac || macOptionIsMeta) && ev.altKey && !ev.metaKey) {
-        const keyMapping = KEYCODE_KEY_MAPPINGS[ev.keyCode];
-        const mappedKey = keyMapping?.[ev.shiftKey ? 1 : 0];
-        if (mappedKey) {
-          result.key = ESC + mappedKey;
-        } else if (ev.keyCode >= 65 && ev.keyCode <= 90) {
-          const keyCode = ev.ctrlKey ? ev.keyCode - 64 : ev.keyCode + 32;
-          let keyString = String.fromCharCode(keyCode);
-          if (ev.shiftKey) {
-            keyString = keyString.toUpperCase();
-          }
-          result.key = ESC + keyString;
-        } else if (ev.keyCode === 32) {
-          result.key = ESC + (ev.ctrlKey ? NUL : ' ');
-        } else if (ev.key === 'Dead' && ev.code.startsWith('Key')) {
-          let keyString = ev.code.slice(3, 4);
-          if (!ev.shiftKey) {
-            keyString = keyString.toLowerCase();
-          }
-          result.key = ESC + keyString;
-          result.cancel = true;
-        }
-      } else if (isMac && !ev.altKey && !ev.ctrlKey && !ev.shiftKey && ev.metaKey) {
-        if (ev.keyCode === 65) {
-          result.type = 'selectAll';
-        }
-      } else if (
-        ev.key &&
-        !ev.ctrlKey &&
-        !ev.altKey &&
-        !ev.metaKey &&
-        ev.keyCode >= 48 &&
-        ev.key.length === 1
-      ) {
-        result.key = ev.key;
-      } else if (ev.key && ev.ctrlKey) {
-        if (ev.key === '_') {
-          result.key = US;
-        }
-        if (ev.key === '@') {
-          result.key = NUL;
-        }
+      return false;
+  }
+}
+
+function applyCtrlOnlyKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+): boolean {
+  if (!ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) {
+    return false;
+  }
+
+  if (ev.keyCode >= 65 && ev.keyCode <= 90) {
+    result.key = String.fromCharCode(ev.keyCode - 64);
+    return true;
+  }
+
+  switch (ev.keyCode) {
+    case 32:
+      result.key = NUL;
+      return true;
+    case 56:
+      result.key = DEL;
+      return true;
+    case 219:
+      result.key = ESC;
+      return true;
+    case 220:
+      result.key = FS;
+      return true;
+    case 221:
+      result.key = GS;
+      return true;
+    default:
+      if (ev.keyCode >= 51 && ev.keyCode <= 55) {
+        result.key = String.fromCharCode(ev.keyCode - 51 + 27);
+        return true;
       }
-      break;
+      return false;
+  }
+}
+
+function applyNavigationKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  modifiers: number,
+  applicationCursorMode: boolean,
+): boolean {
+  switch (ev.keyCode) {
+    case 37:
+      return applyArrowNavigationKey(result, 'D', modifiers, applicationCursorMode, ev.metaKey);
+    case 38:
+      return applyArrowNavigationKey(result, 'A', modifiers, applicationCursorMode, ev.metaKey);
+    case 39:
+      return applyArrowNavigationKey(result, 'C', modifiers, applicationCursorMode, ev.metaKey);
+    case 40:
+      return applyArrowNavigationKey(result, 'B', modifiers, applicationCursorMode, ev.metaKey);
+    case 33:
+      applyPageNavigationKey(result, ev, modifiers, 'pageUp', '5');
+      return true;
+    case 34:
+      applyPageNavigationKey(result, ev, modifiers, 'pageDown', '6');
+      return true;
+    case 35:
+      result.key = resolveHomeEndKey('F', modifiers, applicationCursorMode);
+      return true;
+    case 36:
+      result.key = resolveHomeEndKey('H', modifiers, applicationCursorMode);
+      return true;
+    default:
+      return false;
+  }
+}
+
+function applyArrowNavigationKey(
+  result: TerminalKeyAuditResult,
+  code: 'A' | 'B' | 'C' | 'D',
+  modifiers: number,
+  applicationCursorMode: boolean,
+  metaKey: boolean,
+): boolean {
+  const key = resolveArrowKey(code, modifiers, applicationCursorMode, metaKey);
+  if (!key) {
+    return false;
+  }
+
+  result.key = key;
+  return true;
+}
+
+function applyPageNavigationKey(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  modifiers: number,
+  type: 'pageUp' | 'pageDown',
+  keySuffix: '5' | '6',
+): void {
+  if (ev.shiftKey) {
+    result.type = type;
+    return;
+  }
+
+  result.key = ev.ctrlKey
+    ? `${ESC}[${keySuffix};${String(modifiers + 1)}~`
+    : `${ESC}[${keySuffix}~`;
+}
+
+function applyFunctionKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  modifiers: number,
+): boolean {
+  const functionKeySequence = resolveFunctionKeySequence(modifiers, ev.keyCode);
+  if (!functionKeySequence) {
+    return false;
+  }
+
+  result.key = functionKeySequence;
+  return true;
+}
+
+function applyAltKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  isMac: boolean,
+  macOptionIsMeta: boolean,
+): boolean {
+  if ((isMac && !macOptionIsMeta) || !ev.altKey || ev.metaKey) {
+    return false;
+  }
+
+  const keyMapping = KEYCODE_KEY_MAPPINGS[ev.keyCode];
+  const mappedKey = keyMapping?.[ev.shiftKey ? 1 : 0];
+  if (applyMappedAltKey(result, mappedKey)) {
+    return true;
+  }
+
+  if (applyAltLetterKey(result, ev)) {
+    return true;
+  }
+
+  if (applyAltSpaceKey(result, ev)) {
+    return true;
+  }
+
+  if (applyAltDeadKey(result, ev)) {
+    return true;
+  }
+
+  return false;
+}
+
+function applyMappedAltKey(result: TerminalKeyAuditResult, mappedKey: string | undefined): boolean {
+  if (!mappedKey) {
+    return false;
+  }
+
+  result.key = ESC + mappedKey;
+  return true;
+}
+
+function applyAltLetterKey(result: TerminalKeyAuditResult, ev: TerminalKeyAuditInput): boolean {
+  if (ev.keyCode < 65 || ev.keyCode > 90) {
+    return false;
+  }
+
+  const keyCode = ev.ctrlKey ? ev.keyCode - 64 : ev.keyCode + 32;
+  let keyString = String.fromCharCode(keyCode);
+  if (ev.shiftKey) {
+    keyString = keyString.toUpperCase();
+  }
+  result.key = ESC + keyString;
+  return true;
+}
+
+function applyAltSpaceKey(result: TerminalKeyAuditResult, ev: TerminalKeyAuditInput): boolean {
+  if (ev.keyCode !== 32) {
+    return false;
+  }
+
+  result.key = ESC + (ev.ctrlKey ? NUL : ' ');
+  return true;
+}
+
+function applyAltDeadKey(result: TerminalKeyAuditResult, ev: TerminalKeyAuditInput): boolean {
+  if (ev.key !== 'Dead' || !ev.code.startsWith('Key')) {
+    return false;
+  }
+
+  let keyString = ev.code.slice(3, 4);
+  if (!ev.shiftKey) {
+    keyString = keyString.toLowerCase();
+  }
+  result.key = ESC + keyString;
+  result.cancel = true;
+  return true;
+}
+
+function applyMacMetaKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+  isMac: boolean,
+): boolean {
+  if (isMac && !ev.altKey && !ev.ctrlKey && !ev.shiftKey && ev.metaKey && ev.keyCode === 65) {
+    result.type = 'selectAll';
+    return true;
+  }
+
+  return false;
+}
+
+function applyPrintableKeyAuditResult(
+  result: TerminalKeyAuditResult,
+  ev: TerminalKeyAuditInput,
+): boolean {
+  if (
+    ev.key &&
+    !ev.ctrlKey &&
+    !ev.altKey &&
+    !ev.metaKey &&
+    ev.keyCode >= 48 &&
+    ev.key.length === 1
+  ) {
+    result.key = ev.key;
+    return true;
+  }
+
+  if (ev.key && ev.ctrlKey) {
+    if (ev.key === '_') {
+      result.key = US;
+      return true;
+    }
+    if (ev.key === '@') {
+      result.key = NUL;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function evaluateTerminalKeyAudit(
+  ev: TerminalKeyAuditInput,
+  applicationCursorMode: boolean,
+  isMac: boolean,
+  macOptionIsMeta: boolean,
+): TerminalKeyAuditResult {
+  const result = createTerminalKeyAuditResult();
+  const modifiers =
+    (ev.shiftKey ? 1 : 0) | (ev.altKey ? 2 : 0) | (ev.ctrlKey ? 4 : 0) | (ev.metaKey ? 8 : 0);
+
+  if (
+    !applyEditingKeyAuditResult(result, ev, modifiers) &&
+    !applyNavigationKeyAuditResult(result, ev, modifiers, applicationCursorMode) &&
+    !applyFunctionKeyAuditResult(result, ev, modifiers) &&
+    !applyCtrlOnlyKeyAuditResult(result, ev) &&
+    !applyAltKeyAuditResult(result, ev, isMac, macOptionIsMeta) &&
+    !applyMacMetaKeyAuditResult(result, ev, isMac)
+  ) {
+    applyPrintableKeyAuditResult(result, ev);
   }
 
   return result;

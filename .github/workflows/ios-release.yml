@@ -7,6 +7,10 @@ on:
         description: 'Version (e.g. 1.0.0)'
         required: true
 
+concurrency:
+  group: mobile-app-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -32,7 +36,9 @@ jobs:
           echo "BUILD_NUMBER=$NEXT" >> "$GITHUB_ENV"
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+        run: |
+          xcode-select -p
+          xcodebuild -version
 
       - name: Import certificate
         env:
@@ -175,6 +181,8 @@ jobs:
       - name: Clean up
         if: always()
         run: |
-          security delete-keychain "$KEYCHAIN_PATH" || true
+          if [[ -n "${KEYCHAIN_PATH:-}" && -e "$KEYCHAIN_PATH" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
           rm -rf ~/.private_keys
           rm -f ~/Library/MobileDevice/Provisioning\ Profiles/midterm.mobileprovision

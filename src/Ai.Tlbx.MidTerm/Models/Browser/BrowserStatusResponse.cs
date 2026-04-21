@@ -14,6 +14,8 @@ public sealed class BrowserStatusResponse
     public int TotalConnectedClientCount { get; init; }
     public int ConnectedUiClientCount { get; init; }
     public string? TargetUrl { get; init; }
+    public string? OwnerBrowserId { get; init; }
+    public bool OwnerConnected { get; init; }
     public BrowserClientInfo? DefaultClient { get; init; }
     public BrowserClientInfo[] Clients { get; init; } = [];
 }

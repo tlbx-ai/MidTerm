@@ -12,7 +12,11 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $scriptUrl = 'https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.ps1'
-$scriptContent = Invoke-RestMethod -Uri $scriptUrl
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    $scriptContent = Invoke-RestMethod -Uri $scriptUrl -UseBasicParsing
+} else {
+    $scriptContent = Invoke-RestMethod -Uri $scriptUrl
+}
 $scriptBlock = [ScriptBlock]::Create($scriptContent)
 
 & $scriptBlock @PSBoundParameters

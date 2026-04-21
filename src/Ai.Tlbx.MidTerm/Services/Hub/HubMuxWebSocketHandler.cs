@@ -32,7 +32,7 @@ public sealed class HubMuxWebSocketHandler
         if (string.IsNullOrWhiteSpace(machineId) || string.IsNullOrWhiteSpace(sessionId))
         {
             context.Response.StatusCode = 400;
-            await context.Response.WriteAsync("machineId and sessionId are required.");
+            await context.Response.WriteAsync("machineId and sessionId are required.", context.RequestAborted);
             return;
         }
 
@@ -47,7 +47,7 @@ public sealed class HubMuxWebSocketHandler
 
         try
         {
-            await _hubService.ConfigureRemoteWebSocketAsync(machineId, remoteSocket);
+            await _hubService.ConfigureRemoteWebSocketAsync(machineId, remoteSocket, _shutdownService.Token);
             var remoteUri = BuildRemoteMuxUri(machine.BaseUrl);
             await remoteSocket.ConnectAsync(remoteUri, _shutdownService.Token);
         }

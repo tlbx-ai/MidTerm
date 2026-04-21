@@ -26,6 +26,6 @@ public sealed partial class ManagerBarScheduleEntry
         };
     }
 
-    [GeneratedRegex("^(?:[01]\\d|2[0-3]):[0-5]\\d$")]
+    [GeneratedRegex("^(?:[01]\\d|2[0-3]):[0-5]\\d$", RegexOptions.None, 1000)]
     private static partial Regex TimePattern();
 }

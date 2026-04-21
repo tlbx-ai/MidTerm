@@ -1,80 +1,59 @@
 import SwiftUI
 
-struct ServerListView: View {
+struct LaunchView: View {
     @StateObject private var store = ServerStore()
-    @State private var showingAdd = false
-    @State private var editingServer: Server?
-    @State private var selectedServer: Server?
+    @State private var address = ""
+    @State private var showingTerminal = false
 
     var body: some View {
         NavigationStack {
-            Group {
-                if store.servers.isEmpty {
-                    VStack {
-                        Spacer()
-                        Text("Tap + to add a MidTerm server")
-                            .foregroundStyle(.secondary)
-                        Spacer()
+            Form {
+                Section {
+                    Text("A native shell for your MidTerm workspace.")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Enter one MidTerm address here, then use Hub inside MidTerm to move between machines and workspaces.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("MidTerm Address") {
+                    TextField("https://hostname:2000", text: $address)
+                        .textContentType(.URL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Text("Paste the full URL or just host:port. HTTPS is added automatically when you omit the scheme.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                LauncherHintSection(lastConnected: store.server?.lastConnected)
+
+                Section {
+                    Button("Open MidTerm") {
+                        openMidTerm()
                     }
-                } else {
-                    List {
-                        ForEach(store.servers) { server in
-                            ServerRow(server: server)
-                                .contentShape(Rectangle())
-                                .onTapGesture { connect(server) }
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) { store.delete(server) } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    Button { editingServer = server } label: {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-                                    .tint(.blue)
-                                }
-                        }
-                    }
-                    .listStyle(.plain)
+                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .navigationTitle("MidTerm")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showingAdd = true } label: {
-                        Image(systemName: "plus")
-                    }
+            .onAppear {
+                address = store.server?.url ?? ""
+            }
+            .fullScreenCover(isPresented: $showingTerminal) {
+                if let server = store.server {
+                    TerminalView(server: server)
                 }
             }
-            .sheet(isPresented: $showingAdd) {
-                AddEditServerView(store: store, server: nil)
-            }
-            .sheet(item: $editingServer) { server in
-                AddEditServerView(store: store, server: server)
-            }
-            .fullScreenCover(item: $selectedServer) { server in
-                TerminalView(server: server, store: store)
-            }
         }
     }
 
-    private func connect(_ server: Server) {
-        var updated = server
-        updated.lastConnected = Date()
-        store.update(updated)
-        selectedServer = server
-    }
-}
-
-private struct ServerRow: View {
-    let server: Server
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(server.name)
-                .font(.headline)
-            Text(server.url)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
+    private func openMidTerm() {
+        let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedAddress.isEmpty else { return }
+        store.save(url: trimmedAddress)
+        store.markConnected()
+        address = store.server?.url ?? trimmedAddress
+        showingTerminal = true
     }
 }

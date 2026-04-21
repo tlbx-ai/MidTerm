@@ -15,6 +15,7 @@ const AUDIT_EXCEPTIONS = new Set<string>([
   'src/Ai.Tlbx.MidTerm/src/static/trust.html',
   'src/Ai.Tlbx.MidTerm/src/ts/constants.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/sidebar/heatIndicator.ts',
+  'src/Ai.Tlbx.MidTerm/src/ts/modules/terminal/rgbBackgroundTransparency.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/backgroundAppearance.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/colorLiteralAudit.test.ts',
   'src/Ai.Tlbx.MidTerm/src/ts/modules/theming/cssThemes.test.ts',

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Xunit;
 
@@ -376,6 +377,40 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Contains("write_result false \"Failed to apply staged update\"", script, StringComparison.Ordinal);
         Assert.Contains("\"logFile\": \"$LOG_FILE\"", script, StringComparison.Ordinal);
         Assert.Contains("exec \"$INSTALL_DIR/mt\" \"$@\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetMacOsLauncherScriptContents_UsesStagedManifestToGateHostBinaries()
+    {
+        var settingsDir = Path.Combine(_tempDir, "settings");
+        var logPath = Path.Combine(_tempDir, "update.log");
+
+        var script = UpdateService.GetMacOsLauncherScriptContents(settingsDir, logPath);
+
+        Assert.Contains("staged_update_is_web_only()", script, StringComparison.Ordinal);
+        Assert.Contains("grep -Eq '\"webOnly\"[[:space:]]*:[[:space:]]*true' \"$manifest_path\"", script, StringComparison.Ordinal);
+        Assert.Contains("STAGED_IS_WEB_ONLY=false", script, StringComparison.Ordinal);
+        Assert.Contains("Staged update type:", script, StringComparison.Ordinal);
+        Assert.Contains("CONFIG_AGENTHOST=", script, StringComparison.Ordinal);
+        Assert.Contains("resolve_agenthost_target()", script, StringComparison.Ordinal);
+        Assert.Contains("AGENTHOST_DST=\"$(resolve_agenthost_target)\"", script, StringComparison.Ordinal);
+        Assert.Contains("[[ \"$STAGED_IS_WEB_ONLY\" == \"true\" ]] || apply_file \"$STAGING/mtagenthost\" \"$AGENTHOST_DST\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveInstalledHostExecutablePath_UsesSettingsFallbackWhenInstallDirectoryDoesNotContainAgentHost()
+    {
+        var settingsDir = Path.Combine(_tempDir, "settings-fallback");
+        var baseDir = Path.Combine(_tempDir, "app-base");
+        Directory.CreateDirectory(settingsDir);
+        Directory.CreateDirectory(baseDir);
+
+        var fallbackPath = UpdateService.GetAgentHostFallbackPath(settingsDir);
+        File.WriteAllText(fallbackPath, "fake-agenthost");
+
+        var resolved = SessionLensHostRuntimeService.ResolveInstalledHostExecutablePath(settingsDir, baseDir);
+
+        Assert.Equal(fallbackPath, resolved);
     }
 
     [Fact]

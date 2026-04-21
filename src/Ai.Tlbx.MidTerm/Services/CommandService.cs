@@ -48,7 +48,7 @@ public sealed class CommandService
         var scripts = new List<ScriptDefinition>();
         foreach (var file in Directory.EnumerateFiles(dir)
             .Where(f => SupportedExtensions.Contains(Path.GetExtension(f)))
-            .OrderBy(f => Path.GetFileName(f)))
+            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase))
         {
             var script = ParseScriptFile(file);
             if (script is not null)

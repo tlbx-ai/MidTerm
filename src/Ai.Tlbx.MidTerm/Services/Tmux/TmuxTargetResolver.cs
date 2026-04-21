@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
 /// <summary>
@@ -48,7 +50,7 @@ public sealed class TmuxTargetResolver
         }
 
         // Try as bare integer (pane index)
-        if (int.TryParse(paneTarget, out _))
+        if (int.TryParse(paneTarget, CultureInfo.InvariantCulture, out _))
         {
             return _paneMapper.PaneIdToSessionId($"%{paneTarget}");
         }

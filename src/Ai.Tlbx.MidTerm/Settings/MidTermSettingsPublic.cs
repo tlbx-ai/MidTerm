@@ -7,24 +7,36 @@ public sealed partial class MidTermSettingsPublic
 {
     public const int DefaultScrollbackLines = 2000;
     public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
+    public const int DefaultBackgroundKenBurnsZoomPercent = 150;
+    public const int DefaultBackgroundKenBurnsSpeedPxPerSecond = 12;
 
     // Session Defaults (DefaultShell intentionally nullable - platform-specific logic at runtime)
     public ShellType? DefaultShell { get; set; }
     public int DefaultCols { get; set; } = 120;
     public int DefaultRows { get; set; } = 30;
     public string DefaultWorkingDirectory { get; set; } = "";
+    public string TerminalEnvironmentVariables { get; set; } = "";
     public bool CodexYoloDefault { get; set; } = false;
+    public string CodexDefaultLensModel { get; set; } = "";
     public string CodexEnvironmentVariables { get; set; } = "";
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
+    public string ClaudeDefaultLensModel { get; set; } = "";
     public string ClaudeEnvironmentVariables { get; set; } = "";
+    public string AgentMessageFontFamily { get; set; } = "default";
+    public bool ShowAgentMessageTimestamps { get; set; } = false;
+    public bool ShowUnknownAgentMessages { get; set; } = true;
 
     // Terminal Appearance
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code";
+    public bool TerminalLigaturesEnabled { get; set; } = true;
     public double LineHeight { get; set; } = 1;
     public double LetterSpacing { get; set; } = 0;
     public string FontWeight { get; set; } = "normal";
     public string FontWeightBold { get; set; } = "bold";
+    public bool CustomGlyphs { get; set; } = true;
+    public string BoxDrawingStyle { get; set; } = "classic";
+    public double BoxDrawingScale { get; set; } = 1;
     public CursorStyleSetting CursorStyle { get; set; } = CursorStyleSetting.Block;
     public bool CursorBlink { get; set; } = true;
     public CursorInactiveStyleSetting CursorInactiveStyle { get; set; } = CursorInactiveStyleSetting.None;
@@ -32,11 +44,15 @@ public sealed partial class MidTermSettingsPublic
     public string TerminalColorScheme { get; set; } = "auto";
     public List<TerminalColorSchemeDefinition> TerminalColorSchemes { get; set; } = [];
     public bool BackgroundImageEnabled { get; set; } = false;
+    public bool HideBackgroundImageOnMobile { get; set; } = true;
     public string? BackgroundImageFileName { get; set; }
     public long BackgroundImageRevision { get; set; } = 0;
-    public string BackgroundImageFit { get; set; } = "cover";
+    public bool BackgroundKenBurnsEnabled { get; set; } = false;
+    public int BackgroundKenBurnsZoomPercent { get; set; } = DefaultBackgroundKenBurnsZoomPercent;
+    public int BackgroundKenBurnsSpeedPxPerSecond { get; set; } = DefaultBackgroundKenBurnsSpeedPxPerSecond;
     public int UiTransparency { get; set; } = 0;
     public int? TerminalTransparency { get; set; }
+    public int? TerminalCellBackgroundTransparency { get; set; }
     public TabTitleModeSetting TabTitleMode { get; set; } = TabTitleModeSetting.Hostname;
     public double MinimumContrastRatio { get; set; } = 1;
     public bool SmoothScrolling { get; set; } = false;
@@ -54,11 +70,16 @@ public sealed partial class MidTermSettingsPublic
     public bool ScrollbackProtection { get; set; } = false;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
+    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
+    public bool ShowBookmarks { get; set; } = true;
+    public bool AllowAdHocSessionBookmarks { get; set; } = true;
     public bool ShowSidebarSessionFilter { get; set; } = false;
+    public string WorktreeRootDirectory { get; set; } = "";
     public bool TmuxCompatibility { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
+    public bool CommandBayLigaturesEnabled { get; set; } = true;
     public bool DevMode { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
     public bool ShowUpdateNotification { get; set; } = true;

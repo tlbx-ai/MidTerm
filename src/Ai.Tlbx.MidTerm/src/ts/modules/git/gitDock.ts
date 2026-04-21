@@ -13,9 +13,8 @@ import {
 } from '../../stores';
 import { handleDockLayoutChange } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { refreshGitPanel, renderGitPanelInto } from './gitPanel';
+import { refreshGitPanel, renderGitPanelInto, showCommitInGitPanel } from './gitPanel';
 import { subscribeToSession } from './gitChannel';
-import { closeDiffOverlay } from './gitDiff';
 import { closeCommandsDock } from '../commands/dock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
 import { createLogger } from '../logging';
@@ -103,11 +102,15 @@ export function openGitDock(sessionId: string): void {
   log.info(() => 'Git dock opened');
 }
 
+export async function openGitCommitDock(sessionId: string, hash: string): Promise<void> {
+  openGitDock(sessionId);
+  await showCommitInGitPanel(sessionId, hash);
+}
+
 export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
   currentDockSessionId = null;
-  closeDiffOverlay();
 
   $gitPanelDocked.set(false);
   setActionButtonActive('git', false);

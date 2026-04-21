@@ -154,7 +154,7 @@ public sealed class CertificateInfoService
 
     private static string FormatFingerprint(byte[] hash)
     {
-        return BitConverter.ToString(hash).Replace("-", ":");
+        return BitConverter.ToString(hash).Replace("-", ":", StringComparison.Ordinal);
     }
 
     private static (string[] dnsNames, string[] ipAddresses) ExtractSubjectAlternativeNames(X509Certificate2 cert)

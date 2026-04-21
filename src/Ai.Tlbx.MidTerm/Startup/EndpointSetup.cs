@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -135,13 +136,13 @@ public static class EndpointSetup
             psi.RedirectStandardInput = true;
         }
 
-        var proc = Process.Start(psi);
+        using var proc = Process.Start(psi);
         if (proc is not null && !OperatingSystem.IsWindows())
         {
             try { proc.StandardInput.Close(); } catch { }
         }
 
-        Log.Info(() => $"Replacement process spawned (PID {proc?.Id})");
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Replacement process spawned (PID {proc?.Id})"));
     }
 
     private static bool TryArmServiceRestart(SettingsService settingsService)
@@ -172,19 +173,19 @@ public static class EndpointSetup
                 WindowStyle = ProcessWindowStyle.Hidden
             };
 
-            var process = Process.Start(psi);
+            using var process = Process.Start(psi);
             if (process is null)
             {
                 Log.Error(() => $"Failed to start Windows service restart helper for service '{serviceName}'");
                 return false;
             }
 
-            Log.Info(() => $"Spawned Windows service restart helper (PID {process.Id}) for service '{serviceName}'");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Spawned Windows service restart helper (PID {process.Id}) for service '{serviceName}'"));
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(() => $"Failed to schedule Windows service restart helper: {ex.Message}");
+            Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"Failed to schedule Windows service restart helper: {ex.Message}"));
             return false;
         }
     }
@@ -192,9 +193,10 @@ public static class EndpointSetup
     internal static string BuildWindowsServiceRestartScript(string serviceName, int timeoutSeconds = 45)
     {
         var escapedServiceName = serviceName.Replace("'", "''", StringComparison.Ordinal);
+        var timeoutSecondsText = timeoutSeconds.ToString(CultureInfo.InvariantCulture);
         return $$"""
 $serviceName = '{{escapedServiceName}}'
-$deadline = [DateTime]::UtcNow.AddSeconds({{timeoutSeconds}})
+$deadline = [DateTime]::UtcNow.AddSeconds({{timeoutSecondsText}})
 
 while ($true) {
     $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -454,7 +456,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 .Select(n => new NetworkEndpointInfo
                 {
                     Name = n.Name,
-                    Url = $"https://{n.Ip}:{hostPort}"
+                    Url = string.Create(CultureInfo.InvariantCulture, $"https://{n.Ip}:{hostPort}")
                 })
                 .ToArray();
 
@@ -528,7 +530,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source);
             if (!success)
             {
-                return source == "local" || message.Contains("No update")
+                return source == "local" || message.Contains("No update", StringComparison.Ordinal)
                     ? Results.BadRequest(message)
                     : Results.Problem(message);
             }
@@ -762,13 +764,15 @@ Start-Service -Name $serviceName -ErrorAction Stop
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensPulseService lensPulse,
+        SessionLensRuntimeService lensRuntime,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
+        SessionLayoutStateService sessionLayoutStateService,
+        ManagerBarQueueService managerBarQueueService,
         GitWatcherService gitWatcher,
         BrowserCommandService browserCommandService,
         BrowserPreviewRegistry browserPreviewRegistry,
@@ -777,8 +781,8 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, tmuxLayoutBridge, browserUiBridge);
-        var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, lensPulse, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
+        var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(
@@ -792,7 +796,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
 
         app.Use(async (context, next) =>
         {
-            if (!context.Request.Path.StartsWithSegments("/ws"))
+            if (!context.Request.Path.StartsWithSegments("/ws", StringComparison.Ordinal))
             {
                 await next(context);
                 return;

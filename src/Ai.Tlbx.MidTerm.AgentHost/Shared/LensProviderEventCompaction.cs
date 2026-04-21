@@ -1,0 +1,237 @@
+using System.Globalization;
+
+namespace Ai.Tlbx.MidTerm.Common.Protocol;
+
+public static class LensProviderEventCompaction
+{
+    private const int MaxAssistantDeltaChars = 16384;
+    private const int MaxReasoningDeltaChars = 1024;
+    private const int MaxPlanDeltaChars = 4096;
+    private const int MaxToolDeltaChars = 2048;
+    private const int MaxDiffChars = 16384;
+    private const int MaxCommandTextChars = 2048;
+    private const int MaxToolItemDetailChars = 4096;
+    private const int MaxRequestDetailChars = 2048;
+    private const int MaxRuntimeDetailChars = 4096;
+    private const int MaxPlanMarkdownChars = 16384;
+
+    public static LensProviderEvent CloneForRetention(LensProviderEvent source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        return new LensProviderEvent
+        {
+            Sequence = source.Sequence,
+            EventId = source.EventId,
+            SessionId = source.SessionId,
+            Provider = source.Provider,
+            ThreadId = source.ThreadId,
+            TurnId = source.TurnId,
+            ItemId = source.ItemId,
+            RequestId = source.RequestId,
+            CreatedAt = source.CreatedAt,
+            Type = source.Type,
+            Raw = CloneRawMetadata(source.Raw),
+            SessionState = source.SessionState is null ? null : new LensProviderSessionStatePayload
+            {
+                State = source.SessionState.State,
+                StateLabel = source.SessionState.StateLabel,
+                Reason = source.SessionState.Reason
+            },
+            ThreadState = source.ThreadState is null ? null : new LensProviderThreadStatePayload
+            {
+                State = source.ThreadState.State,
+                StateLabel = source.ThreadState.StateLabel,
+                ProviderThreadId = source.ThreadState.ProviderThreadId
+            },
+            TurnStarted = source.TurnStarted is null ? null : new LensProviderTurnStartedPayload
+            {
+                Model = source.TurnStarted.Model,
+                Effort = source.TurnStarted.Effort
+            },
+            TurnCompleted = source.TurnCompleted is null ? null : new LensProviderTurnCompletedPayload
+            {
+                State = source.TurnCompleted.State,
+                StateLabel = source.TurnCompleted.StateLabel,
+                StopReason = source.TurnCompleted.StopReason,
+                ErrorMessage = CompactTextMiddle(source.TurnCompleted.ErrorMessage, MaxRuntimeDetailChars)
+            },
+            ContentDelta = source.ContentDelta is null ? null : new LensProviderContentDeltaPayload
+            {
+                StreamKind = source.ContentDelta.StreamKind,
+                Delta = CompactContentDelta(source.ContentDelta.StreamKind, source.ContentDelta.Delta)
+            },
+            PlanDelta = source.PlanDelta is null ? null : new LensProviderPlanDeltaPayload
+            {
+                Delta = CompactTextMiddle(source.PlanDelta.Delta, MaxPlanDeltaChars) ?? string.Empty
+            },
+            PlanCompleted = source.PlanCompleted is null ? null : new LensProviderPlanCompletedPayload
+            {
+                PlanMarkdown = CompactTextMiddle(source.PlanCompleted.PlanMarkdown, MaxPlanMarkdownChars) ?? string.Empty
+            },
+            DiffUpdated = source.DiffUpdated is null ? null : new LensProviderDiffUpdatedPayload
+            {
+                UnifiedDiff = CompactTextMiddle(source.DiffUpdated.UnifiedDiff, MaxDiffChars) ?? string.Empty
+            },
+            Item = source.Item is null ? null : new LensProviderItemPayload
+            {
+                ItemType = source.Item.ItemType,
+                Status = source.Item.Status,
+                Title = source.Item.Title,
+                Detail = CompactItemDetail(source.Item.ItemType, source.Item.Detail),
+                Attachments = CloneAttachments(source.Item.Attachments)
+            },
+            Task = source.Task is null ? null : new LensProviderTaskPayload
+            {
+                TaskId = source.Task.TaskId,
+                Status = source.Task.Status,
+                TaskType = source.Task.TaskType,
+                Description = CompactTextMiddle(source.Task.Description, MaxRuntimeDetailChars),
+                Summary = CompactTextMiddle(source.Task.Summary, MaxRuntimeDetailChars),
+                LastToolName = source.Task.LastToolName,
+                UsageJson = CompactTextMiddle(source.Task.UsageJson, MaxRuntimeDetailChars)
+            },
+            QuickSettingsUpdated = source.QuickSettingsUpdated is null ? null : new LensQuickSettingsPayload
+            {
+                Model = source.QuickSettingsUpdated.Model,
+                Effort = source.QuickSettingsUpdated.Effort,
+                PlanMode = LensQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode)
+            },
+            RequestOpened = source.RequestOpened is null ? null : new LensProviderRequestOpenedPayload
+            {
+                RequestType = source.RequestOpened.RequestType,
+                RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
+                Detail = CompactTextMiddle(source.RequestOpened.Detail, MaxRequestDetailChars)
+            },
+            RequestResolved = source.RequestResolved is null ? null : new LensProviderRequestResolvedPayload
+            {
+                RequestType = source.RequestResolved.RequestType,
+                Decision = source.RequestResolved.Decision
+            },
+            UserInputRequested = source.UserInputRequested is null ? null : new LensProviderUserInputRequestedPayload
+            {
+                Questions = source.UserInputRequested.Questions.Select(CloneQuestion).ToList()
+            },
+            UserInputResolved = source.UserInputResolved is null ? null : new LensProviderUserInputResolvedPayload
+            {
+                Answers = source.UserInputResolved.Answers.Select(CloneAnsweredQuestion).ToList()
+            },
+            RuntimeMessage = source.RuntimeMessage is null ? null : new LensProviderRuntimeMessagePayload
+            {
+                Message = source.RuntimeMessage.Message,
+                Detail = CompactTextMiddle(source.RuntimeMessage.Detail, MaxRuntimeDetailChars)
+            }
+        };
+    }
+
+    private static string CompactContentDelta(string streamKind, string value)
+    {
+        var normalized = (streamKind ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "assistant_text" => CompactTextMiddle(value, MaxAssistantDeltaChars),
+            "reasoning_text" or "reasoning_summary_text" => CompactTextMiddle(value, MaxReasoningDeltaChars),
+            "plan_text" => CompactTextMiddle(value, MaxPlanDeltaChars),
+            "command_output" or "file_change_output" => CompactTextMiddle(value, MaxToolDeltaChars),
+            _ when normalized.EndsWith("_output", StringComparison.Ordinal) ||
+                   normalized.EndsWith("_result", StringComparison.Ordinal)
+                => CompactTextMiddle(value, MaxToolDeltaChars),
+            _ => value ?? string.Empty
+        };
+    }
+
+    private static LensProviderEventRaw? CloneRawMetadata(LensProviderEventRaw? source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var raw = new LensProviderEventRaw
+        {
+            Source = source.Source,
+            Method = source.Method,
+            PayloadJson = null
+        };
+
+        return string.IsNullOrWhiteSpace(raw.Source) && string.IsNullOrWhiteSpace(raw.Method)
+            ? null
+            : raw;
+    }
+
+    private static string? CompactItemDetail(string itemType, string? detail)
+    {
+        var normalized = (itemType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "command_execution" or "command" => CompactTextMiddle(detail, MaxCommandTextChars),
+            "command_output" or "file_change_output" => CompactTextMiddle(detail, MaxToolItemDetailChars),
+            _ when normalized.EndsWith("_output", StringComparison.Ordinal) ||
+                   normalized.EndsWith("_result", StringComparison.Ordinal)
+                => CompactTextMiddle(detail, MaxToolItemDetailChars),
+            _ => detail
+        };
+    }
+
+    private static string CompactTextMiddle(string? value, int maxChars)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxChars || maxChars < 32)
+        {
+            return value ?? string.Empty;
+        }
+
+        var omissionCount = value.Length - maxChars;
+        var marker = $" ... [{omissionCount.ToString(CultureInfo.InvariantCulture)} chars omitted] ... ";
+        var available = maxChars - marker.Length;
+        if (available < 8)
+        {
+            return value[..maxChars];
+        }
+
+        var headLength = available / 2;
+        var tailLength = available - headLength;
+        return string.Concat(value.AsSpan(0, headLength), marker, value.AsSpan(value.Length - tailLength));
+    }
+
+    private static List<LensAttachmentReference> CloneAttachments(IReadOnlyList<LensAttachmentReference>? attachments)
+    {
+        if (attachments is null || attachments.Count == 0)
+        {
+            return [];
+        }
+
+        return attachments.Select(static attachment => new LensAttachmentReference
+        {
+            Kind = attachment.Kind,
+            Path = attachment.Path,
+            MimeType = attachment.MimeType,
+            DisplayName = attachment.DisplayName
+        }).ToList();
+    }
+
+    private static LensQuestion CloneQuestion(LensQuestion source)
+    {
+        return new LensQuestion
+        {
+            Id = source.Id,
+            Header = source.Header,
+            Question = source.Question,
+            MultiSelect = source.MultiSelect,
+            Options = source.Options.Select(static option => new LensQuestionOption
+            {
+                Label = option.Label,
+                Description = option.Description
+            }).ToList()
+        };
+    }
+
+    private static LensAnsweredQuestion CloneAnsweredQuestion(LensAnsweredQuestion source)
+    {
+        return new LensAnsweredQuestion
+        {
+            QuestionId = source.QuestionId,
+            Answers = [.. source.Answers]
+        };
+    }
+}

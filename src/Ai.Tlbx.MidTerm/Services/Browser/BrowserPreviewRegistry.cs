@@ -8,7 +8,7 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 public sealed class BrowserPreviewRegistry
 {
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromHours(8);
-    private readonly ConcurrentDictionary<string, RegisteredPreview> _previews = new();
+    private readonly ConcurrentDictionary<string, RegisteredPreview> _previews = new(StringComparer.Ordinal);
 
     public BrowserPreviewClientResponse Create(
         string? sessionId,

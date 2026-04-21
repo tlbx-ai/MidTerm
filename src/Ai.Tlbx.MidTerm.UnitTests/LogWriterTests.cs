@@ -12,19 +12,20 @@ public sealed class LogWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDirectory);
 
-        var logger = new Logger("mt", _tempDirectory, new LogRotationPolicy
         {
-            MaxFileSizeBytes = 80,
-            MaxFileCount = 10,
-            MaxDirectorySizeBytes = 1024 * 1024
-        });
+            using var logger = new Logger("mt", _tempDirectory, new LogRotationPolicy
+            {
+                MaxFileSizeBytes = 80,
+                MaxFileCount = 10,
+                MaxDirectorySizeBytes = 1024 * 1024
+            });
 
-        logger.MinLevel = LogSeverity.Info;
-        logger.Info(() => new string('A', 60));
-        Thread.Sleep(250);
-        logger.Info(() => new string('B', 60));
-        Thread.Sleep(250);
-        logger.Dispose();
+            logger.MinLevel = LogSeverity.Info;
+            logger.Info(() => new string('A', 60));
+            Thread.Sleep(250);
+            logger.Info(() => new string('B', 60));
+            Thread.Sleep(250);
+        }
 
         var logFiles = Directory.GetFiles(_tempDirectory, "mt-*.log")
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
@@ -33,8 +34,8 @@ public sealed class LogWriterTests : IDisposable
         Assert.Equal(2, logFiles.Length);
         Assert.EndsWith(".000.log", logFiles[0], StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith(".001.log", logFiles[1], StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("AAAA", File.ReadAllText(logFiles[0]));
-        Assert.Contains("BBBB", File.ReadAllText(logFiles[1]));
+        Assert.Contains("AAAA", File.ReadAllText(logFiles[0]), StringComparison.Ordinal);
+        Assert.Contains("BBBB", File.ReadAllText(logFiles[1]), StringComparison.Ordinal);
     }
 
     public void Dispose()

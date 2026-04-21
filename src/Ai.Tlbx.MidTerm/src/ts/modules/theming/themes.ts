@@ -10,6 +10,7 @@ import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
 import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
+import { isMobilePresentationContext, shouldRenderBackgroundImage } from './backgroundVisibility';
 import { getTerminalThemeByName } from './terminalColorSchemes';
 
 const ANSI_COLOR_KEYS = [
@@ -36,8 +37,34 @@ const DOM_ANSI_OVERRIDE_STYLE_ID = 'midterm-xterm-ansi-overrides';
 type ResolvedTerminalTheme = {
   baseTheme: TerminalTheme;
   theme: TerminalTheme;
-  alpha: number;
+  terminalBackgroundAlpha: number;
+  cellBackgroundAlpha: number;
 };
+
+export function getEffectiveTerminalBackgroundAlpha(
+  settings: MidTermSettingsPublic | null,
+): number {
+  if (isMobilePresentationContext()) {
+    return 1;
+  }
+
+  return transparencyToAlpha(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0);
+}
+
+export function getEffectiveTerminalCellBackgroundAlpha(
+  settings: MidTermSettingsPublic | null,
+): number {
+  if (isMobilePresentationContext()) {
+    return 1;
+  }
+
+  return transparencyToAlpha(
+    settings?.terminalCellBackgroundTransparency ??
+      settings?.terminalTransparency ??
+      settings?.uiTransparency ??
+      0,
+  );
+}
 
 /**
  * Resolve the effective xterm color scheme.
@@ -61,8 +88,8 @@ export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPub
   }
 
   const existing = document.getElementById(DOM_ANSI_OVERRIDE_STYLE_ID);
-  const { baseTheme, theme, alpha } = resolveEffectiveXtermTheme(settings);
-  if (alpha >= 1) {
+  const { baseTheme, theme, cellBackgroundAlpha } = resolveEffectiveXtermTheme(settings);
+  if (cellBackgroundAlpha >= 1) {
     existing?.remove();
     return;
   }
@@ -90,21 +117,19 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
   }
   const baseTheme = getTerminalThemeByName(settings, key) ?? fallbackTheme;
   const theme: TerminalTheme = Object.assign({}, baseTheme);
-  const transparency = Math.min(
-    Math.max(settings?.terminalTransparency ?? settings?.uiTransparency ?? 0, 0),
-    100,
-  );
-  const hasWallpaper =
-    settings !== null &&
-    settings.backgroundImageEnabled &&
-    settings.backgroundImageFileName !== null;
-  let alpha = 1;
-  if (hasWallpaper || transparency > 0) {
-    alpha = Math.max(0, 1 - transparency / 100);
-    theme.background = withAlpha(theme.background, alpha);
-    applyAnsiTransparency(theme, alpha);
+  const terminalBackgroundAlpha = getEffectiveTerminalBackgroundAlpha(settings);
+  const cellBackgroundAlpha = getEffectiveTerminalCellBackgroundAlpha(settings);
+  const hasWallpaper = shouldRenderBackgroundImage(settings);
+
+  if (hasWallpaper || terminalBackgroundAlpha < 1) {
+    theme.background = withAlpha(theme.background, terminalBackgroundAlpha);
   }
-  return { baseTheme, theme, alpha };
+
+  if (hasWallpaper || cellBackgroundAlpha < 1) {
+    applyAnsiTransparency(theme, cellBackgroundAlpha);
+  }
+
+  return { baseTheme, theme, terminalBackgroundAlpha, cellBackgroundAlpha };
 }
 
 /**
@@ -197,4 +222,9 @@ function withAlpha(color: string, alpha: number): string {
   }
 
   return color;
+}
+
+function transparencyToAlpha(transparency: number): number {
+  const clampedTransparency = Math.min(Math.max(transparency, 0), 100);
+  return Math.max(0, 1 - clampedTransparency / 100);
 }

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace Ai.Tlbx.MidTerm.Services.Tmux;
 
@@ -14,7 +15,7 @@ public static partial class TmuxLog
     private static readonly Lock _lock = new();
     private const int MaxResultLength = 500;
 
-    [GeneratedRegex(@"\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|\([AB012]|[@-Z\\-_])")]
+    [GeneratedRegex(@"\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|\([AB012]|[@-Z\\-_])", RegexOptions.None, 1000)]
     private static partial Regex AnsiEscapePattern();
 
     public static void Initialize(string logDirectory)
@@ -25,7 +26,7 @@ public static partial class TmuxLog
             {
                 Directory.CreateDirectory(logDirectory);
                 var path = Path.Combine(logDirectory, "tmux.log");
-                _writer = new StreamWriter(path, append: true) { AutoFlush = true };
+                ReplaceWriter(path);
                 Write("TmuxLog initialized");
             }
             catch
@@ -40,6 +41,13 @@ public static partial class TmuxLog
         var pane = callerPaneId ?? "?";
         var sanitized = args.Select(Sanitize);
         Write($"[pane={pane}] args: [{string.Join(", ", sanitized.Select(a => $"\"{a}\""))}]");
+    }
+
+    private static void ReplaceWriter(string path)
+    {
+        var next = new StreamWriter(path, append: true) { AutoFlush = true };
+        var previous = Interlocked.Exchange(ref _writer, next);
+        previous?.Dispose();
     }
 
     public static void Command(string name, string? callerPaneId, Dictionary<string, string?> flags, List<string> positional)
@@ -93,9 +101,19 @@ public static partial class TmuxLog
     {
         lock (_lock)
         {
-            _writer?.Dispose();
-            _writer = null;
+            DisposeWriter();
         }
+    }
+
+    private static void DisposeWriter()
+    {
+        if (_writer is null)
+        {
+            return;
+        }
+
+        _writer.Dispose();
+        _writer = null;
     }
 
     private static string Sanitize(string input)
@@ -124,7 +142,7 @@ public static partial class TmuxLog
     {
         lock (_lock)
         {
-            _writer?.WriteLine($"{DateTime.UtcNow:HH:mm:ss.fff} {message}");
+            _writer?.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:HH:mm:ss.fff} {message}"));
         }
     }
 }

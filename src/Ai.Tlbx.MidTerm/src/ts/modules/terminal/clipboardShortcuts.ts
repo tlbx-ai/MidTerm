@@ -15,6 +15,8 @@ export interface ShortcutInput {
   metaKey: boolean;
 }
 
+export type CopyShortcutAction = 'copy' | 'sendKey' | 'ignore';
+
 /**
  * Resolve whether the event is a copy shortcut for the current style.
  */
@@ -27,6 +29,22 @@ export function isCopyShortcut(input: ShortcutInput, style: 'windows' | 'unix'):
   }
 
   return input.ctrlKey && input.shiftKey && !input.altKey && !input.metaKey;
+}
+
+/**
+ * Resolve whether a copy shortcut should copy the selection locally or pass
+ * through to the terminal as normal input (for example Ctrl+C => SIGINT).
+ */
+export function resolveCopyShortcutAction(
+  input: ShortcutInput,
+  style: 'windows' | 'unix',
+  hasSelection: boolean,
+): CopyShortcutAction {
+  if (!isCopyShortcut(input, style)) {
+    return 'ignore';
+  }
+
+  return hasSelection ? 'copy' : 'sendKey';
 }
 
 /**

@@ -113,6 +113,26 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_ScreenshotCapture_NormalizesColorFunctionsBeforeHtml2Canvas()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function normalizeCssColorFunctions", script, StringComparison.Ordinal);
+        Assert.Contains("function normalizeCloneCaptureColors", script, StringComparison.Ordinal);
+        Assert.Contains("function createNormalizedStyleReader", script, StringComparison.Ordinal);
+        Assert.Contains("function installComputedStyleColorNormalization", script, StringComparison.Ordinal);
+        Assert.Contains("value.indexOf(\"color(\")<0", script, StringComparison.Ordinal);
+        Assert.Contains("installComputedStyleColorNormalization(window)", script, StringComparison.Ordinal);
+        Assert.Contains("installComputedStyleColorNormalization(doc.defaultView||window)", script, StringComparison.Ordinal);
+        Assert.Contains("onclone:function(doc)", script, StringComparison.Ordinal);
+        Assert.Contains("normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window))", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_NavigationBridge_DeduplicatesAndCoalescesUpdates()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(
@@ -142,6 +162,9 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("params.get(\"__mtPreviewId\")", script, StringComparison.Ordinal);
         Assert.Contains("params.get(\"__mtPreviewToken\")", script, StringComparison.Ordinal);
         Assert.Contains("url.searchParams.has(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
+        Assert.Contains("params.get(\"__mtReloadToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.has(\"__mtReloadToken\")", script, StringComparison.Ordinal);
+        Assert.Contains("url.searchParams.delete(\"__mtReloadToken\")", script, StringComparison.Ordinal);
         Assert.Contains("url.searchParams.delete(\"__mtTargetRevision\")", script, StringComparison.Ordinal);
         Assert.Contains("history.replaceState(history.state,\"\",url.pathname+url.search+url.hash)", script, StringComparison.Ordinal);
         Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
@@ -152,8 +175,10 @@ public class WebPreviewProxyMiddlewareTests
     [Theory]
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
     [InlineData("?__mtTargetRevision=1", "")]
+    [InlineData("?__mtReloadToken=force-1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
+    [InlineData("?foo=1&__mtReloadToken=force-1&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
     [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
@@ -262,6 +287,31 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void RewriteRootRelativeModuleSpecifiers_AppendsReloadToken_WhenForcedReloadIsActive()
+    {
+        const string source = """
+            <script type="module">
+              import "/js/config.js";
+              export * from "/router/router-lib.js";
+            </script>
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteRootRelativeModuleSpecifiers(
+            source,
+            "/webpreview/route-1",
+            "force-123");
+
+        Assert.Contains(
+            "import \"/webpreview/route-1/js/config.js?__mtReloadToken=force-123\"",
+            rewritten,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "export * from \"/webpreview/route-1/router/router-lib.js?__mtReloadToken=force-123\"",
+            rewritten,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task InvokeAsync_FileTarget_ServesLocalHtmlDocument()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "midterm-webpreview-file-target", Guid.NewGuid().ToString("N"));
@@ -287,7 +337,8 @@ public class WebPreviewProxyMiddlewareTests
             await middleware.InvokeAsync(context);
 
             responseBody.Position = 0;
-            var html = await new StreamReader(responseBody, Encoding.UTF8).ReadToEndAsync();
+            using var reader = new StreamReader(responseBody, Encoding.UTF8);
+            var html = await reader.ReadToEndAsync(context.RequestAborted);
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
             Assert.Contains("<body>preview</body>", html, StringComparison.Ordinal);

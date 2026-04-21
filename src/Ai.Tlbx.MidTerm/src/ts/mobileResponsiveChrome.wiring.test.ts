@@ -9,6 +9,10 @@ const projectRoot = path.resolve(__dirname, '../..');
 const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
 const css = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
 const mainSource = readFileSync(path.join(projectRoot, 'src/ts/main.ts'), 'utf8');
+const mobileActionsSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/sessionTabs/mobileActions.ts'),
+  'utf8',
+);
 
 describe('mobile responsive chrome wiring', () => {
   it('nests the mobile tab strip inside the mobile topbar', () => {
@@ -18,18 +22,39 @@ describe('mobile responsive chrome wiring', () => {
   });
 
   it('toggles merged mobile topbar state from the active session', () => {
-    expect(mainSource).toContain("title?.toggleAttribute('hidden', Boolean(activeSessionId));");
-    expect(mainSource).toContain(
+    expect(mainSource).toContain("from './modules/sessionTabs/mobileActions'");
+    expect(mobileActionsSource).toContain("title?.toggleAttribute('hidden', Boolean(activeSessionId));");
+    expect(mobileActionsSource).toContain(
       "topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));",
     );
+    expect(mobileActionsSource).toContain("resolveSessionSurfaceMode(activeSession) === 'agent'");
+    expect(mobileActionsSource).toContain("activeSessionId !== null &&");
+    expect(mobileActionsSource).toContain("isTabAvailable(activeSessionId, 'agent');");
   });
 
-  it('keeps the smart input textarea on its own row only in mobile layouts', () => {
+  it('keeps mobile footer controls in the adaptive dock instead of hiding automation outright', () => {
     expect(css).toContain('.mobile-topbar.has-mobile-tabs .topbar-title {');
     expect(css).toContain('.mobile-topbar .mobile-tab-strip[hidden] {');
+    expect(css).toContain('.mobile-tab-pill[hidden] {');
+    expect(css).toContain('.mobile-topbar.has-mobile-tabs .topbar-actions {');
+    expect(css).toContain('background: var(--bg-terminal);');
+    expect(css).toContain('border-image: linear-gradient(');
     expect(css).toContain('@media (max-width: 768px) {');
-    expect(css).toContain('.smart-input-row {');
-    expect(css).toContain('order: -1;');
-    expect(css).toContain('flex: 1 0 100%;');
+    expect(html).toContain('id="adaptive-footer-dock"');
+    expect(css).toContain('.adaptive-footer-dock .manager-bar:not(.hidden) {');
+    expect(css).toContain('.adaptive-footer-context .touch-controller.embedded {');
+    expect(css).toContain('.adaptive-footer-context .touch-controller.embedded .touch-dismiss {');
+    expect(css).toContain(
+      ".adaptive-footer-dock[data-device='mobile'] .manager-bar {",
+    );
+    expect(css).toContain('--command-bay-control-height-mobile: 44px;');
+    expect(css).toContain('--command-bay-control-height: var(--command-bay-control-height-mobile);');
+    expect(css).toContain('min-height: 46px;');
+    expect(css).toContain('grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));');
+    expect(css).toContain('.adaptive-footer-context .smart-input-tools-strip {');
+    expect(css).toContain("bottom: calc(100% + var(--command-bay-gap));");
+    expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {");
+    expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {");
+    expect(css).toContain('position: sticky;');
   });
 });

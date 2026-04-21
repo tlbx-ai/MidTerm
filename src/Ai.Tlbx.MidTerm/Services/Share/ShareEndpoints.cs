@@ -38,6 +38,41 @@ public static class ShareEndpoints
             return Results.Json(response, AppJsonContext.Default.CreateShareLinkResponse);
         });
 
+        app.MapGet("/api/share/active", (int? limit) =>
+        {
+            var maxCount = Math.Clamp(limit ?? 6, 0, 6);
+            var sessions = sessionManager.GetSessionList().Sessions
+                .ToDictionary(session => session.Id, StringComparer.Ordinal);
+
+            var response = new ActiveShareGrantListResponse
+            {
+                Shares = shareGrantService.GetActiveGrants(maxCount)
+                    .Select(grant =>
+                    {
+                        sessions.TryGetValue(grant.SessionId, out var session);
+                        return new ActiveShareGrantInfo
+                        {
+                            GrantId = grant.GrantId,
+                            SessionId = grant.SessionId,
+                            SessionName = session?.Name ?? session?.TerminalTitle ?? grant.SessionId,
+                            Mode = grant.Mode,
+                            CreatedAtUtc = grant.CreatedAtUtc,
+                            ExpiresAtUtc = grant.ExpiresAtUtc
+                        };
+                    })
+                    .ToList()
+            };
+
+            return Results.Json(response, AppJsonContext.Default.ActiveShareGrantListResponse);
+        });
+
+        app.MapDelete("/api/share/{grantId}", (string grantId) =>
+        {
+            return shareGrantService.RevokeGrant(grantId)
+                ? Results.NoContent()
+                : Results.NotFound();
+        });
+
         app.MapPost("/api/share/claim", (ClaimShareRequest request, HttpContext ctx) =>
         {
             if (!shareGrantService.TryClaim(request.GrantId, request.Secret, out var access, out var cookieValue))
@@ -99,6 +134,9 @@ public static class ShareEndpoints
     {
         var shared = MidTermSettingsPublic.FromSettings(settings);
         shared.DefaultWorkingDirectory = "";
+        shared.TerminalEnvironmentVariables = "";
+        shared.CodexEnvironmentVariables = "";
+        shared.ClaudeEnvironmentVariables = "";
         shared.RunAsUser = null;
         shared.RunAsUserSid = null;
         shared.AuthenticationEnabled = false;

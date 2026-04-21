@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Net.Sockets;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -47,7 +48,7 @@ public static class WelcomeScreen
         Console.ResetColor();
         Console.WriteLine();
 
-        Console.WriteLine($"  Listening on https://{bindAddress}:{port}");
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  Listening on https://{bindAddress}:{port}"));
         Console.WriteLine();
 
         switch (settingsService.LoadStatus)
@@ -145,7 +146,7 @@ public static class WelcomeScreen
             Log.Error(() => "Certificate: FAILED to load - HTTPS will not work!");
         }
 
-        Log.Info(() => $"Binding: https://{bindAddress}:{port}");
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Binding: https://{bindAddress}:{port}"));
     }
 
     public static void RunWithPortErrorHandling(
@@ -154,7 +155,7 @@ public static class WelcomeScreen
         string bindAddress,
         Action<string, bool>? writeEventLog = null)
     {
-        writeEventLog?.Invoke($"RunWithPortErrorHandling: About to call app.Run with configured URLs (main https://{bindAddress}:{port})", false);
+        writeEventLog?.Invoke(string.Create(CultureInfo.InvariantCulture, $"RunWithPortErrorHandling: About to call app.Run with configured URLs (main https://{bindAddress}:{port})"), false);
 
         try
         {
@@ -170,12 +171,12 @@ public static class WelcomeScreen
                 : "mt --port 2001";
 
             writeEventLog?.Invoke(
-                $"RunWithPortErrorHandling: Failed to bind https://{bindAddress}:{port} ({socketEx.SocketErrorCode})",
+                string.Create(CultureInfo.InvariantCulture, $"RunWithPortErrorHandling: Failed to bind https://{bindAddress}:{port} ({socketEx.SocketErrorCode})"),
                 true);
-            Log.Error(() => $"Failed to bind https://{bindAddress}:{port}: {socketEx.SocketErrorCode}. Exiting.");
+            Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"Failed to bind https://{bindAddress}:{port}: {socketEx.SocketErrorCode}. Exiting."));
 
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"  Error: MidTerm could not bind to https://{bindAddress}:{port}.");
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  Error: MidTerm could not bind to https://{bindAddress}:{port}."));
             Console.ResetColor();
             Console.WriteLine();
             Console.WriteLine("  The port is already in use, reserved, or blocked by OS permissions.");
@@ -186,7 +187,7 @@ public static class WelcomeScreen
                 Console.WriteLine("    - Run npx without --port to let the launcher choose a free port");
             }
             Console.WriteLine($"    - Use a different port manually: {manualCommand}");
-            Console.WriteLine($"    - Close the application using port {port}");
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"    - Close the application using port {port}"));
             Console.WriteLine();
             Environment.Exit(1);
         }

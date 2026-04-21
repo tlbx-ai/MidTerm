@@ -34,7 +34,7 @@ public sealed class WindowsNamedPipeServer : IIpcServer
             PipeOptions.Asynchronous);
 
         await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-        return new NamedPipeConnection(pipe);
+        return NamedPipeConnection.CreateOwned(pipe);
     }
 
     public void Dispose()
@@ -45,22 +45,29 @@ public sealed class WindowsNamedPipeServer : IIpcServer
 
     private sealed class NamedPipeConnection : IIpcClientConnection
     {
-        private readonly NamedPipeServerStream _pipe;
-        private bool _disposed;
+        private NamedPipeServerStream? _pipe;
 
-        public NamedPipeConnection(NamedPipeServerStream pipe)
+        private NamedPipeConnection()
         {
-            _pipe = pipe;
         }
 
-        public Stream Stream => _pipe;
-        public bool IsConnected => !_disposed && _pipe.IsConnected;
+        public static NamedPipeConnection CreateOwned(NamedPipeServerStream pipe)
+        {
+            return new NamedPipeConnection
+            {
+                _pipe = pipe
+            };
+        }
+
+        public Stream Stream => _pipe ?? throw new ObjectDisposedException(nameof(NamedPipeConnection));
+        public bool IsConnected => _pipe is { IsConnected: true };
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-            try { _pipe.Dispose(); } catch { }
+            var pipe = _pipe;
+            _pipe = null;
+            if (pipe is null) return;
+            try { pipe.Dispose(); } catch { }
         }
     }
 }
@@ -107,8 +114,9 @@ public sealed class UnixSocketServer : IIpcServer
         if (_disposed) return;
         _disposed = true;
 
-        try { _listener?.Close(); } catch { }
+        var listener = _listener;
         _listener = null;
+        try { listener?.Dispose(); } catch { }
 
         try
         {

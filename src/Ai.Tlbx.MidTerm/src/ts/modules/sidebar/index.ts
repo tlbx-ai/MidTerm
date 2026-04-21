@@ -5,12 +5,13 @@
  * rendering and sidebar collapse/expand behavior.
  */
 
-export * from './sessionList';
+export * from './spacesTreeSidebar';
 export * from './collapse';
 export * from './shareAccess';
 export * from './networkSection';
 export * from './voiceSection';
 export * from './sidebarUpdater';
 export * from './sessionDrag';
+export { syncSidebarNavButtons } from './sidebarNav';
 export { initTrafficIndicator } from './trafficIndicator';
 export { initHeatIndicator, recordBytes, suppressAllHeat } from './heatIndicator';

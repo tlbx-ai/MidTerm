@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 
@@ -20,15 +21,15 @@ internal static class LensHostTestClient
 
     public static async Task<LensHostCommandResultEnvelope> ReadResultAsync(
         StreamReader reader,
-        Queue<LensHostEventEnvelope> pendingEvents,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
         string? expectedCommandId = null)
     {
         while (true)
         {
             var message = await ReadMessageAsync(reader);
-            if (message.Event is not null)
+            if (message.Patch is not null)
             {
-                pendingEvents.Enqueue(message.Event);
+                pendingPatches.Enqueue(message.Patch);
                 continue;
             }
 
@@ -45,70 +46,181 @@ internal static class LensHostTestClient
         }
     }
 
-    public static async Task<LensHostEventEnvelope> ReadEventAsync(
+    public static async Task<LensHostHistoryPatchEnvelope> ReadPatchAsync(
         StreamReader reader,
-        Queue<LensHostEventEnvelope> pendingEvents)
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches)
     {
-        if (pendingEvents.Count > 0)
+        return await ReadPatchAsync(reader, pendingPatches, TimeSpan.FromSeconds(30));
+    }
+
+    public static async Task<LensHostHistoryPatchEnvelope> ReadPatchAsync(
+        StreamReader reader,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        TimeSpan timeout)
+    {
+        if (pendingPatches.Count > 0)
         {
-            return pendingEvents.Dequeue();
+            return pendingPatches.Dequeue();
         }
 
         while (true)
         {
-            var message = await ReadMessageAsync(reader);
-            if (message.Event is not null)
+            var message = await ReadMessageAsync(reader, timeout);
+            if (message.Patch is not null)
             {
-                return message.Event;
+                return message.Patch;
             }
         }
     }
 
-    public static async Task<IReadOnlyList<LensHostEventEnvelope>> ReadUntilAsync(
+    public static async Task<IReadOnlyList<LensHostHistoryPatchEnvelope>> ReadUntilAsync(
         StreamReader reader,
-        Queue<LensHostEventEnvelope> pendingEvents,
-        Func<LensHostEventEnvelope, bool> predicate,
-        int maxEvents)
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        Func<LensHostHistoryPatchEnvelope, bool> predicate,
+        int maxPatches)
     {
-        var events = new List<LensHostEventEnvelope>();
-        while (events.Count < maxEvents)
+        var patches = new List<LensHostHistoryPatchEnvelope>();
+        while (patches.Count < maxPatches)
         {
-            var envelope = await ReadEventAsync(reader, pendingEvents);
-            events.Add(envelope);
+            var envelope = await ReadPatchAsync(reader, pendingPatches);
+            patches.Add(envelope);
             if (predicate(envelope))
             {
                 break;
             }
         }
 
-        return events;
+        return patches;
     }
 
-    public static async Task<IReadOnlyList<LensHostEventEnvelope>> ReadEventsAsync(
+    public static async Task<IReadOnlyList<LensHostHistoryPatchEnvelope>> ReadUntilMatchAsync(
         StreamReader reader,
-        Queue<LensHostEventEnvelope> pendingEvents,
-        int count)
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        Func<LensHostHistoryPatchEnvelope, bool> predicate,
+        int maxPatches = 64,
+        TimeSpan? timeout = null)
     {
-        var events = new List<LensHostEventEnvelope>(count);
-        while (events.Count < count)
+        var patches = new List<LensHostHistoryPatchEnvelope>();
+        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
+
+        while (patches.Count < maxPatches)
         {
-            events.Add(await ReadEventAsync(reader, pendingEvents));
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            var envelope = await ReadPatchAsync(reader, pendingPatches, remaining);
+            patches.Add(envelope);
+            if (predicate(envelope))
+            {
+                return patches;
+            }
         }
 
-        return events;
+        throw new TimeoutException(
+            $"Timed out waiting for a matching Lens host patch. Saw {patches.Count} patch(es): {string.Join(", ", patches.Select(static envelope => envelope.Patch.CurrentTurn.State))}");
     }
 
-    private static async Task<LensHostMessage> ReadMessageAsync(StreamReader reader)
+    public static async Task<IReadOnlyList<LensHostHistoryPatchEnvelope>> ReadPatchesAsync(
+        StreamReader reader,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        int count)
     {
-        var line = await ReadLineWithTimeoutAsync(reader);
+        var patches = new List<LensHostHistoryPatchEnvelope>(count);
+        while (patches.Count < count)
+        {
+            patches.Add(await ReadPatchAsync(reader, pendingPatches));
+        }
+
+        return patches;
+    }
+
+    public static async Task<LensHistoryWindowResponse> GetHistoryWindowAsync(
+        StreamReader reader,
+        StreamWriter writer,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        string sessionId,
+        int? startIndex = null,
+        int? count = null,
+        int? viewportWidth = null,
+        string? commandId = null)
+    {
+        var requestCommandId = string.IsNullOrWhiteSpace(commandId)
+            ? $"cmd-history-{Guid.NewGuid():N}"
+            : commandId;
+
+        await WriteCommandAsync(writer, new LensHostCommandEnvelope
+        {
+            CommandId = requestCommandId,
+            SessionId = sessionId,
+            Type = "history.window.get",
+            HistoryWindow = new LensHostHistoryWindowRequest
+            {
+                StartIndex = startIndex,
+                Count = count,
+                ViewportWidth = viewportWidth
+            }
+        });
+
+        var result = await ReadResultAsync(reader, pendingPatches, requestCommandId);
+        return result.HistoryWindow
+               ?? throw new InvalidOperationException("mtagenthost did not return a history window.");
+    }
+
+    public static async Task<LensHistoryWindowResponse> WaitForHistoryWindowAsync(
+        StreamReader reader,
+        StreamWriter writer,
+        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        string sessionId,
+        Func<LensHistoryWindowResponse, bool> predicate,
+        TimeSpan timeout,
+        int? count = null)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var window = await GetHistoryWindowAsync(reader, writer, pendingPatches, sessionId, count: count);
+            if (predicate(window))
+            {
+                return window;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException($"Timed out waiting for a matching history window for Lens session '{sessionId}'.");
+    }
+
+    public static string CollectAssistantText(LensHistoryWindowResponse window)
+    {
+        var completedAssistantMessages = window.History
+            .Where(static item =>
+                string.Equals(item.ItemType, "assistant_message", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(item.Body))
+            .Select(static item => item.Body)
+            .ToList();
+
+        if (completedAssistantMessages.Count > 0)
+        {
+            return string.Join(Environment.NewLine, completedAssistantMessages);
+        }
+
+        return window.Streams.AssistantText;
+    }
+
+    private static async Task<LensHostMessage> ReadMessageAsync(StreamReader reader, TimeSpan? timeout = null)
+    {
+        var line = await ReadLineWithTimeoutAsync(reader, timeout);
         using var json = JsonDocument.Parse(line);
         var root = json.RootElement;
-        if (root.TryGetProperty("event", out _))
+        if (root.TryGetProperty("patch", out _))
         {
             return new LensHostMessage
             {
-                Event = JsonSerializer.Deserialize(line, LensHostJsonContext.Default.LensHostEventEnvelope)
-                        ?? throw new InvalidOperationException("Failed to deserialize Lens host event.")
+                Patch = JsonSerializer.Deserialize(line, LensHostJsonContext.Default.LensHostHistoryPatchEnvelope)
+                        ?? throw new InvalidOperationException("Failed to deserialize Lens host history patch.")
             };
         }
 
@@ -124,10 +236,18 @@ internal static class LensHostTestClient
         throw new InvalidOperationException("Unexpected Lens host message payload.");
     }
 
-    private static async Task<string> ReadLineWithTimeoutAsync(StreamReader reader)
+    private static async Task<string> ReadLineWithTimeoutAsync(StreamReader reader, TimeSpan? timeout = null)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var line = await reader.ReadLineAsync(cts.Token).AsTask();
+        var readTask = reader.ReadLineAsync();
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
+        var completed = await Task.WhenAny(readTask, Task.Delay(effectiveTimeout));
+        if (!ReferenceEquals(completed, readTask))
+        {
+            var secondsText = effectiveTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+            throw new TimeoutException($"Timed out waiting {secondsText}s for mtagenthost stdout.");
+        }
+
+        var line = await readTask;
         return line ?? throw new EndOfStreamException("mtagenthost closed stdout unexpectedly.");
     }
 
@@ -135,6 +255,6 @@ internal static class LensHostTestClient
     {
         public LensHostCommandResultEnvelope? Result { get; init; }
 
-        public LensHostEventEnvelope? Event { get; init; }
+        public LensHostHistoryPatchEnvelope? Patch { get; init; }
     }
 }

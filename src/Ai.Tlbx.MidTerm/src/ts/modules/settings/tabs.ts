@@ -7,24 +7,28 @@
 import { startLatencyMeasurement, stopLatencyMeasurement } from '../diagnostics';
 
 export type SettingsTab =
-  | 'general'
-  | 'hub'
+  | 'updates'
+  | 'sessions'
   | 'appearance'
-  | 'agent-ui'
-  | 'behavior'
+  | 'workflow'
+  | 'terminal'
+  | 'ai-agents'
   | 'security'
-  | 'diagnostics';
+  | 'connected-hosts'
+  | 'advanced';
 
 const STORAGE_KEY = 'settings-tab';
-const DEFAULT_TAB: SettingsTab = 'general';
+const DEFAULT_TAB: SettingsTab = 'updates';
 const VALID_TABS: SettingsTab[] = [
-  'general',
-  'hub',
+  'updates',
+  'sessions',
   'appearance',
-  'agent-ui',
-  'behavior',
+  'workflow',
+  'terminal',
+  'ai-agents',
   'security',
-  'diagnostics',
+  'connected-hosts',
+  'advanced',
 ];
 
 let activeTab: SettingsTab = DEFAULT_TAB;
@@ -58,7 +62,7 @@ export function switchSettingsTab(tab: SettingsTab): void {
     panel.classList.toggle('hidden', !isActive);
   });
 
-  if (tab === 'diagnostics') {
+  if (tab === 'advanced') {
     startLatencyMeasurement();
   } else {
     stopLatencyMeasurement();
@@ -79,8 +83,8 @@ function bindTabEvents(): void {
 }
 
 function restoreLastTab(): void {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved && isValidTab(saved)) {
+  const saved = normalizeStoredSettingsTab(localStorage.getItem(STORAGE_KEY));
+  if (saved) {
     switchSettingsTab(saved);
   } else {
     switchSettingsTab(DEFAULT_TAB);
@@ -89,4 +93,33 @@ function restoreLastTab(): void {
 
 function isValidTab(tab: string): tab is SettingsTab {
   return VALID_TABS.includes(tab as SettingsTab);
+}
+
+export function normalizeStoredSettingsTab(tab: string | null): SettingsTab | null {
+  switch (tab) {
+    case null:
+      return null;
+    case 'general':
+      return 'updates';
+    case 'hub':
+      return 'connected-hosts';
+    case 'appearance':
+      return 'appearance';
+    case 'command-bay':
+      return 'workflow';
+    case 'terminal':
+      return 'terminal';
+    case 'agent':
+      return 'ai-agents';
+    case 'security':
+      return 'security';
+    case 'diagnostics':
+      return 'advanced';
+    case 'behavior':
+      return 'workflow';
+    case 'agent-ui':
+      return 'ai-agents';
+    default:
+      return tab && isValidTab(tab) ? tab : null;
+  }
 }

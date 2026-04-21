@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -19,21 +20,27 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         string endpoint,
         string loadedThreadId,
         string assistantReply,
-        bool emitRichTranscriptItems,
+        bool emitRichHistoryItems,
         bool emitTurnIds,
         bool emitLateDiffAfterCompletion,
-        bool emitMcpToolProgress)
+        bool emitMcpToolProgress,
+        bool emitUnknownAgentNotification,
+        bool emitBackgroundTerminalWaitNotification,
+        bool emitMcpStartupStatus)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
         AssistantReply = assistantReply;
-        EmitRichTranscriptItems = emitRichTranscriptItems;
+        EmitRichHistoryItems = emitRichHistoryItems;
         EmitTurnIds = emitTurnIds;
         EmitLateDiffAfterCompletion = emitLateDiffAfterCompletion;
         EmitMcpToolProgress = emitMcpToolProgress;
+        EmitUnknownAgentNotification = emitUnknownAgentNotification;
+        EmitBackgroundTerminalWaitNotification = emitBackgroundTerminalWaitNotification;
+        EmitMcpStartupStatus = emitMcpStartupStatus;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
-        _acceptLoopTask = Task.Run(AcceptLoopAsync);
+        _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
     }
 
     public string Endpoint { get; }
@@ -42,7 +49,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public string AssistantReply { get; }
 
-    public bool EmitRichTranscriptItems { get; }
+    public bool EmitRichHistoryItems { get; }
 
     public bool EmitTurnIds { get; }
 
@@ -50,16 +57,35 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitMcpToolProgress { get; }
 
+    public bool EmitUnknownAgentNotification { get; }
+
+    public bool EmitBackgroundTerminalWaitNotification { get; }
+
+    public bool EmitMcpStartupStatus { get; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
-        bool emitRichTranscriptItems = false,
+        bool emitRichHistoryItems = false,
         bool emitTurnIds = false,
         bool emitLateDiffAfterCompletion = false,
-        bool emitMcpToolProgress = false)
+        bool emitMcpToolProgress = false,
+        bool emitUnknownAgentNotification = false,
+        bool emitBackgroundTerminalWaitNotification = false,
+        bool emitMcpStartupStatus = false)
     {
-        var endpoint = $"ws://127.0.0.1:{GetFreePort()}/";
-        return new FakeCodexWebSocketServer(endpoint, loadedThreadId, assistantReply, emitRichTranscriptItems, emitTurnIds, emitLateDiffAfterCompletion, emitMcpToolProgress);
+        var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
+        return new FakeCodexWebSocketServer(
+            endpoint,
+            loadedThreadId,
+            assistantReply,
+            emitRichHistoryItems,
+            emitTurnIds,
+            emitLateDiffAfterCompletion,
+            emitMcpToolProgress,
+            emitUnknownAgentNotification,
+            emitBackgroundTerminalWaitNotification,
+            emitMcpStartupStatus);
     }
 
     public async ValueTask DisposeAsync()
@@ -193,6 +219,19 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitMcpStartupStatus)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "mcpServer/startupStatus/updated",
+                                @params = new
+                                {
+                                    name = "codex_apps",
+                                    status = "starting",
+                                    error = (string?)null
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "thread/start" when id is not null:
@@ -207,6 +246,19 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitMcpStartupStatus)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "mcpServer/startupStatus/updated",
+                                @params = new
+                                {
+                                    name = "codex_apps",
+                                    status = "starting",
+                                    error = (string?)null
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "turn/start" when id is not null:
@@ -236,7 +288,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
-                        if (EmitRichTranscriptItems)
+                        if (EmitRichHistoryItems)
                         {
                             await SendJsonAsync(socket, new
                             {
@@ -339,6 +391,40 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                     }
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
+                            if (EmitBackgroundTerminalWaitNotification)
+                            {
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "codex/event/background_terminal_wait",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        itemId = "item-command-1",
+                                        msg = new
+                                        {
+                                            turn_id = turnId,
+                                            item_id = "item-command-1",
+                                            text = "Waited for background terminal  npm run lint"
+                                        }
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                            }
+                            if (EmitUnknownAgentNotification)
+                            {
+                                await SendJsonAsync(socket, new
+                                {
+                                    method = "codex/event/unhandled_notification",
+                                    @params = new
+                                    {
+                                        turnId = EmitTurnIds ? turnId : null,
+                                        msg = new
+                                        {
+                                            turn_id = turnId,
+                                            text = "Unhandled codex event for fallback coverage"
+                                        }
+                                    }
+                                }, _shutdown.Token).ConfigureAwait(false);
+                            }
                             await SendJsonAsync(socket, new
                             {
                                 method = "item/completed",
@@ -385,7 +471,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 delta = AssistantReply
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
-                        if (EmitRichTranscriptItems)
+                        if (EmitRichHistoryItems)
                         {
                             await SendJsonAsync(socket, new
                             {
@@ -490,8 +576,10 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         }
 
         var parts = new List<string>();
-        foreach (var entry in input.EnumerateArray())
+        using var entries = input.EnumerateArray();
+        while (entries.MoveNext())
         {
+            var entry = entries.Current;
             var text = GetString(entry, "text");
             if (!string.IsNullOrWhiteSpace(text))
             {

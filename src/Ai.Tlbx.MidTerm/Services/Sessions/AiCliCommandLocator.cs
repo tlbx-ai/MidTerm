@@ -5,8 +5,11 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 internal static partial class AiCliCommandLocator
 {
-    [GeneratedRegex(@"(?ix)(?<path>[A-Z]:[^\r\n""']*?node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js)")]
+    [GeneratedRegex(@"(?ix)(?<path>[A-Z]:[^\r\n""']*?node_modules[\\/]@openai[\\/]codex[\\/]bin[\\/]codex\.js)", RegexOptions.None, 1000)]
     private static partial Regex CodexScriptPathRegex();
+
+    [GeneratedRegex(@"[A-Za-z]:\\[^\r\n""']+", RegexOptions.None, 1000)]
+    private static partial Regex AbsoluteWindowsPathTokenRegex();
 
     public static string? ResolveExecutablePath(string profile, SessionInfoDto session, string? userProfileDirectory = null)
     {
@@ -113,7 +116,8 @@ internal static partial class AiCliCommandLocator
 
     internal static IReadOnlyList<string> GetUserCommandDirectories(string? userProfileDirectory)
     {
-        if (string.IsNullOrWhiteSpace(userProfileDirectory))
+        var profileDirectory = ResolveEffectiveUserProfileDirectory(userProfileDirectory);
+        if (string.IsNullOrWhiteSpace(profileDirectory))
         {
             return [];
         }
@@ -137,19 +141,52 @@ internal static partial class AiCliCommandLocator
             target.Add(normalized);
         }
 
-        AddDirectory(directories, seen, Path.Combine(userProfileDirectory, ".local", "bin"));
+        AddDirectory(directories, seen, Path.Combine(profileDirectory, ".local", "bin"));
+
+        if (!OperatingSystem.IsWindows())
+        {
+            AddDirectory(directories, seen, Path.Combine(profileDirectory, "bin"));
+            return directories;
+        }
 
         if (OperatingSystem.IsWindows())
         {
-            var appDataDirectory = Path.Combine(userProfileDirectory, "AppData", "Roaming");
-            var localAppDataDirectory = Path.Combine(userProfileDirectory, "AppData", "Local");
-            foreach (var directory in GetWellKnownWindowsCommandDirectories(appDataDirectory, localAppDataDirectory, userProfileDirectory))
+            var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
+            var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
+            foreach (var directory in GetWellKnownWindowsCommandDirectories(appDataDirectory, localAppDataDirectory, profileDirectory))
             {
                 AddDirectory(directories, seen, directory);
             }
         }
 
         return directories;
+    }
+
+    internal static IReadOnlyList<string> GetWellKnownUnixCommandDirectories()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
+        return
+        [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/opt/local/bin",
+            "/opt/local/sbin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ];
+    }
+
+    internal static string BuildFallbackPath(string? userProfileDirectory = null)
+    {
+        return string.Join(Path.PathSeparator, EnumerateFallbackDirectories(userProfileDirectory));
     }
 
     internal static IReadOnlyList<string> GetWellKnownWindowsCommandDirectories(
@@ -202,7 +239,7 @@ internal static partial class AiCliCommandLocator
 
     private static IEnumerable<string> ExtractAbsolutePathTokens(string commandLine)
     {
-        foreach (Match match in Regex.Matches(commandLine, @"[A-Za-z]:\\[^\r\n""']+"))
+        foreach (Match match in AbsoluteWindowsPathTokenRegex().Matches(commandLine))
         {
             if (match.Success)
             {
@@ -250,6 +287,67 @@ internal static partial class AiCliCommandLocator
                 yield return directory;
             }
         }
+
+        foreach (var directory in GetWellKnownUnixCommandDirectories())
+        {
+            if (seen.Add(directory))
+            {
+                yield return directory;
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateFallbackDirectories(string? userProfileDirectory)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var directory in GetUserCommandDirectories(userProfileDirectory))
+        {
+            if (seen.Add(directory))
+            {
+                yield return directory;
+            }
+        }
+
+        foreach (var directory in GetWellKnownWindowsCommandDirectories(
+                     Environment.GetEnvironmentVariable("APPDATA"),
+                     Environment.GetEnvironmentVariable("LOCALAPPDATA"),
+                     Environment.GetEnvironmentVariable("USERPROFILE")))
+        {
+            if (seen.Add(directory))
+            {
+                yield return directory;
+            }
+        }
+
+        foreach (var directory in GetWellKnownUnixCommandDirectories())
+        {
+            if (seen.Add(directory))
+            {
+                yield return directory;
+            }
+        }
+    }
+
+    private static string? ResolveEffectiveUserProfileDirectory(string? userProfileDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(userProfileDirectory))
+        {
+            return userProfileDirectory;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        var home = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrWhiteSpace(home))
+        {
+            return home;
+        }
+
+        var currentProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return string.IsNullOrWhiteSpace(currentProfile) ? null : currentProfile;
     }
 
     private static string? TryCombine(string? root, params string[] parts)

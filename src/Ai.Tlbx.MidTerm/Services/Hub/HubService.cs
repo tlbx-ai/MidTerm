@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Security;
@@ -7,8 +8,12 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.Hub;
+using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Models.Certificates;
@@ -239,7 +244,7 @@ public sealed class HubService
     {
         var machine = GetRequiredMachine(machineId);
         await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
-        var response = await remote.Client.PostAsJsonAsync(
+        using var response = await remote.Client.PostAsJsonAsync(
             "/api/sessions",
             request,
             AppJsonContext.Default.CreateSessionRequest,
@@ -253,7 +258,7 @@ public sealed class HubService
     {
         var machine = GetRequiredMachine(machineId);
         await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
-        var response = await remote.Client.DeleteAsync($"/api/sessions/{Uri.EscapeDataString(sessionId)}", ct);
+        using var response = await remote.Client.DeleteAsync($"/api/sessions/{Uri.EscapeDataString(sessionId)}", ct);
         await EnsureSuccessAsync(response, ct);
     }
 
@@ -265,12 +270,249 @@ public sealed class HubService
     {
         var machine = GetRequiredMachine(machineId);
         await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
-        var response = await remote.Client.PutAsJsonAsync(
+        using var response = await remote.Client.PutAsJsonAsync(
             $"/api/sessions/{Uri.EscapeDataString(sessionId)}/name",
             request,
             AppJsonContext.Default.RenameSessionRequest,
             ct);
         await EnsureSuccessAsync(response, ct);
+    }
+
+    public async Task<LauncherPathResponse> GetLauncherHomeAsync(string machineId, CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync("/api/files/picker/home", ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherPathResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker home response was empty.");
+    }
+
+    public async Task<LauncherDirectoryListResponse> GetLauncherRootsAsync(
+        string machineId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync("/api/files/picker/roots", ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryListResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker roots response was empty.");
+    }
+
+    public async Task<LauncherDirectoryListResponse> GetLauncherDirectoriesAsync(
+        string machineId,
+        string path,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync(
+            $"/api/files/picker/directories?path={Uri.EscapeDataString(path)}",
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryListResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker directories response was empty.");
+    }
+
+    public async Task<LauncherDirectoryAccessResponse> GetLauncherWritableAsync(
+        string machineId,
+        string path,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync(
+            $"/api/files/picker/writable?path={Uri.EscapeDataString(path)}",
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryAccessResponse, ct)
+            ?? throw new InvalidOperationException("Remote picker writable response was empty.");
+    }
+
+    public async Task<LauncherDirectoryMutationResponse> CreateLauncherFolderAsync(
+        string machineId,
+        LauncherCreateDirectoryRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/files/picker/folders",
+            request,
+            AppJsonContext.Default.LauncherCreateDirectoryRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryMutationResponse, ct)
+            ?? throw new InvalidOperationException("Remote create-folder response was empty.");
+    }
+
+    public async Task<LauncherDirectoryMutationResponse> CloneLauncherRepositoryAsync(
+        string machineId,
+        LauncherCloneRepositoryRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/files/picker/clone",
+            request,
+            AppJsonContext.Default.LauncherCloneRepositoryRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.LauncherDirectoryMutationResponse, ct)
+            ?? throw new InvalidOperationException("Remote clone response was empty.");
+    }
+
+    public async Task<List<SpaceSummaryDto>> GetSpacesAsync(
+        string machineId,
+        bool includeWorkspaces = true,
+        bool pinnedOnly = false,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        var query = $"/api/spaces?includeWorkspaces={(includeWorkspaces ? "true" : "false")}&pinnedOnly={(pinnedOnly ? "true" : "false")}";
+        using var response = await remote.Client.GetAsync(query, ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.ListSpaceSummaryDto, ct)
+            ?? [];
+    }
+
+    public async Task<SpaceSummaryDto> ImportSpaceAsync(
+        string machineId,
+        SpaceImportRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/spaces/import",
+            request,
+            AppJsonContext.Default.SpaceImportRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote space import response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> UpdateSpaceAsync(
+        string machineId,
+        string spaceId,
+        SpaceUpdateRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PatchAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}",
+            request,
+            AppJsonContext.Default.SpaceUpdateRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote space update response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> InitGitSpaceAsync(
+        string machineId,
+        string spaceId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/git/init",
+            content: null,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote space init response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> CreateWorktreeAsync(
+        string machineId,
+        string spaceId,
+        SpaceCreateWorktreeRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/worktrees",
+            request,
+            AppJsonContext.Default.SpaceCreateWorktreeRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote worktree response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> UpdateWorkspaceAsync(
+        string machineId,
+        string spaceId,
+        string workspaceKey,
+        SpaceUpdateWorkspaceRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PatchAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/workspaces/{Uri.EscapeDataString(workspaceKey)}",
+            request,
+            AppJsonContext.Default.SpaceUpdateWorkspaceRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote workspace update response was empty.");
+    }
+
+    public async Task<SpaceSummaryDto> DeleteWorktreeAsync(
+        string machineId,
+        string spaceId,
+        string workspaceKey,
+        bool force,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.DeleteAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/workspaces/{Uri.EscapeDataString(workspaceKey)}?force={(force ? "true" : "false")}",
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SpaceSummaryDto, ct)
+            ?? throw new InvalidOperationException("Remote worktree delete response was empty.");
+    }
+
+    public async Task<SessionInfoDto> LaunchSpaceAsync(
+        string machineId,
+        string spaceId,
+        string workspaceKey,
+        SpaceLaunchRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            $"/api/spaces/{Uri.EscapeDataString(spaceId)}/workspaces/{Uri.EscapeDataString(workspaceKey)}/launch",
+            request,
+            AppJsonContext.Default.SpaceLaunchRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.SessionInfoDto, ct)
+            ?? throw new InvalidOperationException("Remote space launch response was empty.");
+    }
+
+    public async Task<List<LaunchEntry>> GetRecentsAsync(string machineId, int count = 6, CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.GetAsync(
+            string.Create(CultureInfo.InvariantCulture, $"/api/recents?count={count}"),
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.ListLaunchEntry, ct)
+            ?? [];
     }
 
     public async Task<HubUpdateRolloutResponse> ApplyUpdatesAsync(
@@ -296,9 +538,7 @@ public sealed class HubService
 
             try
             {
-                await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
-                var httpResponse = await remote.Client.PostAsync("/api/update/apply", content: null, ct);
-                await EnsureSuccessAsync(httpResponse, ct);
+                await ApplyUpdateAsync(machine, ct).ConfigureAwait(false);
                 response.Results.Add(new HubUpdateRolloutItem
                 {
                     MachineId = machine.Id,
@@ -320,6 +560,13 @@ public sealed class HubService
         }
 
         return response;
+    }
+
+    private async Task ApplyUpdateAsync(HubMachineSettings machine, CancellationToken ct)
+    {
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var httpResponse = await remote.Client.PostAsync("/api/update/apply", content: null, ct);
+        await EnsureSuccessAsync(httpResponse, ct);
     }
 
     public async Task ConfigureRemoteWebSocketAsync(
@@ -344,10 +591,10 @@ public sealed class HubService
 
         var baseUri = new Uri(machine.BaseUrl, UriKind.Absolute);
         string? capturedFingerprint = null;
-        socket.Options.RemoteCertificateValidationCallback = (_, certificate, _, _) =>
+        socket.Options.RemoteCertificateValidationCallback = (_, certificate, _, sslPolicyErrors) =>
         {
             capturedFingerprint = FormatFingerprint(certificate);
-            return true;
+            return IsRemoteCertificateTrusted(machine, requireTrusted, capturedFingerprint, sslPolicyErrors);
         };
 
         await using var preflight = await CreateRemoteContextAsync(machine, requireTrusted, ct);
@@ -513,6 +760,26 @@ public sealed class HubService
         }
     }
 
+    private static bool IsRemoteCertificateTrusted(
+        HubMachineSettings machine,
+        bool requireTrusted,
+        string? fingerprint,
+        SslPolicyErrors sslPolicyErrors)
+    {
+        if (!requireTrusted)
+        {
+            return true;
+        }
+
+        var pinnedFingerprint = NormalizeFingerprint(machine.PinnedFingerprint);
+        if (!string.IsNullOrWhiteSpace(pinnedFingerprint))
+        {
+            return !HasPinnedMismatch(pinnedFingerprint, fingerprint);
+        }
+
+        return sslPolicyErrors == SslPolicyErrors.None;
+    }
+
     private HubMachineInfo ToMachineInfo(HubMachineSettings machine)
     {
         return new HubMachineInfo
@@ -597,103 +864,110 @@ public sealed class HubService
         bool requireTrusted,
         CancellationToken ct)
     {
-        var handler = new HttpClientHandler
+        RemoteContext? remoteContext = null;
+
+        try
         {
-            CookieContainer = new CookieContainer(),
-            ServerCertificateCustomValidationCallback = (_, certificate, _, _) =>
+            remoteContext = RemoteContext.Create(machine.BaseUrl);
+            var ownedClient = remoteContext.Client;
+            string? capturedFingerprint = null;
+            ownedClient.Handler.ServerCertificateCustomValidationCallback = (_, certificate, _, sslPolicyErrors) =>
             {
-                return true;
-            }
-        };
+                capturedFingerprint = FormatFingerprint(certificate);
+                return HasPinnedFingerprint(machine.PinnedFingerprint)
+                    ? string.Equals(
+                        NormalizeFingerprint(machine.PinnedFingerprint),
+                        NormalizeFingerprint(capturedFingerprint),
+                        StringComparison.Ordinal)
+                    : sslPolicyErrors == SslPolicyErrors.None;
+            };
 
-        string? capturedFingerprint = null;
-        handler.ServerCertificateCustomValidationCallback = (_, certificate, _, _) =>
-        {
-            capturedFingerprint = FormatFingerprint(certificate);
-            return true;
-        };
+            var cookieContainer = ownedClient.Handler.CookieContainer;
 
-        var client = new HttpClient(handler, disposeHandler: false)
-        {
-            BaseAddress = new Uri(machine.BaseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(10)
-        };
+            var authMode = RemoteAuthMode.None;
+            BootstrapResponse? bootstrap = null;
 
-        var authMode = RemoteAuthMode.None;
-        BootstrapResponse? bootstrap = null;
-
-        if (!string.IsNullOrWhiteSpace(machine.ApiKey))
-        {
-            client.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", machine.ApiKey.Trim());
-
-            var apiKeyProbe = await TryGetBootstrapAsync(client, ct);
-            if (apiKeyProbe.Success)
+            if (!string.IsNullOrWhiteSpace(machine.ApiKey))
             {
-                authMode = RemoteAuthMode.ApiKey;
-                bootstrap = apiKeyProbe.Bootstrap;
-            }
-            else
-            {
-                client.DefaultRequestHeaders.Authorization = null;
-                if (!apiKeyProbe.IsUnauthorized)
+                ownedClient.SetBearerToken(machine.ApiKey.Trim());
+
+                var apiKeyProbe = await TryGetBootstrapAsync(ownedClient, ct);
+                if (apiKeyProbe.Success)
                 {
-                    client.Dispose();
-                    handler.Dispose();
-                    throw new InvalidOperationException(apiKeyProbe.ErrorMessage);
+                    authMode = RemoteAuthMode.ApiKey;
+                    bootstrap = apiKeyProbe.Bootstrap;
+                }
+                else
+                {
+                    ownedClient.ClearAuthorization();
+                    if (!apiKeyProbe.IsUnauthorized)
+                    {
+                        throw new InvalidOperationException(apiKeyProbe.ErrorMessage);
+                    }
                 }
             }
-        }
 
-        if (bootstrap is null && !string.IsNullOrWhiteSpace(machine.Password))
-        {
-            await LoginWithPasswordAsync(client, machine, ct);
-            var passwordProbe = await TryGetBootstrapAsync(client, ct);
-            if (!passwordProbe.Success)
+            if (bootstrap is null && !string.IsNullOrWhiteSpace(machine.Password))
             {
-                client.Dispose();
-                handler.Dispose();
-                throw new InvalidOperationException(passwordProbe.ErrorMessage);
+                await LoginWithPasswordAsync(ownedClient, machine, ct);
+                var passwordProbe = await TryGetBootstrapAsync(ownedClient, ct);
+                if (!passwordProbe.Success)
+                {
+                    throw new InvalidOperationException(passwordProbe.ErrorMessage);
+                }
+
+                authMode = RemoteAuthMode.Password;
+                bootstrap = passwordProbe.Bootstrap;
             }
 
-            authMode = RemoteAuthMode.Password;
-            bootstrap = passwordProbe.Bootstrap;
-        }
-
-        if (bootstrap is null)
-        {
-            var anonymousProbe = await TryGetBootstrapAsync(client, ct);
-            if (!anonymousProbe.Success)
+            if (bootstrap is null)
             {
-                client.Dispose();
-                handler.Dispose();
-                throw new InvalidOperationException(anonymousProbe.ErrorMessage);
+                var anonymousProbe = await TryGetBootstrapAsync(ownedClient, ct);
+                if (!anonymousProbe.Success)
+                {
+                    throw new InvalidOperationException(anonymousProbe.ErrorMessage);
+                }
+
+                bootstrap = anonymousProbe.Bootstrap;
             }
 
-            bootstrap = anonymousProbe.Bootstrap;
-        }
+            if (requireTrusted && HasPinnedMismatch(machine.PinnedFingerprint, capturedFingerprint))
+            {
+                throw new InvalidOperationException(
+                    $"Pinned fingerprint mismatch for \"{machine.Name}\". Replace the pin before controlling this machine.");
+            }
 
-        if (requireTrusted && HasPinnedMismatch(machine.PinnedFingerprint, capturedFingerprint))
+            var baseAddress = ownedClient.BaseAddress;
+            var cookieHeader = cookieContainer.GetCookieHeader(baseAddress);
+            remoteContext.UpdateMetadata(
+                NormalizeFingerprint(capturedFingerprint),
+                HasPinnedMismatch(machine.PinnedFingerprint, capturedFingerprint),
+                cookieHeader,
+                authMode,
+                bootstrap);
+            return remoteContext;
+        }
+        catch
         {
-            client.Dispose();
-            handler.Dispose();
-            throw new InvalidOperationException(
-                $"Pinned fingerprint mismatch for \"{machine.Name}\". Replace the pin before controlling this machine.");
-        }
+            if (remoteContext is not null)
+            {
+                await remoteContext.DisposeAsync().ConfigureAwait(false);
+            }
 
-        var cookieHeader = handler.CookieContainer.GetCookieHeader(client.BaseAddress);
-        return new RemoteContext(
-            client,
-            handler,
-            NormalizeFingerprint(capturedFingerprint),
-            HasPinnedMismatch(machine.PinnedFingerprint, capturedFingerprint),
-            cookieHeader,
-            authMode,
-            bootstrap);
+            throw;
+        }
+    }
+
+    private static bool HasPinnedFingerprint(string? fingerprint) =>
+        !string.IsNullOrWhiteSpace(fingerprint);
+
+    private static OwnedRemoteHttpClient CreateOwnedHttpClient(string baseUrl)
+    {
+        return OwnedRemoteHttpClient.Create(baseUrl);
     }
 
     private static async Task LoginWithPasswordAsync(
-        HttpClient client,
+        OwnedRemoteHttpClient client,
         HubMachineSettings machine,
         CancellationToken ct)
     {
@@ -705,12 +979,12 @@ public sealed class HubService
             writer.WriteEndObject();
         }
 
-        var loginContent = new ByteArrayContent(buffer.WrittenSpan.ToArray());
+        using var loginContent = new ByteArrayContent(buffer.WrittenSpan.ToArray());
         loginContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
         {
             CharSet = Encoding.UTF8.WebName
         };
-        var loginResponse = await client.PostAsync(
+        using var loginResponse = await client.PostAsync(
             "/api/auth/login",
             loginContent,
             ct);
@@ -724,40 +998,39 @@ public sealed class HubService
     }
 
     private static async Task<BootstrapProbeResult> TryGetBootstrapAsync(
-        HttpClient client,
+        OwnedRemoteHttpClient client,
         CancellationToken ct)
     {
-        HttpResponseMessage response;
         try
         {
-            response = await client.GetAsync("/api/bootstrap", ct);
+            using var response = await client.GetAsync("/api/bootstrap", ct);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bootstrap = await response.Content.ReadFromJsonAsync(
+                    AppJsonContext.Default.BootstrapResponse,
+                    ct);
+                return bootstrap is null
+                    ? BootstrapProbeResult.Failure("Remote bootstrap response was empty.")
+                    : BootstrapProbeResult.WithSuccess(bootstrap);
+            }
+
+            var message = await response.Content.ReadAsStringAsync(ct);
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return BootstrapProbeResult.WithUnauthorized(string.IsNullOrWhiteSpace(message)
+                    ? string.Create(CultureInfo.InvariantCulture, $"Authentication failed ({(int)response.StatusCode}).")
+                    : message);
+            }
+
+            return BootstrapProbeResult.Failure(string.IsNullOrWhiteSpace(message)
+                ? string.Create(CultureInfo.InvariantCulture, $"Remote bootstrap failed ({(int)response.StatusCode}).")
+                : message);
         }
         catch (Exception ex)
         {
             return BootstrapProbeResult.Failure(ex.Message);
         }
-
-        if (response.IsSuccessStatusCode)
-        {
-            var bootstrap = await response.Content.ReadFromJsonAsync(
-                AppJsonContext.Default.BootstrapResponse,
-                ct);
-            return bootstrap is null
-                ? BootstrapProbeResult.Failure("Remote bootstrap response was empty.")
-                : BootstrapProbeResult.WithSuccess(bootstrap);
-        }
-
-        var message = await response.Content.ReadAsStringAsync(ct);
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-        {
-            return BootstrapProbeResult.WithUnauthorized(string.IsNullOrWhiteSpace(message)
-                ? $"Authentication failed ({(int)response.StatusCode})."
-                : message);
-        }
-
-        return BootstrapProbeResult.Failure(string.IsNullOrWhiteSpace(message)
-            ? $"Remote bootstrap failed ({(int)response.StatusCode})."
-            : message);
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct)
@@ -769,23 +1042,37 @@ public sealed class HubService
 
         var message = await response.Content.ReadAsStringAsync(ct);
         throw new InvalidOperationException(string.IsNullOrWhiteSpace(message)
-            ? $"Remote request failed ({(int)response.StatusCode})."
+            ? string.Create(CultureInfo.InvariantCulture, $"Remote request failed ({(int)response.StatusCode}).")
             : message);
     }
 
     private sealed class RemoteContext : IAsyncDisposable
     {
-        public RemoteContext(
-            HttpClient client,
-            HttpClientHandler handler,
+        public static RemoteContext Create(string baseUrl)
+        {
+            return new RemoteContext(baseUrl);
+        }
+
+        private RemoteContext(string baseUrl)
+        {
+            _ownedClient = OwnedRemoteHttpClient.Create(baseUrl);
+        }
+
+        private OwnedRemoteHttpClient? _ownedClient;
+        public OwnedRemoteHttpClient Client => _ownedClient ?? throw new ObjectDisposedException(nameof(RemoteContext));
+        public string? CapturedFingerprint { get; private set; }
+        public bool HasPinnedFingerprintMismatch { get; private set; }
+        public string CookieHeader { get; private set; } = string.Empty;
+        public RemoteAuthMode AuthMode { get; private set; }
+        public BootstrapResponse? Bootstrap { get; private set; }
+
+        public void UpdateMetadata(
             string? capturedFingerprint,
             bool hasPinnedFingerprintMismatch,
             string cookieHeader,
             RemoteAuthMode authMode,
             BootstrapResponse? bootstrap)
         {
-            Client = client;
-            Handler = handler;
             CapturedFingerprint = capturedFingerprint;
             HasPinnedFingerprintMismatch = hasPinnedFingerprintMismatch;
             CookieHeader = cookieHeader;
@@ -793,19 +1080,121 @@ public sealed class HubService
             Bootstrap = bootstrap;
         }
 
-        public HttpClient Client { get; }
-        public HttpClientHandler Handler { get; }
-        public string? CapturedFingerprint { get; }
-        public bool HasPinnedFingerprintMismatch { get; }
-        public string CookieHeader { get; }
-        public RemoteAuthMode AuthMode { get; }
-        public BootstrapResponse? Bootstrap { get; }
-
         public ValueTask DisposeAsync()
         {
-            Client.Dispose();
-            Handler.Dispose();
+            var ownedClient = _ownedClient;
+            _ownedClient = null;
+            ownedClient?.Dispose();
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class OwnedRemoteHttpClient : IDisposable
+    {
+        private OwnedRemoteHttpClient(HttpClientHandler handler, Uri baseAddress, TimeSpan timeout)
+        {
+            Handler = handler;
+            Invoker = new HttpMessageInvoker(handler, disposeHandler: false);
+            BaseAddress = baseAddress;
+            Timeout = timeout;
+        }
+
+        public HttpClientHandler Handler { get; }
+        public HttpMessageInvoker Invoker { get; }
+        public Uri BaseAddress { get; }
+        public TimeSpan Timeout { get; }
+        private System.Net.Http.Headers.AuthenticationHeaderValue? Authorization { get; set; }
+
+        public static OwnedRemoteHttpClient Create(string baseUrl)
+        {
+            var handler = new HttpClientHandler
+            {
+                CookieContainer = new CookieContainer()
+            };
+
+            try
+            {
+                return new OwnedRemoteHttpClient(
+                    handler,
+                    new Uri(baseUrl, UriKind.Absolute),
+                    TimeSpan.FromSeconds(10));
+            }
+            catch
+            {
+                handler.Dispose();
+                throw;
+            }
+        }
+
+        public void SetBearerToken(string token)
+        {
+            Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        public void ClearAuthorization()
+        {
+            Authorization = null;
+        }
+
+        public async Task<T?> GetFromJsonAsync<T>(string uri, JsonTypeInfo<T> jsonTypeInfo, CancellationToken ct)
+        {
+            using var response = await GetAsync(uri, ct).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync(jsonTypeInfo, ct).ConfigureAwait(false);
+        }
+
+        public Task<HttpResponseMessage> GetAsync(string uri, CancellationToken ct) =>
+            SendAsync(HttpMethod.Get, uri, content: null, ct);
+
+        public Task<HttpResponseMessage> DeleteAsync(string uri, CancellationToken ct) =>
+            SendAsync(HttpMethod.Delete, uri, content: null, ct);
+
+        public Task<HttpResponseMessage> PostAsync(string uri, HttpContent? content, CancellationToken ct) =>
+            SendAsync(HttpMethod.Post, uri, content, ct);
+
+        public Task<HttpResponseMessage> PostAsJsonAsync<T>(string uri, T? value, JsonTypeInfo<T> jsonTypeInfo, CancellationToken ct) =>
+            SendJsonAsync(HttpMethod.Post, uri, value, jsonTypeInfo, ct);
+
+        public Task<HttpResponseMessage> PutAsJsonAsync<T>(string uri, T? value, JsonTypeInfo<T> jsonTypeInfo, CancellationToken ct) =>
+            SendJsonAsync(HttpMethod.Put, uri, value, jsonTypeInfo, ct);
+
+        public Task<HttpResponseMessage> PatchAsJsonAsync<T>(string uri, T? value, JsonTypeInfo<T> jsonTypeInfo, CancellationToken ct) =>
+            SendJsonAsync(HttpMethod.Patch, uri, value, jsonTypeInfo, ct);
+
+        private async Task<HttpResponseMessage> SendJsonAsync<T>(
+            HttpMethod method,
+            string uri,
+            T? value,
+            JsonTypeInfo<T> jsonTypeInfo,
+            CancellationToken ct)
+        {
+            using var content = JsonContent.Create(value, jsonTypeInfo);
+            return await SendAsync(method, uri, content, ct).ConfigureAwait(false);
+        }
+
+        private async Task<HttpResponseMessage> SendAsync(
+            HttpMethod method,
+            string uri,
+            HttpContent? content,
+            CancellationToken ct)
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(Timeout);
+            using var request = new HttpRequestMessage(method, new Uri(BaseAddress, uri))
+            {
+                Content = content,
+            };
+            if (Authorization is not null)
+            {
+                request.Headers.Authorization = Authorization;
+            }
+            return await Invoker.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            Invoker.Dispose();
+            Handler.Dispose();
         }
     }
 

@@ -8,7 +8,7 @@ const createLensTurnRequest = vi.fn((text: string, attachments: unknown[] = [], 
   attachments,
   sessionId,
 }));
-const submitLensTurn = vi.fn();
+const submitQueuedLensTurn = vi.fn();
 
 vi.mock('../comms', () => ({
   sendInput,
@@ -21,7 +21,7 @@ vi.mock('../terminal', () => ({
 vi.mock('../lens/input', () => ({
   isLensActiveSession,
   createLensTurnRequest,
-  submitLensTurn,
+  submitQueuedLensTurn,
 }));
 
 describe('submitSessionText', () => {
@@ -31,18 +31,18 @@ describe('submitSessionText', () => {
     pasteToTerminal.mockReset();
     isLensActiveSession.mockReset();
     createLensTurnRequest.mockClear();
-    submitLensTurn.mockReset();
+    submitQueuedLensTurn.mockReset();
   });
 
   it('submits Lens sessions as a new user turn', async () => {
     isLensActiveSession.mockReturnValue(true);
-    submitLensTurn.mockResolvedValue(undefined);
+    submitQueuedLensTurn.mockResolvedValue(undefined);
 
     const { submitSessionText } = await import('./submit');
     await submitSessionText('s1', 'Summarize the diff.');
 
     expect(createLensTurnRequest).toHaveBeenCalledWith('Summarize the diff.', [], 's1');
-    expect(submitLensTurn).toHaveBeenCalledWith('s1', {
+    expect(submitQueuedLensTurn).toHaveBeenCalledWith('s1', {
       text: 'Summarize the diff.',
       attachments: [],
       sessionId: 's1',
@@ -67,6 +67,6 @@ describe('submitSessionText', () => {
     await result;
 
     expect(sendInput).toHaveBeenCalledWith('s2', '\r');
-    expect(submitLensTurn).not.toHaveBeenCalled();
+    expect(submitQueuedLensTurn).not.toHaveBeenCalled();
   });
 });

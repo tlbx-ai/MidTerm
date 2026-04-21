@@ -9,6 +9,12 @@ import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../.
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
 import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
 import { createTerminalForSession } from '../terminal/manager';
+
+interface LayoutSnapshot {
+  revision?: number;
+  root: LayoutNode | null;
+  focusedSessionId: string | null;
+}
 /**
  * Ensure a terminal exists for a session.
  */
@@ -381,22 +387,49 @@ export function isLayoutActive(): boolean {
 }
 
 // =============================================================================
-// Layout Persistence (localStorage)
+// Layout Persistence (server-authoritative with local fallback)
 // =============================================================================
 
 const LAYOUT_STORAGE_KEY = 'midterm-layout';
 const FOCUSED_STORAGE_KEY = 'midterm-layout-focused';
+const LAYOUT_SYNC_ENDPOINT = '/api/layout';
+const EMPTY_LAYOUT_SNAPSHOT_KEY = JSON.stringify({ root: null, focusedSessionId: null });
+let lastServerSnapshotKey = EMPTY_LAYOUT_SNAPSHOT_KEY;
+let lastServerRevision = 0;
+let pendingSnapshotKey: string | null = null;
+let persistenceReady = false;
+let syncInFlight = false;
+
+function getCurrentLayoutSnapshot(): LayoutSnapshot {
+  return {
+    revision: lastServerRevision,
+    root: $layout.get().root,
+    focusedSessionId: $focusedSessionId.get(),
+  };
+}
+
+function serializeLayoutSnapshot(snapshot: LayoutSnapshot): string {
+  return serializeLayoutContent(snapshot.root, snapshot.focusedSessionId);
+}
+
+function serializeLayoutContent(root: LayoutNode | null, focusedSessionId: string | null): string {
+  return JSON.stringify({
+    root: root ?? null,
+    focusedSessionId: focusedSessionId ?? null,
+  });
+}
 
 /**
- * Save current layout to localStorage.
+ * Save current layout to localStorage as a compatibility fallback.
  */
 export function saveLayoutToStorage(): void {
-  const layout = $layout.get();
-  if (layout.root) {
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
-    const focusedId = $focusedSessionId.get();
-    if (focusedId) {
-      localStorage.setItem(FOCUSED_STORAGE_KEY, focusedId);
+  const snapshot = getCurrentLayoutSnapshot();
+  if (snapshot.root) {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ root: snapshot.root }));
+    if (snapshot.focusedSessionId) {
+      localStorage.setItem(FOCUSED_STORAGE_KEY, snapshot.focusedSessionId);
+    } else {
+      localStorage.removeItem(FOCUSED_STORAGE_KEY);
     }
   } else {
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
@@ -493,6 +526,94 @@ export function restoreLayoutFromStorage(): void {
   }
 }
 
+export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefined): void {
+  const previousServerRevision = lastServerRevision;
+  const normalizedRevision = Math.max(0, snapshot?.revision ?? 0);
+  const currentSnapshotKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());
+  const normalized: LayoutSnapshot = {
+    revision: normalizedRevision,
+    root: snapshot?.root ?? null,
+    focusedSessionId: snapshot?.focusedSessionId ?? null,
+  };
+  const nextSnapshotKey = serializeLayoutSnapshot(normalized);
+
+  if (
+    shouldIgnoreServerLayoutSnapshot(
+      normalizedRevision,
+      previousServerRevision,
+      currentSnapshotKey,
+      nextSnapshotKey,
+    )
+  ) {
+    return;
+  }
+
+  lastServerRevision = normalizedRevision;
+  lastServerSnapshotKey = nextSnapshotKey;
+
+  if (reconcilePendingServerLayoutSnapshot(currentSnapshotKey, nextSnapshotKey)) {
+    return;
+  }
+
+  if (nextSnapshotKey === currentSnapshotKey) {
+    return;
+  }
+
+  if (normalized.root) {
+    setSuppressLayoutAutoFit(true);
+  }
+
+  $layout.set({ root: normalized.root });
+
+  applyServerFocusedSessionState(normalized.root, normalized.focusedSessionId);
+}
+
+function shouldIgnoreServerLayoutSnapshot(
+  normalizedRevision: number,
+  previousServerRevision: number,
+  currentSnapshotKey: string,
+  nextSnapshotKey: string,
+): boolean {
+  if (normalizedRevision < previousServerRevision) {
+    return true;
+  }
+  if (pendingSnapshotKey !== null && normalizedRevision === previousServerRevision) {
+    return true;
+  }
+  return nextSnapshotKey === currentSnapshotKey;
+}
+
+function reconcilePendingServerLayoutSnapshot(
+  currentSnapshotKey: string,
+  nextSnapshotKey: string,
+): boolean {
+  if (pendingSnapshotKey === nextSnapshotKey) {
+    pendingSnapshotKey = null;
+    return false;
+  }
+
+  return pendingSnapshotKey !== null && currentSnapshotKey === pendingSnapshotKey;
+}
+
+function applyServerFocusedSessionState(
+  root: LayoutNode | null,
+  focusedSessionId: string | null,
+): void {
+  if (!root) {
+    $focusedSessionId.set(null);
+    return;
+  }
+
+  const ids: string[] = [];
+  collectSessionIdsFromNode(root, ids);
+  const focusedId =
+    focusedSessionId && ids.includes(focusedSessionId) ? focusedSessionId : (ids[0] ?? null);
+  $focusedSessionId.set(focusedId);
+  if (focusedId) {
+    $activeSessionId.set(focusedId);
+  }
+}
+
 /**
  * Clear layout data from localStorage.
  */
@@ -501,36 +622,107 @@ function clearLayoutStorage(): void {
   localStorage.removeItem(FOCUSED_STORAGE_KEY);
 }
 
-/**
- * Sync layout tree to the server for tmux directional pane selection.
- */
-function syncLayoutToServer(): void {
-  const layout = $layout.get();
-  const root = layout.root;
+export function markLayoutPersistenceReady(): void {
+  if (persistenceReady) {
+    return;
+  }
 
-  fetch('/api/tmux/layout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(root ?? { type: 'leaf', sessionId: null }),
-  }).catch(() => {
-    // Best-effort sync
-  });
+  persistenceReady = true;
+  scheduleLayoutSync();
 }
 
-/**
- * Initialize layout persistence - subscribe to changes.
- */
-let syncTimer: number | undefined;
+function syncLayoutToServer(): void {
+  if (syncInFlight) {
+    return;
+  }
+
+  const snapshot = getCurrentLayoutSnapshot();
+  const snapshotKey = serializeLayoutSnapshot(snapshot);
+  if (snapshotKey === lastServerSnapshotKey && pendingSnapshotKey === null) {
+    return;
+  }
+
+  pendingSnapshotKey = snapshotKey;
+  syncInFlight = true;
+  let shouldResyncImmediately = false;
+  fetch(LAYOUT_SYNC_ENDPOINT, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      revision: lastServerRevision,
+      root: snapshot.root,
+      focusedSessionId: snapshot.focusedSessionId,
+    }),
+  })
+    .then(async (response) => {
+      const serverSnapshot = (await response.json()) as LayoutSnapshot;
+      applyServerLayoutState(serverSnapshot);
+
+      if (!response.ok && response.status !== 409) {
+        throw new Error(`Layout sync failed with status ${response.status}`);
+      }
+
+      shouldResyncImmediately =
+        pendingSnapshotKey !== null && pendingSnapshotKey !== lastServerSnapshotKey;
+    })
+    .catch(() => {
+      // Keep the pending snapshot marker so a later local change can retry it.
+      pendingSnapshotKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());
+    })
+    .finally(() => {
+      syncInFlight = false;
+
+      if (shouldResyncImmediately) {
+        scheduleLayoutSync(0);
+      }
+    });
+}
+
+function scheduleLayoutSync(delayMs = 0): void {
+  if (!persistenceReady) {
+    return;
+  }
+
+  saveLayoutToStorage();
+  const currentSnapshotKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());
+  if (currentSnapshotKey === lastServerSnapshotKey && pendingSnapshotKey === null) {
+    return;
+  }
+
+  pendingSnapshotKey = currentSnapshotKey;
+
+  if (syncTimer !== undefined) {
+    globalThis.clearTimeout(syncTimer);
+  }
+
+  syncTimer = globalThis.setTimeout(() => {
+    syncTimer = undefined;
+    syncLayoutToServer();
+  }, delayMs);
+}
+
+let syncTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
 
 export function initLayoutPersistence(): void {
+  let lastLayoutKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());
   $layout.subscribe(() => {
-    saveLayoutToStorage();
-    if (syncTimer !== undefined) {
-      clearTimeout(syncTimer);
+    const nextLayoutKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());
+    if (nextLayoutKey === lastLayoutKey) {
+      return;
     }
-    syncTimer = window.setTimeout(() => {
-      syncTimer = undefined;
-      syncLayoutToServer();
-    }, 300);
+
+    lastLayoutKey = nextLayoutKey;
+    scheduleLayoutSync(0);
+  });
+
+  let lastFocusedSessionId = $focusedSessionId.get();
+  $focusedSessionId.subscribe(() => {
+    const nextFocusedSessionId = $focusedSessionId.get();
+    if (nextFocusedSessionId === lastFocusedSessionId) {
+      return;
+    }
+
+    lastFocusedSessionId = nextFocusedSessionId;
+    scheduleLayoutSync(75);
   });
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Ai.Tlbx.MidTerm.Services;
@@ -59,27 +60,31 @@ public static class CertificateSetup
         Console.WriteLine($"  DNS names: {string.Join(", ", dnsNames)}");
         Console.WriteLine($"  IP addresses: {string.Join(", ", ipAddresses)}");
 
-        var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
-
+        using var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
         CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
         var isService = serviceMode || settingsService.IsRunningAsService;
         var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, isService);
-        var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
-                              ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
-                              ?? throw new InvalidOperationException("Failed to export private key");
-        protector.StorePrivateKey(privateKeyBytes, keyId);
-        System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+        var privateKeyBytes = CertificateGenerator.ExportPrivateKeyPkcs8(cert);
+        try
+        {
+            protector.StorePrivateKey(privateKeyBytes, keyId);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+        }
 
+        var thumbprint = cert.Thumbprint;
         settings.CertificatePath = certPath;
         settings.CertificatePassword = null;
         settings.KeyProtection = KeyProtectionMethod.OsProtected;
-        settings.CertificateThumbprint = cert.Thumbprint;
+        settings.CertificateThumbprint = thumbprint;
         settingsService.Save(settings);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("Certificate generated successfully!");
-        Console.WriteLine($"  Thumbprint: {cert.Thumbprint}");
+        Console.WriteLine($"  Thumbprint: {thumbprint}");
         Console.ResetColor();
 
         CertificateGenerator.PrintTrustInstructions(certPath, dnsNames, ipAddresses);
@@ -182,7 +187,7 @@ public static class CertificateSetup
                 diagnostic.AppendLine($"  Key file exists: {File.Exists(keyPath)}");
                 if (File.Exists(keyPath))
                 {
-                    diagnostic.AppendLine($"  Key file size: {new FileInfo(keyPath).Length} bytes");
+                    diagnostic.AppendLine(CultureInfo.InvariantCulture, $"  Key file size: {new FileInfo(keyPath).Length} bytes");
                 }
                 if (ex.InnerException is not null)
                 {
@@ -207,18 +212,21 @@ public static class CertificateSetup
             var dnsNames = CertificateGenerator.GetDnsNames();
             var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
 
-            var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
-
+            using var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
             CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
             // Use persisted flag with runtime detection as fallback
             var isServiceInstall = settings.IsServiceInstall || settingsService.IsRunningAsService;
             var protector = Services.Security.CertificateProtectorFactory.Create(settingsDir, isServiceInstall);
-            var privateKeyBytes = cert.GetECDsaPrivateKey()?.ExportPkcs8PrivateKey()
-                                  ?? cert.GetRSAPrivateKey()?.ExportPkcs8PrivateKey()
-                                  ?? throw new InvalidOperationException("Failed to export private key");
-            protector.StorePrivateKey(privateKeyBytes, keyId);
-            System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+            var privateKeyBytes = CertificateGenerator.ExportPrivateKeyPkcs8(cert);
+            try
+            {
+                protector.StorePrivateKey(privateKeyBytes, keyId);
+            }
+            finally
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(privateKeyBytes);
+            }
 
             var loadedCert = protector.LoadCertificateWithPrivateKey(certPath, keyId);
 

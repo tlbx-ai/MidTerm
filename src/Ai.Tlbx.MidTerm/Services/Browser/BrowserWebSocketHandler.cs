@@ -53,7 +53,7 @@ public sealed class BrowserWebSocketHandler
         }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
-        var sendLock = new SemaphoreSlim(1, 1);
+        using var sendLock = new SemaphoreSlim(1, 1);
         var shutdownToken = _shutdownService.Token;
         var connectionId = Guid.NewGuid().ToString("N");
         var sessionId = previewClient?.SessionId
@@ -81,7 +81,7 @@ public sealed class BrowserWebSocketHandler
             await ws.CloseAsync(
                 WebSocketCloseStatus.PolicyViolation,
                 "Duplicate preview connection",
-                CancellationToken.None);
+                shutdownToken);
             return;
         }
 
@@ -93,14 +93,17 @@ public sealed class BrowserWebSocketHandler
             if (ws.State != WebSocketState.Open)
                 return;
 
-            await sendLock.WaitAsync();
+            await sendLock.WaitAsync(shutdownToken);
             try
             {
                 if (ws.State != WebSocketState.Open)
                     return;
 
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(message, AppJsonContext.Default.BrowserWsMessage);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken);
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
@@ -167,7 +170,6 @@ public sealed class BrowserWebSocketHandler
         finally
         {
             _commandService.UnregisterClient(connectionId);
-            sendLock.Dispose();
             BrowserLog.Info(
                 $"Browser WebSocket disconnected (preview={previewId ?? "(anonymous)"}, name={previewName ?? "(default)"}, session={sessionId ?? "(none)"}, browser={browserId ?? "(none)"})");
 

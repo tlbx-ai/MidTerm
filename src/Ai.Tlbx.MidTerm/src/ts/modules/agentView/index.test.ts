@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const onTabActivated = vi.fn();
 const onTabDeactivated = vi.fn();
@@ -11,16 +11,22 @@ const getSessionState = vi.fn();
 const getSessionBufferTail = vi.fn();
 const attachSessionLens = vi.fn();
 const detachSessionLens = vi.fn(() => Promise.resolve());
-const getLensSnapshot = vi.fn();
+const getLensHistoryWindow = vi.fn();
 const getLensEvents = vi.fn();
-const openLensEventStream = vi.fn(() => vi.fn());
+const openLensHistoryStream = vi.fn(() => vi.fn());
+const updateLensHistoryStreamWindow = vi.fn();
 const interruptLensTurn = vi.fn();
 const approveLensRequest = vi.fn();
 const declineLensRequest = vi.fn();
 const resolveLensUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
+let currentSettings: any = { showUnknownAgentMessages: true };
 const activeSessionSubscribers: Array<(sessionId: string | null) => void> = [];
+const documentEventListeners = new Map<string, Array<() => void>>();
+const windowEventListeners = new Map<string, Array<() => void>>();
+let resetAgentViewRuntimeForTests: typeof import('./index').resetAgentViewRuntimeForTests;
+const agentViewModulePromise = import('./index');
 
 function createMockDomNode(overrides: Record<string, unknown> = {}): any {
   const node: any = {
@@ -91,6 +97,30 @@ function createMockDomNode(overrides: Record<string, unknown> = {}): any {
   return Object.assign(node, overrides);
 }
 
+function registerEventListener(
+  store: Map<string, Array<() => void>>,
+  event: string,
+  callback: EventListenerOrEventListenerObject,
+): void {
+  const listeners = store.get(event) ?? [];
+  const normalized =
+    typeof callback === 'function' ? callback : callback.handleEvent.bind(callback);
+  listeners.push(normalized as () => void);
+  store.set(event, listeners);
+}
+
+function triggerDocumentEvent(event: string): void {
+  for (const listener of documentEventListeners.get(event) ?? []) {
+    listener();
+  }
+}
+
+function triggerWindowEvent(event: string): void {
+  for (const listener of windowEventListeners.get(event) ?? []) {
+    listener();
+  }
+}
+
 vi.mock('../sessionTabs', () => ({
   ensureSessionWrapper,
   getActiveTab,
@@ -109,6 +139,14 @@ vi.mock('../../stores', () => ({
       return () => {};
     },
   },
+  $currentSettings: {
+    get: () => currentSettings,
+    subscribe: () => () => {},
+  },
+  getSession: () => ({
+    id: 's1',
+    currentDirectory: 'Q:\\repos\\MidTerm',
+  }),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -127,9 +165,12 @@ vi.mock('../../api/client', () => ({
   getSessionBufferTail,
   attachSessionLens,
   detachSessionLens,
-  getLensSnapshot,
+  getLensHistoryWindow,
+  getLensHistoryWindow,
   getLensEvents,
-  openLensEventStream,
+  openLensHistoryStream,
+  openLensHistoryStream,
+  updateLensHistoryStreamWindow,
   interruptLensTurn,
   approveLensRequest,
   declineLensRequest,
@@ -152,18 +193,30 @@ vi.mock('../logging', () => ({
 }));
 
 describe('agentView dev errors', () => {
+  beforeAll(async () => {
+    ({ resetAgentViewRuntimeForTests } = await agentViewModulePromise);
+  });
+
   beforeEach(() => {
     vi.stubGlobal('document', {
       createElement: () => createMockDomNode(),
+      createTextNode: (text: string) => ({ nodeType: 3, textContent: text }),
       createDocumentFragment: () => ({
         appendChild: vi.fn(),
         childNodes: [],
       }),
+      addEventListener: vi.fn((event: string, callback: EventListenerOrEventListenerObject) => {
+        registerEventListener(documentEventListeners, event, callback);
+      }),
+      visibilityState: 'visible',
+      hidden: false,
     });
     vi.stubGlobal('window', {
       clearTimeout: vi.fn(),
       setTimeout: vi.fn(() => 1),
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn((event: string, callback: EventListenerOrEventListenerObject) => {
+        registerEventListener(windowEventListeners, event, callback);
+      }),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(() => true),
       location: {
@@ -190,18 +243,22 @@ describe('agentView dev errors', () => {
     attachSessionLens.mockReset();
     detachSessionLens.mockReset();
     detachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockReset();
+    getLensHistoryWindow.mockReset();
     getLensEvents.mockReset();
-    openLensEventStream.mockReset();
-    openLensEventStream.mockReturnValue(vi.fn());
+    openLensHistoryStream.mockReset();
+    openLensHistoryStream.mockReturnValue(vi.fn());
+    updateLensHistoryStreamWindow.mockReset();
     interruptLensTurn.mockReset();
     approveLensRequest.mockReset();
     declineLensRequest.mockReset();
     resolveLensUserInput.mockReset();
     showDevErrorDialog.mockReset();
     activeSessionId = null;
+    currentSettings = { showUnknownAgentMessages: true };
     activeSessionSubscribers.length = 0;
-    vi.resetModules();
+    documentEventListeners.clear();
+    windowEventListeners.clear();
+    resetAgentViewRuntimeForTests();
   });
 
   afterEach(() => {
@@ -236,7 +293,7 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-29T10:00:00Z',
       latestSequence: 1,
-      totalHistoryCount: 0,
+      historyCount: 0,
       historyWindowStart: 0,
       historyWindowEnd: 0,
       hasOlderHistory: false,
@@ -271,7 +328,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [],
+      history: [],
       items: [],
       requests: [],
       notices: [],
@@ -281,7 +338,7 @@ describe('agentView dev errors', () => {
 
   it('shows a dev error modal when Lens activation fails', async () => {
     attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
-    getLensSnapshot.mockRejectedValue(new Error('Lens snapshot unavailable'));
+    getLensHistoryWindow.mockRejectedValue(new Error('Lens snapshot unavailable'));
     getLensEvents.mockRejectedValue(new Error('Lens events unavailable'));
 
     const { initAgentView } = await import('./index');
@@ -324,11 +381,11 @@ describe('agentView dev errors', () => {
   });
 
   it('renders Codex Lens as a full-width left layout', async () => {
-    getLensSnapshot.mockResolvedValue(
+    getLensHistoryWindow.mockResolvedValue(
       createSnapshot({
-        totalHistoryCount: 2,
+        historyCount: 2,
         historyWindowEnd: 2,
-        transcript: [
+        history: [
           {
             entryId: 'user:turn-1',
             order: 1,
@@ -395,12 +452,657 @@ describe('agentView dev errors', () => {
     expect(resolveHistoryBadgeLabel('assistant', 'claude')).toBe('Assistant');
   });
 
+  it('shows the Agent badge only on the first assistant row of a turn', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const state = {
+      panel: createPanel(),
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 4,
+        historyWindowEnd: 4,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: null,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 4,
+      historyWindowTargetCount: 4,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'follow',
+      historyAutoScrollPinned: true,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: 0,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const viewport = createMockDomNode({
+      clientHeight: 900,
+      clientWidth: 1200,
+      scrollHeight: 900,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 900 })),
+    });
+    state.historyViewport = viewport;
+    state.panel.querySelector = vi.fn((selector: string) => {
+      if (selector === '[data-agent-field="history"]') {
+        return viewport;
+      }
+
+      return createMockDomNode();
+    });
+
+    const visibleBadges: boolean[] = [];
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: (entry, _sessionId, options) => {
+        const node = createMockDomNode({
+          getBoundingClientRect: vi.fn(() => ({ height: 40, top: 0, bottom: 40 })),
+        });
+        node.dataset = {};
+        if (entry.kind === 'assistant') {
+          visibleBadges.push(options?.showAssistantBadge === true);
+        }
+        return node;
+      },
+      createHistorySpacer: () => createMockDomNode(),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    render.renderHistory(
+      state.panel,
+      [
+        {
+          id: 'user:turn-1',
+          order: 1,
+          kind: 'user',
+          tone: 'info',
+          label: 'User',
+          title: '',
+          body: 'Question',
+          meta: '12:00:00',
+          sourceTurnId: 'turn-1',
+        },
+        {
+          id: 'assistant:turn-1:1',
+          order: 2,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'First part',
+          meta: '12:00:01',
+          sourceTurnId: 'turn-1',
+        },
+        {
+          id: 'assistant:turn-1:2',
+          order: 3,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'Second part',
+          meta: '12:00:02',
+          sourceTurnId: 'turn-1',
+        },
+        {
+          id: 'assistant:turn-2:1',
+          order: 4,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'New turn answer',
+          meta: '12:00:03',
+          sourceTurnId: 'turn-2',
+        },
+      ] as any,
+      's1',
+    );
+
+    expect(visibleBadges).toEqual([true, false, true]);
+  });
+
+  it('keeps the busy indicator DOM node and syncs it in place across live updates', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const state = {
+      panel: createPanel(),
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 1,
+        historyWindowEnd: 1,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: null,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 1,
+      historyWindowTargetCount: 1,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'follow',
+      historyAutoScrollPinned: true,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: 0,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const viewport = createMockDomNode({
+      clientHeight: 900,
+      clientWidth: 1200,
+      scrollHeight: 900,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 900 })),
+    });
+    state.historyViewport = viewport;
+    state.panel.querySelector = vi.fn((selector: string) => {
+      if (selector === '[data-agent-field="history"]') {
+        return viewport;
+      }
+
+      return createMockDomNode();
+    });
+
+    const busyNode = createMockDomNode({
+      dataset: {},
+      getBoundingClientRect: vi.fn(() => ({ height: 32, top: 0, bottom: 32 })),
+    });
+    const createHistoryEntry = vi.fn(() => busyNode);
+    const syncBusyIndicatorEntry = vi.fn();
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry,
+      syncBusyIndicatorEntry,
+      createHistorySpacer: () => createMockDomNode(),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const firstEntry = {
+      id: 'busy-indicator:turn-1',
+      order: 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Agent',
+      title: '',
+      body: 'Working',
+      meta: '',
+      busyIndicator: true,
+      busyElapsedText: '5s',
+    };
+    const updatedEntry = {
+      ...firstEntry,
+      body: 'Applying diff',
+      busyElapsedText: '6s',
+    };
+
+    render.renderHistory(state.panel, [firstEntry] as any, 's1');
+    render.renderHistory(state.panel, [updatedEntry] as any, 's1');
+
+    expect(createHistoryEntry).toHaveBeenCalledTimes(1);
+    expect(syncBusyIndicatorEntry).toHaveBeenCalledTimes(1);
+    expect(syncBusyIndicatorEntry).toHaveBeenCalledWith(busyNode, updatedEntry);
+    expect(state.historyRenderedNodes.get(firstEntry.id)?.node).toBe(busyNode);
+  });
+
+  it('suppresses immediate viewport rewindowing when a browse anchor is restored programmatically', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const panel = createPanel();
+    const viewport = createMockDomNode({
+      clientHeight: 600,
+      clientWidth: 900,
+      scrollHeight: 1800,
+      scrollTop: 320,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(function (this: any, options: { top?: number }) {
+        if (typeof options?.top === 'number') {
+          this.scrollTop = options.top;
+        }
+      }),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 600 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    panel.querySelector = vi.fn((selector: string) => {
+      switch (selector) {
+        case '[data-agent-field="history"]':
+          return viewport;
+        case '[data-agent-field="scroll-to-bottom"]':
+          return scrollButton;
+        case '[data-agent-field="composer-shell"]':
+          return composerShell;
+        case '[data-agent-field="composer-interruption"]':
+          return composerInterruption;
+        default:
+          return createMockDomNode();
+      }
+    });
+
+    const state = {
+      panel,
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 3,
+        historyWindowStart: 0,
+        historyWindowEnd: 3,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: viewport,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 3,
+      historyWindowTargetCount: 3,
+      historyViewportSyncPending: false,
+      historyViewportSyncForcePending: false,
+      historyViewportSyncQueuedDuringRefresh: false,
+      historyViewportSyncSuppressUntil: 0,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'browse',
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: 0,
+      historyLastVoidSyncScrollTop: null,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: null,
+      historyNavigatorDragTargetIndex: null,
+      historyNavigatorQueuedTargetIndex: null,
+      historyNavigatorQueuedRequestKind: null,
+      historyNavigatorPreviewHandle: null,
+      historyNavigatorHydrateHandle: null,
+      historyNavigatorLastPreviewRequestAt: 0,
+      historyPendingJumpTargetIndex: null,
+      historyPendingJumpAlign: null,
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: {
+        entryId: 'assistant:2',
+        topOffsetPx: 18,
+        absoluteIndex: 1,
+      },
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: (entry) =>
+        createMockDomNode({
+          dataset: {},
+          getBoundingClientRect: vi.fn(() =>
+            entry.id === 'assistant:2'
+              ? { top: 96, bottom: 156, height: 60 }
+              : { top: 180, bottom: 240, height: 60 },
+          ),
+        }),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    render.renderHistory(
+      panel,
+      [
+        {
+          id: 'user:1',
+          order: 1,
+          kind: 'user',
+          tone: 'info',
+          label: 'User',
+          title: '',
+          body: 'Question',
+          meta: '12:00',
+        },
+        {
+          id: 'assistant:2',
+          order: 2,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'Answer',
+          meta: '12:01',
+        },
+        {
+          id: 'assistant:3',
+          order: 3,
+          kind: 'assistant',
+          tone: 'info',
+          label: 'Agent',
+          title: '',
+          body: 'More',
+          meta: '12:02',
+        },
+      ] as any,
+      's1',
+    );
+
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    expect(state.historyViewportSyncSuppressUntil).toBeGreaterThan(Date.now() - 1);
+  });
+
+  it('clears stale browse sync state when returning Lens history to the live edge', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const panel = createPanel();
+    const viewport = createMockDomNode({
+      clientHeight: 600,
+      clientWidth: 900,
+      scrollHeight: 2400,
+      scrollTop: 400,
+      querySelector: vi.fn(),
+      scrollTo: vi.fn(function (this: any, options: { top?: number }) {
+        if (typeof options?.top === 'number') {
+          this.scrollTop = options.top;
+        }
+      }),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 600 })),
+    });
+    const scrollButton = createMockDomNode();
+    panel.querySelector = vi.fn((selector: string) => {
+      if (selector === '[data-agent-field="history"]') {
+        return viewport;
+      }
+      if (selector === '[data-agent-field="scroll-to-bottom"]') {
+        return scrollButton;
+      }
+
+      return createMockDomNode();
+    });
+
+    const state = {
+      panel,
+      snapshot: createSnapshot({
+        provider: 'codex',
+        historyCount: 40,
+        historyWindowStart: 0,
+        historyWindowEnd: 40,
+      }),
+      debugScenarioActive: false,
+      activationRunId: 0,
+      historyViewport: viewport,
+      historyEntries: [],
+      historyWindowStart: 0,
+      historyWindowCount: 40,
+      historyWindowTargetCount: 40,
+      historyViewportSyncPending: true,
+      historyViewportSyncForcePending: true,
+      historyViewportSyncQueuedDuringRefresh: true,
+      historyViewportSyncSuppressUntil: Date.now() + 1000,
+      disconnectStream: null,
+      streamConnected: true,
+      refreshInFlight: false,
+      requestBusyIds: new Set(),
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+      historyScrollMode: 'browse',
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: Date.now(),
+      historyLastVoidSyncScrollTop: 144,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: null,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: null,
+      historyNavigatorDragTargetIndex: 8,
+      historyNavigatorQueuedTargetIndex: null,
+      historyNavigatorQueuedRequestKind: null,
+      historyNavigatorPreviewHandle: null,
+      historyNavigatorHydrateHandle: null,
+      historyNavigatorLastPreviewRequestAt: 0,
+      historyPendingJumpTargetIndex: 12,
+      historyPendingJumpAlign: 'center',
+      historyRenderScheduled: null,
+      historyRenderBatchHandle: null,
+      activationState: 'ready',
+      activationDetail: '',
+      activationTrace: [],
+      activationError: null,
+      activationIssue: null,
+      activationActionBusy: false,
+      optimisticTurns: [],
+      renderDirty: false,
+      assistantMarkdownCache: new Map(),
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyMeasurementObserver: null,
+      historyViewportResizeObserver: null,
+      historyViewportSize: null,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: {
+        entryId: 'assistant:10',
+        topOffsetPx: 8,
+        absoluteIndex: 9,
+      },
+      pendingHistoryLayoutAnchor: {
+        entryId: 'assistant:11',
+        topOffsetPx: 10,
+        absoluteIndex: 10,
+      },
+      historyLastVirtualWindowKey: null,
+      historyExpandedEntries: new Set(),
+      runtimeStats: null,
+      busyIndicatorTickHandle: null,
+      completedTurnDurationEntries: new Map(),
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(() => createMockDomNode()),
+      createRequestActionBlock: () => createMockDomNode(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    render.scrollHistoryToBottom('s1');
+
+    expect(state.historyAutoScrollPinned).toBe(true);
+    expect(state.historyNavigatorMode).toBe('follow-live');
+    expect(state.historyNavigatorDragTargetIndex).toBeNull();
+    expect(state.historyViewportSyncPending).toBe(false);
+    expect(state.historyViewportSyncForcePending).toBe(false);
+    expect(state.historyViewportSyncQueuedDuringRefresh).toBe(false);
+    expect(state.historyViewportSyncSuppressUntil).toBe(0);
+    expect(state.pendingHistoryPrependAnchor).toBeNull();
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    expect(state.historyLastVoidSyncScrollTop).toBeNull();
+    expect(viewport.scrollTo).toHaveBeenCalledWith({
+      top: viewport.scrollHeight,
+      behavior: 'auto',
+    });
+  });
+
+  it('renders history metadata as timestamp-only text for every row kind', async () => {
+    const { formatHistoryMeta, shouldHideStatusInMeta } = await import('./index');
+
+    expect(shouldHideStatusInMeta('user', 'In Progress')).toBe(true);
+    expect(shouldHideStatusInMeta('assistant', 'Completed')).toBe(true);
+    expect(shouldHideStatusInMeta('tool', 'Running')).toBe(true);
+    expect(shouldHideStatusInMeta('request', '1/3')).toBe(true);
+    expect(formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z')).toMatch(
+      /\d{2}:\d{2}:\d{2}/,
+    );
+    expect(
+      formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z'),
+    ).not.toContain('In Progress');
+  });
+
+  it('suppresses timestamp meta for command-execution and diff history rows', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      history: [
+        {
+          entryId: 'tool-1',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_execution',
+          title: 'Tool completed',
+          body: 'git status --short',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:00Z',
+          updatedAt: '2026-04-04T20:00:00Z',
+        },
+        {
+          entryId: 'diff-1',
+          order: 2,
+          kind: 'diff',
+          status: 'completed',
+          itemType: 'diff',
+          title: 'Working diff',
+          body: 'diff --git a/a.txt b/a.txt\n@@\n-a\n+b',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:01Z',
+          updatedAt: '2026-04-04T20:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+    expect(history[0]?.meta).toBe('');
+    expect(history[1]?.meta).toBe('');
+  });
+
   it('keeps auto-follow pinned when content grows without user scrolling', async () => {
-    const { resolveHistoryAutoScrollPinned } = await import('./index');
+    const { resolveHistoryScrollMode } = await import('./index');
 
     expect(
-      resolveHistoryAutoScrollPinned({
-        wasPinned: true,
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
         previous: {
           scrollTop: 900,
           clientHeight: 600,
@@ -412,16 +1114,17 @@ describe('agentView dev errors', () => {
           scrollHeight: 1860,
         },
         userInitiated: false,
+        pendingAnchorRestore: false,
       }),
-    ).toBe(true);
+    ).toBe('follow');
   });
 
   it('stops auto-follow immediately when the user scrolls away from the live edge', async () => {
-    const { resolveHistoryAutoScrollPinned } = await import('./index');
+    const { resolveHistoryScrollMode } = await import('./index');
 
     expect(
-      resolveHistoryAutoScrollPinned({
-        wasPinned: true,
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
         previous: {
           scrollTop: 900,
           clientHeight: 600,
@@ -433,8 +1136,162 @@ describe('agentView dev errors', () => {
           scrollHeight: 1860,
         },
         userInitiated: true,
+        pendingAnchorRestore: false,
       }),
-    ).toBe(false);
+    ).toBe('browse');
+  });
+
+  it('stops auto-follow on even small upward user scrolls near the live edge', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 860,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        userInitiated: true,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
+  it('stops auto-follow when the viewport moves upward even if the browser missed the explicit scroll-intent marker', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 760,
+          clientHeight: 600,
+          scrollHeight: 1860,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
+  it('stops auto-follow on even small upward viewport movement near the live edge when intent markers are missed', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'follow',
+        previous: {
+          scrollTop: 900,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        current: {
+          scrollTop: 860,
+          clientHeight: 600,
+          scrollHeight: 1500,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
+  it('preserves browse mode and scroll position when Lens returns to the foreground', async () => {
+    const { prepareLensForForeground } = await import('./viewPresentation');
+
+    const historyViewport = createMockDomNode({
+      scrollTop: 987,
+    });
+    const state = {
+      historyScrollMode: 'browse',
+      historyAutoScrollPinned: false,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyViewport,
+    } as any;
+
+    prepareLensForForeground(state);
+
+    expect(state.historyScrollMode).toBe('browse');
+    expect(state.historyAutoScrollPinned).toBe(false);
+    expect(historyViewport.scrollTop).toBe(987);
+  });
+
+  it('does not repin auto-follow just because layout changed while already detached from the live edge', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'browse',
+        previous: {
+          scrollTop: 240,
+          clientHeight: 600,
+          scrollHeight: 2400,
+        },
+        current: {
+          scrollTop: 240,
+          clientHeight: 600,
+          scrollHeight: 2760,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
+  it('keeps browse mode sticky near the live edge until the user explicitly returns to bottom', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'browse',
+        previous: {
+          scrollTop: 1736,
+          clientHeight: 600,
+          scrollHeight: 2400,
+        },
+        current: {
+          scrollTop: 1738,
+          clientHeight: 600,
+          scrollHeight: 2400,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: false,
+      }),
+    ).toBe('browse');
+  });
+
+  it('keeps a dedicated restore-anchor mode while a prepend anchor is pending', async () => {
+    const { resolveHistoryScrollMode } = await import('./index');
+
+    expect(
+      resolveHistoryScrollMode({
+        previousMode: 'browse',
+        previous: {
+          scrollTop: 240,
+          clientHeight: 600,
+          scrollHeight: 2400,
+        },
+        current: {
+          scrollTop: 240,
+          clientHeight: 600,
+          scrollHeight: 2760,
+        },
+        userInitiated: false,
+        pendingAnchorRestore: true,
+      }),
+    ).toBe('restore-anchor');
   });
 
   it('keeps debug scenarios isolated from the live Lens attach path', async () => {
@@ -454,12 +1311,12 @@ describe('agentView dev errors', () => {
 
     expect(attachSessionLens).not.toHaveBeenCalled();
     expect(getLensEvents).not.toHaveBeenCalled();
-    expect(getLensSnapshot).not.toHaveBeenCalled();
+    expect(getLensHistoryWindow).not.toHaveBeenCalled();
   });
 
   it('restores canonical Lens history when attach fails but a snapshot already exists', async () => {
     attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-22T01:45:00Z',
@@ -531,7 +1388,12 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(getLensSnapshot).toHaveBeenCalledWith('s1');
+    expect(getLensHistoryWindow).toHaveBeenCalledWith(
+      's1',
+      undefined,
+      expect.any(Number),
+      expect.any(String),
+    );
     expect(getLensEvents.mock.calls.length).toBeLessThanOrEqual(1);
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
@@ -539,7 +1401,7 @@ describe('agentView dev errors', () => {
   it('retries live Lens resume automatically after restoring canonical history', async () => {
     attachSessionLens.mockRejectedValueOnce(new Error('Lens attach failed'));
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot
+    getLensHistoryWindow
       .mockRejectedValueOnce(new Error('Lens snapshot unavailable'))
       .mockResolvedValue({
         sessionId: 's1',
@@ -624,7 +1486,7 @@ describe('agentView dev errors', () => {
     attachSessionLens.mockRejectedValue(
       new Error('HTTP 400: MidTerm could not determine the Codex resume id for this session.'),
     );
-    getLensSnapshot
+    getLensHistoryWindow
       .mockResolvedValueOnce({
         sessionId: 's1',
         provider: 'codex',
@@ -751,11 +1613,12 @@ describe('agentView dev errors', () => {
     } as Event);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledWith(
+      expect(openLensHistoryStream).toHaveBeenCalledWith(
         's1',
         expect.any(Number),
         expect.any(Number),
         expect.any(Number),
+        expect.any(String),
         expect.any(Object),
       );
     });
@@ -765,7 +1628,7 @@ describe('agentView dev errors', () => {
     attachSessionLens.mockRejectedValue(
       new Error('HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.'),
     );
-    getLensSnapshot.mockRejectedValue(new Error('Lens snapshot unavailable'));
+    getLensHistoryWindow.mockRejectedValue(new Error('Lens snapshot unavailable'));
     getLensEvents.mockRejectedValue(new Error('Lens events unavailable'));
     getSessionState.mockResolvedValue({
       session: {
@@ -800,9 +1663,9 @@ describe('agentView dev errors', () => {
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
-  it('renders the composer interruption UI for open user-input requests', async () => {
+  it('renders interview requests inline in history instead of the composer interruption UI', async () => {
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-23T11:00:00Z',
@@ -842,7 +1705,7 @@ describe('agentView dev errors', () => {
         {
           requestId: 'req-1',
           turnId: 'turn-1',
-          kind: 'tool_user_input',
+          kind: 'interview',
           kindLabel: 'Question',
           state: 'open',
           detail: 'Please choose a mode.',
@@ -882,7 +1745,12 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot).toHaveBeenCalledWith('s1');
+      expect(getLensHistoryWindow).toHaveBeenCalledWith(
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
       expect(getLensEvents.mock.calls.length).toBeLessThanOrEqual(1);
     });
 
@@ -890,6 +1758,7 @@ describe('agentView dev errors', () => {
       '[data-agent-field="composer-interruption"]',
     ) as any;
     expect(interruptionHost).toBeTruthy();
+    expect(interruptionHost.hidden).toBe(true);
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
@@ -910,9 +1779,9 @@ describe('agentView dev errors', () => {
 
   it('does not close the live Lens stream when the agent tab is deactivated', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:00Z',
@@ -950,7 +1819,7 @@ describe('agentView dev errors', () => {
       items: [],
       requests: [],
       notices: [],
-      transcript: [],
+      history: [],
     });
     getLensEvents.mockResolvedValue({
       sessionId: 's1',
@@ -975,7 +1844,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', createPanel());
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     deactivate?.('s1');
@@ -986,15 +1855,15 @@ describe('agentView dev errors', () => {
 
   it('releases hidden history DOM and collapses background history back to a latest window', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot
+    getLensHistoryWindow
       .mockResolvedValueOnce({
         sessionId: 's1',
         provider: 'codex',
         generatedAt: '2026-03-28T11:00:00Z',
         latestSequence: 40,
-        totalHistoryCount: 400,
+        historyCount: 400,
         historyWindowStart: 160,
         historyWindowEnd: 240,
         hasOlderHistory: true,
@@ -1032,7 +1901,7 @@ describe('agentView dev errors', () => {
         items: [],
         requests: [],
         notices: [],
-        transcript: Array.from({ length: 80 }, (_value, index) => ({
+        history: Array.from({ length: 80 }, (_value, index) => ({
           entryId: `assistant:${index + 161}`,
           turnId: 'turn-1',
           itemId: `assistant-${index + 161}`,
@@ -1053,7 +1922,7 @@ describe('agentView dev errors', () => {
         provider: 'codex',
         generatedAt: '2026-03-28T11:00:05Z',
         latestSequence: 45,
-        totalHistoryCount: 405,
+        historyCount: 405,
         historyWindowStart: 325,
         historyWindowEnd: 405,
         hasOlderHistory: true,
@@ -1091,7 +1960,7 @@ describe('agentView dev errors', () => {
         items: [],
         requests: [],
         notices: [],
-        transcript: Array.from({ length: 80 }, (_value, index) => ({
+        history: Array.from({ length: 80 }, (_value, index) => ({
           entryId: `assistant:${index + 326}`,
           turnId: 'turn-1',
           itemId: `assistant-${index + 326}`,
@@ -1131,7 +2000,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
@@ -1140,18 +2009,491 @@ describe('agentView dev errors', () => {
     deactivate?.('s1');
 
     await vi.waitFor(() => {
-      expect(getLensSnapshot.mock.calls).toContainEqual(['s1', undefined, 80]);
+      expect(getLensHistoryWindow.mock.calls).toContainEqual([
+        's1',
+        undefined,
+        80,
+        expect.any(String),
+      ]);
     });
 
     expect(disconnectStream).not.toHaveBeenCalled();
     expect(historyHost.replaceChildren).toHaveBeenCalled();
   });
 
+  it('re-entering a Lens tab resets follow mode and refreshes the latest history window', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 40,
+          historyCount: 400,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+          history: Array.from({ length: 80 }, (_value, index) => ({
+            entryId: `assistant:${index + 161}`,
+            turnId: 'turn-1',
+            itemId: `assistant-${index + 161}`,
+            requestId: null,
+            order: index + 161,
+            kind: 'assistant',
+            status: 'completed',
+            title: 'Assistant',
+            body: `Historical row ${index + 161}`,
+            updatedAt: '2026-03-28T11:00:00Z',
+            streaming: false,
+            attachments: [],
+            createdAt: '2026-03-28T11:00:00Z',
+          })),
+        }),
+      )
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 45,
+          historyCount: 405,
+          historyWindowStart: 325,
+          historyWindowEnd: 405,
+          hasOlderHistory: true,
+          hasNewerHistory: false,
+          history: Array.from({ length: 80 }, (_value, index) => ({
+            entryId: `assistant:${index + 326}`,
+            turnId: 'turn-1',
+            itemId: `assistant-${index + 326}`,
+            requestId: null,
+            order: index + 326,
+            kind: 'assistant',
+            status: 'completed',
+            title: 'Assistant',
+            body: `Latest row ${index + 326}`,
+            updatedAt: '2026-03-28T11:00:05Z',
+            streaming: false,
+            attachments: [],
+            createdAt: '2026-03-28T11:00:05Z',
+          })),
+        }),
+      );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.scrollTop = 1337;
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        1,
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        2,
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
+    });
+
+    expect(historyHost.scrollTop).toBe(0);
+  });
+
+  it('re-entering a still-connected Lens tab refreshes the latest history window when the cached window is stale', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockImplementation((...args: any[]) => {
+      const handlers = args[5];
+      handlers?.onOpen?.();
+      return disconnectStream;
+    });
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        latestSequence: 40,
+        historyCount: 400,
+        historyWindowStart: 160,
+        historyWindowEnd: 240,
+        hasOlderHistory: true,
+        hasNewerHistory: true,
+        history: Array.from({ length: 80 }, (_value, index) => ({
+          entryId: `assistant:${index + 161}`,
+          turnId: 'turn-1',
+          itemId: `assistant-${index + 161}`,
+          requestId: null,
+          order: index + 161,
+          kind: 'assistant',
+          status: 'completed',
+          title: 'Assistant',
+          body: `Historical row ${index + 161}`,
+          updatedAt: '2026-03-28T11:00:00Z',
+          streaming: false,
+          attachments: [],
+          createdAt: '2026-03-28T11:00:00Z',
+        })),
+      }),
+    );
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+    });
+
+    getLensHistoryWindow.mockClear();
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenCalledWith(
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
+    });
+  });
+
+  it('returning from browser background snaps the active Lens session back to the live edge', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 40,
+          historyCount: 400,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 45,
+          historyCount: 405,
+          historyWindowStart: 325,
+          historyWindowEnd: 405,
+          hasOlderHistory: true,
+          hasNewerHistory: false,
+        }),
+      );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.scrollTop = 1337;
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        1,
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
+    });
+
+    historyHost.scrollTop = 987;
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'hidden';
+    (document as { visibilityState: string; hidden: boolean }).hidden = true;
+    triggerDocumentEvent('visibilitychange');
+
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'visible';
+    (document as { visibilityState: string; hidden: boolean }).hidden = false;
+    triggerDocumentEvent('visibilitychange');
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        2,
+        's1',
+        undefined,
+        80,
+        expect.any(String),
+      );
+    });
+
+    expect(historyHost.scrollTop).toBe(0);
+  });
+
+  it('treats explicit upward wheel intent as a browse detach before foreground recovery reloads history', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 40,
+          historyCount: 400,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createSnapshot({
+          latestSequence: 45,
+          historyCount: 405,
+          historyWindowStart: 160,
+          historyWindowEnd: 240,
+          hasOlderHistory: true,
+          hasNewerHistory: true,
+        }),
+      );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 45,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        1,
+        's1',
+        undefined,
+        expect.any(Number),
+        expect.any(String),
+      );
+    });
+
+    const wheelHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'wheel',
+    )?.[1] as ((event: { deltaY: number }) => void) | undefined;
+    expect(wheelHandler).toBeTypeOf('function');
+
+    wheelHandler?.({ deltaY: -24 });
+
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'hidden';
+    (document as { visibilityState: string; hidden: boolean }).hidden = true;
+    triggerDocumentEvent('visibilitychange');
+
+    (document as { visibilityState: string; hidden: boolean }).visibilityState = 'visible';
+    (document as { visibilityState: string; hidden: boolean }).hidden = false;
+    triggerDocumentEvent('visibilitychange');
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+        2,
+        's1',
+        160,
+        80,
+        expect.any(String),
+      );
+    });
+  });
+
+  it('queues a follow-up viewport history sync when scroll continues during an in-flight browse fetch', async () => {
+    const disconnectStream = vi.fn();
+    openLensHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionLens.mockResolvedValue(undefined);
+
+    const buildWindowSnapshot = (startIndex: number, count: number, latestSequence: number) =>
+      createSnapshot({
+        latestSequence,
+        historyCount: 640,
+        historyWindowStart: startIndex,
+        historyWindowEnd: startIndex + count,
+        hasOlderHistory: startIndex > 0,
+        hasNewerHistory: startIndex + count < 640,
+        history: Array.from({ length: count }, (_value, index) => {
+          const order = startIndex + index + 1;
+          return {
+            entryId: `assistant:${order}`,
+            turnId: `turn-${order}`,
+            itemId: `assistant-${order}`,
+            requestId: null,
+            order,
+            kind: 'assistant',
+            status: 'completed',
+            itemType: 'assistant_text',
+            title: null,
+            body: `History row ${order}`,
+            updatedAt: '2026-04-15T12:00:00Z',
+            streaming: false,
+            attachments: [],
+            createdAt: '2026-04-15T12:00:00Z',
+          };
+        }),
+      });
+
+    let resolveSecondWindow: (() => void) | null = null;
+    const requestedWindows: Array<{ startIndex: number | undefined; count: number | undefined }> =
+      [];
+    getLensHistoryWindow.mockImplementation(
+      async (
+        _sessionId: string,
+        startIndex?: number,
+        count?: number,
+      ): Promise<any> => {
+        requestedWindows.push({ startIndex, count });
+
+        if (requestedWindows.length === 1) {
+          return buildWindowSnapshot(320, 80, 40);
+        }
+
+        if (requestedWindows.length === 2) {
+          return new Promise((resolve) => {
+            resolveSecondWindow = () =>
+              resolve(buildWindowSnapshot(startIndex ?? 0, count ?? 80, 41));
+          });
+        }
+
+        return buildWindowSnapshot(startIndex ?? 0, count ?? 80, 42);
+      },
+    );
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.clientHeight = 600;
+    historyHost.clientWidth = 920;
+    historyHost.scrollHeight = 12000;
+    historyHost.scrollTop = 4200;
+    historyHost.getBoundingClientRect = vi.fn(() => ({ top: 0, bottom: 600 }));
+    historyHost.querySelector = vi.fn(() => null);
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenCalledTimes(1);
+    });
+    const wheelHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'wheel',
+    )?.[1] as ((event: { deltaY: number }) => void) | undefined;
+    const scrollHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'scroll',
+    )?.[1] as (() => void) | undefined;
+    expect(wheelHandler).toBeTypeOf('function');
+    expect(scrollHandler).toBeTypeOf('function');
+
+    wheelHandler?.({ deltaY: -32 });
+
+    historyHost.scrollTop = 1100;
+    scrollHandler?.();
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow).toHaveBeenCalledTimes(2);
+    });
+
+    historyHost.scrollTop = 140;
+    scrollHandler?.();
+    await Promise.resolve();
+    expect(getLensHistoryWindow).toHaveBeenCalledTimes(2);
+
+    expect(resolveSecondWindow).toBeTypeOf('function');
+    resolveSecondWindow?.();
+
+    await vi.waitFor(() => {
+      expect(getLensHistoryWindow.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+    if (requestedWindows[2]) {
+      expect(requestedWindows[2].startIndex).toBeTypeOf('number');
+      expect((requestedWindows[2].count ?? 0) > 0).toBe(true);
+    }
+  });
+
+  it('does not request a viewport-centered refetch when a short retained window already covers full history', async () => {
+    const { resolveViewportCenteredWindowRequest } = await import('../../utils/virtualizer');
+
+    const request = resolveViewportCenteredWindowRequest({
+      items: Array.from({ length: 29 }, (_value, index) => ({
+        id: `row-${index + 1}`,
+        heightPx: 96,
+      })),
+      viewportMetrics: {
+        scrollTop: 3508,
+        clientHeight: 629,
+        clientWidth: 920,
+      },
+      retainedWindow: {
+        windowStart: 0,
+        windowEnd: 29,
+        totalCount: 29,
+      },
+      fetchAheadItems: 20,
+      resolveItemSize: (item) => item.heightPx,
+      observedSizes: [],
+    });
+
+    expect(request).toBeNull();
+  });
+
   it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
-    openLensEventStream.mockReturnValue(disconnectStream);
+    openLensHistoryStream.mockReturnValue(disconnectStream);
     attachSessionLens.mockResolvedValue(undefined);
-    getLensSnapshot.mockResolvedValue({
+    getLensHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:00Z',
@@ -1189,7 +2531,7 @@ describe('agentView dev errors', () => {
       items: [],
       requests: [],
       notices: [],
-      transcript: [
+      history: [
         {
           entryId: 'assistant:turn-1',
           turnId: 'turn-1',
@@ -1226,7 +2568,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensEventStream).toHaveBeenCalledTimes(1);
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
@@ -1234,17 +2576,17 @@ describe('agentView dev errors', () => {
 
     setActiveLensSession('s2');
 
-    const streamCallbacks = openLensEventStream.mock.calls[0]?.[4] as
-      | { onDelta(delta: unknown): void }
+    const streamCallbacks = openLensHistoryStream.mock.calls[0]?.[5] as
+      | { onPatch(delta: unknown): void }
       | undefined;
     expect(streamCallbacks).toBeTruthy();
 
-    streamCallbacks?.onDelta({
+    streamCallbacks?.onPatch({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:01Z',
       latestSequence: 2,
-      totalHistoryCount: 1,
+      historyCount: 1,
       session: {
         state: 'running',
         stateLabel: 'Running',
@@ -1313,6 +2655,159 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
 
     expect(detachSessionLens).toHaveBeenCalledWith('s1');
+  });
+
+  it('batches live history patch renders to one paint every 250ms', async () => {
+    attachSessionLens.mockResolvedValue(undefined);
+    getLensHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        currentTurn: {
+          turnId: 'turn-1',
+          state: 'running',
+          stateLabel: 'Running',
+          model: 'gpt-5.4',
+          effort: 'medium',
+          startedAt: '2026-03-28T11:00:00Z',
+          completedAt: null,
+        },
+        session: {
+          state: 'running',
+          stateLabel: 'Running',
+          reason: null,
+          lastError: null,
+          lastEventAt: '2026-03-28T11:00:00Z',
+        },
+      }),
+    );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    setActiveLensSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    activate?.('s1', createPanel());
+
+    await vi.waitFor(() => {
+      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+    });
+
+    const streamCallbacks = openLensHistoryStream.mock.calls[0]?.[5] as
+      | { onPatch(delta: unknown): void }
+      | undefined;
+    expect(streamCallbacks).toBeTruthy();
+
+    const requestAnimationFrameMock = window.requestAnimationFrame as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    const setTimeoutMock = window.setTimeout as unknown as ReturnType<typeof vi.fn>;
+    requestAnimationFrameMock.mockClear();
+    setTimeoutMock.mockClear();
+
+    const firstPatch = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T11:00:01Z',
+      latestSequence: 2,
+      historyCount: 1,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T11:00:01Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'medium',
+        startedAt: '2026-03-28T11:00:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: 'partial',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:assistant-1',
+          order: 1,
+          kind: 'assistant',
+          turnId: 'turn-1',
+          itemId: 'assistant-1',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'partial',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-03-28T11:00:00Z',
+          updatedAt: '2026-03-28T11:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    };
+
+    streamCallbacks?.onPatch(firstPatch);
+    streamCallbacks?.onPatch({
+      ...firstPatch,
+      generatedAt: '2026-03-28T11:00:02Z',
+      latestSequence: 3,
+      session: {
+        ...firstPatch.session,
+        lastEventAt: '2026-03-28T11:00:02Z',
+      },
+      streams: {
+        ...firstPatch.streams,
+        assistantText: 'partial answer',
+      },
+      historyUpserts: [
+        {
+          ...firstPatch.historyUpserts[0],
+          body: 'partial answer',
+          updatedAt: '2026-03-28T11:00:02Z',
+        },
+      ],
+    });
+
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1);
+    expect(setTimeoutMock.mock.calls[0]?.[1]).toBe(250);
+    expect(requestAnimationFrameMock).not.toHaveBeenCalled();
+
+    const flushRenderBatch = setTimeoutMock.mock.calls[0]?.[0] as (() => void) | undefined;
+    expect(flushRenderBatch).toBeTypeOf('function');
+    flushRenderBatch?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
   });
 
   it('classifies a busy terminal attach failure into a readonly handoff issue', async () => {
@@ -1892,7 +3387,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
     const marked = withLiveAssistantState(snapshot, history);
 
     expect(
@@ -1945,7 +3440,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-1',
           order: 1,
@@ -2068,7 +3563,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-1',
           order: 1,
@@ -2100,7 +3595,7 @@ describe('agentView dev errors', () => {
           itemId: null,
           requestId: 'req-1',
           status: 'open',
-          itemType: 'tool_user_input',
+          itemType: 'interview',
           title: 'User input',
           body: 'Choose SAFE or FAST.',
           attachments: [],
@@ -2114,7 +3609,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -2128,7 +3623,7 @@ describe('agentView dev errors', () => {
     });
   });
 
-  it('keeps backend history order when a turn has both streamed and final assistant rows', async () => {
+  it('shows one settled assistant row when the final assistant item lands after streaming', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
@@ -2166,7 +3661,7 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'user:turn-2',
           order: 1,
@@ -2188,16 +3683,16 @@ describe('agentView dev errors', () => {
           order: 2,
           kind: 'assistant',
           turnId: 'turn-2',
-          itemId: null,
+          itemId: 'assistant-item-2',
           requestId: null,
-          status: 'streaming',
-          itemType: 'assistant_text',
+          status: 'completed',
+          itemType: 'assistant_message',
           title: null,
-          body: 'Ich lese kurz den Inhalt des aktuellen Arbeitsverzeichnisses.',
+          body: '| Name | Groesse |\n| --- | --- |\n| file.txt | 42 |',
           attachments: [],
-          streaming: true,
+          streaming: false,
           createdAt: '2026-03-27T16:40:25Z',
-          updatedAt: '2026-03-27T16:40:25Z',
+          updatedAt: '2026-03-27T16:40:59Z',
         },
         {
           entryId: 'tool:tool-1',
@@ -2215,38 +3710,21 @@ describe('agentView dev errors', () => {
           createdAt: '2026-03-27T16:40:32Z',
           updatedAt: '2026-03-27T16:40:32Z',
         },
-        {
-          entryId: 'assistant:assistant-item-2',
-          order: 4,
-          kind: 'assistant',
-          turnId: 'turn-2',
-          itemId: 'assistant-item-2',
-          requestId: null,
-          status: 'completed',
-          itemType: 'assistant_message',
-          title: null,
-          body: '| Name | Groesse |\n| --- | --- |\n| file.txt | 42 |',
-          attachments: [],
-          streaming: false,
-          createdAt: '2026-03-27T16:40:58Z',
-          updatedAt: '2026-03-27T16:40:59Z',
-        },
       ],
       items: [],
       requests: [],
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history.map((entry) => entry.id)).toEqual([
       'user:turn-2',
       'assistant-stream:turn-2',
       'tool:tool-1',
-      'assistant:assistant-item-2',
     ]);
-    expect(history[1]?.live).toBe(true);
-    expect(history[3]?.live).toBe(false);
+    expect(history[1]?.body).toContain('| file.txt | 42 |');
+    expect(history[1]?.live).toBe(false);
   });
 
   it.skip('hides normal state-management events and merges tool updates', async () => {
@@ -2769,7 +4247,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -2827,7 +4305,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
@@ -2890,7 +4368,7 @@ describe('agentView dev errors', () => {
         {
           requestId: 'req-1',
           turnId: 'turn-1',
-          kind: 'tool_user_input',
+          kind: 'interview',
           kindLabel: 'Question',
           state: 'open',
           detail: 'The agent needs an operator choice.',
@@ -2913,7 +4391,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot, []);
+    const history = buildLensHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ kind: 'user' });
@@ -2961,7 +4439,7 @@ describe('agentView dev errors', () => {
       {
         requestId: 'req-1',
         state: 'open',
-        kind: 'tool_user_input',
+        kind: 'approval',
         updatedAt: '2026-03-23T11:59:58Z',
       },
     ] as any;
@@ -3296,10 +4774,10 @@ describe('agentView dev errors', () => {
     const history = buildLensHistoryEntries(snapshot, events);
     const userEntry = history.find((entry) => entry.kind === 'user');
     const commandCallEntry = history.find(
-      (entry) => entry.kind === 'tool' && entry.body.includes('Get-Content report.md'),
-    );
-    const commandOutputEntry = history.find(
-      (entry) => entry.kind === 'tool' && entry.title === 'Command output',
+      (entry) =>
+        entry.kind === 'tool' &&
+        (entry.commandText?.includes('Get-Content report.md') ||
+          entry.body.includes('Get-Content report.md')),
     );
     const fileChangeEntry = history.find(
       (entry) =>
@@ -3309,11 +4787,256 @@ describe('agentView dev errors', () => {
     const assistantEntry = history.find((entry) => entry.kind === 'assistant');
 
     expect(userEntry?.body).toContain('update report.md');
-    expect(commandCallEntry?.body).toContain('Get-Content report.md');
-    expect(commandOutputEntry?.body).toContain('status: TODO');
+    expect(commandCallEntry?.commandText ?? commandCallEntry?.body).toContain('Get-Content report.md');
+    expect(commandCallEntry?.commandOutputTail).toEqual(['status: TODO']);
+    expect(commandCallEntry?.body).toBe('');
+    expect(history.some((entry) => entry.kind === 'tool' && entry.title === 'Command output')).toBe(
+      false,
+    );
     expect(fileChangeEntry?.body).toContain('report.md');
     expect(diffEntry?.body).toContain('+status: DONE');
     expect(assistantEntry?.body).toContain('| alpha | 3 | Ada |');
+  });
+
+  it('keeps up to 12 tail lines when folding command output into a command row', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      history: [
+        {
+          entryId: 'tool-command',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_execution',
+          title: 'Tool completed',
+          body: 'git log --oneline',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:00Z',
+          updatedAt: '2026-04-04T20:00:00Z',
+        },
+        {
+          entryId: 'tool-output',
+          order: 2,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Command output',
+          body: Array.from({ length: 15 }, (_, index) => `line ${index + 1}`).join('\n'),
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:01Z',
+          updatedAt: '2026-04-04T20:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandOutputTail).toEqual(
+      Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
+    );
+  });
+
+  it('renders direct command-output history rows as persistent Ran rows with folded tail output', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      history: [
+        {
+          entryId: 'tool:cmd-1',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Run command',
+          body: 'git status --short --branch\n\n## dev...origin/dev',
+          itemId: null,
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-05T00:20:00Z',
+          updatedAt: '2026-04-05T00:20:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.body).toBe('');
+    expect(history[0]?.commandText).toBe('git status --short --branch');
+    expect(history[0]?.commandOutputTail).toEqual(['## dev...origin/dev']);
+  });
+
+  it('uses canonical commandText for truncated command-output rows instead of treating omission markers as commands', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      history: [
+        {
+          entryId: 'tool:cmd-omitted',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Run command',
+          commandText: 'codex -m gpt-5.4',
+          body: '... earlier output omitted ...\nline 28 xxxxx\nline 29 xxxxx',
+          itemId: 'cmd-1',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-08T18:00:00Z',
+          updatedAt: '2026-04-08T18:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandText).toBe('codex -m gpt-5.4');
+    expect(history[0]?.commandOutputTail).toEqual([
+      '... earlier output omitted ...',
+      'line 28 xxxxx',
+      'line 29 xxxxx',
+    ]);
+  });
+
+  it('does not synthesize a Ran row from omission markers when command text is unavailable', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      history: [
+        {
+          entryId: 'tool:cmd-omitted-raw',
+          order: 1,
+          kind: 'tool',
+          status: 'completed',
+          itemType: 'command_output',
+          title: 'Run command',
+          body: '... earlier output omitted ...\nline 28 xxxxx',
+          itemId: 'cmd-1',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-08T18:00:00Z',
+          updatedAt: '2026-04-08T18:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.commandText ?? '').toBe('');
+    expect(history[0]?.body).toContain('... earlier output omitted ...');
+  });
+
+  it('renders normalized command-output rows through the dedicated command presentation', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'tool:cmd-1',
+      order: 1,
+      kind: 'tool',
+      tone: 'positive',
+      label: 'Tool',
+      title: 'Run command',
+      body: '',
+      meta: '',
+      sourceItemType: 'command_output',
+      commandText: 'git status --short --branch',
+      commandOutputTail: ['## dev...origin/dev'],
+    });
+
+    expect(presentation.mode).toBe('command');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(2);
+  });
+
+  it('preserves previously shown command tails when later updates regress the same row', async () => {
+    const { preservePersistentCommandEntries } = await import('./index');
+
+    const previousEntries = [
+      {
+        id: 'tool:cmd-1',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: '',
+        body: '',
+        meta: '',
+        sourceItemId: 'cmd-1',
+        sourceTurnId: 'turn-1',
+        sourceItemType: 'command_output',
+        commandText: 'git status --short --branch',
+        commandOutputTail: ['## dev...origin/dev'],
+      },
+    ] as any;
+
+    const entries = [
+      {
+        id: 'tool:cmd-1',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: 'Tool completed',
+        body: '',
+        meta: '20:00:03',
+        sourceItemId: 'cmd-1',
+        sourceTurnId: 'turn-1',
+        sourceItemType: 'command_execution',
+      },
+    ] as any;
+
+    const stabilized = preservePersistentCommandEntries(entries, previousEntries, {
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+    });
+
+    expect(stabilized).toHaveLength(1);
+    expect(stabilized[0]).toMatchObject({
+      body: '',
+      meta: '',
+      commandText: 'git status --short --branch',
+      commandOutputTail: ['## dev...origin/dev'],
+    });
+  });
+
+  it('keeps previously shown command rows materialized while they remain inside the active history window', async () => {
+    const { preservePersistentCommandEntries } = await import('./index');
+
+    const previousEntries = [
+      {
+        id: 'tool:cmd-1',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: '',
+        body: '',
+        meta: '',
+        sourceItemId: 'cmd-1',
+        sourceTurnId: 'turn-1',
+        sourceItemType: 'command_output',
+        commandText: 'git status --short --branch',
+        commandOutputTail: ['## dev...origin/dev'],
+      },
+    ] as any;
+
+    const stabilized = preservePersistentCommandEntries([], previousEntries, {
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+    });
+
+    expect(stabilized).toHaveLength(1);
+    expect(stabilized[0]).toMatchObject({
+      id: 'tool:cmd-1',
+      commandText: 'git status --short --branch',
+      commandOutputTail: ['## dev...origin/dev'],
+    });
   });
 
   it.skip('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {
@@ -4169,7 +5892,7 @@ describe('agentView dev errors', () => {
     expect(userEntries[0]?.attachments?.[0]?.displayName).toBe('screen.png');
   });
 
-  it.skip('keeps attachment-only user rows visible in the history', async () => {
+  it('keeps attachment-only user rows visible in the history', async () => {
     const { buildLensHistoryEntries } = await import('./index');
 
     const snapshot = {
@@ -4207,28 +5930,18 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      items: [],
-      requests: [],
-      notices: [],
-    } as any;
-
-    const events = [
-      {
-        sequence: 1,
-        eventId: 'e-image-only',
-        sessionId: 's1',
-        provider: 'codex',
-        threadId: 'thread-1',
-        turnId: 'turn-2',
-        itemId: 'local-user:turn-2',
-        createdAt: '2026-03-22T01:40:00Z',
-        type: 'item.completed',
-        raw: null,
-        item: {
-          itemType: 'user_message',
+      history: [
+        {
+          entryId: 'user:turn-2',
+          order: 1,
+          kind: 'user',
           status: 'completed',
-          title: 'User message',
-          detail: '',
+          title: '',
+          body: '',
+          updatedAt: '2026-03-22T01:40:00Z',
+          turnId: 'turn-2',
+          itemId: 'local-user:turn-2',
+          itemType: 'user_message',
           attachments: [
             {
               kind: 'image',
@@ -4237,11 +5950,15 @@ describe('agentView dev errors', () => {
               displayName: 'photo.png',
             },
           ],
+          streaming: false,
         },
-      },
-    ] as any;
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildLensHistoryEntries(snapshot);
     const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
@@ -4517,6 +6234,828 @@ describe('agentView dev errors', () => {
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
+  it('subtracts older-history top spacer height before resolving the visible window', async () => {
+    const { computeHistoryVisibleRange } = await import('./historyViewport');
+    const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 41,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 41}`,
+      meta: 'now',
+    })) as any;
+
+    const viewportMetrics = resolveHistoryWindowViewportMetrics(
+      entries,
+      {
+        snapshot: {
+          historyWindowStart: 40,
+          historyWindowEnd: 120,
+          historyCount: 200,
+        },
+        historyObservedHeights: new Map(),
+      } as any,
+      {
+        scrollTop: 4350,
+        clientHeight: 600,
+        clientWidth: 900,
+      },
+      () => 100,
+    );
+
+    expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
+    expect(viewportMetrics.effectiveOffWindowTopSpacerPx).toBe(2800);
+    expect(viewportMetrics.scrollTop).toBe(1550);
+
+    const visibleRange = computeHistoryVisibleRange(
+      entries,
+      viewportMetrics.scrollTop,
+      viewportMetrics.clientHeight,
+      viewportMetrics.clientWidth,
+      () => 100,
+    );
+    const unadjustedRange = computeHistoryVisibleRange(entries, 4350, 600, 900, () => 100);
+
+    expect(visibleRange.start).toBe(15);
+    expect(unadjustedRange.start).toBe(43);
+  });
+
+  it('resolves the actual visible history slice even when the retained window stays below the DOM virtualization threshold', async () => {
+    const { computeHistoryVisibleRange } = await import('./historyViewport');
+
+    const entries = Array.from({ length: 35 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    const visibleRange = computeHistoryVisibleRange(entries, 1800, 600, 900, () => 100);
+
+    expect(visibleRange.start).toBe(18);
+    expect(visibleRange.end).toBe(24);
+  });
+
+  it('caps the viewport-aligned off-window top spacer when estimates exceed the current scroll offset', async () => {
+    const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 41,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 41}`,
+      meta: 'now',
+    })) as any;
+
+    const viewportMetrics = resolveHistoryWindowViewportMetrics(
+      entries,
+      {
+        snapshot: {
+          historyWindowStart: 40,
+          historyWindowEnd: 120,
+          historyCount: 200,
+        },
+        historyObservedHeights: new Map(),
+      } as any,
+      {
+        scrollTop: 240,
+        clientHeight: 600,
+        clientWidth: 900,
+      },
+      () => 100,
+    );
+
+    expect(viewportMetrics.offWindowTopSpacerPx).toBe(2800);
+    expect(viewportMetrics.effectiveOffWindowTopSpacerPx).toBe(240);
+    expect(viewportMetrics.scrollTop).toBe(0);
+  });
+
+  it('keeps the pending prepend anchor inside a bounded render corridor', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 33771,
+      scrollHeight: 56000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const createdNodes = new Map<string, any>();
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 320,
+        historyWindowEnd: 406,
+        historyCount: 520,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: {
+        entryId: 'row-360',
+        topOffsetPx: 24,
+        absoluteIndex: 360,
+      },
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+    } as any;
+    const scheduleHistoryRender = vi.fn();
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender,
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) => {
+        const node = createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({ top: 24, bottom: 124, height: 100 })),
+        });
+        createdNodes.set(entry.id, node);
+        return node;
+      }),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = Array.from({ length: 86 }, (_, index) => ({
+      id: `row-${320 + index}`,
+      order: 321 + index,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${320 + index}`,
+      meta: 'now',
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(historyViewport.childNodes.length).toBeLessThan(entries.length + 2);
+    expect(state.historyRenderedNodes.size).toBeLessThan(entries.length);
+    expect(state.historyRenderedNodes.has('row-360')).toBe(true);
+    expect(scheduleHistoryRender).toHaveBeenCalled();
+  });
+
+  it('keeps the progress navigator active for short histories with tall rendered rows', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 629,
+      clientWidth: 900,
+      scrollTop: 0,
+      scrollHeight: 0,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 629 })),
+    });
+    const progressNav = createMockDomNode({
+      clientHeight: 629,
+      clientWidth: 14,
+      hidden: false,
+      dataset: {},
+      setAttribute: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, height: 629 })),
+    });
+    const progressThumb = createMockDomNode({
+      style: {} as CSSStyleDeclaration,
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="history-progress-nav"]':
+            return progressNav;
+          case '[data-agent-field="history-progress-thumb"]':
+            return progressThumb;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 10,
+        historyCount: 10,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyProgressNav: progressNav,
+      historyProgressThumb: progressThumb,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyPendingJumpTargetIndex: null,
+      historyPendingJumpAlign: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: null,
+      historyNavigatorDragTargetIndex: null,
+      historyNavigatorQueuedTargetIndex: null,
+      historyNavigatorQueuedRequestKind: null,
+      historyNavigatorPreviewHandle: null,
+      historyNavigatorHydrateHandle: null,
+      historyNavigatorLastPreviewRequestAt: 0,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({
+            top: 0,
+            bottom: entry.estimatedHeightPx,
+            height: entry.estimatedHeightPx,
+          })),
+        }),
+      ),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = [67, 67, 63, 96, 519, 57, 85, 363, 2890, 35].map((heightPx, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+      estimatedHeightPx: heightPx,
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(progressNav.hidden).toBe(false);
+    expect(progressNav.dataset.ready).toBe('true');
+    expect(progressNav.tabIndex).toBe(0);
+    expect(progressNav.setAttribute).toHaveBeenCalledWith('aria-disabled', 'false');
+    expect(String(progressThumb.style.height)).not.toBe('');
+    expect(String(progressThumb.style.top)).toBe('6px');
+
+    historyViewport.scrollTop = 4000;
+    render.syncViewportOffset('s1');
+
+    expect(String(progressThumb.style.top)).not.toBe('6px');
+  });
+
+  it('realigns browse-mode history when every rendered row drifts outside the viewport', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2000,
+      scrollHeight: 6000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 80,
+        historyCount: 80,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({ top: -1200, bottom: -1100, height: 100 })),
+        }),
+      ),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(historyViewport.scrollTop).toBe(776);
+  });
+
+  it('keeps viewport-scroll rerendering enabled for short retained windows when spacers are active', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 21740,
+      scrollHeight: 100360,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const offscreenNode = createMockDomNode({
+      getBoundingClientRect: vi.fn(() => ({ top: -1200, bottom: -1100, height: 100 })),
+    });
+    const state = {
+      panel: createMockDomNode(),
+      snapshot: {
+        historyWindowStart: 200,
+        historyWindowEnd: 213,
+        historyCount: 520,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: Array.from({ length: 13 }, (_, index) => ({
+        id: `row-${index}`,
+        order: 201 + index,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: `Row ${201 + index}`,
+        meta: 'now',
+      })),
+      historyRenderedNodes: new Map([
+        [
+          'row-0',
+          {
+            node: offscreenNode,
+            signature: 'sig',
+            entry: null,
+            cluster: null,
+            lastMeasuredWidthBucket: null,
+          },
+        ],
+      ]),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [createMockDomNode()],
+      historyTrailingPlaceholders: [createMockDomNode()],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: '7:19',
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(() => createMockDomNode()),
+      createHistorySpacer: vi.fn(() => createMockDomNode()),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    expect(render.shouldRenderForViewportScroll(state)).toBe(true);
+  });
+
+  it('requests a viewport-centered history sync when placeholders fill the viewport without a concrete row', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2000,
+      scrollHeight: 6000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const syncViewportHistoryWindow = vi.fn();
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 80,
+        historyCount: 400,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({ top: -1200, bottom: -1100, height: 100 })),
+        }),
+      ),
+      createHistorySpacer: vi.fn(),
+      createHistoryPlaceholderBlock: vi.fn((args: any) =>
+        createMockDomNode({
+          className: 'agent-history-placeholder',
+          style: { height: `${args.heightPx}px` },
+          dataset: { direction: args.direction },
+          querySelector: vi.fn(() => null),
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+      syncViewportHistoryWindow,
+    });
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(syncViewportHistoryWindow).toHaveBeenCalledWith('s1');
+  });
+
+  it('does not remeasure unchanged visible rows on every render pass', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 0,
+      scrollHeight: 5600,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const measuredNode = createMockDomNode({
+      textContent: 'Row 0',
+      getBoundingClientRect: vi.fn(() => ({ top: 24, bottom: 124, height: 100 })),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 1,
+        historyCount: 1,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(() => measuredNode),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = [
+      {
+        id: 'row-0',
+        order: 1,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: 'Row 0',
+        meta: 'now',
+      },
+    ] as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(measuredNode.getBoundingClientRect).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the captured anchor absolute index inside a viewport-centered history fetch', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 26875,
+    });
+    const state = {
+      historyViewport,
+      historyEntries: Array.from({ length: 20 }, (_, index) => ({
+        id: `row-${480 + index}`,
+        order: 481 + index,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: `Row ${480 + index}`,
+        meta: 'now',
+      })),
+      snapshot: {
+        historyWindowStart: 480,
+        historyWindowEnd: 500,
+        historyCount: 520,
+      },
+      pendingHistoryPrependAnchor: {
+        entryId: 'row-496',
+        topOffsetPx: 32,
+        absoluteIndex: 496,
+      },
+      historyObservedHeights: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyMeasuredWidthBucket: 0,
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn(),
+      createHistorySpacer: vi.fn(),
+      createRequestActionBlock: vi.fn(),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const requestedWindow = render.getViewportCenteredHistoryWindowRequest(state, {
+      fetchAheadItems: 30,
+      anchorAbsoluteIndex: state.pendingHistoryPrependAnchor.absoluteIndex,
+    });
+
+    expect(requestedWindow).not.toBeNull();
+    expect(requestedWindow?.startIndex).toBeLessThanOrEqual(496);
+    expect((requestedWindow?.startIndex ?? 0) + (requestedWindow?.count ?? 0)).toBeGreaterThan(
+      496,
+    );
+  });
+
   it('estimates taller history rows for narrow viewports', async () => {
     const { estimateHistoryEntryHeight } = await import('./index');
 
@@ -4537,11 +7076,12 @@ describe('agentView dev errors', () => {
     expect(mobileEstimate).toBeGreaterThan(desktopEstimate);
   });
 
-  it('marks the newest assistant row as live while the current turn is still running', async () => {
+  it('marks only the current turn assistant row as live while the current turn is still running', async () => {
     const { withLiveAssistantState } = await import('./index');
 
     const snapshot = {
       currentTurn: {
+        turnId: 'turn-2',
         state: 'running',
       },
     } as any;
@@ -4564,14 +7104,77 @@ describe('agentView dev errors', () => {
         tone: 'info',
         label: 'Assistant',
         title: '',
+        body: 'Settled answer',
+        meta: 'now',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant-2',
+        order: 3,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
         body: 'Partial answer',
         meta: 'now',
+        sourceTurnId: 'turn-2',
       },
     ] as any;
 
     const marked = withLiveAssistantState(snapshot, entries);
     expect(marked[0]?.live).toBeUndefined();
-    expect(marked[1]?.live).toBe(true);
+    expect(marked[1]?.live).toBeUndefined();
+    expect(marked[2]?.live).toBe(true);
+  });
+
+  it('keeps the previous turn assistant row settled when a new turn starts before the next answer arrives', async () => {
+    const { withLiveAssistantState } = await import('./index');
+
+    const snapshot = {
+      currentTurn: {
+        turnId: 'turn-2',
+        state: 'running',
+      },
+    } as any;
+
+    const entries = [
+      {
+        id: 'user-1',
+        order: 1,
+        kind: 'user',
+        tone: 'positive',
+        label: 'You',
+        title: '',
+        body: 'First question',
+        meta: 'now',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'assistant-1',
+        order: 2,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: '# Final answer',
+        meta: 'now',
+        sourceTurnId: 'turn-1',
+      },
+      {
+        id: 'user-2',
+        order: 3,
+        kind: 'user',
+        tone: 'positive',
+        label: 'You',
+        title: '',
+        body: 'Follow-up question',
+        meta: 'now',
+        sourceTurnId: 'turn-2',
+      },
+    ] as any;
+
+    const marked = withLiveAssistantState(snapshot, entries);
+    expect(marked.some((entry: any) => entry.kind === 'assistant' && entry.live)).toBe(false);
   });
 
   it('adds a single trailing busy bubble only while the turn is actively running', async () => {
@@ -4603,7 +7206,8 @@ describe('agentView dev errors', () => {
 
     expect(running).toHaveLength(2);
     expect(running[1]?.busyIndicator).toBe(true);
-    expect(running[1]?.body).toBe('Generating');
+    expect(running[1]?.body).toBe('Working');
+    expect(running[1]?.busyElapsedText).toBe('0s');
 
     const settled = withTrailingBusyIndicator(
       {
@@ -4617,6 +7221,227 @@ describe('agentView dev errors', () => {
 
     expect(settled).toHaveLength(1);
     expect(settled.some((entry: any) => entry.busyIndicator)).toBe(false);
+  });
+
+  it('updates the busy elapsed label in place instead of forcing a full Lens render on each timer tick', async () => {
+    const { syncBusyIndicatorTicker } = await import('./historyProcessing');
+
+    let timerCallback: (() => void) | null = null;
+    (window.setTimeout as any) = vi.fn((callback: () => void) => {
+      timerCallback = callback;
+      return 1;
+    });
+
+    const renderCurrentAgentView = vi.fn();
+    const updateBusyIndicatorElapsed = vi.fn(() => true);
+    const state = { busyIndicatorTickHandle: null } as any;
+    const snapshot = {
+      sessionId: 's-busy',
+      currentTurn: {
+        startedAt: new Date(Date.now() - 5_000).toISOString(),
+      },
+    } as any;
+
+    syncBusyIndicatorTicker({
+      snapshot,
+      state,
+      entries: [{ id: 'busy', busyIndicator: true }] as any,
+      renderCurrentAgentView,
+      updateBusyIndicatorElapsed,
+    });
+
+    expect(typeof timerCallback).toBe('function');
+    timerCallback?.();
+
+    expect(updateBusyIndicatorElapsed).toHaveBeenCalledWith('s-busy', '5s');
+    expect(renderCurrentAgentView).not.toHaveBeenCalled();
+    expect(window.setTimeout).toHaveBeenCalledTimes(2);
+  });
+
+  it('formats turn durations using compact wall-clock units', async () => {
+    const { formatLensTurnDuration } = await import('./index');
+
+    expect(formatLensTurnDuration(42_000)).toBe('42s');
+    expect(formatLensTurnDuration(65_000)).toBe('1m 5s');
+    expect(formatLensTurnDuration(3_661_000)).toBe('1h 1m 1s');
+  });
+
+  it('uses the latest provider in-progress item detail as the busy bubble label before falling back to Working', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-2', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: '' },
+        items: [
+          {
+            itemId: 'user-1',
+            turnId: 'turn-2',
+            itemType: 'user_message',
+            status: 'in_progress',
+            title: 'You',
+            detail: 'Explain why the busy indicator is wrong.',
+            attachments: [],
+            updatedAt: '2026-04-04T20:00:11Z',
+          },
+          {
+            itemId: 'reasoning-1',
+            turnId: 'turn-2',
+            itemType: 'reasoning',
+            status: 'in_progress',
+            title: 'Reasoning',
+            detail: 'Scanning repository layout',
+            attachments: [],
+            updatedAt: '2026-04-04T20:00:10Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(running[0]?.busyIndicator).toBe(true);
+    expect(running[0]?.body).toBe('Scanning repository layout');
+
+    const fallback = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-2', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: '' },
+        items: [
+          {
+            itemId: 'reasoning-1',
+            turnId: 'turn-2',
+            itemType: 'reasoning',
+            status: 'in_progress',
+            title: 'Reasoning',
+            detail: '',
+            attachments: [],
+            updatedAt: '2026-04-04T20:00:10Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(fallback[0]?.body).toBe('Working');
+  });
+
+  it('does not let assistant text, user prompts, or command text populate the busy bubble', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-3', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: 'Summarize the latest release changes for me.' },
+        history: [
+          {
+            entryId: 'user:turn-3',
+            order: 1,
+            kind: 'user',
+            turnId: 'turn-3',
+            itemId: 'user-3',
+            requestId: null,
+            status: 'completed',
+            itemType: 'user_message',
+            title: null,
+            body: 'Summarize the latest release changes for me.',
+            attachments: [],
+            streaming: false,
+            createdAt: '2026-04-13T11:20:00Z',
+            updatedAt: '2026-04-13T11:20:00Z',
+          },
+        ],
+        items: [
+          {
+            itemId: 'command-3',
+            turnId: 'turn-3',
+            itemType: 'command_execution',
+            status: 'in_progress',
+            title: 'git status --short',
+            detail: 'git status --short',
+            attachments: [],
+            updatedAt: '2026-04-13T11:20:02Z',
+          },
+          {
+            itemId: 'assistant-3',
+            turnId: 'turn-3',
+            itemType: 'assistant_text',
+            status: 'in_progress',
+            title: 'Assistant',
+            detail: 'Summarize the latest release changes for me.',
+            attachments: [],
+            updatedAt: '2026-04-13T11:20:01Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(running[0]?.busyIndicator).toBe(true);
+    expect(running[0]?.body).toBe('Working');
+  });
+
+  it('falls back to Working when a generic in-progress tool detail looks like a shell command', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+
+    const running = withTrailingBusyIndicator(
+      {
+        currentTurn: { turnId: 'turn-4', state: 'running' },
+        session: { state: 'running' },
+        streams: { assistantText: '' },
+        items: [
+          {
+            itemId: 'tool-4',
+            turnId: 'turn-4',
+            itemType: 'tool',
+            status: 'in_progress',
+            title: 'Tool',
+            detail: 'npm run build -- --watch',
+            attachments: [],
+            updatedAt: '2026-04-13T11:21:00Z',
+          },
+        ],
+      } as any,
+      [],
+      [],
+    );
+
+    expect(running[0]?.busyIndicator).toBe(true);
+    expect(running[0]?.body).toBe('Working');
+  });
+
+  it('does not persist a phase-offset field on the busy entry so the DOM can phase-lock to wallclock at render time', async () => {
+    const { withTrailingBusyIndicator } = await import('./index');
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(
+      Date.parse('2026-04-04T20:00:13.700Z'),
+    );
+
+    try {
+      const running = withTrailingBusyIndicator(
+        {
+          currentTurn: {
+            turnId: 'turn-2',
+            state: 'running',
+            startedAt: '2026-04-04T20:00:10.000Z',
+          },
+          session: { state: 'running' },
+          streams: { assistantText: '' },
+          items: [],
+        } as any,
+        [],
+        [],
+      );
+
+      expect(running[0]?.busyIndicator).toBe(true);
+      expect((running[0] as any)?.busyAnimationOffsetMs).toBeUndefined();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 
   it('collapses long tool-style history bodies by default while keeping them monospace', async () => {
@@ -4639,6 +7464,563 @@ describe('agentView dev errors', () => {
     expect(presentation.preview).toBe('line 1: tool output');
   });
 
+  it('keeps live assistant rows on markdown presentation while they stream', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'assistant-live-1',
+      order: 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: '# Streaming\n\n- item',
+      meta: 'now',
+      live: true,
+    });
+
+    expect(presentation.mode).toBe('markdown');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(3);
+    expect(presentation.preview).toBe('');
+  });
+
+  it('renders command-execution rows with a dedicated command presentation', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'tool-command-1',
+      order: 1,
+      kind: 'tool',
+      tone: 'positive',
+      label: 'Tool',
+      title: 'Tool completed',
+      body: 'pwsh -Command Get-Location',
+      meta: '20:00:00',
+      sourceItemType: 'command_execution',
+      commandText: 'pwsh -Command Get-Location',
+      commandOutputTail: ['Q:\\repos\\MidTerm'],
+    });
+
+    expect(presentation.mode).toBe('command');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(2);
+  });
+
+  it('tokenizes command text into command, parameter, string, operator, and text parts', async () => {
+    const { tokenizeCommandText } = await import('./index');
+
+    expect(
+      tokenizeCommandText('pwsh -Command "git status" > out.txt'),
+    ).toEqual([
+      { text: 'pwsh', kind: 'command' },
+      { text: ' ', kind: 'whitespace' },
+      { text: '-Command', kind: 'parameter' },
+      { text: ' ', kind: 'whitespace' },
+      { text: '"git status"', kind: 'string' },
+      { text: ' ', kind: 'whitespace' },
+      { text: '>', kind: 'operator' },
+      { text: ' ', kind: 'whitespace' },
+      { text: 'out.txt', kind: 'text' },
+    ]);
+  });
+
+  it('suppresses Codex context and rate-limit notices from history and derives compact runtime stats', async () => {
+    const { buildLensHistoryEntries, buildLensRuntimeStats } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-04-04T20:00:00Z',
+      latestSequence: 8,
+      historyCount: 4,
+      historyWindowStart: 0,
+      historyWindowEnd: 4,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-04T20:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-04-04T19:59:50Z',
+        completedAt: '2026-04-04T20:00:00Z',
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: null,
+        permissionMode: null,
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'system-context',
+          order: 1,
+          kind: 'system',
+          status: 'completed',
+          itemType: null,
+          title: 'Codex context window updated.',
+          body: 'Used 12838 tokens, window 258400, last turn in/out 12630/208',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T19:59:58Z',
+          updatedAt: '2026-04-04T19:59:58Z',
+        },
+        {
+          entryId: 'system-context-body-only',
+          order: 2,
+          kind: 'system',
+          status: 'completed',
+          itemType: null,
+          title: '',
+          body: 'Codex context window updated.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T19:59:58Z',
+          updatedAt: '2026-04-04T19:59:58Z',
+        },
+        {
+          entryId: 'system-rate',
+          order: 3,
+          kind: 'system',
+          status: 'completed',
+          itemType: null,
+          title: 'Codex rate limits updated.',
+          body: '{"rateLimits":{"primary":{"usedPercent":2},"secondary":{"usedPercent":38}}}',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T19:59:59Z',
+          updatedAt: '2026-04-04T19:59:59Z',
+        },
+        {
+          entryId: 'assistant-1',
+          order: 4,
+          kind: 'assistant',
+          status: 'completed',
+          itemType: 'assistant_message',
+          title: null,
+          body: 'Repo is up to date.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-04T20:00:00Z',
+          updatedAt: '2026-04-04T20:00:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [
+        {
+          eventId: 'notice-context-1',
+          type: 'codex/contextWindowUpdated',
+          message: 'Codex context window updated.',
+          detail: 'Used 12838 tokens, window 258400, last turn in/out 12630/208',
+          createdAt: '2026-04-04T19:59:58Z',
+        },
+        {
+          eventId: 'notice-context-2',
+          type: 'codex/contextWindowUpdated',
+          message: 'Codex context window updated.',
+          detail: 'Used 27446 tokens, window 258400, last turn in/out 14511/97',
+          createdAt: '2026-04-04T20:00:01Z',
+        },
+        {
+          eventId: 'notice-rate-1',
+          type: 'account/rateLimits/updated',
+          message: 'Codex rate limits updated.',
+          detail: '{"rateLimits":{"primary":{"usedPercent":2},"secondary":{"usedPercent":38}}}',
+          createdAt: '2026-04-04T20:00:01Z',
+        },
+      ],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+    const stats = buildLensRuntimeStats(snapshot);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]?.kind).toBe('assistant');
+    expect(stats).toEqual({
+      windowUsedTokens: 27446,
+      windowTokenLimit: 258400,
+      accumulatedInputTokens: 27141,
+      accumulatedOutputTokens: 305,
+      primaryRateLimitUsedPercent: 2,
+      secondaryRateLimitUsedPercent: 38,
+    });
+  });
+
+  it('renders runtime stats as percent of context limit plus session in/out totals', async () => {
+    getLensHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        notices: [
+          {
+            eventId: 'notice-context-1',
+            type: 'codex/contextWindowUpdated',
+            message: 'Codex context window updated.',
+            detail: 'Used 12838 tokens, window 258400, last turn in/out 12630/208',
+            createdAt: '2026-04-04T19:59:58Z',
+          },
+        ],
+      }),
+    );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      const host = panel.querySelector('[data-agent-field="runtime-stats"]') as any;
+      expect(host.hidden).toBe(false);
+      expect(host.childNodes[0]?.textContent).toBe('5% of 258k  in 12.6k  out 208');
+    });
+
+    const host = panel.querySelector('[data-agent-field="runtime-stats"]') as any;
+    expect(host.title).toBe('Context 5% of 258k (12.8k used)\nSession in 12.6k\nSession out 208');
+    expect(host.setAttribute).toHaveBeenCalledWith(
+      'aria-label',
+      'Context 5% of 258k (12.8k used) | Session in 12.6k | Session out 208',
+    );
+  });
+
+  it('falls back to a plain window-limit summary when the provider notice reports cumulative totals instead of current context occupancy', async () => {
+    getLensHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        notices: [
+          {
+            eventId: 'notice-context-total-1',
+            type: 'thread.token-usage.updated',
+            message: 'Codex context window updated.',
+            detail: 'Session total 2056000 tokens, window 258400, last turn in/out 3645000/10900',
+            createdAt: '2026-04-08T12:05:57Z',
+          },
+        ],
+      }),
+    );
+    getLensEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      const host = panel.querySelector('[data-agent-field="runtime-stats"]') as any;
+      expect(host.hidden).toBe(false);
+      expect(host.childNodes[0]?.textContent).toBe('Window 258k  in 3645k  out 10.9k');
+    });
+
+    const host = panel.querySelector('[data-agent-field="runtime-stats"]') as any;
+    expect(host.title).toBe('Window 258k\nSession in 3645k\nSession out 10.9k');
+    expect(host.setAttribute).toHaveBeenCalledWith(
+      'aria-label',
+      'Window 258k | Session in 3645k | Session out 10.9k',
+    );
+  });
+
+  it('detects active non-collapsed Lens selections inside the panel', async () => {
+    const { hasActiveLensSelectionInPanel } = await import('./index');
+
+    const selectedTextNode = {} as Node;
+    const outsideTextNode = {} as Node;
+    const panel = {
+      contains: (node: Node | null) => node === selectedTextNode,
+    } as ParentNode;
+
+    expect(
+      hasActiveLensSelectionInPanel(panel, {
+        rangeCount: 1,
+        isCollapsed: false,
+        getRangeAt: () =>
+          ({
+            startContainer: selectedTextNode,
+            endContainer: selectedTextNode,
+          }) as Range,
+      } as Selection),
+    ).toBe(true);
+
+    expect(
+      hasActiveLensSelectionInPanel(panel, {
+        rangeCount: 1,
+        isCollapsed: false,
+        getRangeAt: () =>
+          ({
+            startContainer: outsideTextNode,
+            endContainer: outsideTextNode,
+          }) as Range,
+      } as Selection),
+    ).toBe(false);
+  });
+
+  it('uses dedicated diff presentation for Lens diff rows', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'diff-1',
+      order: 1,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: 'diff --git a/report.md b/report.md\n@@\n-status: TODO\n+status: DONE',
+      meta: '02:29:00',
+    });
+
+    expect(presentation.mode).toBe('diff');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(4);
+    expect(presentation.preview).toBe('');
+  });
+
+  it('keeps long Lens diff rows expanded instead of collapsing them', async () => {
+    const { resolveHistoryBodyPresentation } = await import('./index');
+
+    const presentation = resolveHistoryBodyPresentation({
+      id: 'diff-2',
+      order: 1,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: Array.from({ length: 240 }, (_, index) => `+line ${index + 1}`).join('\n'),
+      meta: '02:29:00',
+    });
+
+    expect(presentation.mode).toBe('diff');
+    expect(presentation.collapsedByDefault).toBe(false);
+    expect(presentation.lineCount).toBe(240);
+    expect(presentation.preview).toBe('');
+  });
+
+  it('trims diff preamble noise and caps rendered Lens diffs with an ellipsis row', async () => {
+    const { buildRenderedDiffLines } = await import('./index');
+
+    const body =
+      'diff --git a/report.md b/report.md\n' +
+      'new file mode 100644\n' +
+      'index 0000000..1111111\n' +
+      '--- /dev/null\n' +
+      '+++ b/report.md\n' +
+      '@@ -0,0 +1,205 @@\n' +
+      Array.from({ length: 205 }, (_, index) => `+line ${index + 1}`).join('\n');
+    const rendered = buildRenderedDiffLines(body);
+
+    expect(rendered).toHaveLength(201);
+    expect(rendered[0]).toEqual({
+      text: 'Edited report.md',
+      className: 'agent-history-diff-line-file',
+    });
+    expect(rendered[1]).toEqual({
+      text: '@@ -0,0 +1,205 @@',
+      className: 'agent-history-diff-line-hunk',
+    });
+    expect(rendered.some((line) => line.text.startsWith('diff --git'))).toBe(false);
+    expect(rendered.some((line) => line.text.startsWith('new file mode'))).toBe(false);
+    expect(rendered.at(-1)).toEqual({
+      text: '... 7 more diff lines omitted ...',
+      className: 'agent-history-diff-line-ellipsis',
+    });
+  });
+
+  it('derives old and new line numbers from diff hunks', async () => {
+    const { buildRenderedDiffLines } = await import('./index');
+
+    const rendered = buildRenderedDiffLines(
+      [
+        'diff --git a/report.md b/report.md',
+        '--- a/report.md',
+        '+++ b/report.md',
+        '@@ -4,3 +4,4 @@',
+        ' line 4',
+        '-line 5 old',
+        '+line 5 new',
+        '+line 6 new',
+      ].join('\n'),
+    );
+
+    expect(rendered[1]).toEqual({
+      text: '@@ -4,3 +4,4 @@',
+      className: 'agent-history-diff-line-hunk',
+    });
+    expect(rendered[2]).toEqual({
+      text: ' line 4',
+      className: 'agent-history-diff-line-context',
+      oldLineNumber: 4,
+      newLineNumber: 4,
+    });
+    expect(rendered[3]).toEqual({
+      text: '-line 5 old',
+      className: 'agent-history-diff-line-delete',
+      oldLineNumber: 5,
+    });
+    expect(rendered[4]).toEqual({
+      text: '+line 5 new',
+      className: 'agent-history-diff-line-add',
+      newLineNumber: 5,
+    });
+    expect(rendered[5]).toEqual({
+      text: '+line 6 new',
+      className: 'agent-history-diff-line-add',
+      newLineNumber: 6,
+    });
+  });
+
+  it('renders diff code lines through one stable old/new gutter shape', async () => {
+    const { createAgentHistoryDom } = await import('./historyDom');
+
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshLensSnapshot: async () => {},
+      renderCurrentAgentView: () => {},
+      retryLensActivation: async () => {},
+      logWarn: () => {},
+    });
+
+    const entry = {
+      id: 'diff-structured',
+      order: 1,
+      kind: 'diff',
+      tone: 'warning',
+      label: 'Diff',
+      title: 'Working diff',
+      body: [
+        'diff --git a/report.md b/report.md',
+        '--- a/report.md',
+        '+++ b/report.md',
+        '@@ -4,3 +4,4 @@',
+        ' line 4',
+        '-line 5 old',
+        '+line 5 new',
+      ].join('\n'),
+      meta: '',
+    } as const;
+
+    const article = historyDom.createHistoryEntry(entry, 's1') as any;
+    const body = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-diff-body'),
+    );
+    const content = body.children.find((child: any) =>
+      String(child.className).includes('agent-history-diff-content'),
+    );
+    const contextRow = content.children[2];
+    const deleteRow = content.children[3];
+    const addRow = content.children[4];
+
+    expect(contextRow.dataset.hasLineNumbers).toBe('true');
+    expect(deleteRow.dataset.hasLineNumbers).toBe('true');
+    expect(addRow.dataset.hasLineNumbers).toBe('true');
+    expect(contextRow.children[0].className).toContain('agent-history-diff-line-gutter');
+    expect(deleteRow.children[0].className).toContain('agent-history-diff-line-gutter');
+    expect(addRow.children[0].className).toContain('agent-history-diff-line-gutter');
+    expect(deleteRow.children[0].children).toHaveLength(2);
+    expect(addRow.children[0].children).toHaveLength(2);
+  });
+
+  it('renders live assistant rows through the markdown body instead of raw streaming text', async () => {
+    const { createAgentHistoryDom } = await import('./historyDom');
+
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshLensSnapshot: async () => {},
+      renderCurrentAgentView: () => {},
+      retryLensActivation: async () => {},
+      logWarn: () => {},
+    });
+
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'assistant-live-markdown',
+        order: 1,
+        kind: 'assistant',
+        tone: 'info',
+        label: 'Assistant',
+        title: '',
+        body: 'Heading\n\n- streamed bullet',
+        meta: '',
+        live: true,
+      },
+      's1',
+    );
+
+    const body = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-markdown'),
+    );
+    const content = body?.children.find((child: any) =>
+      String(child.className).includes('agent-history-markdown-content'),
+    );
+
+    expect(
+      article.children.some((child: any) =>
+        String(child.className).includes('agent-history-streaming-body'),
+      ),
+    ).toBe(false);
+    expect(content).toBeDefined();
+    expect(content.innerHTML).toContain('<ul>');
+  });
+
+  it('resolves diff file headers against the session working directory when available', async () => {
+    const { buildRenderedDiffLines } = await import('./index');
+
+    const rendered = buildRenderedDiffLines(
+      [
+        'diff --git a/src/report.md b/src/report.md',
+        '--- a/src/report.md',
+        '+++ b/src/report.md',
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n'),
+      'Q:\\repos\\MidTerm',
+    );
+
+    expect(rendered[0]).toEqual({
+      text: 'Edited Q:\\repos\\MidTerm\\src\\report.md',
+      className: 'agent-history-diff-line-file',
+    });
+  });
+
   it('applies canonical live deltas directly into the materialized history window', async () => {
     const { applyCanonicalLensDelta } = await import('./index');
 
@@ -4647,7 +8029,10 @@ describe('agentView dev errors', () => {
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:00Z',
       latestSequence: 1,
-      totalHistoryCount: 1,
+      historyCount: 1,
+      estimatedTotalHistoryHeightPx: 52,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
       historyWindowStart: 0,
       historyWindowEnd: 1,
       hasOlderHistory: false,
@@ -4682,10 +8067,11 @@ describe('agentView dev errors', () => {
         fileChangeOutput: '',
         unifiedDiff: '',
       },
-      transcript: [
+      history: [
         {
           entryId: 'assistant:assistant-1',
           order: 1,
+          estimatedHeightPx: 52,
           kind: 'assistant',
           turnId: 'turn-1',
           itemId: 'assistant-1',
@@ -4711,12 +8097,13 @@ describe('agentView dev errors', () => {
       historyWindowCount: 80,
     } as any;
 
-    applyCanonicalLensDelta(state, {
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:01Z',
       latestSequence: 2,
-      totalHistoryCount: 1,
+      historyCount: 1,
+      estimatedTotalHistoryHeightPx: 68,
       session: {
         state: 'running',
         stateLabel: 'Running',
@@ -4751,6 +8138,7 @@ describe('agentView dev errors', () => {
         {
           entryId: 'assistant:assistant-1',
           order: 1,
+          estimatedHeightPx: 68,
           kind: 'assistant',
           turnId: 'turn-1',
           itemId: 'assistant-1',
@@ -4773,14 +8161,589 @@ describe('agentView dev errors', () => {
       noticeUpserts: [],
     });
 
+    expect(requiresWindowRefresh).toBe(false);
     expect(snapshot.latestSequence).toBe(2);
     expect(snapshot.generatedAt).toBe('2026-03-28T10:00:01Z');
     expect(snapshot.streams.assistantText).toBe('Hello');
-    expect(snapshot.transcript).toHaveLength(1);
-    expect(snapshot.transcript[0]?.body).toBe('Hello');
-    expect(snapshot.transcript[0]?.streaming).toBe(true);
+    expect(snapshot.history).toHaveLength(1);
+    expect(snapshot.history[0]?.body).toBe('Hello');
+    expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(0);
+    expect(snapshot.history[0]?.streaming).toBe(true);
     expect(snapshot.historyWindowStart).toBe(0);
     expect(snapshot.historyWindowEnd).toBe(1);
     expect(snapshot.hasNewerHistory).toBe(false);
+  });
+
+  it('keeps the live-edge retention target when a short initial history window receives more rows', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-live-retain',
+      provider: 'codex',
+      generatedAt: '2026-04-13T10:00:00Z',
+      latestSequence: 1,
+      historyCount: 1,
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-13T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-live-retain',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-live-retain',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-04-13T10:00:00Z',
+        completedAt: null,
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'user:turn-live-retain',
+          order: 1,
+          kind: 'user',
+          turnId: 'turn-live-retain',
+          itemId: 'user-live-retain',
+          requestId: null,
+          status: 'completed',
+          itemType: 'user_message',
+          title: null,
+          body: 'Keep the prior history visible while streaming.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-13T10:00:00Z',
+          updatedAt: '2026-04-13T10:00:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 0,
+      historyWindowCount: 1,
+      historyWindowTargetCount: 80,
+      historyAutoScrollPinned: true,
+    } as any;
+
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+      sessionId: 's-live-retain',
+      provider: 'codex',
+      generatedAt: '2026-04-13T10:00:01Z',
+      latestSequence: 2,
+      historyCount: 2,
+      session: snapshot.session,
+      thread: snapshot.thread,
+      currentTurn: snapshot.currentTurn,
+      quickSettings: snapshot.quickSettings,
+      streams: {
+        ...snapshot.streams,
+        assistantText: 'Streaming reply',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:turn-live-retain',
+          order: 2,
+          kind: 'assistant',
+          turnId: 'turn-live-retain',
+          itemId: 'assistant-live-retain',
+          requestId: null,
+          status: 'streaming',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Streaming reply',
+          attachments: [],
+          streaming: true,
+          createdAt: '2026-04-13T10:00:01Z',
+          updatedAt: '2026-04-13T10:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(requiresWindowRefresh).toBe(false);
+    expect(snapshot.historyWindowStart).toBe(0);
+    expect(snapshot.historyWindowEnd).toBe(2);
+    expect(snapshot.history).toHaveLength(2);
+    expect(snapshot.history.map((entry: any) => entry.entryId)).toEqual([
+      'user:turn-live-retain',
+      'assistant:turn-live-retain',
+    ]);
+    expect(state.historyWindowCount).toBe(2);
+    expect(state.historyWindowTargetCount).toBe(80);
+  });
+
+  it('requests a snapshot refresh when off-window history changes arrive while browsing older history', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-scroll',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:00Z',
+      latestSequence: 5,
+      historyCount: 120,
+      estimatedTotalHistoryHeightPx: 9600,
+      estimatedHistoryBeforeWindowPx: 4200,
+      estimatedHistoryAfterWindowPx: 3000,
+      historyWindowStart: 40,
+      historyWindowEnd: 80,
+      hasOlderHistory: true,
+      hasNewerHistory: true,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-scroll',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-scroll',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-28T10:00:00Z',
+        completedAt: null,
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: 'off',
+        permissionMode: 'default',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'assistant:window-1',
+          order: 41,
+          estimatedHeightPx: 84,
+          kind: 'assistant',
+          turnId: 'turn-scroll',
+          itemId: 'assistant-window-1',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Older visible history',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T09:59:00Z',
+          updatedAt: '2026-03-28T09:59:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 40,
+      historyWindowCount: 40,
+    } as any;
+
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+      sessionId: 's-scroll',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:02Z',
+      latestSequence: 6,
+      historyCount: 121,
+      estimatedTotalHistoryHeightPx: 9684,
+      session: snapshot.session,
+      thread: snapshot.thread,
+      currentTurn: snapshot.currentTurn,
+      quickSettings: snapshot.quickSettings,
+      streams: snapshot.streams,
+      historyUpserts: [
+        {
+          entryId: 'assistant:new-tail',
+          order: 121,
+          estimatedHeightPx: 84,
+          kind: 'assistant',
+          turnId: 'turn-scroll',
+          itemId: 'assistant-new-tail',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'New tail entry',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T10:00:02Z',
+          updatedAt: '2026-03-28T10:00:02Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(requiresWindowRefresh).toBe(true);
+    expect(snapshot.estimatedHistoryBeforeWindowPx).toBe(4200);
+    expect(snapshot.estimatedHistoryAfterWindowPx).toBe(3000);
+  });
+
+  it('does not trim the front of a fully loaded history window while custom scrolling away from the live edge', async () => {
+    const { applyCanonicalLensDelta } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-custom',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:00Z',
+      latestSequence: 10,
+      historyCount: 64,
+      historyWindowStart: 0,
+      historyWindowEnd: 64,
+      hasOlderHistory: false,
+      hasNewerHistory: false,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T10:00:00Z',
+      },
+      thread: {
+        threadId: 'thread-custom',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-custom',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'high',
+        startedAt: '2026-03-28T10:00:00Z',
+        completedAt: null,
+      },
+      quickSettings: {
+        model: 'gpt-5.4',
+        effort: 'high',
+        planMode: 'off',
+        permissionMode: 'default',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: Array.from({ length: 64 }, (_, index) => ({
+        entryId: `assistant:${index + 1}`,
+        order: index + 1,
+        estimatedHeightPx: 84,
+        kind: 'assistant',
+        turnId: 'turn-custom',
+        itemId: `assistant-${index + 1}`,
+        requestId: null,
+        status: 'completed',
+        itemType: 'assistant_text',
+        title: null,
+        body: `Entry ${index + 1}`,
+        attachments: [],
+        streaming: false,
+        createdAt: '2026-03-28T10:00:00Z',
+        updatedAt: '2026-03-28T10:00:00Z',
+      })),
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const state = {
+      snapshot,
+      historyWindowStart: 0,
+      historyWindowCount: 64,
+      historyAutoScrollPinned: false,
+    } as any;
+
+    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+      sessionId: 's-custom',
+      provider: 'codex',
+      generatedAt: '2026-03-28T10:00:01Z',
+      latestSequence: 11,
+      historyCount: 65,
+      session: snapshot.session,
+      thread: snapshot.thread,
+      currentTurn: snapshot.currentTurn,
+      quickSettings: snapshot.quickSettings,
+      streams: snapshot.streams,
+      historyUpserts: [
+        {
+          entryId: 'assistant:65',
+          order: 65,
+          estimatedHeightPx: 84,
+          kind: 'assistant',
+          turnId: 'turn-custom',
+          itemId: 'assistant-65',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'Entry 65',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T10:00:01Z',
+          updatedAt: '2026-03-28T10:00:01Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    expect(requiresWindowRefresh).toBe(true);
+    expect(snapshot.historyWindowStart).toBe(0);
+    expect(snapshot.historyWindowEnd).toBe(64);
+    expect(snapshot.history[0]?.entryId).toBe('assistant:1');
+    expect(snapshot.history).toHaveLength(64);
+    expect(snapshot.hasNewerHistory).toBe(true);
+  });
+  it('shows unknown agent fallback entries by default and hides them when disabled', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-04-08T16:40:00Z',
+      latestSequence: 1,
+      historyCount: 1,
+      estimatedTotalHistoryHeightPx: 84,
+      historyWindowStart: 0,
+      historyWindowEnd: 1,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-08T16:40:00Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-1',
+        state: 'completed',
+        stateLabel: 'Completed',
+        model: null,
+        effort: null,
+        startedAt: '2026-04-08T16:39:00Z',
+        completedAt: '2026-04-08T16:40:00Z',
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'tool:item-unknown-1',
+          order: 1,
+          estimatedHeightPx: 84,
+          kind: 'tool',
+          turnId: 'turn-1',
+          itemId: 'item-unknown-1',
+          requestId: null,
+          status: 'completed',
+          itemType: 'unknown_agent_message',
+          title: 'Unknown agent message',
+          body: 'Method: codex/event/unhandled_notification\n{"msg":{"text":"Unhandled codex event for fallback coverage"}}',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-08T16:40:00Z',
+          updatedAt: '2026-04-08T16:40:00Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    currentSettings = { showUnknownAgentMessages: true };
+    const visibleHistory = buildLensHistoryEntries(snapshot);
+    expect(visibleHistory).toHaveLength(1);
+    expect(visibleHistory[0]?.sourceItemType).toBe('unknown_agent_message');
+
+    currentSettings = { showUnknownAgentMessages: false };
+    const hiddenHistory = buildLensHistoryEntries(snapshot);
+    expect(hiddenHistory).toHaveLength(0);
+  });
+
+  it('labels canonical agent state and agent error runtime rows distinctly', async () => {
+    const { buildLensHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-agent-runtime',
+      provider: 'codex',
+      generatedAt: '2026-04-09T08:00:00Z',
+      latestSequence: 2,
+      historyCount: 2,
+      estimatedTotalHistoryHeightPx: 120,
+      historyWindowStart: 0,
+      historyWindowEnd: 2,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-09T08:00:01Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: null,
+        state: 'idle',
+        stateLabel: 'Idle',
+        model: null,
+        effort: null,
+        startedAt: null,
+        completedAt: null,
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'runtime-agent-state',
+          order: 1,
+          estimatedHeightPx: 52,
+          kind: 'system',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'info',
+          itemType: 'agent_state',
+          title: 'Agent state',
+          body: 'codex_apps starting.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:00Z',
+          updatedAt: '2026-04-09T08:00:00Z',
+        },
+        {
+          entryId: 'runtime-agent-error',
+          order: 2,
+          estimatedHeightPx: 68,
+          kind: 'notice',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'agent.error',
+          itemType: 'agent_error',
+          title: 'Agent error',
+          body: '[features].collab is deprecated. Use [features].multi_agent instead.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:01Z',
+          updatedAt: '2026-04-09T08:00:01Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const history = buildLensHistoryEntries(snapshot);
+
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
+      kind: 'system',
+      label: 'Agent State',
+      sourceItemType: 'agent_state',
+      tone: 'info',
+    });
+    expect(history[1]).toMatchObject({
+      kind: 'notice',
+      label: 'Agent Error',
+      sourceItemType: 'agent_error',
+      tone: 'attention',
+    });
   });
 });

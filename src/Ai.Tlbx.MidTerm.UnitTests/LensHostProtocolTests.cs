@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -91,11 +92,8 @@ public sealed class LensHostProtocolTests
     [Fact]
     public void SyntheticLensHostFlow_ProducesCanonicalSnapshotThroughIngress()
     {
-        var pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
+        var history = new SessionLensHistoryService();
         var host = new SyntheticLensAgentHost();
-
-        ingress.ValidateHello(host.Hello);
 
         var attachResult = host.Handle(new LensHostCommandEnvelope
         {
@@ -110,7 +108,10 @@ public sealed class LensHostProtocolTests
                 WorkingDirectory = "Q:/repo"
             }
         });
-        ingress.ApplyEvents(attachResult.Events);
+        foreach (var lensEvent in attachResult.Events)
+        {
+            history.Append(lensEvent);
+        }
 
         var turnResult = host.Handle(new LensHostCommandEnvelope
         {
@@ -123,7 +124,10 @@ public sealed class LensHostProtocolTests
                 Text = "Continue with the implementation."
             }
         });
-        ingress.ApplyEvents(turnResult.Events);
+        foreach (var lensEvent in turnResult.Events)
+        {
+            history.Append(lensEvent);
+        }
 
         var resolveResult = host.Handle(new LensHostCommandEnvelope
         {
@@ -137,9 +141,12 @@ public sealed class LensHostProtocolTests
                 Decision = "accept"
             }
         });
-        ingress.ApplyEvents(resolveResult.Events);
+        foreach (var lensEvent in resolveResult.Events)
+        {
+            history.Append(lensEvent);
+        }
 
-        var snapshot = pulse.GetSnapshot("session-1");
+        var snapshot = history.GetSnapshot("session-1");
 
         Assert.NotNull(snapshot);
         Assert.Equal("codex", snapshot!.Provider);
@@ -196,45 +203,45 @@ public sealed class LensHostProtocolTests
                     }
                 },
                 [
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-attach-1",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:00Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:00Z"),
                         Type = "session.started",
-                        SessionState = new LensPulseSessionStatePayload
+                        SessionState = new LensProviderSessionStatePayload
                         {
                             State = "starting",
                             StateLabel = "Starting",
                             Reason = "Synthetic attach"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-attach-2",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:01Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:01Z"),
                         Type = "thread.started",
-                        ThreadState = new LensPulseThreadStatePayload
+                        ThreadState = new LensProviderThreadStatePayload
                         {
                             State = "active",
                             StateLabel = "Active",
                             ProviderThreadId = "thread-1"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-attach-3",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:02Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:02Z"),
                         Type = "session.ready",
-                        SessionState = new LensPulseSessionStatePayload
+                        SessionState = new LensProviderSessionStatePayload
                         {
                             State = "ready",
                             StateLabel = "Ready",
@@ -270,15 +277,15 @@ public sealed class LensHostProtocolTests
                     }
                 },
                 [
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-settings-1",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:02.5000000Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:02.5000000Z"),
                         Type = "quick-settings.updated",
-                        QuickSettingsUpdated = new LensPulseQuickSettingsPayload
+                        QuickSettingsUpdated = new LensQuickSettingsPayload
                         {
                             Model = "gpt-5.3-codex",
                             Effort = "medium",
@@ -286,22 +293,22 @@ public sealed class LensHostProtocolTests
                             PermissionMode = LensQuickSettings.PermissionModeManual
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-1",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:03Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:03Z"),
                         Type = "turn.started",
-                        TurnStarted = new LensPulseTurnStartedPayload
+                        TurnStarted = new LensProviderTurnStartedPayload
                         {
                             Model = "gpt-5.3-codex",
                             Effort = "medium"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-2",
                         SessionId = command.SessionId,
@@ -309,15 +316,15 @@ public sealed class LensHostProtocolTests
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
                         ItemId = "item-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:04Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:04Z"),
                         Type = "content.delta",
-                        ContentDelta = new LensPulseContentDeltaPayload
+                        ContentDelta = new LensProviderContentDeltaPayload
                         {
                             StreamKind = "assistant_text",
                             Delta = "Assistant says hi."
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-3",
                         SessionId = command.SessionId,
@@ -325,29 +332,29 @@ public sealed class LensHostProtocolTests
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
                         ItemId = "item-2",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:05Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:05Z"),
                         Type = "content.delta",
-                        ContentDelta = new LensPulseContentDeltaPayload
+                        ContentDelta = new LensProviderContentDeltaPayload
                         {
                             StreamKind = "reasoning_text",
                             Delta = "Thinking hard."
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-4",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:06Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:06Z"),
                         Type = "plan.completed",
-                        PlanCompleted = new LensPulsePlanCompletedPayload
+                        PlanCompleted = new LensProviderPlanCompletedPayload
                         {
                             PlanMarkdown = "1. inspect\n2. patch"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-5",
                         SessionId = command.SessionId,
@@ -355,29 +362,29 @@ public sealed class LensHostProtocolTests
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
                         ItemId = "tool-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:07Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:07Z"),
                         Type = "content.delta",
-                        ContentDelta = new LensPulseContentDeltaPayload
+                        ContentDelta = new LensProviderContentDeltaPayload
                         {
                             StreamKind = "command_output",
                             Delta = "dotnet test"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-6",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:08Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:08Z"),
                         Type = "diff.updated",
-                        DiffUpdated = new LensPulseDiffUpdatedPayload
+                        DiffUpdated = new LensProviderDiffUpdatedPayload
                         {
                             UnifiedDiff = "--- a/app.cs\n+++ b/app.cs"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-7",
                         SessionId = command.SessionId,
@@ -385,39 +392,39 @@ public sealed class LensHostProtocolTests
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
                         RequestId = "approval-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:09Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:09Z"),
                         Type = "request.opened",
-                        RequestOpened = new LensPulseRequestOpenedPayload
+                        RequestOpened = new LensProviderRequestOpenedPayload
                         {
                             RequestType = "command_execution_approval",
                             RequestTypeLabel = "Command approval",
                             Detail = "Run dotnet test"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-8",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:10Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:10Z"),
                         Type = "turn.completed",
-                        TurnCompleted = new LensPulseTurnCompletedPayload
+                        TurnCompleted = new LensProviderTurnCompletedPayload
                         {
                             State = "completed",
                             StateLabel = "Completed"
                         }
                     }),
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-turn-9",
                         SessionId = command.SessionId,
                         Provider = "codex",
                         ThreadId = "thread-1",
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:11Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:11Z"),
                         Type = "session.state.changed",
-                        SessionState = new LensPulseSessionStatePayload
+                        SessionState = new LensProviderSessionStatePayload
                         {
                             State = "ready",
                             StateLabel = "Ready",
@@ -444,7 +451,7 @@ public sealed class LensHostProtocolTests
                     }
                 },
                 [
-                    Envelope(command.SessionId, new LensPulseEvent
+                    Envelope(command.SessionId, new LensProviderEvent
                     {
                         EventId = "evt-resolve-1",
                         SessionId = command.SessionId,
@@ -452,9 +459,9 @@ public sealed class LensHostProtocolTests
                         ThreadId = "thread-1",
                         TurnId = "turn-1",
                         RequestId = command.ResolveRequest!.RequestId,
-                        CreatedAt = DateTimeOffset.Parse("2026-03-20T15:00:12Z"),
+                        CreatedAt = ParseUtc("2026-03-20T15:00:12Z"),
                         Type = "request.resolved",
-                        RequestResolved = new LensPulseRequestResolvedPayload
+                        RequestResolved = new LensProviderRequestResolvedPayload
                         {
                             RequestType = "command_execution_approval",
                             Decision = command.ResolveRequest.Decision
@@ -463,18 +470,28 @@ public sealed class LensHostProtocolTests
                 ]);
         }
 
-        private static LensHostEventEnvelope Envelope(string sessionId, LensPulseEvent lensEvent)
+        private static LensProviderEvent Envelope(string sessionId, LensProviderEvent lensEvent)
         {
-            return new LensHostEventEnvelope
-            {
-                ProtocolVersion = LensHostProtocol.CurrentVersion,
-                SessionId = sessionId,
-                Event = lensEvent
-            };
+            lensEvent.SessionId = sessionId;
+            return lensEvent;
         }
     }
 
+    private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
+
     private sealed record SyntheticCommandResult(
         LensHostCommandResultEnvelope Result,
-        IReadOnlyList<LensHostEventEnvelope> Events);
+        IReadOnlyList<LensProviderEvent> Events);
 }
+
+
+
+
+
+
+
+
+
+
+
+

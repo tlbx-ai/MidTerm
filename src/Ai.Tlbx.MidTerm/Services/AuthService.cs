@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models.Security;
@@ -23,7 +24,7 @@ public sealed class AuthService
     private readonly SettingsService _settingsService;
     private readonly ApiKeyService _apiKeyService;
     private readonly TimeProvider _timeProvider;
-    private readonly ConcurrentDictionary<string, RateLimitEntry> _rateLimits = new();
+    private readonly ConcurrentDictionary<string, RateLimitEntry> _rateLimits = new(StringComparer.Ordinal);
 
     public AuthService(
         SettingsService settingsService,
@@ -43,7 +44,7 @@ public sealed class AuthService
             dirty = true;
         }
 
-        if (settings.PasswordHash is not null && settings.PasswordHash.StartsWith("__PENDING__:"))
+        if (settings.PasswordHash is not null && settings.PasswordHash.StartsWith("__PENDING__:", StringComparison.Ordinal))
         {
             var pendingPassword = settings.PasswordHash["__PENDING__:".Length..];
             settings.PasswordHash = HashPassword(pendingPassword);
@@ -113,7 +114,7 @@ public sealed class AuthService
             return false;
         }
 
-        if (!int.TryParse(parts[2], out var iterations))
+        if (!int.TryParse(parts[2], CultureInfo.InvariantCulture, out var iterations))
         {
             return false;
         }
@@ -149,9 +150,9 @@ public sealed class AuthService
         EnsureSessionSecret(settings);
 
         var timestamp = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
-        var signature = ComputeHmac(timestamp.ToString(), settings.SessionSecret!);
+        var signature = ComputeHmac(timestamp.ToString(CultureInfo.InvariantCulture), settings.SessionSecret!);
 
-        return $"{timestamp}:{signature}";
+        return string.Create(CultureInfo.InvariantCulture, $"{timestamp}:{signature}");
     }
 
     /// <summary>
@@ -165,7 +166,7 @@ public sealed class AuthService
         }
 
         var parts = token.Split(':');
-        if (parts.Length != 2 || !long.TryParse(parts[0], out var timestamp))
+        if (parts.Length != 2 || !long.TryParse(parts[0], CultureInfo.InvariantCulture, out var timestamp))
         {
             return false;
         }
@@ -182,7 +183,7 @@ public sealed class AuthService
             return false;
         }
 
-        var expectedSignature = ComputeHmac(timestamp.ToString(), settings.SessionSecret);
+        var expectedSignature = ComputeHmac(timestamp.ToString(CultureInfo.InvariantCulture), settings.SessionSecret);
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(parts[1]),
             Encoding.UTF8.GetBytes(expectedSignature));

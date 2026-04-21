@@ -1,7 +1,6 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { TerminalState } from '../../types';
-
-let isTerminalViewingScrollback: typeof import('./scaling').isTerminalViewingScrollback;
+import { isTerminalViewingScrollback } from './scrollback';
 
 function makeState(viewportY: number, baseY: number): Pick<TerminalState, 'terminal'> {
   return {
@@ -17,19 +16,6 @@ function makeState(viewportY: number, baseY: number): Pick<TerminalState, 'termi
 }
 
 describe('isTerminalViewingScrollback', () => {
-  beforeAll(async () => {
-    vi.stubGlobal('localStorage', {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-      clear: () => {},
-      key: () => null,
-      length: 0,
-    });
-
-    ({ isTerminalViewingScrollback } = await import('./scaling'));
-  });
-
   it('returns true when the viewport is above live output', () => {
     expect(isTerminalViewingScrollback(makeState(120, 180))).toBe(true);
   });

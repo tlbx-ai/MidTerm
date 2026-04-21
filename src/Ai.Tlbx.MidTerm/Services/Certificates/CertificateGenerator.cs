@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -18,29 +19,30 @@ public static class CertificateGenerator
 
     public static X509Certificate2 GenerateSelfSigned(string[] dnsNames, string[] ipAddresses, bool useEcdsa = true)
     {
-        AsymmetricAlgorithm key;
-        CertificateRequest request;
-
         if (useEcdsa)
         {
-            var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP384);
-            key = ecdsa;
-            request = new CertificateRequest(
+            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+            var request = new CertificateRequest(
                 CertificateSubject,
                 ecdsa,
                 HashAlgorithmName.SHA384);
+            return CreateExportableSelfSignedCertificate(request, dnsNames, ipAddresses);
         }
-        else
-        {
-            var rsa = RSA.Create(4096);
-            key = rsa;
-            request = new CertificateRequest(
+
+        using var rsa = RSA.Create(4096);
+        var rsaRequest = new CertificateRequest(
                 CertificateSubject,
                 rsa,
                 HashAlgorithmName.SHA256,
                 RSASignaturePadding.Pkcs1);
-        }
+        return CreateExportableSelfSignedCertificate(rsaRequest, dnsNames, ipAddresses);
+    }
 
+    private static X509Certificate2 CreateExportableSelfSignedCertificate(
+        CertificateRequest request,
+        string[] dnsNames,
+        string[] ipAddresses)
+    {
         request.CertificateExtensions.Add(
             new X509BasicConstraintsExtension(
                 certificateAuthority: true,
@@ -76,8 +78,31 @@ public static class CertificateGenerator
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(ValidityYears));
 
-        // Return with exportable private key
-        return cert;
+        using (cert)
+        {
+            var exported = cert.Export(X509ContentType.Pfx);
+            return X509CertificateLoader.LoadPkcs12(
+                exported,
+                null,
+                X509KeyStorageFlags.Exportable);
+        }
+    }
+
+    public static byte[] ExportPrivateKeyPkcs8(X509Certificate2 cert)
+    {
+        using var ecdsa = cert.GetECDsaPrivateKey();
+        if (ecdsa is not null)
+        {
+            return ecdsa.ExportPkcs8PrivateKey();
+        }
+
+        using var rsa = cert.GetRSAPrivateKey();
+        if (rsa is not null)
+        {
+            return rsa.ExportPkcs8PrivateKey();
+        }
+
+        throw new InvalidOperationException("Failed to export private key");
     }
 
     public static void ExportToPfx(X509Certificate2 cert, string path, string? password)
@@ -101,7 +126,7 @@ public static class CertificateGenerator
             .SelectMany(ni => ni.GetIPProperties().UnicastAddresses
                 .Where(addr => addr.Address.AddressFamily == AddressFamily.InterNetwork)
                 .Select(addr => addr.Address.ToString()))
-            .Distinct()
+            .Distinct(StringComparer.Ordinal)
             .ToArray();
     }
 
@@ -152,7 +177,7 @@ public static class CertificateGenerator
         Console.ResetColor();
         Console.WriteLine($"  Location: {certPath}");
         Console.WriteLine($"  Valid for: {string.Join(", ", dnsNames.Concat(ipAddresses))}");
-        Console.WriteLine($"  Expires: {DateTime.UtcNow.AddYears(ValidityYears):yyyy-MM-dd}");
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  Expires: {DateTime.UtcNow.AddYears(ValidityYears):yyyy-MM-dd}"));
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("  WARNING: Browser will show security warning until certificate is trusted.");

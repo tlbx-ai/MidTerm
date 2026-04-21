@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- managerBar.ts remains a legacy integration hub; small overflow-policy changes are safer than broad file splits in the same turn. */
 /**
  * Manager Bar Module
  *
@@ -6,24 +7,27 @@
  * session that was active when the action was triggered.
  */
 
-import { $activeSessionId, $currentSettings, $sessions } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $managerBarQueue,
+  $settingsOpen,
+  $sessions,
+} from '../../stores';
 import { updateSettings } from '../../api/client';
+import { icon } from '../../constants';
+import type { ManagerBarQueueEntry } from '../../types';
+import { enqueueCommandBayAction, removeCommandBayQueueEntry } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
-import { getSessionHeat } from '../sidebar/heatIndicator';
 import {
-  computeNextScheduleTime,
   createDefaultManagerButton,
   formatPromptPreview,
-  getManagerBarHeatResumeAt,
-  intervalToMs,
   isImmediateManagerAction,
-  isManagerBarCooldownReady,
   normalizeManagerBarButton,
   normalizeManagerBarButtons,
-  shouldManagerActionWaitForInitialCooldown,
   type ManagerActionType,
   type ManagerBarScheduleEntry,
   type ManagerButton,
@@ -35,32 +39,25 @@ import {
 import { shouldShowManagerBar } from './visibility';
 
 const log = createLogger('managerBar');
-
-const QUEUE_POLL_INTERVAL_MS = 500;
-
-type QueuePhase =
-  | 'pendingImmediate'
-  | 'pendingCooldown'
-  | 'chainCooldown'
-  | 'pendingInterval'
-  | 'pendingSchedule';
-
-interface QueueEntry {
-  queueId: string;
-  sessionId: string;
-  action: NormalizedManagerButton;
-  phase: QueuePhase;
-  nextPromptIndex: number;
-  completedCycles: number;
-  nextRunAt: number | null;
-  ignoreHeatUntilMs: number | null;
-}
+const QUEUE_ENQUEUE_DEDUP_WINDOW_MS = 1500;
+const OVERFLOW_LAYOUT_EPSILON_PX = 0.75;
+const OVERFLOW_BUTTON_GAP_PX = 6;
+const OVERFLOW_MENU_BUTTON_WIDTH_PX = 32;
 
 let barEl: HTMLElement | null = null;
 let queueEl: HTMLElement | null = null;
 let buttonsEl: HTMLElement | null = null;
 let addBtn: HTMLElement | null = null;
+let overflowBtn: HTMLButtonElement | null = null;
 let mobileDropdown: HTMLElement | null = null;
+let menuPopoverEl: HTMLElement | null = null;
+let overflowPopoverEl: HTMLElement | null = null;
+let openMenuButtonId: string | null = null;
+let openMenuAnchorEl: HTMLButtonElement | null = null;
+let overflowActionIds: string[] = [];
+let overflowProxyAnchorEl: HTMLElement | null = null;
+let managerBarResizeObserver: ResizeObserver | null = null;
+let overflowLayoutFrameId: number | null = null;
 
 let modalEl: HTMLElement | null = null;
 let modalBackdrop: HTMLElement | null = null;
@@ -92,9 +89,10 @@ let scheduleGroupEl: HTMLElement | null = null;
 
 let editingActionId: string | null = null;
 let renderedButtons: NormalizedManagerButton[] = [];
-const queueEntries: QueueEntry[] = [];
-let queueTimerId: number | null = null;
+let queueEntries: ManagerBarQueueEntry[] = [];
 let releaseBackButtonLayer: (() => void) | null = null;
+const pendingEnqueueGuards = new Map<string, number>();
+const pendingQueueRemovals = new Set<string>();
 
 export function sendCommand(sessionId: string, text: string): void {
   void submitSessionText(sessionId, text).catch((error: unknown) => {
@@ -102,57 +100,46 @@ export function sendCommand(sessionId: string, text: string): void {
   });
 }
 
+export function setAutomationOverflowProxyAnchor(el: HTMLElement | null): void {
+  overflowProxyAnchorEl = el;
+}
+
+export function triggerAutomationOverflow(): void {
+  toggleOverflowMenu();
+}
+
+export function triggerAddAutomation(): void {
+  openActionModal();
+}
+
 export function initManagerBar(): void {
   barEl = document.getElementById('manager-bar');
   queueEl = document.getElementById('manager-bar-queue');
   buttonsEl = document.getElementById('manager-bar-buttons');
   addBtn = document.getElementById('manager-bar-add');
+  overflowBtn = document.getElementById('manager-bar-overflow') as HTMLButtonElement | null;
   mobileDropdown = document.getElementById('mobile-actions-dropdown');
 
-  modalEl = document.getElementById('manager-action-modal');
-  modalBackdrop = modalEl?.querySelector('.modal-backdrop') ?? null;
-  modalCloseBtn = document.getElementById('btn-close-manager-action');
-  modalCancelBtn = document.getElementById('btn-cancel-manager-action');
-  modalSaveBtn = document.getElementById('btn-save-manager-action');
-  modalTitleEl = document.getElementById('manager-action-modal-title');
-  modalErrorEl = document.getElementById('manager-action-error');
-  labelInput = document.getElementById('manager-action-label') as HTMLInputElement | null;
-  typeSelect = document.getElementById('manager-action-type') as HTMLSelectElement | null;
-  triggerSelect = document.getElementById('manager-action-trigger') as HTMLSelectElement | null;
-  promptsTitleEl = document.getElementById('manager-action-prompts-title');
-  promptsCopyEl = document.getElementById('manager-action-prompts-copy');
-  typeDescriptionEl = document.getElementById('manager-action-type-description');
-  triggerDescriptionEl = document.getElementById('manager-action-trigger-description');
-  promptsContainer = document.getElementById('manager-action-prompts');
-  addPromptBtn = document.getElementById('manager-action-add-prompt') as HTMLButtonElement | null;
-  repeatCountInput = document.getElementById(
-    'manager-action-repeat-count',
-  ) as HTMLInputElement | null;
-  repeatEveryValueInput = document.getElementById(
-    'manager-action-repeat-every-value',
-  ) as HTMLInputElement | null;
-  repeatEveryUnitSelect = document.getElementById(
-    'manager-action-repeat-every-unit',
-  ) as HTMLSelectElement | null;
-  scheduleContainer = document.getElementById('manager-action-schedule-list');
-  addScheduleBtn = document.getElementById(
-    'manager-action-add-schedule',
-  ) as HTMLButtonElement | null;
-  cooldownHintEl = document.getElementById('manager-action-cooldown-hint');
-  chainHintEl = document.getElementById('manager-action-chain-hint');
-  triggerDetailsEl = document.getElementById('manager-action-trigger-details');
-  repeatCountGroupEl = document.getElementById('manager-action-repeat-count-group');
-  repeatIntervalGroupEl = document.getElementById('manager-action-repeat-interval-group');
-  scheduleGroupEl = document.getElementById('manager-action-schedule-group');
+  ensureManagerActionModalElements();
+  ensureMenuPopover();
+  ensureOverflowPopover();
 
-  if (!barEl || !buttonsEl || !addBtn || !queueEl) return;
+  if (!barEl || !buttonsEl || !addBtn || !overflowBtn || !queueEl) return;
 
   const syncManagerBarVisibility = (): void => {
     const settings = $currentSettings.get();
-    const visible = shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
+    const visible =
+      !$settingsOpen.get() &&
+      shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
     barEl?.classList.toggle('hidden', !visible);
+    if (!visible) {
+      overflowBtn?.setAttribute('hidden', '');
+      overflowActionIds = [];
+      closeOpenManagerOverflow();
+    }
     renderMobileButtons(visible ? renderedButtons : []);
     renderQueue();
+    scheduleOverflowLayout();
   };
 
   $currentSettings.subscribe((settings) => {
@@ -168,60 +155,88 @@ export function initManagerBar(): void {
     syncManagerBarVisibility();
   });
 
-  $sessions.subscribe((sessions) => {
-    let changed = false;
-    for (let index = queueEntries.length - 1; index >= 0; index -= 1) {
-      if (!sessions[queueEntries[index]?.sessionId ?? '']) {
-        queueEntries.splice(index, 1);
-        changed = true;
+  $settingsOpen.subscribe(() => {
+    syncManagerBarVisibility();
+  });
+
+  $managerBarQueue.subscribe((entries) => {
+    queueEntries = [...entries];
+    const liveQueueIds = new Set(entries.map((entry) => entry.queueId));
+    for (const queueId of pendingQueueRemovals) {
+      if (!liveQueueIds.has(queueId)) {
+        pendingQueueRemovals.delete(queueId);
       }
-    }
-    if (changed) {
-      syncQueueProcessor();
     }
     syncManagerBarVisibility();
   });
 
-  queueEl.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement | null;
-    const deleteBtn = target?.closest<HTMLElement>('.manager-queue-delete');
-    const queueId = deleteBtn?.dataset.queueId;
-    if (!queueId) return;
-
-    removeQueueEntry(queueId);
-  });
-
   buttonsEl.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement | null;
+    const target = resolveEventElement(event.target);
     if (!target) return;
 
-    const editBtn = target.closest('.manager-btn-edit');
-    if (editBtn) {
-      const button = editBtn.closest<HTMLElement>('.manager-btn');
-      if (button?.dataset.id) {
-        const action = renderedButtons.find((entry) => entry.id === button.dataset.id);
-        if (action) openActionModal(action);
+    const menuBtn = target.closest<HTMLButtonElement>('.manager-btn-menu');
+    if (menuBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const button = menuBtn.closest<HTMLElement>('.manager-btn');
+      const buttonId = button?.dataset.id ?? null;
+      if (buttonId) {
+        toggleManagerActionMenu(menuBtn, buttonId);
       }
       return;
     }
 
-    const deleteBtn = target.closest('.manager-btn-delete');
-    if (deleteBtn) {
-      const button = deleteBtn.closest<HTMLElement>('.manager-btn');
-      if (button?.dataset.id) deleteButton(button.dataset.id);
+    const button = target.closest<HTMLElement>('.manager-btn');
+    if (button) {
+      closeOpenManagerMenus();
+      if (button.dataset.id) runButton(button.dataset.id);
+    }
+  });
+
+  buttonsEl.addEventListener('pointerdown', (event) => {
+    const target = resolveEventElement(event.target);
+    if (!target?.closest('.manager-btn-menu')) {
       return;
     }
 
-    const labelEl = target.closest('.manager-btn-label');
-    if (labelEl) {
-      const button = labelEl.closest<HTMLElement>('.manager-btn');
-      if (button?.dataset.id) runButton(button.dataset.id);
-    }
+    event.stopPropagation();
   });
 
-  addBtn.addEventListener('click', () => {
+  document.addEventListener('click', handleDocumentClickForManagerMenu);
+  document.addEventListener('click', handleDocumentClickForManagerOverflow);
+
+  addBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeOpenManagerMenus();
     openActionModal();
   });
+
+  overflowBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleOverflowMenu();
+  });
+
+  window.addEventListener('resize', () => {
+    positionManagerActionMenu();
+    scheduleOverflowLayout();
+  });
+  document.addEventListener(
+    'scroll',
+    () => {
+      positionManagerActionMenu();
+      positionManagerOverflowMenu();
+    },
+    true,
+  );
+  managerBarResizeObserver = new ResizeObserver(() => {
+    scheduleOverflowLayout();
+    positionManagerActionMenu();
+    positionManagerOverflowMenu();
+  });
+  managerBarResizeObserver.observe(barEl);
+  managerBarResizeObserver.observe(buttonsEl);
 
   if (mobileDropdown) {
     mobileDropdown.addEventListener('click', (event) => {
@@ -233,6 +248,126 @@ export function initManagerBar(): void {
   }
 
   bindModalEvents();
+}
+
+function ensureManagerActionModalElements(): boolean {
+  const pickElement = <T extends HTMLElement>(current: T | null, id: string): T | null =>
+    current ?? (document.getElementById(id) as T | null);
+
+  modalEl = pickElement(modalEl, 'manager-action-modal');
+  modalBackdrop ??= modalEl?.querySelector('.modal-backdrop') ?? null;
+  modalCloseBtn = pickElement(modalCloseBtn, 'btn-close-manager-action');
+  modalCancelBtn = pickElement(modalCancelBtn, 'btn-cancel-manager-action');
+  modalSaveBtn = pickElement(modalSaveBtn, 'btn-save-manager-action');
+  modalTitleEl = pickElement(modalTitleEl, 'manager-action-modal-title');
+  modalErrorEl = pickElement(modalErrorEl, 'manager-action-error');
+  labelInput = pickElement<HTMLInputElement>(labelInput, 'manager-action-label');
+  typeSelect = pickElement<HTMLSelectElement>(typeSelect, 'manager-action-type');
+  triggerSelect = pickElement<HTMLSelectElement>(triggerSelect, 'manager-action-trigger');
+  promptsTitleEl = pickElement(promptsTitleEl, 'manager-action-prompts-title');
+  promptsCopyEl = pickElement(promptsCopyEl, 'manager-action-prompts-copy');
+  typeDescriptionEl = pickElement(typeDescriptionEl, 'manager-action-type-description');
+  triggerDescriptionEl = pickElement(triggerDescriptionEl, 'manager-action-trigger-description');
+  promptsContainer = pickElement(promptsContainer, 'manager-action-prompts');
+  addPromptBtn = pickElement<HTMLButtonElement>(addPromptBtn, 'manager-action-add-prompt');
+  repeatCountInput = pickElement<HTMLInputElement>(repeatCountInput, 'manager-action-repeat-count');
+  repeatEveryValueInput = pickElement<HTMLInputElement>(
+    repeatEveryValueInput,
+    'manager-action-repeat-every-value',
+  );
+  repeatEveryUnitSelect = pickElement<HTMLSelectElement>(
+    repeatEveryUnitSelect,
+    'manager-action-repeat-every-unit',
+  );
+  scheduleContainer = pickElement(scheduleContainer, 'manager-action-schedule-list');
+  addScheduleBtn = pickElement<HTMLButtonElement>(addScheduleBtn, 'manager-action-add-schedule');
+  cooldownHintEl = pickElement(cooldownHintEl, 'manager-action-cooldown-hint');
+  chainHintEl = pickElement(chainHintEl, 'manager-action-chain-hint');
+  triggerDetailsEl = pickElement(triggerDetailsEl, 'manager-action-trigger-details');
+  repeatCountGroupEl = pickElement(repeatCountGroupEl, 'manager-action-repeat-count-group');
+  repeatIntervalGroupEl = pickElement(
+    repeatIntervalGroupEl,
+    'manager-action-repeat-interval-group',
+  );
+  scheduleGroupEl = pickElement(scheduleGroupEl, 'manager-action-schedule-group');
+
+  return Boolean(
+    modalEl &&
+    modalTitleEl &&
+    labelInput &&
+    typeSelect &&
+    triggerSelect &&
+    repeatCountInput &&
+    repeatEveryValueInput &&
+    repeatEveryUnitSelect,
+  );
+}
+
+function ensureMenuPopover(): void {
+  if (menuPopoverEl) {
+    return;
+  }
+
+  const popover = document.createElement('div');
+  popover.className = 'manager-bar-action-popover hidden';
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'manager-bar-action-popover-btn manager-bar-action-popover-edit';
+  editBtn.innerHTML = `<span class="icon">\ue91f</span><span class="manager-bar-action-popover-label">${escapeHtml(t('managerBar.edit'))}</span>`;
+  editBtn.addEventListener('click', () => {
+    const actionId = openMenuButtonId;
+    closeOpenManagerMenus();
+    if (!actionId) {
+      return;
+    }
+
+    const action = renderedButtons.find((entry) => entry.id === actionId);
+    if (action) {
+      openActionModal(action);
+    }
+  });
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'manager-bar-action-popover-btn manager-bar-action-popover-delete';
+  deleteBtn.innerHTML = `<span class="icon">\ue909</span><span class="manager-bar-action-popover-label">${escapeHtml(t('managerBar.remove'))}</span>`;
+  deleteBtn.addEventListener('click', () => {
+    const actionId = openMenuButtonId;
+    closeOpenManagerMenus();
+    if (actionId) {
+      deleteButton(actionId);
+    }
+  });
+
+  popover.appendChild(editBtn);
+  popover.appendChild(deleteBtn);
+  document.body.appendChild(popover);
+
+  menuPopoverEl = popover;
+}
+
+function ensureOverflowPopover(): void {
+  if (overflowPopoverEl) {
+    return;
+  }
+
+  const popover = document.createElement('div');
+  popover.className = 'manager-bar-action-popover manager-bar-overflow-popover hidden';
+  popover.addEventListener('click', (event) => {
+    const target = resolveEventElement(event.target);
+    const actionButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item');
+    if (!actionButton?.dataset.actionId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeOpenManagerOverflow();
+    runButton(actionButton.dataset.actionId);
+  });
+  document.body.appendChild(popover);
+  overflowPopoverEl = popover;
 }
 
 function bindModalEvents(): void {
@@ -295,6 +430,7 @@ function bindModalEvents(): void {
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    if (closeOpenManagerMenus()) return;
     if (!modalEl || modalEl.classList.contains('hidden')) return;
     closeActionModal();
   });
@@ -303,6 +439,8 @@ function bindModalEvents(): void {
 function renderButtons(buttons: NormalizedManagerButton[]): void {
   if (!buttonsEl) return;
 
+  closeOpenManagerMenus();
+  closeOpenManagerOverflow();
   buttonsEl.innerHTML = '';
   for (const button of buttons) {
     const wrapper = document.createElement('span');
@@ -310,12 +448,397 @@ function renderButtons(buttons: NormalizedManagerButton[]): void {
     wrapper.dataset.id = button.id;
     wrapper.innerHTML =
       `<span class="manager-btn-label">${escapeHtml(button.label)}</span>` +
-      `<span class="manager-btn-actions">` +
-      `<button class="manager-btn-edit" title="${escapeHtml(t('managerBar.edit'))}" type="button"><span class="icon">\ue91f</span></button>` +
-      `<button class="manager-btn-delete" title="${escapeHtml(t('managerBar.remove'))}" type="button"><span class="icon">\ue909</span></button>` +
-      `</span>`;
+      `<button class="manager-btn-menu" title="${escapeHtml(t('session.actions'))}" aria-label="${escapeHtml(t('session.actions'))}" aria-haspopup="menu" aria-expanded="false" type="button">${icon('menu')}</button>`;
     buttonsEl.appendChild(wrapper);
   }
+  scheduleOverflowLayout();
+}
+
+function handleDocumentClickForManagerMenu(event: MouseEvent): void {
+  const target = resolveEventElement(event.target);
+  if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {
+    return;
+  }
+
+  closeOpenManagerMenus();
+}
+
+function handleDocumentClickForManagerOverflow(event: MouseEvent): void {
+  const target = resolveEventElement(event.target);
+  if (
+    target?.closest('.manager-bar-overflow') ||
+    target?.closest('.manager-bar-overflow-popover')
+  ) {
+    return;
+  }
+
+  closeOpenManagerOverflow();
+}
+
+function closeOpenManagerMenus(): boolean {
+  if (!buttonsEl) return false;
+
+  let closedAny = false;
+  buttonsEl.querySelectorAll<HTMLElement>('.manager-btn.menu-open').forEach((button) => {
+    button.classList.remove('menu-open');
+    closedAny = true;
+  });
+  buttonsEl
+    .querySelectorAll<HTMLButtonElement>('.manager-btn-menu[aria-expanded="true"]')
+    .forEach((button) => {
+      button.setAttribute('aria-expanded', 'false');
+    });
+
+  if (menuPopoverEl && !menuPopoverEl.classList.contains('hidden')) {
+    menuPopoverEl.classList.add('hidden');
+    menuPopoverEl.style.removeProperty('left');
+    menuPopoverEl.style.removeProperty('top');
+    closedAny = true;
+  }
+
+  openMenuButtonId = null;
+  openMenuAnchorEl = null;
+
+  return closedAny;
+}
+
+function closeOpenManagerOverflow(): boolean {
+  if (!overflowBtn || !overflowPopoverEl) {
+    return false;
+  }
+
+  const wasOpen = !overflowPopoverEl.classList.contains('hidden');
+  overflowPopoverEl.classList.add('hidden');
+  overflowPopoverEl.replaceChildren();
+  overflowPopoverEl.style.removeProperty('left');
+  overflowPopoverEl.style.removeProperty('top');
+  overflowBtn.setAttribute('aria-expanded', 'false');
+  return wasOpen;
+}
+
+function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): void {
+  const isSameMenu = openMenuButtonId === actionId && !menuPopoverEl?.classList.contains('hidden');
+  closeOpenManagerMenus();
+  if (isSameMenu) {
+    return;
+  }
+
+  const button = anchor.closest<HTMLElement>('.manager-btn');
+  if (!button) {
+    return;
+  }
+
+  ensureMenuPopover();
+  button.classList.add('menu-open');
+  anchor.setAttribute('aria-expanded', 'true');
+  openMenuButtonId = actionId;
+  openMenuAnchorEl = anchor;
+  menuPopoverEl?.classList.remove('hidden');
+  positionManagerActionMenu();
+}
+
+function toggleOverflowMenu(): void {
+  if (!overflowBtn || !overflowPopoverEl) {
+    return;
+  }
+  if (overflowActionIds.length === 0 && !(barEl && isMobileLensSurface(barEl))) {
+    return;
+  }
+
+  const isOpen = !overflowPopoverEl.classList.contains('hidden');
+  if (isOpen) {
+    closeOpenManagerOverflow();
+    return;
+  }
+
+  closeOpenManagerMenus();
+  renderOverflowMenuItems();
+  overflowPopoverEl.classList.remove('hidden');
+  overflowBtn.setAttribute('aria-expanded', 'true');
+  positionManagerOverflowMenu();
+}
+
+function positionManagerActionMenu(): void {
+  if (!menuPopoverEl || !openMenuAnchorEl || menuPopoverEl.classList.contains('hidden')) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = openMenuAnchorEl.getBoundingClientRect();
+  const popoverRect = menuPopoverEl.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
+
+  let left = triggerRect.right - popoverRect.width;
+  left = Math.max(
+    viewportPadding,
+    Math.min(left, window.innerWidth - viewportPadding - popoverRect.width),
+  );
+
+  let top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
+  top = Math.max(
+    viewportPadding,
+    Math.min(top, window.innerHeight - viewportPadding - popoverRect.height),
+  );
+
+  menuPopoverEl.style.left = `${String(Math.round(left))}px`;
+  menuPopoverEl.style.top = `${String(Math.round(top))}px`;
+}
+
+function positionManagerOverflowMenu(): void {
+  const anchorEl = overflowProxyAnchorEl ?? overflowBtn;
+  if (!overflowPopoverEl || !anchorEl || overflowPopoverEl.classList.contains('hidden')) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = anchorEl.getBoundingClientRect();
+  const popoverRect = overflowPopoverEl.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
+
+  let left = triggerRect.right - popoverRect.width;
+  left = Math.max(
+    viewportPadding,
+    Math.min(left, window.innerWidth - viewportPadding - popoverRect.width),
+  );
+
+  let top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
+  top = Math.max(
+    viewportPadding,
+    Math.min(top, window.innerHeight - viewportPadding - popoverRect.height),
+  );
+
+  overflowPopoverEl.style.left = `${String(Math.round(left))}px`;
+  overflowPopoverEl.style.top = `${String(Math.round(top))}px`;
+}
+
+function renderOverflowMenuItems(): void {
+  if (!overflowPopoverEl) {
+    return;
+  }
+
+  overflowPopoverEl.replaceChildren();
+  for (const actionId of overflowActionIds) {
+    const action = renderedButtons.find((entry) => entry.id === actionId);
+    if (!action) {
+      continue;
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
+    button.dataset.actionId = action.id;
+    button.textContent = action.label;
+    overflowPopoverEl.appendChild(button);
+  }
+
+  if (barEl && isMobileLensSurface(barEl)) {
+    const addItem = document.createElement('button');
+    addItem.type = 'button';
+    addItem.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
+    addItem.textContent = t('managerBar.addButton');
+    addItem.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeOpenManagerOverflow();
+      openActionModal();
+    });
+    overflowPopoverEl.appendChild(addItem);
+  }
+}
+
+function scheduleOverflowLayout(): void {
+  if (overflowLayoutFrameId !== null) {
+    window.cancelAnimationFrame(overflowLayoutFrameId);
+  }
+
+  overflowLayoutFrameId = window.requestAnimationFrame(() => {
+    overflowLayoutFrameId = null;
+    syncOverflowedButtons();
+  });
+}
+
+function syncOverflowedButtons(): void {
+  if (!barEl || !buttonsEl || !addBtn || !overflowBtn) {
+    return;
+  }
+  const managerBar = barEl;
+  const buttonStrip = buttonsEl;
+  const addButton = addBtn;
+  const overflowButton = overflowBtn;
+
+  const isMobileSurface = shouldCollapseManagerButtonsToOverflow(managerBar);
+  if (managerBar.classList.contains('hidden') && !isMobileSurface) {
+    return;
+  }
+
+  const mobileLens = isMobileLensSurface(managerBar);
+  addButton.classList.toggle('hidden', mobileLens);
+
+  const buttonElements = [...buttonStrip.querySelectorAll<HTMLElement>('.manager-btn')];
+  if (buttonElements.length === 0) {
+    resetOverflowLayoutState(buttonStrip, overflowButton);
+    if (mobileLens) {
+      overflowButton.removeAttribute('hidden');
+    }
+    return;
+  }
+
+  for (const element of buttonElements) {
+    element.classList.remove('manager-btn-overflow-hidden');
+  }
+
+  resetOverflowLayoutChrome(buttonStrip, overflowButton);
+  if (collapseManagerButtonsToOverflow(managerBar, buttonStrip, buttonElements, overflowButton)) {
+    return;
+  }
+
+  const fullAvailableWidth = getAvailableManagerRailWidth(managerBar, addButton);
+
+  const buttonWidths = buttonElements.map((element) => getMeasuredWidth(element));
+  const totalWidth = buttonWidths.reduce(
+    (sum, width, index) => sum + width + (index > 0 ? OVERFLOW_BUTTON_GAP_PX : 0),
+    0,
+  );
+
+  if (totalWidth <= fullAvailableWidth + OVERFLOW_LAYOUT_EPSILON_PX) {
+    buttonStrip.style.maxWidth = `${String(fullAvailableWidth)}px`;
+    resetOverflowMenuState(overflowButton);
+    return;
+  }
+
+  const visibleBudget = Math.max(
+    0,
+    fullAvailableWidth - OVERFLOW_MENU_BUTTON_WIDTH_PX - OVERFLOW_BUTTON_GAP_PX,
+  );
+  const nextOverflowIds = collectOverflowActionIds(buttonElements, buttonWidths, visibleBudget);
+
+  buttonStrip.style.maxWidth = `${String(Math.max(0, visibleBudget))}px`;
+  overflowActionIds = nextOverflowIds;
+  if (overflowActionIds.length === 0) {
+    resetOverflowMenuState(overflowButton);
+    return;
+  }
+
+  overflowButton.removeAttribute('hidden');
+  if (overflowPopoverEl && !overflowPopoverEl.classList.contains('hidden')) {
+    renderOverflowMenuItems();
+    positionManagerOverflowMenu();
+  }
+}
+
+function resetOverflowLayoutChrome(
+  buttonStrip: HTMLElement,
+  overflowButton: HTMLButtonElement,
+): void {
+  buttonStrip.style.maxWidth = '';
+  overflowButton.setAttribute('hidden', '');
+}
+
+function resetOverflowMenuState(overflowButton: HTMLButtonElement): void {
+  overflowButton.setAttribute('hidden', '');
+  overflowActionIds = [];
+  closeOpenManagerOverflow();
+}
+
+function resetOverflowLayoutState(
+  buttonStrip: HTMLElement,
+  overflowButton: HTMLButtonElement,
+): void {
+  resetOverflowLayoutChrome(buttonStrip, overflowButton);
+  resetOverflowMenuState(overflowButton);
+}
+
+function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolean {
+  const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
+  return footerDock?.dataset.device === 'mobile';
+}
+
+function isMobileLensSurface(managerBar: HTMLElement): boolean {
+  const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
+  return footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'lens';
+}
+
+function collapseManagerButtonsToOverflow(
+  managerBar: HTMLElement,
+  buttonStrip: HTMLElement,
+  buttonElements: readonly HTMLElement[],
+  overflowButton: HTMLButtonElement,
+): boolean {
+  if (!shouldCollapseManagerButtonsToOverflow(managerBar)) {
+    return false;
+  }
+
+  overflowActionIds = buttonElements
+    .map((element) => element.dataset.id ?? '')
+    .filter((id) => id.length > 0);
+  for (const element of buttonElements) {
+    element.classList.add('manager-btn-overflow-hidden');
+  }
+
+  buttonStrip.style.maxWidth = '0px';
+  if (overflowActionIds.length === 0) {
+    resetOverflowMenuState(overflowButton);
+    return true;
+  }
+
+  overflowButton.removeAttribute('hidden');
+  if (overflowPopoverEl && !overflowPopoverEl.classList.contains('hidden')) {
+    renderOverflowMenuItems();
+    positionManagerOverflowMenu();
+  }
+  return true;
+}
+
+function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {
+  const railWidth = Math.max(
+    0,
+    Math.floor(managerBar.parentElement?.clientWidth ?? managerBar.clientWidth),
+  );
+  const measuredRailWidth = Math.max(
+    0,
+    managerBar.parentElement?.getBoundingClientRect().width ??
+      managerBar.getBoundingClientRect().width,
+  );
+  const availableRailWidth = measuredRailWidth > 0 ? measuredRailWidth : railWidth;
+  const addWidth = getMeasuredWidth(addButton);
+  return Math.max(0, availableRailWidth - addWidth - OVERFLOW_BUTTON_GAP_PX);
+}
+
+function collectOverflowActionIds(
+  buttonElements: HTMLElement[],
+  buttonWidths: number[],
+  visibleBudget: number,
+): string[] {
+  const nextOverflowIds: string[] = [];
+  let consumedWidth = 0;
+
+  buttonElements.forEach((element, index) => {
+    const width = (buttonWidths[index] ?? 0) + (index > 0 ? OVERFLOW_BUTTON_GAP_PX : 0);
+    const id = element.dataset.id ?? '';
+    if (
+      consumedWidth + width <= visibleBudget + OVERFLOW_LAYOUT_EPSILON_PX ||
+      consumedWidth <= OVERFLOW_LAYOUT_EPSILON_PX
+    ) {
+      consumedWidth += width;
+      element.classList.remove('manager-btn-overflow-hidden');
+      return;
+    }
+
+    element.classList.add('manager-btn-overflow-hidden');
+    if (id) {
+      nextOverflowIds.push(id);
+    }
+  });
+
+  return nextOverflowIds;
+}
+
+function getMeasuredWidth(element: HTMLElement): number {
+  return Math.max(element.getBoundingClientRect().width, element.offsetWidth, 0);
 }
 
 function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
@@ -347,11 +870,12 @@ function renderMobileButtons(buttons: NormalizedManagerButton[]): void {
 function renderQueue(): void {
   if (!queueEl) return;
 
-  const settings = $currentSettings.get();
   const activeSessionId = $activeSessionId.get();
   const visibleQueue =
-    settings?.managerBarEnabled && activeSessionId
-      ? queueEntries.filter((entry) => entry.sessionId === activeSessionId)
+    !$settingsOpen.get() && activeSessionId
+      ? queueEntries
+          .filter((entry) => entry.sessionId === activeSessionId)
+          .filter((entry) => !pendingQueueRemovals.has(entry.queueId))
       : [];
 
   queueEl.innerHTML = '';
@@ -362,6 +886,7 @@ function renderQueue(): void {
     const item = document.createElement('div');
     item.className = 'manager-queue-item';
     item.dataset.queueId = entry.queueId;
+    item.dataset.kind = entry.kind;
 
     const title = document.createElement('div');
     title.className = 'manager-queue-title';
@@ -378,6 +903,11 @@ function renderQueue(): void {
     deleteBtn.title = t('managerBar.queue.dequeue');
     deleteBtn.setAttribute('aria-label', t('managerBar.queue.dequeue'));
     deleteBtn.innerHTML = '<span class="icon">\ue909</span>';
+    deleteBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void removeQueueEntry(entry.queueId);
+    });
 
     item.appendChild(title);
     item.appendChild(condition);
@@ -386,8 +916,16 @@ function renderQueue(): void {
   }
 }
 
-function describeQueueTitle(entry: QueueEntry): string {
+function describeQueueTitle(entry: ManagerBarQueueEntry): string {
+  if (entry.kind === 'prompt') {
+    return describeQueuedPromptTitle(entry);
+  }
+
   const action = entry.action;
+  if (!action) {
+    return t('managerBar.modal.singlePrompt');
+  }
+
   if (action.actionType === 'chain') {
     const step = Math.min(action.prompts.length, entry.nextPromptIndex + 1);
     return `${action.label} (${step}/${action.prompts.length})`;
@@ -400,12 +938,17 @@ function describeQueueTitle(entry: QueueEntry): string {
   return action.label || formatPromptPreview(action.prompts[0] ?? '');
 }
 
-function describeQueueCondition(entry: QueueEntry): string {
+function describeQueueCondition(entry: ManagerBarQueueEntry): string {
+  const usesTurnQueue = usesTurnQueueForSession(entry.sessionId);
   if (entry.phase === 'chainCooldown') {
-    return t('managerBar.queue.chainCooldown');
+    return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.chainCooldown');
   }
   if (entry.phase === 'pendingCooldown') {
-    return t('managerBar.queue.cooldown');
+    return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
+  }
+
+  if (!entry.action) {
+    return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
   }
 
   const trigger = entry.action.trigger;
@@ -428,20 +971,42 @@ function describeQueueCondition(entry: QueueEntry): string {
   if (trigger.kind === 'fireAndForget' && entry.action.actionType === 'chain') {
     return t('managerBar.queue.chainRunning');
   }
-  return t('managerBar.queue.cooldown');
+  return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
+}
+
+function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {
+  const text = entry.turn?.text?.trim() ?? '';
+  if (text.length > 0) {
+    return formatPromptPreview(text);
+  }
+
+  const attachments = entry.turn?.attachments ?? [];
+  const firstAttachment = attachments[0];
+  if (firstAttachment) {
+    const pathParts = firstAttachment.path
+      .split(/[\\/]/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    const firstLabel =
+      firstAttachment.displayName?.trim() ||
+      pathParts[pathParts.length - 1] ||
+      firstAttachment.path.trim();
+    return attachments.length > 1 ? `${firstLabel} +${attachments.length - 1}` : firstLabel;
+  }
+
+  return t('managerBar.modal.singlePrompt');
+}
+
+function usesTurnQueueForSession(sessionId: string): boolean {
+  return $sessions.get()[sessionId]?.lensOnly === true;
 }
 
 function openActionModal(existing?: NormalizedManagerButton): void {
-  if (
-    !modalEl ||
-    !modalTitleEl ||
-    !labelInput ||
-    !typeSelect ||
-    !triggerSelect ||
-    !repeatCountInput ||
-    !repeatEveryValueInput ||
-    !repeatEveryUnitSelect
-  ) {
+  if (!ensureManagerActionModalElements()) {
+    return;
+  }
+
+  if (!hasManagerActionModalElements()) {
     return;
   }
 
@@ -449,16 +1014,7 @@ function openActionModal(existing?: NormalizedManagerButton): void {
   editingActionId = existing?.id ?? null;
   clearModalError();
 
-  modalTitleEl.textContent = existing
-    ? t('managerBar.modal.editTitle')
-    : t('managerBar.modal.title');
-  labelInput.value = action.label;
-  typeSelect.value = action.actionType;
-  triggerSelect.value = action.trigger.kind;
-  repeatCountInput.value = String(action.trigger.repeatCount);
-  repeatEveryValueInput.value = String(action.trigger.repeatEveryValue);
-  repeatEveryUnitSelect.value = action.trigger.repeatEveryUnit;
-
+  populateManagerActionModal(action, existing);
   renderPromptEditors(
     action.actionType === 'chain' ? Math.max(action.prompts.length, 1) : 1,
     action.prompts,
@@ -471,12 +1027,57 @@ function openActionModal(existing?: NormalizedManagerButton): void {
     releaseBackButtonLayer = registerBackButtonLayer(closeActionModal);
   }
 
-  modalEl.classList.remove('hidden');
-  const modalBody = modalEl.querySelector<HTMLElement>('.manager-action-modal-body');
+  const activeModalEl = modalEl;
+  if (!activeModalEl) {
+    return;
+  }
+
+  activeModalEl.classList.remove('hidden');
+  const modalBody = activeModalEl.querySelector<HTMLElement>('.manager-action-modal-body');
   if (modalBody) {
     modalBody.scrollTop = 0;
   }
   focusPrimaryPrompt();
+}
+
+function hasManagerActionModalElements(): boolean {
+  return !!(
+    modalEl &&
+    modalTitleEl &&
+    labelInput &&
+    typeSelect &&
+    triggerSelect &&
+    repeatCountInput &&
+    repeatEveryValueInput &&
+    repeatEveryUnitSelect
+  );
+}
+
+function populateManagerActionModal(
+  action: NormalizedManagerButton,
+  existing?: NormalizedManagerButton,
+): void {
+  if (
+    !modalTitleEl ||
+    !labelInput ||
+    !typeSelect ||
+    !triggerSelect ||
+    !repeatCountInput ||
+    !repeatEveryValueInput ||
+    !repeatEveryUnitSelect
+  ) {
+    return;
+  }
+
+  modalTitleEl.textContent = existing
+    ? t('managerBar.modal.editTitle')
+    : t('managerBar.modal.title');
+  labelInput.value = action.label;
+  typeSelect.value = action.actionType;
+  triggerSelect.value = action.trigger.kind;
+  repeatCountInput.value = String(action.trigger.repeatCount);
+  repeatEveryValueInput.value = String(action.trigger.repeatEveryValue);
+  repeatEveryUnitSelect.value = action.trigger.repeatEveryUnit;
 }
 
 function closeActionModal(): void {
@@ -493,7 +1094,7 @@ function saveModalAction(): void {
 
   const actionType = getModalActionType();
   const prompts = readPromptValues();
-  if (prompts.length === 0 || prompts.every((prompt) => prompt.trim().length === 0)) {
+  if (!hasValidManagerActionPrompts(prompts)) {
     showModalError(t('managerBar.modal.errorPromptRequired'));
     return;
   }
@@ -505,7 +1106,26 @@ function saveModalAction(): void {
     return;
   }
 
-  const action = normalizeManagerBarButton({
+  const action = buildManagerActionFromModal(actionType, prompts, triggerKind, schedule);
+
+  const currentButtons = normalizeManagerBarButtons(
+    settings.managerBarButtons as unknown as ManagerButton[],
+  );
+  saveButtons(upsertManagerAction(currentButtons, action));
+  closeActionModal();
+}
+
+function hasValidManagerActionPrompts(prompts: string[]): boolean {
+  return prompts.length > 0 && prompts.some((prompt) => prompt.trim().length > 0);
+}
+
+function buildManagerActionFromModal(
+  actionType: ManagerActionType,
+  prompts: string[],
+  triggerKind: ManagerTriggerKind,
+  schedule: ManagerBarScheduleEntry[],
+): NormalizedManagerButton {
+  return normalizeManagerBarButton({
     id: editingActionId ?? generateActionId(),
     label: labelInput?.value ?? '',
     text: prompts[0] ?? '',
@@ -519,10 +1139,12 @@ function saveModalAction(): void {
       schedule,
     },
   });
+}
 
-  const currentButtons = normalizeManagerBarButtons(
-    settings.managerBarButtons as unknown as ManagerButton[],
-  );
+function upsertManagerAction(
+  currentButtons: NormalizedManagerButton[],
+  action: NormalizedManagerButton,
+): NormalizedManagerButton[] {
   const nextButtons = [...currentButtons];
   const index = editingActionId
     ? nextButtons.findIndex((button) => button.id === editingActionId)
@@ -532,9 +1154,7 @@ function saveModalAction(): void {
   } else {
     nextButtons.push(action);
   }
-
-  saveButtons(nextButtons);
-  closeActionModal();
+  return nextButtons;
 }
 
 function renderPromptEditors(count: number, values: string[], actionType: ManagerActionType): void {
@@ -716,153 +1336,67 @@ function runButton(id: string): void {
   const sessionId = $activeSessionId.get();
   if (!action || !sessionId) return;
 
-  if (isImmediateManagerAction(action)) {
+  if (isImmediateManagerAction(action) && !usesTurnQueueForSession(sessionId)) {
     sendCommand(sessionId, action.prompts[0] ?? '');
     return;
   }
 
-  enqueueAction(sessionId, action);
+  void enqueueAction(sessionId, action);
 }
 
-function enqueueAction(sessionId: string, action: NormalizedManagerButton): void {
-  const phase = getInitialQueuePhase(action);
-  const nextRunAt =
-    phase === 'pendingSchedule'
-      ? computeNextScheduleTime(action.trigger.schedule, Date.now())
-      : null;
-
-  if (phase === 'pendingSchedule' && nextRunAt === null) {
-    log.warn(() => `Unable to schedule manager action ${action.id}`);
-    return;
-  }
-
-  queueEntries.push({
-    queueId: `${action.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    sessionId,
-    action,
-    phase,
-    nextPromptIndex: 0,
-    completedCycles: 0,
-    nextRunAt,
-    ignoreHeatUntilMs: null,
-  });
-
-  syncQueueProcessor();
-  processQueueEntries();
-  renderQueue();
-}
-
-function removeQueueEntry(queueId: string): void {
-  const index = queueEntries.findIndex((entry) => entry.queueId === queueId);
-  if (index < 0) return;
-
-  queueEntries.splice(index, 1);
-  syncQueueProcessor();
-  renderQueue();
-}
-
-function getInitialQueuePhase(action: NormalizedManagerButton): QueuePhase {
-  if (action.trigger.kind === 'schedule') return 'pendingSchedule';
-  if (shouldManagerActionWaitForInitialCooldown(action)) return 'pendingCooldown';
-  return 'pendingImmediate';
-}
-
-function syncQueueProcessor(): void {
-  if (queueEntries.length === 0) {
-    if (queueTimerId !== null) {
-      window.clearInterval(queueTimerId);
-      queueTimerId = null;
-    }
-    return;
-  }
-
-  if (queueTimerId === null) {
-    queueTimerId = window.setInterval(processQueueEntries, QUEUE_POLL_INTERVAL_MS);
-  }
-}
-
-function processQueueEntries(): void {
-  const sessions = $sessions.get();
-  let changed = false;
-
-  for (let index = queueEntries.length - 1; index >= 0; index -= 1) {
-    const entry = queueEntries[index];
-    if (!entry || !sessions[entry.sessionId]) {
-      queueEntries.splice(index, 1);
-      changed = true;
-      continue;
-    }
-
-    if (!isQueueEntryReady(entry)) continue;
-
-    const prompt = entry.action.prompts[entry.nextPromptIndex];
-    if (!prompt) {
-      queueEntries.splice(index, 1);
-      changed = true;
-      continue;
-    }
-
-    sendCommand(entry.sessionId, prompt);
-    changed = true;
-    advanceQueueEntry(entry, index);
-  }
-
-  if (changed) {
-    renderQueue();
-  }
-  syncQueueProcessor();
-}
-
-function isQueueEntryReady(entry: QueueEntry): boolean {
+async function enqueueAction(sessionId: string, action: NormalizedManagerButton): Promise<void> {
   const now = Date.now();
-  if (entry.phase === 'pendingImmediate') {
-    return true;
+  pruneExpiredEnqueueGuards(now);
+  const enqueueGuardKey = buildEnqueueGuardKey(sessionId, action);
+  const blockedUntil = pendingEnqueueGuards.get(enqueueGuardKey) ?? 0;
+  if (blockedUntil > now) {
+    return;
   }
-  if (entry.phase === 'pendingCooldown' || entry.phase === 'chainCooldown') {
-    return isManagerBarCooldownReady(getSessionHeat(entry.sessionId), now, entry.ignoreHeatUntilMs);
+
+  pendingEnqueueGuards.set(enqueueGuardKey, now + QUEUE_ENQUEUE_DEDUP_WINDOW_MS);
+
+  try {
+    await enqueueCommandBayAction(sessionId, action);
+  } catch (error) {
+    log.error(() => `Failed to enqueue manager bar action: ${String(error)}`);
   }
-  return entry.nextRunAt !== null && now >= entry.nextRunAt;
 }
 
-function advanceQueueEntry(entry: QueueEntry, index: number): void {
-  entry.nextPromptIndex += 1;
-  if (entry.nextPromptIndex < entry.action.prompts.length) {
-    entry.phase = 'chainCooldown';
-    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
-    return;
-  }
+function buildEnqueueGuardKey(sessionId: string, action: NormalizedManagerButton): string {
+  return [
+    sessionId,
+    action.id,
+    action.actionType,
+    action.trigger.kind,
+    action.prompts.join('\u001f'),
+  ].join('\u001d');
+}
 
-  entry.completedCycles += 1;
-  entry.nextPromptIndex = 0;
-
-  const trigger = entry.action.trigger;
-  if (trigger.kind === 'fireAndForget' || trigger.kind === 'onCooldown') {
-    queueEntries.splice(index, 1);
-    return;
-  }
-
-  if (trigger.kind === 'repeatCount') {
-    if (entry.completedCycles >= trigger.repeatCount) {
-      queueEntries.splice(index, 1);
-      return;
+function pruneExpiredEnqueueGuards(now: number): void {
+  for (const [key, expiresAt] of pendingEnqueueGuards.entries()) {
+    if (expiresAt <= now) {
+      pendingEnqueueGuards.delete(key);
     }
-    entry.phase = 'pendingCooldown';
-    entry.ignoreHeatUntilMs = getManagerBarHeatResumeAt(Date.now());
+  }
+}
+
+async function removeQueueEntry(queueId: string): Promise<void> {
+  if (pendingQueueRemovals.has(queueId)) {
     return;
   }
 
-  if (trigger.kind === 'repeatInterval') {
-    entry.phase = 'pendingInterval';
-    entry.nextRunAt = Date.now() + intervalToMs(trigger);
-    entry.ignoreHeatUntilMs = null;
-    return;
-  }
+  pendingQueueRemovals.add(queueId);
+  renderQueue();
 
-  entry.phase = 'pendingSchedule';
-  entry.nextRunAt = computeNextScheduleTime(trigger.schedule, Date.now());
-  entry.ignoreHeatUntilMs = null;
-  if (entry.nextRunAt === null) {
-    queueEntries.splice(index, 1);
+  try {
+    await removeCommandBayQueueEntry(queueId);
+    queueEntries = queueEntries.filter((entry) => entry.queueId !== queueId);
+    pendingQueueRemovals.delete(queueId);
+    renderQueue();
+  } catch (error) {
+    pendingQueueRemovals.delete(queueId);
+    renderQueue();
+    log.error(() => `Failed to dequeue manager bar action: ${String(error)}`);
   }
 }
 
@@ -902,6 +1436,18 @@ function generateActionId(): string {
   return `manager-action-${Date.now()}`;
 }
 
+function resolveEventElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) {
+    return target;
+  }
+
+  if (target instanceof Node) {
+    return target.parentElement;
+  }
+
+  return null;
+}
+
 function escapeHtml(value: string): string {
   const div = document.createElement('div');
   div.textContent = value;
@@ -937,3 +1483,5 @@ function focusNewestScheduleTime(): void {
     input.focus();
   });
 }
+
+/* eslint-enable max-lines */

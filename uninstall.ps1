@@ -13,6 +13,28 @@ $ProgressPreference = "SilentlyContinue"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
+function Invoke-CompatibleWebRequest
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+        [Parameter(Mandatory = $true)]
+        [string]$OutFile
+    )
+
+    $params = @{
+        Uri = $Uri
+        OutFile = $OutFile
+    }
+
+    if ($PSVersionTable.PSVersion.Major -lt 6)
+    {
+        $params.UseBasicParsing = $true
+    }
+
+    return Invoke-WebRequest @params
+}
+
 $ServiceName = "MidTerm"
 $OldHostServiceName = "MidTermHost"
 $FirewallRuleName = "MidTerm HTTPS"
@@ -388,7 +410,7 @@ if ($serviceTraces)
 
         $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.ps1"
         $tempScript = Join-Path $env:TEMP "mt-uninstall-elevated.ps1"
-        Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript
+        Invoke-CompatibleWebRequest -Uri $scriptUrl -OutFile $tempScript
 
         $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
         $baseArguments = @(

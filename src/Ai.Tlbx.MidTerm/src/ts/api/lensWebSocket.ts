@@ -1,22 +1,22 @@
 import {
   type LensCommandAcceptedResponse,
+  type LensHistoryDelta,
+  type LensHistoryPatch,
+  type LensHistorySnapshot,
+  type LensHistoryWindowResponse,
   type LensInterruptRequest,
-  type LensPulseDeltaResponse,
-  type LensPulseEvent,
-  type LensPulseEventListResponse,
-  type LensPulseSnapshotResponse,
   type LensRequestDecisionRequest,
   type LensTurnRequest,
   type LensTurnStartResponse,
   type LensUserInputAnswerRequest,
 } from './types';
+import { LensHttpError } from './errors';
 import { ReconnectController, createWsUrl } from '../utils';
 
 type LensWsRequestAction =
   | 'attach'
   | 'detach'
-  | 'snapshot.get'
-  | 'events.get'
+  | 'history.window.get'
   | 'turn.submit'
   | 'turn.interrupt'
   | 'request.approve'
@@ -27,14 +27,9 @@ type LensWsRequestAction =
 type LensWsPending =
   | { resolve: () => void; reject: (error: unknown) => void; kind: 'ack' }
   | {
-      resolve: (value: LensPulseSnapshotResponse) => void;
+      resolve: (value: LensHistorySnapshot) => void;
       reject: (error: unknown) => void;
-      kind: 'snapshot';
-    }
-  | {
-      resolve: (value: LensPulseEventListResponse) => void;
-      reject: (error: unknown) => void;
-      kind: 'events';
+      kind: 'historyWindow';
     }
   | {
       resolve: (value: LensTurnStartResponse) => void;
@@ -48,17 +43,19 @@ type LensWsPending =
     };
 
 type LensSubscriptionCallbacks = {
-  onDelta(delta: LensPulseDeltaResponse): void;
-  onSnapshot?(snapshot: LensPulseSnapshotResponse): void;
+  onPatch(patch: LensHistoryDelta): void;
+  onHistoryWindow?(historyWindow: LensHistorySnapshot): void;
   onOpen?(): void;
   onError?(error: Event): void;
 };
 
 type LensSessionSubscription = {
   afterSequence: number;
-  snapshotWindow?: {
+  historyWindow?: {
     startIndex?: number;
     count?: number;
+    viewportWidth?: number;
+    windowRevision?: string;
   };
   listeners: Set<LensSubscriptionCallbacks>;
 };
@@ -66,10 +63,14 @@ type LensSessionSubscription = {
 type LensServerMessage =
   | { type: 'ack'; id: string; action: string; sessionId: string }
   | { type: 'error'; id?: string; action?: string; sessionId?: string; message: string }
-  | { type: 'snapshot'; id?: string; sessionId: string; snapshot: LensPulseSnapshotResponse }
-  | { type: 'events'; id?: string; sessionId: string; events: LensPulseEventListResponse }
-  | { type: 'event'; sessionId: string; event: LensPulseEvent }
-  | { type: 'delta'; sessionId: string; delta: LensPulseDeltaResponse }
+  | {
+      type: 'history.window';
+      id?: string;
+      sessionId: string;
+      windowRevision?: string | null;
+      historyWindow: LensHistoryWindowResponse;
+    }
+  | { type: 'history.patch'; sessionId: string; patch: LensHistoryPatch }
   | { type: 'turnStarted'; id: string; sessionId: string; response: LensTurnStartResponse }
   | {
       type: 'commandAccepted';
@@ -77,6 +78,7 @@ type LensServerMessage =
       sessionId: string;
       response: LensCommandAcceptedResponse;
     };
+type PendingLensServerMessage = Exclude<LensServerMessage, { type: 'history.patch' }>;
 
 const reconnect = new ReconnectController();
 const subscriptions = new Map<string, LensSessionSubscription>();
@@ -85,9 +87,7 @@ let ws: WebSocket | null = null;
 let connectPromise: Promise<void> | null = null;
 
 function createLensWsError(detail: string): Error {
-  const error = new Error(`HTTP 400: ${detail}`);
-  error.name = 'LensHttpError';
-  return error;
+  return new LensHttpError(400, detail);
 }
 
 function createRequestId(): string {
@@ -98,17 +98,48 @@ function createRequestId(): string {
   return `lens-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildSnapshotWindow(
+function buildHistoryWindow(
   startIndex: number | undefined,
   count: number | undefined,
-): LensSessionSubscription['snapshotWindow'] | undefined {
-  if (startIndex === undefined && count === undefined) {
+  viewportWidth: number | undefined,
+  windowRevision: string | undefined,
+): LensSessionSubscription['historyWindow'] | undefined {
+  if (
+    startIndex === undefined &&
+    count === undefined &&
+    viewportWidth === undefined &&
+    !windowRevision
+  ) {
     return undefined;
   }
 
   return {
     ...(startIndex === undefined ? {} : { startIndex }),
     ...(count === undefined ? {} : { count }),
+    ...(viewportWidth === undefined ? {} : { viewportWidth }),
+    ...(windowRevision ? { windowRevision } : {}),
+  };
+}
+
+function historyWindowsEqual(
+  left: LensSessionSubscription['historyWindow'] | undefined,
+  right: LensSessionSubscription['historyWindow'] | undefined,
+): boolean {
+  return (
+    left?.startIndex === right?.startIndex &&
+    left?.count === right?.count &&
+    left?.viewportWidth === right?.viewportWidth &&
+    left?.windowRevision === right?.windowRevision
+  );
+}
+
+function normalizeHistoryWindowResponse(
+  historyWindow: LensHistoryWindowResponse,
+  windowRevision: string | null | undefined,
+): LensHistorySnapshot {
+  return {
+    ...historyWindow,
+    windowRevision: windowRevision ?? null,
   };
 }
 
@@ -142,110 +173,131 @@ function resubscribeAll(): void {
       type: 'subscribe',
       sessionId,
       afterSequence: subscription.afterSequence,
-      snapshotWindow: subscription.snapshotWindow,
+      historyWindow: subscription.historyWindow,
     });
   }
 }
 
-function handleServerMessage(message: LensServerMessage): void {
-  switch (message.type) {
-    case 'ack': {
-      const request = pending.get(message.id);
-      if (request?.kind === 'ack') {
-        pending.delete(message.id);
-        request.resolve();
-      }
-      return;
-    }
-    case 'error': {
-      if (message.id) {
-        const request = pending.get(message.id);
-        if (request) {
-          pending.delete(message.id);
-          request.reject(createLensWsError(message.message));
-          return;
-        }
-      }
-
-      return;
-    }
-    case 'snapshot': {
-      if (!message.id) {
-        const subscription = subscriptions.get(message.sessionId);
-        if (!subscription) {
-          return;
-        }
-
-        subscription.afterSequence = Math.max(
-          subscription.afterSequence,
-          message.snapshot.latestSequence,
-        );
-        for (const listener of subscription.listeners) {
-          listener.onSnapshot?.(message.snapshot);
-        }
-        return;
-      }
-
-      const request = pending.get(message.id);
-      if (request?.kind === 'snapshot') {
-        pending.delete(message.id);
-        request.resolve(message.snapshot);
-      }
-      return;
-    }
-    case 'events': {
-      if (!message.id) {
-        return;
-      }
-
-      const request = pending.get(message.id);
-      if (request?.kind === 'events') {
-        pending.delete(message.id);
-        request.resolve(message.events);
-      }
-      return;
-    }
-    case 'turnStarted': {
-      const request = pending.get(message.id);
-      if (request?.kind === 'turnStarted') {
-        pending.delete(message.id);
-        request.resolve(message.response);
-      }
-      return;
-    }
-    case 'commandAccepted': {
-      const request = pending.get(message.id);
-      if (request?.kind === 'commandAccepted') {
-        pending.delete(message.id);
-        request.resolve(message.response);
-      }
-      return;
-    }
-    case 'event': {
-      const subscription = subscriptions.get(message.sessionId);
-      if (!subscription) {
-        return;
-      }
-
-      subscription.afterSequence = Math.max(subscription.afterSequence, message.event.sequence);
-      return;
-    }
-    case 'delta': {
-      const subscription = subscriptions.get(message.sessionId);
-      if (!subscription) {
-        return;
-      }
-
-      subscription.afterSequence = Math.max(
-        subscription.afterSequence,
-        message.delta.latestSequence,
-      );
-      for (const listener of subscription.listeners) {
-        listener.onDelta(message.delta);
-      }
-      return;
-    }
+function resolvePendingRequest<TKind extends LensWsPending['kind']>(
+  id: string,
+  kind: TKind,
+): Extract<LensWsPending, { kind: TKind }> | null {
+  const request = pending.get(id);
+  if (!request || request.kind !== kind) {
+    return null;
   }
+
+  pending.delete(id);
+  return request as Extract<LensWsPending, { kind: TKind }>;
+}
+
+function handleHistoryWindowMessage(
+  message: Extract<LensServerMessage, { type: 'history.window' }>,
+): void {
+  if (!message.id) {
+    const subscription = subscriptions.get(message.sessionId);
+    if (!subscription) {
+      return;
+    }
+
+    subscription.afterSequence = Math.max(
+      subscription.afterSequence,
+      message.historyWindow.latestSequence,
+    );
+    if (
+      subscription.historyWindow?.windowRevision &&
+      message.windowRevision &&
+      subscription.historyWindow.windowRevision !== message.windowRevision
+    ) {
+      return;
+    }
+    for (const listener of subscription.listeners) {
+      listener.onHistoryWindow?.(
+        normalizeHistoryWindowResponse(message.historyWindow, message.windowRevision),
+      );
+    }
+    return;
+  }
+
+  resolvePendingRequest(message.id, 'historyWindow')?.resolve(
+    normalizeHistoryWindowResponse(message.historyWindow, message.windowRevision),
+  );
+}
+
+function handleSubscriptionSequenceUpdate(
+  sessionId: string,
+  nextSequence: number,
+  onFound?: (subscription: LensSessionSubscription) => void,
+): void {
+  const subscription = subscriptions.get(sessionId);
+  if (!subscription) {
+    return;
+  }
+
+  subscription.afterSequence = Math.max(subscription.afterSequence, nextSequence);
+  onFound?.(subscription);
+}
+
+function handleErrorMessage(message: Extract<LensServerMessage, { type: 'error' }>): void {
+  if (!message.id) {
+    return;
+  }
+
+  const request = pending.get(message.id);
+  if (!request) {
+    return;
+  }
+
+  pending.delete(message.id);
+  request.reject(createLensWsError(message.message));
+}
+
+const pendingMessageHandlers: {
+  [TType in PendingLensServerMessage['type']]: (
+    message: Extract<PendingLensServerMessage, { type: TType }>,
+  ) => void;
+} = {
+  ack: (message) => {
+    resolvePendingRequest(message.id, 'ack')?.resolve();
+  },
+  error: handleErrorMessage,
+  'history.window': handleHistoryWindowMessage,
+  turnStarted: (message) => {
+    resolvePendingRequest(message.id, 'turnStarted')?.resolve(message.response);
+  },
+  commandAccepted: (message) => {
+    resolvePendingRequest(message.id, 'commandAccepted')?.resolve(message.response);
+  },
+};
+
+function isSubscriptionServerMessage(
+  message: LensServerMessage,
+): message is Extract<LensServerMessage, { type: 'history.patch' }> {
+  return message.type === 'history.patch';
+}
+
+function handlePendingServerMessage(message: PendingLensServerMessage): void {
+  const handler = pendingMessageHandlers[message.type] as (
+    pendingMessage: PendingLensServerMessage,
+  ) => void;
+  handler(message);
+}
+
+function emitSubscriptionPatch(sessionId: string, patch: LensHistoryDelta): void {
+  handleSubscriptionSequenceUpdate(sessionId, patch.latestSequence, (subscription) => {
+    for (const listener of subscription.listeners) {
+      listener.onPatch(patch);
+    }
+  });
+}
+
+function handleServerMessage(message: LensServerMessage): void {
+  if (!isSubscriptionServerMessage(message)) {
+    handlePendingServerMessage(message);
+    return;
+  }
+
+  emitSubscriptionPatch(message.sessionId, message.patch);
 }
 
 function sendRaw(payload: unknown): void {
@@ -313,47 +365,32 @@ async function requestAck(
   return request;
 }
 
-async function requestSnapshot(
+async function requestHistoryWindow(
   sessionId: string,
   startIndex?: number,
   count?: number,
-): Promise<LensPulseSnapshotResponse> {
+  windowRevision?: string,
+  viewportWidth?: number,
+): Promise<LensHistorySnapshot> {
   await ensureConnected();
   const id = createRequestId();
-  const request = new Promise<LensPulseSnapshotResponse>((resolve, reject) => {
-    pending.set(id, { resolve, reject, kind: 'snapshot' });
+  const request = new Promise<LensHistorySnapshot>((resolve, reject) => {
+    pending.set(id, { resolve, reject, kind: 'historyWindow' });
   });
   sendRaw({
     type: 'request',
     id,
-    action: 'snapshot.get',
+    action: 'history.window.get',
     sessionId,
-    snapshotWindow:
-      startIndex === undefined && count === undefined
+    historyWindow:
+      startIndex === undefined && count === undefined && viewportWidth === undefined
         ? undefined
         : {
             ...(startIndex === undefined ? {} : { startIndex }),
             ...(count === undefined ? {} : { count }),
+            ...(viewportWidth === undefined ? {} : { viewportWidth }),
+            ...(windowRevision ? { windowRevision } : {}),
           },
-  });
-  return request;
-}
-
-async function requestEvents(
-  sessionId: string,
-  afterSequence = 0,
-): Promise<LensPulseEventListResponse> {
-  await ensureConnected();
-  const id = createRequestId();
-  const request = new Promise<LensPulseEventListResponse>((resolve, reject) => {
-    pending.set(id, { resolve, reject, kind: 'events' });
-  });
-  sendRaw({
-    type: 'request',
-    id,
-    action: 'events.get',
-    sessionId,
-    afterSequence,
   });
   return request;
 }
@@ -379,10 +416,7 @@ async function requestTurnStarted(
 }
 
 async function requestCommandAccepted(
-  action: Exclude<
-    LensWsRequestAction,
-    'attach' | 'detach' | 'snapshot.get' | 'events.get' | 'turn.submit'
-  >,
+  action: Exclude<LensWsRequestAction, 'attach' | 'detach' | 'history.window.get' | 'turn.submit'>,
   sessionId: string,
   extra: Record<string, unknown> = {},
 ): Promise<LensCommandAcceptedResponse> {
@@ -409,19 +443,14 @@ export async function detachLensSession(sessionId: string): Promise<void> {
   return requestAck('detach', sessionId);
 }
 
-export async function getLensSnapshotWs(
+export async function getLensHistoryWindowWs(
   sessionId: string,
   startIndex?: number,
   count?: number,
-): Promise<LensPulseSnapshotResponse> {
-  return requestSnapshot(sessionId, startIndex, count);
-}
-
-export async function getLensEventsWs(
-  sessionId: string,
-  afterSequence = 0,
-): Promise<LensPulseEventListResponse> {
-  return requestEvents(sessionId, afterSequence);
+  windowRevision?: string,
+  viewportWidth?: number,
+): Promise<LensHistorySnapshot> {
+  return requestHistoryWindow(sessionId, startIndex, count, windowRevision, viewportWidth);
 }
 
 export async function submitLensTurnWs(
@@ -467,12 +496,14 @@ export async function resolveLensUserInputWs(
   });
 }
 
-export function openLensEventSocket(
+export function openLensHistorySocket(
   sessionId: string,
   afterSequence: number,
   startIndex: number | undefined,
   count: number | undefined,
+  windowRevision: string | undefined,
   callbacks: LensSubscriptionCallbacks,
+  viewportWidth?: number,
 ): () => void {
   let subscription = subscriptions.get(sessionId);
   if (!subscription) {
@@ -482,20 +513,30 @@ export function openLensEventSocket(
     };
   }
   subscription.afterSequence = Math.max(subscription.afterSequence, afterSequence);
-  const nextSnapshotWindow = buildSnapshotWindow(startIndex, count);
-  if (nextSnapshotWindow) {
-    subscription.snapshotWindow = nextSnapshotWindow;
+  const nextHistoryWindow = buildHistoryWindow(startIndex, count, viewportWidth, windowRevision);
+  if (nextHistoryWindow) {
+    subscription.historyWindow = nextHistoryWindow;
   }
   subscription.listeners.add(callbacks);
   subscriptions.set(sessionId, subscription);
 
+  const shouldSendSubscribeImmediately = ws?.readyState === WebSocket.OPEN;
   void ensureConnected()
     .then(() => {
+      if (!shouldSendSubscribeImmediately) {
+        return;
+      }
+
+      const current = subscriptions.get(sessionId);
+      if (!current || !current.listeners.has(callbacks)) {
+        return;
+      }
+
       sendRaw({
         type: 'subscribe',
         sessionId,
-        afterSequence: subscription.afterSequence,
-        snapshotWindow: subscription.snapshotWindow,
+        afterSequence: current.afterSequence,
+        historyWindow: current.historyWindow,
       });
     })
     .catch(() => {
@@ -520,4 +561,47 @@ export function openLensEventSocket(
       afterSequence: current.afterSequence,
     });
   };
+}
+
+export function updateLensHistorySocketWindow(
+  sessionId: string,
+  startIndex: number | undefined,
+  count: number | undefined,
+  windowRevision: string | undefined,
+  viewportWidth?: number,
+): void {
+  const subscription = subscriptions.get(sessionId);
+  if (!subscription) {
+    return;
+  }
+
+  const nextHistoryWindow = buildHistoryWindow(startIndex, count, viewportWidth, windowRevision);
+  if (historyWindowsEqual(subscription.historyWindow, nextHistoryWindow)) {
+    return;
+  }
+
+  if (nextHistoryWindow) {
+    subscription.historyWindow = nextHistoryWindow;
+  } else {
+    delete subscription.historyWindow;
+  }
+
+  const shouldSendSubscribeImmediately = ws?.readyState === WebSocket.OPEN;
+  void ensureConnected().then(() => {
+    if (!shouldSendSubscribeImmediately) {
+      return;
+    }
+
+    const current = subscriptions.get(sessionId);
+    if (!current) {
+      return;
+    }
+
+    sendRaw({
+      type: 'subscribe',
+      sessionId,
+      afterSequence: current.afterSequence,
+      historyWindow: current.historyWindow,
+    });
+  });
 }

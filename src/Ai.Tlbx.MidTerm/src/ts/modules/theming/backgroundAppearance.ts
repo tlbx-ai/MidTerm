@@ -6,6 +6,11 @@
 
 import type { MidTermSettingsPublic } from '../../types';
 import { getCssThemePalette } from './cssThemes';
+import {
+  isMobileBackgroundSuppressed,
+  isMobilePresentationContext,
+  shouldRenderBackgroundImage,
+} from './backgroundVisibility';
 
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
@@ -28,6 +33,8 @@ const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
   { name: '--bg-sidebar-opaque', source: '--bg-sidebar' },
   { name: '--bg-settings-opaque', source: '--bg-settings' },
   { name: '--bg-dropdown-opaque', source: '--bg-dropdown' },
+  { name: '--bg-session-hover-opaque', source: '--bg-session-hover' },
+  { name: '--bg-session-active-opaque', source: '--bg-session-active' },
   { name: '--bg-hover-opaque', source: '--bg-hover' },
   { name: '--bg-active-opaque', source: '--bg-active' },
 ];
@@ -54,6 +61,13 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
     response: 0.6,
   },
 ];
+const BACKGROUND_KEN_BURNS_MIN_SCALE = 1.5;
+const BACKGROUND_KEN_BURNS_MAX_SCALE = 3;
+const BACKGROUND_KEN_BURNS_MAX_SPEED_PX_PER_SECOND = 120;
+const BACKGROUND_KEN_BURNS_REFERENCE_SIZE_PX = 720;
+const BACKGROUND_KEN_BURNS_PATH_MULTIPLIER = Math.PI * 2 * 0.46;
+const BACKGROUND_KEN_BURNS_PAN_X_FACTOR = 0.24;
+const BACKGROUND_KEN_BURNS_PAN_Y_FACTOR = 0.16;
 
 interface RgbColor {
   r: number;
@@ -68,12 +82,11 @@ export function getBackgroundImageUrl(revision: number): string {
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {
   const root = document.documentElement;
   const palette = getCssThemePalette(settings.theme);
-  const uiTransparency = clamp(settings.uiTransparency, 0, 100);
-  const terminalTransparency = clamp(
-    settings.terminalTransparency ?? settings.uiTransparency,
-    0,
-    100,
-  );
+  const mobilePresentation = isMobilePresentationContext();
+  const uiTransparency = mobilePresentation ? 0 : clamp(settings.uiTransparency, 0, 100);
+  const terminalTransparency = mobilePresentation
+    ? 0
+    : clamp(settings.terminalTransparency ?? settings.uiTransparency, 0, 100);
   const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
 
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
@@ -110,23 +123,22 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     );
   }
 
-  const hasImage = Boolean(
-    settings.backgroundImageEnabled &&
-    settings.backgroundImageFileName &&
-    settings.backgroundImageRevision > 0,
-  );
+  const hasImage = shouldRenderBackgroundImage(settings);
 
   root.style.setProperty(
     '--app-background-image',
     hasImage ? `url("${getBackgroundImageUrl(settings.backgroundImageRevision)}")` : 'none',
   );
-  root.style.setProperty(
-    '--app-background-size',
-    settings.backgroundImageFit === 'contain' ? 'contain' : 'cover',
-  );
+  root.style.setProperty('--app-background-size', 'cover');
   root.style.setProperty('--app-background-repeat', 'no-repeat');
   root.style.setProperty('--app-background-position', 'center center');
+  syncBackgroundKenBurnsEffect(root, settings, hasImage);
   document.body.classList.toggle('has-app-background', hasImage);
+  document.body.classList.toggle(
+    'hide-app-background-on-mobile',
+    isMobileBackgroundSuppressed(settings),
+  );
+  document.body.classList.toggle('opaque-terminal-surfaces', terminalTransparency === 0);
 }
 
 function parseColor(value: string | undefined): RgbColor | null {
@@ -195,4 +207,61 @@ function transparencyToAlpha(transparency: number, response: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function syncBackgroundKenBurnsEffect(
+  root: HTMLElement,
+  settings: MidTermSettingsPublic,
+  hasImage: boolean,
+): void {
+  const enabled = hasImage && settings.backgroundKenBurnsEnabled;
+  const scale = enabled
+    ? clamp(
+        settings.backgroundKenBurnsZoomPercent / 100,
+        BACKGROUND_KEN_BURNS_MIN_SCALE,
+        BACKGROUND_KEN_BURNS_MAX_SCALE,
+      )
+    : 1;
+  const speedPxPerSecond = clamp(
+    settings.backgroundKenBurnsSpeedPxPerSecond,
+    0,
+    BACKGROUND_KEN_BURNS_MAX_SPEED_PX_PER_SECOND,
+  );
+  const overflow = Math.max(0, scale - 1);
+  const panXPercent = overflow * BACKGROUND_KEN_BURNS_PAN_X_FACTOR * 100;
+  const panYPercent = overflow * BACKGROUND_KEN_BURNS_PAN_Y_FACTOR * 100;
+
+  root.style.setProperty(
+    '--app-background-transform',
+    `translate3d(0px, 0px, 0) scale(${scale.toFixed(3)})`,
+  );
+  root.style.setProperty('--app-background-ken-burns-scale', scale.toFixed(3));
+  root.style.setProperty('--app-background-ken-burns-pan-x', `${panXPercent.toFixed(3)}%`);
+  root.style.setProperty('--app-background-ken-burns-pan-y', `${panYPercent.toFixed(3)}%`);
+
+  if (!enabled || speedPxPerSecond <= 0) {
+    root.style.setProperty('--app-background-animation', 'none');
+    return;
+  }
+
+  root.style.setProperty(
+    '--app-background-animation',
+    `midterm-app-background-ken-burns ${computeBackgroundKenBurnsDurationSeconds(scale, speedPxPerSecond).toFixed(3)}s linear infinite`,
+  );
+}
+
+function computeBackgroundKenBurnsDurationSeconds(scale: number, speedPxPerSecond: number): number {
+  if (speedPxPerSecond <= 0) {
+    return 0;
+  }
+
+  const travelDistancePx =
+    getBackgroundKenBurnsReferenceSizePx() *
+    Math.max(0, scale - 1) *
+    BACKGROUND_KEN_BURNS_PATH_MULTIPLIER;
+  return clamp(travelDistancePx / speedPxPerSecond, 0.1, 86400);
+}
+
+function getBackgroundKenBurnsReferenceSizePx(): number {
+  return BACKGROUND_KEN_BURNS_REFERENCE_SIZE_PX;
 }

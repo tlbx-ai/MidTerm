@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -121,6 +122,7 @@ public static class Program
         IPtyConnection? pty = null;
         IProcessMonitor? processMonitor = null;
         TerminalSession? session = null;
+        CancellationTokenSource? shutdownCts = null;
         try
         {
             Console.WriteLine($"[mthost] Creating PTY: {shellConfig.ExecutablePath}");
@@ -133,7 +135,7 @@ public static class Program
                 config.Cols,
                 config.Rows,
                 environment);
-            Console.WriteLine($"[mthost] PTY created, PID={pty.Pid}");
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"[mthost] PTY created, PID={pty.Pid}"));
 
             processMonitor = CreateProcessMonitor();
             session = new TerminalSession(
@@ -150,29 +152,30 @@ public static class Program
                 ? IpcEndpoint.GetLegacySessionEndpoint(config.SessionId, Environment.ProcessId)
                 : IpcEndpoint.GetSessionEndpoint(config.MtInstanceId, config.SessionId, Environment.ProcessId);
             Console.WriteLine($"[mthost] Listening on: {endpoint}");
-            Log.Info(() => $"PTY ready, PID={pty.Pid}, endpoint={endpoint}");
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"PTY ready, PID={pty.Pid}, endpoint={endpoint}"));
 
             if (processMonitor is not null)
             {
                 processMonitor.StartMonitoring(pty.Pid, pty.MasterFd);
-                Log.Info(() => $"Process monitor started for PID={pty.Pid}, masterFd={pty.MasterFd}");
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Process monitor started for PID={pty.Pid}, masterFd={pty.MasterFd}"));
             }
 
-            using var cts = new CancellationTokenSource();
-            _shutdownCts = cts;
+            shutdownCts = new CancellationTokenSource();
+            var previousShutdownCts = Interlocked.Exchange(ref _shutdownCts, shutdownCts);
+            previousShutdownCts?.Dispose();
             Task? ptyReadTask = null;
 
             // Accept client connections (mt.exe)
             // The read loop is started by the first client that connects
-            await AcceptClientsAsync(session, endpoint, cts.Token, () =>
+            await AcceptClientsAsync(session, endpoint, shutdownCts.Token, () =>
             {
                 if (ptyReadTask is null)
                 {
-                    ptyReadTask = session.StartReadLoopAsync(cts.Token);
+                    ptyReadTask = session.StartReadLoopAsync(shutdownCts.Token);
                 }
             }).ConfigureAwait(false);
 
-            cts.Cancel();
+            shutdownCts.Cancel();
             if (ptyReadTask is not null)
             {
                 await ptyReadTask.ConfigureAwait(false);
@@ -180,6 +183,15 @@ public static class Program
         }
         finally
         {
+            if (shutdownCts is not null)
+            {
+                if (ReferenceEquals(_shutdownCts, shutdownCts))
+                {
+                    Interlocked.Exchange(ref _shutdownCts, null);
+                }
+
+                shutdownCts.Dispose();
+            }
             session?.Dispose();
             processMonitor?.StopMonitoring();
             processMonitor?.Dispose();
@@ -196,12 +208,12 @@ public static class Program
 
         var pid = Environment.ProcessId;
         var tmuxPath = OperatingSystem.IsWindows()
-            ? $@"\\.\pipe\midterm-tmux-{pid},{pid},0"
-            : $"/tmp/midterm-tmux-{pid},{pid},0";
+            ? string.Create(CultureInfo.InvariantCulture, $@"\\.\pipe\midterm-tmux-{pid},{pid},0")
+            : string.Create(CultureInfo.InvariantCulture, $"/tmp/midterm-tmux-{pid},{pid},0");
 
         env["TMUX"] = tmuxPath;
-        env["TMUX_PANE"] = $"%{config.PaneIndex ?? 0}";
-        env["MT_PORT"] = config.MtPort.Value.ToString();
+        env["TMUX_PANE"] = string.Create(CultureInfo.InvariantCulture, $"%{config.PaneIndex ?? 0}");
+        env["MT_PORT"] = config.MtPort.Value.ToString(CultureInfo.InvariantCulture);
         env["MT_TOKEN"] = config.MtToken;
         env["MT_SESSION_ID"] = config.SessionId;
         env["MT_PREVIEW_NAME"] = "default";
@@ -256,14 +268,7 @@ public static class Program
             {
                 var client = await server.AcceptAsync(ct).ConfigureAwait(false);
                 connectionCount++;
-                Log.Info(() => $"Client connected (#{connectionCount})");
-
-                var clientCts = new CancellationTokenSource();
-
-                // Create a linked CTS that combines shutdown token with this client's token
-                // This is created outside the lock and passed directly to HandleClientAsync
-                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, clientCts.Token);
-                var clientToken = linkedCts.Token;
+                Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Client connected (#{connectionCount})"));
 
                 // Start the read loop when the first client subscribes to output
                 Action? onSubscribed = null;
@@ -279,14 +284,7 @@ public static class Program
                     };
                 }
 
-                // Run HandleClientAsync synchronously (don't fire-and-forget)
-                // This ensures the linked CTS stays alive for the duration of the handler
-                var handlerTask = HandleClientAsync(
-                    session,
-                    client,
-                    clientToken,
-                    onSubscribed,
-                    () => PromoteCurrentClient(clientCts));
+                var handlerTask = RunClientAsync(session, client, onSubscribed, ct);
                 lock (clientTasks)
                 {
                     clientTasks.Add(handlerTask);
@@ -294,7 +292,15 @@ public static class Program
 
                 _ = handlerTask.ContinueWith(t =>
                 {
-                    linkedCts.Dispose();
+                    try
+                    {
+                        client.Dispose();
+                    }
+                    catch (Exception disposeEx)
+                    {
+                        Log.Exception(disposeEx, "RunClient.ClientDispose");
+                    }
+
                     if (t.Exception is not null)
                     {
                         Log.Exception(t.Exception.Flatten().InnerException ?? t.Exception, "HandleClient.Task");
@@ -329,6 +335,29 @@ public static class Program
         }
     }
 
+    private static async Task RunClientAsync(
+        TerminalSession session,
+        IIpcClientConnection client,
+        Action? onSubscribed,
+        CancellationToken shutdownToken)
+    {
+        using var clientCts = new CancellationTokenSource();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken, clientCts.Token);
+
+        try
+        {
+            await HandleClientAsync(
+                session,
+                client,
+                linkedCts.Token,
+                onSubscribed,
+                () => PromoteCurrentClient(clientCts)).ConfigureAwait(false);
+        }
+        finally
+        {
+        }
+    }
+
     private static void PromoteCurrentClient(CancellationTokenSource nextClientCts)
     {
         lock (_clientLock)
@@ -338,14 +367,27 @@ public static class Program
                 return;
             }
 
-            var oldCts = _currentClientCts;
-            _currentClientCts = nextClientCts;
-            oldCts?.Cancel();
-            if (!ReferenceEquals(oldCts, nextClientCts))
+            if (_currentClientCts is not null)
             {
-                oldCts?.Dispose();
+                _currentClientCts.Cancel();
+                _currentClientCts.Dispose();
+                _currentClientCts = null;
             }
+
+            _currentClientCts = nextClientCts;
         }
+    }
+
+    private static void DisposeCurrentClientCts_NoLock()
+    {
+        if (_currentClientCts is null)
+        {
+            return;
+        }
+
+        _currentClientCts.Cancel();
+        _currentClientCts.Dispose();
+        _currentClientCts = null;
     }
 
     private readonly record struct PooledFrame(
@@ -641,8 +683,6 @@ public static class Program
             clientCts.Cancel();
             // Await heartbeat completion; exceptions are expected during cancellation
             try { await heartbeatTask.ConfigureAwait(false); } catch { }
-            try { client.Dispose(); }
-            catch (Exception disposeEx) { Log.Exception(disposeEx, "HandleClient.ClientDispose"); }
             Log.Info(() => "Client disconnected");
         }
     }
@@ -673,7 +713,7 @@ public static class Program
                         if (!PeekNamedPipe(handle, IntPtr.Zero, 0, IntPtr.Zero, out _, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
-                            Log.Warn(() => $"Heartbeat: PeekNamedPipe failed (error {error}) - pipe stale");
+                            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Heartbeat: PeekNamedPipe failed (error {error}) - pipe stale"));
                             clientCts.Cancel();
                             break;
                         }
@@ -765,7 +805,7 @@ public static class Program
 
             if (payloadLength < 0 || payloadLength > TtyHostProtocol.MaxPayloadSize)
             {
-                Log.Warn(() => $"Invalid payload length: {payloadLength}");
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Invalid payload length: {payloadLength}"));
                 break;
             }
 
@@ -985,19 +1025,23 @@ public static class Program
                 case "--cwd" when i + 1 < args.Length:
                     workingDir = args[++i];
                     break;
-                case "--cols" when i + 1 < args.Length && int.TryParse(args[i + 1], out var c):
+                case "--cols" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var c):
                     cols = c;
                     i++;
                     break;
-                case "--rows" when i + 1 < args.Length && int.TryParse(args[i + 1], out var r):
+                case "--rows" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var r):
                     rows = r;
                     i++;
                     break;
-                case "--scrollback" when i + 1 < args.Length && int.TryParse(args[i + 1], out var sb):
+                case "--scrollback" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var sb):
                     scrollbackBytes = sb;
                     i++;
                     break;
-                case "--scrollback-bytes" when i + 1 < args.Length && int.TryParse(args[i + 1], out var sbBytes):
+                case "--scrollback-bytes" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var sbBytes):
                     scrollbackBytes = sbBytes;
                     i++;
                     break;
@@ -1008,7 +1052,8 @@ public static class Program
                 case "--debug":
                     logLevel = LogSeverity.Verbose;
                     break;
-                case "--mt-port" when i + 1 < args.Length && int.TryParse(args[i + 1], out var mp):
+                case "--mt-port" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var mp):
                     mtPort = mp;
                     i++;
                     break;
@@ -1021,7 +1066,8 @@ public static class Program
                 case "--mt-owner-token" when i + 1 < args.Length:
                     mtOwnerToken = args[++i];
                     break;
-                case "--pane-index" when i + 1 < args.Length && int.TryParse(args[i + 1], out var pi):
+                case "--pane-index" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var pi):
                     paneIndex = pi;
                     i++;
                     break;
@@ -1031,7 +1077,7 @@ public static class Program
             }
         }
 
-        sessionId ??= Environment.ProcessId.ToString();
+        sessionId ??= Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
         workingDir ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         scrollbackBytes = Math.Clamp(scrollbackBytes, MinScrollbackBytes, MaxScrollbackBytes);
 
@@ -1183,7 +1229,7 @@ internal sealed class TerminalSession : IDisposable
                 }
 
                 var data = buffer.AsMemory(0, bytesRead);
-                Log.Verbose(() => $"[PTY-READ] {bytesRead} bytes");
+                Log.Verbose(() => string.Create(CultureInfo.InvariantCulture, $"[PTY-READ] {bytesRead} bytes"));
                 ulong sequenceStart;
 
                 lock (_bufferLock)

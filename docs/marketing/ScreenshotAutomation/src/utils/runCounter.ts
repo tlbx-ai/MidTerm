@@ -14,11 +14,14 @@ export function getNextRunNumber(): number {
 
   for (const entry of entries) {
     const match = entry.match(/^run-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxRun) {
-        maxRun = num;
-      }
+    const rawRun = match?.[1];
+    if (!rawRun) {
+      continue;
+    }
+
+    const num = parseInt(rawRun, 10);
+    if (num > maxRun) {
+      maxRun = num;
     }
   }
 

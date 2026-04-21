@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { $currentSettings, $isMainBrowser } from '../../stores';
+import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
-import { fitSessionToScreen } from './scaling';
+import { applyTerminalScaling, fitSessionToScreen, scheduleForegroundResizeRecovery } from './scaling';
 import { sendResize } from '../comms';
+import { focusActiveTerminal } from './manager';
 
 const mocks = vi.hoisted(() => ({
-  refreshTerminalRenderer: vi.fn((state: any) => {
+  remeasureTerminalCells: vi.fn((state: any) => {
     const dims = state.terminal?._core?._renderService?.dimensions?.css?.cell;
     if (dims) {
       dims.width = 10;
@@ -40,7 +41,8 @@ vi.mock('./manager', () => ({
 
 vi.mock('./presentationRefresh', () => ({
   isTerminalVisible: () => true,
-  refreshTerminalRenderer: mocks.refreshTerminalRenderer,
+  remeasureTerminalCells: mocks.remeasureTerminalCells,
+  refreshTerminalRenderer: vi.fn(),
 }));
 
 type FakeElement = {
@@ -84,7 +86,7 @@ function createFitHarness() {
       _renderService: {
         dimensions: {
           css: {
-            cell: { width: 9.5, height: 20 },
+            cell: { width: 10, height: 20 },
           },
         },
       },
@@ -147,21 +149,30 @@ function createFitHarness() {
 describe('fitSessionToScreen', () => {
   const originalDocument = globalThis.document;
   const originalLocalStorage = globalThis.localStorage;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  let bodyClasses: ReturnType<typeof createClassList>;
 
   beforeEach(() => {
     sessionTerminals.clear();
-    mocks.refreshTerminalRenderer.mockClear();
+    mocks.remeasureTerminalCells.mockClear();
     vi.mocked(sendResize).mockReset();
+    vi.mocked(focusActiveTerminal).mockReset();
     $isMainBrowser.set(true);
     $currentSettings.set({
       fontSize: 14,
       fontFamily: 'Cascadia Code',
     } as never);
+    $sessions.set({});
+    $activeSessionId.set('s1');
     dom.terminalsArea = {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
+    bodyClasses = createClassList();
     globalThis.document = {
       getElementById: () => null,
+      body: {
+        classList: bodyClasses,
+      },
     } as Document;
     globalThis.localStorage = {
       getItem: () => null,
@@ -171,24 +182,128 @@ describe('fitSessionToScreen', () => {
       key: () => null,
       length: 0,
     } as Storage;
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
   });
 
   afterEach(() => {
     sessionTerminals.clear();
     dom.terminalsArea = null;
+    $sessions.set({});
+    $activeSessionId.set(null);
     globalThis.document = originalDocument;
     globalThis.localStorage = originalLocalStorage;
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
     vi.clearAllMocks();
   });
 
-  it('refreshes xterm renderer metrics before fitting the main-browser viewport', () => {
+  it('fits the main-browser viewport without forcing a renderer refresh when cell metrics exist', () => {
     const harness = createFitHarness();
     sessionTerminals.set('s1', harness.state as never);
 
     fitSessionToScreen('s1');
 
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledOnce();
+    expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+    expect(focusActiveTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reclaim terminal focus while the soft keyboard is visible', () => {
+    const harness = createFitHarness();
+    sessionTerminals.set('s1', harness.state as never);
+    bodyClasses.add('keyboard-visible');
+
+    fitSessionToScreen('s1');
+
+    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+    expect(focusActiveTerminal).not.toHaveBeenCalled();
+  });
+
+  it('retries a transiently tiny viewport instead of collapsing to minimum dimensions', () => {
+    const harness = createFitHarness();
+    let measurements = 0;
+    sessionTerminals.set('s1', harness.state as never);
+    dom.terminalsArea = {
+      getBoundingClientRect: () => {
+        measurements += 1;
+        return measurements === 1 ? { width: 0, height: 0 } : { width: 818, height: 488 };
+      },
+    } as HTMLElement;
+
+    fitSessionToScreen('s1');
+
+    expect(harness.terminal.resize).toHaveBeenCalledTimes(1);
+    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+  });
+
+  it('does not rerender or send a resize on foreground recovery when the viewport already matches', () => {
+    const harness = createFitHarness();
+    harness.state.terminal.cols = 81;
+    harness.state.serverCols = 81;
+    sessionTerminals.set('s1', harness.state as never);
+
+    scheduleForegroundResizeRecovery();
+
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
+    expect(sendResize).not.toHaveBeenCalled();
+  });
+
+  it('recovers main-browser sizing on foreground recovery when the viewport changed in the background', () => {
+    const harness = createFitHarness();
+    sessionTerminals.set('s1', harness.state as never);
+
+    scheduleForegroundResizeRecovery();
+
+    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+  });
+
+  it('coalesces repeated scaling requests for the same terminal into one animation frame', () => {
+    const terminal = {
+      cols: 80,
+      rows: 24,
+      buffer: { active: { viewportY: 0, baseY: 0 } },
+    };
+    const xterm = {
+      style: {} as Record<string, string>,
+      offsetWidth: 800,
+      offsetHeight: 480,
+    };
+    const container = {
+      clientWidth: 800,
+      clientHeight: 480,
+      classList: createClassList(),
+      appendChild: vi.fn(),
+      closest: () => null,
+      querySelector<T>(selector: string): T | null {
+        if (selector === '.xterm') return xterm as T;
+        return null;
+      },
+    } as unknown as HTMLDivElement;
+    const state = {
+      terminal,
+      fitAddon: {} as never,
+      container,
+      serverCols: 80,
+      serverRows: 24,
+      opened: true,
+      pendingVisualRefresh: false,
+    };
+
+    const callbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    }) as typeof requestAnimationFrame;
+
+    applyTerminalScaling('s1', state as never);
+    applyTerminalScaling('s1', state as never);
+
+    expect(callbacks).toHaveLength(1);
   });
 });

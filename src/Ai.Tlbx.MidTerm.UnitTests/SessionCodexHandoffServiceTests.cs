@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -11,6 +12,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class SessionCodexHandoffServiceTests : IDisposable
 {
     private readonly string _tempRoot = Path.Combine(Path.GetTempPath(), "midterm-codex-handoff-tests", Guid.NewGuid().ToString("N"));
+    private readonly List<HandoffServiceContext> _serviceContexts = [];
 
     public SessionCodexHandoffServiceTests()
     {
@@ -144,48 +146,23 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     {
         var cwd = Path.Combine(_tempRoot, "repo-snapshot");
         Directory.CreateDirectory(cwd);
-        var service = CreateService(out var pulse);
-        pulse.Append(new LensPulseEvent
-        {
-            EventId = "evt-session-started",
-            SessionId = "s-snapshot",
-            Provider = "codex",
-            CreatedAt = new DateTimeOffset(2026, 3, 23, 21, 6, 51, TimeSpan.Zero),
-            Type = "session.started",
-            SessionState = new LensPulseSessionStatePayload
-            {
-                State = "starting",
-                StateLabel = "Starting",
-                Reason = "Lens runtime attached."
-            }
-        });
-        pulse.Append(new LensPulseEvent
-        {
-            EventId = "evt-thread-started",
-            SessionId = "s-snapshot",
-            Provider = "codex",
-            CreatedAt = new DateTimeOffset(2026, 3, 23, 21, 6, 52, TimeSpan.Zero),
-            Type = "thread.started",
-            ThreadState = new LensPulseThreadStatePayload
-            {
-                State = "active",
-                StateLabel = "Active",
-                ProviderThreadId = "thread-from-snapshot"
-            }
-        });
-
+        await using var context = CreateServiceContext(mode: "synthetic");
         var session = new SessionInfoDto
         {
             Id = "s-snapshot",
             CurrentDirectory = cwd,
-            CreatedAt = new DateTime(2026, 3, 23, 21, 5, 0, DateTimeKind.Utc)
+            CreatedAt = new DateTime(2026, 3, 23, 21, 5, 0, DateTimeKind.Utc),
+            ForegroundName = "codex"
         };
 
-        var resumeThreadId = await service.ResolveResumeThreadIdAsync(session, CancellationToken.None);
+        Assert.True(await context.LensRuntime.EnsureAttachedAsync(session.Id, session, ct: CancellationToken.None));
+        Assert.True(context.LensRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow));
 
-        Assert.Equal("thread-from-snapshot", resumeThreadId);
-        Assert.True(service.TryGetKnownResumeThreadId("s-snapshot", out var rememberedThreadId));
-        Assert.Equal("thread-from-snapshot", rememberedThreadId);
+        var resumeThreadId = await context.Service.ResolveResumeThreadIdAsync(session, CancellationToken.None);
+
+        Assert.Equal(historyWindow!.Thread.ThreadId, resumeThreadId);
+        Assert.True(context.Service.TryGetKnownResumeThreadId("s-snapshot", out var rememberedThreadId));
+        Assert.Equal(historyWindow.Thread.ThreadId, rememberedThreadId);
     }
 
     [Fact]
@@ -245,6 +222,11 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
 
     public void Dispose()
     {
+        foreach (var context in _serviceContexts)
+        {
+            context.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
         try
         {
             if (Directory.Exists(_tempRoot))
@@ -257,35 +239,33 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
         }
     }
 
-    private SessionCodexHandoffService CreateService(out SessionLensPulseService pulse)
+    private HandoffServiceContext CreateServiceContext(string? mode = null)
     {
-        pulse = new SessionLensPulseService();
-        var ingress = new SessionLensHostIngressService(pulse);
-        var hostRuntime = new SessionLensHostRuntimeService(ingress, pulse, new SettingsService(), mode: "off");
-        var sessionManager = new TtyHostSessionManager();
-        var lensRuntime = new SessionLensRuntimeService(sessionManager, new AiCliProfileService(), pulse, hostRuntime);
-        var foregroundProcessService = new SessionForegroundProcessService();
-        return new SessionCodexHandoffService(
-            sessionManager,
-            new WorkerSessionRegistryService(),
-            new AiCliProfileService(),
-            foregroundProcessService,
-            pulse,
-            lensRuntime,
-            _tempRoot);
+        var context = new HandoffServiceContext(_tempRoot, mode ?? "off");
+        _serviceContexts.Add(context);
+        return context;
     }
 
     private SessionCodexHandoffService CreateService()
     {
-        return CreateService(out _);
+        return CreateServiceContext().Service;
     }
 
     private string WriteSessionMeta(string sessionId, string cwd, DateTimeOffset timestamp)
     {
         Directory.CreateDirectory(cwd);
-        var datePath = Path.Combine(_tempRoot, "sessions", timestamp.ToString("yyyy", null), timestamp.ToString("MM", null), timestamp.ToString("dd", null));
+        var datePath = Path.Combine(
+            _tempRoot,
+            "sessions",
+            timestamp.ToString("yyyy", CultureInfo.InvariantCulture),
+            timestamp.ToString("MM", CultureInfo.InvariantCulture),
+            timestamp.ToString("dd", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(datePath);
-        var filePath = Path.Combine(datePath, $"rollout-{timestamp:yyyy-MM-ddTHH-mm-ss}-{sessionId}.jsonl");
+        var filePath = Path.Combine(
+            datePath,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"rollout-{timestamp:yyyy-MM-ddTHH-mm-ss}-{sessionId}.jsonl"));
         var payload = JsonSerializer.Serialize(new
         {
             timestamp,
@@ -299,5 +279,47 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
         });
         File.WriteAllText(filePath, payload, Encoding.UTF8);
         return filePath;
+    }
+
+    private sealed class HandoffServiceContext : IAsyncDisposable
+    {
+        private readonly SessionLensRuntimeService _lensRuntime;
+        private readonly TtyHostSessionManager _sessionManager;
+        private readonly SessionLensHostRuntimeService _hostRuntime;
+        private bool _disposed;
+
+        public HandoffServiceContext(
+            string tempRoot,
+            string mode)
+        {
+            _hostRuntime = new SessionLensHostRuntimeService(new SettingsService(), mode: mode);
+            _sessionManager = new TtyHostSessionManager();
+            _lensRuntime = new SessionLensRuntimeService(_sessionManager, new AiCliProfileService(), _hostRuntime);
+            Service = new SessionCodexHandoffService(
+                _sessionManager,
+                new WorkerSessionRegistryService(),
+                new AiCliProfileService(),
+                new SessionForegroundProcessService(),
+                _lensRuntime,
+                tempRoot);
+            LensRuntime = _lensRuntime;
+        }
+
+        public SessionCodexHandoffService Service { get; }
+
+        public SessionLensRuntimeService LensRuntime { get; }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            await _lensRuntime.DisposeAsync();
+            await _sessionManager.DisposeAsync();
+            await _hostRuntime.DisposeAsync();
+        }
     }
 }

@@ -89,7 +89,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F063` Appearance settings support background-image upload.
 - `F064` Appearance settings can enable or disable the background image.
 - `F065` Appearance settings can remove the background image.
-- `F066` Appearance settings support background fit modes.
+- `F066` Background images always use cover layout and can optionally run a configurable Ken Burns zoom/pan effect.
 - `F067` Appearance settings control UI transparency.
 - `F068` Behavior settings control the default working directory for new sessions.
 - `F069` Behavior settings control scrollback size.
@@ -196,7 +196,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F164` Sessions can be undocked back out of a layout.
 - `F165` Layout sessions can be swapped.
 - `F166` Focus can move between sessions inside a split layout.
-- `F167` Layout trees persist in `localStorage`.
+- `F167` Layout trees persist in backend layout state.
 - `F168` Layout restore reattaches sessions without auto-resizing them.
 - `F169` Resize observers keep terminal presentation aligned with container changes.
 - `F170` Visual viewport listeners adapt the UI to mobile keyboards and viewport changes.
@@ -277,7 +277,9 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F242` Git panels group files into untracked files.
 - `F243` Git panels build hierarchical path trees for each file section.
 - `F244` Git panels show recent commits.
-- `F245` Git panels can open diff overlays for tracked files.
+- `F245` Git panels can open dock-native diff inspectors for tracked files.
+- `F245a` Git panels can inspect recent commits with structured patch details.
+- `F245b` Git panels can suggest terminal git commands for explicit write handoff.
 - `F246` Commands panels list per-session scripts.
 - `F247` Commands panels show empty-state guidance when no scripts exist.
 - `F248` Commands panels can create new scripts inline.
@@ -303,9 +305,11 @@ This is the canonical feature sweep for the current codebase. The coverage order
 
 - `F263` Smart Input can fully replace direct terminal keyboard focus, and Lens reuses that same docked infrastructure as its in-conversation composer lane.
 - `F264` Smart Input can coexist with direct terminal keyboard focus in both mode, but Lens keeps a single composer path so conversation turns do not split across two inputs.
+- `F264a` Terminal and Lens now share one adaptive active-session footer dock instead of separate smart-input and manager bars.
 - `F265` Smart Input keeps a per-session draft buffer.
 - `F266` Switching active sessions preserves and restores Smart Input drafts.
-- `F267` Smart Input auto-grows its textarea up to five lines.
+- `F267` Smart Input auto-grows its textarea up to one base line plus seven upward overlay lines, then falls back to internal scrolling.
+- `F267a` The footer dock reserves only its collapsed height, so multiline input growth expands upward over the pane instead of shrinking the active viewport.
 - `F268` Smart Input sends on Enter.
 - `F269` Smart Input inserts newlines on `Shift+Enter`.
 - `F270` Smart Input includes an explicit Send button.
@@ -320,6 +324,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F279` Smart Input can embed the touch controller as a second row.
 - `F280` The embedded touch-controller row can be expanded or collapsed.
 - `F281` Touch-controller expansion state persists in `localStorage`.
+- `F281a` Mobile Lens surfaces keep media actions explicit in the dock while mobile Terminal keeps terminal control buttons in the dock context row instead of on desktop.
 - `F282` Smart Input state is removed when a session closes.
 - `F283` Voice support checks MidTerm.Voice availability before enabling controls.
 - `F284` Voice support can populate provider and voice dropdowns from server health data.

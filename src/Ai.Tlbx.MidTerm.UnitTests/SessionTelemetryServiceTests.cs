@@ -39,6 +39,22 @@ public sealed class SessionTelemetryServiceTests
     }
 
     [Fact]
+    public void RecordOutput_DoesNotCreateHeatFromControlOnlyTraffic()
+    {
+        var service = new SessionTelemetryService();
+
+        service.RecordOutput("sess1234", [0x1B, 0x5B, (byte)'?', (byte)'2', (byte)'5', (byte)'h', 0x0D]);
+
+        var snapshot = service.GetSnapshot("sess1234");
+        var activity = service.GetActivity("sess1234", 30, 10);
+
+        Assert.True(snapshot.TotalOutputBytes > 0);
+        Assert.Equal(0, snapshot.CurrentHeat);
+        Assert.Equal(0, activity.CurrentHeat);
+        Assert.DoesNotContain(activity.Heatmap, sample => sample.Heat > 0);
+    }
+
+    [Fact]
     public void ClearSession_RemovesStoredActivity()
     {
         var service = new SessionTelemetryService();

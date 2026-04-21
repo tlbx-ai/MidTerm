@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace Ai.Tlbx.MidTerm.Common.Ipc;
@@ -33,22 +34,22 @@ public static class IpcEndpoint
     {
         if (OperatingSystem.IsWindows())
         {
-            return $"{Prefix}{sessionId}-{pid}";
+            return string.Create(CultureInfo.InvariantCulture, $"{Prefix}{sessionId}-{pid}");
         }
 
         var socketDir = GetUnixSocketDirectory();
-        return Path.Combine(socketDir, $"{Prefix}{sessionId}-{pid}.sock");
+        return Path.Combine(socketDir, string.Create(CultureInfo.InvariantCulture, $"{Prefix}{sessionId}-{pid}.sock"));
     }
 
     public static string BuildEndpointName(string instanceId, string sessionId, int pid)
     {
-        return $"{Prefix}{instanceId}-{sessionId}-{pid}";
+        return string.Create(CultureInfo.InvariantCulture, $"{Prefix}{instanceId}-{sessionId}-{pid}");
     }
 
     public static string GetUnixSocketDirectory()
     {
         var uid = GetUnixUid();
-        var dir = $"/tmp/midterm-{uid}";
+        var dir = string.Create(CultureInfo.InvariantCulture, $"/tmp/midterm-{uid}");
         if (!Directory.Exists(dir))
         {
             Directory.CreateDirectory(dir);
@@ -89,7 +90,7 @@ public static class IpcEndpoint
             name = endpointName;
         }
 
-        if (!name.StartsWith(Prefix))
+        if (!name.StartsWith(Prefix, StringComparison.Ordinal))
         {
             return null;
         }
@@ -97,13 +98,13 @@ public static class IpcEndpoint
         var remainder = name[Prefix.Length..];
         var segments = remainder.Split('-', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 2 &&
-            int.TryParse(segments[1], out var legacyPid))
+            int.TryParse(segments[1], CultureInfo.InvariantCulture, out var legacyPid))
         {
             return (null, segments[0], legacyPid);
         }
 
         if (segments.Length != 3 ||
-            !int.TryParse(segments[2], out var pid))
+            !int.TryParse(segments[2], CultureInfo.InvariantCulture, out var pid))
         {
             return null;
         }

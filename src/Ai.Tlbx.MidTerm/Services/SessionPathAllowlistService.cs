@@ -11,7 +11,7 @@ public sealed class SessionPathAllowlistService
 {
     private const int MaxPathsPerSession = 1000;
 
-    private readonly ConcurrentDictionary<string, OrderedAllowlist> _allowlists = new();
+    private readonly ConcurrentDictionary<string, OrderedAllowlist> _allowlists = new(StringComparer.Ordinal);
 
     public void RegisterPath(string sessionId, string path)
     {

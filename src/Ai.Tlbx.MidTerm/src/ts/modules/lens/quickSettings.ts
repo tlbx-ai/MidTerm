@@ -2,8 +2,10 @@ import type {
   LensAttachmentReference,
   LensQuickSettingsSummary,
   MidTermSettingsPublic,
+  MidTermSettingsUpdate,
   LensTurnRequest,
 } from '../../api/types';
+import { updateSettings } from '../../api/client';
 import * as stores from '../../stores';
 
 export const LENS_QUICK_SETTINGS_CHANGED_EVENT = 'midterm:lens-quick-settings-changed';
@@ -27,6 +29,11 @@ interface LensQuickSettingsSessionState {
 interface LensSessionProviderHint {
   profileHint?: string | null;
   foregroundName?: string | null;
+}
+
+interface CurrentSettingsStoreLike {
+  get?: () => MidTermSettingsPublic | null;
+  set?: (value: MidTermSettingsPublic | null) => void;
 }
 
 type LensPlanMode = LensQuickSettingsSummary['planMode'];
@@ -104,15 +111,24 @@ function readProviderStickyQuickSettings(
   try {
     const raw = localStorage.getItem(`${QUICK_SETTINGS_PROVIDER_STORAGE_PREFIX}${provider}`);
     if (!raw) {
-      return {};
+      return {
+        model: resolveRememberedProviderModel(provider, null),
+      };
     }
 
     const parsed = JSON.parse(raw) as unknown;
-    return typeof parsed === 'object' && parsed !== null
-      ? (parsed as Partial<LensQuickSettingsSummary>)
-      : {};
+    const legacySticky =
+      typeof parsed === 'object' && parsed !== null
+        ? (parsed as Partial<LensQuickSettingsSummary>)
+        : {};
+    return {
+      ...legacySticky,
+      model: resolveRememberedProviderModel(provider, normalizeOptionalValue(legacySticky.model)),
+    };
   } catch {
-    return {};
+    return {
+      model: resolveRememberedProviderModel(provider, null),
+    };
   }
 }
 
@@ -132,6 +148,102 @@ function writeProviderStickyQuickSettings(
   } catch {
     // Ignore quota/storage failures and keep the in-memory session draft.
   }
+}
+
+function resolveRememberedProviderModel(
+  provider: string | null,
+  legacyModel: string | null,
+): string | null {
+  const currentSettingsStore = getOptionalStoreExport('$currentSettings') as
+    | CurrentSettingsStoreLike
+    | undefined;
+  const currentSettings =
+    currentSettingsStore && typeof currentSettingsStore.get === 'function'
+      ? currentSettingsStore.get()
+      : null;
+
+  if (provider === 'codex') {
+    return (
+      normalizeOptionalValue(currentSettings?.codexDefaultLensModel) ?? legacyModel ?? 'gpt-5.4'
+    );
+  }
+
+  if (provider === 'claude') {
+    return normalizeOptionalValue(currentSettings?.claudeDefaultLensModel) ?? legacyModel;
+  }
+
+  return legacyModel;
+}
+
+export function getLensResolvedProviderModel(provider: string | null): string | null {
+  return resolveRememberedProviderModel(provider, null);
+}
+
+function persistRememberedProviderModel(provider: string | null, model: string | null): void {
+  if (provider !== 'codex' && provider !== 'claude') {
+    return;
+  }
+
+  const currentSettingsStore = getOptionalStoreExport('$currentSettings') as
+    | CurrentSettingsStoreLike
+    | undefined;
+  if (
+    !currentSettingsStore ||
+    typeof currentSettingsStore.get !== 'function' ||
+    typeof currentSettingsStore.set !== 'function'
+  ) {
+    return;
+  }
+  const getCurrentSettings = currentSettingsStore.get;
+  const setCurrentSettings = currentSettingsStore.set;
+
+  const currentSettings = getCurrentSettings();
+  if (!currentSettings) {
+    return;
+  }
+
+  const nextStoredValue = normalizeOptionalValue(model) ?? '';
+  const currentStoredValue =
+    provider === 'codex'
+      ? currentSettings.codexDefaultLensModel
+      : currentSettings.claudeDefaultLensModel;
+  if (currentStoredValue === nextStoredValue) {
+    return;
+  }
+
+  const nextSettings: MidTermSettingsPublic = {
+    ...currentSettings,
+    ...(provider === 'codex'
+      ? { codexDefaultLensModel: nextStoredValue }
+      : { claudeDefaultLensModel: nextStoredValue }),
+  };
+
+  setCurrentSettings(nextSettings);
+  void updateSettings(nextSettings as MidTermSettingsUpdate)
+    .then(({ response }) => {
+      if (response.ok) {
+        return;
+      }
+
+      const latestSettings = getCurrentSettings();
+      const latestStoredValue =
+        provider === 'codex'
+          ? (latestSettings?.codexDefaultLensModel ?? '')
+          : (latestSettings?.claudeDefaultLensModel ?? '');
+      if (latestStoredValue === nextStoredValue) {
+        setCurrentSettings(currentSettings);
+      }
+    })
+    .catch(() => {
+      const latestSettings = getCurrentSettings();
+      const latestStoredValue =
+        provider === 'codex'
+          ? (latestSettings?.codexDefaultLensModel ?? '')
+          : (latestSettings?.claudeDefaultLensModel ?? '');
+      if (latestStoredValue === nextStoredValue) {
+        setCurrentSettings(currentSettings);
+      }
+    });
 }
 
 function resolveSessionProvider(sessionId: string | null | undefined): string | null {
@@ -271,6 +383,9 @@ export function setLensQuickSettingsDraft(
   state.draft = normalizeQuickSettings({ ...state.draft, ...patch }, state.provider);
   state.draftDirty = true;
   writeProviderStickyQuickSettings(state.provider, state.draft);
+  if (Object.prototype.hasOwnProperty.call(patch, 'model')) {
+    persistRememberedProviderModel(state.provider, state.draft.model ?? null);
+  }
   dispatchQuickSettingsChange(sessionId, state, 'draft');
 }
 

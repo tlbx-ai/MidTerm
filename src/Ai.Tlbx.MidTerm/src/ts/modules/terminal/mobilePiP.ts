@@ -3,12 +3,15 @@
  *
  * Provides a mobile-first miniature terminal preview using Document PiP.
  * When the PWA is backgrounded, we attempt to open a floating mini window
- * showing the active terminal and flash it when output heat cools down.
+ * showing the active terminal and flash it when server-backed output heat
+ * cools down. This intentionally follows the same PTY/Lens signal used by the
+ * sidebar heat strip so replayed browser bytes cannot re-arm PiP heat.
  */
 
 import { ASSET_VERSION, MOBILE_BREAKPOINT } from '../../constants';
 import { sessionTerminals } from '../../state';
 import { $activeSessionId, $sessionList } from '../../stores';
+import { getDisplayedSessionHeat, getSessionHeat } from '../sidebar/heatIndicator';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 
@@ -17,9 +20,9 @@ const log = createLogger('mobilePiP');
 const PREVIEW_LINES = 16;
 const PREVIEW_COLS = 88;
 const PREVIEW_REFRESH_MS = 1000;
-const HEAT_WINDOW_MS = 5000;
-const HEAT_IDLE_BPS = 24;
-const COOLING_RATIO_THRESHOLD = 0.9;
+const HEAT_POLL_MS = 1000;
+const LIVE_HEAT_THRESHOLD = 0.02;
+const DISPLAY_HEAT_THRESHOLD = 0.02;
 const FLASH_DURATION_MS = 600;
 
 interface DocumentPictureInPictureWindowOptions {
@@ -40,6 +43,11 @@ interface WindowWithDocumentPictureInPicture extends Window {
 
 type HeatTrend = 'idle' | 'up' | 'down' | 'steady';
 
+interface SessionHeatReading {
+  liveHeat: number;
+  displayedHeat: number;
+}
+
 let initialized = false;
 let enabled = false;
 let autoPiPDisabled = false;
@@ -53,10 +61,8 @@ let heatIntervalId: number | null = null;
 let flashTimeoutId: number | null = null;
 
 let trackedSessionId: string | null = null;
-let heatWindowBytes = 0;
-let lastHeatTickMs = performance.now();
-let lastHeatBps = 0;
-let currentHeatBps = 0;
+let currentHeatReading: SessionHeatReading = { liveHeat: 0, displayedHeat: 0 };
+let flashedCurrentCooldown = false;
 let heatTrend: HeatTrend = 'idle';
 
 /**
@@ -74,7 +80,7 @@ export function initMobilePiP(): void {
 
   if ('mediaSession' in navigator) {
     try {
-      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- MediaSession PiP action typing is still incomplete, so this cast is isolated to the feature-detection call site. */
       (navigator.mediaSession as any).setActionHandler('enterpictureinpicture', () => {
         void openPiPIfEligibleAsync();
       });
@@ -98,19 +104,8 @@ export function initMobilePiP(): void {
   });
 
   if (heatIntervalId === null) {
-    heatIntervalId = window.setInterval(onHeatWindowTick, HEAT_WINDOW_MS);
+    heatIntervalId = window.setInterval(onHeatWindowTick, HEAT_POLL_MS);
   }
-}
-
-/**
- * Record output bytes for active-session heat tracking.
- * Called from mux output callback wiring in main.ts.
- */
-export function recordMobilePiPBytes(sessionId: string, bytes: number): void {
-  if (!enabled) return;
-  if (bytes <= 0) return;
-  if (trackedSessionId === null || sessionId !== trackedSessionId) return;
-  heatWindowBytes += bytes;
 }
 
 function handleVisibilityChange(): void {
@@ -320,7 +315,7 @@ function buildPiPDocument(doc: Document): void {
 
   const rate = doc.createElement('div');
   rate.className = 'mm-mobile-pip__rate';
-  rate.textContent = '. 0 B/s';
+  rate.textContent = '. idle';
 
   header.appendChild(title);
   header.appendChild(rate);
@@ -436,38 +431,33 @@ function buildTerminalPreview(sessionId: string): string {
 
 function resetHeatTracking(sessionId: string | null): void {
   trackedSessionId = sessionId;
-  heatWindowBytes = 0;
-  lastHeatTickMs = performance.now();
-  lastHeatBps = 0;
-  currentHeatBps = 0;
-  heatTrend = 'idle';
+  currentHeatReading = readTrackedSessionHeat(sessionId);
+  flashedCurrentCooldown = false;
+  heatTrend = resolveHeatTrend(currentHeatReading, currentHeatReading);
   applyHeatUi();
 }
 
 function onHeatWindowTick(): void {
-  const elapsedMs = Math.max(1, performance.now() - lastHeatTickMs);
-  lastHeatTickMs = performance.now();
+  const previousHeat = currentHeatReading;
+  currentHeatReading = readTrackedSessionHeat(trackedSessionId);
+  heatTrend = resolveHeatTrend(previousHeat, currentHeatReading);
 
-  currentHeatBps = (heatWindowBytes / elapsedMs) * 1000;
-  heatWindowBytes = 0;
-
-  if (currentHeatBps <= HEAT_IDLE_BPS) {
-    heatTrend = 'idle';
-  } else if (lastHeatBps <= HEAT_IDLE_BPS) {
-    heatTrend = 'up';
-  } else if (currentHeatBps < lastHeatBps * COOLING_RATIO_THRESHOLD) {
-    heatTrend = 'down';
-  } else if (currentHeatBps > lastHeatBps * 1.1) {
-    heatTrend = 'up';
-  } else {
-    heatTrend = 'steady';
-  }
-
-  if (heatTrend === 'down' && pipWindow !== null) {
+  if (
+    heatTrend === 'down' &&
+    isLiveHeat(previousHeat.liveHeat) &&
+    !flashedCurrentCooldown &&
+    pipWindow !== null
+  ) {
     flashPiP();
+    flashedCurrentCooldown = true;
   }
 
-  lastHeatBps = currentHeatBps;
+  if (isLiveHeat(currentHeatReading.liveHeat)) {
+    flashedCurrentCooldown = false;
+  } else if (!isDisplayedHeat(currentHeatReading.displayedHeat)) {
+    flashedCurrentCooldown = false;
+  }
+
   applyHeatUi();
 }
 
@@ -477,21 +467,21 @@ function applyHeatUi(): void {
   pipRoot.classList.remove('heat-idle', 'heat-up', 'heat-down', 'heat-steady');
   if (heatTrend === 'idle') {
     pipRoot.classList.add('heat-idle');
-    pipRateEl.textContent = `. ${formatRate(currentHeatBps)}`;
+    pipRateEl.textContent = '. idle';
     return;
   }
   if (heatTrend === 'up') {
     pipRoot.classList.add('heat-up');
-    pipRateEl.textContent = `^ ${formatRate(currentHeatBps)}`;
+    pipRateEl.textContent = '^ live';
     return;
   }
   if (heatTrend === 'down') {
     pipRoot.classList.add('heat-down');
-    pipRateEl.textContent = `v ${formatRate(currentHeatBps)}`;
+    pipRateEl.textContent = 'v cooling';
     return;
   }
   pipRoot.classList.add('heat-steady');
-  pipRateEl.textContent = `- ${formatRate(currentHeatBps)}`;
+  pipRateEl.textContent = isLiveHeat(currentHeatReading.liveHeat) ? '- live' : '- warm';
 }
 
 function flashPiP(): void {
@@ -510,9 +500,41 @@ function flashPiP(): void {
   }, FLASH_DURATION_MS);
 }
 
-function formatRate(bps: number): string {
-  if (bps < 1) return '0 B/s';
-  if (bps < 1000) return `${Math.round(bps)} B/s`;
-  if (bps < 1000000) return `${(bps / 1000).toFixed(1)} KB/s`;
-  return `${(bps / 1000000).toFixed(2)} MB/s`;
+function readTrackedSessionHeat(sessionId: string | null): SessionHeatReading {
+  if (!sessionId) {
+    return { liveHeat: 0, displayedHeat: 0 };
+  }
+
+  return {
+    liveHeat: getSessionHeat(sessionId),
+    displayedHeat: getDisplayedSessionHeat(sessionId),
+  };
+}
+
+function isLiveHeat(heat: number): boolean {
+  return heat > LIVE_HEAT_THRESHOLD;
+}
+
+function isDisplayedHeat(heat: number): boolean {
+  return heat > DISPLAY_HEAT_THRESHOLD;
+}
+
+function resolveHeatTrend(previous: SessionHeatReading, current: SessionHeatReading): HeatTrend {
+  const wasLive = isLiveHeat(previous.liveHeat);
+  const isLive = isLiveHeat(current.liveHeat);
+  const hasDisplayedHeat = isDisplayedHeat(current.displayedHeat);
+
+  if (isLive) {
+    return wasLive ? 'steady' : 'up';
+  }
+
+  if (wasLive && hasDisplayedHeat) {
+    return 'down';
+  }
+
+  if (hasDisplayedHeat) {
+    return 'steady';
+  }
+
+  return 'idle';
 }

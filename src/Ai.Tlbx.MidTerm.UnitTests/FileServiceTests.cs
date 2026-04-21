@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public class FileServiceTests : IDisposable
+public sealed class FileServiceTests : IDisposable
 {
     private readonly string _tempDir;
 
@@ -25,6 +25,10 @@ public class FileServiceTests : IDisposable
         catch
         {
         }
+
+        FileService.ResetFileInfoCacheForTests();
+
+        GC.SuppressFinalize(this);
     }
 
     // =======================================================================
@@ -176,7 +180,7 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "readme.md", maxDepth: 5);
 
         Assert.NotNull(result);
-        Assert.EndsWith("readme.md", result);
+        Assert.EndsWith("readme.md", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -187,7 +191,7 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "src/main.ts", maxDepth: 5);
 
         Assert.NotNull(result);
-        Assert.EndsWith("main.ts", result);
+        Assert.EndsWith("main.ts", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -199,7 +203,7 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "components", maxDepth: 5);
 
         Assert.NotNull(result);
-        Assert.Contains("components", result);
+        Assert.Contains("components", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -249,5 +253,29 @@ public class FileServiceTests : IDisposable
         var result = FileService.SearchTree(_tempDir, "nope.txt", maxDepth: 5);
 
         Assert.Null(result);
+    }
+
+    // =======================================================================
+    // GetFileInfo
+    // =======================================================================
+
+    [Fact]
+    public void GetFileInfo_UsesProcessGlobalCacheAcrossCalls()
+    {
+        FileService.ResetFileInfoCacheForTests();
+        var filePath = Path.Combine(_tempDir, "cached.txt");
+        File.WriteAllText(filePath, "cached");
+
+        var initial = FileService.GetFileInfo(filePath);
+        File.Delete(filePath);
+        var cached = FileService.GetFileInfo(filePath);
+
+        Assert.True(initial.Exists);
+        Assert.True(cached.Exists);
+
+        FileService.ResetFileInfoCacheForTests();
+
+        var refreshed = FileService.GetFileInfo(filePath);
+        Assert.False(refreshed.Exists);
     }
 }

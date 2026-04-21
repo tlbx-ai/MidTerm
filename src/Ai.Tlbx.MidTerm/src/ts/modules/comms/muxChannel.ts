@@ -31,12 +31,20 @@ import {
   MUX_TYPE_DATA_LOSS,
   MUX_TYPE_PONG,
   MUX_TYPE_SYNC_COMPLETE,
+  MUX_TYPE_VISIBLE_SESSIONS_HINT,
   WS_CLOSE_SERVER_SHUTDOWN,
 } from '../../constants';
 import type { ForegroundChangePayload } from '../../types';
 import { handleForegroundChange } from '../process';
 import { scanOutputForPaths } from '../terminal/fileLinks';
-import { processCursorVisibilityControls } from './cursorVisibility';
+import {
+  hideBurstCursor,
+  processCursorVisibilityControls,
+  reconcileSynchronizedOutputCursorState,
+  scheduleBurstCursorShow,
+  shouldHideCursorForOutput,
+  showBurstCursor,
+} from './cursorVisibility';
 import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
   consumeCompletedOutputRtt,
@@ -74,12 +82,14 @@ import {
   $muxWsConnected,
   $muxHasConnected,
   $activeSessionId,
+  $currentSettings,
   $stateWsConnected,
   $dataLossDetected,
 } from '../../stores';
 
 const log = createLogger('mux');
 const muxReconnect = new ReconnectController();
+const textEncoder = new TextEncoder();
 
 // Per-session byte activity callback (used by heat indicator)
 type SessionBytesCallback = (sessionId: string, bytes: number) => void;
@@ -427,6 +437,27 @@ function measureCompletedOutputRtt(sessionId: string): void {
 
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
+let currentVisibleSessionIds: string[] = [];
+let currentStreamableSessionIds = new Set<string>();
+
+function isQuickResumeEnabled(): boolean {
+  return $currentSettings.get()?.resumeMode === 'quickResume';
+}
+
+function normalizeSessionIds(sessionIds: readonly string[]): string[] {
+  return [...new Set(sessionIds.filter((sessionId) => !isHubSessionId(sessionId)))].sort();
+}
+
+function getStreamableSessionIds(
+  activeSessionId: string | null,
+  visibleSessionIds: readonly string[],
+): Set<string> {
+  const streamable = new Set<string>(visibleSessionIds);
+  if (activeSessionId && !isHubSessionId(activeSessionId)) {
+    streamable.add(activeSessionId);
+  }
+  return streamable;
+}
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -456,17 +487,11 @@ const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
-const CURSOR_BURST_WINDOW_MS = 180;
-const CURSOR_BURST_MIN_BYTES = 12;
-const CURSOR_IDLE_SHOW_MS = 650;
-// Keep the cursor visible briefly after local input so TUI redraws triggered by typing
-// do not look like "remote output" bursts.
-const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
-const SHOW_CURSOR_SEQ = '\x1b[?25h';
-const HIDE_CURSOR_SEQ = '\x1b[?25l';
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 let outputQueueGeneration = 0;
+let yieldToMainChannel: MessageChannel | null = null;
+const pendingYieldToMainResolves: Array<() => void> = [];
 
 function compactSessionQueue(queue: SessionOutputQueue): void {
   if (queue.index > 0) {
@@ -484,6 +509,21 @@ function yieldToMain(): Promise<void> {
   if (typeof scheduler?.yield === 'function') {
     return scheduler.yield();
   }
+
+  if (typeof MessageChannel !== 'undefined') {
+    if (!yieldToMainChannel) {
+      yieldToMainChannel = new MessageChannel();
+      yieldToMainChannel.port1.onmessage = () => {
+        pendingYieldToMainResolves.shift()?.();
+      };
+    }
+
+    return new Promise((resolve) => {
+      pendingYieldToMainResolves.push(resolve);
+      yieldToMainChannel?.port2.postMessage(0);
+    });
+  }
+
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
@@ -749,118 +789,6 @@ export function isBracketedPasteEnabled(sessionId: string): boolean {
   return bracketedPasteState.get(sessionId) ?? false;
 }
 
-function containsImmediateHideTerminalControl(data: Uint8Array): boolean {
-  for (let i = 0; i < data.length; i++) {
-    const byte = data[i];
-    if (
-      byte === 0x1b ||
-      byte === 0x90 ||
-      byte === 0x9b ||
-      byte === 0x9d ||
-      byte === 0x9e ||
-      byte === 0x9f
-    ) {
-      return true;
-    }
-
-    if (byte === 0xc2 && i + 1 < data.length) {
-      const next = data[i + 1];
-      if (next === 0x90 || next === 0x9b || next === 0x9d || next === 0x9e || next === 0x9f) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function hideBurstCursor(state: TerminalState): void {
-  if (!state.burstCursorHidden) {
-    if (!state.syncOutputCursorHidden) {
-      state.terminal.write(HIDE_CURSOR_SEQ);
-    }
-    state.burstCursorHidden = true;
-  }
-
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
-}
-
-function showBurstCursor(state: TerminalState): void {
-  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
-    return;
-  }
-
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-    state.burstCursorRestoreTimer = null;
-  }
-
-  if (state.burstCursorHidden) {
-    state.burstCursorHidden = false;
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
-}
-
-function scheduleBurstCursorShow(state: TerminalState): void {
-  if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
-    return;
-  }
-
-  if (state.burstCursorRestoreTimer != null) {
-    clearTimeout(state.burstCursorRestoreTimer);
-  }
-
-  state.burstCursorRestoreTimer = window.setTimeout(() => {
-    showBurstCursor(state);
-  }, CURSOR_IDLE_SHOW_MS);
-}
-
-function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): boolean {
-  if (data.length <= 0) {
-    return false;
-  }
-
-  const now = performance.now();
-  const lastLocalInputAtMs = state.lastLocalInputAtMs ?? null;
-  if (lastLocalInputAtMs !== null && now - lastLocalInputAtMs <= CURSOR_LOCAL_INPUT_GRACE_MS) {
-    return false;
-  }
-
-  if (containsImmediateHideTerminalControl(data) || state.burstCursorHidden) {
-    return true;
-  }
-
-  const last = state.lastBurstOutputAtMs ?? 0;
-  state.lastBurstOutputAtMs = now;
-
-  return (
-    data.length >= CURSOR_BURST_MIN_BYTES || (last > 0 && now - last <= CURSOR_BURST_WINDOW_MS)
-  );
-}
-
-function hideSynchronizedOutputCursor(state: TerminalState): void {
-  if (state.syncOutputCursorHidden) {
-    return;
-  }
-
-  state.syncOutputCursorHidden = true;
-  state.terminal.write(HIDE_CURSOR_SEQ);
-}
-
-function showSynchronizedOutputCursor(state: TerminalState): void {
-  if (!state.syncOutputCursorHidden) {
-    return;
-  }
-
-  state.syncOutputCursorHidden = false;
-  if (!state.burstCursorHidden && state.remoteCursorVisible !== false) {
-    state.terminal.write(SHOW_CURSOR_SEQ);
-  }
-}
-
 export function reconcileSynchronizedOutputCursor(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state?.opened) {
@@ -870,11 +798,7 @@ export function reconcileSynchronizedOutputCursor(sessionId: string): void {
   // Codex and similar TUIs wrap redraws in DEC synchronized output. xterm buffers row
   // paints for that mode, but the visible cursor can still appear to jump around unless we
   // suppress it until the synchronized update completes.
-  if (state.terminal.modes.synchronizedOutputMode) {
-    hideSynchronizedOutputCursor(state);
-  } else {
-    showSynchronizedOutputCursor(state);
-  }
+  reconcileSynchronizedOutputCursorState(state);
 }
 
 /**
@@ -902,6 +826,94 @@ function writeTerminalData(
   });
 }
 
+function updateReconnectFreezeForOutput(
+  state: TerminalState,
+  data: Uint8Array,
+  cols: number,
+  rows: number,
+): void {
+  if (state.reconnectFreezeOverlay && (data.length > 0 || (cols > 0 && rows > 0))) {
+    removeReconnectFreeze(state);
+  }
+}
+
+function processTerminalOutputCursorState(
+  state: TerminalState,
+  sessionId: string,
+  data: Uint8Array,
+): {
+  data: Uint8Array;
+} & ReturnType<typeof processCursorVisibilityControls> {
+  if (data.length >= 8) {
+    scanBracketedPaste(data, sessionId);
+  }
+
+  const shouldHideCursor = shouldHideCursorForOutput(state, data);
+  const cursorVisibility = processCursorVisibilityControls(
+    data,
+    shouldHideCursor || state.burstCursorHidden === true,
+  );
+  if (cursorVisibility.remoteCursorVisible !== null) {
+    state.remoteCursorVisible = cursorVisibility.remoteCursorVisible;
+  }
+  if (shouldHideCursor) {
+    hideBurstCursor(state);
+  }
+  if (data.length > 0) {
+    scheduleBurstCursorShow(state);
+  }
+  return cursorVisibility;
+}
+
+function applyTerminalResizeIfNeeded(
+  sessionId: string,
+  state: TerminalState,
+  cols: number,
+  rows: number,
+): void {
+  if (!(cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened)) {
+    return;
+  }
+
+  const currentCols = state.terminal.cols;
+  const currentRows = state.terminal.rows;
+  if (currentCols === cols && currentRows === rows) {
+    return;
+  }
+
+  try {
+    state.terminal.resize(cols, rows);
+    state.serverCols = cols;
+    state.serverRows = rows;
+    applyTerminalScaling(sessionId, state);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    log.warn(() => `Terminal resize deferred: ${message}`);
+  }
+}
+
+function writeOutputDataWithPathScan(
+  sessionId: string,
+  state: TerminalState,
+  sequenceEnd: bigint,
+  data: Uint8Array,
+  generation: number,
+): void {
+  if (data.length === 0) {
+    return;
+  }
+
+  writeTerminalData(sessionId, state, sequenceEnd, data, generation, () => {
+    if (sessionId === $activeSessionId.get()) {
+      queueMicrotask(() => {
+        if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
+          scanOutputForPaths(sessionId, data);
+        }
+      });
+    }
+  });
+}
+
 function writeToTerminal(
   sessionId: string,
   state: TerminalState,
@@ -911,69 +923,10 @@ function writeToTerminal(
   data: Uint8Array,
   generation: number,
 ): void {
-  if (state.reconnectFreezeOverlay && (data.length > 0 || (cols > 0 && rows > 0))) {
-    removeReconnectFreeze(state);
-  }
-
-  // Track bracketed paste mode by scanning raw bytes (no string allocation)
-  if (data.length >= 8) {
-    scanBracketedPaste(data, sessionId);
-  }
-
-  const shouldHideCursor = shouldHideCursorForOutput(state, data);
-  // Codex emits cursor show/hide commands inside redraw frames, so strip them while the
-  // burst-hider is active and restore the last requested visibility after the burst settles.
-  const cursorVisibility = processCursorVisibilityControls(
-    data,
-    shouldHideCursor || state.burstCursorHidden === true,
-  );
-
-  if (cursorVisibility.remoteCursorVisible !== null) {
-    state.remoteCursorVisible = cursorVisibility.remoteCursorVisible;
-  }
-
-  if (shouldHideCursor) {
-    hideBurstCursor(state);
-  }
-
-  if (data.length > 0) {
-    scheduleBurstCursorShow(state);
-  }
-
-  // Resize if dimensions are valid and different
-  if (cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened) {
-    const currentCols = state.terminal.cols;
-    const currentRows = state.terminal.rows;
-
-    if (currentCols !== cols || currentRows !== rows) {
-      try {
-        state.terminal.resize(cols, rows);
-        state.serverCols = cols;
-        state.serverRows = rows;
-        applyTerminalScaling(sessionId, state);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        log.warn(() => `Terminal resize deferred: ${message}`);
-      }
-    }
-  }
-
-  // Always write data if present
-  if (cursorVisibility.data.length > 0) {
-    const writtenData = cursorVisibility.data;
-    writeTerminalData(sessionId, state, sequenceEnd, writtenData, generation, () => {
-      // File path scanning is intentionally kicked behind the xterm write callback.
-      // The terminal parse path is latency-sensitive; File Radar can lag slightly
-      // without affecting correctness.
-      if (sessionId === $activeSessionId.get()) {
-        queueMicrotask(() => {
-          if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
-            scanOutputForPaths(sessionId, writtenData);
-          }
-        });
-      }
-    });
-  }
+  updateReconnectFreezeForOutput(state, data, cols, rows);
+  const cursorVisibility = processTerminalOutputCursorState(state, sessionId, data);
+  applyTerminalResizeIfNeeded(sessionId, state, cols, rows);
+  writeOutputDataWithPathScan(sessionId, state, sequenceEnd, cursorVisibility.data, generation);
 
   // DISABLED: Was causing cursor to disappear in some cases
   // if (didResize) {
@@ -992,6 +945,167 @@ export function applyOutputFrameToTerminal(
   writeToTerminal(sessionId, state, sequenceEnd, cols, rows, data, outputQueueGeneration);
 }
 
+function handleMuxInitFrame(type: number, data: Uint8Array): boolean {
+  if (type !== 0xff) {
+    return false;
+  }
+
+  if (data.length >= MUX_HEADER_SIZE + 2) {
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const serverVersion = dv.getUint16(MUX_HEADER_SIZE, true);
+    setServerProtocolVersion(serverVersion);
+    log.info(
+      () => `Server protocol version: ${serverVersion}, client version: ${MUX_PROTOCOL_VERSION}`,
+    );
+
+    if (serverVersion < MUX_MIN_COMPATIBLE_VERSION) {
+      log.error(
+        () =>
+          `Server protocol version ${serverVersion} is below minimum ${MUX_MIN_COMPATIBLE_VERSION}`,
+      );
+    } else if (serverVersion > MUX_PROTOCOL_VERSION) {
+      log.warn(
+        () => `Server uses newer protocol (v${serverVersion}), client is v${MUX_PROTOCOL_VERSION}`,
+      );
+    }
+  }
+
+  return true;
+}
+
+function handleMuxSyncCompleteFrame(type: number): boolean {
+  if (type !== MUX_TYPE_SYNC_COMPLETE) {
+    return false;
+  }
+
+  if (syncCompleteTimeout !== null) {
+    clearTimeout(syncCompleteTimeout);
+    syncCompleteTimeout = null;
+  }
+  thawReconnectFreeze();
+  _suppressHeatCallback?.(0);
+  setBellNotificationsSuppressed(false);
+  return true;
+}
+
+function handleMuxResyncFrame(type: number): boolean {
+  if (type !== MUX_TYPE_RESYNC) {
+    return false;
+  }
+
+  log.info(() => 'Resync: clearing terminals for buffer refresh');
+  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
+  beginReplayHeatSuppressionForAllSessions();
+  forEachLocalTerminal((state) => {
+    if (state.opened) {
+      state.terminal.clear();
+      state.terminal.write('\x1b[0m');
+    }
+  });
+  pendingOutputFrames.clear();
+  sessionsNeedingResync.clear();
+  clearQueuedOutput();
+  return true;
+}
+
+function handleMuxOutputFrame(type: number, sessionId: string, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_OUTPUT && type !== MUX_TYPE_COMPRESSED_OUTPUT) {
+    return false;
+  }
+
+  armOutputRttMeasurement(sessionId);
+  const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
+  const termDataBytes = Math.max(0, payload.length - hdrBytes);
+  if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
+    _sessionBytesCallback?.(sessionId, termDataBytes);
+  }
+  if (payload.length >= 4) {
+    queueOutputFrame(sessionId, payload, type === MUX_TYPE_COMPRESSED_OUTPUT);
+  }
+  return true;
+}
+
+function handleMuxForegroundChangeFrame(
+  type: number,
+  sessionId: string,
+  payload: Uint8Array,
+): boolean {
+  if (type !== MUX_TYPE_FOREGROUND_CHANGE) {
+    return false;
+  }
+
+  try {
+    const jsonStr = new TextDecoder().decode(payload);
+    const changePayload = JSON.parse(jsonStr) as ForegroundChangePayload;
+    handleForegroundChange(sessionId, changePayload);
+  } catch (e) {
+    log.error(() => `Failed to parse foreground change: ${String(e)}`);
+  }
+
+  return true;
+}
+
+function handleMuxPongFrame(type: number, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_PONG) {
+    return false;
+  }
+
+  if (payload.length >= 9 && pongCallback) {
+    const pdv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const pongMode = pdv.getUint8(0);
+    const timestampBytes = payload.slice(1, 9);
+    const timestamp = new DataView(timestampBytes.buffer).getFloat64(0, true);
+    const rtt = performance.now() - timestamp;
+    if (pongMode === 0 && payload.length >= 13) {
+      lastFlushDelayMs = pdv.getUint16(9, true);
+      lastServerIoRttMs = pdv.getUint16(11, true);
+    }
+    pongCallback(pongMode, rtt);
+  }
+
+  return true;
+}
+
+function resolveMuxDataLossReason(reasonCode: number): string {
+  switch (reasonCode) {
+    case 1:
+      return 'mthost_ipc_overflow';
+    case 2:
+      return 'mux_overflow';
+    case 3:
+      return 'browser_pending_overflow';
+    case 4:
+      return 'ipc_timeout_reconnect';
+    case 5:
+      return 'buffer_refresh_tail_replay';
+    case 6:
+      return 'reconnect_tail_replay';
+    case 7:
+      return 'quick_resume_tail_replay';
+    default:
+      return 'manual';
+  }
+}
+
+function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_DATA_LOSS) {
+    return false;
+  }
+
+  const dataView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const droppedBytes = payload.length >= 5 ? dataView.getUint32(1, true) : 0;
+  log.warn(
+    () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
+  );
+  const reasonCode = payload.length >= 1 ? dataView.getUint8(0) : 0;
+  const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+  snapshot.dataLossCount += 1;
+  snapshot.lastDataLossReason = resolveMuxDataLossReason(reasonCode);
+  sessionsNeedingResync.add(sessionId);
+  requestBufferRefresh(sessionId);
+  return true;
+}
+
 // =============================================================================
 // WebSocket Connection
 // =============================================================================
@@ -1007,6 +1121,9 @@ export function connectMuxWebSocket(): void {
   const query = new URLSearchParams();
   if (activeId) {
     query.set('activeSessionId', activeId);
+  }
+  if (currentVisibleSessionIds.length > 0) {
+    query.set('visibleSessionIds', currentVisibleSessionIds.join(','));
   }
   const wsPathBase = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
   const wsPath = query.size > 0 ? `${wsPathBase}?${query.toString()}` : wsPathBase;
@@ -1064,6 +1181,7 @@ export function connectMuxWebSocket(): void {
     if (activeSessionId) {
       sendActiveSessionHint(activeSessionId);
     }
+    sendVisibleSessionsHint(currentVisibleSessionIds);
 
     // Flush any input buffered during disconnection
     flushPendingInput();
@@ -1084,133 +1202,27 @@ export function connectMuxWebSocket(): void {
     if (data.length < MUX_HEADER_SIZE) return;
 
     const type = data[0];
+    if (type === undefined) return;
 
-    // Handle init frame (0xFF) - contains protocol version
-    if (type === 0xff) {
-      // Init frame format: [0xFF][clientId:8][protocolVersion:2][fullClientId:32]
-      if (data.length >= MUX_HEADER_SIZE + 2) {
-        const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-        const serverVersion = dv.getUint16(MUX_HEADER_SIZE, true);
-        setServerProtocolVersion(serverVersion);
-        log.info(
-          () =>
-            `Server protocol version: ${serverVersion}, client version: ${MUX_PROTOCOL_VERSION}`,
-        );
-
-        if (serverVersion < MUX_MIN_COMPATIBLE_VERSION) {
-          log.error(
-            () =>
-              `Server protocol version ${serverVersion} is below minimum ${MUX_MIN_COMPATIBLE_VERSION}`,
-          );
-        } else if (serverVersion > MUX_PROTOCOL_VERSION) {
-          log.warn(
-            () =>
-              `Server uses newer protocol (v${serverVersion}), client is v${MUX_PROTOCOL_VERSION}`,
-          );
-        }
-      }
+    if (handleMuxInitFrame(type, data)) {
       return;
     }
 
-    if (type === MUX_TYPE_SYNC_COMPLETE) {
-      if (syncCompleteTimeout !== null) {
-        clearTimeout(syncCompleteTimeout);
-        syncCompleteTimeout = null;
-      }
-      thawReconnectFreeze();
-      _suppressHeatCallback?.(0);
-      setBellNotificationsSuppressed(false);
+    if (handleMuxSyncCompleteFrame(type)) {
       return;
     }
 
     const sessionId = decodeSessionId(data, 1);
     const payload = data.subarray(MUX_HEADER_SIZE); // zero-copy view
 
-    if (type === MUX_TYPE_RESYNC) {
-      // Server is resyncing due to dropped frames - clear all terminals
-      log.info(() => 'Resync: clearing terminals for buffer refresh');
-      _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
-      beginReplayHeatSuppressionForAllSessions();
-      forEachLocalTerminal((state) => {
-        if (state.opened) {
-          state.terminal.clear();
-          state.terminal.write('\x1b[0m');
-        }
-      });
-      pendingOutputFrames.clear();
-      sessionsNeedingResync.clear();
-      clearQueuedOutput();
+    if (handleMuxResyncFrame(type)) {
       return;
     }
 
-    if (type === MUX_TYPE_OUTPUT || type === MUX_TYPE_COMPRESSED_OUTPUT) {
-      armOutputRttMeasurement(sessionId);
-      // Pass only terminal data bytes (exclude cols/rows header overhead)
-      const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
-      const termDataBytes = Math.max(0, payload.length - hdrBytes);
-      if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
-        _sessionBytesCallback?.(sessionId, termDataBytes);
-      }
-      // Queue output by session so async decompression and xterm callbacks
-      // cannot reorder a single terminal's output stream.
-      // .slice() here is needed — WS may recycle the ArrayBuffer
-      if (payload.length >= 4) {
-        queueOutputFrame(sessionId, payload.slice(), type === MUX_TYPE_COMPRESSED_OUTPUT);
-      }
-    } else if (type === MUX_TYPE_FOREGROUND_CHANGE) {
-      try {
-        const jsonStr = new TextDecoder().decode(payload);
-        const changePayload = JSON.parse(jsonStr) as ForegroundChangePayload;
-        handleForegroundChange(sessionId, changePayload);
-      } catch (e) {
-        log.error(() => `Failed to parse foreground change: ${String(e)}`);
-      }
-    } else if (type === MUX_TYPE_PONG) {
-      if (payload.length >= 9 && pongCallback) {
-        const pdv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-        const pongMode = pdv.getUint8(0);
-        const timestampBytes = payload.slice(1, 9); // must copy — Float64Array needs 8-byte alignment
-        const timestamp = new DataView(timestampBytes.buffer).getFloat64(0, true);
-        const rtt = performance.now() - timestamp;
-        // Server pong (mode 0) includes diagnostics: [flushDelay:2][serverRtt:2]
-        if (pongMode === 0 && payload.length >= 13) {
-          lastFlushDelayMs = pdv.getUint16(9, true);
-          lastServerIoRttMs = pdv.getUint16(11, true);
-        }
-        pongCallback(pongMode, rtt);
-      }
-    } else if (type === MUX_TYPE_DATA_LOSS) {
-      const droppedBytes =
-        payload.length >= 5
-          ? new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(1, true)
-          : 0;
-      log.warn(
-        () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
-      );
-      const reasonCode =
-        payload.length >= 1
-          ? new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint8(0)
-          : 0;
-      const reason =
-        reasonCode === 1
-          ? 'mthost_ipc_overflow'
-          : reasonCode === 2
-            ? 'mux_overflow'
-            : reasonCode === 3
-              ? 'browser_pending_overflow'
-              : reasonCode === 4
-                ? 'ipc_timeout_reconnect'
-                : reasonCode === 5
-                  ? 'buffer_refresh_tail_replay'
-                  : reasonCode === 6
-                    ? 'reconnect_tail_replay'
-                    : 'manual';
-      const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
-      snapshot.dataLossCount += 1;
-      snapshot.lastDataLossReason = reason;
-      sessionsNeedingResync.add(sessionId);
-      requestBufferRefresh(sessionId);
-    }
+    if (handleMuxOutputFrame(type, sessionId, payload)) return;
+    if (handleMuxForegroundChangeFrame(type, sessionId, payload)) return;
+    if (handleMuxPongFrame(type, payload)) return;
+    void handleMuxDataLossFrame(type, sessionId, payload);
   };
 
   ws.onclose = (event) => {
@@ -1276,7 +1288,26 @@ export function sendInput(sessionId: string, data: string): void {
 
   recordInputTimestamp(sessionId);
 
-  const payload = new TextEncoder().encode(data);
+  let asciiOnly = true;
+  for (let i = 0; i < data.length; i++) {
+    if (data.charCodeAt(i) > 0x7f) {
+      asciiOnly = false;
+      break;
+    }
+  }
+
+  if (asciiOnly) {
+    const frame = new Uint8Array(MUX_HEADER_SIZE + data.length);
+    frame[0] = MUX_TYPE_INPUT;
+    encodeSessionId(frame, 1, sessionId);
+    for (let i = 0; i < data.length; i++) {
+      frame[MUX_HEADER_SIZE + i] = data.charCodeAt(i);
+    }
+    sendFrame(frame);
+    return;
+  }
+
+  const payload = textEncoder.encode(data);
   const frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
   frame[0] = MUX_TYPE_INPUT;
   encodeSessionId(frame, 1, sessionId);
@@ -1329,7 +1360,10 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
 /**
  * Request buffer refresh for a session via WebSocket.
  */
-export function requestBufferRefresh(sessionId: string): void {
+export function requestBufferRefresh(
+  sessionId: string,
+  mode: 'fullReplay' | 'quickResume' = 'fullReplay',
+): void {
   if (isHubSessionId(sessionId)) {
     requestHubBufferRefresh(sessionId);
     return;
@@ -1338,12 +1372,14 @@ export function requestBufferRefresh(sessionId: string): void {
   beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
-  snapshot.lastReplayReason = 'buffer_refresh_tail_replay';
+  snapshot.lastReplayReason =
+    mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
-  const frame = new Uint8Array(MUX_HEADER_SIZE);
+  const frame = new Uint8Array(MUX_HEADER_SIZE + 1);
   frame[0] = MUX_TYPE_BUFFER_REQUEST;
   encodeSessionId(frame, 1, sessionId);
+  frame[MUX_HEADER_SIZE] = mode === 'quickResume' ? 1 : 0;
   sendFrame(frame);
 }
 
@@ -1367,6 +1403,56 @@ export function sendActiveSessionHint(sessionId: string | null): void {
     encodeSessionId(frame, 1, sessionId);
   }
   sendFrame(frame);
+}
+
+export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+
+  const normalizedSessionIds = normalizeSessionIds(sessionIds);
+  const frame = new Uint8Array(MUX_HEADER_SIZE + normalizedSessionIds.length * 8);
+  frame[0] = MUX_TYPE_VISIBLE_SESSIONS_HINT;
+  let offset = MUX_HEADER_SIZE;
+  normalizedSessionIds.forEach((sessionId) => {
+    encodeSessionId(frame, offset, sessionId);
+    offset += 8;
+  });
+  sendFrame(frame);
+}
+
+export function updateTerminalVisibility(
+  activeSessionId: string | null,
+  visibleSessionIds: readonly string[],
+): void {
+  const normalizedVisibleSessionIds = normalizeSessionIds(visibleSessionIds);
+  const nextStreamableSessionIds = getStreamableSessionIds(
+    activeSessionId,
+    normalizedVisibleSessionIds,
+  );
+  const quickResumeEnabled = isQuickResumeEnabled();
+  const sessionsNeedingQuickResume: string[] = [];
+
+  if (quickResumeEnabled) {
+    nextStreamableSessionIds.forEach((sessionId) => {
+      if (!currentStreamableSessionIds.has(sessionId)) {
+        sessionsNeedingQuickResume.push(sessionId);
+      }
+    });
+  }
+
+  currentVisibleSessionIds = normalizedVisibleSessionIds;
+  currentStreamableSessionIds = nextStreamableSessionIds;
+
+  if (muxWs && muxWs.readyState === WebSocket.OPEN) {
+    sendVisibleSessionsHint(normalizedVisibleSessionIds);
+  }
+
+  if (!quickResumeEnabled) {
+    return;
+  }
+
+  sessionsNeedingQuickResume.forEach((sessionId) => {
+    requestBufferRefresh(sessionId, 'quickResume');
+  });
 }
 
 /**
@@ -1417,4 +1503,36 @@ export function writeOutputFrame(
     frame.data,
     outputQueueGeneration,
   );
+}
+
+export function resetMuxChannelRuntimeForTests(): void {
+  if (syncCompleteTimeout !== null) {
+    clearTimeout(syncCompleteTimeout);
+    syncCompleteTimeout = null;
+  }
+
+  _sessionBytesCallback = null;
+  _suppressHeatCallback = null;
+  pongCallback = null;
+  lastOutputRtt = null;
+  lastFlushDelayMs = null;
+  lastServerIoRttMs = null;
+  lastHintedSessionId = null;
+  currentVisibleSessionIds = [];
+  currentStreamableSessionIds = new Set<string>();
+
+  replaySuppressedSessions.clear();
+  browserTransportSnapshots.clear();
+  bracketedPasteState.clear();
+  outputRttListeners.clear();
+  pendingInputQueue.length = 0;
+  pendingYieldToMainResolves.length = 0;
+  yieldToMainChannel?.port1.close();
+  yieldToMainChannel?.port2.close();
+  yieldToMainChannel = null;
+
+  clearQueuedOutput();
+  pendingOutputFrames.clear();
+  sessionsNeedingResync.clear();
+  closeWebSocket(muxWs, setMuxWs);
 }

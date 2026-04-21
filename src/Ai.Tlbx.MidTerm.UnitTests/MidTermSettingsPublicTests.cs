@@ -63,6 +63,51 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripBackgroundKenBurnsSettings()
+    {
+        var settings = new MidTermSettings
+        {
+            BackgroundKenBurnsEnabled = true,
+            BackgroundKenBurnsZoomPercent = 210,
+            BackgroundKenBurnsSpeedPxPerSecond = 28
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.BackgroundKenBurnsEnabled);
+        Assert.Equal(210, publicSettings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(28, publicSettings.BackgroundKenBurnsSpeedPxPerSecond);
+
+        settings.BackgroundKenBurnsEnabled = false;
+        settings.BackgroundKenBurnsZoomPercent = MidTermSettings.DefaultBackgroundKenBurnsZoomPercent;
+        settings.BackgroundKenBurnsSpeedPxPerSecond = MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.BackgroundKenBurnsEnabled);
+        Assert.Equal(210, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(28, settings.BackgroundKenBurnsSpeedPxPerSecond);
+    }
+
+    [Fact]
+    public void ApplyTo_ClampsBackgroundKenBurnsSettings()
+    {
+        var settings = new MidTermSettings();
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            BackgroundKenBurnsEnabled = true,
+            BackgroundKenBurnsZoomPercent = 999,
+            BackgroundKenBurnsSpeedPxPerSecond = -10
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.BackgroundKenBurnsEnabled);
+        Assert.Equal(MidTermSettings.MaxBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
+        Assert.Equal(MidTermSettings.MinBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripDisableAutoMainBrowserPromotion()
     {
         var settings = new MidTermSettings
@@ -81,10 +126,87 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripAllowAdHocSessionBookmarks()
+    {
+        var settings = new MidTermSettings
+        {
+            AllowAdHocSessionBookmarks = false
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.False(publicSettings.AllowAdHocSessionBookmarks);
+
+        settings.AllowAdHocSessionBookmarks = true;
+        publicSettings.ApplyTo(settings);
+
+        Assert.False(settings.AllowAdHocSessionBookmarks);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripShowBookmarks()
+    {
+        var settings = new MidTermSettings
+        {
+            ShowBookmarks = false
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.False(publicSettings.ShowBookmarks);
+
+        settings.ShowBookmarks = true;
+        publicSettings.ApplyTo(settings);
+
+        Assert.False(settings.ShowBookmarks);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripTerminalEnvironmentVariables()
+    {
+        var settings = new MidTermSettings
+        {
+            TerminalEnvironmentVariables = "FOO=bar\nEMPTY=\nJSON={\"enabled\":true}"
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal(settings.TerminalEnvironmentVariables, publicSettings.TerminalEnvironmentVariables);
+
+        settings.TerminalEnvironmentVariables = string.Empty;
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("FOO=bar\nEMPTY=\nJSON={\"enabled\":true}", settings.TerminalEnvironmentVariables);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripLensDefaultModels()
+    {
+        var settings = new MidTermSettings
+        {
+            CodexDefaultLensModel = "gpt-5.4-codex",
+            ClaudeDefaultLensModel = "claude-sonnet-4-6"
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal("gpt-5.4-codex", publicSettings.CodexDefaultLensModel);
+        Assert.Equal("claude-sonnet-4-6", publicSettings.ClaudeDefaultLensModel);
+
+        settings.CodexDefaultLensModel = string.Empty;
+        settings.ClaudeDefaultLensModel = string.Empty;
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("gpt-5.4-codex", settings.CodexDefaultLensModel);
+        Assert.Equal("claude-sonnet-4-6", settings.ClaudeDefaultLensModel);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripFontRenderingSettings()
     {
         var settings = new MidTermSettings
         {
+            TerminalLigaturesEnabled = true,
             LineHeight = 1.2,
             LetterSpacing = 0.4,
             FontWeight = "500",
@@ -93,21 +215,102 @@ public sealed class MidTermSettingsPublicTests
 
         var publicSettings = MidTermSettingsPublic.FromSettings(settings);
 
+        Assert.True(publicSettings.TerminalLigaturesEnabled);
         Assert.Equal(1.2, publicSettings.LineHeight);
         Assert.Equal(0.4, publicSettings.LetterSpacing);
         Assert.Equal("500", publicSettings.FontWeight);
         Assert.Equal("700", publicSettings.FontWeightBold);
 
+        settings.TerminalLigaturesEnabled = false;
         settings.LineHeight = 1;
         settings.LetterSpacing = 0;
         settings.FontWeight = "normal";
         settings.FontWeightBold = "bold";
         publicSettings.ApplyTo(settings);
 
+        Assert.True(settings.TerminalLigaturesEnabled);
         Assert.Equal(1.2, settings.LineHeight);
         Assert.Equal(0.4, settings.LetterSpacing);
         Assert.Equal("500", settings.FontWeight);
         Assert.Equal("700", settings.FontWeightBold);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripCommandBayLigaturesSetting()
+    {
+        var settings = new MidTermSettings
+        {
+            CommandBayLigaturesEnabled = true
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.CommandBayLigaturesEnabled);
+
+        settings.CommandBayLigaturesEnabled = false;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.CommandBayLigaturesEnabled);
+    }
+
+    [Fact]
+    public void ApplyTo_NormalizesAgentMessageFontFamilyToSupportedValues()
+    {
+        var settings = new MidTermSettings
+        {
+            AgentMessageFontFamily = "default"
+        };
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            AgentMessageFontFamily = "segoe ui"
+        };
+
+        publicSettings.ApplyTo(settings);
+        Assert.Equal("Segoe UI", settings.AgentMessageFontFamily);
+
+        publicSettings = MidTermSettingsPublic.FromSettings(settings);
+        Assert.Equal("Segoe UI", publicSettings.AgentMessageFontFamily);
+
+        publicSettings.AgentMessageFontFamily = "unsupported";
+        publicSettings.ApplyTo(settings);
+        Assert.Equal("default", settings.AgentMessageFontFamily);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripShowAgentMessageTimestamps()
+    {
+        var settings = new MidTermSettings
+        {
+            ShowAgentMessageTimestamps = true
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.ShowAgentMessageTimestamps);
+
+        settings.ShowAgentMessageTimestamps = false;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.ShowAgentMessageTimestamps);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_RoundTripShowUnknownAgentMessages()
+    {
+        var settings = new MidTermSettings
+        {
+            ShowUnknownAgentMessages = false
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.False(publicSettings.ShowUnknownAgentMessages);
+
+        settings.ShowUnknownAgentMessages = true;
+        publicSettings.ApplyTo(settings);
+
+        Assert.False(settings.ShowUnknownAgentMessages);
     }
 
     [Fact]
@@ -258,7 +461,9 @@ public sealed class MidTermSettingsPublicTests
             TerminalColorScheme = settings.TerminalColorScheme,
             TerminalColorSchemes = settings.TerminalColorSchemes,
             BackgroundImageEnabled = settings.BackgroundImageEnabled,
-            BackgroundImageFit = settings.BackgroundImageFit,
+            BackgroundKenBurnsEnabled = settings.BackgroundKenBurnsEnabled,
+            BackgroundKenBurnsZoomPercent = settings.BackgroundKenBurnsZoomPercent,
+            BackgroundKenBurnsSpeedPxPerSecond = settings.BackgroundKenBurnsSpeedPxPerSecond,
             UiTransparency = settings.UiTransparency,
             TerminalTransparency = settings.TerminalTransparency,
             TabTitleMode = settings.TabTitleMode,

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services.Security;
 
@@ -27,33 +28,51 @@ internal static class LensHostEnvironmentResolver
     internal static void ApplyProfileEnvironment(ProcessStartInfo startInfo, string? profileDirectory)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
+        ApplyProfileEnvironment(startInfo.Environment, profileDirectory);
+    }
+
+    internal static void ApplyProfileEnvironment(
+        IDictionary<string, string?> environment,
+        string? profileDirectory,
+        IList<string>? pathPrependEntries = null)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
         if (string.IsNullOrWhiteSpace(profileDirectory) || !Directory.Exists(profileDirectory))
         {
             return;
         }
 
-        startInfo.Environment["USERPROFILE"] = profileDirectory;
-        startInfo.Environment["HOME"] = profileDirectory;
-        startInfo.Environment["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
+        environment["USERPROFILE"] = profileDirectory;
+        environment["HOME"] = profileDirectory;
+        environment["CODEX_HOME"] = Path.Combine(profileDirectory, ".codex");
 
         var root = Path.GetPathRoot(profileDirectory);
         if (!string.IsNullOrWhiteSpace(root))
         {
-            startInfo.Environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            startInfo.Environment["HOMEPATH"] = profileDirectory[root.Length..];
+            environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            environment["HOMEPATH"] = profileDirectory[root.Length..];
         }
 
         var appDataDirectory = Path.Combine(profileDirectory, "AppData", "Roaming");
         var localAppDataDirectory = Path.Combine(profileDirectory, "AppData", "Local");
-        startInfo.Environment["APPDATA"] = appDataDirectory;
-        startInfo.Environment["LOCALAPPDATA"] = localAppDataDirectory;
+        environment["APPDATA"] = appDataDirectory;
+        environment["LOCALAPPDATA"] = localAppDataDirectory;
 
         // Lens runtimes often rely on per-user command shims and local bins.
         // Service environments do not always inherit those PATH entries, so add the
         // common user-local locations explicitly for standalone Lens sessions.
         foreach (var directory in AiCliCommandLocator.GetUserCommandDirectories(profileDirectory).Reverse())
         {
-            PrependPath(startInfo, directory);
+            if (pathPrependEntries is null)
+            {
+                PrependPath(environment, directory);
+            }
+            else if (!string.IsNullOrWhiteSpace(directory) &&
+                     Directory.Exists(directory) &&
+                     !pathPrependEntries.Contains(directory, StringComparer.OrdinalIgnoreCase))
+            {
+                pathPrependEntries.Add(directory);
+            }
         }
     }
 
@@ -116,12 +135,19 @@ internal static class LensHostEnvironmentResolver
 #if WINDOWS
         if (!string.IsNullOrWhiteSpace(userSid))
         {
-            const string profileListRoot = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
-            using var profileKey = Registry.LocalMachine.OpenSubKey(Path.Combine(profileListRoot, userSid));
-            var profilePath = profileKey?.GetValue("ProfileImagePath") as string;
+            var profilePath = TryReadProfileDirectoryFromProfileList(userSid);
             if (!string.IsNullOrWhiteSpace(profilePath))
             {
-                return Environment.ExpandEnvironmentVariables(profilePath);
+                return profilePath;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(userName))
+        {
+            var profilePath = TryResolveWindowsProfileDirectoryFromRegistry(userName);
+            if (!string.IsNullOrWhiteSpace(profilePath))
+            {
+                return profilePath;
             }
         }
 #endif
@@ -131,8 +157,7 @@ internal static class LensHostEnvironmentResolver
             return null;
         }
 
-        var currentUserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var usersRoot = Directory.GetParent(currentUserProfile)?.FullName;
+        var usersRoot = ResolveWindowsProfilesRoot();
         if (string.IsNullOrWhiteSpace(usersRoot))
         {
             return null;
@@ -167,14 +192,120 @@ internal static class LensHostEnvironmentResolver
             : Path.Combine(usersRoot, fallbackLeaf);
     }
 
-    private static void PrependPath(ProcessStartInfo startInfo, string? directory)
+    private static string? ResolveWindowsProfilesRoot()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+#if WINDOWS
+        const string profileListRoot = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+        using var profileListKey = Registry.LocalMachine.OpenSubKey(profileListRoot);
+        var configuredProfilesDirectory = profileListKey?.GetValue("ProfilesDirectory") as string;
+        if (!string.IsNullOrWhiteSpace(configuredProfilesDirectory))
+        {
+            return Environment.ExpandEnvironmentVariables(configuredProfilesDirectory);
+        }
+#endif
+
+        var currentUserProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(currentUserProfile))
+        {
+            var parentDirectory = Directory.GetParent(currentUserProfile)?.FullName;
+            if (!string.IsNullOrWhiteSpace(parentDirectory) &&
+                !currentUserProfile.Contains(
+                    $"{Path.DirectorySeparatorChar}system32{Path.DirectorySeparatorChar}config{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return parentDirectory;
+            }
+        }
+
+        var systemDrive = Environment.GetEnvironmentVariable("SystemDrive");
+        if (!string.IsNullOrWhiteSpace(systemDrive))
+        {
+            return Path.Combine(systemDrive, "Users");
+        }
+
+        return Directory.GetParent(currentUserProfile)?.FullName;
+    }
+
+#if WINDOWS
+    [SupportedOSPlatform("windows")]
+    private static string? TryResolveWindowsProfileDirectoryFromRegistry(string userName)
+    {
+        const string profileListRoot = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+        using var profileListKey = Registry.LocalMachine.OpenSubKey(profileListRoot);
+        if (profileListKey is null)
+        {
+            return null;
+        }
+
+        var candidates = BuildWindowsProfileLeafCandidates(userName);
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var subKeyName in profileListKey.GetSubKeyNames())
+        {
+            var profilePath = TryReadProfileDirectoryFromProfileList(subKeyName);
+            if (string.IsNullOrWhiteSpace(profilePath))
+            {
+                continue;
+            }
+
+            var leafName = Path.GetFileName(
+                profilePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (candidates.Contains(leafName, StringComparer.OrdinalIgnoreCase))
+            {
+                return profilePath;
+            }
+        }
+
+        return null;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? TryReadProfileDirectoryFromProfileList(string subKeyName)
+    {
+        const string profileListRoot = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+        using var profileKey = Registry.LocalMachine.OpenSubKey(Path.Combine(profileListRoot, subKeyName));
+        var profilePath = profileKey?.GetValue("ProfileImagePath") as string;
+        return string.IsNullOrWhiteSpace(profilePath)
+            ? null
+            : Environment.ExpandEnvironmentVariables(profilePath);
+    }
+#endif
+
+    private static List<string> BuildWindowsProfileLeafCandidates(string userName)
+    {
+        var candidates = new List<string>();
+        var trimmedUserName = userName.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmedUserName))
+        {
+            candidates.Add(trimmedUserName);
+        }
+
+        var normalizedUserName = SystemUserProvider.NormalizeWindowsUsername(userName);
+        if (!string.IsNullOrWhiteSpace(normalizedUserName) &&
+            !candidates.Contains(normalizedUserName, StringComparer.OrdinalIgnoreCase))
+        {
+            candidates.Add(normalizedUserName);
+        }
+
+        return candidates;
+    }
+
+    private static void PrependPath(IDictionary<string, string?> environment, string? directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
         {
             return;
         }
 
-        var existingPath = startInfo.Environment.TryGetValue("PATH", out var currentPath)
+        var existingPath = environment.TryGetValue("PATH", out var currentPath)
             ? currentPath ?? string.Empty
             : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
 
@@ -185,7 +316,7 @@ internal static class LensHostEnvironmentResolver
             return;
         }
 
-        startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+        environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
             ? directory
             : directory + Path.PathSeparator + existingPath;
     }

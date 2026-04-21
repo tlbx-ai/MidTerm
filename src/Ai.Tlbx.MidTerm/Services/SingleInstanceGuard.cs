@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Text;
 #if WINDOWS
 using System.Threading;
 #endif
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -28,15 +30,23 @@ public sealed class SingleInstanceGuard : IDisposable
     public static SingleInstanceGuard? TryAcquire(string instanceKey, out string? existingInfo)
     {
         existingInfo = null;
-        var guard = new SingleInstanceGuard(instanceKey);
+        SingleInstanceGuard? guard = new(instanceKey);
 
-        if (guard.TryAcquireInternal(out existingInfo))
+        try
         {
-            return guard;
-        }
+            if (guard.TryAcquireInternal(out existingInfo))
+            {
+                var acquiredGuard = guard;
+                guard = null;
+                return acquiredGuard;
+            }
 
-        guard.Dispose();
-        return null;
+            return null;
+        }
+        finally
+        {
+            guard?.Dispose();
+        }
     }
 
     private bool TryAcquireInternal(out string? existingInfo)
@@ -57,6 +67,7 @@ public sealed class SingleInstanceGuard : IDisposable
 
         try
         {
+            _mutex?.Dispose();
             _mutex = new Mutex(true, GetMutexName(), out var createdNew);
 
             if (createdNew)
@@ -83,6 +94,7 @@ public sealed class SingleInstanceGuard : IDisposable
 
         var pidPath = GetPidFilePath(_instanceKey);
         var pidDir = Path.GetDirectoryName(pidPath);
+        FileStream? pidFile = null;
 
         try
         {
@@ -91,32 +103,37 @@ public sealed class SingleInstanceGuard : IDisposable
                 Directory.CreateDirectory(pidDir);
             }
 
-            _pidFile = new FileStream(
+            pidFile = new FileStream(
                 pidPath,
                 FileMode.OpenOrCreate,
                 FileAccess.ReadWrite,
                 FileShare.None);
 
             // Check if there's an existing PID and if that process is still running
-            _pidFile.Seek(0, SeekOrigin.Begin);
-            using var reader = new StreamReader(_pidFile, leaveOpen: true);
+            pidFile.Seek(0, SeekOrigin.Begin);
+            using var reader = new StreamReader(pidFile, leaveOpen: true);
             var content = reader.ReadToEnd().Trim();
 
-            if (int.TryParse(content, out var existingPid) && IsProcessRunning(existingPid))
+            if (int.TryParse(content, NumberStyles.None, CultureInfo.InvariantCulture, out var existingPid) &&
+                IsProcessRunning(existingPid))
             {
-                existingInfo = $"Another mt.exe instance is already running (PID: {existingPid})";
-                _pidFile.Dispose();
-                _pidFile = null;
+                existingInfo = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Another mt.exe instance is already running (PID: {existingPid})");
+                pidFile.Dispose();
+                pidFile = null;
                 return false;
             }
 
             // Write our PID
-            _pidFile.SetLength(0);
-            _pidFile.Seek(0, SeekOrigin.Begin);
-            using var writer = new StreamWriter(_pidFile, leaveOpen: true);
-            writer.Write(Environment.ProcessId.ToString());
+            pidFile.SetLength(0);
+            pidFile.Seek(0, SeekOrigin.Begin);
+            using var writer = new StreamWriter(pidFile, leaveOpen: true);
+            writer.Write(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
             writer.Flush();
 
+            _pidFile?.Dispose();
+            _pidFile = pidFile;
             return true;
         }
         catch (IOException)
@@ -129,10 +146,22 @@ public sealed class SingleInstanceGuard : IDisposable
             Console.WriteLine($"[SingleInstanceGuard] PID file error: {ex.Message}");
             return true;
         }
+        finally
+        {
+            if (!ReferenceEquals(pidFile, _pidFile))
+            {
+                pidFile?.Dispose();
+            }
+        }
     }
 
     private static string GetPidFilePath(string instanceKey)
     {
+        if (TryGetUnixServiceLockDirectory(out var serviceLockDirectory))
+        {
+            return Path.Combine(serviceLockDirectory, $"midterm-{instanceKey}.pid");
+        }
+
         // Running as root (service mode) - use system location
         if (Environment.GetEnvironmentVariable("USER") == "root" ||
             Environment.GetEnvironmentVariable("EUID") == "0")
@@ -147,6 +176,41 @@ public sealed class SingleInstanceGuard : IDisposable
         // User mode - use home directory
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         return Path.Combine(home, ".midterm", $"midterm-{instanceKey}.pid");
+    }
+
+    internal static bool TryGetUnixServiceLockDirectory(out string lockDirectory)
+    {
+        lockDirectory = string.Empty;
+
+        if (OperatingSystem.IsWindows() || !string.IsNullOrWhiteSpace(SettingsService.GetSettingsDirectoryOverride()))
+        {
+            return false;
+        }
+
+        const string serviceSettingsDirectory = "/usr/local/etc/midterm";
+        var serviceSettingsPath = Path.Combine(serviceSettingsDirectory, "settings.json");
+        if (!File.Exists(serviceSettingsPath))
+        {
+            return false;
+        }
+
+        var candidate = Path.Combine(serviceSettingsDirectory, "locks");
+        try
+        {
+            Directory.CreateDirectory(candidate);
+            var probePath = Path.Combine(candidate, $".lock-probe-{Guid.NewGuid():N}");
+            using (File.Open(probePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+            }
+
+            File.Delete(probePath);
+            lockDirectory = candidate;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsProcessRunning(int pid)

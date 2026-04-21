@@ -41,6 +41,8 @@ function closeCurrentDock(): void {
 
 function restoreDock(sessionId: string, info: SessionDockInfo): void {
   switch (info.innerDock) {
+    case 'none':
+      break;
     case 'git':
       openGitDock(sessionId);
       break;

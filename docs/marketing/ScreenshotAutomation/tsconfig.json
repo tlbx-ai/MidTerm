@@ -4,6 +4,17 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -11,6 +22,6 @@
     "outDir": "./dist",
     "rootDir": "."
   },
-  "include": ["tests/**/*.ts", "src/**/*.ts"],
+  "include": ["src/**/*.ts", "playwright.config.ts"],
   "exclude": ["node_modules"]
 }

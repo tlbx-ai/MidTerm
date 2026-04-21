@@ -62,5 +62,5 @@ android {
 }
 
 dependencies {
-    // Zero external dependencies. Platform SDK + Kotlin stdlib only.
+    implementation("androidx.core:core-splashscreen:1.0.1")
 }

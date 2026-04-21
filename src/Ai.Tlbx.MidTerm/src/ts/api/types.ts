@@ -34,13 +34,27 @@ export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 export type SessionInfoDto = Schemas['SessionInfoDto'] & {
   lensOnly?: boolean;
   profileHint?: string | null;
+  lensResumeThreadId?: string | null;
+  spaceId?: string | null;
+  workspacePath?: string | null;
+  surface?: string | null;
+  isAdHoc?: boolean;
 };
 export type SessionListDto = Schemas['SessionListDto'];
 export type CreateSessionRequest = Schemas['CreateSessionRequest'];
 export type WorkerBootstrapRequest = Schemas['WorkerBootstrapRequest'] & {
   lensOnly?: boolean;
+  resumeThreadId?: string | null;
 };
 export type WorkerBootstrapResponse = Schemas['WorkerBootstrapResponse'];
+export interface ProviderResumeCatalogEntryDto {
+  provider: string;
+  sessionId: string;
+  workingDirectory: string;
+  title: string;
+  previewText?: string | null;
+  updatedAtUtc: string;
+}
 export type RenameSessionRequest = Schemas['RenameSessionRequest'];
 export type ResizeRequest = Schemas['ResizeRequest'];
 export type ResizeResponse = Schemas['ResizeResponse'];
@@ -63,6 +77,25 @@ export interface LensAttachmentReference {
   displayName?: string | null;
 }
 
+export interface LensInlineFileReference {
+  field: 'title' | 'body' | 'commandText';
+  displayText: string;
+  path: string;
+  pathKind: 'absolute' | 'relative';
+  resolvedPath?: string | null;
+  exists: boolean;
+  isDirectory: boolean;
+  mimeType?: string | null;
+  line?: number | null;
+  column?: number | null;
+}
+
+export interface LensInlineImagePreview {
+  displayPath: string;
+  resolvedPath: string;
+  mimeType?: string | null;
+}
+
 export interface LensCommandAcceptedResponse {
   sessionId: string;
   status: string;
@@ -74,67 +107,12 @@ export interface LensInterruptRequest {
   turnId?: string | null;
 }
 
-export interface LensPulseAnsweredQuestion {
+export interface LensAnsweredQuestion {
   questionId: string;
   answers: string[];
 }
 
-export interface LensPulseContentDeltaPayload {
-  streamKind: string;
-  delta: string;
-}
-
-export interface LensPulseDiffUpdatedPayload {
-  unifiedDiff: string;
-}
-
-export interface LensPulseEventRaw {
-  source: string;
-  method?: string | null;
-  payloadJson?: string | null;
-}
-
-export interface LensPulseSessionStatePayload {
-  state: string;
-  stateLabel: string;
-  reason?: string | null;
-}
-
-export interface LensPulseThreadStatePayload {
-  state: string;
-  stateLabel: string;
-  providerThreadId?: string | null;
-}
-
-export interface LensPulseTurnStartedPayload {
-  model?: string | null;
-  effort?: string | null;
-}
-
-export interface LensPulseTurnCompletedPayload {
-  state: string;
-  stateLabel: string;
-  stopReason?: string | null;
-  errorMessage?: string | null;
-}
-
-export interface LensPulsePlanDeltaPayload {
-  delta: string;
-}
-
-export interface LensPulsePlanCompletedPayload {
-  planMarkdown: string;
-}
-
-export interface LensPulseItemPayload {
-  itemType: string;
-  status: string;
-  title?: string | null;
-  detail?: string | null;
-  attachments: LensAttachmentReference[];
-}
-
-export interface LensPulseQuickSettingsPayload {
+export interface LensQuickSettingsPayload {
   model?: string | null;
   effort?: string | null;
   planMode: string;
@@ -148,99 +126,42 @@ export interface LensQuickSettingsSummary {
   permissionMode: string;
 }
 
-export interface LensPulseRequestOpenedPayload {
-  requestType: string;
-  requestTypeLabel: string;
-  detail?: string | null;
-}
-
-export interface LensPulseRequestResolvedPayload {
-  requestType: string;
-  decision?: string | null;
-}
-
-export interface LensPulseQuestionOption {
+export interface LensQuestionOption {
   label: string;
   description: string;
 }
 
-export interface LensPulseQuestion {
+export interface LensQuestion {
   id: string;
   header: string;
   question: string;
   multiSelect: boolean;
-  options: LensPulseQuestionOption[];
+  options: LensQuestionOption[];
 }
 
-export interface LensPulseUserInputRequestedPayload {
-  questions: LensPulseQuestion[];
-}
-
-export interface LensPulseUserInputResolvedPayload {
-  answers: LensPulseAnsweredQuestion[];
-}
-
-export interface LensPulseRuntimeMessagePayload {
-  message: string;
-  detail?: string | null;
-}
-
-export interface LensPulseEvent {
-  sequence: number;
-  eventId: string;
-  sessionId: string;
-  provider: string;
-  threadId: string;
-  turnId?: string | null;
-  itemId?: string | null;
-  requestId?: string | null;
-  createdAt: string;
-  type: string;
-  raw?: LensPulseEventRaw | null;
-  sessionState?: LensPulseSessionStatePayload | null;
-  threadState?: LensPulseThreadStatePayload | null;
-  turnStarted?: LensPulseTurnStartedPayload | null;
-  turnCompleted?: LensPulseTurnCompletedPayload | null;
-  contentDelta?: LensPulseContentDeltaPayload | null;
-  planDelta?: LensPulsePlanDeltaPayload | null;
-  planCompleted?: LensPulsePlanCompletedPayload | null;
-  diffUpdated?: LensPulseDiffUpdatedPayload | null;
-  item?: LensPulseItemPayload | null;
-  quickSettingsUpdated?: LensPulseQuickSettingsPayload | null;
-  requestOpened?: LensPulseRequestOpenedPayload | null;
-  requestResolved?: LensPulseRequestResolvedPayload | null;
-  userInputRequested?: LensPulseUserInputRequestedPayload | null;
-  userInputResolved?: LensPulseUserInputResolvedPayload | null;
-  runtimeMessage?: LensPulseRuntimeMessagePayload | null;
-}
-
-export interface LensPulseEventListResponse {
-  sessionId: string;
-  latestSequence: number;
-  events: LensPulseEvent[];
-}
-
-export interface LensPulseDeltaResponse {
+export interface LensHistoryPatch {
   sessionId: string;
   provider: string;
   generatedAt: string;
   latestSequence: number;
-  totalHistoryCount: number;
-  session: LensPulseSessionSummary;
-  thread: LensPulseThreadSummary;
-  currentTurn: LensPulseTurnSummary;
+  historyCount: number;
+  session: LensSessionSummary;
+  thread: LensThreadSummary;
+  currentTurn: LensTurnSummary;
   quickSettings: LensQuickSettingsSummary;
-  streams: LensPulseStreamsSummary;
-  historyUpserts: LensPulseHistoryEntry[];
+  streams: LensStreamsSummary;
+  historyUpserts: LensHistoryItem[];
   historyRemovals: string[];
-  itemUpserts: LensPulseItemSummary[];
+  itemUpserts: LensItemSummary[];
   itemRemovals: string[];
-  requestUpserts: LensPulseRequestSummary[];
+  requestUpserts: LensRequestSummary[];
   requestRemovals: string[];
-  noticeUpserts: LensPulseRuntimeNotice[];
+  noticeUpserts: LensRuntimeNotice[];
 }
 
-export interface LensPulseSessionSummary {
+export type LensHistoryDelta = LensHistoryPatch;
+
+export interface LensSessionSummary {
   state: string;
   stateLabel: string;
   reason?: string | null;
@@ -248,13 +169,13 @@ export interface LensPulseSessionSummary {
   lastEventAt?: string | null;
 }
 
-export interface LensPulseThreadSummary {
+export interface LensThreadSummary {
   threadId: string;
   state: string;
   stateLabel: string;
 }
 
-export interface LensPulseTurnSummary {
+export interface LensTurnSummary {
   turnId?: string | null;
   state: string;
   stateLabel: string;
@@ -264,7 +185,7 @@ export interface LensPulseTurnSummary {
   completedAt?: string | null;
 }
 
-export interface LensPulseStreamsSummary {
+export interface LensStreamsSummary {
   assistantText: string;
   reasoningText: string;
   reasoningSummaryText: string;
@@ -274,9 +195,10 @@ export interface LensPulseStreamsSummary {
   unifiedDiff: string;
 }
 
-export interface LensPulseHistoryEntry {
+export interface LensHistoryItem {
   entryId: string;
   order: number;
+  estimatedHeightPx?: number;
   kind: string;
   turnId?: string | null;
   itemId?: string | null;
@@ -284,17 +206,17 @@ export interface LensPulseHistoryEntry {
   status: string;
   itemType?: string | null;
   title?: string | null;
+  commandText?: string | null;
   body: string;
   attachments: LensAttachmentReference[];
+  fileMentions?: LensInlineFileReference[];
+  imagePreviews?: LensInlineImagePreview[];
   streaming: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-/** @deprecated Prefer LensPulseHistoryEntry in application code. */
-export type LensPulseTranscriptEntry = LensPulseHistoryEntry;
-
-export interface LensPulseItemSummary {
+export interface LensItemSummary {
   itemId: string;
   turnId?: string | null;
   itemType: string;
@@ -305,7 +227,7 @@ export interface LensPulseItemSummary {
   updatedAt: string;
 }
 
-export interface LensPulseRequestSummary {
+export interface LensRequestSummary {
   requestId: string;
   turnId?: string | null;
   kind: string;
@@ -313,12 +235,12 @@ export interface LensPulseRequestSummary {
   state: string;
   detail?: string | null;
   decision?: string | null;
-  questions: LensPulseQuestion[];
-  answers: LensPulseAnsweredQuestion[];
+  questions: LensQuestion[];
+  answers: LensAnsweredQuestion[];
   updatedAt: string;
 }
 
-export interface LensPulseRuntimeNotice {
+export interface LensRuntimeNotice {
   eventId: string;
   type: string;
   message: string;
@@ -326,29 +248,47 @@ export interface LensPulseRuntimeNotice {
   createdAt: string;
 }
 
-export interface LensPulseSnapshotResponse {
+export interface LensHistoryWindowResponse {
   sessionId: string;
   provider: string;
   generatedAt: string;
+  windowRevision?: string | null;
   latestSequence: number;
-  totalHistoryCount: number;
+  historyCount: number;
   historyWindowStart: number;
   historyWindowEnd: number;
   hasOlderHistory: boolean;
   hasNewerHistory: boolean;
-  session: LensPulseSessionSummary;
-  thread: LensPulseThreadSummary;
-  currentTurn: LensPulseTurnSummary;
+  session: LensSessionSummary;
+  thread: LensThreadSummary;
+  currentTurn: LensTurnSummary;
   quickSettings: LensQuickSettingsSummary;
-  streams: LensPulseStreamsSummary;
-  transcript: LensPulseHistoryEntry[];
-  items: LensPulseItemSummary[];
-  requests: LensPulseRequestSummary[];
-  notices: LensPulseRuntimeNotice[];
+  streams: LensStreamsSummary;
+  history: LensHistoryItem[];
+  items: LensItemSummary[];
+  requests: LensRequestSummary[];
+  notices: LensRuntimeNotice[];
 }
+
+export type LensHistoryWindow = LensHistoryWindowResponse;
+export type LensHistorySnapshot = LensHistoryWindowResponse;
+export type LensHistoryRequestSummary = LensRequestSummary;
+export type LensHistorySessionSummary = LensSessionSummary;
+export type LensHistoryThreadSummary = LensThreadSummary;
+export type LensHistoryTurnSummary = LensTurnSummary;
+export type LensHistoryStreamsSummary = LensStreamsSummary;
+export type LensHistoryRuntimeNotice = LensRuntimeNotice;
 
 export interface LensRequestDecisionRequest {
   decision: string;
+}
+
+export interface LensTerminalReplayStep {
+  kind: 'text' | 'image' | 'filePath' | 'textFile';
+  text?: string | null;
+  path?: string | null;
+  mimeType?: string | null;
+  useBracketedPaste?: boolean;
 }
 
 export interface LensTurnRequest {
@@ -358,6 +298,7 @@ export interface LensTurnRequest {
   planMode?: string | null;
   permissionMode?: string | null;
   attachments: LensAttachmentReference[];
+  terminalReplay?: LensTerminalReplayStep[];
 }
 
 export interface LensTurnStartResponse {
@@ -370,7 +311,7 @@ export interface LensTurnStartResponse {
 }
 
 export interface LensUserInputAnswerRequest {
-  answers: LensPulseAnsweredQuestion[];
+  answers: LensAnsweredQuestion[];
 }
 
 // Settings
@@ -416,6 +357,8 @@ export type NetworkEndpointInfo = Schemas['NetworkEndpointInfo'];
 export type ShareAccessMode = Schemas['ShareAccessMode'];
 export type CreateShareLinkRequest = Schemas['CreateShareLinkRequest'];
 export type CreateShareLinkResponse = Schemas['CreateShareLinkResponse'];
+export type ActiveShareGrantInfo = Schemas['ActiveShareGrantInfo'];
+export type ActiveShareGrantListResponse = Schemas['ActiveShareGrantListResponse'];
 export type ClaimShareRequest = Schemas['ClaimShareRequest'];
 export type ClaimShareResponse = Schemas['ClaimShareResponse'];
 export type ShareBootstrapResponse = Schemas['ShareBootstrapResponse'];
@@ -431,11 +374,98 @@ export type DirectoryEntry = Schemas['DirectoryEntry'];
 export type DirectoryListResponse = Schemas['DirectoryListResponse'];
 
 // History
-export type LaunchEntry = Schemas['LaunchEntry'];
+export type LaunchEntry = Schemas['LaunchEntry'] & {
+  launchOrigin?: string | null;
+  surfaceType?: string | null;
+  foregroundProcessName?: string | null;
+  foregroundProcessCommandLine?: string | null;
+  foregroundProcessDisplayName?: string | null;
+  foregroundProcessIdentity?: string | null;
+};
 export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
   dedupeKey?: string | null;
+  launchOrigin?: string | null;
+  surfaceType?: 'trm' | 'cdx' | 'cld';
+  foregroundProcessName?: string | null;
+  foregroundProcessCommandLine?: string | null;
+  foregroundProcessDisplayName?: string | null;
+  foregroundProcessIdentity?: string | null;
 };
 export type HistoryPatchRequest = Schemas['HistoryPatchRequest'];
+
+// Spaces
+export interface SpaceWorkspaceSessionDto {
+  sessionId: string;
+  title: string;
+  surface: 'terminal' | 'codex' | 'claude';
+  lensOnly: boolean;
+  profileHint?: string | null;
+}
+
+export interface SpaceWorkspaceDto {
+  key: string;
+  displayName: string;
+  path: string;
+  kind: 'plain' | 'worktree';
+  branch?: string | null;
+  head?: string | null;
+  isMain: boolean;
+  isDetached: boolean;
+  locked: boolean;
+  prunable: boolean;
+  changeCount: number;
+  hasChanges: boolean;
+  hasActiveAiSession: boolean;
+  activeSessions: SpaceWorkspaceSessionDto[];
+}
+
+export interface SpaceSummaryDto {
+  id: string;
+  displayName: string;
+  label: string;
+  kind: 'plain' | 'git';
+  rootPath: string;
+  importedPath: string;
+  commonRepoId?: string | null;
+  isPinned: boolean;
+  canInitGit: boolean;
+  canCreateWorktree: boolean;
+  primaryWorkspaceKey?: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  workspaces: SpaceWorkspaceDto[];
+}
+
+export interface SpaceImportRequest {
+  path: string;
+  label?: string | null;
+}
+
+export interface SpaceUpdateRequest {
+  label?: string | null;
+  isPinned?: boolean | null;
+}
+
+export interface SpaceCreateWorktreeRequest {
+  path: string;
+  branchName: string;
+  name?: string | null;
+}
+
+export interface SpaceUpdateWorkspaceRequest {
+  label?: string | null;
+}
+
+export interface SpaceDeleteWorktreeRequest {
+  force?: boolean;
+}
+
+export interface SpaceLaunchRequest {
+  surface: 'terminal' | 'codex' | 'claude';
+  cols?: number;
+  rows?: number;
+  shell?: string | null;
+}
 
 // Shells & Users
 export type ShellInfoDto = Schemas['ShellInfoDto'];

@@ -22,7 +22,7 @@ public class CompressedStaticFilesMiddlewareTests
             async context =>
             {
                 nextCalled = true;
-                await context.Response.WriteAsync("next");
+                await context.Response.WriteAsync("next", context.RequestAborted);
             },
             provider
         );
@@ -36,7 +36,7 @@ public class CompressedStaticFilesMiddlewareTests
 
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body, Encoding.UTF8, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
+        var body = await reader.ReadToEndAsync(context.RequestAborted);
 
         Assert.True(nextCalled);
         Assert.Equal("next", body);
@@ -70,7 +70,7 @@ public class CompressedStaticFilesMiddlewareTests
 
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body, Encoding.UTF8, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
+        var body = await reader.ReadToEndAsync(context.RequestAborted);
 
         Assert.False(nextCalled);
         Assert.Equal("compressed", body);

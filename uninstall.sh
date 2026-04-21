@@ -228,6 +228,7 @@ cleanup_temp_root() {
 detect_user_traces() {
     path_exists "$UNIX_USER_BIN_DIR/mt" ||
         path_exists "$UNIX_USER_BIN_DIR/mthost" ||
+        path_exists "$UNIX_USER_BIN_DIR/mtagenthost" ||
         path_exists "$UNIX_USER_BIN_DIR/mt-host" ||
         path_exists "$UNIX_USER_LIB_DIR" ||
         path_exists "$UNIX_USER_SETTINGS_DIR"
@@ -254,6 +255,7 @@ detect_temp_traces() {
 detect_service_traces() {
     path_exists "$UNIX_SERVICE_BIN_DIR/mt" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mthost" ||
+        path_exists "$UNIX_SERVICE_BIN_DIR/mtagenthost" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mt-host" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/version.json" ||
         path_exists "$UNIX_SERVICE_LIB_DIR" ||
@@ -276,6 +278,37 @@ detect_system_trust_traces() {
     fi
 
     path_exists "$LINUX_CERT_PATH"
+}
+
+stop_midterm_binary_processes() {
+    local pattern
+    local path
+    local pids=""
+
+    for path in "$@"; do
+        [ -n "$path" ] || continue
+        pattern="^${path}( |$)"
+        pids=$(printf '%s\n%s\n' "$pids" "$(pgrep -f "$pattern" 2>/dev/null || true)" | awk 'NF' | sort -u)
+    done
+
+    if [ -z "$pids" ]; then
+        return 0
+    fi
+
+    kill $pids >/dev/null 2>&1 || true
+    sleep 1
+
+    local remaining=""
+    for path in "$@"; do
+        [ -n "$path" ] || continue
+        pattern="^${path}( |$)"
+        remaining=$(printf '%s\n%s\n' "$remaining" "$(pgrep -f "$pattern" 2>/dev/null || true)" | awk 'NF' | sort -u)
+    done
+
+    if [ -n "$remaining" ]; then
+        kill -9 $remaining >/dev/null 2>&1 || true
+        sleep 1
+    fi
 }
 
 stop_service_processes() {
@@ -394,8 +427,14 @@ remove_system_trust() {
 cleanup_user_scope() {
     print_info "Cleaning user install for $INSTALLING_USER..."
 
+    stop_midterm_binary_processes \
+        "$UNIX_USER_BIN_DIR/mt" \
+        "$UNIX_USER_BIN_DIR/mthost" \
+        "$UNIX_USER_BIN_DIR/mtagenthost" || true
+
     remove_path "$UNIX_USER_BIN_DIR/mt" || true
     remove_path "$UNIX_USER_BIN_DIR/mthost" || true
+    remove_path "$UNIX_USER_BIN_DIR/mtagenthost" || true
     remove_path "$UNIX_USER_BIN_DIR/mt-host" || true
     remove_path "$UNIX_USER_LIB_DIR" || true
     remove_path "$UNIX_USER_SETTINGS_DIR" || true
@@ -409,6 +448,11 @@ cleanup_service_scope() {
     print_info "Cleaning system install..."
 
     stop_service_processes
+    stop_midterm_binary_processes \
+        "$UNIX_SERVICE_BIN_DIR/mt" \
+        "$UNIX_SERVICE_BIN_DIR/mthost" \
+        "$UNIX_SERVICE_BIN_DIR/mtagenthost" \
+        "$UNIX_SERVICE_SETTINGS_DIR/mtagenthost" || true
 
     remove_path "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" || true
     remove_path "/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist" || true
@@ -418,6 +462,7 @@ cleanup_service_scope() {
 
     remove_path "$UNIX_SERVICE_BIN_DIR/mt" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mthost" || true
+    remove_path "$UNIX_SERVICE_BIN_DIR/mtagenthost" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mt-host" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/version.json" || true
     remove_path "$UNIX_SERVICE_LIB_DIR" || true

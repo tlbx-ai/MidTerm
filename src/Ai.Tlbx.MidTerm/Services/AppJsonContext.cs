@@ -16,6 +16,7 @@ using Ai.Tlbx.MidTerm.Models.Share;
 using Ai.Tlbx.MidTerm.Models.Security;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Models.Hub;
+using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -65,24 +66,25 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<SessionAttentionItem>))]
 [JsonSerializable(typeof(WorkerBootstrapRequest))]
 [JsonSerializable(typeof(WorkerBootstrapResponse))]
+[JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
+[JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
 [JsonSerializable(typeof(LensTurnRequest))]
 [JsonSerializable(typeof(LensAttachmentReference))]
 [JsonSerializable(typeof(List<LensAttachmentReference>))]
+[JsonSerializable(typeof(LensTerminalReplayStep))]
+[JsonSerializable(typeof(List<LensTerminalReplayStep>))]
 [JsonSerializable(typeof(LensTurnStartResponse))]
 [JsonSerializable(typeof(LensInterruptRequest))]
 [JsonSerializable(typeof(LensRequestDecisionRequest))]
 [JsonSerializable(typeof(LensUserInputAnswerRequest))]
 [JsonSerializable(typeof(LensCommandAcceptedResponse))]
-[JsonSerializable(typeof(LensSnapshotWindowRequest))]
-[JsonSerializable(typeof(LensEventsRequest))]
+[JsonSerializable(typeof(LensHistoryWindowRequest))]
 [JsonSerializable(typeof(LensWsRequestMessage))]
 [JsonSerializable(typeof(LensWsSubscriptionMessage))]
 [JsonSerializable(typeof(LensWsAckMessage))]
 [JsonSerializable(typeof(LensWsErrorMessage))]
-[JsonSerializable(typeof(LensWsSnapshotMessage))]
-[JsonSerializable(typeof(LensWsEventsMessage))]
-[JsonSerializable(typeof(LensWsEventMessage))]
-[JsonSerializable(typeof(LensWsDeltaMessage))]
+[JsonSerializable(typeof(LensWsHistoryWindowMessage))]
+[JsonSerializable(typeof(LensWsHistoryPatchMessage))]
 [JsonSerializable(typeof(LensWsTurnStartedMessage))]
 [JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(RenameSessionRequest))]
@@ -108,47 +110,33 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<AgentSessionVibeActivity>))]
 [JsonSerializable(typeof(AgentSessionVibeTerminal))]
 [JsonSerializable(typeof(AgentSessionFeedResponse))]
-[JsonSerializable(typeof(LensPulseEvent))]
-[JsonSerializable(typeof(LensPulseDeltaResponse))]
-[JsonSerializable(typeof(List<LensPulseEvent>))]
-[JsonSerializable(typeof(LensPulseEventRaw))]
-[JsonSerializable(typeof(LensPulseSessionStatePayload))]
-[JsonSerializable(typeof(LensPulseThreadStatePayload))]
-[JsonSerializable(typeof(LensPulseTurnStartedPayload))]
-[JsonSerializable(typeof(LensPulseTurnCompletedPayload))]
-[JsonSerializable(typeof(LensPulseContentDeltaPayload))]
-[JsonSerializable(typeof(LensPulsePlanDeltaPayload))]
-[JsonSerializable(typeof(LensPulsePlanCompletedPayload))]
-[JsonSerializable(typeof(LensPulseDiffUpdatedPayload))]
-[JsonSerializable(typeof(LensPulseItemPayload))]
-[JsonSerializable(typeof(LensPulseQuickSettingsPayload))]
-[JsonSerializable(typeof(LensPulseRequestOpenedPayload))]
-[JsonSerializable(typeof(LensPulseRequestResolvedPayload))]
-[JsonSerializable(typeof(LensPulseUserInputRequestedPayload))]
-[JsonSerializable(typeof(LensPulseUserInputResolvedPayload))]
-[JsonSerializable(typeof(LensPulseRuntimeMessagePayload))]
-[JsonSerializable(typeof(LensPulseQuestion))]
-[JsonSerializable(typeof(List<LensPulseQuestion>))]
-[JsonSerializable(typeof(LensPulseQuestionOption))]
-[JsonSerializable(typeof(List<LensPulseQuestionOption>))]
-[JsonSerializable(typeof(LensPulseAnsweredQuestion))]
-[JsonSerializable(typeof(List<LensPulseAnsweredQuestion>))]
-[JsonSerializable(typeof(LensPulseEventListResponse))]
-[JsonSerializable(typeof(LensPulseSnapshotResponse))]
-[JsonSerializable(typeof(LensPulseSessionSummary))]
-[JsonSerializable(typeof(LensPulseThreadSummary))]
-[JsonSerializable(typeof(LensPulseTurnSummary))]
+[JsonSerializable(typeof(LensQuickSettingsPayload))]
+[JsonSerializable(typeof(LensQuestion))]
+[JsonSerializable(typeof(List<LensQuestion>))]
+[JsonSerializable(typeof(LensQuestionOption))]
+[JsonSerializable(typeof(List<LensQuestionOption>))]
+[JsonSerializable(typeof(LensAnsweredQuestion))]
+[JsonSerializable(typeof(List<LensAnsweredQuestion>))]
+[JsonSerializable(typeof(LensHistoryWindowResponse))]
+[JsonSerializable(typeof(LensHistoryPatch))]
+[JsonSerializable(typeof(LensSessionSummary))]
+[JsonSerializable(typeof(LensThreadSummary))]
+[JsonSerializable(typeof(LensTurnSummary))]
 [JsonSerializable(typeof(LensQuickSettingsSummary))]
-[JsonSerializable(typeof(LensPulseStreamsSummary))]
-[JsonSerializable(typeof(LensPulseItemSummary))]
-[JsonSerializable(typeof(List<LensPulseItemSummary>))]
-[JsonSerializable(typeof(LensPulseRequestSummary))]
-[JsonSerializable(typeof(List<LensPulseRequestSummary>))]
-[JsonSerializable(typeof(LensPulseRuntimeNotice))]
-[JsonSerializable(typeof(List<LensPulseRuntimeNotice>))]
+[JsonSerializable(typeof(LensStreamsSummary))]
+[JsonSerializable(typeof(LensItemSummary))]
+[JsonSerializable(typeof(List<LensItemSummary>))]
+[JsonSerializable(typeof(LensRequestSummary))]
+[JsonSerializable(typeof(List<LensRequestSummary>))]
+[JsonSerializable(typeof(LensRuntimeNotice))]
+[JsonSerializable(typeof(List<LensRuntimeNotice>))]
 [JsonSerializable(typeof(SessionBufferTextResponse))]
 [JsonSerializable(typeof(TerminalTransportDiagnosticsDto))]
 [JsonSerializable(typeof(SessionStateResponse))]
+[JsonSerializable(typeof(SessionLayoutState))]
+[JsonSerializable(typeof(ManagerBarQueueEntryDto))]
+[JsonSerializable(typeof(List<ManagerBarQueueEntryDto>))]
+[JsonSerializable(typeof(ManagerBarQueueEnqueueRequest))]
 
 // --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]
@@ -168,6 +156,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LauncherDirectoryEntry))]
 [JsonSerializable(typeof(LauncherDirectoryEntry[]))]
 [JsonSerializable(typeof(LauncherDirectoryListResponse))]
+[JsonSerializable(typeof(LauncherDirectoryAccessResponse))]
+[JsonSerializable(typeof(LauncherCreateDirectoryRequest))]
+[JsonSerializable(typeof(LauncherCloneRepositoryRequest))]
+[JsonSerializable(typeof(LauncherDirectoryMutationResponse))]
 
 // --- History ---
 [JsonSerializable(typeof(HistoryPatchRequest))]
@@ -177,6 +169,20 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(CreateHistoryRequest))]
 [JsonSerializable(typeof(CreateHistoryResponse))]
 [JsonSerializable(typeof(SetBookmarkRequest))]
+[JsonSerializable(typeof(SpaceSummaryDto))]
+[JsonSerializable(typeof(List<SpaceSummaryDto>))]
+[JsonSerializable(typeof(SpaceWorkspaceDto))]
+[JsonSerializable(typeof(List<SpaceWorkspaceDto>))]
+[JsonSerializable(typeof(SpaceWorkspaceSessionDto))]
+[JsonSerializable(typeof(List<SpaceWorkspaceSessionDto>))]
+[JsonSerializable(typeof(SpaceWorktreeRecord))]
+[JsonSerializable(typeof(List<SpaceWorktreeRecord>))]
+[JsonSerializable(typeof(SpaceImportRequest))]
+[JsonSerializable(typeof(SpaceUpdateRequest))]
+[JsonSerializable(typeof(SpaceCreateWorktreeRequest))]
+[JsonSerializable(typeof(SpaceUpdateWorkspaceRequest))]
+[JsonSerializable(typeof(SpaceDeleteWorktreeRequest))]
+[JsonSerializable(typeof(SpaceLaunchRequest))]
 
 // --- Commands ---
 [JsonSerializable(typeof(ScriptDefinition))]
@@ -197,6 +203,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Share ---
 [JsonSerializable(typeof(CreateShareLinkRequest))]
 [JsonSerializable(typeof(CreateShareLinkResponse))]
+[JsonSerializable(typeof(ActiveShareGrantInfo))]
+[JsonSerializable(typeof(List<ActiveShareGrantInfo>))]
+[JsonSerializable(typeof(ActiveShareGrantListResponse))]
 [JsonSerializable(typeof(ClaimShareRequest))]
 [JsonSerializable(typeof(ClaimShareResponse))]
 [JsonSerializable(typeof(ShareBootstrapResponse))]
@@ -275,8 +284,35 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(StateUpdate))]
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(MainBrowserStatusMessage))]
+[JsonSerializable(typeof(LayoutNode))]
+[JsonSerializable(typeof(List<LayoutNode>))]
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, UseStringEnumConverter = true)]
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

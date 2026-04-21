@@ -221,7 +221,7 @@ Before changing mux behavior, read `Services/WebSockets/MuxClient.cs` and `MuxPr
 - Each terminal has independent dimensions
 - **Multi-client scenario** (e.g., PC + iPad): connecting from a second device must NOT resize sessions. The second device shows terminals scaled (CSS transform) to fit its viewport. The user can explicitly press resize on the second device to claim optimal dimensions.
 - **Page reload / reconnect**: must never send resize commands to the server. Terminals sync server dimensions and apply CSS scaling locally.
-- **Layout restore from storage**: when a saved layout is restored on page load, terminals are moved to panes and CSS-scaled — NOT resized to fit pane dimensions. User must explicitly resize.
+- **Layout restore from persisted state**: when a saved layout is restored on page load, terminals are moved to panes and CSS-scaled — NOT resized to fit pane dimensions. User must explicitly resize.
 - **Scaled terminals** should be visually centered in their container, not top-left aligned.
 
 ## Tmux Compatibility Layer
@@ -337,6 +337,7 @@ Use these commits to draft `-ReleaseTitle` (concise headline) and `-ReleaseNotes
 
 **Step 5 — Determine `-mthostUpdate`**
 - Check if any commits touched `Ai.Tlbx.MidTerm.TtyHost/`, `Ai.Tlbx.MidTerm.Common/`, or protocol code → `yes`
+- Check if `Ai.Tlbx.MidTerm.AgentHost/` changed in a way that must ship to running installs → `yes`
 - Web-only / frontend-only changes → `no`
 - If unclear, default to `yes` (safer)
 
@@ -387,8 +388,8 @@ Users can choose which releases to receive via `settings.json`:
 
 | Channel | Setting | Receives |
 |---------|---------|----------|
-| Stable (default) | `"updateChannel": "stable"` | Only full releases (v6.10.32) |
-| Dev | `"updateChannel": "dev"` | Prereleases + full releases (v6.10.32-dev) |
+| Stable (default) | `"updateChannel": "stable"` | Stable releases from `main` (web-only or full, e.g. `v6.10.32`) |
+| Dev | `"updateChannel": "dev"` | Dev prereleases plus stable releases (web-only or full, e.g. `v6.10.32-dev`) |
 
 ### Version Management in Dev
 
@@ -400,7 +401,10 @@ Both scripts share the same parameters:
 - `-Bump`: `major`, `minor`, or `patch`
 - `-ReleaseTitle`: One-line headline (NO version number)
 - `-ReleaseNotes`: MANDATORY array of detailed changelog entries
-- `-mthostUpdate`: `yes` if TtyHost/Common/protocol changed, `no` for web-only
+- `-mthostUpdate`: the single low-level-runtime switch
+
+With `-mthostUpdate no`: web-only release. Running installs preserve their current `mthost` and `mtagenthost`.
+With `-mthostUpdate yes`: full runtime refresh. Running installs replace both `mthost` and `mtagenthost`.
 
 **Good ReleaseNotes:**
 - "Fixed bug where settings panel would close when checking for updates"
@@ -409,9 +413,6 @@ Both scripts share the same parameters:
 **Bad ReleaseNotes:**
 - "Fix bug" (too vague)
 - "Update UI" (what specifically?)
-
-With `-mthostUpdate no`: Only mt version bumped, terminals survive update.
-With `-mthostUpdate yes`: Both mt and mthost bumped, terminals restart.
 
 ## Install System
 

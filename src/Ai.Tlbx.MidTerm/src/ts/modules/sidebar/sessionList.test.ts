@@ -1,43 +1,33 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createSessionFilterController } from './sessionFilterController';
+import {
+  filterSessionsByQuery,
+  groupSessionsByController,
+  shouldShowAgentControlAction,
+  syncSessionItemActiveStates,
+} from './sessionListLogic';
 
-const translations: Record<string, string> = {
-  'sidebar.humanControlled': 'Human controlled',
-  'sidebar.agentControlled': 'Agent controlled',
-  'sidebar.noMatchingTerminals': 'No terminals match the current filter',
+const groupingOptions = {
+  humanLabel: 'Human controlled',
+  agentLabel: 'Agent controlled',
 };
 
-const originalLocalStorage = globalThis.localStorage;
-
-vi.mock('../i18n', () => ({
-  t: (key: string) => translations[key] ?? key,
-}));
+const translations: Record<string, string> = {
+  'sidebar.filterTerminals': 'Filter terminals',
+  'sidebar.clearTerminalFilter': 'Clear terminal filter',
+};
 
 describe('sessionList grouping', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.stubGlobal('localStorage', {
-      getItem: vi.fn(() => null),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    });
-  });
-
-  afterAll(() => {
-    vi.unstubAllGlobals();
-    Object.assign(globalThis, {
-      localStorage: originalLocalStorage,
-    });
-  });
-
-  it('groups human sessions before agent sessions while preserving in-group order', async () => {
-    const { groupSessionsByController } = await import('./sessionList');
-
-    const groups = groupSessionsByController([
-      { id: 'human-1', shellType: 'Pwsh', name: 'Human 1' } as any,
-      { id: 'agent-1', shellType: 'Pwsh', name: 'Agent 1', agentControlled: true } as any,
-      { id: 'human-2', shellType: 'Pwsh', name: 'Human 2' } as any,
-      { id: 'agent-2', shellType: 'Pwsh', name: 'Agent 2', agentControlled: true } as any,
-    ]);
+  it('groups human sessions before agent sessions while preserving in-group order', () => {
+    const groups = groupSessionsByController(
+      [
+        { id: 'human-1', shellType: 'Pwsh', name: 'Human 1' } as any,
+        { id: 'agent-1', shellType: 'Pwsh', name: 'Agent 1', agentControlled: true } as any,
+        { id: 'human-2', shellType: 'Pwsh', name: 'Human 2' } as any,
+        { id: 'agent-2', shellType: 'Pwsh', name: 'Agent 2', agentControlled: true } as any,
+      ],
+      groupingOptions,
+    );
 
     expect(groups.map((group) => group.key)).toEqual(['human', 'agent']);
     expect(groups.every((group) => group.showHeader)).toBe(true);
@@ -45,61 +35,60 @@ describe('sessionList grouping', () => {
     expect(groups[1]?.sessions.map((session) => session.id)).toEqual(['agent-1', 'agent-2']);
   });
 
-  it('omits empty groups', async () => {
-    const { groupSessionsByController } = await import('./sessionList');
-
-    const groups = groupSessionsByController([
-      { id: 'agent-1', shellType: 'Pwsh', name: 'Agent 1', agentControlled: true } as any,
-    ]);
+  it('omits empty groups', () => {
+    const groups = groupSessionsByController(
+      [{ id: 'agent-1', shellType: 'Pwsh', name: 'Agent 1', agentControlled: true } as any],
+      groupingOptions,
+    );
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.key).toBe('agent');
     expect(groups[0]?.showHeader).toBe(true);
   });
 
-  it('sorts agent sessions with attention before quiet workers', async () => {
-    const { groupSessionsByController } = await import('./sessionList');
-
-    const groups = groupSessionsByController([
-      {
-        id: 'agent-busy',
-        shellType: 'Pwsh',
-        name: 'Busy worker',
-        agentControlled: true,
-        order: 2,
-        supervisor: { state: 'busy-turn', attentionScore: 10, needsAttention: false },
-      } as any,
-      {
-        id: 'agent-blocked',
-        shellType: 'Pwsh',
-        name: 'Blocked worker',
-        agentControlled: true,
-        order: 1,
-        supervisor: { state: 'blocked', attentionScore: 95, needsAttention: true },
-      } as any,
-    ]);
+  it('sorts agent sessions with attention before quiet workers', () => {
+    const groups = groupSessionsByController(
+      [
+        {
+          id: 'agent-busy',
+          shellType: 'Pwsh',
+          name: 'Busy worker',
+          agentControlled: true,
+          order: 2,
+          supervisor: { state: 'busy-turn', attentionScore: 10, needsAttention: false },
+        } as any,
+        {
+          id: 'agent-blocked',
+          shellType: 'Pwsh',
+          name: 'Blocked worker',
+          agentControlled: true,
+          order: 1,
+          supervisor: { state: 'blocked', attentionScore: 95, needsAttention: true },
+        } as any,
+      ],
+      groupingOptions,
+    );
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.attentionCount).toBe(1);
     expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-blocked', 'agent-busy']);
   });
 
-  it('hides group headers when only human sessions are visible', async () => {
-    const { groupSessionsByController } = await import('./sessionList');
-
-    const groups = groupSessionsByController([
-      { id: 'human-1', shellType: 'Pwsh', name: 'Human 1' } as any,
-      { id: 'human-2', shellType: 'Pwsh', name: 'Human 2' } as any,
-    ]);
+  it('hides group headers when only human sessions are visible', () => {
+    const groups = groupSessionsByController(
+      [
+        { id: 'human-1', shellType: 'Pwsh', name: 'Human 1' } as any,
+        { id: 'human-2', shellType: 'Pwsh', name: 'Human 2' } as any,
+      ],
+      groupingOptions,
+    );
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.key).toBe('human');
     expect(groups[0]?.showHeader).toBe(false);
   });
 
-  it('filters sessions by title, shell, and current directory tokens', async () => {
-    const { filterSessionsByQuery } = await import('./sessionList');
-
+  it('filters sessions by title, shell, and current directory tokens', () => {
     const filtered = filterSessionsByQuery(
       [
         {
@@ -124,9 +113,7 @@ describe('sessionList grouping', () => {
     expect(filtered.map((session) => session.id)).toEqual(['agent-1']);
   });
 
-  it('removes empty controller groups after filtering', async () => {
-    const { filterSessionsByQuery, groupSessionsByController } = await import('./sessionList');
-
+  it('removes empty controller groups after filtering', () => {
     const groups = groupSessionsByController(
       filterSessionsByQuery(
         [
@@ -135,6 +122,7 @@ describe('sessionList grouping', () => {
         ],
         'worker',
       ),
+      groupingOptions,
     );
 
     expect(groups).toHaveLength(1);
@@ -142,27 +130,17 @@ describe('sessionList grouping', () => {
     expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-1']);
   });
 
-  it('only shows the AI control action for AI-controlled sessions', async () => {
-    const { shouldShowAgentControlAction } = await import('./sessionList');
-
+  it('only shows the AI control action for AI-controlled sessions', () => {
     expect(shouldShowAgentControlAction('agent')).toBe(true);
     expect(shouldShowAgentControlAction('human')).toBe(false);
   });
 
-  it('keeps stored queries inactive until the sidebar filter setting is enabled', async () => {
-    const localStorageMock = {
-      getItem: vi.fn(() => 'worker'),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    };
-    vi.stubGlobal('localStorage', localStorageMock);
-    vi.stubGlobal('document', { addEventListener: vi.fn() });
-    vi.stubGlobal('window', { addEventListener: vi.fn() });
-
-    const stores = await import('../../stores');
-    const state = await import('../../state');
-    const { applySessionFilterSettingChange, initializeSessionList, isSessionFilterActive } =
-      await import('./sessionList');
+  it('keeps stored queries inactive until the sidebar filter setting is enabled', () => {
+    let storedValue = 'worker';
+    let settingsLoaded = false;
+    let filterEnabled = false;
+    let renderCount = 0;
+    const persistedValues: string[] = [];
 
     const filterBar = {
       hidden: false,
@@ -189,35 +167,53 @@ describe('sessionList grouping', () => {
       setAttribute: vi.fn(),
       addEventListener: vi.fn(),
     };
-    state.dom.sessionFilterBar = filterBar as any;
-    state.dom.sessionFilterInput = filterInput as any;
-    state.dom.sessionFilterClear = clearButton as any;
 
-    initializeSessionList();
-    expect(isSessionFilterActive()).toBe(false);
+    const controller = createSessionFilterController({
+      getElements: () => ({
+        filterBar: filterBar as any,
+        filterInput: filterInput as any,
+        filterClear: clearButton as any,
+      }),
+      isEnabled: () => filterEnabled,
+      areSettingsLoaded: () => settingsLoaded,
+      loadStoredFilter: () => storedValue,
+      persistFilter: (value) => {
+        storedValue = value;
+        persistedValues.push(value);
+      },
+      render: () => {
+        renderCount += 1;
+      },
+      translate: (key) => translations[key] ?? key,
+    });
+
+    controller.initialize();
+    expect(controller.isActive()).toBe(false);
     expect(filterBar.hidden).toBe(true);
     expect(clearButton.hidden).toBe(true);
     expect(filterInput.value).toBe('');
+    expect(storedValue).toBe('worker');
 
-    stores.$currentSettings.set({ showSidebarSessionFilter: true } as any);
-    applySessionFilterSettingChange();
-    expect(isSessionFilterActive()).toBe(true);
+    settingsLoaded = true;
+    filterEnabled = true;
+    controller.applySettingChange();
+    expect(controller.isActive()).toBe(true);
     expect(filterBar.hidden).toBe(false);
     expect(clearButton.hidden).toBe(false);
     expect(filterInput.value).toBe('worker');
 
-    stores.$currentSettings.set({ showSidebarSessionFilter: false } as any);
-    applySessionFilterSettingChange();
-    expect(isSessionFilterActive()).toBe(false);
+    filterEnabled = false;
+    controller.applySettingChange();
+    expect(controller.isActive()).toBe(false);
     expect(filterBar.hidden).toBe(true);
     expect(clearButton.hidden).toBe(true);
     expect(filterInput.value).toBe('');
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('midterm.sidebar.sessionFilter');
+    expect(storedValue).toBe('');
+    expect(persistedValues).toContain('');
+    expect(renderCount).toBeGreaterThan(0);
   });
 
-  it('keeps only the requested sidebar item active after rerender normalization', async () => {
-    const { syncSessionItemActiveStates } = await import('./sessionList');
-
+  it('keeps only the requested sidebar item active after rerender normalization', () => {
     const createItem = (sessionId: string, active: boolean) => {
       const classes = new Set(active ? ['session-item', 'active'] : ['session-item']);
       const attributes = new Map<string, string>([['aria-current', active ? 'true' : 'false']]);

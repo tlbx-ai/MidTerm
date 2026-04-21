@@ -189,6 +189,17 @@ export function formatDate(isoDate: string): string {
   }
 }
 
+/**
+ * Shared viewer header contract:
+ * - The surrounding surface chrome owns the header for every viewer type.
+ * - Viewer bodies should start with content, not a renderer-specific top bar.
+ * - Variant metadata belongs in the shared subtitle text so text, binary, and
+ *   future viewers keep the same top alignment.
+ */
+export function formatViewerHeaderSubtitle(path: string, metadata?: string | null): string {
+  return metadata ? `${path} | ${metadata}` : path;
+}
+
 export function isTextFile(ext: string, mime: string, serverIsText?: boolean | null): boolean {
   if (serverIsText != null) return serverIsText;
   if (TEXT_EXTENSIONS.has(ext)) return true;
@@ -233,7 +244,7 @@ export function getLineCount(text: string): number {
   return Math.max(text.split('\n').length, 1);
 }
 
-export function formatBinaryDump(bytes: Uint8Array): string {
+export function formatBinaryDump(bytes: Uint8Array, startOffset = 0): string {
   if (bytes.length === 0) {
     return '';
   }
@@ -249,7 +260,8 @@ export function formatBinaryDump(bytes: Uint8Array): string {
       value >= 0x20 && value <= 0x7e ? String.fromCharCode(value) : '.',
     ).join('');
 
-    lines.push(`${offset.toString(16).toUpperCase().padStart(8, '0')}  ${hex}  ${ascii}`);
+    const absoluteOffset = startOffset + offset;
+    lines.push(`${absoluteOffset.toString(16).toUpperCase().padStart(8, '0')}  ${hex}  ${ascii}`);
   }
 
   return lines.join('\n');
@@ -313,6 +325,7 @@ export function createLineNumberedEditor(
   textarea.className = 'file-viewer-textarea';
   textarea.wrap = 'off';
   textarea.spellcheck = false;
+  let syncingScroll = false;
 
   const updateMetrics = (text: string): void => {
     const lineCount = getLineCount(text);
@@ -325,7 +338,20 @@ export function createLineNumberedEditor(
     updateMetrics(textarea.value);
   });
   textarea.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
     gutter.scrollTop = textarea.scrollTop;
+    syncingScroll = false;
+  });
+  gutter.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
+    textarea.scrollTop = gutter.scrollTop;
+    syncingScroll = false;
   });
 
   const setText = (text: string): void => {
@@ -363,6 +389,7 @@ export function createLineNumberedViewer(
   const pre = document.createElement('pre');
   pre.className = 'file-viewer-text';
   scroller.appendChild(pre);
+  let syncingScroll = false;
 
   const setText = (nextText: string, nextHtml?: string): void => {
     const lineCount = getLineCount(nextText);
@@ -377,7 +404,20 @@ export function createLineNumberedViewer(
   };
 
   scroller.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
     gutter.scrollTop = scroller.scrollTop;
+    syncingScroll = false;
+  });
+  gutter.addEventListener('scroll', () => {
+    if (syncingScroll) {
+      return;
+    }
+    syncingScroll = true;
+    scroller.scrollTop = gutter.scrollTop;
+    syncingScroll = false;
   });
 
   setText(text, html);
@@ -571,54 +611,63 @@ function consumeLineComment(text: string, start: number): number {
   return index;
 }
 
+function tryConsumeHighlightBoundary(
+  text: string,
+  cursor: number,
+): { kind: HighlightSegment['kind']; end: number } | null {
+  const current = text[cursor];
+  const next = text[cursor + 1] ?? '';
+
+  if (current === '"' || current === "'" || current === '`') {
+    return {
+      kind: 'string',
+      end: consumeQuotedString(text, cursor),
+    };
+  }
+
+  if (current === '/' && next === '/') {
+    return {
+      kind: 'comment',
+      end: consumeLineComment(text, cursor),
+    };
+  }
+
+  if (current === '#' && next !== '[' && next !== '(') {
+    return {
+      kind: 'comment',
+      end: consumeLineComment(text, cursor),
+    };
+  }
+
+  if (current === '-' && next === '-') {
+    return {
+      kind: 'comment',
+      end: consumeLineComment(text, cursor),
+    };
+  }
+
+  return null;
+}
+
+function isHighlightBoundary(text: string, index: number): boolean {
+  return tryConsumeHighlightBoundary(text, index) !== null;
+}
+
 function tokenizeHighlightSegments(text: string): HighlightSegment[] {
   const segments: HighlightSegment[] = [];
   let cursor = 0;
 
   while (cursor < text.length) {
-    const current = text[cursor];
-    const next = text[cursor + 1] ?? '';
-
-    if (current === '"' || current === "'" || current === '`') {
-      const end = consumeQuotedString(text, cursor);
-      pushHighlightSegment(segments, 'string', text.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    if (current === '/' && next === '/') {
-      const end = consumeLineComment(text, cursor);
-      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    if (current === '#' && next !== '[' && next !== '(') {
-      const end = consumeLineComment(text, cursor);
-      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    if (current === '-' && next === '-') {
-      const end = consumeLineComment(text, cursor);
-      pushHighlightSegment(segments, 'comment', text.slice(cursor, end));
-      cursor = end;
+    const boundary = tryConsumeHighlightBoundary(text, cursor);
+    if (boundary) {
+      pushHighlightSegment(segments, boundary.kind, text.slice(cursor, boundary.end));
+      cursor = boundary.end;
       continue;
     }
 
     let end = cursor + 1;
     while (end < text.length) {
-      const segmentCurrent = text[end];
-      const segmentNext = text[end + 1] ?? '';
-      if (
-        segmentCurrent === '"' ||
-        segmentCurrent === "'" ||
-        segmentCurrent === '`' ||
-        (segmentCurrent === '/' && segmentNext === '/') ||
-        (segmentCurrent === '#' && segmentNext !== '[' && segmentNext !== '(') ||
-        (segmentCurrent === '-' && segmentNext === '-')
-      ) {
+      if (isHighlightBoundary(text, end)) {
         break;
       }
       end += 1;

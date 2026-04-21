@@ -17,10 +17,12 @@ import type {
   Session,
   MidTermSettingsPublic,
   UpdateInfo,
+  UpdateType,
   AuthStatusResponse,
   ProcessState,
   DisplayLayout,
   ShareAccessMode,
+  ManagerBarQueueEntry,
 } from '../types';
 
 // =============================================================================
@@ -206,6 +208,18 @@ export const $currentSettings = atom<MidTermSettingsPublic | null>(null);
 
 /** Update info from server */
 export const $updateInfo = atom<UpdateInfo | null>(null);
+export const $managerBarQueue = atom<ManagerBarQueueEntry[]>([]);
+
+export interface FrontendRefreshState {
+  clientVersion: string;
+  serverVersion: string;
+  updateType: UpdateType | 'unknown';
+  status: 'available' | 'required';
+  reason: 'server-update';
+}
+
+/** Pending shell refresh state when the server is newer than the live frontend bundle. */
+export const $frontendRefreshState = atom<FrontendRefreshState | null>(null);
 
 /** Auth status from server */
 export const $authStatus = atom<AuthStatusResponse | null>(null);

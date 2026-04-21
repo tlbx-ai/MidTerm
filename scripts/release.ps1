@@ -3,6 +3,11 @@
 .SYNOPSIS
     Creates a new release by bumping version, committing, tagging, and pushing.
 
+.DESCRIPTION
+    The script refuses to reuse a version that already exists as a tag or in fetched version
+    history, and it re-checks remote state immediately before commit/tag to avoid races during
+    long-running preflight verification.
+
 .PARAMETER Bump
     Version bump type: major, minor, or patch
 
@@ -27,13 +32,18 @@
     This is NOT optional. Users deserve to know what changed in each release.
 
 .PARAMETER mthostUpdate
-    MANDATORY: Does this release require updating mthost?
+    MANDATORY: Is this a low-level runtime refresh?
+
+    This is intentionally a single release decision. There is no separate
+    mtagenthost release switch.
 
     Answer 'yes' if ANY of these are true:
       - Changed Ai.Tlbx.MidTerm.TtyHost/ code
+      - Changed Ai.Tlbx.MidTerm.AgentHost/ in a way that must ship to running installs
       - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol code)
       - Changed mux WebSocket binary protocol format
       - Changed named pipe protocol between mt and mthost
+      - Changed Lens runtime IPC/attach contracts
       - Changed session ID encoding/format
       - Changed any IPC mechanism
 
@@ -42,9 +52,10 @@
       - CSS/HTML
       - REST API endpoints (not used by mthost)
       - Web-only C# code (endpoints, auth, settings)
+      - Lens/UI changes that do not require refreshing installed host binaries
 
-    When 'yes': Both mt and mthost versions bumped, terminals restart on update
-    When 'no':  Only mt version bumped, terminals survive the update
+    When 'yes': Full update. Running installs refresh both mthost and mtagenthost.
+    When 'no':  Web-only update. Running installs preserve their current mthost and mtagenthost.
 
 .EXAMPLE
     .\release.ps1 -Bump patch -ReleaseTitle "Fix settings panel closing unexpectedly" -ReleaseNotes @(
@@ -67,7 +78,7 @@
     .\release.ps1 -Bump patch -ReleaseTitle "Fix PTY handle leak on session close" -ReleaseNotes @(
         "Fixed memory leak where PTY handles were not released when closing sessions",
         "Improved cleanup sequence ensures all resources are freed",
-        "Affects mthost - terminals will restart during update"
+        "Affects the low-level host runtimes - terminals and Lens runtimes restart during update"
     ) -mthostUpdate yes
 #>
 
@@ -90,6 +101,134 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$recentTagRefreshCount = 5
+
+function Get-WebVersionFromGitRef {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RefName
+    )
+
+    try {
+        $json = git show "${RefName}:src/version.json" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
+            return $null
+        }
+
+        return (($json | ConvertFrom-Json).web)
+    } catch {
+        return $null
+    }
+}
+
+function Test-GitTagExists {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$TagName
+    )
+
+    git rev-parse -q --verify "refs/tags/$TagName" 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
+function Test-WebVersionExistsInHistory {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version
+    )
+
+    $pattern = '"web"\s*:\s*"' + [regex]::Escape($Version) + '"'
+    $hits = @(git log --all --format="%H" --pickaxe-regex -G $pattern -- src/version.json 2>$null)
+    return $hits.Count -gt 0
+}
+
+function Assert-VersionIsAvailable {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version,
+
+        [string[]]$RefsToCheck = @()
+    )
+
+    $tagName = "v$Version"
+    if (Test-GitTagExists -TagName $tagName) {
+        throw "Target version '$Version' is already tagged as '$tagName'."
+    }
+
+    foreach ($ref in $RefsToCheck) {
+        $refVersion = Get-WebVersionFromGitRef -RefName $ref
+        if ($refVersion -eq $Version) {
+            throw "Target version '$Version' is already present in $ref:src/version.json."
+        }
+    }
+
+    if (Test-WebVersionExistsInHistory -Version $Version) {
+        throw "Target version '$Version' already appears in fetched src/version.json history. Choose a new version instead of reusing it."
+    }
+}
+
+function Assert-RemoteDidNotChange {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RemoteRef,
+
+        [Parameter(Mandatory=$true)]
+        [string]$ExpectedCommit
+    )
+
+    $currentRemoteCommit = git rev-parse $RemoteRef 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentRemoteCommit)) {
+        throw "Could not resolve $RemoteRef while verifying release safety."
+    }
+
+    if ($currentRemoteCommit -ne $ExpectedCommit) {
+        throw "Remote $RemoteRef changed during release verification ($ExpectedCommit -> $currentRemoteCommit). Re-run the release script from the updated branch tip."
+    }
+}
+
+function Get-RecentRemoteTagNames {
+    param(
+        [Parameter(Mandatory=$true)]
+        [int]$Count
+    )
+
+    $tagRefs = @(git ls-remote --tags --refs --sort="-version:refname" origin "v*" 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not list remote tags."
+    }
+
+    $tagNames = foreach ($tagRef in $tagRefs) {
+        if ($tagRef -match 'refs/tags/(?<name>\S+)$') {
+            $Matches.name
+        }
+    }
+
+    return @($tagNames | Select-Object -First $Count)
+}
+
+function Refresh-RemoteState {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string[]]$BranchRefs,
+
+        [int]$RecentTagCount = 5
+    )
+
+    $refspecs = @()
+    foreach ($branchRef in $BranchRefs) {
+        $refspecs += "refs/heads/$branchRef" + ":refs/remotes/origin/$branchRef"
+    }
+
+    $recentTagNames = Get-RecentRemoteTagNames -Count $RecentTagCount
+    foreach ($tagName in $recentTagNames) {
+        $refspecs += "+refs/tags/${tagName}:refs/tags/${tagName}"
+    }
+
+    git fetch origin @refspecs 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not refresh remote branches and recent tags."
+    }
+}
 
 # Ensure we're on main branch
 $currentBranch = git branch --show-current
@@ -143,8 +282,10 @@ if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[
 
 # Ensure we're up to date with remote
 Write-Host "Checking remote status..." -ForegroundColor Cyan
-git fetch origin 2>$null
-if ($LASTEXITCODE -ne 0) {
+try {
+    Refresh-RemoteState -BranchRefs @("main") -RecentTagCount $recentTagRefreshCount
+}
+catch {
     Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
 }
 
@@ -188,6 +329,8 @@ if ($localCommit -ne $remoteCommit) {
     }
 }
 
+$releaseRemoteCommit = git rev-parse origin/main 2>$null
+
 # Files to update
 $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Csproj files read version dynamically from version.json - no paths needed
@@ -219,19 +362,28 @@ switch ($Bump) {
 $newVersion = "$major.$minor.$patch"
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
+try {
+    Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/main")
+} catch {
+    Write-Host ""
+    Write-Host "ERROR: Unsafe release version selection." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    exit 1
+}
+
 # Determine release type
 $isPtyBreaking = $mthostUpdate -eq "yes"
 if ($isPtyBreaking) {
-    Write-Host "Release type: FULL (mt + mthost)" -ForegroundColor Yellow
+    Write-Host "Release type: FULL runtime refresh (running installs replace mthost + mtagenthost)" -ForegroundColor Yellow
 } else {
-    Write-Host "Release type: Web-only updater (release archives still include mthost; running installs keep their current host)" -ForegroundColor Green
+    Write-Host "Release type: Web-only updater (running installs preserve mthost + mtagenthost; archives may still include host binaries)" -ForegroundColor Green
 }
 
 # Update version.json
 $versionJson.web = $newVersion
 if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
-    # Remove webOnly flag for PTY-breaking releases (mthost checksum will be included)
+    # Remove webOnly flag for low-level runtime refreshes.
     if ($versionJson.PSObject.Properties["webOnly"]) {
         $versionJson.PSObject.Properties.Remove("webOnly")
     }
@@ -241,7 +393,7 @@ if ($isPtyBreaking) {
     if ($ptyParts.Count -eq 4) {
         $versionJson.pty = "$($ptyParts[0]).$($ptyParts[1]).$($ptyParts[2])"
     }
-    # Mark as web-only so the updater preserves the installed mthost/checksum contract
+    # Mark as web-only so running installs preserve the currently installed host runtimes.
     $versionJson | Add-Member -NotePropertyName "webOnly" -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
@@ -257,12 +409,56 @@ Write-Host "  Synced: src/npx-launcher/package.json" -ForegroundColor Gray
 if ($isPtyBreaking) {
     Write-Host "  TtyHost: will use pty version from version.json" -ForegroundColor Gray
 } else {
-    Write-Host "  TtyHost: binary still ships in release archives; updater remains web-only" -ForegroundColor DarkGray
+    Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
+}
+
+# Clean frontend preflight (fresh npm install + frontend build in a clean snapshot)
+# before we commit or tag anything.
+Write-Host ""
+Write-Host "Running clean frontend preflight..." -ForegroundColor Cyan
+$frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
+try {
+    & $frontendPreflightScript -Version $newVersion
+    Write-Host "Frontend preflight succeeded." -ForegroundColor Green
+}
+catch {
+    Write-Host ""
+    Write-Host "ERROR: Frontend preflight failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
+    exit 1
+}
+
+# Build verification (catches C# compile issues before committing)
+Write-Host ""
+Write-Host "Running .NET test suite..." -ForegroundColor Cyan
+$dotnetTestSuiteScript = Join-Path $PSScriptRoot "run-dotnet-test-suite.ps1"
+$runtimeBuildVerificationScript = Join-Path $PSScriptRoot "run-runtime-build-verification.ps1"
+try {
+    & $dotnetTestSuiteScript -Configuration Release -WarnAsError
+    Write-Host ".NET tests succeeded." -ForegroundColor Green
+
+    Write-Host ""
+    Write-Host "Running runtime build verification..." -ForegroundColor Cyan
+    & $runtimeBuildVerificationScript -Configuration Release -WarnAsError
+    Write-Host "Runtime build verification succeeded." -ForegroundColor Green
+}
+catch {
+    Write-Host ""
+    Write-Host "ERROR: Release verification failed — aborting release before any git changes." -ForegroundColor Red
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+    git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
+    exit 1
 }
 
 # Git operations
 Write-Host ""
 Write-Host "Committing and tagging..." -ForegroundColor Cyan
+
+Refresh-RemoteState -BranchRefs @("main") -RecentTagCount $recentTagRefreshCount
+
+Assert-RemoteDidNotChange -RemoteRef "origin/main" -ExpectedCommit $releaseRemoteCommit
+Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/main")
 
 git add -A
 if ($LASTEXITCODE -ne 0) { throw "git add failed" }
