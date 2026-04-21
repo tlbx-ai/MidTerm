@@ -38,6 +38,7 @@
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostRealResumeCatalogSmokeTests.cs" Link="MtAgentHostRealResumeCatalogSmokeTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\PathSensitiveEnvironmentCollection.cs" Link="PathSensitiveEnvironmentCollection.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\SessionLensHistoryServiceTests.cs" Link="SessionLensHistoryServiceTests.cs" />
+    <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\TestExecutablePathResolver.cs" Link="TestExecutablePathResolver.cs" />
   </ItemGroup>
 
   <ItemGroup>

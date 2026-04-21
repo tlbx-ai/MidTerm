@@ -28,13 +28,12 @@ internal sealed class FakeCodexPathScope : IDisposable
         var root = Path.Combine(Path.GetTempPath(), "midterm-fake-codex-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
-        var fakeCodexBin = ResolveFakeCodexOutputDirectory();
-        var executableName = OperatingSystem.IsWindows() ? "codex.exe" : "codex";
-        var executablePath = Path.Combine(fakeCodexBin, executableName);
-        if (!File.Exists(executablePath))
-        {
-            throw new InvalidOperationException($"Expected fake Codex executable at '{executablePath}'.");
-        }
+        var executablePath = TestExecutablePathResolver.ResolveExecutablePath(
+            AppContext.BaseDirectory,
+            "Ai.Tlbx.MidTerm.FakeCodex",
+            "codex");
+        var fakeCodexBin = Path.GetDirectoryName(executablePath)
+            ?? throw new InvalidOperationException($"Could not determine fake Codex output directory from '{executablePath}'.");
 
         var originalPath = Environment.GetEnvironmentVariable("PATH");
         var capturePath = Path.Combine(root, "fake-codex-launch.json");
@@ -55,17 +54,5 @@ internal sealed class FakeCodexPathScope : IDisposable
         catch
         {
         }
-    }
-
-    private static string ResolveFakeCodexOutputDirectory()
-    {
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        return Path.Combine(
-            repoRoot,
-            "src",
-            "Ai.Tlbx.MidTerm.FakeCodex",
-            "bin",
-            "Debug",
-            "net10.0");
     }
 }
