@@ -43,10 +43,21 @@ public class TtyHostIntegrationTests
 
     private static string FindTtyHostExe()
     {
+        var projectRoot = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "Ai.Tlbx.MidTerm.TtyHost"));
+        var preferredConfiguration = IsReleaseTestRun() ? "Release" : "Debug";
+        var fallbackConfiguration = preferredConfiguration == "Release" ? "Debug" : "Release";
         var candidates = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Ai.Tlbx.MidTerm.TtyHost", "bin", "Debug", "net10.0", "win-x64", "mthost.exe"),
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Ai.Tlbx.MidTerm.TtyHost", "bin", "Release", "net10.0", "win-x64", "mthost.exe"),
+            Path.Combine(projectRoot, "bin", preferredConfiguration, "net10.0", "win-x64", "mthost.exe"),
+            Path.Combine(projectRoot, "bin", preferredConfiguration, "net10.0", "mthost.exe"),
+            Path.Combine(projectRoot, "bin", fallbackConfiguration, "net10.0", "win-x64", "mthost.exe"),
+            Path.Combine(projectRoot, "bin", fallbackConfiguration, "net10.0", "mthost.exe"),
             @"C:\Program Files\MidTerm\mthost.exe",
         };
 
@@ -60,5 +71,12 @@ public class TtyHostIntegrationTests
         }
 
         return Path.GetFullPath(candidates[0]);
+    }
+
+    private static bool IsReleaseTestRun()
+    {
+        return AppContext.BaseDirectory.Contains(
+            $"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase);
     }
 }
