@@ -31,13 +31,12 @@ internal sealed class FakeClaudePathScope : IDisposable
         var root = Path.Combine(Path.GetTempPath(), "midterm-fake-claude-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
-        var fakeClaudeBin = ResolveFakeClaudeOutputDirectory();
-        var executableName = OperatingSystem.IsWindows() ? "claude.exe" : "claude";
-        var executablePath = Path.Combine(fakeClaudeBin, executableName);
-        if (!File.Exists(executablePath))
-        {
-            throw new InvalidOperationException($"Expected fake Claude executable at '{executablePath}'.");
-        }
+        var executablePath = TestExecutablePathResolver.ResolveExecutablePath(
+            AppContext.BaseDirectory,
+            "Ai.Tlbx.MidTerm.FakeClaude",
+            "claude");
+        var fakeClaudeBin = Path.GetDirectoryName(executablePath)
+            ?? throw new InvalidOperationException($"Could not determine fake Claude output directory from '{executablePath}'.");
 
         var originalPath = Environment.GetEnvironmentVariable("PATH");
         var originalStateDir = Environment.GetEnvironmentVariable(FakeClaudeStateDirVariable);
@@ -59,17 +58,5 @@ internal sealed class FakeClaudePathScope : IDisposable
         catch
         {
         }
-    }
-
-    private static string ResolveFakeClaudeOutputDirectory()
-    {
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        return Path.Combine(
-            repoRoot,
-            "src",
-            "Ai.Tlbx.MidTerm.FakeClaude",
-            "bin",
-            "Debug",
-            "net10.0");
     }
 }

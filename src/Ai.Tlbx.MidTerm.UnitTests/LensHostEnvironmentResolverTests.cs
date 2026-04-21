@@ -123,10 +123,23 @@ public sealed class LensHostEnvironmentResolverTests
             return;
         }
 
-        var profileDirectory = LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(
-            @"C:\Users\johan\AppData\Roaming\npm\codex.cmd");
+        var profileDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var executablePath = Path.Combine(profileDirectory, "AppData", "Roaming", "npm", "codex.cmd");
+        Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
 
-        Assert.Equal(Path.Combine("C:\\", "Users", "johan"), profileDirectory);
+        try
+        {
+            var resolved = LensHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(executablePath);
+
+            Assert.Equal(profileDirectory, resolved);
+        }
+        finally
+        {
+            if (File.Exists(executablePath))
+            {
+                File.Delete(executablePath);
+            }
+        }
     }
 
     [Fact]
