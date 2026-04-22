@@ -160,6 +160,10 @@ export function applySessionFilterSettingChange(): void {
   syncSearchControls();
 }
 
+export function isSessionFilterActive(): boolean {
+  return sessionFilterController.isActive();
+}
+
 export function renderSessionList(): void {
   if (!dom.sessionList) {
     return;

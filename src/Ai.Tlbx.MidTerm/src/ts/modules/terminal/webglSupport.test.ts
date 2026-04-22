@@ -32,7 +32,18 @@ describe('webglSupport', () => {
     expect(shouldUseWebglRenderer(createSettings({ useWebGL: false }))).toBe(false);
   });
 
-  it('keeps WebGL enabled when terminal-controlled cell backgrounds are transparent', () => {
+  it('keeps WebGL enabled when only terminal-controlled cell backgrounds are transparent', () => {
+    expect(
+      shouldUseWebglRenderer(
+        createSettings({
+          terminalTransparency: 0,
+          terminalCellBackgroundTransparency: 35,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps WebGL enabled when terminal-controlled cell backgrounds inherit terminal transparency', () => {
     expect(
       shouldUseWebglRenderer({
         ...createSettings({}),
