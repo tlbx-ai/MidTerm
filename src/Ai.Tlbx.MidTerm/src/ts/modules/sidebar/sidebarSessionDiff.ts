@@ -65,8 +65,8 @@ function getSidebarStructuralSignature(session: Session): string {
     session.name,
     session.manuallyNamed,
     session.shellType,
-    session.currentDirectory,
     session.workspacePath,
+    session.workspacePath ? '' : session.currentDirectory,
     session.spaceId,
     session.isAdHoc,
     session.bookmarkId,
@@ -79,11 +79,6 @@ function getSidebarStructuralSignature(session: Session): string {
     session.surface,
     session.lensResumeThreadId,
     session.hasLensHistory,
-    session.foregroundPid,
-    session.foregroundName,
-    session.foregroundCommandLine,
-    session.foregroundDisplayName,
-    session.foregroundProcessIdentity,
     getAgentAttachPointSignature(session),
     getSupervisorSignature(session),
   ]
@@ -91,9 +86,23 @@ function getSidebarStructuralSignature(session: Session): string {
     .join(FIELD_SEPARATOR);
 }
 
+function getSidebarPatchableContentSignature(session: Session): string {
+  return [
+    session.terminalTitle,
+    session.currentDirectory,
+    session.foregroundPid,
+    session.foregroundName,
+    session.foregroundCommandLine,
+    session.foregroundDisplayName,
+    session.foregroundProcessIdentity,
+  ]
+    .map(normalizeSignatureValue)
+    .join(FIELD_SEPARATOR);
+}
+
 /**
  * Returns null when the sidebar tree needs a full render.
- * Otherwise returns sessions whose volatile terminal title can be patched in place.
+ * Otherwise returns sessions whose volatile display content can be patched in place.
  */
 export function getSidebarFastPathSessionUpdates(
   previous: SessionMap,
@@ -105,7 +114,7 @@ export function getSidebarFastPathSessionUpdates(
     return null;
   }
 
-  const titleChangedSessions: Session[] = [];
+  const contentChangedSessions: Session[] = [];
   for (let index = 0; index < currentIds.length; index += 1) {
     const sessionId = currentIds[index];
     const previousId = previousIds[index];
@@ -126,10 +135,13 @@ export function getSidebarFastPathSessionUpdates(
       return null;
     }
 
-    if ((previousSession.terminalTitle ?? null) !== (currentSession.terminalTitle ?? null)) {
-      titleChangedSessions.push(currentSession);
+    if (
+      getSidebarPatchableContentSignature(previousSession) !==
+      getSidebarPatchableContentSignature(currentSession)
+    ) {
+      contentChangedSessions.push(currentSession);
     }
   }
 
-  return titleChangedSessions;
+  return contentChangedSessions;
 }

@@ -131,6 +131,7 @@ import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
   bindHubSettings,
   createRemoteSession,
+  getHubSidebarRenderSignature,
   initHubRuntime,
   isHubSessionId,
   refreshHubState,
@@ -406,11 +407,16 @@ async function init(): Promise<void> {
   initSessionShareButton();
   initDockState();
   initHubRuntime();
+  let previousHubSidebarSignature = getHubSidebarRenderSignature();
   subscribeHubState(() => {
-    renderSessionList();
-    updateEmptyState();
-    updateMobileTitle();
-    syncMobileTabActionState();
+    const nextHubSidebarSignature = getHubSidebarRenderSignature();
+    if (previousHubSidebarSignature !== nextHubSidebarSignature) {
+      previousHubSidebarSignature = nextHubSidebarSignature;
+      renderSessionList();
+      updateEmptyState();
+      updateMobileTitle();
+      syncMobileTabActionState();
+    }
     renderHubSettings();
   });
 

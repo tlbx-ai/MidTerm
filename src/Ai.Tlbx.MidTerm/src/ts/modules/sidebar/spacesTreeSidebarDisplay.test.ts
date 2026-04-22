@@ -3,6 +3,7 @@ import type { Session } from '../../types';
 
 let domRef: typeof import('../../state').dom | null = null;
 let syncDisplayText: typeof import('./spacesTreeSidebarDisplay').syncSidebarSessionDisplayText;
+let syncActiveState: typeof import('./spacesTreeSidebarDisplay').syncSidebarActiveSessionState;
 
 function makeSession(overrides: Partial<Session>): Session {
   return {
@@ -25,7 +26,9 @@ beforeEach(async () => {
   });
 
   domRef = (await import('../../state')).dom;
-  syncDisplayText = (await import('./spacesTreeSidebarDisplay')).syncSidebarSessionDisplayText;
+  const displayModule = await import('./spacesTreeSidebarDisplay');
+  syncDisplayText = displayModule.syncSidebarSessionDisplayText;
+  syncActiveState = displayModule.syncSidebarActiveSessionState;
 });
 
 afterEach(() => {
@@ -83,5 +86,43 @@ describe('spaces tree sidebar display sync', () => {
     ).toBe(true);
     expect(title.textContent).toBe('worker');
     expect(subtitle.textContent).toBe('Codex ⠙');
+  });
+
+  it('updates active row state without replacing sidebar items', () => {
+    function makeItem(sessionId: string) {
+      const classes = new Set<string>();
+      const attributes = new Map<string, string>();
+      return {
+        dataset: { sessionId },
+        classList: {
+          toggle: (className: string, enabled: boolean) => {
+            if (enabled) {
+              classes.add(className);
+            } else {
+              classes.delete(className);
+            }
+          },
+        },
+        setAttribute: (name: string, value: string) => {
+          attributes.set(name, value);
+        },
+        hasClass: (className: string) => classes.has(className),
+        getAttributeValue: (name: string) => attributes.get(name),
+      };
+    }
+
+    const first = makeItem('s1');
+    const second = makeItem('s2');
+    const host = {
+      querySelectorAll: (selector: string) =>
+        selector === '.session-item[data-session-id]' ? [first, second] : [],
+    };
+    domRef!.sessionList = host as unknown as HTMLElement;
+
+    expect(syncActiveState('s2')).toBe(true);
+    expect(first.hasClass('active')).toBe(false);
+    expect(first.getAttributeValue('aria-current')).toBe('false');
+    expect(second.hasClass('active')).toBe(true);
+    expect(second.getAttributeValue('aria-current')).toBe('true');
   });
 });

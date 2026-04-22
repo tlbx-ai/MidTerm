@@ -45,3 +45,19 @@ export function syncSidebarSessionDisplayText(session: Session): boolean {
 
   return true;
 }
+
+export function syncSidebarActiveSessionState(activeSessionId: string | null): boolean {
+  const host = dom.sessionList;
+  if (!host) {
+    return false;
+  }
+
+  const items = host.querySelectorAll<HTMLElement>('.session-item[data-session-id]');
+  for (const item of items) {
+    const isActive = item.dataset.sessionId === activeSessionId;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-current', isActive ? 'true' : 'false');
+  }
+
+  return true;
+}

@@ -12,6 +12,7 @@ Do not run release, tag, publish, promote, or merge-to-main workflows unless the
 - We do not have a big team continuously revisiting code quality, and we cannot afford to come back later to clean up avoidable leftovers. If a feature change or refactor supersedes logic, helpers, types, config, branches, or APIs, remove that dead code in the same change. Do not leave cleanup debt behind on the assumption that someone will revisit it later.
 - always search if somthing exist first before implementing new features/api surfaces 
 - Midterm is in production, it is used by large teams and needs to be stable and performant 
+- For keyed UI lists/trees, use `src/Ai.Tlbx.MidTerm/src/ts/utils/domReconcile.ts`; content-only hot updates must preserve DOM node identity and full rebuilds are only for structural add/remove/move/filter changes.
 
 Rules:
 

@@ -15,4 +15,21 @@ describe('spacesTreeSidebar wiring', () => {
     expect(locale).not.toContain('"spaces.noSearchMatches"');
     expect(locale).not.toContain('"spaces.sidebarEmpty"');
   });
+
+  it('patches foreground process changes without routing through full tree render', () => {
+    expect(source).toContain('addProcessStateListener(queueSidebarSessionProcessInfoUpdate)');
+    expect(source).not.toContain('addProcessStateListener(queueSidebarTreeRender)');
+  });
+
+  it('does not rebuild the whole sidebar for normal space expand-collapse clicks', () => {
+    expect(source).toContain('patchSpaceNodeExpandedContent(node, machineId, space)');
+    expect(source).toContain('removeSpaceNodeExpandedContent(node)');
+    expect(source).not.toContain('toggleSpaceExpanded(machineId: string | null, spaceId: string');
+  });
+
+  it('reconciles the sidebar tree instead of replacing the host children', () => {
+    expect(source).toContain('reconcileKeyedChildren(host, getSidebarRootItems()');
+    expect(source).toContain('reconcileSidebarSessions');
+    expect(source).not.toContain('host.replaceChildren()');
+  });
 });

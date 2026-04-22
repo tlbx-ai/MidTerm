@@ -58,6 +58,43 @@ describe('sidebar session diff', () => {
     expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([]);
   });
 
+  it('allows foreground-process-only updates to patch existing sidebar rows', () => {
+    const previous = session({ foregroundName: 'pwsh', foregroundCommandLine: 'pwsh' });
+    const current = session({
+      foregroundName: 'codex',
+      foregroundCommandLine: 'codex --model gpt-5.4',
+      foregroundDisplayName: 'codex',
+    });
+
+    expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([current]);
+  });
+
+  it('allows cwd display updates when workspace placement is stable', () => {
+    const previous = session({
+      currentDirectory: 'Q:/repos/MidTerm',
+      workspacePath: 'Q:/repos/MidTerm',
+    });
+    const current = session({
+      currentDirectory: 'Q:/repos/MidTerm/src',
+      workspacePath: 'Q:/repos/MidTerm',
+    });
+
+    expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([current]);
+  });
+
+  it('requires a full render when cwd controls sidebar placement', () => {
+    const previous = session({
+      currentDirectory: 'Q:/repos/MidTerm',
+      workspacePath: null,
+    });
+    const current = session({
+      currentDirectory: 'Q:/repos/MidTerm/src',
+      workspacePath: null,
+    });
+
+    expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toBeNull();
+  });
+
   it('requires a full render when a sidebar structural field changes', () => {
     const previous = session({ terminalTitle: 'build' });
     const current = session({ terminalTitle: 'build ⠋', name: 'worker' });
