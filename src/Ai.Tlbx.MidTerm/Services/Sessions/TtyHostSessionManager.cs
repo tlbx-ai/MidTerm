@@ -805,7 +805,13 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         else
         {
             // Terminal-reported title: store in TerminalTitle field (local only, no IPC)
-            info.TerminalTitle = NormalizeTerminalTitle(info, name);
+            var terminalTitle = NormalizeTerminalTitle(info, name);
+            if (string.Equals(info.TerminalTitle, terminalTitle, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            info.TerminalTitle = terminalTitle;
             OnStateChanged?.Invoke(sessionId);
             NotifyStateChange();
             return true;
