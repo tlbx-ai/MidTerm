@@ -24,6 +24,21 @@ describe('workspace pane transparency wiring', () => {
     expect(css).toContain('background: var(--workspace-pane-chrome-background);');
   });
 
+  it('keeps terminal and Lens panes as the only workspace surface over wallpaper', () => {
+    expect(css).toContain('.main-content {');
+    expect(css).toContain('.terminals-area {');
+    expect(css).toContain('.layout-leaf {');
+    expect(css).toContain(
+      "body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],",
+    );
+    expect(css).toContain('background-color: transparent;');
+    expect(css).toContain('background: transparent;');
+    expect(css).toContain(
+      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
+    );
+    expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
+  });
+
   it('binds the sidebar header and IDE bar to the shared app chrome background', () => {
     expect(css).toContain('--app-chrome-background: var(--bg-terminal);');
     expect(css).toContain(

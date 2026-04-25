@@ -307,7 +307,7 @@
   --terminal-bg: #05050a; /* Alias for compatibility */
   --bg-primary: #0d0e14; /* L: 3.5% - Main canvas */
   --bg-elevated: #161821; /* L: 6.5% - Cards, panels */
-  --bg-sidebar: #0d0e14; /* L: 3.5% - Sidebar */
+  --bg-sidebar: #05050a; /* Sidebar shares the terminal canvas */
   --bg-surface: #242735; /* L: 12.5% - Input fields, dropdowns */
   --bg-input: #242735; /* Alias for compatibility */
   --bg-dropdown: #242735; /* Alias for compatibility */
@@ -323,7 +323,7 @@
   --bg-session-hover: #1c1e2a; /* Subtle hover */
   --bg-session-active: #1c1e2a; /* Active session */
   --bg-settings: #161821; /* Same as bg-elevated */
-  --bg-tertiary: #161821; /* Alias for bg-sidebar */
+  --bg-tertiary: #05050a; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
@@ -336,6 +336,10 @@
     0 0 8px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent),
     0 0 16px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent),
     0 0 28px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent);
+  --sidebar-icon-shadow:
+    drop-shadow(0 0 4px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent))
+    drop-shadow(0 0 10px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent));
   --sidebar-text-shadow-inline-bleed: 8px;
 
   /* === BORDERS === */
@@ -2013,6 +2017,11 @@ body.has-app-background::after {
   align-items: center;
   gap: 2px;
   --session-actions-background: var(--bg-session-hover-opaque, var(--bg-session-hover));
+  --session-action-hover-background: color-mix(
+    in srgb,
+    var(--session-actions-background) 78%,
+    var(--accent-gold) 22%
+  );
   background: linear-gradient(
     to right,
     transparent,
@@ -2162,9 +2171,13 @@ body.has-app-background::after {
 .session-resize:hover,
 .session-rename:hover,
 .session-notes-toggle:hover,
-.session-inject:hover {
-  background-color: var(--accent-gold);
-  color: var(--bg-primary);
+.session-inject:hover,
+.session-undock:hover {
+  background: var(
+    --session-action-hover-background,
+    var(--session-actions-background, var(--bg-session-hover-opaque))
+  );
+  color: var(--text-primary);
 }
 
 .session-control.active:hover {
@@ -2360,7 +2373,7 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: var(--bg-primary);
+  background-color: transparent;
   position: relative;
   overflow: hidden;
 }
@@ -2370,7 +2383,7 @@ body.has-app-background::after {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  background-color: transparent;
 }
 
 .terminal-container {
@@ -2777,7 +2790,7 @@ body.has-app-background::after {
   display: flex;
   min-width: 0;
   min-height: 0;
-  background-color: var(--terminal-bg);
+  background-color: transparent;
 }
 
 .layout-leaf > .session-wrapper {
@@ -4306,6 +4319,7 @@ body.has-app-background::after {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  filter: var(--sidebar-icon-shadow);
 }
 
 .session-filter-bar {
@@ -11231,7 +11245,7 @@ body.shared-session-mode .session-tab-bar {
 
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
-  background: var(--bg-terminal);
+  background: transparent;
 }
 
 .session-wrapper.hidden {

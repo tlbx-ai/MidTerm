@@ -156,6 +156,7 @@ describe('backgroundAppearance', () => {
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
     const terminalCanvasAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-canvas-background'));
+    const sidebarAlpha = alphaOf(rootStyle.getPropertyValue('--bg-sidebar'));
     const terminalUiAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-ui-background'));
     const appChromeAlpha = alphaOf(rootStyle.getPropertyValue('--app-chrome-background'));
     const textInputAlpha = alphaOf(rootStyle.getPropertyValue('--text-input-background'));
@@ -167,6 +168,10 @@ describe('backgroundAppearance', () => {
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(terminalCanvasAlpha).toBeCloseTo(0.4, 5);
+    expect(sidebarAlpha).toBeCloseTo(terminalCanvasAlpha, 5);
+    expect(rootStyle.getPropertyValue('--bg-sidebar')).toBe(
+      rootStyle.getPropertyValue('--terminal-canvas-background'),
+    );
     expect(terminalUiAlpha).toBeCloseTo(0.7, 5);
     expect(appChromeAlpha).toBeCloseTo(0.925, 5);
     expect(textInputAlpha).toBeCloseTo(0.94, 5);

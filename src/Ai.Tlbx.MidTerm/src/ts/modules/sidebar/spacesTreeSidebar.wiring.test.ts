@@ -73,7 +73,12 @@ describe('spacesTreeSidebar wiring', () => {
     expect(css).toContain(
       '--session-actions-background: var(--bg-session-active-opaque, var(--bg-session-active));',
     );
+    expect(css).toContain('--session-action-hover-background: color-mix(');
+    expect(css).toContain('var(--session-actions-background) 78%');
+    expect(css).toContain('var(--accent-gold) 22%');
     expect(css).toContain('background: var(--session-actions-background, transparent);');
+    expect(css).toContain('background: var(\n    --session-action-hover-background,');
+    expect(css).toContain('color: var(--text-primary);');
     expect(css).toContain('width: 30px;');
     expect(css).toContain('height: 30px;');
     expect(css).toContain('right: 0;');

@@ -304,6 +304,8 @@ describe('settings persistence wiring', () => {
     );
     expect(cssSource).toContain('--sidebar-item-text-shadow:');
     expect(cssSource).toContain('text-shadow: var(--sidebar-item-text-shadow);');
+    expect(cssSource).toContain('--sidebar-icon-shadow:');
+    expect(cssSource).toContain('filter: var(--sidebar-icon-shadow);');
     expect(cssSource).toContain(
       '--sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));',
     );
