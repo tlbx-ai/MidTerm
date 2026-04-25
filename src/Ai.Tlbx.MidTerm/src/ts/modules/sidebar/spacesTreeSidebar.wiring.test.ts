@@ -57,7 +57,27 @@ describe('spacesTreeSidebar wiring', () => {
     expect(source).toContain('resizeSessionNotesInput(textarea)');
     expect(source).not.toContain('textarea.value = normalized ??');
     expect(css).toContain('font-family: inherit');
-    expect(css).toContain('max-height: calc((var(--fs-lg) * 1.25 * 5) + 10px)');
+    expect(css).toContain('font-size: var(--fs-sm)');
+    expect(css).toContain('max-height: calc((var(--fs-sm) * 1.3 * 5) + 10px)');
+    expect(css).toContain('overflow-y: hidden;');
+    expect(css).toContain('.session-notes-input:focus');
+    expect(css).toContain('overflow-y: auto;');
+    expect(css).toContain('padding: 5px 0;');
+    expect(css).toContain('text-shadow: var(--sidebar-item-text-shadow);');
+  });
+
+  it('keeps transparent sidebar hover actions on opaque button shells', () => {
+    expect(css).toContain(
+      '--session-actions-background: var(--bg-session-hover-opaque, var(--bg-session-hover));',
+    );
+    expect(css).toContain(
+      '--session-actions-background: var(--bg-session-active-opaque, var(--bg-session-active));',
+    );
+    expect(css).toContain('background: var(--session-actions-background, transparent);');
+    expect(css).toContain('width: 30px;');
+    expect(css).toContain('height: 30px;');
+    expect(css).toContain('right: 0;');
+    expect(css).toContain('padding: 2px 0 2px 12px;');
   });
 
   it('selects the session when notes are activated', () => {
