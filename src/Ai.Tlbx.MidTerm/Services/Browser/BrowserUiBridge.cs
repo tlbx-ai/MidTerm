@@ -110,6 +110,44 @@ public sealed class BrowserUiBridge
         return true;
     }
 
+    public bool RequestClaim(string? sessionId, string? previewName, out string error)
+    {
+        error = "";
+        if (_previewOwnerService is null)
+        {
+            error = "Preview ownership is not available in this MidTerm instance.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            error = "sessionId required";
+            return false;
+        }
+
+        ListenerRegistration[] listeners;
+        lock (_lock)
+        {
+            if (_listeners.Count == 0)
+            {
+                error = "No MidTerm browser UI is connected. Open the owning MidTerm browser tab first; the preview target alone cannot drive /ws/state.";
+                return false;
+            }
+
+            listeners = _listeners.Values.ToArray();
+        }
+
+        var target = SelectClaimListener(listeners);
+        if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
+        {
+            error = "A MidTerm browser UI is connected, but it did not report a browser identity. Reload the MidTerm tab, then retry mt_claim_preview.";
+            return false;
+        }
+
+        _previewOwnerService.Claim(sessionId, previewName, target.BrowserId);
+        return true;
+    }
+
     private bool TryGetTargetListener(
         string? sessionId,
         string? previewName,
@@ -171,6 +209,31 @@ public sealed class BrowserUiBridge
         _previewOwnerService?.Claim(sessionId, previewName, target.BrowserId);
         error = "";
         return true;
+    }
+
+    private ListenerRegistration? SelectClaimListener(ListenerRegistration[] listeners)
+    {
+        if (listeners.Length == 0)
+        {
+            return null;
+        }
+
+        var candidates = listeners.AsEnumerable();
+        var mainBrowserId = _mainBrowserService.GetMainBrowserId();
+        if (!string.IsNullOrWhiteSpace(mainBrowserId))
+        {
+            var mainCandidates = candidates
+                .Where(listener => string.Equals(listener.BrowserId, mainBrowserId, StringComparison.Ordinal))
+                .ToArray();
+            if (mainCandidates.Length > 0)
+            {
+                candidates = mainCandidates;
+            }
+        }
+
+        return candidates
+            .OrderByDescending(listener => listener.ConnectedAtUtc)
+            .FirstOrDefault();
     }
 
     private sealed class ListenerRegistration

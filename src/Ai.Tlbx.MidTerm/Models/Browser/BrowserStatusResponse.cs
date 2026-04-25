@@ -8,8 +8,10 @@ public sealed class BrowserStatusResponse
     public bool HasUiClient { get; init; }
     public bool IsScoped { get; init; }
     public string State { get; init; } = "disconnected";
+    public string BridgePhase { get; init; } = "disconnected";
     public string? ScopeDescription { get; init; }
     public string? StatusMessage { get; init; }
+    public string? RecoveryHint { get; init; }
     public int ConnectedClientCount { get; init; }
     public int TotalConnectedClientCount { get; init; }
     public int ConnectedUiClientCount { get; init; }

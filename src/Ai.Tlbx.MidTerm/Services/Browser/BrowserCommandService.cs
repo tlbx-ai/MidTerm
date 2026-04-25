@@ -232,6 +232,7 @@ public sealed class BrowserCommandService
         {
             headline,
             $"state: {status.State}",
+            $"bridge phase: {status.BridgePhase}",
             $"controllable: {(status.Controllable ? "yes" : "no")}",
             $"scope: {status.ScopeDescription ?? "(global)"}",
             $"target configured: {(status.HasTarget ? "yes" : "no")}",
@@ -261,6 +262,11 @@ public sealed class BrowserCommandService
         if (!string.IsNullOrWhiteSpace(status.StatusMessage))
         {
             lines.Add($"reason: {status.StatusMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(status.RecoveryHint))
+        {
+            lines.Add($"recovery: {status.RecoveryHint}");
         }
 
         if (!status.HasUiClient)
@@ -406,8 +412,23 @@ public sealed class BrowserCommandService
                         hasTarget: hasTarget,
                         hasUiClient: hasUiClient,
                         ambiguous: false),
+                    BridgePhase = ResolveBridgePhase(
+                        connected: false,
+                        controllable: false,
+                        hasTarget: hasTarget,
+                        hasUiClient: hasUiClient,
+                        ambiguous: false,
+                        ownerBrowserId: ownerBrowserId,
+                        ownerConnected: false),
                     ScopeDescription = scopeDescription,
                     StatusMessage = message,
+                    RecoveryHint = BuildRecoveryHint(
+                        hasTarget: hasTarget,
+                        hasUiClient: hasUiClient,
+                        connected: false,
+                        ambiguous: false,
+                        ownerBrowserId: ownerBrowserId,
+                        ownerConnected: false),
                     ConnectedClientCount = 0,
                     TotalConnectedClientCount = 0,
                     ConnectedUiClientCount = connectedUiClientCount,
@@ -453,8 +474,23 @@ public sealed class BrowserCommandService
                         hasTarget: hasTarget,
                         hasUiClient: hasUiClient,
                         ambiguous: false),
+                    BridgePhase = ResolveBridgePhase(
+                        connected: false,
+                        controllable: false,
+                        hasTarget: hasTarget,
+                        hasUiClient: hasUiClient,
+                        ambiguous: false,
+                        ownerBrowserId: ownerBrowserId,
+                        ownerConnected: false),
                     ScopeDescription = scopeDescription,
                     StatusMessage = message,
+                    RecoveryHint = BuildRecoveryHint(
+                        hasTarget: hasTarget,
+                        hasUiClient: hasUiClient,
+                        connected: false,
+                        ambiguous: false,
+                        ownerBrowserId: ownerBrowserId,
+                        ownerConnected: false),
                     ConnectedClientCount = 0,
                     TotalConnectedClientCount = clients.Length,
                     ConnectedUiClientCount = connectedUiClientCount,
@@ -491,8 +527,23 @@ public sealed class BrowserCommandService
                     hasTarget: hasTarget,
                     hasUiClient: hasUiClient,
                     ambiguous: isAmbiguous),
+                BridgePhase = ResolveBridgePhase(
+                    connected: true,
+                    controllable: resolved,
+                    hasTarget: hasTarget,
+                    hasUiClient: hasUiClient,
+                    ambiguous: isAmbiguous,
+                    ownerBrowserId: ownerBrowserId,
+                    ownerConnected: ownerConnected),
                 ScopeDescription = scopeDescription,
                 StatusMessage = statusMessage,
+                RecoveryHint = BuildRecoveryHint(
+                    hasTarget: hasTarget,
+                    hasUiClient: hasUiClient,
+                    connected: true,
+                    ambiguous: isAmbiguous,
+                    ownerBrowserId: ownerBrowserId,
+                    ownerConnected: ownerConnected),
                 ConnectedClientCount = matches.Length,
                 TotalConnectedClientCount = clients.Length,
                 ConnectedUiClientCount = connectedUiClientCount,
@@ -664,6 +715,84 @@ public sealed class BrowserCommandService
         }
 
         return "disconnected";
+    }
+
+    private static string ResolveBridgePhase(
+        bool connected,
+        bool controllable,
+        bool hasTarget,
+        bool hasUiClient,
+        bool ambiguous,
+        string? ownerBrowserId,
+        bool ownerConnected)
+    {
+        if (controllable)
+        {
+            return "ready";
+        }
+
+        if (ambiguous)
+        {
+            return "ambiguous-preview";
+        }
+
+        if (!hasUiClient)
+        {
+            return "no-ui-client";
+        }
+
+        if (!hasTarget)
+        {
+            return "no-target";
+        }
+
+        if (!string.IsNullOrWhiteSpace(ownerBrowserId) && !ownerConnected)
+        {
+            return "owner-offline";
+        }
+
+        if (!connected)
+        {
+            return "preview-frame-disconnected";
+        }
+
+        return "unresolved-preview-client";
+    }
+
+    private static string? BuildRecoveryHint(
+        bool hasTarget,
+        bool hasUiClient,
+        bool connected,
+        bool ambiguous,
+        string? ownerBrowserId,
+        bool ownerConnected)
+    {
+        if (!hasUiClient)
+        {
+            return "Open or reload the owning MidTerm browser tab so /ws/state can receive browser UI instructions.";
+        }
+
+        if (!hasTarget)
+        {
+            return "Run mt_open <url> to configure and dock a preview target.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(ownerBrowserId) && !ownerConnected)
+        {
+            return "Run mt_claim_preview to explicitly assign this preview to the connected MidTerm browser, then retry mt_open or mt_reload.";
+        }
+
+        if (ambiguous)
+        {
+            return "Run the command with --session and --preview, or switch with mt_preview <name>.";
+        }
+
+        if (!connected)
+        {
+            return "The target is configured but the iframe has not attached to /ws/browser; retry mt_open, mt_reload, or inspect the MidTerm browser console.";
+        }
+
+        return null;
     }
 
     private void CancelPendingForClient(string connectionId)

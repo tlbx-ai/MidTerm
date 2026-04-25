@@ -3588,8 +3588,10 @@
           "hasUiClient",
           "isScoped",
           "state",
+          "bridgePhase",
           "scopeDescription",
           "statusMessage",
+          "recoveryHint",
           "connectedClientCount",
           "totalConnectedClientCount",
           "connectedUiClientCount",
@@ -3619,6 +3621,9 @@
           "state": {
             "type": "string"
           },
+          "bridgePhase": {
+            "type": "string"
+          },
           "scopeDescription": {
             "type": [
               "null",
@@ -3626,6 +3631,12 @@
             ]
           },
           "statusMessage": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoveryHint": {
             "type": [
               "null",
               "string"

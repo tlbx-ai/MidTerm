@@ -266,6 +266,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Browser ---
 [JsonSerializable(typeof(BrowserCommandRequest))]
 [JsonSerializable(typeof(BrowserCommandResponse))]
+[JsonSerializable(typeof(BrowserCapabilitiesResponse))]
 [JsonSerializable(typeof(BrowserStatusResponse))]
 [JsonSerializable(typeof(BrowserClientInfo))]
 [JsonSerializable(typeof(BrowserClientInfo[]))]
@@ -291,7 +292,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

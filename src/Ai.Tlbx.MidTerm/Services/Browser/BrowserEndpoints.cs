@@ -22,7 +22,7 @@ public static class BrowserEndpoints
         MapPreviewClientEndpoint(app, previewRegistry, previewOwnerService, previewOriginService, webPreviewService);
         MapStatusEndpoint(app, commandService, webPreviewService, uiBridge);
         MapCliEndpoint(app, commandService, sessionManager, webPreviewService, uiBridge);
-        MapJsonEndpoints(app, commandService, sessionManager, webPreviewService);
+        MapJsonEndpoints(app, commandService, sessionManager, webPreviewService, uiBridge);
 
         if (uiBridge is not null)
         {
@@ -203,7 +203,7 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  claim               Explicitly claim preview ownership for this browser UI\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
@@ -223,6 +223,79 @@ public static class BrowserEndpoints
                     previewId,
                     uiBridge?.ConnectedBrowserCount ?? 0).TrimEnd('\n', '\r');
                 return Results.Text(status);
+            }
+
+            if (command == "claim")
+            {
+                var sessionId = GetFlagValue(args, "--session");
+                var previewName = GetFlagValue(args, "--preview");
+                if (uiBridge is null)
+                {
+                    return Results.Text("Browser UI bridge is not available.\n", statusCode: 409);
+                }
+
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    return Results.Text("sessionId required\n", statusCode: 400);
+                }
+
+                return uiBridge.RequestClaim(sessionId, previewName, out var error)
+                    ? Results.Text($"claimed preview '{previewName ?? WebPreviewService.DefaultPreviewName}' in session '{sessionId}'\n")
+                    : Results.Text(error + "\n", statusCode: 409);
+            }
+
+            if (command == "capabilities")
+            {
+                var sessionId = GetFlagValue(args, "--session");
+                var previewName = GetFlagValue(args, "--preview");
+                var targetUrl = sessionId is not null
+                    ? webPreviewService.GetTargetUrl(sessionId, previewName)
+                    : null;
+                var capabilities = BuildCapabilitiesResponse(
+                    commandService,
+                    webPreviewService,
+                    uiBridge,
+                    sessionId,
+                    previewName,
+                    targetUrl);
+
+                if (HasFlag(args, "--json"))
+                {
+                    return Results.Json(capabilities, AppJsonContext.Default.BrowserCapabilitiesResponse);
+                }
+
+                return Results.Text(BuildCapabilitiesText(capabilities));
+            }
+
+            if (command == "proxylog-summary")
+            {
+                var sessionId = GetFlagValue(args, "--session");
+                var previewName = GetFlagValue(args, "--preview");
+                var limit = GetIntFlag(args, "--limit") ?? 100;
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    return Results.Text("sessionId required\n", statusCode: 400);
+                }
+
+                var entries = webPreviewService.GetLogEntries(sessionId, previewName, limit);
+                return Results.Text(WebPreviewEndpoints.BuildProxyLogSummaryText(entries));
+            }
+
+            if (command == "inspect")
+            {
+                var sessionId = GetFlagValue(args, "--session");
+                var previewName = GetFlagValue(args, "--preview");
+                var includeScreenshot = HasFlag(args, "--screenshot");
+                var text = await BuildInspectTextAsync(
+                    commandService,
+                    sessionManager,
+                    webPreviewService,
+                    uiBridge,
+                    sessionId,
+                    previewName,
+                    includeScreenshot,
+                    ctx.RequestAborted);
+                return Results.Text(text);
             }
 
             var request = ParseCliArgs(command, args);
@@ -258,8 +331,44 @@ public static class BrowserEndpoints
         WebApplication app,
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
-        WebPreviewService webPreviewService)
+        WebPreviewService webPreviewService,
+        BrowserUiBridge? uiBridge)
     {
+        app.MapGet("/api/browser/capabilities", (string? sessionId, string? previewName) =>
+        {
+            var targetUrl = sessionId is not null
+                ? webPreviewService.GetTargetUrl(sessionId, previewName)
+                : null;
+            var response = BuildCapabilitiesResponse(
+                commandService,
+                webPreviewService,
+                uiBridge,
+                sessionId,
+                previewName,
+                targetUrl);
+            return Results.Json(response, AppJsonContext.Default.BrowserCapabilitiesResponse);
+        });
+
+        app.MapPost("/api/browser/claim", (Models.WebPreview.WebPreviewSessionRequest request) =>
+        {
+            if (uiBridge is null)
+            {
+                return Results.Text("Browser UI bridge is not available.\n", statusCode: 409);
+            }
+
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            return uiBridge.RequestClaim(
+                NormalizeOptional(request.SessionId),
+                NormalizeOptional(request.PreviewName),
+                out var error)
+                ? Results.Ok()
+                : Results.Text(error + "\n", statusCode: 409);
+        });
+
         app.MapPost("/api/browser/command", async (BrowserCommandRequest request, HttpContext ctx) =>
         {
             if (string.IsNullOrWhiteSpace(request.Command))
@@ -405,6 +514,210 @@ public static class BrowserEndpoints
             var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
             return ToJsonResult(result);
         });
+    }
+
+    private static BrowserCapabilitiesResponse BuildCapabilitiesResponse(
+        BrowserCommandService commandService,
+        WebPreviewService webPreviewService,
+        BrowserUiBridge? uiBridge,
+        string? sessionId,
+        string? previewName,
+        string? targetUrl)
+    {
+        var normalizedPreview = WebPreviewService.NormalizePreviewName(previewName);
+        var status = commandService.GetStatus(
+            targetUrl,
+            sessionId,
+            normalizedPreview,
+            connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0);
+        return new BrowserCapabilitiesResponse
+        {
+            SessionId = sessionId ?? "",
+            PreviewName = normalizedPreview,
+            Status = status,
+            FastCommands =
+            [
+                "mt_status",
+                "mt_inspect",
+                "mt_outline [depth]",
+                "mt_text [selector]",
+                "mt_query <selector> --text",
+                "mt_exec <js>"
+            ],
+            DiagnosticCommands =
+            [
+                "mt_proxylog_summary [limit]",
+                "mt_proxylog [limit]",
+                "mt_log error",
+                "mt_forms",
+                "mt_links",
+                "mt_screenshot"
+            ],
+            RecoveryCommands =
+            [
+                "mt_claim_preview",
+                "mt_open --claim <url>",
+                "mt_reload",
+                "mt_preview_reset [url]",
+                "mt_clearstate"
+            ],
+            Notes =
+            [
+                "Browser commands require a configured preview target, an attached MidTerm UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
+                "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
+                "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
+            ]
+        };
+    }
+
+    private static string BuildCapabilitiesText(BrowserCapabilitiesResponse capabilities)
+    {
+        var status = capabilities.Status;
+        return string.Join('\n',
+            [
+                "dev browser capabilities",
+                $"session: {capabilities.SessionId}",
+                $"preview: {capabilities.PreviewName}",
+                $"state: {status.State}",
+                $"bridge phase: {status.BridgePhase}",
+                $"controllable: {(status.Controllable ? "yes" : "no")}",
+                $"target: {status.TargetUrl ?? "(none)"}",
+                $"recovery: {status.RecoveryHint ?? "(none)"}",
+                "fast: " + string.Join(", ", capabilities.FastCommands),
+                "diagnostics: " + string.Join(", ", capabilities.DiagnosticCommands),
+                "recovery commands: " + string.Join(", ", capabilities.RecoveryCommands),
+                "notes: " + string.Join(" ", capabilities.Notes)
+            ]) + "\n";
+    }
+
+    private static async Task<string> BuildInspectTextAsync(
+        BrowserCommandService commandService,
+        TtyHostSessionManager sessionManager,
+        WebPreviewService webPreviewService,
+        BrowserUiBridge? uiBridge,
+        string? sessionId,
+        string? previewName,
+        bool includeScreenshot,
+        CancellationToken cancellationToken)
+    {
+        var targetUrl = sessionId is not null
+            ? webPreviewService.GetTargetUrl(sessionId, previewName)
+            : null;
+        var statusText = commandService.GetStatusText(
+            targetUrl,
+            sessionId,
+            previewName,
+            connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0).TrimEnd();
+        var status = commandService.GetStatus(
+            targetUrl,
+            sessionId,
+            previewName,
+            connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0);
+        var lines = new List<string>
+        {
+            "dev browser inspect",
+            statusText,
+            "proxy:",
+            sessionId is null
+                ? "sessionId required for proxy summary"
+                : WebPreviewEndpoints.BuildProxyLogSummaryText(webPreviewService.GetLogEntries(sessionId, previewName, 50)).TrimEnd()
+        };
+
+        if (!status.Controllable)
+        {
+            lines.Add("browser: unavailable");
+            return string.Join('\n', lines) + "\n";
+        }
+
+        var scope = new BrowserCommandRequest
+        {
+            SessionId = sessionId,
+            PreviewName = previewName
+        };
+
+        var pageInfo = await RunBrowserTextCommandAsync(commandService, scope, "exec", value:
+            """
+            (function(){var t=(document.body&&document.body.innerText||"").replace(/\s+/g," ").trim();return JSON.stringify({url:location.href,title:document.title,readyState:document.readyState,text:t.slice(0,1200),links:document.links.length,forms:document.forms.length,images:document.images.length,frames:document.querySelectorAll("iframe,frame").length});})()
+            """,
+            timeout: 3,
+            cancellationToken: cancellationToken);
+        lines.Add("page:");
+        lines.Add(pageInfo);
+
+        var outline = await RunBrowserTextCommandAsync(commandService, scope, "outline", maxDepth: 3, timeout: 3, cancellationToken: cancellationToken);
+        lines.Add("outline:");
+        lines.Add(TrimMultiline(outline, 3000));
+
+        var forms = await RunBrowserTextCommandAsync(commandService, scope, "forms", selector: "form", timeout: 3, cancellationToken: cancellationToken);
+        lines.Add("forms:");
+        lines.Add(TrimMultiline(forms, 2000));
+
+        var errors = await RunBrowserTextCommandAsync(commandService, scope, "log", value: "error", timeout: 3, cancellationToken: cancellationToken);
+        lines.Add("console errors:");
+        lines.Add(TrimMultiline(errors, 2000));
+
+        if (includeScreenshot)
+        {
+            var screenshotResult = await commandService.ExecuteCommandAsync(
+                new BrowserCommandRequest
+                {
+                    Command = "screenshot",
+                    SessionId = sessionId,
+                    PreviewName = previewName,
+                    Timeout = 30
+                },
+                cancellationToken);
+            if (screenshotResult.Success && screenshotResult.Result is not null)
+            {
+                var screenshotPath = await SaveResultToDiskAsync(
+                    "screenshot",
+                    screenshotResult,
+                    new BrowserCommandRequest { SessionId = sessionId, PreviewName = previewName },
+                    sessionManager,
+                    webPreviewService);
+                lines.Add("screenshot:");
+                lines.Add(screenshotPath ?? "(capture succeeded, save failed)");
+            }
+            else
+            {
+                lines.Add("screenshot:");
+                lines.Add(screenshotResult.Error ?? "screenshot failed");
+            }
+        }
+
+        return string.Join('\n', lines) + "\n";
+    }
+
+    private static async Task<string> RunBrowserTextCommandAsync(
+        BrowserCommandService commandService,
+        BrowserCommandRequest scope,
+        string command,
+        string? selector = null,
+        string? value = null,
+        int? maxDepth = null,
+        int timeout = 5,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await commandService.ExecuteCommandAsync(
+            new BrowserCommandRequest
+            {
+                Command = command,
+                Selector = selector,
+                Value = value,
+                MaxDepth = maxDepth,
+                Timeout = timeout,
+                SessionId = scope.SessionId,
+                PreviewName = scope.PreviewName,
+                PreviewId = scope.PreviewId
+            },
+            cancellationToken);
+        return result.Success ? result.Result ?? "" : $"error: {result.Error ?? "command failed"}";
+    }
+
+    private static string TrimMultiline(string value, int maxLength)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..Math.Max(0, maxLength - 1)] + "...";
     }
 
     private static BrowserCommandRequest? ParseCliArgs(string command, List<string> args)

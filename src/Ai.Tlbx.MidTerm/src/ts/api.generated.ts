@@ -3745,8 +3745,10 @@ export interface components {
       hasUiClient: boolean;
       isScoped: boolean;
       state: string;
+      bridgePhase: string;
       scopeDescription: null | string;
       statusMessage: null | string;
+      recoveryHint: null | string;
       /** Format: int32 */
       connectedClientCount: number;
       /** Format: int32 */

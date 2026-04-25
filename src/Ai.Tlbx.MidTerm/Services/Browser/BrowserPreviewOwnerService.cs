@@ -92,6 +92,17 @@ public sealed class BrowserPreviewOwnerService
         }
     }
 
+    public bool TryClaim(string? sessionId, string? previewName, string? browserId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(browserId))
+        {
+            return false;
+        }
+
+        Claim(sessionId, previewName, browserId);
+        return true;
+    }
+
     private readonly record struct PreviewKey(string SessionId, string PreviewName)
     {
         public static PreviewKey Create(string sessionId, string? previewName)

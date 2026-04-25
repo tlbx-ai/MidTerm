@@ -116,6 +116,15 @@ Preview control ownership is now backend-owned per `(sessionId, previewName)` in
 - if the owner disappears and multiple different browsers remain attached, the preview stays non-controllable instead of silently picking one by focus or recency
 - presentation state such as docked vs detached mode, viewport size, and scroll position remains browser-local and is not replicated globally
 
+Agents can explicitly recover from stale preview ownership with `mt_claim_preview` or `mt_open --claim <url>`. The claim path assigns the selected `(sessionId, previewName)` to the connected MidTerm browser UI listener, then normal `open`, `reload`, and browser-command routing use that owner. `mt_status` now includes a compact `bridge phase` field such as `no-ui-client`, `no-target`, `owner-offline`, `preview-frame-disconnected`, `ambiguous-preview`, or `ready`, plus a one-line recovery hint.
+
+For token-efficient discovery and diagnostics, agents should prefer:
+
+- `mt_capabilities` / `mt_capabilities --json` for available commands, current status, and recommended recovery commands
+- `mt_inspect` for status, proxy summary, page metadata, a shallow outline, forms, and console errors in one compact response
+- `mt_inspect --screenshot` when the screenshot path is needed in the same diagnostic pass
+- `mt_proxylog_summary [limit]` for status buckets, websocket totals, slow requests, and recent failures without dumping full headers
+
 When the proxied page leaks root-relative asset URLs outside `/webpreview/{routeKey}` and those URLs collide with MidTerm's own static prefixes (`/js/*`, `/css/*`, `/fonts/*`, `/img/*`, `/locales/*`, `/favicon/*`), MidTerm now treats them as preview traffic when the request referer is a preview route. The only built-in exception today is `/js/html2canvas.min.js`, which remains a local MidTerm asset used by the injected screenshot helper.
 
 ## Embedded MidTerm Guardrails
@@ -189,6 +198,8 @@ MidTerm only auto-updates the stored preview target when a **document/iframe HTM
 `requestCookies` now reflects the effective cookie header MidTerm forwarded from the preview's server-side cookie jar for that upstream URL, not just any explicit `Cookie` header present on the outgoing request object.
 
 CLI: `mt_proxylog [limit]` / `Mt-ProxyLog [-Limit N]`
+
+`GET /api/webpreview/proxylog/summary?limit=N` returns a compact text summary for agent use. CLI: `mt_proxylog_summary [limit]` / `Mt-ProxyLogSummary [-Limit N]`.
 
 Use this as the **first diagnostic step** when a site doesn't work through the proxy.
 
