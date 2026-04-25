@@ -49,4 +49,19 @@ describe('spacesTreeSidebar wiring', () => {
     expect(source).toContain('apiSetSessionNotes(sessionId, notes)');
     expect(source).not.toContain('notesPane.replaceChildren');
   });
+
+  it('keeps note drafts editable while sizing them to their content', () => {
+    expect(source).toContain('textarea.rows = 1');
+    expect(source).toContain('const draft = constrainSessionNotesDraft(textarea.value)');
+    expect(source).toContain('resizeSessionNotesInput(textarea)');
+    expect(source).not.toContain('textarea.value = normalized ??');
+    expect(css).toContain('font-family: inherit');
+    expect(css).toContain('max-height: calc((var(--fs-lg) * 1.25 * 5) + 10px)');
+  });
+
+  it('selects the session when notes are activated', () => {
+    expect(source).toContain('callbacks?.onSelect(entry.id);');
+    expect(source).toContain("textarea.addEventListener('focus'");
+    expect(source).toContain('toggleSessionNotes(entry.id)');
+  });
 });

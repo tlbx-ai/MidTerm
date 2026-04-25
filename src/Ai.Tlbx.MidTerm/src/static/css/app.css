@@ -2103,17 +2103,18 @@ body.has-app-background::after {
 .session-notes-input {
   display: block;
   width: 100%;
-  min-height: calc((var(--fs-xs) * 1.35 * 5) + 10px);
-  max-height: calc((var(--fs-xs) * 1.35 * 5) + 10px);
+  min-height: calc((var(--fs-lg) * 1.25) + 10px);
+  max-height: calc((var(--fs-lg) * 1.25 * 5) + 10px);
   resize: none;
   box-sizing: border-box;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--text-primary);
-  font-family: var(--font-ui-emoji);
-  font-size: var(--fs-xs);
-  line-height: 1.35;
+  font-family: inherit;
+  font-size: var(--fs-lg);
+  line-height: 1.25;
+  overflow-y: auto;
   padding: 5px 6px;
   outline: none;
 }

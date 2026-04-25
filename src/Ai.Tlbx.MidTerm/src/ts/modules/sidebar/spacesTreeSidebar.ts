@@ -1149,6 +1149,7 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     notesButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      callbacks?.onSelect(entry.id);
       toggleSessionNotes(entry.id);
     });
     actions.appendChild(notesButton);
@@ -1193,22 +1194,26 @@ function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
   pane.className = 'session-notes-pane';
   const textarea = document.createElement('textarea');
   textarea.className = 'session-notes-input';
-  textarea.rows = SESSION_NOTES_MAX_LINES;
+  textarea.rows = 1;
   textarea.spellcheck = true;
   textarea.placeholder = t('session.notesPlaceholder');
   textarea.setAttribute('aria-label', t('session.notes'));
   textarea.addEventListener('click', (event) => {
     event.stopPropagation();
   });
+  textarea.addEventListener('focus', () => {
+    callbacks?.onSelect(entry.id);
+  });
   textarea.addEventListener('keydown', (event) => {
     event.stopPropagation();
   });
   textarea.addEventListener('input', () => {
-    const normalized = normalizeSessionNotes(textarea.value);
-    if (textarea.value !== (normalized ?? '')) {
-      textarea.value = normalized ?? '';
+    const draft = constrainSessionNotesDraft(textarea.value);
+    if (textarea.value !== draft) {
+      textarea.value = draft;
     }
-    updateSessionNotes(entry.id, normalized);
+    resizeSessionNotesInput(textarea);
+    updateSessionNotes(entry.id, normalizeSessionNotes(draft));
   });
   pane.appendChild(textarea);
   syncSessionNotesPane(pane, entry);
@@ -1232,6 +1237,7 @@ function syncSessionNotesPane(pane: HTMLDivElement, entry: SidebarSessionRef): v
   if (document.activeElement !== textarea && textarea.value !== (notes ?? '')) {
     textarea.value = notes ?? '';
   }
+  resizeSessionNotesInput(textarea);
 }
 
 function isSessionNotesExpanded(sessionId: string): boolean {
@@ -1320,20 +1326,27 @@ function normalizeSessionNotes(value: string | null | undefined): string | null 
     return null;
   }
 
-  const lines = value
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .slice(0, SESSION_NOTES_MAX_LINES)
-    .map((line) => line.trimEnd());
-  const normalized = lines.join('\n').trim();
+  const normalized = constrainSessionNotesDraft(value).trim();
   if (!normalized) {
     return null;
   }
 
-  return normalized.length <= SESSION_NOTES_MAX_CHARS
-    ? normalized
-    : normalized.slice(0, SESSION_NOTES_MAX_CHARS);
+  return normalized;
+}
+
+function constrainSessionNotesDraft(value: string): string {
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .slice(0, SESSION_NOTES_MAX_LINES)
+    .join('\n')
+    .slice(0, SESSION_NOTES_MAX_CHARS);
+}
+
+function resizeSessionNotesInput(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${String(textarea.scrollHeight)}px`;
 }
 
 function createAdHocSection(): HTMLElement {
