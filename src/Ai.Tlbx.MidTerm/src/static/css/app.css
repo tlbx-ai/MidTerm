@@ -2006,6 +2006,7 @@ body.has-app-background::after {
 
 .session-actions {
   position: absolute;
+  top: 8px;
   right: 8px;
   display: flex;
   align-items: center;
@@ -2092,7 +2093,7 @@ body.has-app-background::after {
 
 .session-notes-pane {
   margin-top: 6px;
-  padding-right: 38px;
+  padding-right: 4px;
 }
 
 .session-notes-pane[hidden] {
@@ -2106,10 +2107,10 @@ body.has-app-background::after {
   max-height: calc((var(--fs-xs) * 1.35 * 5) + 10px);
   resize: none;
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  border: 1px solid transparent;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--bg-input) 84%, transparent);
-  color: var(--text-muted);
+  background: transparent;
+  color: var(--text-primary);
   font-family: var(--font-ui-emoji);
   font-size: var(--fs-xs);
   line-height: 1.35;
@@ -2119,6 +2120,7 @@ body.has-app-background::after {
 
 .session-notes-input:focus {
   border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--bg-input) 84%, transparent);
   color: var(--text-primary);
 }
 

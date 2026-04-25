@@ -1143,7 +1143,7 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     );
     notesButton.setAttribute('aria-label', notesButton.title);
     notesButton.innerHTML = `
-      <span class="session-action-icon">${icon(isSessionNotesExpanded(entry.id) ? 'collapse' : 'expand')}</span>
+      <span class="session-action-icon">${icon('notes')}</span>
       <span class="session-action-label">${escapeHtml(t('session.notes'))}</span>
     `;
     notesButton.addEventListener('click', (event) => {

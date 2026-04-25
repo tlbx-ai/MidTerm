@@ -370,6 +370,7 @@ export const ICONS = {
   undock: '\ue920', // close_fullscreen
   fullscreen: '\ue90c', // expand (open fullscreen)
   inject: '\ue997', // magic-wand (tell AI about MidTerm)
+  notes: '\ue922', // pen-tool
 } as const;
 
 /** Creates an icon span element */
