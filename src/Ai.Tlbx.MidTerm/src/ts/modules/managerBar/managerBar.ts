@@ -318,6 +318,7 @@ function ensureMenuPopover(): void {
   editBtn.addEventListener('click', () => {
     const actionId = openMenuButtonId;
     closeOpenManagerMenus();
+    closeOpenManagerOverflow();
     if (!actionId) {
       return;
     }
@@ -335,6 +336,7 @@ function ensureMenuPopover(): void {
   deleteBtn.addEventListener('click', () => {
     const actionId = openMenuButtonId;
     closeOpenManagerMenus();
+    closeOpenManagerOverflow();
     if (actionId) {
       deleteButton(actionId);
     }
@@ -356,6 +358,14 @@ function ensureOverflowPopover(): void {
   popover.className = 'manager-bar-action-popover manager-bar-overflow-popover hidden';
   popover.addEventListener('click', (event) => {
     const target = resolveEventElement(event.target);
+    const menuButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item-menu');
+    if (menuButton?.dataset.actionId) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleManagerActionMenu(menuButton, menuButton.dataset.actionId);
+      return;
+    }
+
     const actionButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item');
     if (!actionButton?.dataset.actionId) {
       return;
@@ -363,6 +373,7 @@ function ensureOverflowPopover(): void {
 
     event.preventDefault();
     event.stopPropagation();
+    closeOpenManagerMenus();
     closeOpenManagerOverflow();
     runButton(actionButton.dataset.actionId);
   });
@@ -476,15 +487,17 @@ function handleDocumentClickForManagerOverflow(event: MouseEvent): void {
 }
 
 function closeOpenManagerMenus(): boolean {
-  if (!buttonsEl) return false;
-
   let closedAny = false;
-  buttonsEl.querySelectorAll<HTMLElement>('.manager-btn.menu-open').forEach((button) => {
-    button.classList.remove('menu-open');
-    closedAny = true;
-  });
-  buttonsEl
-    .querySelectorAll<HTMLButtonElement>('.manager-btn-menu[aria-expanded="true"]')
+  document
+    .querySelectorAll<HTMLElement>('.manager-btn.menu-open, .manager-bar-overflow-row.menu-open')
+    .forEach((button) => {
+      button.classList.remove('menu-open');
+      closedAny = true;
+    });
+  document
+    .querySelectorAll<HTMLButtonElement>(
+      '.manager-btn-menu[aria-expanded="true"], .manager-bar-overflow-item-menu[aria-expanded="true"]',
+    )
     .forEach((button) => {
       button.setAttribute('aria-expanded', 'false');
     });
@@ -523,7 +536,7 @@ function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): v
     return;
   }
 
-  const button = anchor.closest<HTMLElement>('.manager-btn');
+  const button = anchor.closest<HTMLElement>('.manager-btn, .manager-bar-overflow-row');
   if (!button) {
     return;
   }
@@ -627,12 +640,28 @@ function renderOverflowMenuItems(): void {
       continue;
     }
 
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
-    button.dataset.actionId = action.id;
-    button.textContent = action.label;
-    overflowPopoverEl.appendChild(button);
+    const row = document.createElement('div');
+    row.className = 'manager-bar-overflow-row';
+
+    const runButton = document.createElement('button');
+    runButton.type = 'button';
+    runButton.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
+    runButton.dataset.actionId = action.id;
+    runButton.textContent = action.label;
+
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'manager-bar-action-popover-btn manager-bar-overflow-item-menu';
+    menuButton.dataset.actionId = action.id;
+    menuButton.title = t('session.actions');
+    menuButton.setAttribute('aria-label', t('session.actions'));
+    menuButton.setAttribute('aria-haspopup', 'menu');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.innerHTML = icon('menu');
+
+    row.appendChild(runButton);
+    row.appendChild(menuButton);
+    overflowPopoverEl.appendChild(row);
   }
 
   if (barEl && isMobileLensSurface(barEl)) {

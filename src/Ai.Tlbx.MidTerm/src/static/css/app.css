@@ -10985,8 +10985,30 @@ body.shared-session-mode .session-tab-bar {
   display: none !important;
 }
 
+.manager-bar-overflow-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 220px;
+}
+
 .manager-bar-overflow-item {
-  min-width: 180px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.manager-bar-overflow-item-menu {
+  flex: 0 0 var(--command-bay-control-height, 36px);
+  justify-content: center;
+  min-width: var(--command-bay-control-height, 36px);
+  padding: 0;
+}
+
+.manager-bar-overflow-item-menu:hover,
+.manager-bar-overflow-row.menu-open .manager-bar-overflow-item-menu {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--command-bay-border-strong, transparent);
 }
 
 .manager-bar-add:hover {
