@@ -490,6 +490,27 @@ if (Test-Path $localesSource) {
     }
 }
 
+# SVG image assets -> wwwroot/img/
+$imageSource = Join-Path $StaticSource "img"
+if (Test-Path $imageSource) {
+    $imageDir = Join-Path $WwwRoot "img"
+    if (-not (Test-Path $imageDir)) {
+        New-Item -ItemType Directory -Path $imageDir -Force | Out-Null
+    }
+    Get-ChildItem -Path "$imageSource\*.svg" | ForEach-Object {
+        $dstPath = Join-Path $imageDir $_.Name
+        $result = Process-TextFile -Source $_.FullName -Destination $dstPath -Compress $Publish
+
+        if ($Publish) {
+            $totalSaved += $result.Saved
+            Write-Host "  img/$($_.Name) -> img/$($_.Name).br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host "  img/$($_.Name)" -ForegroundColor DarkGray
+        }
+    }
+}
+
 # Additional JS files (not bundled, e.g. audio worklets) -> wwwroot/js/
 $jsSource = Join-Path $StaticSource "js"
 if (Test-Path $jsSource) {
