@@ -26,6 +26,7 @@ public static class HistoryEndpoints
                 request.CommandLine,
                 request.WorkingDirectory,
                 request.Label,
+                request.Notes,
                 request.DedupeKey,
                 request.LaunchMode,
                 request.Profile,
@@ -69,6 +70,13 @@ public static class HistoryEndpoints
             if (request.Label is not null)
             {
                 if (!historyService.SetLabel(id, request.Label))
+                {
+                    return Results.NotFound();
+                }
+            }
+            if (request.Notes is not null)
+            {
+                if (!historyService.SetNotes(id, request.Notes))
                 {
                     return Results.NotFound();
                 }

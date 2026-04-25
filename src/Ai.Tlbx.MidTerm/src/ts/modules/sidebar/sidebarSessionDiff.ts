@@ -95,6 +95,7 @@ function getSidebarPatchableContentSignature(session: Session): string {
     session.foregroundCommandLine,
     session.foregroundDisplayName,
     session.foregroundProcessIdentity,
+    session.notes,
   ]
     .map(normalizeSignatureValue)
     .join(FIELD_SEPARATOR);

@@ -139,4 +139,40 @@ public sealed class HistoryServiceTests : IDisposable
         Assert.Equal(SessionLaunchOrigins.AdHoc, entry!.LaunchOrigin);
         Assert.Equal(HistorySurfaceTypes.Codex, entry.SurfaceType);
     }
+
+    [Fact]
+    public void RecordEntry_PersistsNotes()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var service = new HistoryService(new SettingsService(_tempDir));
+
+        var id = service.RecordEntry(
+            "Pwsh",
+            "codex",
+            null,
+            @"Q:\repo",
+            notes: "size ownership\ncheck followers");
+
+        Assert.NotNull(id);
+
+        var entry = service.GetEntry(id!);
+        Assert.NotNull(entry);
+        Assert.Equal("size ownership\ncheck followers", entry!.Notes);
+    }
+
+    [Fact]
+    public void SetNotes_NormalizesToFiveLines()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var service = new HistoryService(new SettingsService(_tempDir));
+        var id = service.RecordEntry("Pwsh", "codex", null, @"Q:\repo");
+        Assert.NotNull(id);
+
+        var ok = service.SetNotes(id!, "one\ntwo\nthree\nfour\nfive\nsix");
+
+        Assert.True(ok);
+        Assert.Equal("one\ntwo\nthree\nfour\nfive", service.GetEntry(id!)!.Notes);
+    }
 }

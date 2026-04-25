@@ -24,6 +24,7 @@ public sealed class LaunchEntry
     public string WorkingDirectory { get; set; } = "";
     public bool IsStarred { get; set; }
     public string? Label { get; set; }
+    public string? Notes { get; set; }
     public DateTime LastUsed { get; set; }
     public int Order { get; set; }
     public string LaunchMode { get; set; } = LaunchEntryLaunchModes.Terminal;

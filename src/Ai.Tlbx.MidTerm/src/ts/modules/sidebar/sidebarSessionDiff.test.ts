@@ -69,6 +69,13 @@ describe('sidebar session diff', () => {
     expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([current]);
   });
 
+  it('allows notes-only updates to patch existing sidebar rows', () => {
+    const previous = session({ notes: null });
+    const current = session({ notes: 'investigate resize' });
+
+    expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([current]);
+  });
+
   it('allows cwd display updates when workspace placement is stable', () => {
     const previous = session({
       currentDirectory: 'Q:/repos/MidTerm',

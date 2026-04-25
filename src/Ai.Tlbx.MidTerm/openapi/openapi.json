@@ -933,6 +933,45 @@
         }
       }
     },
+    "/api/sessions/{id}/notes": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSessionNotesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfoDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/control": {
       "put": {
         "tags": [
@@ -3898,6 +3937,12 @@
               "string"
             ]
           },
+          "notes": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "launchMode": {
             "type": "string"
           },
@@ -4378,6 +4423,12 @@
               "null",
               "string"
             ]
+          },
+          "notes": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -4495,6 +4546,7 @@
           "workingDirectory",
           "isStarred",
           "label",
+          "notes",
           "lastUsed",
           "order",
           "launchMode",
@@ -4530,6 +4582,12 @@
             "type": "boolean"
           },
           "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "notes": {
             "type": [
               "null",
               "string"
@@ -5766,6 +5824,7 @@
           "shellType",
           "name",
           "terminalTitle",
+          "notes",
           "manuallyNamed",
           "currentDirectory",
           "foregroundPid",
@@ -5829,6 +5888,12 @@
             ]
           },
           "terminalTitle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "notes": {
             "type": [
               "null",
               "string"
@@ -6263,6 +6328,17 @@
         "properties": {
           "agentControlled": {
             "type": "boolean"
+          }
+        }
+      },
+      "SetSessionNotesRequest": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

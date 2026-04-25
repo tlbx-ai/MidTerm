@@ -99,6 +99,10 @@ public static class SessionEndpointDefinitions
             await handler.RenameSessionAsync(id, request, auto))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPut("/api/sessions/{id}/notes", async (string id, SetSessionNotesRequest request, ISessionHandler handler) =>
+            await handler.SetSessionNotesAsync(id, request))
+            .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");
+
         app.MapPut("/api/sessions/{id}/control", async (string id, SetSessionControlRequest request, ISessionHandler handler) =>
             await handler.SetSessionControlAsync(id, request))
             .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");

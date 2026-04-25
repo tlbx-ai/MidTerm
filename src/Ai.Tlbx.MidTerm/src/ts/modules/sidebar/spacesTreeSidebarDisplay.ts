@@ -41,9 +41,27 @@ export function syncSidebarSessionDisplayText(session: Session): boolean {
     } else {
       subtitle?.remove();
     }
+
+    syncSidebarSessionNotes(item, session.notes);
   }
 
   return true;
+}
+
+function syncSidebarSessionNotes(item: HTMLElement, value: string | null | undefined): void {
+  const notes = normalizeSessionNotes(value);
+  const notesInput = item.querySelector<HTMLTextAreaElement>('.session-notes-input');
+  if (notesInput && document.activeElement !== notesInput && notesInput.value !== (notes ?? '')) {
+    notesInput.value = notes ?? '';
+  }
+  item
+    .querySelector<HTMLButtonElement>('.session-notes-toggle')
+    ?.classList.toggle('has-notes', notes !== null);
+}
+
+function normalizeSessionNotes(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
 }
 
 export function syncSidebarActiveSessionState(activeSessionId: string | null): boolean {

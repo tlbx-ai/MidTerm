@@ -39,6 +39,7 @@ internal sealed class SessionRegistry
     public ConcurrentDictionary<string, string> TmuxParentSessions { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, string> BookmarkLinks { get; } = new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, string> SessionNotes { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new(StringComparer.Ordinal);
 
@@ -162,6 +163,7 @@ internal sealed class SessionRegistry
                         ShellType = s.ShellType,
                         Name = s.Name,
                         TerminalTitle = s.TerminalTitle,
+                        Notes = SessionNotes.TryGetValue(s.Id, out var notes) ? notes : null,
                         ManuallyNamed = s.ManuallyNamed,
                         CurrentDirectory = s.CurrentDirectory,
                         ForegroundPid = s.ForegroundPid,
@@ -197,6 +199,7 @@ internal sealed class SessionRegistry
         HiddenSessions.TryRemove(sessionId, out _);
         TmuxParentSessions.TryRemove(sessionId, out _);
         BookmarkLinks.TryRemove(sessionId, out _);
+        SessionNotes.TryRemove(sessionId, out _);
         AgentControlledSessions.TryRemove(sessionId, out _);
         LensOnlySessions.TryRemove(sessionId, out _);
         LaunchOrigins.TryRemove(sessionId, out _);
@@ -229,6 +232,49 @@ internal sealed class SessionRegistry
         BookmarkLinks[sessionId] = bookmarkId;
         NotifyStateChange();
         return true;
+    }
+
+    public bool SetSessionNotes(string sessionId, string? notes)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeSessionNotes(notes);
+        if (normalized is null)
+        {
+            SessionNotes.TryRemove(sessionId, out _);
+        }
+        else
+        {
+            SessionNotes[sessionId] = normalized;
+        }
+
+        NotifyStateChange();
+        return true;
+    }
+
+    internal static string? NormalizeSessionNotes(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return null;
+        }
+
+        var lines = notes.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None)
+            .Take(5)
+            .Select(static line => line.TrimEnd())
+            .ToArray();
+        var normalized = string.Join('\n', lines).Trim();
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        return normalized.Length <= 600 ? normalized : normalized[..600];
     }
 
     public bool SetAgentControlled(string sessionId, bool agentControlled)

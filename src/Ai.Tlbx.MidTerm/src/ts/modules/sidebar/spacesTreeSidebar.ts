@@ -1,8 +1,20 @@
 /* eslint-disable max-lines -- Existing large sidebar owner; keyed reconciliation keeps DOM identity without a broader module split. */
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
+import {
+  patchHistoryEntry,
+  setSessionNotes as apiSetSessionNotes,
+  type HistoryPatchRequest,
+} from '../../api/client';
 import { icon } from '../../constants';
 import { dom } from '../../state';
-import { $activeSessionId, $currentSettings, $sessionList, $settingsOpen } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $sessionList,
+  $settingsOpen,
+  getSession,
+  setSession,
+} from '../../stores';
 import { getLaunchableHubMachines, getHubSidebarSections } from '../hub/runtime';
 import { t } from '../i18n';
 import { addProcessStateListener, getForegroundInfo } from '../process';
@@ -113,10 +125,15 @@ let queuedRenderFrameId: number | null = null;
 const queuedProcessInfoSessionIds = new Set<string>();
 let actionPopoverEl: HTMLDivElement | null = null;
 let chooserPopoverEl: HTMLDivElement | null = null;
+const expandedNotesSessionIds = new Set<string>();
+const pendingNoteSaveTimers = new Map<string, number>();
 
 const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
 const SPACE_EXPANDED_PREFIX = 'midterm.sidebar.spaceExpanded.';
 const TREE_TTL_MS = 15_000;
+const SESSION_NOTES_SAVE_DELAY_MS = 350;
+const SESSION_NOTES_MAX_LINES = 5;
+const SESSION_NOTES_MAX_CHARS = 600;
 
 export function getSessionDisplayName(session: Session): string {
   return getLegacySessionDisplayName(session);
@@ -897,6 +914,8 @@ function createSidebarSessionNode(
   syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, entry);
   info.appendChild(processInfo);
 
+  info.appendChild(createSessionNotesPane(entry));
+
   item.appendChild(info);
   item.appendChild(createSidebarSessionActions(entry));
   return item;
@@ -919,6 +938,16 @@ function patchSidebarSessionNode(
   const processInfo = item.querySelector<HTMLElement>('.session-process-info');
   if (processInfo) {
     syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, entry);
+  }
+
+  let notesPane = item.querySelector<HTMLDivElement>('.session-notes-pane');
+  const info = item.querySelector<HTMLElement>('.session-info');
+  if (!notesPane && info) {
+    notesPane = createSessionNotesPane(entry);
+    info.appendChild(notesPane);
+  }
+  if (notesPane) {
+    syncSessionNotesPane(notesPane, entry);
   }
 
   const actions = item.querySelector<HTMLDivElement>('.session-actions');
@@ -1055,7 +1084,12 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
       $currentSettings.get()?.showBookmarks !== false,
       $currentSettings.get()?.allowAdHocSessionBookmarks === true,
     ),
+    isSessionNotesExpanded(entry.id),
+    !!normalizeSessionNotes(entry.session.notes),
     t('session.pinToQuickLaunch'),
+    t('session.notes'),
+    t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
+    t('session.rename'),
     t('session.close'),
   ].join('\u001f');
 }
@@ -1099,6 +1133,43 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     actions.appendChild(pinButton);
   }
 
+  if (entry.machineId === null) {
+    const notesButton = document.createElement('button');
+    notesButton.className = `session-notes-toggle${normalizeSessionNotes(entry.session.notes) ? ' has-notes' : ''}`;
+    notesButton.setAttribute('role', 'menuitem');
+    notesButton.setAttribute('aria-expanded', isSessionNotesExpanded(entry.id) ? 'true' : 'false');
+    notesButton.title = t(
+      isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes',
+    );
+    notesButton.setAttribute('aria-label', notesButton.title);
+    notesButton.innerHTML = `
+      <span class="session-action-icon">${icon(isSessionNotesExpanded(entry.id) ? 'collapse' : 'expand')}</span>
+      <span class="session-action-label">${escapeHtml(t('session.notes'))}</span>
+    `;
+    notesButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSessionNotes(entry.id);
+    });
+    actions.appendChild(notesButton);
+  }
+
+  const renameButton = document.createElement('button');
+  renameButton.className = 'session-rename';
+  renameButton.setAttribute('role', 'menuitem');
+  renameButton.title = t('session.rename');
+  renameButton.setAttribute('aria-label', t('session.rename'));
+  renameButton.innerHTML = `
+    <span class="session-action-icon">${icon('rename')}</span>
+    <span class="session-action-label">${escapeHtml(t('session.rename'))}</span>
+  `;
+  renameButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks?.onRename(entry.id);
+  });
+  actions.appendChild(renameButton);
+
   const closeButton = document.createElement('button');
   closeButton.className = 'session-close';
   closeButton.setAttribute('role', 'menuitem');
@@ -1115,6 +1186,154 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
   });
 
   actions.appendChild(closeButton);
+}
+
+function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
+  const pane = document.createElement('div');
+  pane.className = 'session-notes-pane';
+  const textarea = document.createElement('textarea');
+  textarea.className = 'session-notes-input';
+  textarea.rows = SESSION_NOTES_MAX_LINES;
+  textarea.spellcheck = true;
+  textarea.placeholder = t('session.notesPlaceholder');
+  textarea.setAttribute('aria-label', t('session.notes'));
+  textarea.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+  textarea.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+  });
+  textarea.addEventListener('input', () => {
+    const normalized = normalizeSessionNotes(textarea.value);
+    if (textarea.value !== (normalized ?? '')) {
+      textarea.value = normalized ?? '';
+    }
+    updateSessionNotes(entry.id, normalized);
+  });
+  pane.appendChild(textarea);
+  syncSessionNotesPane(pane, entry);
+  return pane;
+}
+
+function syncSessionNotesPane(pane: HTMLDivElement, entry: SidebarSessionRef): void {
+  const expanded = isSessionNotesExpanded(entry.id);
+  const notes = normalizeSessionNotes(entry.session.notes);
+  pane.hidden = !expanded;
+  pane.classList.toggle('open', expanded);
+  pane.dataset.sessionId = entry.id;
+
+  const textarea = pane.querySelector<HTMLTextAreaElement>('.session-notes-input');
+  if (!textarea) {
+    return;
+  }
+
+  textarea.placeholder = t('session.notesPlaceholder');
+  textarea.setAttribute('aria-label', t('session.notes'));
+  if (document.activeElement !== textarea && textarea.value !== (notes ?? '')) {
+    textarea.value = notes ?? '';
+  }
+}
+
+function isSessionNotesExpanded(sessionId: string): boolean {
+  return expandedNotesSessionIds.has(sessionId);
+}
+
+function toggleSessionNotes(sessionId: string): void {
+  const nextExpanded = !isSessionNotesExpanded(sessionId);
+  if (nextExpanded) {
+    expandedNotesSessionIds.add(sessionId);
+  } else {
+    expandedNotesSessionIds.delete(sessionId);
+  }
+
+  const item = dom.sessionList?.querySelector<HTMLElement>(
+    `.session-item[data-session-id="${CSS.escape(sessionId)}"]`,
+  );
+  if (!item) {
+    renderSessionList();
+    return;
+  }
+
+  const entry = getAllSidebarSessions().find((candidate) => candidate.id === sessionId);
+  if (!entry) {
+    return;
+  }
+
+  const actions = item.querySelector<HTMLDivElement>('.session-actions');
+  if (actions) {
+    delete actions.dataset.actionsSignature;
+    patchSidebarSessionActions(actions, entry);
+  }
+
+  const pane = item.querySelector<HTMLDivElement>('.session-notes-pane');
+  if (pane) {
+    syncSessionNotesPane(pane, entry);
+  }
+
+  if (nextExpanded) {
+    const input = item.querySelector<HTMLTextAreaElement>('.session-notes-input');
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+}
+
+function updateSessionNotes(sessionId: string, notes: string | null): void {
+  const session = getSession(sessionId);
+  if (!session) {
+    return;
+  }
+
+  if ((session.notes ?? null) !== notes) {
+    setSession({ ...session, notes });
+  }
+
+  const existingTimer = pendingNoteSaveTimers.get(sessionId);
+  if (existingTimer !== undefined) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timer = window.setTimeout(() => {
+    pendingNoteSaveTimers.delete(sessionId);
+    apiSetSessionNotes(sessionId, notes)
+      .then((updatedSession) => {
+        const currentSession = getSession(sessionId);
+        if (currentSession) {
+          setSession({ ...currentSession, notes: updatedSession.notes ?? null });
+          if (currentSession.bookmarkId) {
+            patchHistoryEntry(currentSession.bookmarkId, {
+              notes: updatedSession.notes ?? '',
+            } as HistoryPatchRequest).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {
+        // Keep the local note visible; a later edit or state refresh can retry/resolve it.
+      });
+  }, SESSION_NOTES_SAVE_DELAY_MS);
+  pendingNoteSaveTimers.set(sessionId, timer);
+}
+
+function normalizeSessionNotes(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const lines = value
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .slice(0, SESSION_NOTES_MAX_LINES)
+    .map((line) => line.trimEnd());
+  const normalized = lines.join('\n').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.length <= SESSION_NOTES_MAX_CHARS
+    ? normalized
+    : normalized.slice(0, SESSION_NOTES_MAX_CHARS);
 }
 
 function createAdHocSection(): HTMLElement {

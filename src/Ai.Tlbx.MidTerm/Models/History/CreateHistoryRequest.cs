@@ -9,6 +9,7 @@ public sealed class CreateHistoryRequest
     public string? DedupeKey { get; init; }
     public bool IsStarred { get; init; }
     public string? Label { get; init; }
+    public string? Notes { get; init; }
     public string LaunchMode { get; init; } = LaunchEntryLaunchModes.Terminal;
     public string? Profile { get; init; }
     public string? LaunchOrigin { get; init; }

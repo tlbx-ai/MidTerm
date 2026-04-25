@@ -599,6 +599,7 @@ export function createSessionActionHandlers({
       workingDirectory: target.workingDirectory,
       isStarred: true,
       label,
+      notes: session.notes ?? null,
       dedupeKey: target.dedupeKey,
       launchMode: target.historyMode.launchMode,
       profile: target.historyMode.profile,

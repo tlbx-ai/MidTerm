@@ -66,6 +66,45 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetSessionNotes_ExistingSession_PopulatesSessionListNotes()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetSessionNotes("s1", "investigate resize\nfollow-up");
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("investigate resize\nfollow-up", dto.Notes);
+    }
+
+    [Fact]
+    public async Task SetSessionNotes_NormalizesToFiveLines()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        manager.SetSessionNotes("s1", "one\ntwo\nthree\nfour\nfive\nsix");
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("one\ntwo\nthree\nfour\nfive", dto.Notes);
+    }
+
+    [Fact]
+    public async Task SetSessionNotes_BlankClearsNotes()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+        manager.SetSessionNotes("s1", "keep this");
+
+        var ok = manager.SetSessionNotes("s1", " ");
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Null(dto.Notes);
+    }
+
+    [Fact]
     public async Task SetAgentControlled_UnknownSession_ReturnsFalse()
     {
         await using var manager = CreateManager();

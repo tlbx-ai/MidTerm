@@ -2042,6 +2042,7 @@ body.has-app-background::after {
 .session-pin,
 .session-resize,
 .session-rename,
+.session-notes-toggle,
 .session-inject,
 .session-undock,
 .session-close {
@@ -2083,6 +2084,42 @@ body.has-app-background::after {
 
 .session-pin.pinned {
   color: var(--accent-gold);
+}
+
+.session-notes-toggle.has-notes {
+  color: var(--accent-blue);
+}
+
+.session-notes-pane {
+  margin-top: 6px;
+  padding-right: 38px;
+}
+
+.session-notes-pane[hidden] {
+  display: none;
+}
+
+.session-notes-input {
+  display: block;
+  width: 100%;
+  min-height: calc((var(--fs-xs) * 1.35 * 5) + 10px);
+  max-height: calc((var(--fs-xs) * 1.35 * 5) + 10px);
+  resize: none;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-input) 84%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-ui-emoji);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  padding: 5px 6px;
+  outline: none;
+}
+
+.session-notes-input:focus {
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
 }
 
 .session-pin.save-success {
@@ -3592,6 +3629,7 @@ body.has-app-background::after {
   .session-actions .session-pin,
   .session-actions .session-resize,
   .session-actions .session-rename,
+  .session-actions .session-notes-toggle,
   .session-actions .session-inject,
   .session-actions .session-undock,
   .session-actions .session-close {
@@ -3640,6 +3678,11 @@ body.has-app-background::after {
     color: var(--text-secondary);
   }
 
+  .session-actions .session-notes-toggle .session-action-icon {
+    background: var(--accent-blue-15);
+    color: var(--accent-blue);
+  }
+
   .session-actions .session-undock .session-action-icon {
     background: var(--accent-green-10);
     color: var(--accent-green);
@@ -3663,6 +3706,11 @@ body.has-app-background::after {
 
   .session-actions .session-rename:active {
     background-color: var(--btn-secondary-hover);
+  }
+
+  .session-actions .session-notes-toggle:active {
+    background-color: var(--accent-blue);
+    color: var(--text-on-accent);
   }
 
   .session-actions .session-undock:active {

@@ -823,6 +823,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetBookmarkId(sessionId, bookmarkId);
     }
 
+    public bool SetSessionNotes(string sessionId, string? notes)
+    {
+        return _registry.SetSessionNotes(sessionId, notes);
+    }
+
     public bool SetAgentControlled(string sessionId, bool agentControlled)
     {
         return _registry.SetAgentControlled(sessionId, agentControlled);

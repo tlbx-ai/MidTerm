@@ -88,6 +88,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LensWsTurnStartedMessage))]
 [JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(RenameSessionRequest))]
+[JsonSerializable(typeof(SetSessionNotesRequest))]
 [JsonSerializable(typeof(SetSessionControlRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]

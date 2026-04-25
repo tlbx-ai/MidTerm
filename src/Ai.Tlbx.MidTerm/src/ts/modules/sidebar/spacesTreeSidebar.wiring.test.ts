@@ -32,4 +32,21 @@ describe('spacesTreeSidebar wiring', () => {
     expect(source).toContain('reconcileSidebarSessions');
     expect(source).not.toContain('host.replaceChildren()');
   });
+
+  it('keeps session row actions for rename and collapsible notes', () => {
+    expect(source).toContain("renameButton.className = 'session-rename'");
+    expect(source).toContain('callbacks?.onRename(entry.id)');
+    expect(source).toContain('notesButton.className = `session-notes-toggle');
+    expect(source).toContain("notesButton.setAttribute('aria-expanded'");
+    expect(source).toContain('toggleSessionNotes(entry.id)');
+    expect(css).toContain('.session-notes-pane');
+    expect(css).toContain('.session-notes-input');
+    expect(locale).toContain('"session.notes"');
+  });
+
+  it('patches session notes inside keyed rows instead of rebuilding the tree', () => {
+    expect(source).toContain('syncSessionNotesPane(notesPane, entry)');
+    expect(source).toContain('apiSetSessionNotes(sessionId, notes)');
+    expect(source).not.toContain('notesPane.replaceChildren');
+  });
 });
