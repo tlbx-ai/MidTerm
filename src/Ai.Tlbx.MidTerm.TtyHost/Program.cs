@@ -1293,9 +1293,30 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public async Task StartReadLoopAsync(CancellationToken ct)
+    public Task StartReadLoopAsync(CancellationToken ct)
+    {
+        return Task.Factory.StartNew(
+            () => RunReadLoop(ct),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+    }
+
+    private void RunReadLoop(CancellationToken ct)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(65536);
+        using var cancelRegistration = ct.Register(static state =>
+        {
+            try
+            {
+                ((IPtyConnection)state!).Dispose();
+            }
+            catch
+            {
+                // Best-effort cancellation for blocking PTY reads during shutdown.
+            }
+        }, _pty);
+
         try
         {
             while (!ct.IsCancellationRequested)
@@ -1303,14 +1324,23 @@ internal sealed class TerminalSession : IDisposable
                 int bytesRead;
                 try
                 {
-                    bytesRead = await _pty.ReaderStream.ReadAsync(buffer, ct).ConfigureAwait(false);
+                    bytesRead = _pty.ReaderStream.Read(buffer, 0, buffer.Length);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
                 catch (IOException ex)
                 {
+                    if (ct.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
                     Log.Exception(ex, "TerminalSession.ReadLoop");
                     break;
                 }
