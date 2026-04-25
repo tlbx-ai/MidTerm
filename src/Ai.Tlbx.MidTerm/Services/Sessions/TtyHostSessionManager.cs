@@ -59,6 +59,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string, int>? OnSessionCreated;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
     public event Action<string, string>? OnCwdChanged;
+    public event Action<string, TtyHostInputTraceReport>? OnInputTrace;
 
     public TtyHostSessionManager(
         string? expectedVersion = null,
@@ -734,6 +735,20 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
+    public async Task<TtyHostInputWriteTiming?> SendInputWithTraceAsync(
+        string sessionId,
+        ReadOnlyMemory<byte> data,
+        uint traceId,
+        CancellationToken ct = default)
+    {
+        if (!_clients.TryGetValue(sessionId, out var client))
+        {
+            return null;
+        }
+
+        return await client.SendInputWithTraceAsync(data, traceId, ct).ConfigureAwait(false);
+    }
+
     public async Task<byte[]?> PingAsync(string sessionId, byte[] pingData, CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
@@ -944,6 +959,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         client.OnStateChanged += id => _ = HandleClientStateChangedAsync(id);
         client.OnReconnected += HandleClientReconnected;
         client.OnDataLoss += HandleClientDataLoss;
+        client.OnInputTrace += HandleClientInputTrace;
     }
 
     private void HandleClientOutput(string sessionId, ulong sequenceStart, int cols, int rows, ReadOnlyMemory<byte> data)
@@ -966,6 +982,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
         state.DataLossCount++;
         state.LastDataLossReason = payload.Reason;
+    }
+
+    private void HandleClientInputTrace(string sessionId, TtyHostInputTraceReport report)
+    {
+        OnInputTrace?.Invoke(sessionId, report);
     }
 
     /// <summary>

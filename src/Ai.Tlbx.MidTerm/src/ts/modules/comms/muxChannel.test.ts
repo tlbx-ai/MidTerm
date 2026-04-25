@@ -6,6 +6,8 @@ import {
   connectMuxWebSocket,
   encodeSessionId,
   resetMuxChannelRuntimeForTests,
+  sendInput,
+  setInputLatencyTracingEnabled,
   updateTerminalVisibility,
 } from './muxChannel';
 
@@ -80,7 +82,7 @@ class MockWebSocket {
 interface Harness {
   encodeSessionId: typeof encodeSessionId;
   updateTerminalVisibility: typeof updateTerminalVisibility;
-  sessionTerminals: typeof import('../../state')['sessionTerminals'];
+  sessionTerminals: (typeof import('../../state'))['sessionTerminals'];
   stores: typeof stores;
   constants: typeof constants;
   ws: MockWebSocket;
@@ -138,7 +140,7 @@ function buildSequencedOutputMessage(
 }
 
 function attachFakeTerminal(
-  sessionTerminals: typeof import('../../state')['sessionTerminals'],
+  sessionTerminals: (typeof import('../../state'))['sessionTerminals'],
   sessionId: string,
 ): FakeTerminalHarness {
   const pendingCallbacks: Array<() => void> = [];
@@ -383,5 +385,28 @@ describe('muxChannel', () => {
     expect(frames[1]?.[harness.constants.MUX_HEADER_SIZE]).toBe(1);
     expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
     expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe(1);
+  });
+
+  it('sends sampled input trace markers before normal input when tracing is enabled', async () => {
+    const harness = await loadHarness([10, 10, 10, 10]);
+
+    setInputLatencyTracingEnabled(true);
+    harness.ws.send.mockClear();
+
+    sendInput('sess1234', 'a');
+
+    expect(harness.ws.send).toHaveBeenCalledTimes(3);
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_ACTIVE_HINT);
+    expect(frames[1]?.[0]).toBe(harness.constants.MUX_TYPE_INPUT_TRACE_MARKER);
+    expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_INPUT);
+    expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe('a'.charCodeAt(0));
+
+    const markerView = new DataView(
+      frames[1]!.buffer,
+      frames[1]!.byteOffset,
+      frames[1]!.byteLength,
+    );
+    expect(markerView.getUint32(harness.constants.MUX_HEADER_SIZE, true)).not.toBe(0);
   });
 });

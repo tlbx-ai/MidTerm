@@ -89,6 +89,7 @@ public sealed class MuxClient : IAsyncDisposable
     private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new(StringComparer.Ordinal);
     private readonly string? _allowedSessionId;
     private readonly Func<TerminalResumeModeSetting> _getResumeMode;
+    private readonly Action<string, string, ulong, long>? _outputFrameSent;
     private FrozenSet<string> _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
 
     public string Id { get; }
@@ -242,12 +243,14 @@ public sealed class MuxClient : IAsyncDisposable
         string id,
         WebSocket webSocket,
         Func<TerminalResumeModeSetting> getResumeMode,
-        string? allowedSessionId = null)
+        string? allowedSessionId = null,
+        Action<string, string, ulong, long>? outputFrameSent = null)
     {
         Id = id;
         WebSocket = webSocket;
         _getResumeMode = getResumeMode;
         _allowedSessionId = allowedSessionId;
+        _outputFrameSent = outputFrameSent;
         _inputChannel = Channel.CreateBounded<OutputItem>(new BoundedChannelOptions(MaxQueuedItems)
         {
             SingleReader = true,
@@ -261,27 +264,27 @@ public sealed class MuxClient : IAsyncDisposable
     /// Queue raw terminal output for buffered delivery.
     /// Copies data into a pooled buffer owned by this client.
     /// </summary>
-    internal void QueueOutput(string sessionId, ulong sequenceEndExclusive, int cols, int rows, SharedOutputBuffer buffer)
+    internal bool QueueOutput(string sessionId, ulong sequenceEndExclusive, int cols, int rows, SharedOutputBuffer buffer)
     {
         if (_cts.IsCancellationRequested)
         {
             buffer.Release();
-            return;
+            return false;
         }
         if (!CanAccessSession(sessionId))
         {
             buffer.Release();
-            return;
+            return false;
         }
         if (WebSocket.State != WebSocketState.Open)
         {
             buffer.Release();
-            return;
+            return false;
         }
         if (!ShouldDeliverSession(sessionId))
         {
             buffer.Release();
-            return;
+            return false;
         }
 
         if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, sequenceEndExclusive, cols, rows, buffer)))
@@ -289,7 +292,10 @@ public sealed class MuxClient : IAsyncDisposable
             _droppedSessions.Enqueue(sessionId);
             Log.Verbose(() => $"[MuxClient] {Id}: Input queue full, dropped frame for {sessionId}");
             buffer.Release();
+            return false;
         }
+
+        return true;
     }
 
     /// <summary>
@@ -553,6 +559,7 @@ public sealed class MuxClient : IAsyncDisposable
 
                 // Send first, reset after - prevents data loss on send failure.
                 await SendFrameAsync(frameBuffer, frameLength).ConfigureAwait(false);
+                _outputFrameSent?.Invoke(Id, sessionId, sequenceEndExclusive, Environment.TickCount64);
             }
             finally
             {

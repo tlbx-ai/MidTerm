@@ -767,6 +767,8 @@ public static class Program
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
         var attached = !session.RequiresOwnershipHandshake;
+        uint? pendingInputTraceId = null;
+        long pendingInputTraceMarkerReceivedAtMs = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -872,11 +874,31 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.Input:
+                        var inputReceivedAtMs = Environment.TickCount64;
                         var inputSlice = payloadLength > 0 && payloadBuffer is not null
                             ? payloadBuffer.AsMemory(0, payloadLength)
                             : ReadOnlyMemory<byte>.Empty;
                         Log.Verbose(() => $"[IPC-INPUT] {inputSlice.Length} bytes");
                         await session.SendInputAsync(inputSlice, ct).ConfigureAwait(false);
+                        if (pendingInputTraceId is uint traceId)
+                        {
+                            var report = TtyHostProtocol.CreateInputTraceReport(new TtyHostInputTraceReport(
+                                traceId,
+                                pendingInputTraceMarkerReceivedAtMs,
+                                inputReceivedAtMs,
+                                Environment.TickCount64));
+                            EnqueueFrame(channelWriter, report);
+                            pendingInputTraceId = null;
+                            pendingInputTraceMarkerReceivedAtMs = 0;
+                        }
+                        break;
+
+                    case TtyHostMessageType.InputTraceMarker:
+                        if (TtyHostProtocol.TryParseInputTraceMarker(payload, out var markerTraceId))
+                        {
+                            pendingInputTraceId = markerTraceId;
+                            pendingInputTraceMarkerReceivedAtMs = Environment.TickCount64;
+                        }
                         break;
 
                     case TtyHostMessageType.Resize:

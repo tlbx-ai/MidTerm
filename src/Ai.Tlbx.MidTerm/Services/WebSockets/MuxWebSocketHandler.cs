@@ -447,7 +447,7 @@ public sealed class MuxWebSocketHandler
                 {
                     Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(payloadMemory.ToArray())}");
                 }
-                await _muxManager.HandleInputAsync(sessionId, payloadMemory);
+                await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory);
                 break;
 
             case MuxProtocol.TypeResize:
@@ -472,6 +472,13 @@ public sealed class MuxWebSocketHandler
 
             case MuxProtocol.TypeVisibleSessionsHint:
                 client.SetVisibleSessions(MuxProtocol.ParseVisibleSessionsHintPayload(payload));
+                break;
+
+            case MuxProtocol.TypeInputTraceMarker:
+                if (MuxProtocol.TryParseInputTraceMarker(payload, out var traceId))
+                {
+                    _muxManager.BeginInputTrace(client.Id, sessionId, traceId);
+                }
                 break;
 
             case MuxProtocol.TypePing:

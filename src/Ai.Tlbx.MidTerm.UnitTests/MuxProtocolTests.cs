@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -237,6 +238,43 @@ public class MuxProtocolTests
         Assert.Equal(2, sessionIds.Count);
         Assert.Contains("sess0001", sessionIds);
         Assert.Contains("sess0002", sessionIds);
+    }
+
+    [Fact]
+    public void InputTraceMarker_RoundTrips_TraceId()
+    {
+        Span<byte> payload = stackalloc byte[MuxProtocol.InputTraceMarkerPayloadSize];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, 42);
+
+        Assert.True(MuxProtocol.TryParseInputTraceMarker(payload, out var traceId));
+        Assert.Equal(42U, traceId);
+    }
+
+    [Fact]
+    public void CreateInputTraceResultFrame_RoundTrips_FixedPayload()
+    {
+        var result = new MuxInputTraceResult(
+            7,
+            123UL,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9);
+
+        var frame = MuxProtocol.CreateInputTraceResultFrame("session1", result);
+
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
+        Assert.Equal(MuxProtocol.TypeInputTraceResult, type);
+        Assert.Equal("session1", sessionId);
+        Assert.Equal(MuxProtocol.InputTraceResultPayloadSize, payload.Length);
+        Assert.Equal(7U, BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]));
+        Assert.Equal(123UL, BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(4, 8)));
+        Assert.Equal(9, BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(44, 4)));
     }
 
 }

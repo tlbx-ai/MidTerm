@@ -92,6 +92,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     public event Action<string>? OnReconnected;
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
     public event Action<string, TtyHostDataLossPayload>? OnDataLoss;
+    public event Action<string, TtyHostInputTraceReport>? OnInputTrace;
 
     public TtyHostClient(string sessionId, int hostPid, string? instanceId = null, string? ownerToken = null, bool useLegacyEndpoint = false)
     {
@@ -252,6 +253,42 @@ public sealed class TtyHostClient : IAsyncDisposable
         catch
         {
             TriggerReconnect();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<TtyHostInputWriteTiming?> SendInputWithTraceAsync(
+        ReadOnlyMemory<byte> data,
+        uint traceId,
+        CancellationToken ct = default)
+    {
+        if (_disposed) return null;
+
+        var traceMarkerFrameSize = TtyHostProtocol.HeaderSize + TtyHostProtocol.InputTraceMarkerPayloadSize;
+        var inputFrameSize = TtyHostProtocol.HeaderSize + data.Length;
+        var frameSize = traceMarkerFrameSize + inputFrameSize;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            if (data.Length < 20)
+            {
+                Log.Verbose(() => $"[IPC-SEND] {_sessionId}: trace={traceId} {BitConverter.ToString(data.ToArray())}");
+            }
+
+            TtyHostProtocol.WriteInputTraceMarkerFrameInto(traceId, buffer.AsSpan(0, traceMarkerFrameSize));
+            TtyHostProtocol.WriteInputFrameInto(data.Span, buffer.AsSpan(traceMarkerFrameSize, inputFrameSize));
+
+            var writeStartAtMs = Environment.TickCount64;
+            await WriteWithLockAsync(buffer, frameSize, ct).ConfigureAwait(false);
+            return new TtyHostInputWriteTiming(writeStartAtMs, Environment.TickCount64);
+        }
+        catch
+        {
+            TriggerReconnect();
+            return null;
         }
         finally
         {
@@ -749,6 +786,21 @@ public sealed class TtyHostClient : IAsyncDisposable
                 }
                 break;
 
+            case TtyHostMessageType.InputTrace:
+                try
+                {
+                    var trace = TtyHostProtocol.ParseInputTraceReport(payload.Span);
+                    if (trace is not null)
+                    {
+                        OnInputTrace?.Invoke(_sessionId, trace.Value);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Exception(ex, $"TtyHostClient.OnInputTrace({_sessionId})");
+                }
+                break;
+
             default:
                 break;
         }
@@ -1060,3 +1112,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 }
+
+public readonly record struct TtyHostInputWriteTiming(
+    long IpcWriteStartAtMs,
+    long IpcWriteDoneAtMs);
