@@ -9,6 +9,7 @@ import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../.
 import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
 import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
 import { createTerminalForSession } from '../terminal/manager';
+import { resolveSessionSurfaceMode } from '../sessionSurface';
 
 interface LayoutSnapshot {
   revision?: number;
@@ -16,11 +17,15 @@ interface LayoutSnapshot {
   focusedSessionId: string | null;
 }
 /**
- * Ensure a terminal exists for a session.
+ * Ensure a terminal surface exists only for terminal-backed sessions.
  */
 function ensureTerminalExists(sessionId: string): void {
+  const sessionInfo = getSession(sessionId);
+  if (resolveSessionSurfaceMode(sessionInfo) !== 'terminal') {
+    return;
+  }
+
   if (!sessionTerminals.has(sessionId)) {
-    const sessionInfo = getSession(sessionId);
     createTerminalForSession(sessionId, sessionInfo);
   }
 }

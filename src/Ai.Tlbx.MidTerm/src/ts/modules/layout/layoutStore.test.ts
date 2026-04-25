@@ -124,4 +124,38 @@ describe('layoutStore server sync', () => {
     expect(stores.$layout.get().root).toEqual(newerLayout);
     expect(stores.$focusedSessionId.get()).toBe('session-b');
   });
+
+  it('docks onto Lens sessions without creating a terminal surface for the Lens target', async () => {
+    const { stores, layoutStore } = await loadHarness();
+    stores.$sessions.set({
+      'terminal-session': {
+        id: 'terminal-session',
+        cols: 120,
+        rows: 30,
+        lensOnly: false,
+      } as any,
+      'lens-session': {
+        id: 'lens-session',
+        cols: 0,
+        rows: 0,
+        lensOnly: true,
+      } as any,
+    });
+
+    layoutStore.dockSession('lens-session', 'terminal-session', 'left');
+
+    expect(mocks.createTerminalForSession).toHaveBeenCalledTimes(1);
+    expect(mocks.createTerminalForSession).toHaveBeenCalledWith(
+      'terminal-session',
+      expect.objectContaining({ id: 'terminal-session' }),
+    );
+    expect(stores.$layout.get().root).toEqual({
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'leaf', sessionId: 'terminal-session' },
+        { type: 'leaf', sessionId: 'lens-session' },
+      ],
+    });
+  });
 });

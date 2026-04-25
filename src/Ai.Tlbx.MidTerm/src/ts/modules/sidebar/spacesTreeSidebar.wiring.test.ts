@@ -41,6 +41,7 @@ describe('spacesTreeSidebar wiring', () => {
     expect(source).toContain('toggleSessionNotes(entry.id)');
     expect(css).toContain('.session-notes-pane');
     expect(css).toContain('.session-notes-input');
+    expect(css).toContain('.session-notes-toggle:hover');
     expect(locale).toContain('"session.notes"');
   });
 
@@ -63,5 +64,22 @@ describe('spacesTreeSidebar wiring', () => {
     expect(source).toContain('callbacks?.onSelect(entry.id);');
     expect(source).toContain("textarea.addEventListener('focus'");
     expect(source).toContain('toggleSessionNotes(entry.id)');
+  });
+
+  it('keeps notes editing isolated from row click and drag handling', () => {
+    expect(source).toContain("textarea.addEventListener('pointerdown', stopRowInteraction)");
+    expect(source).toContain("textarea.addEventListener('mousedown', stopRowInteraction)");
+    expect(source).toContain("textarea.addEventListener('touchstart', stopRowInteraction)");
+    expect(source).toContain("textarea.addEventListener('click', stopRowInteraction)");
+  });
+
+  it('keeps local space sessions draggable for layout docking without making them reorderable', () => {
+    expect(source).toContain('item.draggable = isReorderable || canDockSidebarSession(entry)');
+    expect(source).toContain('function canDockSidebarSession(entry: SidebarSessionRef): boolean');
+    expect(source).toContain('entry.machineId === null');
+    expect(source).toContain(
+      'function canReorderSidebarSession(entry: SidebarSessionRef, reorderScope: string): boolean',
+    );
+    expect(source).toContain("reorderScope !== ''");
   });
 });

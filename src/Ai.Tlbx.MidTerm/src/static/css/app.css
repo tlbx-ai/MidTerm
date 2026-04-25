@@ -2155,6 +2155,7 @@ body.has-app-background::after {
 .session-pin:hover,
 .session-resize:hover,
 .session-rename:hover,
+.session-notes-toggle:hover,
 .session-inject:hover {
   background-color: var(--accent-gold);
   color: var(--bg-primary);

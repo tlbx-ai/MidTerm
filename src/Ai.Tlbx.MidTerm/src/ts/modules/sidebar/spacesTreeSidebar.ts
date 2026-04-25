@@ -1055,7 +1055,7 @@ function configureSidebarSessionNode(
     delete item.dataset.reorderScope;
   }
   item.setAttribute('aria-current', entry.id === $activeSessionId.get() ? 'true' : 'false');
-  item.draggable = isReorderable;
+  item.draggable = isReorderable || canDockSidebarSession(entry);
 }
 
 function normalizeSidebarReorderScope(value: string | null | undefined): string {
@@ -1064,6 +1064,10 @@ function normalizeSidebarReorderScope(value: string | null | undefined): string 
 
 function canReorderSidebarSession(entry: SidebarSessionRef, reorderScope: string): boolean {
   return reorderScope !== '' && !entry.session.parentSessionId && getSearchValue() === '';
+}
+
+function canDockSidebarSession(entry: SidebarSessionRef): boolean {
+  return entry.machineId === null && !entry.session.parentSessionId && getSearchValue() === '';
 }
 
 function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
@@ -1198,9 +1202,14 @@ function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
   textarea.spellcheck = true;
   textarea.placeholder = t('session.notesPlaceholder');
   textarea.setAttribute('aria-label', t('session.notes'));
-  textarea.addEventListener('click', (event) => {
+  const stopRowInteraction = (event: Event) => {
     event.stopPropagation();
-  });
+  };
+  textarea.addEventListener('pointerdown', stopRowInteraction);
+  textarea.addEventListener('mousedown', stopRowInteraction);
+  textarea.addEventListener('touchstart', stopRowInteraction);
+  textarea.addEventListener('click', stopRowInteraction);
+  textarea.addEventListener('dblclick', stopRowInteraction);
   textarea.addEventListener('focus', () => {
     callbacks?.onSelect(entry.id);
   });
