@@ -56,6 +56,7 @@ let openMenuButtonId: string | null = null;
 let openMenuAnchorEl: HTMLButtonElement | null = null;
 let overflowActionIds: string[] = [];
 let overflowProxyAnchorEl: HTMLElement | null = null;
+let activeOverflowAnchorEl: HTMLElement | null = null;
 let managerBarResizeObserver: ResizeObserver | null = null;
 let overflowLayoutFrameId: number | null = null;
 
@@ -102,10 +103,13 @@ export function sendCommand(sessionId: string, text: string): void {
 
 export function setAutomationOverflowProxyAnchor(el: HTMLElement | null): void {
   overflowProxyAnchorEl = el;
+  if (!el && activeOverflowAnchorEl && activeOverflowAnchorEl !== overflowBtn) {
+    activeOverflowAnchorEl = null;
+  }
 }
 
-export function triggerAutomationOverflow(): void {
-  toggleOverflowMenu();
+export function triggerAutomationOverflow(anchor: HTMLElement | null = null): void {
+  toggleOverflowMenu(anchor);
 }
 
 export function triggerAddAutomation(): void {
@@ -215,7 +219,7 @@ export function initManagerBar(): void {
   overflowBtn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    toggleOverflowMenu();
+    toggleOverflowMenu(overflowBtn);
   });
 
   window.addEventListener('resize', () => {
@@ -526,6 +530,7 @@ function closeOpenManagerOverflow(): boolean {
   overflowPopoverEl.style.removeProperty('left');
   overflowPopoverEl.style.removeProperty('top');
   overflowBtn.setAttribute('aria-expanded', 'false');
+  activeOverflowAnchorEl = null;
   return wasOpen;
 }
 
@@ -550,7 +555,7 @@ function toggleManagerActionMenu(anchor: HTMLButtonElement, actionId: string): v
   positionManagerActionMenu();
 }
 
-function toggleOverflowMenu(): void {
+function toggleOverflowMenu(anchor: HTMLElement | null = null): void {
   if (!overflowBtn || !overflowPopoverEl) {
     return;
   }
@@ -565,6 +570,7 @@ function toggleOverflowMenu(): void {
   }
 
   closeOpenManagerMenus();
+  activeOverflowAnchorEl = resolveUsableOverflowAnchor(anchor) ?? resolveCurrentOverflowAnchor();
   renderOverflowMenuItems();
   overflowPopoverEl.classList.remove('hidden');
   overflowBtn.setAttribute('aria-expanded', 'true');
@@ -600,7 +606,7 @@ function positionManagerActionMenu(): void {
 }
 
 function positionManagerOverflowMenu(): void {
-  const anchorEl = overflowProxyAnchorEl ?? overflowBtn;
+  const anchorEl = resolveCurrentOverflowAnchor();
   if (!overflowPopoverEl || !anchorEl || overflowPopoverEl.classList.contains('hidden')) {
     return;
   }
@@ -626,6 +632,27 @@ function positionManagerOverflowMenu(): void {
 
   overflowPopoverEl.style.left = `${String(Math.round(left))}px`;
   overflowPopoverEl.style.top = `${String(Math.round(top))}px`;
+}
+
+function resolveCurrentOverflowAnchor(): HTMLElement | null {
+  return (
+    resolveUsableOverflowAnchor(activeOverflowAnchorEl) ??
+    resolveUsableOverflowAnchor(overflowProxyAnchorEl) ??
+    resolveUsableOverflowAnchor(overflowBtn)
+  );
+}
+
+function resolveUsableOverflowAnchor(anchor: HTMLElement | null): HTMLElement | null {
+  if (!anchor?.isConnected) {
+    return null;
+  }
+
+  const rect = anchor.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+
+  return anchor;
 }
 
 function renderOverflowMenuItems(): void {

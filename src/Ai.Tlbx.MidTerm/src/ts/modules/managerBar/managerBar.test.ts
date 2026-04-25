@@ -48,7 +48,9 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain(
       "overflowBtn = document.getElementById('manager-bar-overflow') as HTMLButtonElement | null;",
     );
-    expect(managerBarSource).toContain('function toggleOverflowMenu(): void {');
+    expect(managerBarSource).toContain(
+      'function toggleOverflowMenu(anchor: HTMLElement | null = null): void {',
+    );
     expect(managerBarSource).toContain('function syncOverflowedButtons(): void {');
     expect(managerBarSource).toContain(
       "managerBar.classList.contains('hidden') && !isMobileSurface",
@@ -125,11 +127,15 @@ describe('manager bar visibility', () => {
   });
 
   it('exports trigger hooks and proxy anchor for mobile status row proxy buttons', () => {
-    expect(managerBarSource).toContain('export function triggerAutomationOverflow(): void {');
+    expect(managerBarSource).toContain(
+      'export function triggerAutomationOverflow(anchor: HTMLElement | null = null): void {',
+    );
     expect(managerBarSource).toContain('export function triggerAddAutomation(): void {');
     expect(managerBarSource).toContain('export function setAutomationOverflowProxyAnchor(');
     expect(managerBarSource).toContain('let overflowProxyAnchorEl:');
-    expect(managerBarSource).toContain('overflowProxyAnchorEl ?? overflowBtn');
+    expect(managerBarSource).toContain('let activeOverflowAnchorEl:');
+    expect(managerBarSource).toContain('resolveUsableOverflowAnchor(overflowProxyAnchorEl)');
+    expect(managerBarSource).toContain('resolveUsableOverflowAnchor(overflowBtn)');
   });
 
   it('renders prompt queue items beside automation items in the same queue surface', () => {

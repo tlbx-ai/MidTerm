@@ -64,12 +64,14 @@ describe('smart input tab wiring', () => {
     );
     expect(viewSource).toContain("document.addEventListener('scroll', updateMenuPlacement, true);");
     expect(viewSource).toContain('trigger.disabled = disabled;');
-    expect(viewSource).toContain("select.addEventListener('midterm:disabled', syncDisabledState as EventListener);");
+    expect(viewSource).toContain(
+      "select.addEventListener('midterm:disabled', syncDisabledState as EventListener);",
+    );
   });
 
   it('avoids no-op Lens quick-setting dropdown churn during footer resync', () => {
-    expect(viewSource).toContain("if (select.dataset.midtermOptionsSignature === nextSignature) {");
-    expect(viewSource).toContain("select.dataset.midtermOptionsSignature = nextSignature;");
+    expect(viewSource).toContain('if (select.dataset.midtermOptionsSignature === nextSignature) {');
+    expect(viewSource).toContain('select.dataset.midtermOptionsSignature = nextSignature;');
     expect(viewSource).toContain("select.dispatchEvent(new Event('midterm:options'));");
     expect(viewSource).toContain("select.dispatchEvent(new Event('midterm:disabled'));");
     expect(viewSource).toContain('syncSelection();');
@@ -79,11 +81,21 @@ describe('smart input tab wiring', () => {
 
   it('locks Lens quick settings while turns are running or queued', () => {
     expect(source).toContain('hasInterruptibleLensTurnWork');
-    expect(footerSupportSource).toContain('const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);');
-    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensModelSelect, quickSettingsLocked);');
-    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensEffortSelect, quickSettingsLocked);');
-    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensPlanSelect, quickSettingsLocked);');
-    expect(footerSupportSource).toContain('setLensQuickSettingsDropdownDisabled(lensPermissionSelect, quickSettingsLocked);');
+    expect(footerSupportSource).toContain(
+      'const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);',
+    );
+    expect(footerSupportSource).toContain(
+      'setLensQuickSettingsDropdownDisabled(lensModelSelect, quickSettingsLocked);',
+    );
+    expect(footerSupportSource).toContain(
+      'setLensQuickSettingsDropdownDisabled(lensEffortSelect, quickSettingsLocked);',
+    );
+    expect(footerSupportSource).toContain(
+      'setLensQuickSettingsDropdownDisabled(lensPlanSelect, quickSettingsLocked);',
+    );
+    expect(footerSupportSource).toContain(
+      'setLensQuickSettingsDropdownDisabled(lensPermissionSelect, quickSettingsLocked);',
+    );
   });
 
   it('mounts smart input, manager automation, and status rails inside one adaptive footer dock', () => {
@@ -172,7 +184,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('enqueueCommandBayTurn');
     expect(source).not.toContain('await handleFileDrop(files);');
     expect(source).not.toContain(
-      "isLensActiveSession(sessionId) &&\n        clipboardDataMayContainLensComposerImage",
+      'isLensActiveSession(sessionId) &&\n        clipboardDataMayContainLensComposerImage',
     );
     expect(submissionSource).toContain('prepareSmartInputOutboundPrompt');
     expect(submissionSource).toContain(
@@ -194,7 +206,9 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('let suppressNextToolsToggleClick = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
-    expect(source).toContain('const preserveTextareaFocus = document.activeElement === activeTextarea;');
+    expect(source).toContain(
+      'const preserveTextareaFocus = document.activeElement === activeTextarea;',
+    );
     expect(source).toContain('layoutState.showInput &&');
     expect(source).toContain(
       'preserveTextareaFocus || (focusTextarea && shouldAllowProgrammaticSmartInputFocus())',
@@ -217,10 +231,18 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('font-size: var(--terminal-font-size, 16px);');
     expect(css).toContain('font-weight: var(--terminal-font-weight, normal);');
     expect(css).toContain('letter-spacing: var(--terminal-letter-spacing, 0px);');
-    expect(css).toContain("--smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);");
-    expect(css).toContain("--smart-input-textarea-collapsed-height: var(--smart-input-control-height);");
-    expect(css).toContain('--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);');
-    expect(css).toContain('var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px');
+    expect(css).toContain(
+      '--smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);',
+    );
+    expect(css).toContain(
+      '--smart-input-textarea-collapsed-height: var(--smart-input-control-height);',
+    );
+    expect(css).toContain(
+      '--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);',
+    );
+    expect(css).toContain(
+      'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+    );
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
     expect(css).toContain('var(--terminal-line-height, 1)');
     expect(css).toContain('font-kerning: none;');
@@ -244,13 +266,21 @@ describe('smart input tab wiring', () => {
   it('supports an inset composer expand toggle without duplicating the live textarea', () => {
     expect(viewSource).toContain("textareaShell.className = 'smart-input-textarea-shell';");
     expect(viewSource).toContain("composerExpandBtn.className = 'smart-input-expand-toggle';");
-    expect(viewSource).toContain('syncSmartInputComposerExpandToggleState(composerExpandBtn, false);');
-    expect(viewSource).toContain("textareaShell.appendChild(textarea);");
-    expect(viewSource).toContain("textareaShell.appendChild(composerExpandBtn);");
+    expect(viewSource).toContain(
+      'syncSmartInputComposerExpandToggleState(composerExpandBtn, false);',
+    );
+    expect(viewSource).toContain('textareaShell.appendChild(textarea);');
+    expect(viewSource).toContain('textareaShell.appendChild(composerExpandBtn);');
     expect(source).toContain('const sessionComposerExpanded = new Map<string, boolean>();');
-    expect(source).toContain("footerDock?.setAttribute('data-composer-expanded', composerExpanded ? 'true' : 'false');");
-    expect(source).toContain('setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));');
-    expect(source).toContain('releaseComposerExpandedBackButtonLayer = registerBackButtonLayer(() => {');
+    expect(source).toContain(
+      "footerDock?.setAttribute('data-composer-expanded', composerExpanded ? 'true' : 'false');",
+    );
+    expect(source).toContain(
+      'setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));',
+    );
+    expect(source).toContain(
+      'releaseComposerExpandedBackButtonLayer = registerBackButtonLayer(() => {',
+    );
     expect(footerSupportSource).toContain('composerExpanded: boolean;');
     expect(footerSupportSource).toContain('args.composerExpanded');
     expect(css).toContain('.smart-input-textarea-shell {');
@@ -270,12 +300,18 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('persistDraftForSession(lastSessionId);');
     expect(source).toContain('syncDraftForActiveSession();');
     expect(source).toContain('const sessionComposerExpanded = new Map<string, boolean>();');
-    expect(source).toContain('function setComposerExpandedForSession(sessionId: string, expanded: boolean): void {');
-    expect(source).toContain('return sessionId ? sessionComposerExpanded.get(sessionId) === true : false;');
+    expect(source).toContain(
+      'function setComposerExpandedForSession(sessionId: string, expanded: boolean): void {',
+    );
+    expect(source).toContain(
+      'return sessionId ? sessionComposerExpanded.get(sessionId) === true : false;',
+    );
   });
 
   it('auto-collapses the expanded composer only after a prompt send succeeds', () => {
-    expect(source).toContain('function collapseComposerAfterSuccessfulSend(sessionId: string): void {');
+    expect(source).toContain(
+      'function collapseComposerAfterSuccessfulSend(sessionId: string): void {',
+    );
     expect(source).toContain('if ($activeSessionId.get() === sessionId) {');
     expect(source).toContain('collapseComposerAfterSuccessfulSend(sessionId);');
   });
@@ -330,7 +366,9 @@ describe('smart input tab wiring', () => {
     expect(source).toContain(
       "import { resolveSmartInputShiftTabAction } from './smartInputTextareaShortcuts';",
     );
-    expect(source).toContain('function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {');
+    expect(source).toContain(
+      'function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {',
+    );
     expect(source).toContain('const shiftTabAction = resolveSmartInputShiftTabAction(');
     expect(source).toContain('if (handleSmartInputShiftTabShortcut(event)) {');
     expect(source).toContain('toggleLensPlanMode(sessionId);');
@@ -341,7 +379,9 @@ describe('smart input tab wiring', () => {
 
   it('advertises prompt history restoration from the empty Automation Bar composer', () => {
     expect(viewSource).toContain("textarea.placeholder = t('smartInput.placeholder');");
-    expect(source).toContain("layoutState.isMobile ? 'smartInput.placeholderMobile' : 'smartInput.placeholder'");
+    expect(source).toContain(
+      "layoutState.isMobile ? 'smartInput.placeholderMobile' : 'smartInput.placeholder'",
+    );
     expect(source).toContain('pushCurrentPromptToHistory(sessionId);');
     expect(source).toContain('sessionPromptHistoryNavigation');
   });
@@ -382,15 +422,14 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('createAutomationOverflowProxy()');
     expect(source).toContain('createAutomationAddProxy()');
     expect(source).toContain('setAutomationOverflowProxyAnchor(overflowProxy)');
-    expect(source).toContain('triggerAutomationOverflow()');
+    expect(source).toContain('triggerAutomationOverflow(btn)');
+    expect(source).toContain('setAutomationOverflowProxyAnchor(null)');
     expect(source).toContain('triggerAddAutomation()');
     expect(source).toContain(
       "managerBar?.classList.toggle('hidden', !layoutState.showAutomation || layoutState.isMobile)",
     );
     expect(css).toContain('.adaptive-footer-status-left {');
     expect(css).toContain('.adaptive-footer-status-right {');
-    expect(css).toContain(
-      ".adaptive-footer-dock[data-device='mobile'] .manager-bar {",
-    );
+    expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .manager-bar {");
   });
 });
