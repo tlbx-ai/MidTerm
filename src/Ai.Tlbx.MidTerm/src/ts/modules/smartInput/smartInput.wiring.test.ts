@@ -41,6 +41,13 @@ describe('smart input tab wiring', () => {
     expect(source).not.toContain("onTabDeactivated('agent'");
   });
 
+  it('keys footer glass material off UI transparency, not terminal pane transparency', () => {
+    expect(source).toContain('const transparency = settings?.uiTransparency ?? 0;');
+    expect(source).not.toContain(
+      'const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;',
+    );
+  });
+
   it('keeps Lens quick settings hidden when the hidden attribute is set', () => {
     expect(css).toContain('.smart-input-lens-settings[hidden] {');
     expect(css).toContain('.smart-input-lens-actions[hidden] {');

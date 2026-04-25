@@ -282,6 +282,8 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-terminal);');
     expect(cssSource).toContain('background: var(--bg-primary);');
     expect(cssSource).toContain('background: var(--terminal-ui-background, var(--terminal-bg));');
+    expect(cssSource).toContain('--workspace-pane-background: var(--bg-primary);');
+    expect(cssSource).toContain('--workspace-pane-chrome-background: var(--bg-elevated);');
     expect(cssSource).toContain(
       'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );

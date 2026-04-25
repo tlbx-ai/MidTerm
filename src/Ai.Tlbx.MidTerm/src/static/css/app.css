@@ -327,8 +327,8 @@
   --terminal-canvas-background: var(--bg-terminal);
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
-  --workspace-pane-background: var(--terminal-canvas-background, var(--terminal-bg));
-  --workspace-pane-chrome-background: var(--terminal-ui-background, var(--terminal-bg));
+  --workspace-pane-background: var(--bg-primary);
+  --workspace-pane-chrome-background: var(--bg-elevated);
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
@@ -2390,7 +2390,7 @@ body.has-app-background::after {
   position: absolute;
   inset: 0;
   padding: 0;
-  background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  background-color: transparent;
   touch-action: manipulation;
   display: flex;
   align-items: flex-start;
@@ -11553,7 +11553,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: transparent;
 }
 
 .agent-runtime-stats {
@@ -11569,7 +11569,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 0;
   background: color-mix(
     in srgb,
-    var(--terminal-canvas-background, var(--terminal-bg)) 90%,
+    var(--terminal-ui-background, var(--terminal-bg)) 90%,
     transparent
   );
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
@@ -11779,7 +11779,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex: 0 0 auto;
   padding: 14px 18px 18px;
   border-top: 1px solid color-mix(in srgb, var(--agent-lens-rail) 44%, transparent);
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: transparent;
 }
 
 .agent-composer-interruption {
@@ -11806,7 +11806,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 0 12px;
   border: 1px solid color-mix(in srgb, var(--agent-lens-live) 26%, transparent);
   border-radius: 0;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-ui-background, var(--terminal-bg));
   color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
   font-size: 0.72rem;
   font-weight: 700;

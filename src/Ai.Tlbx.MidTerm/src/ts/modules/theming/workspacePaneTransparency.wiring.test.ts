@@ -8,13 +8,9 @@ const __dirname = path.dirname(__filename);
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 
 describe('workspace pane transparency wiring', () => {
-  it('binds files, git, and web panes to terminal-scoped background tokens', () => {
-    expect(css).toContain(
-      '--workspace-pane-background: var(--terminal-canvas-background, var(--terminal-bg));',
-    );
-    expect(css).toContain(
-      '--workspace-pane-chrome-background: var(--terminal-ui-background, var(--terminal-bg));',
-    );
+  it('keeps files, git, and web panes out of terminal-scoped background tokens', () => {
+    expect(css).toContain('--workspace-pane-background: var(--bg-primary);');
+    expect(css).toContain('--workspace-pane-chrome-background: var(--bg-elevated);');
     expect(css).toContain('.file-viewer-dock {');
     expect(css).toContain('.git-dock {');
     expect(css).toContain('.web-preview-dock {');

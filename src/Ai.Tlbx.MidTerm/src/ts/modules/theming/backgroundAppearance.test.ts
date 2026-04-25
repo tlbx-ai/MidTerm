@@ -168,10 +168,8 @@ describe('backgroundAppearance', () => {
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(terminalCanvasAlpha).toBeCloseTo(0.4, 5);
-    expect(sidebarAlpha).toBeCloseTo(terminalCanvasAlpha, 5);
-    expect(rootStyle.getPropertyValue('--bg-sidebar')).toBe(
-      rootStyle.getPropertyValue('--terminal-canvas-background'),
-    );
+    expect(sidebarAlpha).toBeCloseTo(0.854, 5);
+    expect(sidebarAlpha).not.toBeCloseTo(terminalCanvasAlpha, 5);
     expect(terminalUiAlpha).toBeCloseTo(0.7, 5);
     expect(appChromeAlpha).toBeCloseTo(0.925, 5);
     expect(textInputAlpha).toBeCloseTo(0.94, 5);

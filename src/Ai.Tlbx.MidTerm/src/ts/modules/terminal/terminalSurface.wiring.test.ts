@@ -16,9 +16,7 @@ describe('terminal surface wiring', () => {
     expect(constants).toContain('export const TERMINAL_PADDING = 0;');
     expect(appCss).toContain('.terminal-container {');
     expect(appCss).toContain('padding: 0;');
-    expect(appCss).toContain(
-      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
-    );
+    expect(appCss).toContain('background-color: transparent;');
   });
 
   it('lets the xterm host cover floor-to-cell remainder space inside the panel', () => {

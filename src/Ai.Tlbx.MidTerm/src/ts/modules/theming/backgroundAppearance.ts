@@ -15,6 +15,7 @@ import {
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
   { name: '--bg-elevated', boost: 0.22 },
+  { name: '--bg-sidebar', boost: 0.22 },
   { name: '--bg-surface', boost: 0.28 },
   { name: '--bg-input', boost: 0.28 },
   { name: '--bg-dropdown', boost: 0.28 },
@@ -23,6 +24,7 @@ const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-session-hover', boost: 0.32 },
   { name: '--bg-session-active', boost: 0.38 },
   { name: '--bg-settings', boost: 0.22 },
+  { name: '--bg-tertiary', boost: 0.22 },
 ];
 
 const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
@@ -44,8 +46,6 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
   response?: number;
 }> = [
   { name: '--terminal-canvas-background', source: '--bg-terminal', mode: 'terminal' },
-  { name: '--bg-sidebar', source: '--bg-terminal', mode: 'terminal' },
-  { name: '--bg-tertiary', source: '--bg-terminal', mode: 'terminal' },
   { name: '--terminal-ui-background', source: '--bg-terminal', mode: 'ui' },
   { name: '--app-chrome-background', source: '--bg-terminal', mode: 'ui', response: 0.25 },
   { name: '--text-input-background', source: '--bg-input', mode: 'ui', response: 0.2 },
