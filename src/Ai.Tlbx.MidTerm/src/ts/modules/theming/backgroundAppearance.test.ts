@@ -182,6 +182,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-elevated-opaque')).toBe('#161821');
     expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#1C1E2A');
     expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#1C1E2A');
+    expect(rootStyle.getPropertyValue('--sidebar-text-backdrop-color')).toBe('transparent');
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
   });
 
@@ -194,6 +195,20 @@ describe('backgroundAppearance', () => {
     );
 
     expect(alphaOf(rootStyle.getPropertyValue('--app-chrome-background'))).toBeCloseTo(0.75, 5);
+  });
+
+  it('removes the sidebar text backdrop when terminal transparency is off', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        uiTransparency: 100,
+        terminalTransparency: 0,
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--sidebar-text-backdrop-color')).toBe('transparent');
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
@@ -213,6 +228,10 @@ describe('backgroundAppearance', () => {
 
     expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
       'url("/api/settings/background-image?v=12")',
+    );
+    expect(alphaOf(rootStyle.getPropertyValue('--sidebar-text-backdrop-color'))).toBeCloseTo(
+      0.252,
+      5,
     );
     expect(rootStyle.getPropertyValue('--app-background-size')).toBe('cover');
     expect(rootStyle.getPropertyValue('--app-background-transform')).toBe(

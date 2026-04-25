@@ -304,13 +304,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
     );
-    expect(cssSource).toContain('--sidebar-item-text-shadow:');
-    expect(cssSource).toContain('text-shadow: var(--sidebar-item-text-shadow);');
-    expect(cssSource).toContain('--sidebar-icon-shadow:');
-    expect(cssSource).toContain('filter: var(--sidebar-icon-shadow);');
-    expect(cssSource).toContain(
-      '--sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));',
-    );
+    expect(cssSource).toContain('--sidebar-text-backdrop-color: transparent;');
+    expect(cssSource).toContain('background-image: var(--sidebar-text-backdrop);');
+    expect(cssSource).toContain('filter: none;');
   });
 
   it('keeps manager bar buttons readable under UI transparency', () => {

@@ -332,15 +332,15 @@
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
-  --sidebar-text-shadow:
-    0 0 8px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent),
-    0 0 16px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent),
-    0 0 28px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent);
-  --sidebar-icon-shadow:
-    drop-shadow(0 0 4px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent))
-    drop-shadow(0 0 10px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent))
-    drop-shadow(0 0 18px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent));
-  --sidebar-text-shadow-inline-bleed: 8px;
+  --sidebar-text-backdrop-color: transparent;
+  --sidebar-text-backdrop: linear-gradient(
+    90deg,
+    transparent 0,
+    var(--sidebar-text-backdrop-color) 0.45em,
+    var(--sidebar-text-backdrop-color) calc(100% - 0.45em),
+    transparent 100%
+  );
+  --sidebar-text-backdrop-inline-bleed: 4px;
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -747,10 +747,7 @@ body.has-app-background::after {
   overflow: hidden;
   text-overflow: ellipsis;
   padding-block: 10px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -10px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-text-shadow);
 }
 
 .add-session-btn {
@@ -1127,7 +1124,6 @@ body.has-app-background::after {
   font-size: var(--fs-xs);
   font-weight: 600;
   overflow: visible;
-  text-shadow: var(--sidebar-text-shadow);
 }
 
 .session-group-toggle:hover {
@@ -1212,11 +1208,6 @@ body.has-app-background::after {
   gap: 0;
   position: relative;
   font-family: var(--font-ui-emoji);
-  --sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));
-  --sidebar-item-text-shadow:
-    0 0 8px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 96%, transparent),
-    0 0 16px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 84%, transparent),
-    0 0 28px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 62%, transparent);
   transition:
     background-color 0.15s ease-in-out,
     opacity 0.2s;
@@ -1269,12 +1260,10 @@ body.has-app-background::after {
 .session-item.dragging {
   opacity: 0.5;
   background-color: var(--sidebar-item-active-background, var(--bg-session-active));
-  --sidebar-item-text-shadow-color: var(--bg-session-active-opaque, var(--bg-session-active));
 }
 
 .session-item.drag-over {
   background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
-  --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
 }
 
 .session-item.drag-over-above {
@@ -1298,13 +1287,11 @@ body.has-app-background::after {
       transparent
     );
     transform: translateX(2px);
-    --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
   }
 }
 
 .session-item.active {
   background-color: var(--sidebar-item-active-background, var(--bg-session-active));
-  --sidebar-item-text-shadow-color: var(--bg-session-active-opaque, var(--bg-session-active));
   border-image: linear-gradient(
       to bottom,
       transparent 0%,
@@ -1431,10 +1418,7 @@ body.has-app-background::after {
   flex-shrink: 1;
   min-width: 0;
   padding-block: 10px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -10px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .session-item.two-line .session-title {
@@ -1449,9 +1433,6 @@ body.has-app-background::after {
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .session-details {
@@ -1461,10 +1442,7 @@ body.has-app-background::after {
   align-items: center;
   gap: 4px;
   padding-block: 8px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -8px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .passive-indicator {
@@ -1493,10 +1471,7 @@ body.has-app-background::after {
   gap: 0;
   min-width: 0;
   padding-block: 8px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -8px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .fg-cwd {
@@ -2130,7 +2105,6 @@ body.has-app-background::after {
   overflow-y: hidden;
   padding: 5px 0;
   outline: none;
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .session-notes-input:focus {
@@ -2242,7 +2216,6 @@ body.has-app-background::after {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
-  text-shadow: var(--sidebar-text-shadow);
   overflow: visible;
 }
 
@@ -4286,7 +4259,8 @@ body.has-app-background::after {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 12px;
+  min-height: 32px;
+  padding: 4px 12px;
   border: none;
   background: none;
   color: var(--text-primary);
@@ -4295,7 +4269,6 @@ body.has-app-background::after {
   border-radius: 0;
   text-align: left;
   overflow: visible;
-  text-shadow: var(--sidebar-text-shadow);
 }
 
 .sidebar-nav-btn:hover {
@@ -4305,6 +4278,7 @@ body.has-app-background::after {
 
 .sidebar-nav-btn:hover .icon {
   color: var(--text-primary);
+  transform: scale(1.12);
 }
 
 .sidebar-nav-btn:active {
@@ -4312,14 +4286,49 @@ body.has-app-background::after {
 }
 
 .sidebar-nav-btn .icon {
-  font-size: var(--fs-xl);
-  width: 20px;
-  height: 20px;
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  filter: var(--sidebar-icon-shadow);
+  line-height: 1;
+  filter: none;
+  transition: transform 0.14s ease;
+}
+
+.sidebar-nav-btn .icon svg {
+  width: 1em;
+  height: 1em;
+}
+
+.sidebar
+  :is(
+    .sidebar-title,
+    .sidebar-nav-btn > span:not(.icon),
+    .spaces-tree-target-header,
+    .spaces-tree-space-title,
+    .session-group-label,
+    .session-title,
+    .session-subtitle,
+    .session-details,
+    .session-foreground,
+    .voice-section-title,
+    .network-section-title,
+    .sidebar-footer .version,
+    .sidebar-footer .footer-traffic,
+    .sidebar-footer .footer-separator,
+    .footer-update-hint
+  ) {
+  padding-inline: var(--sidebar-text-backdrop-inline-bleed);
+  margin-inline: calc(var(--sidebar-text-backdrop-inline-bleed) * -1);
+  background-image: var(--sidebar-text-backdrop);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  text-shadow: none;
 }
 
 .session-filter-bar {

@@ -63,7 +63,7 @@ describe('spacesTreeSidebar wiring', () => {
     expect(css).toContain('.session-notes-input:focus');
     expect(css).toContain('overflow-y: auto;');
     expect(css).toContain('padding: 5px 0;');
-    expect(css).toContain('text-shadow: var(--sidebar-item-text-shadow);');
+    expect(css).not.toContain('text-shadow: var(--sidebar-item-text-shadow);');
   });
 
   it('keeps transparent sidebar hover actions on opaque button shells', () => {
