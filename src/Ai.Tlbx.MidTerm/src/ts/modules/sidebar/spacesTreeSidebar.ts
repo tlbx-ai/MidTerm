@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Existing large sidebar owner; keyed reconciliation keeps DOM identity without a broader module split. */
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
+import type { SessionSelectionOptions } from '../../sessionActions';
 import {
   patchHistoryEntry,
   setSessionNotes as apiSetSessionNotes,
@@ -65,7 +66,7 @@ import {
 } from './spacesTreeSidebarElements';
 
 export interface SessionListCallbacks {
-  onSelect: (sessionId: string) => void;
+  onSelect: (sessionId: string, options?: SessionSelectionOptions) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
   onToggleAgentControl: (sessionId: string) => void;
@@ -1153,7 +1154,7 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     notesButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      callbacks?.onSelect(entry.id);
+      callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });
       toggleSessionNotes(entry.id);
     });
     actions.appendChild(notesButton);
@@ -1211,7 +1212,7 @@ function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
   textarea.addEventListener('click', stopRowInteraction);
   textarea.addEventListener('dblclick', stopRowInteraction);
   textarea.addEventListener('focus', () => {
-    callbacks?.onSelect(entry.id);
+    callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });
   });
   textarea.addEventListener('keydown', (event) => {
     event.stopPropagation();
