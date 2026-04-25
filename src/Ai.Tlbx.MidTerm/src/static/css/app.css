@@ -326,6 +326,7 @@
   --bg-tertiary: #161821; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
   --terminal-ui-background: var(--terminal-bg);
+  --app-chrome-background: var(--bg-terminal);
   --workspace-pane-background: var(--terminal-canvas-background, var(--terminal-bg));
   --workspace-pane-chrome-background: var(--terminal-ui-background, var(--terminal-bg));
   --text-input-background: var(--bg-input);
@@ -709,7 +710,7 @@ body.has-app-background::after {
   box-sizing: border-box;
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
-  background-color: var(--bg-sidebar);
+  background-color: var(--app-chrome-background, var(--bg-terminal));
   position: relative;
 }
 
@@ -2787,9 +2788,7 @@ body.has-app-background::after {
 
 .layout-leaf .session-tab-bar {
   border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 2%, transparent), transparent),
-    color-mix(in srgb, var(--bg-dialog-chrome) 94%, transparent);
+  background: var(--app-chrome-background, var(--bg-terminal));
   padding: 0 4px;
 }
 
@@ -2829,9 +2828,7 @@ body.has-app-background::after {
 
 .layout-leaf.focused .session-tab-bar {
   border-bottom-color: color-mix(in srgb, var(--accent-gold) 16%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-gold) 6%, transparent), transparent),
-    color-mix(in srgb, var(--bg-dialog-chrome) 96%, transparent);
+  background: var(--app-chrome-background, var(--bg-terminal));
 }
 
 /* Dock overlay - shown during drag to indicate drop zones */
@@ -11245,7 +11242,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 0;
-  background: var(--bg-terminal);
+  background: var(--app-chrome-background, var(--bg-terminal));
   border-bottom: none;
   flex-shrink: 0;
   padding: 0 8px;

@@ -258,6 +258,18 @@ describe('settings persistence wiring', () => {
     );
   });
 
+  it('raises app and terminal transparency after a background image upload', () => {
+    expect(persistenceSource).toContain('const MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY = 50;');
+    expect(persistenceSource).toContain(
+      'uiTransparency: Math.max(current.uiTransparency, MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY),',
+    );
+    expect(persistenceSource).toContain(
+      'terminalTransparency: Math.max(\n        current.terminalTransparency ?? current.uiTransparency,\n        MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY,\n      ),',
+    );
+    expect(persistenceSource).toContain("'setting-ui-transparency-value'");
+    expect(persistenceSource).toContain("'setting-terminal-transparency-value'");
+  });
+
   it('keeps settings surfaces opaque under UI transparency', () => {
     expect(cssSource).toContain('background-color: var(--bg-settings-opaque, var(--bg-settings));');
     expect(cssSource).toContain('background: var(--bg-elevated-opaque, var(--bg-elevated));');

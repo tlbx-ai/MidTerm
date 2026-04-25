@@ -1,6 +1,7 @@
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -83,5 +84,55 @@ public sealed class BackgroundImageServiceTests : IDisposable
         var resolvedPath = service.GetCurrentImagePath(settings);
 
         Assert.Equal(currentPath, resolvedPath);
+    }
+
+    [Fact]
+    public async Task SaveAsync_RaisesUiAndTerminalTransparencyToRevealUploadedImage()
+    {
+        var settingsService = new SettingsService(_tempDir);
+        settingsService.Save(new MidTermSettings
+        {
+            UiTransparency = 20,
+            TerminalTransparency = 40,
+            TerminalCellBackgroundTransparency = 10
+        });
+        var service = new BackgroundImageService(settingsService);
+        await using var stream = new MemoryStream([1, 2, 3]);
+        var file = new FormFile(stream, 0, stream.Length, "file", "wallpaper.png")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/png"
+        };
+
+        await service.SaveAsync(file);
+
+        var settings = settingsService.Load();
+        Assert.Equal(50, settings.UiTransparency);
+        Assert.Equal(50, settings.TerminalTransparency);
+        Assert.Equal(10, settings.TerminalCellBackgroundTransparency);
+    }
+
+    [Fact]
+    public async Task SaveAsync_PreservesExistingTransparencyAboveUploadMinimum()
+    {
+        var settingsService = new SettingsService(_tempDir);
+        settingsService.Save(new MidTermSettings
+        {
+            UiTransparency = 60,
+            TerminalTransparency = 70
+        });
+        var service = new BackgroundImageService(settingsService);
+        await using var stream = new MemoryStream([1, 2, 3]);
+        var file = new FormFile(stream, 0, stream.Length, "file", "wallpaper.jpg")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/jpeg"
+        };
+
+        await service.SaveAsync(file);
+
+        var settings = settingsService.Load();
+        Assert.Equal(60, settings.UiTransparency);
+        Assert.Equal(70, settings.TerminalTransparency);
     }
 }

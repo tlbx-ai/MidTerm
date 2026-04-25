@@ -23,4 +23,13 @@ describe('workspace pane transparency wiring', () => {
     expect(css).toContain('background: var(--workspace-pane-background);');
     expect(css).toContain('background: var(--workspace-pane-chrome-background);');
   });
+
+  it('binds the sidebar header and IDE bar to the shared app chrome background', () => {
+    expect(css).toContain('--app-chrome-background: var(--bg-terminal);');
+    expect(css).toContain(
+      'background-color: var(--app-chrome-background, var(--bg-terminal));',
+    );
+    expect(css).toContain('background: var(--app-chrome-background, var(--bg-terminal));');
+    expect(css).not.toContain('color-mix(in srgb, var(--bg-dialog-chrome) 94%, transparent)');
+  });
 });
