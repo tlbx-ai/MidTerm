@@ -52,7 +52,7 @@ public static class MuxProtocol
     public const int CompressionThreshold = 8192; // Only compress payloads > 8KB (buffer replays)
     public const int CompressedOutputHeaderSize = 25; // HeaderSize + seq(8) + dims(4) + uncompressedLen(4)
     public const int InputTraceMarkerPayloadSize = 4;
-    public const int InputTraceResultPayloadSize = 48;
+    public const int InputTraceResultPayloadSize = 68;
 
     public const byte BufferRequestModeFullReplay = 0x00;
     public const byte BufferRequestModeQuickResume = 0x01;
@@ -417,11 +417,16 @@ public static class MuxProtocol
         WriteInt32(payload, 16, result.IpcWriteMs);
         WriteInt32(payload, 20, result.ServerReceiveToMthostReceiveMs);
         WriteInt32(payload, 24, result.ServerReceiveToPtyWriteDoneMs);
-        WriteInt32(payload, 28, result.ServerReceiveToOutputObservedMs);
-        WriteInt32(payload, 32, result.OutputObservedToMuxQueuedMs);
-        WriteInt32(payload, 36, result.MuxQueuedToClientQueuedMs);
-        WriteInt32(payload, 40, result.ClientQueuedToWsFlushMs);
-        WriteInt32(payload, 44, result.ServerReceiveToWsFlushMs);
+        WriteInt32(payload, 28, result.PtyWriteDoneToPtyOutputReadMs);
+        WriteInt32(payload, 32, result.PtyOutputReadToMthostIpcEnqueuedMs);
+        WriteInt32(payload, 36, result.MthostIpcEnqueuedToWriteDoneMs);
+        WriteInt32(payload, 40, result.MthostIpcWriteDoneToFlushDoneMs);
+        WriteInt32(payload, 44, result.MthostIpcEnqueuedToServerOutputObservedMs);
+        WriteInt32(payload, 48, result.ServerReceiveToOutputObservedMs);
+        WriteInt32(payload, 52, result.OutputObservedToMuxQueuedMs);
+        WriteInt32(payload, 56, result.MuxQueuedToClientQueuedMs);
+        WriteInt32(payload, 60, result.ClientQueuedToWsFlushMs);
+        WriteInt32(payload, 64, result.ServerReceiveToWsFlushMs);
         return frame;
     }
 
@@ -482,6 +487,11 @@ public readonly record struct MuxInputTraceResult(
     int IpcWriteMs,
     int ServerReceiveToMthostReceiveMs,
     int ServerReceiveToPtyWriteDoneMs,
+    int PtyWriteDoneToPtyOutputReadMs,
+    int PtyOutputReadToMthostIpcEnqueuedMs,
+    int MthostIpcEnqueuedToWriteDoneMs,
+    int MthostIpcWriteDoneToFlushDoneMs,
+    int MthostIpcEnqueuedToServerOutputObservedMs,
     int ServerReceiveToOutputObservedMs,
     int OutputObservedToMuxQueuedMs,
     int MuxQueuedToClientQueuedMs,

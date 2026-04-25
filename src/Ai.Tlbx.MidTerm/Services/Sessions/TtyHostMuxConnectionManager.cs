@@ -43,6 +43,10 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         public long MthostMarkerReceivedAtMs { get; set; }
         public long MthostInputReceivedAtMs { get; set; }
         public long PtyWriteDoneAtMs { get; set; }
+        public long PtyOutputReadAtMs { get; set; }
+        public long MthostIpcOutputEnqueuedAtMs { get; set; }
+        public long MthostIpcOutputWriteDoneAtMs { get; set; }
+        public long MthostIpcOutputFlushDoneAtMs { get; set; }
         public long OutputObservedAtMs { get; set; }
         public long MuxQueueEnqueuedAtMs { get; set; }
         public long ClientQueuedAtMs { get; set; }
@@ -272,7 +276,17 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             trace.MthostMarkerReceivedAtMs = report.MarkerReceivedAtMs;
             trace.MthostInputReceivedAtMs = report.InputReceivedAtMs;
             trace.PtyWriteDoneAtMs = report.PtyWriteDoneAtMs;
+            if (report.FirstOutputSequenceEndExclusive != 0)
+            {
+                trace.FirstOutputSequenceEndExclusive = report.FirstOutputSequenceEndExclusive;
+                trace.PtyOutputReadAtMs = report.PtyOutputReadAtMs;
+                trace.MthostIpcOutputEnqueuedAtMs = report.IpcOutputEnqueuedAtMs;
+                trace.MthostIpcOutputWriteDoneAtMs = report.IpcOutputWriteDoneAtMs;
+                trace.MthostIpcOutputFlushDoneAtMs = report.IpcOutputFlushDoneAtMs;
+            }
         }
+
+        TrySendInputTraceResult(trace);
     }
 
     private InputLatencyTrace? MarkInputTraceOutputObserved(string sessionId, ulong sequenceEndExclusive)
@@ -330,24 +344,36 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             return;
         }
 
+        lock (trace.Gate)
+        {
+            trace.WsFlushAtMs = sentAtMs;
+        }
+
+        TrySendInputTraceResult(trace);
+    }
+
+    private void TrySendInputTraceResult(InputLatencyTrace trace)
+    {
         MuxInputTraceResult result;
         lock (trace.Gate)
         {
-            if (trace.Reported)
+            if (trace.Reported ||
+                trace.FirstOutputSequenceEndExclusive == 0 ||
+                trace.WsFlushAtMs == 0 ||
+                trace.MthostIpcOutputFlushDoneAtMs == 0)
             {
                 return;
             }
 
-            trace.WsFlushAtMs = sentAtMs;
             trace.Reported = true;
             result = BuildInputTraceResult(trace);
         }
 
         RemoveInputTrace(trace);
 
-        if (_clients.TryGetValue(clientId, out var client) && client.WebSocket.State == WebSocketState.Open)
+        if (_clients.TryGetValue(trace.ClientId, out var client) && client.WebSocket.State == WebSocketState.Open)
         {
-            client.QueueFrame(MuxProtocol.CreateInputTraceResultFrame(sessionId, result), sessionId);
+            client.QueueFrame(MuxProtocol.CreateInputTraceResultFrame(trace.SessionId, result), trace.SessionId);
         }
     }
 
@@ -389,6 +415,11 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             ElapsedMs(trace.IpcWriteStartAtMs, trace.IpcWriteDoneAtMs),
             ElapsedMs(trace.MuxInputReceivedAtMs, trace.MthostInputReceivedAtMs),
             ElapsedMs(trace.MuxInputReceivedAtMs, trace.PtyWriteDoneAtMs),
+            ElapsedMs(trace.PtyWriteDoneAtMs, trace.PtyOutputReadAtMs),
+            ElapsedMs(trace.PtyOutputReadAtMs, trace.MthostIpcOutputEnqueuedAtMs),
+            ElapsedMs(trace.MthostIpcOutputEnqueuedAtMs, trace.MthostIpcOutputWriteDoneAtMs),
+            ElapsedMs(trace.MthostIpcOutputWriteDoneAtMs, trace.MthostIpcOutputFlushDoneAtMs),
+            ElapsedMs(trace.MthostIpcOutputEnqueuedAtMs, trace.OutputObservedAtMs),
             ElapsedMs(trace.MuxInputReceivedAtMs, trace.OutputObservedAtMs),
             ElapsedMs(trace.OutputObservedAtMs, trace.MuxQueueEnqueuedAtMs),
             ElapsedMs(trace.MuxQueueEnqueuedAtMs, trace.ClientQueuedAtMs),

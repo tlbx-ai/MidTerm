@@ -207,7 +207,12 @@ public class TtyHostProtocolTests
             44U,
             1000,
             1002,
-            1003));
+            1003,
+            200UL,
+            1010,
+            1011,
+            1012,
+            1013));
 
         Assert.True(TtyHostProtocol.TryReadHeader(frame, out var type, out var payloadLength));
         Assert.Equal(TtyHostMessageType.InputTrace, type);
@@ -220,5 +225,10 @@ public class TtyHostProtocolTests
         Assert.Equal(1000, report.Value.MarkerReceivedAtMs);
         Assert.Equal(1002, report.Value.InputReceivedAtMs);
         Assert.Equal(1003, report.Value.PtyWriteDoneAtMs);
+        Assert.Equal(200UL, report.Value.FirstOutputSequenceEndExclusive);
+        Assert.Equal(1010, report.Value.PtyOutputReadAtMs);
+        Assert.Equal(1011, report.Value.IpcOutputEnqueuedAtMs);
+        Assert.Equal(1012, report.Value.IpcOutputWriteDoneAtMs);
+        Assert.Equal(1013, report.Value.IpcOutputFlushDoneAtMs);
     }
 }

@@ -34,6 +34,8 @@ interface MetricElements {
   inputTrace: HTMLSpanElement;
   inputServer: HTMLSpanElement;
   inputHost: HTMLSpanElement;
+  inputPtyOut: HTMLSpanElement;
+  inputIpcOut: HTMLSpanElement;
   inputMux: HTMLSpanElement;
   serverRtt: HTMLSpanElement;
   mthostRtt: HTMLSpanElement;
@@ -102,6 +104,8 @@ function ensureOverlay(): void {
     { label: 'Trace', id: 'inputTrace' },
     { label: 'SrvIn', id: 'inputServer' },
     { label: 'TtyIn', id: 'inputHost' },
+    { label: 'PtyOut', id: 'inputPtyOut' },
+    { label: 'IpcOut', id: 'inputIpcOut' },
     { label: 'MuxOut', id: 'inputMux' },
     { label: 'Srv', id: 'serverRtt' },
     { label: 'Host', id: 'mthostRtt' },
@@ -412,12 +416,31 @@ function handleInputLatencyTrace(sessionId: string, trace: InputLatencyTraceSnap
   setTraceMetric(metricEls.inputHost, hostText, trace.serverReceiveToPtyWriteDoneMs);
   metricEls.inputHost.title = 'server receive to mthost input receive / PTY write done';
 
-  const muxText = `${formatTraceMs(trace.serverReceiveToOutputObservedMs)}/${formatTraceMs(
+  const ptyOutText = `${formatTraceMs(trace.ptyWriteDoneToPtyOutputReadMs)}/${formatTraceMs(
+    trace.ptyOutputReadToMthostIpcEnqueuedMs,
+  )} ms`;
+  setTraceMetric(metricEls.inputPtyOut, ptyOutText, trace.ptyWriteDoneToPtyOutputReadMs);
+  metricEls.inputPtyOut.title =
+    'PTY write done to PTY output read / PTY output read to mthost IPC enqueue';
+
+  const ipcOutText = `${formatTraceMs(trace.mthostIpcEnqueuedToWriteDoneMs)}/${formatTraceMs(
+    trace.mthostIpcWriteDoneToFlushDoneMs,
+  )}/${formatTraceMs(trace.mthostIpcEnqueuedToServerOutputObservedMs)} ms`;
+  setTraceMetric(
+    metricEls.inputIpcOut,
+    ipcOutText,
+    trace.mthostIpcEnqueuedToServerOutputObservedMs,
+  );
+  metricEls.inputIpcOut.title =
+    'mthost IPC enqueue to write done / write done to flush done / enqueue to server output observed';
+
+  const muxText = `${formatTraceMs(trace.outputObservedToMuxQueuedMs)}/${formatTraceMs(
     trace.muxQueuedToClientQueuedMs,
   )}/${formatTraceMs(trace.clientQueuedToWsFlushMs)} ms`;
-  setTraceMetric(metricEls.inputMux, muxText, trace.serverReceiveToWsFlushMs);
+  setTraceMetric(metricEls.inputMux, muxText, trace.clientQueuedToWsFlushMs);
   metricEls.inputMux.title =
-    `output observed / mux queue->client queue / client queue->ws flush; ` +
+    `server output observed->mux queue / mux queue->client queue / client queue->ws flush; ` +
+    `server->output=${formatTraceMs(trace.serverReceiveToOutputObservedMs)}ms ` +
     `server->flush=${formatTraceMs(trace.serverReceiveToWsFlushMs)}ms`;
 }
 

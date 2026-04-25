@@ -264,7 +264,12 @@ public class MuxProtocolTests
             6,
             7,
             8,
-            9);
+            9,
+            10,
+            11,
+            12,
+            13,
+            14);
 
         var frame = MuxProtocol.CreateInputTraceResultFrame("session1", result);
 
@@ -274,7 +279,7 @@ public class MuxProtocolTests
         Assert.Equal(MuxProtocol.InputTraceResultPayloadSize, payload.Length);
         Assert.Equal(7U, BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]));
         Assert.Equal(123UL, BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(4, 8)));
-        Assert.Equal(9, BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(44, 4)));
+        Assert.Equal(14, BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(64, 4)));
     }
 
 }

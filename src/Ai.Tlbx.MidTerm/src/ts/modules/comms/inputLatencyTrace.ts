@@ -13,6 +13,11 @@ export interface InputLatencyTraceSnapshot {
   ipcWriteMs: number;
   serverReceiveToMthostReceiveMs: number;
   serverReceiveToPtyWriteDoneMs: number;
+  ptyWriteDoneToPtyOutputReadMs: number;
+  ptyOutputReadToMthostIpcEnqueuedMs: number;
+  mthostIpcEnqueuedToWriteDoneMs: number;
+  mthostIpcWriteDoneToFlushDoneMs: number;
+  mthostIpcEnqueuedToServerOutputObservedMs: number;
   serverReceiveToOutputObservedMs: number;
   outputObservedToMuxQueuedMs: number;
   muxQueuedToClientQueuedMs: number;
@@ -26,6 +31,11 @@ interface InputLatencyServerTrace {
   ipcWriteMs: number;
   serverReceiveToMthostReceiveMs: number;
   serverReceiveToPtyWriteDoneMs: number;
+  ptyWriteDoneToPtyOutputReadMs: number;
+  ptyOutputReadToMthostIpcEnqueuedMs: number;
+  mthostIpcEnqueuedToWriteDoneMs: number;
+  mthostIpcWriteDoneToFlushDoneMs: number;
+  mthostIpcEnqueuedToServerOutputObservedMs: number;
   serverReceiveToOutputObservedMs: number;
   outputObservedToMuxQueuedMs: number;
   muxQueuedToClientQueuedMs: number;
@@ -228,6 +238,11 @@ function completeInputTrace(
     ipcWriteMs: server.ipcWriteMs,
     serverReceiveToMthostReceiveMs: server.serverReceiveToMthostReceiveMs,
     serverReceiveToPtyWriteDoneMs: server.serverReceiveToPtyWriteDoneMs,
+    ptyWriteDoneToPtyOutputReadMs: server.ptyWriteDoneToPtyOutputReadMs,
+    ptyOutputReadToMthostIpcEnqueuedMs: server.ptyOutputReadToMthostIpcEnqueuedMs,
+    mthostIpcEnqueuedToWriteDoneMs: server.mthostIpcEnqueuedToWriteDoneMs,
+    mthostIpcWriteDoneToFlushDoneMs: server.mthostIpcWriteDoneToFlushDoneMs,
+    mthostIpcEnqueuedToServerOutputObservedMs: server.mthostIpcEnqueuedToServerOutputObservedMs,
     serverReceiveToOutputObservedMs: server.serverReceiveToOutputObservedMs,
     outputObservedToMuxQueuedMs: server.outputObservedToMuxQueuedMs,
     muxQueuedToClientQueuedMs: server.muxQueuedToClientQueuedMs,
@@ -267,7 +282,7 @@ export function handleMuxInputTraceResultFrame(
     return false;
   }
 
-  if (payload.length < 48) {
+  if (payload.length < 68) {
     return true;
   }
 
@@ -284,11 +299,16 @@ export function handleMuxInputTraceResultFrame(
     ipcWriteMs: view.getInt32(16, true),
     serverReceiveToMthostReceiveMs: view.getInt32(20, true),
     serverReceiveToPtyWriteDoneMs: view.getInt32(24, true),
-    serverReceiveToOutputObservedMs: view.getInt32(28, true),
-    outputObservedToMuxQueuedMs: view.getInt32(32, true),
-    muxQueuedToClientQueuedMs: view.getInt32(36, true),
-    clientQueuedToWsFlushMs: view.getInt32(40, true),
-    serverReceiveToWsFlushMs: view.getInt32(44, true),
+    ptyWriteDoneToPtyOutputReadMs: view.getInt32(28, true),
+    ptyOutputReadToMthostIpcEnqueuedMs: view.getInt32(32, true),
+    mthostIpcEnqueuedToWriteDoneMs: view.getInt32(36, true),
+    mthostIpcWriteDoneToFlushDoneMs: view.getInt32(40, true),
+    mthostIpcEnqueuedToServerOutputObservedMs: view.getInt32(44, true),
+    serverReceiveToOutputObservedMs: view.getInt32(48, true),
+    outputObservedToMuxQueuedMs: view.getInt32(52, true),
+    muxQueuedToClientQueuedMs: view.getInt32(56, true),
+    clientQueuedToWsFlushMs: view.getInt32(60, true),
+    serverReceiveToWsFlushMs: view.getInt32(64, true),
   };
   tryCompleteInputTracesForSession(sessionId);
   return true;

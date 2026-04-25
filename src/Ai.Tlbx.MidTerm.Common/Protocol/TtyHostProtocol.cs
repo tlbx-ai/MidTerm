@@ -16,7 +16,8 @@ public static class TtyHostProtocol
     public const int HeaderSize = 5;
     public const int MaxPayloadSize = 1024 * 1024;
     public const int InputTraceMarkerPayloadSize = 4;
-    public const int InputTraceReportPayloadSize = 28;
+    public const int MinimumInputTraceReportPayloadSize = 28;
+    public const int InputTraceReportPayloadSize = 68;
 
     public static byte[] CreateInfoRequest()
     {
@@ -365,12 +366,17 @@ public static class TtyHostProtocol
         BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(4, 8), report.MarkerReceivedAtMs);
         BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(12, 8), report.InputReceivedAtMs);
         BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(20, 8), report.PtyWriteDoneAtMs);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(28, 8), report.FirstOutputSequenceEndExclusive);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(36, 8), report.PtyOutputReadAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(44, 8), report.IpcOutputEnqueuedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(52, 8), report.IpcOutputWriteDoneAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(60, 8), report.IpcOutputFlushDoneAtMs);
         return CreateFrame(TtyHostMessageType.InputTrace, payload);
     }
 
     public static TtyHostInputTraceReport? ParseInputTraceReport(ReadOnlySpan<byte> payload)
     {
-        if (payload.Length < InputTraceReportPayloadSize)
+        if (payload.Length < MinimumInputTraceReportPayloadSize)
         {
             return null;
         }
@@ -385,7 +391,12 @@ public static class TtyHostProtocol
             traceId,
             BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(4, 8)),
             BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(12, 8)),
-            BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(20, 8)));
+            BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(20, 8)),
+            payload.Length >= 36 ? BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(28, 8)) : 0,
+            payload.Length >= 44 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(36, 8)) : 0,
+            payload.Length >= 52 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(44, 8)) : 0,
+            payload.Length >= 60 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(52, 8)) : 0,
+            payload.Length >= 68 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(60, 8)) : 0);
     }
 
     public static byte[] CreateDataLoss(TtyHostDataLossPayload payload)
@@ -466,7 +477,12 @@ public readonly record struct TtyHostInputTraceReport(
     uint TraceId,
     long MarkerReceivedAtMs,
     long InputReceivedAtMs,
-    long PtyWriteDoneAtMs);
+    long PtyWriteDoneAtMs,
+    ulong FirstOutputSequenceEndExclusive = 0,
+    long PtyOutputReadAtMs = 0,
+    long IpcOutputEnqueuedAtMs = 0,
+    long IpcOutputWriteDoneAtMs = 0,
+    long IpcOutputFlushDoneAtMs = 0);
 
 /// <summary>
 /// Session metadata exchanged between mt and mthost.
