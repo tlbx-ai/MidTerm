@@ -333,8 +333,12 @@
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
   --sidebar-readable-text-shadow:
-    0 0 2px var(--bg-sidebar-opaque, var(--bg-sidebar)),
-    0 1px 3px var(--bg-sidebar-opaque, var(--bg-sidebar));
+    0 0 4px var(--bg-sidebar-opaque, var(--bg-sidebar)),
+    0 1px 7px var(--bg-sidebar-opaque, var(--bg-sidebar)),
+    0 2px 12px var(--bg-sidebar-opaque, var(--bg-sidebar));
+  --sidebar-readable-icon-shadow:
+    drop-shadow(0 0 4px var(--bg-sidebar-opaque, var(--bg-sidebar)))
+    drop-shadow(0 1px 7px var(--bg-sidebar-opaque, var(--bg-sidebar)));
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -748,6 +752,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   .sidebar
   :is(
     .sidebar-title,
+    .sidebar-nav-btn > .icon,
     .sidebar-nav-btn > span:not(.icon),
     .spaces-tree-target-header,
     .spaces-tree-space-title,
@@ -764,6 +769,10 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     .footer-update-hint
   ) {
   text-shadow: var(--sidebar-readable-text-shadow);
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn > .icon {
+  filter: var(--sidebar-readable-icon-shadow);
 }
 
 .add-session-btn {
