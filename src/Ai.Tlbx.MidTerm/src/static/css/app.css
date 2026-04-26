@@ -332,33 +332,37 @@
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
-  --sidebar-readable-text-color: white;
-  --sidebar-readable-muted-text-color: white;
+  --sidebar-readable-text-color: color-mix(in srgb, white 94%, var(--text-primary) 6%);
+  --sidebar-readable-muted-text-color: color-mix(in srgb, white 84%, var(--text-secondary) 16%);
   --sidebar-readable-shadow-core: color-mix(
     in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 78%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 94%,
     transparent
   );
   --sidebar-readable-shadow-soft: color-mix(
     in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 42%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 72%,
     transparent
   );
   --sidebar-readable-shadow-wide: color-mix(
     in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 24%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 52%,
     transparent
   );
   --sidebar-readable-text-shadow:
-    0 0 1px var(--sidebar-readable-shadow-core),
-    0 1px 9px var(--sidebar-readable-shadow-soft),
-    0 2px 18px var(--sidebar-readable-shadow-wide);
+    0 0 2px var(--sidebar-readable-shadow-core),
+    0 1px 10px var(--sidebar-readable-shadow-soft),
+    0 2px 22px var(--sidebar-readable-shadow-wide);
+  --sidebar-readable-filter-shadow:
+    drop-shadow(0 0 2px var(--sidebar-readable-shadow-core))
+    drop-shadow(0 1px 14px var(--sidebar-readable-shadow-soft))
+    drop-shadow(0 2px 30px var(--sidebar-readable-shadow-wide));
   --sidebar-readable-icon-shadow:
-    drop-shadow(0 0 1px var(--sidebar-readable-shadow-core))
-    drop-shadow(0 1px 9px var(--sidebar-readable-shadow-soft));
-  --sidebar-readable-blend-mode: difference;
-  --sidebar-readable-ellipsis-pad-x: 12px;
-  --sidebar-readable-ellipsis-pad-y: 5px;
+    drop-shadow(0 0 2px var(--sidebar-readable-shadow-core))
+    drop-shadow(0 1px 14px var(--sidebar-readable-shadow-soft))
+    drop-shadow(0 2px 30px var(--sidebar-readable-shadow-wide));
+  --sidebar-readable-ellipsis-pad-x: 24px;
+  --sidebar-readable-ellipsis-pad-y: 8px;
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -789,7 +793,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     .footer-update-hint
   ) {
   color: var(--sidebar-readable-text-color);
-  mix-blend-mode: var(--sidebar-readable-blend-mode);
+  filter: var(--sidebar-readable-filter-shadow);
   text-shadow: var(--sidebar-readable-text-shadow);
 }
 
