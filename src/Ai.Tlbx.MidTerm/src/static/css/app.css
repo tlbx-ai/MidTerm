@@ -336,31 +336,31 @@
   --sidebar-readable-muted-text-color: color-mix(in srgb, white 84%, var(--text-secondary) 16%);
   --sidebar-readable-shadow-core: color-mix(
     in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 94%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 85%,
     transparent
   );
   --sidebar-readable-shadow-soft: color-mix(
     in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 72%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 65%,
     transparent
   );
   --sidebar-readable-shadow-wide: color-mix(
     in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 52%,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 47%,
     transparent
   );
   --sidebar-readable-text-shadow:
     0 0 2px var(--sidebar-readable-shadow-core),
-    0 1px 10px var(--sidebar-readable-shadow-soft),
-    0 2px 22px var(--sidebar-readable-shadow-wide);
+    0 1px 12px var(--sidebar-readable-shadow-soft),
+    0 2px 26px var(--sidebar-readable-shadow-wide);
   --sidebar-readable-filter-shadow:
     drop-shadow(0 0 2px var(--sidebar-readable-shadow-core))
-    drop-shadow(0 1px 14px var(--sidebar-readable-shadow-soft))
-    drop-shadow(0 2px 30px var(--sidebar-readable-shadow-wide));
+    drop-shadow(0 1px 16px var(--sidebar-readable-shadow-soft))
+    drop-shadow(0 2px 34px var(--sidebar-readable-shadow-wide));
   --sidebar-readable-icon-shadow:
     drop-shadow(0 0 2px var(--sidebar-readable-shadow-core))
-    drop-shadow(0 1px 14px var(--sidebar-readable-shadow-soft))
-    drop-shadow(0 2px 30px var(--sidebar-readable-shadow-wide));
+    drop-shadow(0 1px 16px var(--sidebar-readable-shadow-soft))
+    drop-shadow(0 2px 34px var(--sidebar-readable-shadow-wide));
   --sidebar-readable-ellipsis-pad-x: 24px;
   --sidebar-readable-ellipsis-pad-y: 8px;
 
@@ -768,8 +768,17 @@ body.has-app-background::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-block: 10px;
-  margin-block: -10px;
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 10px)
+    var(--sidebar-readable-ellipsis-pad-x, 0px);
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 10px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 0px) * -1);
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar-brand,
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar-title {
+  overflow: visible;
 }
 
 body.has-app-background:not(.opaque-terminal-surfaces)
@@ -881,6 +890,29 @@ body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-target-header {
+  align-self: flex-start;
+  display: inline-block;
+  overflow: visible;
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 8px)
+    calc(4px + var(--sidebar-readable-ellipsis-pad-x, 24px));
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 8px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 24px) * -1);
+  position: relative;
+  z-index: 2;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .spaces-tree-adhoc
+  .spaces-tree-target-header {
+  padding:
+    calc(10px + var(--sidebar-readable-ellipsis-pad-y, 8px))
+    calc(12px + var(--sidebar-readable-ellipsis-pad-x, 24px))
+    calc(6px + var(--sidebar-readable-ellipsis-pad-y, 8px));
 }
 
 .spaces-tree-space-list,

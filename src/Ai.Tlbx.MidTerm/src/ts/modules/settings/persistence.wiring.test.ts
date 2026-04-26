@@ -315,6 +315,10 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('.sidebar-nav-btn > .icon');
     expect(cssSource).toContain('.session-group-toggle {');
     expect(cssSource).toContain('.session-group-label {');
+    expect(cssSource).toContain('.spaces-tree-target-header {');
+    expect(cssSource).toContain('.spaces-tree-adhoc');
+    expect(cssSource).toContain('.sidebar-title {');
+    expect(cssSource).toContain('.sidebar-brand,');
     expect(cssSource).toContain('color: var(--sidebar-readable-text-color);');
     expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color);');
     expect(cssSource).toContain('filter: var(--sidebar-readable-filter-shadow);');
