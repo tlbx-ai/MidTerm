@@ -313,6 +313,8 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('--sidebar-readable-ellipsis-pad-x:');
     expect(cssSource).toContain('body.has-app-background:not(.opaque-terminal-surfaces)');
     expect(cssSource).toContain('.sidebar-nav-btn > .icon');
+    expect(cssSource).toContain('.session-group-toggle {');
+    expect(cssSource).toContain('.session-group-label {');
     expect(cssSource).toContain('color: var(--sidebar-readable-text-color);');
     expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color);');
     expect(cssSource).toContain('filter: var(--sidebar-readable-filter-shadow);');
