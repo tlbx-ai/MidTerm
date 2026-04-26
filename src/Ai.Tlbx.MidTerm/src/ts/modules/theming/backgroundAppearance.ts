@@ -69,7 +69,6 @@ const BACKGROUND_KEN_BURNS_REFERENCE_SIZE_PX = 720;
 const BACKGROUND_KEN_BURNS_PATH_MULTIPLIER = Math.PI * 2 * 0.46;
 const BACKGROUND_KEN_BURNS_PAN_X_FACTOR = 0.24;
 const BACKGROUND_KEN_BURNS_PAN_Y_FACTOR = 0.16;
-const SIDEBAR_TEXT_BACKDROP_MAX_ALPHA = 0.72;
 
 interface RgbColor {
   r: number;
@@ -126,14 +125,6 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
   }
 
   const hasImage = shouldRenderBackgroundImage(settings);
-  root.style.setProperty(
-    '--sidebar-text-backdrop-color',
-    resolveSidebarTextBackdropColor(
-      palette['--bg-sidebar'],
-      hasImage,
-      Math.min(uiTransparency, terminalTransparency),
-    ),
-  );
 
   root.style.setProperty(
     '--app-background-image',
@@ -209,24 +200,6 @@ function parseHexColor(value: string): RgbColor | null {
 
 function toRgba(color: RgbColor, alpha: number): string {
   return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${alpha.toFixed(3)})`;
-}
-
-function resolveSidebarTextBackdropColor(
-  sidebarColor: string | undefined,
-  hasImage: boolean,
-  transparency: number,
-): string {
-  const rgb = parseColor(sidebarColor);
-  if (!hasImage || !rgb) {
-    return 'transparent';
-  }
-
-  const alpha = clamp(
-    (clamp(transparency, 0, 100) / 100) * SIDEBAR_TEXT_BACKDROP_MAX_ALPHA,
-    0,
-    SIDEBAR_TEXT_BACKDROP_MAX_ALPHA,
-  );
-  return alpha <= 0 ? 'transparent' : toRgba(rgb, alpha);
 }
 
 function transparencyToAlpha(transparency: number, response: number): number {
