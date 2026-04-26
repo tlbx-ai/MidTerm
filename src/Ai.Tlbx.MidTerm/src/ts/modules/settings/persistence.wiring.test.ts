@@ -316,7 +316,12 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('.session-group-toggle {');
     expect(cssSource).toContain('.session-group-label {');
     expect(cssSource).toContain('.spaces-tree-target-header {');
+    expect(cssSource).toContain('.spaces-tree-target-header::before');
+    expect(cssSource).toContain('.spaces-tree-adhoc-list');
     expect(cssSource).toContain('.spaces-tree-adhoc');
+    expect(cssSource).toContain('.spaces-tree-workspace-name');
+    expect(cssSource).toContain('.spaces-tree-workspace-branch');
+    expect(cssSource).toContain('.spaces-tree-workspace-badge');
     expect(cssSource).toContain('.sidebar-title {');
     expect(cssSource).toContain('.sidebar-brand,');
     expect(cssSource).toContain('color: var(--sidebar-readable-text-color);');
