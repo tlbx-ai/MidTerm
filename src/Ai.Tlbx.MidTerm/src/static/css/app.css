@@ -332,11 +332,9 @@
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
-  --sidebar-text-outline: color-mix(
-    in srgb,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 72%,
-    transparent
-  );
+  --sidebar-readable-text-shadow:
+    0 0 2px var(--bg-sidebar-opaque, var(--bg-sidebar)),
+    0 1px 3px var(--bg-sidebar-opaque, var(--bg-sidebar));
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -765,9 +763,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     .sidebar-footer .footer-separator,
     .footer-update-hint
   ) {
-  -webkit-text-stroke: 0.28px var(--sidebar-text-outline);
-  paint-order: stroke fill;
-  mix-blend-mode: difference;
+  text-shadow: var(--sidebar-readable-text-shadow);
 }
 
 .add-session-btn {
@@ -2055,13 +2051,13 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .session-inject,
 .session-undock,
 .session-close {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: var(--session-actions-background, transparent);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: var(--fs-md);
+  font-size: 18px;
   line-height: 1;
   border-radius: 3px;
   display: flex;
@@ -2085,7 +2081,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .session-action-icon.text-icon {
-  font-size: var(--fs-lg);
+  font-size: 20px;
 }
 
 .session-action-label {
@@ -2183,7 +2179,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .session-inject:hover .session-action-icon,
 .session-undock:hover .session-action-icon,
 .session-close:hover .session-action-icon {
-  transform: scale(1.18);
+  transform: scale(1.22);
 }
 
 .session-control.active:hover {

@@ -304,10 +304,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
     );
-    expect(cssSource).toContain('--sidebar-text-outline: color-mix(');
+    expect(cssSource).toContain('--sidebar-readable-text-shadow:');
     expect(cssSource).toContain('body.has-app-background:not(.opaque-terminal-surfaces)');
-    expect(cssSource).toContain('-webkit-text-stroke: 0.28px var(--sidebar-text-outline);');
-    expect(cssSource).toContain('mix-blend-mode: difference;');
+    expect(cssSource).toContain('text-shadow: var(--sidebar-readable-text-shadow);');
     expect(cssSource).toContain('filter: none;');
   });
 
