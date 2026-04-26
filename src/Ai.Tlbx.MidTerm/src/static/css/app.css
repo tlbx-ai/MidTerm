@@ -332,13 +332,30 @@
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
+  --sidebar-readable-text-color: color-mix(in srgb, white 88%, var(--text-primary) 12%);
+  --sidebar-readable-muted-text-color: color-mix(in srgb, white 72%, var(--text-secondary) 28%);
+  --sidebar-readable-shadow-core: color-mix(
+    in srgb,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 78%,
+    transparent
+  );
+  --sidebar-readable-shadow-soft: color-mix(
+    in srgb,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 42%,
+    transparent
+  );
+  --sidebar-readable-shadow-wide: color-mix(
+    in srgb,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 24%,
+    transparent
+  );
   --sidebar-readable-text-shadow:
-    0 0 4px var(--bg-sidebar-opaque, var(--bg-sidebar)),
-    0 1px 7px var(--bg-sidebar-opaque, var(--bg-sidebar)),
-    0 2px 12px var(--bg-sidebar-opaque, var(--bg-sidebar));
+    0 0 1px var(--sidebar-readable-shadow-core),
+    0 1px 9px var(--sidebar-readable-shadow-soft),
+    0 2px 18px var(--sidebar-readable-shadow-wide);
   --sidebar-readable-icon-shadow:
-    drop-shadow(0 0 4px var(--bg-sidebar-opaque, var(--bg-sidebar)))
-    drop-shadow(0 1px 7px var(--bg-sidebar-opaque, var(--bg-sidebar)));
+    drop-shadow(0 0 1px var(--sidebar-readable-shadow-core))
+    drop-shadow(0 1px 9px var(--sidebar-readable-shadow-soft));
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -768,7 +785,24 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     .sidebar-footer .footer-separator,
     .footer-update-hint
   ) {
+  color: var(--sidebar-readable-text-color);
   text-shadow: var(--sidebar-readable-text-shadow);
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .sidebar
+  :is(
+    .session-subtitle,
+    .session-details,
+    .session-foreground,
+    .voice-section-title,
+    .network-section-title,
+    .sidebar-footer .version,
+    .sidebar-footer .footer-traffic,
+    .sidebar-footer .footer-separator,
+    .footer-update-hint
+  ) {
+  color: var(--sidebar-readable-muted-text-color);
 }
 
 body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn > .icon {
@@ -1458,6 +1492,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
+  padding: 4px 3px;
+  margin: -4px -3px;
 }
 
 .session-details {
@@ -1507,6 +1543,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn
   white-space: nowrap;
   direction: rtl;
   text-align: left;
+  padding: 4px 3px;
+  margin: -4px -3px;
 }
 
 .fg-separator {
@@ -1521,6 +1559,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 4px 3px;
+  margin: -4px -3px;
 }
 
 /* Unnamed sessions: process indicator promoted to title row */
@@ -15635,6 +15675,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --sidebar-session-secondary-text: color-mix(in srgb, var(--text-primary) 62%, var(--text-muted));
 }
 
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .session-item {
+  color: var(--sidebar-readable-text-color);
+  --sidebar-session-secondary-text: var(--sidebar-readable-muted-text-color);
+}
+
 .sidebar
   .session-item
   :is(
@@ -15644,6 +15689,18 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     .session-foreground.process-title
   ) {
   color: var(--text-primary) !important;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .sidebar
+  .session-item
+  :is(
+    .session-title,
+    .session-role-badge,
+    .session-state-badge,
+    .session-foreground.process-title
+  ) {
+  color: var(--sidebar-readable-text-color) !important;
 }
 
 .sidebar .session-item :is(.session-subtitle, .session-details, .passive-indicator) {

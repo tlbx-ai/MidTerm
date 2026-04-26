@@ -306,10 +306,16 @@ describe('settings persistence wiring', () => {
     );
     expect(cssSource).toContain('--sidebar-readable-text-shadow:');
     expect(cssSource).toContain('--sidebar-readable-icon-shadow:');
+    expect(cssSource).toContain('--sidebar-readable-text-color:');
+    expect(cssSource).toContain('--sidebar-readable-muted-text-color:');
+    expect(cssSource).toContain('--sidebar-readable-shadow-wide:');
     expect(cssSource).toContain('body.has-app-background:not(.opaque-terminal-surfaces)');
     expect(cssSource).toContain('.sidebar-nav-btn > .icon');
+    expect(cssSource).toContain('color: var(--sidebar-readable-text-color);');
+    expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color);');
     expect(cssSource).toContain('text-shadow: var(--sidebar-readable-text-shadow);');
     expect(cssSource).toContain('filter: var(--sidebar-readable-icon-shadow);');
+    expect(cssSource).toContain('--sidebar-session-secondary-text: var(--sidebar-readable-muted-text-color);');
     expect(cssSource).toContain('filter: none;');
   });
 
