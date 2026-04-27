@@ -79,13 +79,6 @@ const MAX_BACKGROUND_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 const MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY = 50;
 const DEFAULT_BOX_DRAWING_SCALE = 1;
-
-type MidTermWindow = Window &
-  typeof globalThis & {
-    __MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__?: number;
-    __MIDTERM_XTERM_BOX_DRAWING_STYLE__?: string;
-  };
-
 const DEFAULT_BOX_DRAWING_STYLE = 'classic';
 
 function normalizeBoxDrawingScale(value: number | null | undefined): number {
@@ -99,13 +92,11 @@ function normalizeBoxDrawingStyle(value: string | null | undefined): string {
 }
 
 function syncBoxDrawingScale(settingValue: number | null | undefined): void {
-  (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__ =
-    normalizeBoxDrawingScale(settingValue);
+  window.__MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__ = normalizeBoxDrawingScale(settingValue);
 }
 
 function syncBoxDrawingStyle(settingValue: string | null | undefined): void {
-  (window as MidTermWindow).__MIDTERM_XTERM_BOX_DRAWING_STYLE__ =
-    normalizeBoxDrawingStyle(settingValue);
+  window.__MIDTERM_XTERM_BOX_DRAWING_STYLE__ = normalizeBoxDrawingStyle(settingValue);
 }
 
 function applySettingsLocally(settings: MidTermSettingsPublic): void {
