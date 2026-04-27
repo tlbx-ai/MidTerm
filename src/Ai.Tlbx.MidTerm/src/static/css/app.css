@@ -4312,7 +4312,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   position: absolute;
   z-index: 1;
   pointer-events: none;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-gap-background, var(--terminal-canvas-background, var(--terminal-bg)));
 }
 
 .terminal-gap-fill-right {
