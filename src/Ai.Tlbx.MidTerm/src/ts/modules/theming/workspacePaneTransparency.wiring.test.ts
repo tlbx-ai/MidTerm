@@ -24,14 +24,15 @@ describe('workspace pane transparency wiring', () => {
     expect(css).toContain('.main-content {');
     expect(css).toContain('.terminals-area {');
     expect(css).toContain('.layout-leaf {');
+    expect(css).toContain('body.has-app-background {\n  background: transparent;\n}');
+    expect(css).not.toContain('body.has-app-background::after');
+    expect(css).not.toContain('color-mix(in srgb, var(--bg-primary) 25%, transparent)');
     expect(css).toContain(
       "body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],",
     );
     expect(css).toContain('background-color: transparent;');
     expect(css).toContain('background: transparent;');
-    expect(css).toContain(
-      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
-    );
+    expect(css).toContain('background-color: transparent;');
     expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
   });
 

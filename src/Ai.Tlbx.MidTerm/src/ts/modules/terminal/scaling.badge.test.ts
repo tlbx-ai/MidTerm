@@ -259,7 +259,7 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.xterm.style.transformOrigin).toBe('top left');
     expect(harness.getGapFillers()).toHaveLength(3);
     expect(harness.container.style['--terminal-gap-content-width']).toBe('818px');
-    expect(harness.container.style['--terminal-gap-bottom-height']).toBe('9px');
+    expect(harness.container.style['--terminal-gap-bottom-height']).toBe('9.171px');
   });
 
   it('shows the follower badge on a one-column undersized mismatch', () => {

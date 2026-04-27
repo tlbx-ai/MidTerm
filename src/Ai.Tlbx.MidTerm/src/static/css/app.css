@@ -593,6 +593,10 @@ body {
   background: var(--bg-primary);
 }
 
+body.has-app-background {
+  background: transparent;
+}
+
 @media (min-width: 769px) {
   body {
     box-sizing: border-box;
@@ -660,22 +664,8 @@ body::before {
   }
 }
 
-body.has-app-background::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--bg-primary) 25%, transparent),
-    color-mix(in srgb, var(--bg-primary) 55%, transparent)
-  );
-  z-index: -1;
-  pointer-events: none;
-}
-
 @media (max-width: 768px) {
-  body.hide-app-background-on-mobile::before,
-  body.hide-app-background-on-mobile::after {
+  body.hide-app-background-on-mobile::before {
     content: none;
   }
 }
@@ -2725,9 +2715,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 /* xterm sizing - natural size based on rows/cols */
 .terminal-container .xterm {
   flex-shrink: 0;
-  min-width: 100%;
-  min-height: 100%;
-  background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  z-index: 2;
+  background-color: transparent;
 }
 
 /* Terminal scrollbar visibility — controlled by scrollbarStyle setting */

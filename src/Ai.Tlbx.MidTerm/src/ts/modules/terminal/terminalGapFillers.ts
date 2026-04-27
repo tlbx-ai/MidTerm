@@ -11,8 +11,10 @@ export function updateTerminalGapFillers(
   syncTerminalGapBackground(container, xterm);
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
-  const contentWidth = Math.min(containerWidth, Math.max(0, content.offsetWidth * scale));
-  const contentHeight = Math.min(containerHeight, Math.max(0, content.offsetHeight * scale));
+  const { width: measuredContentWidth, height: measuredContentHeight } =
+    measureTerminalGapContentSize(content, scale);
+  const contentWidth = Math.min(containerWidth, measuredContentWidth);
+  const contentHeight = Math.min(containerHeight, measuredContentHeight);
   const rightWidth = Math.max(0, containerWidth - contentWidth);
   const bottomHeight = Math.max(0, containerHeight - contentHeight);
 
@@ -46,6 +48,26 @@ function isTerminalGapContentElement(value: unknown): value is HTMLElement {
     candidate.offsetWidth > 0 &&
     candidate.offsetHeight > 0
   );
+}
+
+function measureTerminalGapContentSize(
+  content: HTMLElement,
+  scale: number,
+): { width: number; height: number } {
+  if (typeof content.getBoundingClientRect === 'function') {
+    const rect = content.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      return {
+        width: Math.max(0, rect.width),
+        height: Math.max(0, rect.height),
+      };
+    }
+  }
+
+  return {
+    width: Math.max(0, content.offsetWidth * scale),
+    height: Math.max(0, content.offsetHeight * scale),
+  };
 }
 
 export function clearTerminalGapFillers(container: HTMLElement): void {
@@ -164,11 +186,21 @@ function ensureTerminalGapFillers(container: HTMLElement): void {
 }
 
 function setTerminalGapVariable(container: HTMLElement, name: string, value: number): void {
-  const px = `${Math.round(value)}px`;
+  const px = formatCssPixelValue(value);
   if (typeof container.style.setProperty === 'function') {
     container.style.setProperty(name, px);
     return;
   }
 
   (container.style as CSSStyleDeclaration & Record<string, string>)[name] = px;
+}
+
+function formatCssPixelValue(value: number): string {
+  const normalized = Math.max(0, value);
+  const rounded = Math.round(normalized);
+  if (Math.abs(normalized - rounded) < 0.001) {
+    return `${rounded}px`;
+  }
+
+  return `${normalized.toFixed(3)}px`;
 }

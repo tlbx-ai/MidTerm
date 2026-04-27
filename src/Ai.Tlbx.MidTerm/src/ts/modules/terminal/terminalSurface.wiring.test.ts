@@ -23,13 +23,10 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('background-color: transparent;');
   });
 
-  it('lets the xterm host cover floor-to-cell remainder space inside the panel', () => {
+  it('keeps the xterm host from becoming a transparency-affecting backing pane', () => {
     expect(appCss).toContain('.terminal-container .xterm {');
-    expect(appCss).toContain('min-width: 100%;');
-    expect(appCss).toContain('min-height: 100%;');
-    expect(appCss).toContain(
-      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
-    );
+    expect(appCss).toContain('background-color: transparent;');
+    expect(appCss).toContain('z-index: 2;');
   });
 
   it('colors scaled terminal gaps with terminal canvas background without backing the xterm', () => {
@@ -45,6 +42,8 @@ describe('terminal surface wiring', () => {
     expect(terminalGapFillersSource).toContain("'xterm-screen'");
     expect(terminalGapFillersSource).toContain("'xterm-scrollable-element'");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-background'");
+    expect(terminalGapFillersSource).toContain('getBoundingClientRect');
+    expect(terminalGapFillersSource).toContain('formatCssPixelValue');
     expect(terminalGapFillersSource).toContain("document.createElement('div')");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-right-width'");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-bottom-height'");
