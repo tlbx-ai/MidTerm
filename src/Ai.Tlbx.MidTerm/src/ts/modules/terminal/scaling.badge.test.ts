@@ -46,6 +46,7 @@ type FakeElement = {
   setAttribute: (name: string, value: string) => void;
   addEventListener: (type: string, handler: () => void) => void;
   closest: <T>(selector: string) => T | null;
+  getElementsByClassName?: (className: string) => { item: (index: number) => FakeElement | null };
   getBoundingClientRect: () => { width: number; height: number };
   clientWidth?: number;
   clientHeight?: number;
@@ -93,7 +94,11 @@ function fakeElementHasClass(element: FakeElement, className: string): boolean {
   return element.className?.split(/\s+/).includes(className) ?? false;
 }
 
-function createTerminalHarness(cols: number, rows: number) {
+function createTerminalHarness(
+  cols: number,
+  rows: number,
+  xtermDimensions?: { width: number; height: number },
+) {
   const children: FakeElement[] = [];
   const terminal = {
     cols,
@@ -115,11 +120,8 @@ function createTerminalHarness(cols: number, rows: number) {
     },
   };
 
-  const xterm = {
-    style: {} as Record<string, string>,
-  } as FakeElement;
-
-  Object.defineProperties(xterm, {
+  const screen = {} as FakeElement;
+  Object.defineProperties(screen, {
     offsetWidth: {
       get: () => terminal.cols * 10,
     },
@@ -128,13 +130,23 @@ function createTerminalHarness(cols: number, rows: number) {
     },
   });
 
-  const screen = {} as FakeElement;
-  Object.defineProperties(screen, {
+  const xterm = {
+    style: {} as Record<string, string>,
+    querySelector<T>(selector: string): T | null {
+      if (selector === '.xterm-screen') return screen as T;
+      return null;
+    },
+    getElementsByClassName(className: string) {
+      return { item: (index: number) => (className === 'xterm-screen' && index === 0 ? screen : null) };
+    },
+  } as FakeElement;
+
+  Object.defineProperties(xterm, {
     offsetWidth: {
-      get: () => terminal.cols * 10,
+      get: () => xtermDimensions?.width ?? terminal.cols * 10,
     },
     offsetHeight: {
-      get: () => terminal.rows * 20,
+      get: () => xtermDimensions?.height ?? terminal.rows * 20,
     },
   });
 
@@ -267,6 +279,21 @@ describe('terminal scaling badge thresholds', () => {
 
     expect(harness.getOverlay()?.innerHTML).toContain('terminal.makeReferenceScaleBrowser');
     expect(harness.xterm.style.transform ?? '').toBe('');
+  });
+
+  it('fills natural-fit main-browser gaps from the rendered terminal grid', () => {
+    const harness = createTerminalHarness(81, 24, { width: 818, height: 488 });
+    $isMainBrowser.set(true);
+
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()).toBeNull();
+    expect(harness.xterm.style.transform ?? '').toBe('');
+    expect(harness.getGapFillers()).toHaveLength(3);
+    expect(harness.container.style['--terminal-gap-content-width']).toBe('810px');
+    expect(harness.container.style['--terminal-gap-content-height']).toBe('480px');
+    expect(harness.container.style['--terminal-gap-right-width']).toBe('8px');
+    expect(harness.container.style['--terminal-gap-bottom-height']).toBe('8px');
   });
 
   it('keeps passive scaling free of resize side effects after the browser becomes main', () => {

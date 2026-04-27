@@ -41,6 +41,8 @@ describe('terminal surface wiring', () => {
     expect(scalingSource).toContain(
       "import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';",
     );
+    expect(scalingSource).toContain('updateTerminalGapFillers(container, xterm, 1);');
+    expect(terminalGapFillersSource).toContain("'xterm-screen'");
     expect(terminalGapFillersSource).toContain("document.createElement('div')");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-right-width'");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-bottom-height'");

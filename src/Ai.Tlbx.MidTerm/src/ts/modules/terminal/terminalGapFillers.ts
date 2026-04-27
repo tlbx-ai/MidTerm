@@ -7,10 +7,11 @@ export function updateTerminalGapFillers(
   xterm: HTMLElement,
   scale: number,
 ): void {
+  const content = getTerminalGapContentElement(xterm);
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
-  const contentWidth = Math.min(containerWidth, Math.max(0, xterm.offsetWidth * scale));
-  const contentHeight = Math.min(containerHeight, Math.max(0, xterm.offsetHeight * scale));
+  const contentWidth = Math.min(containerWidth, Math.max(0, content.offsetWidth * scale));
+  const contentHeight = Math.min(containerHeight, Math.max(0, content.offsetHeight * scale));
   const rightWidth = Math.max(0, containerWidth - contentWidth);
   const bottomHeight = Math.max(0, containerHeight - contentHeight);
 
@@ -22,6 +23,28 @@ export function updateTerminalGapFillers(
   if (rightWidth > 0 || bottomHeight > 0) {
     ensureTerminalGapFillers(container);
   }
+}
+
+function getTerminalGapContentElement(xterm: HTMLElement): HTMLElement {
+  const host = xterm as {
+    getElementsByClassName?: (className: string) => { item: (index: number) => unknown };
+  };
+  if (typeof host.getElementsByClassName !== 'function') {
+    return xterm;
+  }
+
+  const screen = host.getElementsByClassName('xterm-screen').item(0);
+  return isTerminalGapContentElement(screen) ? screen : xterm;
+}
+
+function isTerminalGapContentElement(value: unknown): value is HTMLElement {
+  const candidate = value as Partial<HTMLElement> | null;
+  return (
+    typeof candidate?.offsetWidth === 'number' &&
+    typeof candidate.offsetHeight === 'number' &&
+    candidate.offsetWidth > 0 &&
+    candidate.offsetHeight > 0
+  );
 }
 
 export function clearTerminalGapFillers(container: HTMLElement): void {

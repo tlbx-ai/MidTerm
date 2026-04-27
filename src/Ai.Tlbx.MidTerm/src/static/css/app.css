@@ -2194,14 +2194,14 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   justify-content: center;
   width: 1em;
   height: 1em;
-  font-size: inherit;
+  font-size: 16px;
   line-height: 1;
   flex-shrink: 0;
   transition: transform 0.14s ease;
 }
 
 .session-action-icon.text-icon {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .session-action-label {

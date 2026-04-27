@@ -83,6 +83,8 @@ describe('spacesTreeSidebar wiring', () => {
     expect(css).toContain('transition: transform 0.14s ease;');
     expect(css).toContain('.session-control:hover .session-action-icon');
     expect(css).toContain('transform: scale(1.12);');
+    expect(css).toContain('font-size: 16px;');
+    expect(css).toContain('font-size: 18px;');
     expect(css).toContain('width: 28px;');
     expect(css).toContain('height: 28px;');
     expect(css).toContain('right: 0;');
