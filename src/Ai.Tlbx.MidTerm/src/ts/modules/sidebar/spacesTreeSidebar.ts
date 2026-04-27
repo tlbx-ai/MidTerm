@@ -1,7 +1,21 @@
+/* eslint-disable max-lines -- Existing large sidebar owner; keyed reconciliation keeps DOM identity without a broader module split. */
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
+import type { SessionSelectionOptions } from '../../sessionActions';
+import {
+  patchHistoryEntry,
+  setSessionNotes as apiSetSessionNotes,
+  type HistoryPatchRequest,
+} from '../../api/client';
 import { icon } from '../../constants';
 import { dom } from '../../state';
-import { $activeSessionId, $currentSettings, $sessionList, $settingsOpen } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $sessionList,
+  $settingsOpen,
+  getSession,
+  setSession,
+} from '../../stores';
 import { getLaunchableHubMachines, getHubSidebarSections } from '../hub/runtime';
 import { t } from '../i18n';
 import { addProcessStateListener, getForegroundInfo } from '../process';
@@ -24,6 +38,7 @@ import {
 import { showCreateWorktreeDialog } from '../spaces/spacesDialogs';
 import { launchSpaceWorkspace, type SpaceSurface } from '../spaces/runtime';
 import { showAlert, showConfirm, showTextPrompt } from '../../utils/dialog';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import {
   createSessionFilterController,
   type SessionFilterControllerElements,
@@ -36,14 +51,22 @@ import {
   shouldShowAdHocBookmarkAction,
 } from './spacesTreeSidebarLogic';
 import {
-  createForegroundIndicator as createSessionForegroundIndicator,
   getSessionDisplayInfo,
   getSessionDisplayName as getLegacySessionDisplayName,
 } from './sessionList';
 import { getSessionControlMode } from './sessionListLogic';
+import {
+  syncSpacesTreeSidebarSessionProcessInfo,
+  syncSpacesTreeSidebarSessionProcessInfoElement,
+} from './spacesTreeSidebarProcessInfo';
+import {
+  appendWorkspaceBadges,
+  createSpaceChevron,
+  createTextSpan,
+} from './spacesTreeSidebarElements';
 
 export interface SessionListCallbacks {
-  onSelect: (sessionId: string) => void;
+  onSelect: (sessionId: string, options?: SessionSelectionOptions) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
   onToggleAgentControl: (sessionId: string) => void;
@@ -76,18 +99,42 @@ interface SidebarSessionNodeOptions {
   reorderScope?: string | null;
 }
 
+type SidebarRootItem =
+  | { kind: 'adhoc'; sessions: SidebarSessionRef[] }
+  | { kind: 'section'; section: SidebarSpaceSection };
+
+interface SidebarSpaceNodeContext {
+  machineId: string | null;
+  space: SpaceSummaryDto;
+}
+
+interface SidebarWorkspaceNodeContext {
+  machineId: string | null;
+  space: SpaceSummaryDto;
+  workspace: SpaceWorkspaceDto;
+}
+
+const spaceNodeContexts = new WeakMap<HTMLElement, SidebarSpaceNodeContext>();
+const workspaceNodeContexts = new WeakMap<HTMLElement, SidebarWorkspaceNodeContext>();
+
 let callbacks: SessionListCallbacks | null = null;
 let cachedSections: SidebarSpaceSection[] = [];
 let loadPromise: Promise<void> | null = null;
 let lastLoadedAt = 0;
 let loadToken = 0;
 let queuedRenderFrameId: number | null = null;
+const queuedProcessInfoSessionIds = new Set<string>();
 let actionPopoverEl: HTMLDivElement | null = null;
 let chooserPopoverEl: HTMLDivElement | null = null;
+const expandedNotesSessionIds = new Set<string>();
+const pendingNoteSaveTimers = new Map<string, number>();
 
 const SESSION_FILTER_STORAGE_KEY = 'midterm.sidebar.sessionFilter';
 const SPACE_EXPANDED_PREFIX = 'midterm.sidebar.spaceExpanded.';
 const TREE_TTL_MS = 15_000;
+const SESSION_NOTES_SAVE_DELAY_MS = 350;
+const SESSION_NOTES_MAX_LINES = 5;
+const SESSION_NOTES_MAX_CHARS = 600;
 
 export function getSessionDisplayName(session: Session): string {
   return getLegacySessionDisplayName(session);
@@ -137,7 +184,7 @@ const sessionFilterController = createSessionFilterController({
 
 export function initializeSessionList(): void {
   ensurePopovers();
-  addProcessStateListener(queueSidebarTreeRender);
+  addProcessStateListener(queueSidebarSessionProcessInfoUpdate);
   sessionFilterController.initialize();
   syncSearchControls();
   document.addEventListener('click', handleGlobalPopoverClick);
@@ -284,22 +331,59 @@ function renderSidebarTree(): void {
   const host = dom.sessionList;
   host.className = 'session-list spaces-sidebar-tree';
   pruneHeatSessions(getAllSidebarSessions().map((entry) => entry.id));
-  host.querySelectorAll<HTMLElement>('.session-item[data-session-id]').forEach((item) => {
-    const sessionId = item.dataset.sessionId;
-    if (sessionId) {
-      unregisterHeatCanvas(sessionId);
-    }
+  reconcileKeyedChildren(host, getSidebarRootItems(), {
+    key: getSidebarRootItemKey,
+    create: createSidebarRootNode,
+    patch: patchSidebarRootNode,
+    destroy: destroySidebarTreeNode,
   });
-  host.replaceChildren();
+}
 
+function getSidebarRootItems(): SidebarRootItem[] {
+  const items: SidebarRootItem[] = [];
   const adHocSessions = getAdHocSessions();
   if (adHocSessions.length > 0) {
-    host.appendChild(createAdHocSection(adHocSessions));
+    items.push({ kind: 'adhoc', sessions: adHocSessions });
   }
 
-  for (const section of getVisibleSpaceSections()) {
-    host.appendChild(createSpaceTargetSection(section));
+  items.push(
+    ...getVisibleSpaceSections().map((section) => ({ kind: 'section' as const, section })),
+  );
+  return items;
+}
+
+function getSidebarRootItemKey(item: SidebarRootItem): string {
+  return item.kind === 'adhoc' ? 'adhoc' : `target:${item.section.machineId ?? 'local'}`;
+}
+
+function getSpaceKey(machineId: string | null, space: SpaceSummaryDto): string {
+  return `space:${getSpaceStorageKey(machineId, space.id)}`;
+}
+
+function getWorkspaceKey(
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  workspace: SpaceWorkspaceDto,
+): string {
+  const workspaceKey = workspace.key || normalizeOptionalPath(workspace.path) || workspace.path;
+  return `workspace:${getSpaceStorageKey(machineId, space.id)}:${workspaceKey}`;
+}
+
+function getSessionKey(entry: SidebarSessionRef): string {
+  return `session:${entry.id}`;
+}
+
+function createSidebarRootNode(item: SidebarRootItem): HTMLElement {
+  return item.kind === 'adhoc' ? createAdHocSection() : createSpaceTargetSection();
+}
+
+function patchSidebarRootNode(node: HTMLElement, item: SidebarRootItem): void {
+  if (item.kind === 'adhoc') {
+    patchAdHocSection(node, item.sessions);
+    return;
   }
+
+  patchSpaceTargetSection(node, item.section);
 }
 
 function getVisibleSpaceSections(): SidebarSpaceSection[] {
@@ -360,71 +444,88 @@ function getAdHocSessions(): SidebarSessionRef[] {
     .filter(matchesSidebarSessionSearch);
 }
 
-function createSpaceTargetSection(section: SidebarSpaceSection): HTMLElement {
+function createSpaceTargetSection(): HTMLElement {
   const wrapper = document.createElement('section');
   wrapper.className = 'spaces-tree-target';
 
   const header = document.createElement('div');
   header.className = 'spaces-tree-target-header';
-  header.innerHTML = `<span class="spaces-tree-target-label">${escapeHtml(section.label)}</span>`;
+  header.appendChild(createTextSpan('spaces-tree-target-label', ''));
   wrapper.appendChild(header);
 
   const list = document.createElement('div');
   list.className = 'spaces-tree-space-list';
-  for (const space of section.spaces) {
-    list.appendChild(createSpaceNode(section.machineId, space));
-  }
   wrapper.appendChild(list);
 
   return wrapper;
 }
 
-function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTMLElement {
-  const rootWorkspace = getRootWorkspace(space);
-  const rootSessions = getVisibleRootSessions(machineId, space, rootWorkspace);
-  const childWorkspaces = getVisibleChildWorkspaces(machineId, space);
-  const expanded = isSpaceExpanded(machineId, space, getSpaceSessions(machineId, space).length > 0);
+function patchSpaceTargetSection(wrapper: HTMLElement, section: SidebarSpaceSection): void {
+  wrapper.className = 'spaces-tree-target';
+  const label = wrapper.querySelector<HTMLElement>('.spaces-tree-target-label');
+  if (label && label.textContent !== section.label) {
+    label.textContent = section.label;
+  }
 
+  const list = wrapper.querySelector<HTMLElement>('.spaces-tree-space-list');
+  if (!list) {
+    return;
+  }
+
+  reconcileKeyedChildren(list, section.spaces, {
+    key: (space) => {
+      return getSpaceKey(section.machineId, space);
+    },
+    create: createSpaceNode,
+    patch: (node, space) => {
+      patchSpaceNode(node, section.machineId, space);
+    },
+    destroy: destroySidebarTreeNode,
+  });
+}
+
+function createSpaceNode(): HTMLElement {
   const node = document.createElement('article');
-  node.className = `spaces-tree-space${expanded ? ' expanded' : ''}`;
+  node.className = 'spaces-tree-space';
 
   const header = document.createElement('button');
   header.type = 'button';
   header.className = 'spaces-tree-space-header';
   header.addEventListener('click', () => {
-    toggleSpaceExpanded(machineId, space.id, expanded);
+    const context = spaceNodeContexts.get(node);
+    if (context) {
+      toggleSpaceExpanded(node, context.machineId, context.space);
+    }
   });
 
   const identity = document.createElement('div');
   identity.className = 'spaces-tree-space-identity';
-  identity.appendChild(createTextSpan('spaces-tree-space-title', space.displayName));
+  identity.appendChild(createTextSpan('spaces-tree-space-title', ''));
   header.appendChild(identity);
-  header.title = space.rootPath;
 
   const meta = document.createElement('div');
   meta.className = 'spaces-tree-space-meta';
-  if (rootWorkspace) {
-    appendWorkspaceBadges(meta, rootWorkspace);
-  }
   meta.appendChild(createSpaceChevron());
   header.appendChild(meta);
 
   const actions = document.createElement('div');
   actions.className = 'spaces-tree-space-actions';
 
-  if (rootWorkspace) {
-    const addButton = document.createElement('button');
-    addButton.type = 'button';
-    addButton.className = 'spaces-tree-add spaces-tree-inline-action';
-    addButton.title = t('spaces.newSession');
-    addButton.setAttribute('aria-label', t('spaces.newSession'));
-    addButton.textContent = '+';
-    addButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openSurfaceChooser(addButton, machineId, space, rootWorkspace);
-    });
-    actions.appendChild(addButton);
-  }
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'spaces-tree-add spaces-tree-inline-action';
+  addButton.title = t('spaces.newSession');
+  addButton.setAttribute('aria-label', t('spaces.newSession'));
+  addButton.textContent = '+';
+  addButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const context = spaceNodeContexts.get(node);
+    const rootWorkspace = context ? getRootWorkspace(context.space) : null;
+    if (context && rootWorkspace) {
+      openSurfaceChooser(addButton, context.machineId, context.space, rootWorkspace);
+    }
+  });
+  actions.appendChild(addButton);
 
   const forgetButton = document.createElement('button');
   forgetButton.type = 'button';
@@ -434,7 +535,10 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
   forgetButton.innerHTML = icon('close');
   forgetButton.addEventListener('click', (event) => {
     event.stopPropagation();
-    void promptAndForgetSpace(machineId, space);
+    const context = spaceNodeContexts.get(node);
+    if (context) {
+      void promptAndForgetSpace(context.machineId, context.space);
+    }
   });
   actions.appendChild(forgetButton);
 
@@ -446,46 +550,133 @@ function createSpaceNode(machineId: string | null, space: SpaceSummaryDto): HTML
   menuButton.textContent = '⋯';
   menuButton.addEventListener('click', (event) => {
     event.stopPropagation();
-    openActionPopover(menuButton, buildSpaceActions(machineId, space));
+    const context = spaceNodeContexts.get(node);
+    if (context) {
+      openActionPopover(menuButton, buildSpaceActions(context.machineId, context.space));
+    }
   });
   actions.appendChild(menuButton);
   header.appendChild(actions);
 
   node.appendChild(header);
 
-  if (!expanded) {
-    return node;
-  }
-
-  if (rootSessions.length > 0) {
-    const rootSessionList = document.createElement('div');
-    rootSessionList.className = 'spaces-tree-space-session-list';
-    for (const entry of rootSessions) {
-      rootSessionList.appendChild(createSidebarSessionNode(entry));
-    }
-    node.appendChild(rootSessionList);
-  }
-
-  if (childWorkspaces.length > 0) {
-    const workspaceList = document.createElement('div');
-    workspaceList.className = 'spaces-tree-workspace-list';
-    for (const workspace of childWorkspaces) {
-      workspaceList.appendChild(createWorkspaceNode(machineId, space, workspace));
-    }
-    node.appendChild(workspaceList);
-  }
-
   return node;
 }
 
-function createWorkspaceNode(
+function patchSpaceNode(node: HTMLElement, machineId: string | null, space: SpaceSummaryDto): void {
+  spaceNodeContexts.set(node, { machineId, space });
+
+  const rootWorkspace = getRootWorkspace(space);
+  const expanded = isSpaceExpanded(machineId, space, getSpaceSessions(machineId, space).length > 0);
+  node.classList.toggle('expanded', expanded);
+
+  const header = node.querySelector<HTMLButtonElement>('.spaces-tree-space-header');
+  if (header) {
+    header.title = space.rootPath;
+  }
+
+  const title = node.querySelector<HTMLElement>('.spaces-tree-space-title');
+  if (title && title.textContent !== space.displayName) {
+    title.textContent = space.displayName;
+  }
+
+  const meta = node.querySelector<HTMLElement>('.spaces-tree-space-meta');
+  if (meta) {
+    patchSpaceMeta(meta, rootWorkspace);
+  }
+
+  const addButton = node.querySelector<HTMLButtonElement>('.spaces-tree-add');
+  if (addButton) {
+    addButton.hidden = !rootWorkspace;
+    addButton.title = t('spaces.newSession');
+    addButton.setAttribute('aria-label', t('spaces.newSession'));
+  }
+
+  const forgetButton = node.querySelector<HTMLButtonElement>('.spaces-tree-forget');
+  if (forgetButton) {
+    forgetButton.title = t('spaces.deleteSpace');
+    forgetButton.setAttribute('aria-label', forgetButton.title);
+  }
+
+  const menuButton = node.querySelector<HTMLButtonElement>('.spaces-tree-overflow');
+  if (menuButton) {
+    menuButton.title = t('session.actions');
+    menuButton.setAttribute('aria-label', t('session.actions'));
+  }
+
+  if (expanded) {
+    patchSpaceNodeExpandedContent(node, machineId, space);
+  } else {
+    removeSpaceNodeExpandedContent(node);
+  }
+}
+
+function patchSpaceMeta(meta: HTMLElement, rootWorkspace: SpaceWorkspaceDto | null): void {
+  const signature = rootWorkspace
+    ? [
+        rootWorkspace.branch,
+        rootWorkspace.isDetached,
+        rootWorkspace.locked,
+        rootWorkspace.prunable,
+        rootWorkspace.hasChanges,
+        rootWorkspace.changeCount,
+      ].join('\u001f')
+    : '';
+  if (meta.dataset.workspaceBadgeSignature === signature) {
+    return;
+  }
+
+  meta.dataset.workspaceBadgeSignature = signature;
+  meta.replaceChildren();
+  if (rootWorkspace) {
+    appendWorkspaceBadges(meta, rootWorkspace);
+  }
+  meta.appendChild(createSpaceChevron());
+}
+
+function patchSpaceNodeExpandedContent(
+  node: HTMLElement,
   machineId: string | null,
   space: SpaceSummaryDto,
-  workspace: SpaceWorkspaceDto,
-): HTMLElement {
-  const sessions = getWorkspaceSessions(machineId, space, workspace).filter(
-    matchesSidebarSessionSearch,
+): void {
+  const rootWorkspace = getRootWorkspace(space);
+  const rootSessions = getVisibleRootSessions(machineId, space, rootWorkspace);
+  const childWorkspaces = getVisibleChildWorkspaces(machineId, space);
+
+  const workspaceList = ensureDirectChildContainer(
+    node,
+    'spaces-tree-workspace-list',
+    rootSessions.length > 0 ? null : node.children[1],
   );
+
+  if (rootSessions.length > 0) {
+    const rootSessionList = ensureDirectChildContainer(
+      node,
+      'spaces-tree-space-session-list',
+      workspaceList,
+    );
+    reconcileSidebarSessions(rootSessionList, rootSessions);
+  } else {
+    removeDirectChildContainer(node, 'spaces-tree-space-session-list');
+  }
+
+  if (childWorkspaces.length > 0) {
+    reconcileKeyedChildren(workspaceList, childWorkspaces, {
+      key: (workspace) => {
+        return getWorkspaceKey(machineId, space, workspace);
+      },
+      create: createWorkspaceNode,
+      patch: (block, workspace) => {
+        patchWorkspaceNode(block, machineId, space, workspace);
+      },
+      destroy: destroySidebarTreeNode,
+    });
+  } else {
+    removeDirectChildContainer(node, 'spaces-tree-workspace-list');
+  }
+}
+
+function createWorkspaceNode(): HTMLElement {
   const block = document.createElement('section');
   block.className = 'spaces-tree-workspace-block';
 
@@ -495,10 +686,18 @@ function createWorkspaceNode(
   const mainButton = document.createElement('button');
   mainButton.type = 'button';
   mainButton.className = 'spaces-tree-workspace-open';
-  mainButton.disabled = sessions.length === 0;
-  mainButton.title = workspace.path;
-  if (sessions.length > 0) {
-    mainButton.addEventListener('click', () => {
+  mainButton.addEventListener('click', () => {
+    const context = workspaceNodeContexts.get(block);
+    if (!context) {
+      return;
+    }
+
+    const sessions = getWorkspaceSessions(
+      context.machineId,
+      context.space,
+      context.workspace,
+    ).filter(matchesSidebarSessionSearch);
+    if (sessions.length > 0) {
       const activeSession =
         sessions.find((session) => session.id === $activeSessionId.get()) ?? sessions[0];
       if (!activeSession) {
@@ -506,13 +705,11 @@ function createWorkspaceNode(
       }
       callbacks?.onSelect(activeSession.id);
       callbacks?.onCloseSidebar();
-    });
-  }
+    }
+  });
 
   const line = document.createElement('div');
   line.className = 'spaces-tree-workspace-line';
-  line.appendChild(createTextSpan('spaces-tree-workspace-name', workspace.displayName));
-  appendWorkspaceBadges(line, workspace);
   mainButton.appendChild(line);
   row.appendChild(mainButton);
 
@@ -527,37 +724,151 @@ function createWorkspaceNode(
   addButton.textContent = '+';
   addButton.addEventListener('click', (event) => {
     event.stopPropagation();
-    openSurfaceChooser(addButton, machineId, space, workspace);
+    const context = workspaceNodeContexts.get(block);
+    if (context) {
+      openSurfaceChooser(addButton, context.machineId, context.space, context.workspace);
+    }
   });
   actions.appendChild(addButton);
 
-  if (canManageWorkspace(space, workspace)) {
-    const menuButton = document.createElement('button');
-    menuButton.type = 'button';
-    menuButton.className = 'spaces-tree-overflow spaces-tree-inline-action';
-    menuButton.title = t('session.actions');
-    menuButton.setAttribute('aria-label', t('session.actions'));
-    menuButton.textContent = '⋯';
-    menuButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openActionPopover(menuButton, buildWorkspaceActions(machineId, space, workspace, sessions));
-    });
-    actions.appendChild(menuButton);
-  }
+  const menuButton = document.createElement('button');
+  menuButton.type = 'button';
+  menuButton.className = 'spaces-tree-overflow spaces-tree-inline-action';
+  menuButton.title = t('session.actions');
+  menuButton.setAttribute('aria-label', t('session.actions'));
+  menuButton.textContent = '⋯';
+  menuButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const context = workspaceNodeContexts.get(block);
+    if (!context) {
+      return;
+    }
+
+    const sessions = getWorkspaceSessions(
+      context.machineId,
+      context.space,
+      context.workspace,
+    ).filter(matchesSidebarSessionSearch);
+    openActionPopover(
+      menuButton,
+      buildWorkspaceActions(context.machineId, context.space, context.workspace, sessions),
+    );
+  });
+  actions.appendChild(menuButton);
 
   row.appendChild(actions);
   block.appendChild(row);
 
-  if (sessions.length > 0) {
-    const sessionList = document.createElement('div');
-    sessionList.className = 'spaces-tree-workspace-session-list';
-    for (const entry of sessions) {
-      sessionList.appendChild(createSidebarSessionNode(entry));
-    }
-    block.appendChild(sessionList);
-  }
+  const sessionList = document.createElement('div');
+  sessionList.className = 'spaces-tree-workspace-session-list';
+  block.appendChild(sessionList);
 
   return block;
+}
+
+function patchWorkspaceNode(
+  block: HTMLElement,
+  machineId: string | null,
+  space: SpaceSummaryDto,
+  workspace: SpaceWorkspaceDto,
+): void {
+  workspaceNodeContexts.set(block, { machineId, space, workspace });
+
+  const sessions = getWorkspaceSessions(machineId, space, workspace).filter(
+    matchesSidebarSessionSearch,
+  );
+
+  const mainButton = block.querySelector<HTMLButtonElement>('.spaces-tree-workspace-open');
+  if (mainButton) {
+    mainButton.disabled = sessions.length === 0;
+    mainButton.title = workspace.path;
+  }
+
+  const line = block.querySelector<HTMLElement>('.spaces-tree-workspace-line');
+  if (line) {
+    patchWorkspaceLine(line, workspace);
+  }
+
+  const addButton = block.querySelector<HTMLButtonElement>('.spaces-tree-add');
+  if (addButton) {
+    addButton.title = t('spaces.newSession');
+    addButton.setAttribute('aria-label', t('spaces.newSession'));
+  }
+
+  const menuButton = block.querySelector<HTMLButtonElement>('.spaces-tree-overflow');
+  if (menuButton) {
+    const canManage = canManageWorkspace(space, workspace);
+    menuButton.hidden = !canManage;
+    menuButton.title = t('session.actions');
+    menuButton.setAttribute('aria-label', t('session.actions'));
+  }
+
+  const sessionList = block.querySelector<HTMLElement>('.spaces-tree-workspace-session-list');
+  if (sessions.length > 0) {
+    if (sessionList) {
+      sessionList.hidden = false;
+      reconcileSidebarSessions(sessionList, sessions);
+    }
+  } else if (sessionList) {
+    sessionList.hidden = true;
+    reconcileSidebarSessions(sessionList, []);
+  }
+}
+
+function patchWorkspaceLine(line: HTMLElement, workspace: SpaceWorkspaceDto): void {
+  const signature = [
+    workspace.displayName,
+    workspace.branch,
+    workspace.isDetached,
+    workspace.locked,
+    workspace.prunable,
+    workspace.hasChanges,
+    workspace.changeCount,
+  ].join('\u001f');
+  if (line.dataset.workspaceLineSignature === signature) {
+    return;
+  }
+
+  line.dataset.workspaceLineSignature = signature;
+  line.replaceChildren(createTextSpan('spaces-tree-workspace-name', workspace.displayName));
+  appendWorkspaceBadges(line, workspace);
+}
+
+function getDirectChildContainer(parent: HTMLElement, className: string): HTMLElement | null {
+  return (
+    Array.from(parent.children).find(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && child.classList.contains(className),
+    ) ?? null
+  );
+}
+
+function ensureDirectChildContainer(
+  parent: HTMLElement,
+  className: string,
+  before: Element | null | undefined = null,
+): HTMLElement {
+  let container = getDirectChildContainer(parent, className);
+  if (!container) {
+    container = document.createElement('div');
+    container.className = className;
+  }
+
+  if (container.parentElement !== parent || (before && before !== container)) {
+    parent.insertBefore(container, before ?? null);
+  }
+
+  return container;
+}
+
+function removeDirectChildContainer(parent: HTMLElement, className: string): void {
+  const container = getDirectChildContainer(parent, className);
+  if (!container) {
+    return;
+  }
+
+  destroySidebarTreeNode(container);
+  container.remove();
 }
 
 function createSidebarSessionNode(
@@ -601,20 +912,118 @@ function createSidebarSessionNode(
 
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
-  const foreground = getForegroundInfo(entry.id);
-  processInfo.appendChild(
-    createSessionForegroundIndicator(
-      foreground.cwd || entry.session.currentDirectory || entry.session.workspacePath || null,
-      foreground.commandLine,
-      foreground.name?.trim() || entry.session.shellType || t('session.terminal'),
-      foreground.displayName,
-    ),
-  );
+  syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, entry);
   info.appendChild(processInfo);
+
+  info.appendChild(createSessionNotesPane(entry));
 
   item.appendChild(info);
   item.appendChild(createSidebarSessionActions(entry));
   return item;
+}
+
+function patchSidebarSessionNode(
+  item: HTMLElement,
+  entry: SidebarSessionRef,
+  options: SidebarSessionNodeOptions = {},
+): void {
+  const reorderScope = normalizeSidebarReorderScope(options.reorderScope);
+  configureSidebarSessionNode(
+    item,
+    entry,
+    reorderScope,
+    canReorderSidebarSession(entry, reorderScope),
+  );
+  syncSidebarSessionItemDisplayText(item, entry.session);
+
+  const processInfo = item.querySelector<HTMLElement>('.session-process-info');
+  if (processInfo) {
+    syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, entry);
+  }
+
+  let notesPane = item.querySelector<HTMLDivElement>('.session-notes-pane');
+  const info = item.querySelector<HTMLElement>('.session-info');
+  if (!notesPane && info) {
+    notesPane = createSessionNotesPane(entry);
+    info.appendChild(notesPane);
+  }
+  if (notesPane) {
+    syncSessionNotesPane(notesPane, entry);
+  }
+
+  const actions = item.querySelector<HTMLDivElement>('.session-actions');
+  if (actions) {
+    patchSidebarSessionActions(actions, entry);
+  }
+}
+
+export function syncSidebarSessionProcessInfo(sessionId: string): boolean {
+  const host = dom.sessionList;
+  if (!host) {
+    return false;
+  }
+
+  return syncSpacesTreeSidebarSessionProcessInfo(host, getAllSidebarSessions(), sessionId);
+}
+
+function reconcileSidebarSessions(
+  container: HTMLElement,
+  sessions: SidebarSessionRef[],
+  options: SidebarSessionNodeOptions = {},
+): void {
+  reconcileKeyedChildren(container, sessions, {
+    key: getSessionKey,
+    create: (entry) => createSidebarSessionNode(entry, options),
+    patch: (item, entry) => {
+      patchSidebarSessionNode(item, entry, options);
+    },
+    destroy: destroySidebarSessionNode,
+  });
+}
+
+function destroySidebarSessionNode(item: HTMLElement): void {
+  const sessionId = item.dataset.sessionId;
+  if (sessionId) {
+    unregisterHeatCanvas(sessionId);
+  }
+}
+
+function destroySidebarTreeNode(element: HTMLElement): void {
+  if (element.matches('.session-item[data-session-id]')) {
+    destroySidebarSessionNode(element);
+  }
+  element.querySelectorAll<HTMLElement>('.session-item[data-session-id]').forEach((item) => {
+    destroySidebarSessionNode(item);
+  });
+}
+
+function syncSidebarSessionItemDisplayText(item: HTMLElement, session: Session): boolean {
+  const displayInfo = getSessionDisplayInfo(session);
+  const title = item.querySelector<HTMLElement>('.session-title');
+  const titleRow = item.querySelector<HTMLElement>('.session-title-row');
+  if (!title || !titleRow) {
+    return false;
+  }
+
+  if (title.textContent !== displayInfo.primary) {
+    title.textContent = displayInfo.primary;
+  }
+
+  let subtitle = item.querySelector<HTMLElement>('.session-subtitle');
+  if (displayInfo.secondary) {
+    if (!subtitle) {
+      subtitle = document.createElement('div');
+      subtitle.className = 'session-subtitle';
+      titleRow.appendChild(subtitle);
+    }
+    if (subtitle.textContent !== displayInfo.secondary) {
+      subtitle.textContent = displayInfo.secondary;
+    }
+  } else {
+    subtitle?.remove();
+  }
+
+  return true;
 }
 
 function configureSidebarSessionNode(
@@ -634,6 +1043,8 @@ function configureSidebarSessionNode(
   if (isChild) {
     classNames.push('tmux-child');
     item.dataset.parentId = entry.session.parentSessionId ?? '';
+  } else {
+    delete item.dataset.parentId;
   }
 
   item.className = classNames.join(' ');
@@ -641,9 +1052,11 @@ function configureSidebarSessionNode(
   item.dataset.controlMode = getSessionControlMode(entry.session);
   if (reorderScope) {
     item.dataset.reorderScope = reorderScope;
+  } else {
+    delete item.dataset.reorderScope;
   }
   item.setAttribute('aria-current', entry.id === $activeSessionId.get() ? 'true' : 'false');
-  item.draggable = isReorderable;
+  item.draggable = isReorderable || canDockSidebarSession(entry);
 }
 
 function normalizeSidebarReorderScope(value: string | null | undefined): string {
@@ -654,11 +1067,50 @@ function canReorderSidebarSession(entry: SidebarSessionRef, reorderScope: string
   return reorderScope !== '' && !entry.session.parentSessionId && getSearchValue() === '';
 }
 
+function canDockSidebarSession(entry: SidebarSessionRef): boolean {
+  return entry.machineId === null && !entry.session.parentSessionId && getSearchValue() === '';
+}
+
 function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
   const actions = document.createElement('div');
   actions.className = 'session-actions';
-  actions.id = `session-actions-${entry.id}`;
   actions.setAttribute('role', 'menu');
+  patchSidebarSessionActions(actions, entry);
+  return actions;
+}
+
+function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
+  return [
+    entry.id,
+    entry.session.bookmarkId ?? '',
+    shouldShowAdHocBookmarkAction(
+      entry.session,
+      entry.machineId,
+      $currentSettings.get()?.showBookmarks !== false,
+      $currentSettings.get()?.allowAdHocSessionBookmarks === true,
+    ),
+    isSessionNotesExpanded(entry.id),
+    !!normalizeSessionNotes(entry.session.notes),
+    t('session.pinToQuickLaunch'),
+    t('session.notes'),
+    t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
+    t('session.rename'),
+    t('session.close'),
+  ].join('\u001f');
+}
+
+function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessionRef): void {
+  actions.id = `session-actions-${entry.id}`;
+  actions.className = 'session-actions';
+  actions.setAttribute('role', 'menu');
+
+  const signature = getSidebarSessionActionsSignature(entry);
+  if (actions.dataset.actionsSignature === signature) {
+    return;
+  }
+
+  actions.dataset.actionsSignature = signature;
+  actions.replaceChildren();
 
   if (
     shouldShowAdHocBookmarkAction(
@@ -686,6 +1138,44 @@ function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
     actions.appendChild(pinButton);
   }
 
+  if (entry.machineId === null) {
+    const notesButton = document.createElement('button');
+    notesButton.className = `session-notes-toggle${normalizeSessionNotes(entry.session.notes) ? ' has-notes' : ''}`;
+    notesButton.setAttribute('role', 'menuitem');
+    notesButton.setAttribute('aria-expanded', isSessionNotesExpanded(entry.id) ? 'true' : 'false');
+    notesButton.title = t(
+      isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes',
+    );
+    notesButton.setAttribute('aria-label', notesButton.title);
+    notesButton.innerHTML = `
+      <span class="session-action-icon">${icon('notes')}</span>
+      <span class="session-action-label">${escapeHtml(t('session.notes'))}</span>
+    `;
+    notesButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });
+      toggleSessionNotes(entry.id);
+    });
+    actions.appendChild(notesButton);
+  }
+
+  const renameButton = document.createElement('button');
+  renameButton.className = 'session-rename';
+  renameButton.setAttribute('role', 'menuitem');
+  renameButton.title = t('session.rename');
+  renameButton.setAttribute('aria-label', t('session.rename'));
+  renameButton.innerHTML = `
+    <span class="session-action-icon">${icon('rename')}</span>
+    <span class="session-action-label">${escapeHtml(t('session.rename'))}</span>
+  `;
+  renameButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks?.onRename(entry.id);
+  });
+  actions.appendChild(renameButton);
+
   const closeButton = document.createElement('button');
   closeButton.className = 'session-close';
   closeButton.setAttribute('role', 'menuitem');
@@ -702,26 +1192,200 @@ function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
   });
 
   actions.appendChild(closeButton);
-  return actions;
 }
 
-function createAdHocSection(sessions: SidebarSessionRef[]): HTMLElement {
+function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
+  const pane = document.createElement('div');
+  pane.className = 'session-notes-pane';
+  const textarea = document.createElement('textarea');
+  textarea.className = 'session-notes-input';
+  textarea.rows = 1;
+  textarea.spellcheck = true;
+  textarea.placeholder = t('session.notesPlaceholder');
+  textarea.setAttribute('aria-label', t('session.notes'));
+  const stopRowInteraction = (event: Event) => {
+    event.stopPropagation();
+  };
+  textarea.addEventListener('pointerdown', stopRowInteraction);
+  textarea.addEventListener('mousedown', stopRowInteraction);
+  textarea.addEventListener('touchstart', stopRowInteraction);
+  textarea.addEventListener('click', stopRowInteraction);
+  textarea.addEventListener('dblclick', stopRowInteraction);
+  textarea.addEventListener('focus', () => {
+    callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });
+  });
+  textarea.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+  });
+  textarea.addEventListener('input', () => {
+    const draft = constrainSessionNotesDraft(textarea.value);
+    if (textarea.value !== draft) {
+      textarea.value = draft;
+    }
+    resizeSessionNotesInput(textarea);
+    updateSessionNotes(entry.id, normalizeSessionNotes(draft));
+  });
+  pane.appendChild(textarea);
+  syncSessionNotesPane(pane, entry);
+  return pane;
+}
+
+function syncSessionNotesPane(pane: HTMLDivElement, entry: SidebarSessionRef): void {
+  const expanded = isSessionNotesExpanded(entry.id);
+  const notes = normalizeSessionNotes(entry.session.notes);
+  pane.hidden = !expanded;
+  pane.classList.toggle('open', expanded);
+  pane.dataset.sessionId = entry.id;
+
+  const textarea = pane.querySelector<HTMLTextAreaElement>('.session-notes-input');
+  if (!textarea) {
+    return;
+  }
+
+  textarea.placeholder = t('session.notesPlaceholder');
+  textarea.setAttribute('aria-label', t('session.notes'));
+  if (document.activeElement !== textarea && textarea.value !== (notes ?? '')) {
+    textarea.value = notes ?? '';
+  }
+  resizeSessionNotesInput(textarea);
+}
+
+function isSessionNotesExpanded(sessionId: string): boolean {
+  return expandedNotesSessionIds.has(sessionId);
+}
+
+function toggleSessionNotes(sessionId: string): void {
+  const nextExpanded = !isSessionNotesExpanded(sessionId);
+  if (nextExpanded) {
+    expandedNotesSessionIds.add(sessionId);
+  } else {
+    expandedNotesSessionIds.delete(sessionId);
+  }
+
+  const item = dom.sessionList?.querySelector<HTMLElement>(
+    `.session-item[data-session-id="${CSS.escape(sessionId)}"]`,
+  );
+  if (!item) {
+    renderSessionList();
+    return;
+  }
+
+  const entry = getAllSidebarSessions().find((candidate) => candidate.id === sessionId);
+  if (!entry) {
+    return;
+  }
+
+  const actions = item.querySelector<HTMLDivElement>('.session-actions');
+  if (actions) {
+    delete actions.dataset.actionsSignature;
+    patchSidebarSessionActions(actions, entry);
+  }
+
+  const pane = item.querySelector<HTMLDivElement>('.session-notes-pane');
+  if (pane) {
+    syncSessionNotesPane(pane, entry);
+  }
+
+  if (nextExpanded) {
+    const input = item.querySelector<HTMLTextAreaElement>('.session-notes-input');
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+}
+
+function updateSessionNotes(sessionId: string, notes: string | null): void {
+  const session = getSession(sessionId);
+  if (!session) {
+    return;
+  }
+
+  if ((session.notes ?? null) !== notes) {
+    setSession({ ...session, notes });
+  }
+
+  const existingTimer = pendingNoteSaveTimers.get(sessionId);
+  if (existingTimer !== undefined) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timer = window.setTimeout(() => {
+    pendingNoteSaveTimers.delete(sessionId);
+    apiSetSessionNotes(sessionId, notes)
+      .then((updatedSession) => {
+        const currentSession = getSession(sessionId);
+        if (currentSession) {
+          setSession({ ...currentSession, notes: updatedSession.notes ?? null });
+          if (currentSession.bookmarkId) {
+            patchHistoryEntry(currentSession.bookmarkId, {
+              notes: updatedSession.notes ?? '',
+            } as HistoryPatchRequest).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {
+        // Keep the local note visible; a later edit or state refresh can retry/resolve it.
+      });
+  }, SESSION_NOTES_SAVE_DELAY_MS);
+  pendingNoteSaveTimers.set(sessionId, timer);
+}
+
+function normalizeSessionNotes(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = constrainSessionNotesDraft(value).trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function constrainSessionNotesDraft(value: string): string {
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .slice(0, SESSION_NOTES_MAX_LINES)
+    .join('\n')
+    .slice(0, SESSION_NOTES_MAX_CHARS);
+}
+
+function resizeSessionNotesInput(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${String(textarea.scrollHeight)}px`;
+}
+
+function createAdHocSection(): HTMLElement {
   const section = document.createElement('section');
   section.className = 'spaces-tree-target spaces-tree-adhoc session-group session-group-flat';
 
   const header = document.createElement('div');
   header.className = 'spaces-tree-target-header';
-  header.innerHTML = `<span class="spaces-tree-target-label">${escapeHtml(t('spaces.adHocSessions'))}</span>`;
+  header.appendChild(createTextSpan('spaces-tree-target-label', ''));
   section.appendChild(header);
 
   const list = document.createElement('div');
   list.className = 'spaces-tree-adhoc-list session-group-items';
-  for (const entry of sessions) {
-    list.appendChild(createSidebarSessionNode(entry, { reorderScope: 'adhoc' }));
-  }
-
   section.appendChild(list);
   return section;
+}
+
+function patchAdHocSection(section: HTMLElement, sessions: SidebarSessionRef[]): void {
+  section.className = 'spaces-tree-target spaces-tree-adhoc session-group session-group-flat';
+  const label = section.querySelector<HTMLElement>('.spaces-tree-target-label');
+  const title = t('spaces.adHocSessions');
+  if (label && label.textContent !== title) {
+    label.textContent = title;
+  }
+
+  const list = section.querySelector<HTMLElement>('.spaces-tree-adhoc-list');
+  if (list) {
+    reconcileSidebarSessions(list, sessions, { reorderScope: 'adhoc' });
+  }
 }
 
 function getVisibleRootSessions(
@@ -1240,12 +1904,43 @@ function isSpaceExpanded(
   return hasSessions;
 }
 
-function toggleSpaceExpanded(machineId: string | null, spaceId: string, isExpanded: boolean): void {
+function removeSpaceNodeExpandedContent(node: HTMLElement): void {
+  const children = Array.from(node.children).slice(1);
+  for (const child of children) {
+    child.querySelectorAll<HTMLElement>('.session-item[data-session-id]').forEach((item) => {
+      const sessionId = item.dataset.sessionId;
+      if (sessionId) {
+        unregisterHeatCanvas(sessionId);
+      }
+    });
+    child.remove();
+  }
+}
+
+function toggleSpaceExpanded(
+  node: HTMLElement,
+  machineId: string | null,
+  space: SpaceSummaryDto,
+): void {
+  const isExpanded = node.classList.contains('expanded');
   localStorage.setItem(
-    `${SPACE_EXPANDED_PREFIX}${getSpaceStorageKey(machineId, spaceId)}`,
+    `${SPACE_EXPANDED_PREFIX}${getSpaceStorageKey(machineId, space.id)}`,
     String(!isExpanded),
   );
-  renderSessionList();
+  if (getSearchValue()) {
+    renderSessionList();
+    return;
+  }
+
+  closePopovers();
+  if (isExpanded) {
+    removeSpaceNodeExpandedContent(node);
+    node.classList.remove('expanded');
+    return;
+  }
+
+  node.classList.add('expanded');
+  patchSpaceNodeExpandedContent(node, machineId, space);
 }
 
 function getSpaceStorageKey(machineId: string | null, spaceId: string): string {
@@ -1267,50 +1962,38 @@ async function toggleSpacePinned(machineId: string | null, space: SpaceSummaryDt
   }
 }
 
-function createSpaceChevron(): HTMLSpanElement {
-  const chevron = document.createElement('span');
-  chevron.className = 'network-section-chevron icon spaces-tree-section-chevron';
-  chevron.innerHTML = '&#xe910;';
-  chevron.setAttribute('aria-hidden', 'true');
-  return chevron;
+function flushQueuedSidebarSessionProcessInfoUpdates(): void {
+  const sessionIds = Array.from(queuedProcessInfoSessionIds);
+  queuedProcessInfoSessionIds.clear();
+
+  if (isSessionFilterActive()) {
+    renderSessionList();
+    updateEmptyState();
+    updateMobileTitle();
+    return;
+  }
+
+  for (const sessionId of sessionIds) {
+    if (!syncSidebarSessionProcessInfo(sessionId)) {
+      renderSessionList();
+      updateEmptyState();
+      updateMobileTitle();
+      return;
+    }
+  }
+
+  updateMobileTitle();
 }
 
-function appendWorkspaceBadges(container: HTMLElement, workspace: SpaceWorkspaceDto): void {
-  if (workspace.branch) {
-    container.appendChild(createTextSpan('spaces-tree-workspace-branch', workspace.branch));
-  }
-  if (workspace.isDetached) {
-    container.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.detached')));
-  }
-  if (workspace.locked) {
-    container.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.locked')));
-  }
-  if (workspace.prunable) {
-    container.appendChild(createTextSpan('spaces-tree-workspace-badge', t('spaces.prunable')));
-  }
-  if (workspace.hasChanges) {
-    container.appendChild(
-      createTextSpan('spaces-tree-workspace-badge warn', String(workspace.changeCount)),
-    );
-  }
-}
-
-function createTextSpan(className: string, value: string): HTMLSpanElement {
-  const span = document.createElement('span');
-  span.className = className;
-  span.textContent = value;
-  return span;
-}
-
-function queueSidebarTreeRender(): void {
+function queueSidebarSessionProcessInfoUpdate(sessionId: string): void {
+  queuedProcessInfoSessionIds.add(sessionId);
   if (queuedRenderFrameId !== null) {
     return;
   }
 
   queuedRenderFrameId = window.requestAnimationFrame(() => {
     queuedRenderFrameId = null;
-    renderSessionList();
-    updateMobileTitle();
+    flushQueuedSidebarSessionProcessInfoUpdates();
   });
 }
 
@@ -1334,3 +2017,5 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+/* eslint-enable max-lines */

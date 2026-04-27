@@ -273,11 +273,79 @@ public static partial class WebPreviewEndpoints
             return Results.Json(entries, AppJsonContext.Default.ListWebPreviewProxyLogEntry);
         });
 
+        app.MapGet("/api/webpreview/proxylog/summary", (string sessionId, string? previewName, int? limit) =>
+        {
+            var entries = service.GetLogEntries(sessionId, previewName, limit ?? 100);
+            return Results.Text(BuildProxyLogSummaryText(entries));
+        });
+
         app.MapDelete("/api/webpreview/proxylog", (string sessionId, string? previewName) =>
         {
             service.ClearLog(sessionId, previewName);
             return Results.Ok();
         });
+    }
+
+    internal static string BuildProxyLogSummaryText(IReadOnlyList<WebPreviewProxyLogEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return "proxylog summary\nentries: 0\nerrors: 0\n";
+        }
+
+        var statusBuckets = entries
+            .GroupBy(entry => entry.StatusCode)
+            .OrderBy(group => group.Key)
+            .Select(group => string.Create(CultureInfo.InvariantCulture, $"{group.Key}:{group.Count()}"));
+        var failures = entries
+            .Where(entry => entry.StatusCode >= 400 || !string.IsNullOrWhiteSpace(entry.Error))
+            .OrderByDescending(entry => entry.Timestamp)
+            .Take(8)
+            .ToArray();
+        var websocketEntries = entries
+            .Where(entry => string.Equals(entry.Method, "WS-UPGRADE", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var slowest = entries
+            .OrderByDescending(entry => entry.DurationMs)
+            .Take(5)
+            .ToArray();
+        var redirected = entries.Count(entry => entry.StatusCode is >= 300 and <= 399);
+        var withCookies = entries.Count(entry => !string.IsNullOrWhiteSpace(entry.RequestCookies));
+
+        var lines = new List<string>
+        {
+            "proxylog summary",
+            string.Create(CultureInfo.InvariantCulture, $"entries: {entries.Count}"),
+            string.Create(CultureInfo.InvariantCulture, $"errors: {failures.Length}"),
+            $"status: {string.Join(" ", statusBuckets)}",
+            string.Create(CultureInfo.InvariantCulture, $"websocket: {websocketEntries.Length} total, {websocketEntries.Count(entry => entry.StatusCode == 101)} connected, {websocketEntries.Count(entry => entry.StatusCode >= 400)} failed"),
+            string.Create(CultureInfo.InvariantCulture, $"redirects: {redirected}"),
+            string.Create(CultureInfo.InvariantCulture, $"requests with cookies: {withCookies}"),
+            $"slowest: {string.Join(" | ", slowest.Select(entry => string.Create(CultureInfo.InvariantCulture, $"{entry.StatusCode} {entry.DurationMs}ms {TrimForSummary(entry.UpstreamUrl, 96)}")))}"
+        };
+
+        if (failures.Length > 0)
+        {
+            lines.Add("failures:");
+            foreach (var failure in failures)
+            {
+                var error = string.IsNullOrWhiteSpace(failure.Error) ? "" : $" error={TrimForSummary(failure.Error, 80)}";
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"  {failure.StatusCode} {failure.Type} {TrimForSummary(failure.UpstreamUrl, 120)}{error}"));
+            }
+        }
+
+        return string.Join('\n', lines) + "\n";
+    }
+
+    private static string TrimForSummary(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "(none)";
+        }
+
+        var compact = value.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return compact.Length <= maxLength ? compact : compact[..Math.Max(0, maxLength - 1)] + "...";
     }
 
     /// <summary>

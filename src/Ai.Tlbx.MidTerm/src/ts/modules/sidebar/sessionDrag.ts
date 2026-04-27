@@ -44,6 +44,14 @@ function closestSessionItem(el: Element | null): HTMLElement | null {
   return found instanceof HTMLElement ? found : null;
 }
 
+function isInteractiveDragTarget(el: Element | null): boolean {
+  return (
+    el?.closest(
+      'button, input, textarea, select, a, [contenteditable="true"], .session-actions, .session-notes-pane',
+    ) != null
+  );
+}
+
 function isSameControlMode(target: HTMLElement | null): boolean {
   if (!target || !draggedElement) {
     return false;
@@ -60,9 +68,18 @@ function isSameReorderScope(target: HTMLElement | null): boolean {
   return (target.dataset.reorderScope ?? '') === (draggedElement.dataset.reorderScope ?? '');
 }
 
+function getReorderScope(item: HTMLElement | null): string {
+  return item?.dataset.reorderScope ?? '';
+}
+
 function canReorderWithTarget(target: HTMLElement | null): target is HTMLElement {
+  const draggedReorderScope = getReorderScope(draggedElement);
   return (
-    !!target && target !== draggedElement && isSameControlMode(target) && isSameReorderScope(target)
+    draggedReorderScope !== '' &&
+    !!target &&
+    target !== draggedElement &&
+    isSameControlMode(target) &&
+    isSameReorderScope(target)
   );
 }
 
@@ -119,6 +136,11 @@ function handleDragStart(e: DragEvent): void {
   }
 
   const target = e.target as HTMLElement;
+  if (isInteractiveDragTarget(target)) {
+    e.preventDefault();
+    return;
+  }
+
   const sessionItem = closestSessionItem(target);
   if (!sessionItem) return;
 
@@ -303,6 +325,10 @@ function handleTouchStart(e: TouchEvent): void {
   if (!touch) return;
 
   const target = touch.target as HTMLElement;
+  if (isInteractiveDragTarget(target)) {
+    return;
+  }
+
   const sessionItem = closestSessionItem(target);
   if (!sessionItem) return;
 

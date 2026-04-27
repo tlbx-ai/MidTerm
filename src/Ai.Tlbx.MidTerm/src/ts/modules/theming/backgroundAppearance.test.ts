@@ -156,7 +156,9 @@ describe('backgroundAppearance', () => {
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
     const terminalCanvasAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-canvas-background'));
+    const sidebarAlpha = alphaOf(rootStyle.getPropertyValue('--bg-sidebar'));
     const terminalUiAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-ui-background'));
+    const appChromeAlpha = alphaOf(rootStyle.getPropertyValue('--app-chrome-background'));
     const textInputAlpha = alphaOf(rootStyle.getPropertyValue('--text-input-background'));
     const sidebarHoverAlpha = alphaOf(rootStyle.getPropertyValue('--sidebar-item-hover-background'));
 
@@ -166,7 +168,10 @@ describe('backgroundAppearance', () => {
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(terminalCanvasAlpha).toBeCloseTo(0.4, 5);
+    expect(sidebarAlpha).toBeCloseTo(0.854, 5);
+    expect(sidebarAlpha).not.toBeCloseTo(terminalCanvasAlpha, 5);
     expect(terminalUiAlpha).toBeCloseTo(0.7, 5);
+    expect(appChromeAlpha).toBeCloseTo(0.925, 5);
     expect(textInputAlpha).toBeCloseTo(0.94, 5);
     expect(sidebarHoverAlpha).toBeCloseTo(0.82, 5);
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
@@ -178,6 +183,17 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-session-hover-opaque')).toBe('#1C1E2A');
     expect(rootStyle.getPropertyValue('--bg-session-active-opaque')).toBe('#1C1E2A');
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
+  });
+
+  it('keeps shared app chrome 75 percent opaque at full UI transparency', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        uiTransparency: 100,
+      }),
+    );
+
+    expect(alphaOf(rootStyle.getPropertyValue('--app-chrome-background'))).toBeCloseTo(0.75, 5);
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {

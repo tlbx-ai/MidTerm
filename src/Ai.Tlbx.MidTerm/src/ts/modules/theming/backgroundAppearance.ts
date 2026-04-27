@@ -47,6 +47,7 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
 }> = [
   { name: '--terminal-canvas-background', source: '--bg-terminal', mode: 'terminal' },
   { name: '--terminal-ui-background', source: '--bg-terminal', mode: 'ui' },
+  { name: '--app-chrome-background', source: '--bg-terminal', mode: 'ui', response: 0.25 },
   { name: '--text-input-background', source: '--bg-input', mode: 'ui', response: 0.2 },
   {
     name: '--sidebar-item-hover-background',

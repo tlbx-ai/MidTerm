@@ -256,6 +256,8 @@ The canonical history contract must satisfy the following:
 - Only exceptional states such as approvals, errors, or diff summaries may justify stronger containment.
 - Lens must own the visible backdrop of its active surface. When terminal transparency is configured as fully opaque, Lens should sit on an opaque terminal-toned underlay so wallpaper or hidden sibling panels cannot bleed through the active Lens surface.
 - Lens pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.
+- Lens and Terminal panes should be the only workspace backdrop layer between their content and the app wallpaper. Parent workspace shells must stay transparent so stacked translucent backgrounds do not change the intended terminal-transparency opacity.
+- Terminal transparency should be applied once at the outer Lens pane surface. Inner Lens shells, composer wrappers, and status controls must not add a second terminal-transparency underlay that changes the effective opacity.
 
 ### Color and emphasis
 
@@ -638,7 +640,8 @@ Status in this branch/work item:
 - implemented: Lens plain `Esc` now interrupts active Lens turns from the composer, touch-controller, focused Lens surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap
 - implemented: while the shared Command Bay composer is focused, bare `Shift+Tab` now toggles plan mode only for the active Lens surface and forwards raw backtab to the active Terminal surface instead of applying one behavior across both surfaces
 - implemented: when terminal transparency is fully opaque, active Lens sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Lens surface
-- implemented: Lens pane backgrounds and composer underlays now key off terminal transparency tokens rather than the generic UI transparency tokens
+- implemented: workspace parent shells stay transparent so active Terminal and Lens panes sit directly over the app wallpaper without extra translucent backdrop layers
+- implemented: Lens terminal-transparency ownership is limited to the outer Lens pane backdrop; inner chat/composer wrappers stay transparent so UI transparency and stacked underlays do not alter the effective Lens pane opacity
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label, phase-locks both its sweep and spinner animations to a shared wallclock-derived phase, and keeps the existing busy DOM node alive across live label/elapsed updates so redraws do not visibly restart the motion
 - implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter

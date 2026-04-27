@@ -307,7 +307,7 @@
   --terminal-bg: #05050a; /* Alias for compatibility */
   --bg-primary: #0d0e14; /* L: 3.5% - Main canvas */
   --bg-elevated: #161821; /* L: 6.5% - Cards, panels */
-  --bg-sidebar: #0d0e14; /* L: 3.5% - Sidebar */
+  --bg-sidebar: #05050a; /* Sidebar shares the terminal canvas */
   --bg-surface: #242735; /* L: 12.5% - Input fields, dropdowns */
   --bg-input: #242735; /* Alias for compatibility */
   --bg-dropdown: #242735; /* Alias for compatibility */
@@ -323,19 +323,42 @@
   --bg-session-hover: #1c1e2a; /* Subtle hover */
   --bg-session-active: #1c1e2a; /* Active session */
   --bg-settings: #161821; /* Same as bg-elevated */
-  --bg-tertiary: #161821; /* Alias for bg-sidebar */
+  --bg-tertiary: #05050a; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
   --terminal-ui-background: var(--terminal-bg);
-  --workspace-pane-background: var(--terminal-canvas-background, var(--terminal-bg));
-  --workspace-pane-chrome-background: var(--terminal-ui-background, var(--terminal-bg));
+  --app-chrome-background: var(--bg-terminal);
+  --workspace-pane-background: var(--bg-primary);
+  --workspace-pane-chrome-background: var(--bg-elevated);
   --text-input-background: var(--bg-input);
   --sidebar-item-hover-background: var(--bg-session-hover);
   --sidebar-item-active-background: var(--bg-session-active);
-  --sidebar-text-shadow:
-    0 0 8px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 96%, transparent),
-    0 0 16px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 84%, transparent),
-    0 0 28px color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 62%, transparent);
-  --sidebar-text-shadow-inline-bleed: 8px;
+  --sidebar-readable-text-color: color-mix(in srgb, white 94%, var(--text-primary) 6%);
+  --sidebar-readable-muted-text-color: color-mix(in srgb, white 84%, var(--text-secondary) 16%);
+  --sidebar-readable-shadow-core: color-mix(
+    in srgb,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 85%,
+    transparent
+  );
+  --sidebar-readable-shadow-soft: color-mix(
+    in srgb,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 65%,
+    transparent
+  );
+  --sidebar-readable-shadow-wide: color-mix(
+    in srgb,
+    var(--bg-sidebar-opaque, var(--bg-sidebar)) 47%,
+    transparent
+  );
+  --sidebar-readable-text-shadow:
+    0 0 2px var(--sidebar-readable-shadow-core),
+    0 1px 12px var(--sidebar-readable-shadow-soft),
+    0 2px 26px var(--sidebar-readable-shadow-wide);
+  --sidebar-readable-icon-shadow:
+    drop-shadow(0 0 2px var(--sidebar-readable-shadow-core))
+    drop-shadow(0 1px 16px var(--sidebar-readable-shadow-soft))
+    drop-shadow(0 2px 34px var(--sidebar-readable-shadow-wide));
+  --sidebar-readable-ellipsis-pad-x: 24px;
+  --sidebar-readable-ellipsis-pad-y: 8px;
 
   /* === BORDERS === */
   --border-color: #1e202b;
@@ -570,6 +593,10 @@ body {
   background: var(--bg-primary);
 }
 
+body.has-app-background {
+  background: transparent;
+}
+
 @media (min-width: 769px) {
   body {
     box-sizing: border-box;
@@ -637,22 +664,8 @@ body::before {
   }
 }
 
-body.has-app-background::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--bg-primary) 25%, transparent),
-    color-mix(in srgb, var(--bg-primary) 55%, transparent)
-  );
-  z-index: -1;
-  pointer-events: none;
-}
-
 @media (max-width: 768px) {
-  body.hide-app-background-on-mobile::before,
-  body.hide-app-background-on-mobile::after {
+  body.hide-app-background-on-mobile::before {
     content: none;
   }
 }
@@ -709,7 +722,7 @@ body.has-app-background::after {
   box-sizing: border-box;
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
-  background-color: var(--bg-sidebar);
+  background-color: var(--app-chrome-background, var(--bg-terminal));
   position: relative;
 }
 
@@ -741,11 +754,64 @@ body.has-app-background::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-block: 10px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
-  margin-block: -10px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-text-shadow);
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 10px)
+    var(--sidebar-readable-ellipsis-pad-x, 0px);
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 10px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 0px) * -1);
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar-brand,
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar-title {
+  overflow: visible;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .sidebar
+  :is(
+    .sidebar-title,
+    .sidebar-nav-btn > .icon,
+    .sidebar-nav-btn > span:not(.icon),
+    .spaces-tree-target-header,
+    .spaces-tree-space-title,
+    .spaces-tree-workspace-name,
+    .spaces-tree-workspace-branch,
+    .spaces-tree-workspace-badge,
+    .session-group-label,
+    .session-title,
+    .session-subtitle,
+    .session-details,
+    .session-foreground,
+    .voice-section-title,
+    .network-section-title,
+    .sidebar-footer .version,
+    .sidebar-footer .footer-traffic,
+    .sidebar-footer .footer-separator,
+    .footer-update-hint:not(.hidden)
+  ) {
+  color: var(--sidebar-readable-text-color);
+  text-shadow: var(--sidebar-readable-text-shadow);
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .sidebar
+  :is(
+    .session-subtitle,
+    .session-details,
+    .session-foreground,
+    .voice-section-title,
+    .network-section-title,
+    .sidebar-footer .version,
+    .sidebar-footer .footer-traffic,
+    .sidebar-footer .footer-separator,
+    .footer-update-hint:not(.hidden)
+  ) {
+  color: var(--sidebar-readable-muted-text-color);
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn > .icon {
+  filter: var(--sidebar-readable-icon-shadow);
 }
 
 .add-session-btn {
@@ -801,6 +867,11 @@ body.has-app-background::after {
   gap: 0;
 }
 
+body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc {
+  isolation: isolate;
+  position: relative;
+}
+
 .spaces-tree-adhoc .spaces-tree-target-header {
   padding: 10px 12px 6px;
 }
@@ -812,6 +883,34 @@ body.has-app-background::after {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-target-header {
+  align-self: flex-start;
+  display: inline-block;
+  overflow: visible;
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 8px)
+    calc(4px + var(--sidebar-readable-ellipsis-pad-x, 24px));
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 8px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 24px) * -1);
+  position: relative;
+  z-index: 2;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .spaces-tree-adhoc
+  .spaces-tree-target-header {
+  padding:
+    calc(10px + var(--sidebar-readable-ellipsis-pad-y, 8px))
+    calc(12px + var(--sidebar-readable-ellipsis-pad-x, 24px))
+    calc(6px + var(--sidebar-readable-ellipsis-pad-y, 8px));
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
+  position: relative;
+  z-index: 1;
 }
 
 .spaces-tree-space-list,
@@ -1121,8 +1220,9 @@ body.has-app-background::after {
   letter-spacing: 0.08em;
   font-size: var(--fs-xs);
   font-weight: 600;
+  position: relative;
   overflow: visible;
-  text-shadow: var(--sidebar-text-shadow);
+  z-index: 1;
 }
 
 .session-group-toggle:hover {
@@ -1142,7 +1242,16 @@ body.has-app-background::after {
 
 .session-group-label {
   flex: 1 1 auto;
+  display: inline-block;
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 8px)
+    var(--sidebar-readable-ellipsis-pad-x, 24px);
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 8px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 24px) * -1);
+  position: relative;
   text-align: left;
+  z-index: 1;
 }
 
 .session-group-count {
@@ -1207,11 +1316,6 @@ body.has-app-background::after {
   gap: 0;
   position: relative;
   font-family: var(--font-ui-emoji);
-  --sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));
-  --sidebar-item-text-shadow:
-    0 0 8px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 96%, transparent),
-    0 0 16px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 84%, transparent),
-    0 0 28px color-mix(in srgb, var(--sidebar-item-text-shadow-color) 62%, transparent);
   transition:
     background-color 0.15s ease-in-out,
     opacity 0.2s;
@@ -1264,12 +1368,10 @@ body.has-app-background::after {
 .session-item.dragging {
   opacity: 0.5;
   background-color: var(--sidebar-item-active-background, var(--bg-session-active));
-  --sidebar-item-text-shadow-color: var(--bg-session-active-opaque, var(--bg-session-active));
 }
 
 .session-item.drag-over {
   background-color: var(--sidebar-item-hover-background, var(--bg-session-hover));
-  --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
 }
 
 .session-item.drag-over-above {
@@ -1293,13 +1395,11 @@ body.has-app-background::after {
       transparent
     );
     transform: translateX(2px);
-    --sidebar-item-text-shadow-color: var(--bg-session-hover-opaque, var(--bg-session-hover));
   }
 }
 
 .session-item.active {
   background-color: var(--sidebar-item-active-background, var(--bg-session-active));
-  --sidebar-item-text-shadow-color: var(--bg-session-active-opaque, var(--bg-session-active));
   border-image: linear-gradient(
       to bottom,
       transparent 0%,
@@ -1426,10 +1526,7 @@ body.has-app-background::after {
   flex-shrink: 1;
   min-width: 0;
   padding-block: 10px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -10px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .session-item.two-line .session-title {
@@ -1444,9 +1541,12 @@ body.has-app-background::after {
   text-overflow: ellipsis;
   flex-shrink: 1;
   min-width: 0;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 4px)
+    var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
 }
 
 .session-details {
@@ -1456,10 +1556,7 @@ body.has-app-background::after {
   align-items: center;
   gap: 4px;
   padding-block: 8px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -8px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .passive-indicator {
@@ -1488,10 +1585,7 @@ body.has-app-background::after {
   gap: 0;
   min-width: 0;
   padding-block: 8px;
-  padding-inline: var(--sidebar-text-shadow-inline-bleed);
   margin-block: -8px;
-  margin-inline: calc(var(--sidebar-text-shadow-inline-bleed) * -1);
-  text-shadow: var(--sidebar-item-text-shadow);
 }
 
 .fg-cwd {
@@ -1502,6 +1596,12 @@ body.has-app-background::after {
   white-space: nowrap;
   direction: rtl;
   text-align: left;
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 4px)
+    var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
 }
 
 .fg-separator {
@@ -1516,6 +1616,12 @@ body.has-app-background::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding:
+    var(--sidebar-readable-ellipsis-pad-y, 4px)
+    var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin:
+    calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
 }
 
 /* Unnamed sessions: process indicator promoted to title row */
@@ -2006,17 +2112,25 @@ body.has-app-background::after {
 
 .session-actions {
   position: absolute;
-  right: 8px;
+  top: 6px;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 2px;
+  --session-actions-background: var(--bg-session-hover-opaque, var(--bg-session-hover));
+  --session-action-hover-background: color-mix(
+    in srgb,
+    var(--session-actions-background) 78%,
+    var(--accent-gold) 22%
+  );
   background: linear-gradient(
     to right,
     transparent,
-    var(--sidebar-item-hover-background, var(--bg-session-hover)) 8px,
-    var(--sidebar-item-hover-background, var(--bg-session-hover))
+    var(--session-actions-background) 8px,
+    var(--session-actions-background)
   );
-  padding-left: 12px;
+  padding: 2px 0 2px 12px;
+  border-radius: 4px 0 0 4px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
@@ -2030,11 +2144,12 @@ body.has-app-background::after {
 }
 
 .session-item.active .session-actions {
+  --session-actions-background: var(--bg-session-active-opaque, var(--bg-session-active));
   background: linear-gradient(
     to right,
     transparent,
-    var(--sidebar-item-active-background, var(--bg-session-active)) 8px,
-    var(--sidebar-item-active-background, var(--bg-session-active))
+    var(--session-actions-background) 8px,
+    var(--session-actions-background)
   );
 }
 
@@ -2042,16 +2157,17 @@ body.has-app-background::after {
 .session-pin,
 .session-resize,
 .session-rename,
+.session-notes-toggle,
 .session-inject,
 .session-undock,
 .session-close {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: none;
-  background: transparent;
+  background: var(--session-actions-background, transparent);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: var(--fs-md);
+  font-size: 18px;
   line-height: 1;
   border-radius: 3px;
   display: flex;
@@ -2068,13 +2184,14 @@ body.has-app-background::after {
   justify-content: center;
   width: 1em;
   height: 1em;
-  font-size: inherit;
+  font-size: 16px;
   line-height: 1;
   flex-shrink: 0;
+  transition: transform 0.14s ease;
 }
 
 .session-action-icon.text-icon {
-  font-size: var(--fs-lg);
+  font-size: 18px;
 }
 
 .session-action-label {
@@ -2083,6 +2200,46 @@ body.has-app-background::after {
 
 .session-pin.pinned {
   color: var(--accent-gold);
+}
+
+.session-notes-toggle.has-notes {
+  color: var(--accent-blue);
+}
+
+.session-notes-pane {
+  margin-top: 6px;
+  padding-right: 2px;
+}
+
+.session-notes-pane[hidden] {
+  display: none;
+}
+
+.session-notes-input {
+  display: block;
+  width: calc(100% + 4px);
+  min-height: calc((var(--fs-sm) * 1.3) + 10px);
+  max-height: calc((var(--fs-sm) * 1.3 * 5) + 10px);
+  resize: none;
+  box-sizing: border-box;
+  margin-inline: -2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  overflow-y: hidden;
+  padding: 5px 2px;
+  outline: none;
+}
+
+.session-notes-input:focus {
+  border-color: var(--accent-blue);
+  background: var(--bg-dropdown-opaque, var(--bg-input));
+  color: var(--text-primary);
+  overflow-y: auto;
 }
 
 .session-pin.save-success {
@@ -2115,9 +2272,25 @@ body.has-app-background::after {
 .session-pin:hover,
 .session-resize:hover,
 .session-rename:hover,
-.session-inject:hover {
-  background-color: var(--accent-gold);
-  color: var(--bg-primary);
+.session-notes-toggle:hover,
+.session-inject:hover,
+.session-undock:hover {
+  background: var(
+    --session-action-hover-background,
+    var(--session-actions-background, var(--bg-session-hover-opaque))
+  );
+  color: var(--text-primary);
+}
+
+.session-control:hover .session-action-icon,
+.session-pin:hover .session-action-icon,
+.session-resize:hover .session-action-icon,
+.session-rename:hover .session-action-icon,
+.session-notes-toggle:hover .session-action-icon,
+.session-inject:hover .session-action-icon,
+.session-undock:hover .session-action-icon,
+.session-close:hover .session-action-icon {
+  transform: scale(1.12);
 }
 
 .session-control.active:hover {
@@ -2182,7 +2355,6 @@ body.has-app-background::after {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
-  text-shadow: var(--sidebar-text-shadow);
   overflow: visible;
 }
 
@@ -2313,7 +2485,7 @@ body.has-app-background::after {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: var(--bg-primary);
+  background-color: transparent;
   position: relative;
   overflow: hidden;
 }
@@ -2323,14 +2495,14 @@ body.has-app-background::after {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  background-color: transparent;
 }
 
 .terminal-container {
   position: absolute;
   inset: 0;
   padding: 0;
-  background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  background-color: transparent;
   touch-action: manipulation;
   display: flex;
   align-items: flex-start;
@@ -2543,9 +2715,8 @@ body.has-app-background::after {
 /* xterm sizing - natural size based on rows/cols */
 .terminal-container .xterm {
   flex-shrink: 0;
-  min-width: 100%;
-  min-height: 100%;
-  background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  z-index: 2;
+  background-color: transparent;
 }
 
 /* Terminal scrollbar visibility — controlled by scrollbarStyle setting */
@@ -2730,7 +2901,7 @@ body.has-app-background::after {
   display: flex;
   min-width: 0;
   min-height: 0;
-  background-color: var(--terminal-bg);
+  background-color: transparent;
 }
 
 .layout-leaf > .session-wrapper {
@@ -2741,9 +2912,7 @@ body.has-app-background::after {
 
 .layout-leaf .session-tab-bar {
   border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 2%, transparent), transparent),
-    color-mix(in srgb, var(--bg-dialog-chrome) 94%, transparent);
+  background: var(--app-chrome-background, var(--bg-terminal));
   padding: 0 4px;
 }
 
@@ -2783,9 +2952,7 @@ body.has-app-background::after {
 
 .layout-leaf.focused .session-tab-bar {
   border-bottom-color: color-mix(in srgb, var(--accent-gold) 16%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-gold) 6%, transparent), transparent),
-    color-mix(in srgb, var(--bg-dialog-chrome) 96%, transparent);
+  background: var(--app-chrome-background, var(--bg-terminal));
 }
 
 /* Dock overlay - shown during drag to indicate drop zones */
@@ -3592,6 +3759,7 @@ body.has-app-background::after {
   .session-actions .session-pin,
   .session-actions .session-resize,
   .session-actions .session-rename,
+  .session-actions .session-notes-toggle,
   .session-actions .session-inject,
   .session-actions .session-undock,
   .session-actions .session-close {
@@ -3602,6 +3770,7 @@ body.has-app-background::after {
     gap: 14px;
     padding: 12px 14px;
     border-radius: 12px;
+    background: transparent;
     color: var(--text-primary);
     font-size: var(--fs-lg);
   }
@@ -3640,6 +3809,11 @@ body.has-app-background::after {
     color: var(--text-secondary);
   }
 
+  .session-actions .session-notes-toggle .session-action-icon {
+    background: var(--accent-blue-15);
+    color: var(--accent-blue);
+  }
+
   .session-actions .session-undock .session-action-icon {
     background: var(--accent-green-10);
     color: var(--accent-green);
@@ -3663,6 +3837,11 @@ body.has-app-background::after {
 
   .session-actions .session-rename:active {
     background-color: var(--btn-secondary-hover);
+  }
+
+  .session-actions .session-notes-toggle:active {
+    background-color: var(--accent-blue);
+    color: var(--text-on-accent);
   }
 
   .session-actions .session-undock:active {
@@ -4111,11 +4290,39 @@ body.has-app-background::after {
   margin-top: 48px;
 }
 
-/* Scaled terminal — centering is acceptable since scaling already loses pixel-perfection */
+/* Scaled terminal: anchor the visual terminal at the top-left, then fill exposed gaps explicitly. */
 .terminal-container.scaled {
   overflow: hidden;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.terminal-gap-fill {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--terminal-gap-background, var(--terminal-canvas-background, var(--terminal-bg)));
+}
+
+.terminal-gap-fill-right {
+  top: 0;
+  left: var(--terminal-gap-content-width, 0px);
+  width: var(--terminal-gap-right-width, 0px);
+  height: var(--terminal-gap-content-height, 0px);
+}
+
+.terminal-gap-fill-bottom {
+  top: var(--terminal-gap-content-height, 0px);
+  left: 0;
+  width: var(--terminal-gap-content-width, 0px);
+  height: var(--terminal-gap-bottom-height, 0px);
+}
+
+.terminal-gap-fill-corner {
+  top: var(--terminal-gap-content-height, 0px);
+  left: var(--terminal-gap-content-width, 0px);
+  width: var(--terminal-gap-right-width, 0px);
+  height: var(--terminal-gap-bottom-height, 0px);
 }
 
 .scaled-overlay {
@@ -4218,6 +4425,7 @@ body.has-app-background::after {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 32px;
   padding: 6px 12px;
   border: none;
   background: none;
@@ -4227,7 +4435,6 @@ body.has-app-background::after {
   border-radius: 0;
   text-align: left;
   overflow: visible;
-  text-shadow: var(--sidebar-text-shadow);
 }
 
 .sidebar-nav-btn:hover {
@@ -4251,6 +4458,13 @@ body.has-app-background::after {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  line-height: 1;
+  filter: none;
+}
+
+.sidebar-nav-btn .icon svg {
+  width: 1em;
+  height: 1em;
 }
 
 .session-filter-bar {
@@ -10937,8 +11151,30 @@ body.shared-session-mode .session-tab-bar {
   display: none !important;
 }
 
+.manager-bar-overflow-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 220px;
+}
+
 .manager-bar-overflow-item {
-  min-width: 180px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.manager-bar-overflow-item-menu {
+  flex: 0 0 var(--command-bay-control-height, 36px);
+  justify-content: center;
+  min-width: var(--command-bay-control-height, 36px);
+  padding: 0;
+}
+
+.manager-bar-overflow-item-menu:hover,
+.manager-bar-overflow-row.menu-open .manager-bar-overflow-item-menu {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--command-bay-border-strong, transparent);
 }
 
 .manager-bar-add:hover {
@@ -11154,7 +11390,7 @@ body.shared-session-mode .session-tab-bar {
 
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
-  background: var(--bg-terminal);
+  background: transparent;
 }
 
 .session-wrapper.hidden {
@@ -11165,7 +11401,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 0;
-  background: var(--bg-terminal);
+  background: var(--app-chrome-background, var(--bg-terminal));
   border-bottom: none;
   flex-shrink: 0;
   padding: 0 8px;
@@ -11462,7 +11698,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: transparent;
 }
 
 .agent-runtime-stats {
@@ -11478,7 +11714,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 0;
   background: color-mix(
     in srgb,
-    var(--terminal-canvas-background, var(--terminal-bg)) 90%,
+    var(--terminal-ui-background, var(--terminal-bg)) 90%,
     transparent
   );
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
@@ -11688,7 +11924,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex: 0 0 auto;
   padding: 14px 18px 18px;
   border-top: 1px solid color-mix(in srgb, var(--agent-lens-rail) 44%, transparent);
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: transparent;
 }
 
 .agent-composer-interruption {
@@ -11715,7 +11951,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 0 12px;
   border: 1px solid color-mix(in srgb, var(--agent-lens-live) 26%, transparent);
   border-radius: 0;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-ui-background, var(--terminal-bg));
   color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
   font-size: 0.72rem;
   font-weight: 700;
@@ -15528,6 +15764,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --sidebar-session-secondary-text: color-mix(in srgb, var(--text-primary) 62%, var(--text-muted));
 }
 
+body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .session-item {
+  color: var(--sidebar-readable-text-color);
+  --sidebar-session-secondary-text: var(--sidebar-readable-muted-text-color);
+}
+
 .sidebar
   .session-item
   :is(
@@ -15537,6 +15778,18 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     .session-foreground.process-title
   ) {
   color: var(--text-primary) !important;
+}
+
+body.has-app-background:not(.opaque-terminal-surfaces)
+  .sidebar
+  .session-item
+  :is(
+    .session-title,
+    .session-role-badge,
+    .session-state-badge,
+    .session-foreground.process-title
+  ) {
+  color: var(--sidebar-readable-text-color) !important;
 }
 
 .sidebar .session-item :is(.session-subtitle, .session-details, .passive-indicator) {
@@ -15621,7 +15874,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     var(--command-bay-floating-button-border) 80%,
     var(--terminal-ui-background, var(--terminal-bg)) 20%
   );
-  --command-bay-floating-button-shadow: 0px 0px 40px 10px var(--command-bay-surface);
   --command-bay-shadow: 0 2px 8px color-mix(in srgb, black 8%, transparent);
   position: absolute;
   left: 0;
@@ -16114,8 +16366,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   height: var(--command-bay-control-height);
   border-color: var(--command-bay-floating-button-border);
   background: var(--command-bay-floating-button-surface);
-  -webkit-box-shadow: var(--command-bay-floating-button-shadow);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  -webkit-box-shadow: none;
+  box-shadow: none;
 }
 
 .adaptive-footer-dock .smart-input-tools-toggle:hover,
@@ -16125,8 +16377,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-dock .smart-input-send-btn:focus-visible,
 .adaptive-footer-dock .smart-input-send-btn:active {
   border-color: var(--command-bay-floating-button-border);
-  -webkit-box-shadow: var(--command-bay-floating-button-shadow);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  -webkit-box-shadow: none;
+  box-shadow: none;
 }
 
 .smart-input-tools-toggle::before,
@@ -16214,7 +16466,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-send-btn:active {
   background: color-mix(in srgb, var(--command-bay-surface-hover) 88%, transparent);
   border-color: var(--command-bay-floating-button-border);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  box-shadow: none;
 }
 
 .smart-input-tools-toggle:active::before,
@@ -16247,10 +16499,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-tools-toggle:focus-visible,
 .smart-input-send-btn:focus-visible {
   -webkit-box-shadow:
-    var(--command-bay-floating-button-shadow),
     0 0 0 1px color-mix(in srgb, var(--accent-blue) 12%, transparent);
   box-shadow:
-    var(--command-bay-floating-button-shadow),
     0 0 0 1px color-mix(in srgb, var(--accent-blue) 12%, transparent);
 }
 
@@ -16707,8 +16957,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 0;
   background: var(--command-bay-ui-reactive-floating-button-surface);
   border: 1px solid var(--command-bay-ui-reactive-floating-button-border);
-  -webkit-box-shadow: var(--command-bay-floating-button-shadow);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  -webkit-box-shadow: none;
+  box-shadow: none;
   color: var(--command-bay-action-ink);
   font-family: var(--font-ui);
   font-size: var(--command-bay-automation-chip-font-size);
@@ -16728,8 +16978,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 0;
   background: var(--command-bay-ui-reactive-floating-button-surface);
   border: 1px solid var(--command-bay-ui-reactive-floating-button-border);
-  -webkit-box-shadow: var(--command-bay-floating-button-shadow);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  -webkit-box-shadow: none;
+  box-shadow: none;
   color: var(--command-bay-action-ink);
   font-family: var(--font-ui);
   font-size: var(--command-bay-automation-chip-font-size);
@@ -16753,8 +17003,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-dock .manager-bar-overflow:focus-visible {
   background: color-mix(in srgb, var(--command-bay-surface-hover) 88%, transparent);
   border-color: var(--command-bay-floating-button-border);
-  -webkit-box-shadow: var(--command-bay-floating-button-shadow);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  -webkit-box-shadow: none;
+  box-shadow: none;
 }
 
 .adaptive-footer-dock .manager-btn-label {
@@ -16787,7 +17037,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   background: color-mix(in srgb, var(--command-bay-surface-hover) 88%, transparent);
   color: var(--command-bay-text);
   border-color: var(--command-bay-floating-button-border);
-  box-shadow: var(--command-bay-floating-button-shadow);
+  box-shadow: none;
 }
 
 .adaptive-footer-context .touch-controller.embedded {

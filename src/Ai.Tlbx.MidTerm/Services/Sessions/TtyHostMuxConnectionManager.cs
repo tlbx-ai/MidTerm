@@ -21,10 +21,48 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         int Rows,
         SharedOutputBuffer Buffer);
 
+    private sealed class InputLatencyTrace
+    {
+        public readonly object Gate = new();
+
+        public InputLatencyTrace(string clientId, string sessionId, uint traceId, long markerReceivedAtMs)
+        {
+            ClientId = clientId;
+            SessionId = sessionId;
+            TraceId = traceId;
+            MuxMarkerReceivedAtMs = markerReceivedAtMs;
+        }
+
+        public string ClientId { get; }
+        public string SessionId { get; }
+        public uint TraceId { get; }
+        public long MuxMarkerReceivedAtMs { get; }
+        public long MuxInputReceivedAtMs { get; set; }
+        public long IpcWriteStartAtMs { get; set; }
+        public long IpcWriteDoneAtMs { get; set; }
+        public long MthostMarkerReceivedAtMs { get; set; }
+        public long MthostInputReceivedAtMs { get; set; }
+        public long PtyWriteDoneAtMs { get; set; }
+        public long PtyOutputReadAtMs { get; set; }
+        public long MthostIpcOutputEnqueuedAtMs { get; set; }
+        public long MthostIpcOutputWriteDoneAtMs { get; set; }
+        public long MthostIpcOutputFlushDoneAtMs { get; set; }
+        public long OutputObservedAtMs { get; set; }
+        public long MuxQueueEnqueuedAtMs { get; set; }
+        public long ClientQueuedAtMs { get; set; }
+        public long WsFlushAtMs { get; set; }
+        public ulong FirstOutputSequenceEndExclusive { get; set; }
+        public bool Reported { get; set; }
+    }
+
     private readonly TtyHostSessionManager _sessionManager;
     private readonly ConcurrentDictionary<string, MuxClient> _clients = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _inputTimestamps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, int> _lastServerRttMs = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string ClientId, string SessionId), InputLatencyTrace> _inputTraceMarkers = new();
+    private readonly ConcurrentDictionary<(string SessionId, uint TraceId), InputLatencyTrace> _activeInputTraces = new();
+    private const int MaxInputLatencyTraces = 256;
+    private const long InputLatencyTraceTimeoutMs = 10_000;
     private const int MaxQueuedOutputs = 1000;
     private readonly Channel<PooledOutputItem> _outputQueue =
         Channel.CreateBounded<PooledOutputItem>(
@@ -35,6 +73,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private readonly Action<string, ulong, int, int, ReadOnlyMemory<byte>> _outputHandler;
     private readonly Action<string> _sessionClosedHandler;
     private readonly Action<string, ForegroundChangePayload> _foregroundChangedHandler;
+    private readonly Action<string, TtyHostInputTraceReport> _inputTraceHandler;
     private readonly string _settingsListenerId;
     private TerminalResumeModeSetting _resumeMode;
     private bool _disposed;
@@ -48,9 +87,11 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         _outputHandler = HandleOutput;
         _sessionClosedHandler = HandleSessionClosed;
         _foregroundChangedHandler = HandleForegroundChanged;
+        _inputTraceHandler = HandleInputTrace;
         _sessionManager.OnOutput += _outputHandler;
         _sessionManager.OnSessionClosed += _sessionClosedHandler;
         _sessionManager.OnForegroundChanged += _foregroundChangedHandler;
+        _sessionManager.OnInputTrace += _inputTraceHandler;
 
         _cts = new CancellationTokenSource();
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
@@ -60,6 +101,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     {
         _inputTimestamps.TryRemove(sessionId, out _);
         _lastServerRttMs.TryRemove(sessionId, out _);
+        RemoveInputTracesForSession(sessionId);
         MuxProtocol.ClearSessionCache(sessionId);
 
         foreach (var client in _clients.Values)
@@ -79,8 +121,13 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         data.Span.CopyTo(shared.WriteSpan);
 
         var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
+        var trace = MarkInputTraceOutputObserved(sessionId, sequenceEndExclusive);
         if (!_outputQueue.Writer.TryWrite(new PooledOutputItem(sessionId, sequenceEndExclusive, cols, rows, shared)))
         {
+            if (trace is not null)
+            {
+                RemoveInputTrace(trace);
+            }
             Log.Warn(() => $"[MuxManager] Output queue full, dropping frame for {sessionId} ({data.Length} bytes)");
             foreach (var client in _clients.Values)
             {
@@ -90,6 +137,15 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
                 }
             }
             shared.Release();
+            return;
+        }
+
+        if (trace is not null)
+        {
+            lock (trace.Gate)
+            {
+                trace.MuxQueueEnqueuedAtMs = Environment.TickCount64;
+            }
         }
     }
 
@@ -124,7 +180,10 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
                     if (client.WebSocket.State == WebSocketState.Open)
                     {
                         item.Buffer.AddRef();
-                        client.QueueOutput(item.SessionId, item.SequenceEndExclusive, item.Cols, item.Rows, item.Buffer);
+                        if (client.QueueOutput(item.SessionId, item.SequenceEndExclusive, item.Cols, item.Rows, item.Buffer))
+                        {
+                            MarkInputTraceClientQueued(client.Id, item.SessionId, item.SequenceEndExclusive);
+                        }
                     }
                 }
             }
@@ -137,7 +196,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
     public MuxClient AddClient(string clientId, WebSocket webSocket, string? allowedSessionId = null)
     {
-        var client = new MuxClient(clientId, webSocket, GetResumeMode, allowedSessionId);
+        var client = new MuxClient(clientId, webSocket, GetResumeMode, allowedSessionId, HandleClientOutputFrameSent);
         _clients[clientId] = client;
         return client;
     }
@@ -148,14 +207,297 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     {
         if (_clients.TryRemove(clientId, out var client))
         {
+            RemoveInputTracesForClient(clientId);
             await client.DisposeAsync().ConfigureAwait(false);
         }
     }
 
-    public async Task HandleInputAsync(string sessionId, ReadOnlyMemory<byte> data)
+    public void BeginInputTrace(string clientId, string sessionId, uint traceId)
     {
-        _inputTimestamps[sessionId] = Environment.TickCount64;
-        await _sessionManager.SendInputAsync(sessionId, data, _cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+        if (traceId == 0)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        PruneExpiredInputTraces(now);
+        if (_activeInputTraces.Count + _inputTraceMarkers.Count >= MaxInputLatencyTraces)
+        {
+            return;
+        }
+
+        _inputTraceMarkers[(clientId, sessionId)] = new InputLatencyTrace(clientId, sessionId, traceId, now);
+    }
+
+    public async Task HandleInputAsync(string clientId, string sessionId, ReadOnlyMemory<byte> data)
+    {
+        var inputReceivedAtMs = Environment.TickCount64;
+        _inputTimestamps[sessionId] = inputReceivedAtMs;
+
+        if (!_inputTraceMarkers.TryRemove((clientId, sessionId), out var trace))
+        {
+            await _sessionManager.SendInputAsync(sessionId, data, _cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            return;
+        }
+
+        lock (trace.Gate)
+        {
+            trace.MuxInputReceivedAtMs = inputReceivedAtMs;
+        }
+        _activeInputTraces[(sessionId, trace.TraceId)] = trace;
+
+        var timing = await _sessionManager.SendInputWithTraceAsync(
+            sessionId,
+            data,
+            trace.TraceId,
+            _cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+        if (timing is null)
+        {
+            RemoveInputTrace(trace);
+            return;
+        }
+
+        lock (trace.Gate)
+        {
+            trace.IpcWriteStartAtMs = timing.Value.IpcWriteStartAtMs;
+            trace.IpcWriteDoneAtMs = timing.Value.IpcWriteDoneAtMs;
+        }
+    }
+
+    private void HandleInputTrace(string sessionId, TtyHostInputTraceReport report)
+    {
+        if (!_activeInputTraces.TryGetValue((sessionId, report.TraceId), out var trace))
+        {
+            return;
+        }
+
+        lock (trace.Gate)
+        {
+            trace.MthostMarkerReceivedAtMs = report.MarkerReceivedAtMs;
+            trace.MthostInputReceivedAtMs = report.InputReceivedAtMs;
+            trace.PtyWriteDoneAtMs = report.PtyWriteDoneAtMs;
+            if (report.FirstOutputSequenceEndExclusive != 0)
+            {
+                trace.FirstOutputSequenceEndExclusive = report.FirstOutputSequenceEndExclusive;
+                trace.PtyOutputReadAtMs = report.PtyOutputReadAtMs;
+                trace.MthostIpcOutputEnqueuedAtMs = report.IpcOutputEnqueuedAtMs;
+                trace.MthostIpcOutputWriteDoneAtMs = report.IpcOutputWriteDoneAtMs;
+                trace.MthostIpcOutputFlushDoneAtMs = report.IpcOutputFlushDoneAtMs;
+            }
+        }
+
+        TrySendInputTraceResult(trace);
+    }
+
+    private InputLatencyTrace? MarkInputTraceOutputObserved(string sessionId, ulong sequenceEndExclusive)
+    {
+        var now = Environment.TickCount64;
+        foreach (var trace in _activeInputTraces.Values)
+        {
+            if (!string.Equals(trace.SessionId, sessionId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            lock (trace.Gate)
+            {
+                if (trace.FirstOutputSequenceEndExclusive != 0 || trace.Reported)
+                {
+                    continue;
+                }
+
+                trace.FirstOutputSequenceEndExclusive = sequenceEndExclusive;
+                trace.OutputObservedAtMs = now;
+                return trace;
+            }
+        }
+
+        return null;
+    }
+
+    private void MarkInputTraceClientQueued(string clientId, string sessionId, ulong sequenceEndExclusive)
+    {
+        var trace = FindClientTraceForOutput(clientId, sessionId, sequenceEndExclusive);
+        if (trace is null)
+        {
+            return;
+        }
+
+        lock (trace.Gate)
+        {
+            if (trace.ClientQueuedAtMs == 0)
+            {
+                trace.ClientQueuedAtMs = Environment.TickCount64;
+            }
+        }
+    }
+
+    private void HandleClientOutputFrameSent(
+        string clientId,
+        string sessionId,
+        ulong sequenceEndExclusive,
+        long sentAtMs)
+    {
+        var trace = FindClientTraceForOutput(clientId, sessionId, sequenceEndExclusive);
+        if (trace is null)
+        {
+            return;
+        }
+
+        lock (trace.Gate)
+        {
+            trace.WsFlushAtMs = sentAtMs;
+        }
+
+        TrySendInputTraceResult(trace);
+    }
+
+    private void TrySendInputTraceResult(InputLatencyTrace trace)
+    {
+        MuxInputTraceResult result;
+        lock (trace.Gate)
+        {
+            if (trace.Reported ||
+                trace.FirstOutputSequenceEndExclusive == 0 ||
+                trace.WsFlushAtMs == 0 ||
+                trace.MthostIpcOutputFlushDoneAtMs == 0)
+            {
+                return;
+            }
+
+            trace.Reported = true;
+            result = BuildInputTraceResult(trace);
+        }
+
+        RemoveInputTrace(trace);
+
+        if (_clients.TryGetValue(trace.ClientId, out var client) && client.WebSocket.State == WebSocketState.Open)
+        {
+            client.QueueFrame(MuxProtocol.CreateInputTraceResultFrame(trace.SessionId, result), trace.SessionId);
+        }
+    }
+
+    private InputLatencyTrace? FindClientTraceForOutput(
+        string clientId,
+        string sessionId,
+        ulong sequenceEndExclusive)
+    {
+        foreach (var trace in _activeInputTraces.Values)
+        {
+            if (!string.Equals(trace.ClientId, clientId, StringComparison.Ordinal) ||
+                !string.Equals(trace.SessionId, sessionId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            lock (trace.Gate)
+            {
+                if (trace.Reported ||
+                    trace.FirstOutputSequenceEndExclusive == 0 ||
+                    trace.FirstOutputSequenceEndExclusive > sequenceEndExclusive)
+                {
+                    continue;
+                }
+
+                return trace;
+            }
+        }
+
+        return null;
+    }
+
+    private static MuxInputTraceResult BuildInputTraceResult(InputLatencyTrace trace)
+    {
+        return new MuxInputTraceResult(
+            trace.TraceId,
+            trace.FirstOutputSequenceEndExclusive,
+            ElapsedMs(trace.MuxInputReceivedAtMs, trace.IpcWriteStartAtMs),
+            ElapsedMs(trace.IpcWriteStartAtMs, trace.IpcWriteDoneAtMs),
+            ElapsedMs(trace.MuxInputReceivedAtMs, trace.MthostInputReceivedAtMs),
+            ElapsedMs(trace.MuxInputReceivedAtMs, trace.PtyWriteDoneAtMs),
+            ElapsedMs(trace.PtyWriteDoneAtMs, trace.PtyOutputReadAtMs),
+            ElapsedMs(trace.PtyOutputReadAtMs, trace.MthostIpcOutputEnqueuedAtMs),
+            ElapsedMs(trace.MthostIpcOutputEnqueuedAtMs, trace.MthostIpcOutputWriteDoneAtMs),
+            ElapsedMs(trace.MthostIpcOutputWriteDoneAtMs, trace.MthostIpcOutputFlushDoneAtMs),
+            ElapsedMs(trace.MthostIpcOutputEnqueuedAtMs, trace.OutputObservedAtMs),
+            ElapsedMs(trace.MuxInputReceivedAtMs, trace.OutputObservedAtMs),
+            ElapsedMs(trace.OutputObservedAtMs, trace.MuxQueueEnqueuedAtMs),
+            ElapsedMs(trace.MuxQueueEnqueuedAtMs, trace.ClientQueuedAtMs),
+            ElapsedMs(trace.ClientQueuedAtMs, trace.WsFlushAtMs),
+            ElapsedMs(trace.MuxInputReceivedAtMs, trace.WsFlushAtMs));
+    }
+
+    private static int ElapsedMs(long startAtMs, long endAtMs)
+    {
+        if (startAtMs <= 0 || endAtMs <= 0 || endAtMs < startAtMs)
+        {
+            return -1;
+        }
+
+        return (int)Math.Clamp(endAtMs - startAtMs, 0, int.MaxValue);
+    }
+
+    private void PruneExpiredInputTraces(long nowMs)
+    {
+        foreach (var (key, trace) in _inputTraceMarkers)
+        {
+            if (nowMs - trace.MuxMarkerReceivedAtMs > InputLatencyTraceTimeoutMs)
+            {
+                _inputTraceMarkers.TryRemove(key, out _);
+            }
+        }
+
+        foreach (var (key, trace) in _activeInputTraces)
+        {
+            if (nowMs - trace.MuxMarkerReceivedAtMs > InputLatencyTraceTimeoutMs)
+            {
+                _activeInputTraces.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private void RemoveInputTrace(InputLatencyTrace trace)
+    {
+        _inputTraceMarkers.TryRemove((trace.ClientId, trace.SessionId), out _);
+        _activeInputTraces.TryRemove((trace.SessionId, trace.TraceId), out _);
+    }
+
+    private void RemoveInputTracesForClient(string clientId)
+    {
+        foreach (var (key, trace) in _inputTraceMarkers)
+        {
+            if (string.Equals(trace.ClientId, clientId, StringComparison.Ordinal))
+            {
+                _inputTraceMarkers.TryRemove(key, out _);
+            }
+        }
+
+        foreach (var (key, trace) in _activeInputTraces)
+        {
+            if (string.Equals(trace.ClientId, clientId, StringComparison.Ordinal))
+            {
+                _activeInputTraces.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private void RemoveInputTracesForSession(string sessionId)
+    {
+        foreach (var (key, trace) in _inputTraceMarkers)
+        {
+            if (string.Equals(trace.SessionId, sessionId, StringComparison.Ordinal))
+            {
+                _inputTraceMarkers.TryRemove(key, out _);
+            }
+        }
+
+        foreach (var (key, trace) in _activeInputTraces)
+        {
+            if (string.Equals(trace.SessionId, sessionId, StringComparison.Ordinal))
+            {
+                _activeInputTraces.TryRemove(key, out _);
+            }
+        }
     }
 
     public int GetServerRtt(string sessionId)
@@ -236,6 +578,9 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         _sessionManager.OnOutput -= _outputHandler;
         _sessionManager.OnSessionClosed -= _sessionClosedHandler;
         _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
+        _sessionManager.OnInputTrace -= _inputTraceHandler;
+        _inputTraceMarkers.Clear();
+        _activeInputTraces.Clear();
         _settingsService.RemoveSettingsListener(_settingsListenerId);
     }
 

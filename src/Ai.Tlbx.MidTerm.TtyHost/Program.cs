@@ -395,13 +395,21 @@ public static class Program
         int Length,
         int TerminalBytes,
         ulong SequenceEndExclusive,
-        long EnqueuedAtMs);
+        long EnqueuedAtMs,
+        uint InputTraceId);
+
+    private readonly record struct PendingInputTraceOutputFlush(
+        uint TraceId,
+        ulong SequenceEndExclusive,
+        long EnqueuedAtMs,
+        long IpcWriteDoneAtMs);
 
     private static bool EnqueueFrame(
         ChannelWriter<PooledFrame> writer,
         ReadOnlySpan<byte> frame,
         int terminalBytes = 0,
-        ulong sequenceEndExclusive = 0)
+        ulong sequenceEndExclusive = 0,
+        uint inputTraceId = 0)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(frame.Length);
         frame.CopyTo(buffer);
@@ -410,7 +418,8 @@ public static class Program
             frame.Length,
             terminalBytes,
             sequenceEndExclusive,
-            Environment.TickCount64)))
+            Environment.TickCount64,
+            inputTraceId)))
         {
             ArrayPool<byte>.Shared.Return(buffer);
             return false;
@@ -429,12 +438,23 @@ public static class Program
         {
             while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
             {
+                List<PendingInputTraceOutputFlush>? traceFlushes = null;
                 while (reader.TryRead(out var frame))
                 {
                     try
                     {
                         await stream.WriteAsync(frame.Buffer.AsMemory(0, frame.Length), ct).ConfigureAwait(false);
+                        var writeDoneAtMs = Environment.TickCount64;
                         session.RecordIpcFlushed(frame.SequenceEndExclusive, frame.TerminalBytes, frame.EnqueuedAtMs);
+                        if (frame.InputTraceId != 0)
+                        {
+                            traceFlushes ??= [];
+                            traceFlushes.Add(new PendingInputTraceOutputFlush(
+                                frame.InputTraceId,
+                                frame.SequenceEndExclusive,
+                                frame.EnqueuedAtMs,
+                                writeDoneAtMs));
+                        }
                     }
                     finally
                     {
@@ -442,6 +462,26 @@ public static class Program
                     }
                 }
                 await stream.FlushAsync(ct).ConfigureAwait(false);
+
+                if (traceFlushes is { Count: > 0 })
+                {
+                    var flushDoneAtMs = Environment.TickCount64;
+                    foreach (var traceFlush in traceFlushes)
+                    {
+                        if (session.TryCreateInputTraceOutputReport(
+                            traceFlush.TraceId,
+                            traceFlush.SequenceEndExclusive,
+                            traceFlush.EnqueuedAtMs,
+                            traceFlush.IpcWriteDoneAtMs,
+                            flushDoneAtMs,
+                            out var report))
+                        {
+                            await stream.WriteAsync(report, ct).ConfigureAwait(false);
+                        }
+                    }
+
+                    await stream.FlushAsync(ct).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -513,9 +553,10 @@ public static class Program
                     if (client.IsConnected)
                     {
                         var sequenceEndExclusive = sequenceStart + (ulong)data.Length;
+                        var inputTraceId = session.GetInputTraceIdForOutput(sequenceEndExclusive);
                         TtyHostProtocol.WriteOutputMessage(sequenceStart, session.Cols, session.Rows, data.Span, frame =>
                         {
-                            if (EnqueueFrame(channelWriter, frame, data.Length, sequenceEndExclusive))
+                            if (EnqueueFrame(channelWriter, frame, data.Length, sequenceEndExclusive, inputTraceId))
                             {
                                 session.RecordIpcEnqueued(sequenceEndExclusive, data.Length);
                                 return;
@@ -767,6 +808,8 @@ public static class Program
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
         var attached = !session.RequiresOwnershipHandshake;
+        uint? pendingInputTraceId = null;
+        long pendingInputTraceMarkerReceivedAtMs = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -872,11 +915,41 @@ public static class Program
                         break;
 
                     case TtyHostMessageType.Input:
+                        var inputReceivedAtMs = Environment.TickCount64;
                         var inputSlice = payloadLength > 0 && payloadBuffer is not null
                             ? payloadBuffer.AsMemory(0, payloadLength)
                             : ReadOnlyMemory<byte>.Empty;
                         Log.Verbose(() => $"[IPC-INPUT] {inputSlice.Length} bytes");
+                        if (pendingInputTraceId is uint pendingTraceId)
+                        {
+                            session.BeginInputTrace(
+                                pendingTraceId,
+                                pendingInputTraceMarkerReceivedAtMs,
+                                inputReceivedAtMs);
+                        }
+
                         await session.SendInputAsync(inputSlice, ct).ConfigureAwait(false);
+                        if (pendingInputTraceId is uint traceId)
+                        {
+                            var ptyWriteDoneAtMs = Environment.TickCount64;
+                            session.MarkInputTracePtyWriteDone(traceId, ptyWriteDoneAtMs);
+                            var report = TtyHostProtocol.CreateInputTraceReport(new TtyHostInputTraceReport(
+                                traceId,
+                                pendingInputTraceMarkerReceivedAtMs,
+                                inputReceivedAtMs,
+                                ptyWriteDoneAtMs));
+                            EnqueueFrame(channelWriter, report);
+                            pendingInputTraceId = null;
+                            pendingInputTraceMarkerReceivedAtMs = 0;
+                        }
+                        break;
+
+                    case TtyHostMessageType.InputTraceMarker:
+                        if (TtyHostProtocol.TryParseInputTraceMarker(payload, out var markerTraceId))
+                        {
+                            pendingInputTraceId = markerTraceId;
+                            pendingInputTraceMarkerReceivedAtMs = Environment.TickCount64;
+                        }
                         break;
 
                     case TtyHostMessageType.Resize:
@@ -1142,13 +1215,32 @@ internal sealed class TerminalSession : IDisposable
 {
     internal const int DefaultBufferCapacity = 2 * 1024 * 1024; // 2MB fixed buffer
 
+    private sealed class InputTraceState
+    {
+        public InputTraceState(uint traceId, long markerReceivedAtMs, long inputReceivedAtMs)
+        {
+            TraceId = traceId;
+            MarkerReceivedAtMs = markerReceivedAtMs;
+            InputReceivedAtMs = inputReceivedAtMs;
+        }
+
+        public uint TraceId { get; }
+        public long MarkerReceivedAtMs { get; }
+        public long InputReceivedAtMs { get; }
+        public long PtyWriteDoneAtMs { get; set; }
+        public ulong FirstOutputSequenceEndExclusive { get; set; }
+        public long PtyOutputReadAtMs { get; set; }
+    }
+
     private readonly IPtyConnection _pty;
     private readonly IProcessMonitor? _processMonitor;
     private readonly CircularByteBuffer _outputBuffer;
     private readonly object _bufferLock = new();
     private readonly object _transportLock = new();
+    private readonly object _inputTraceLock = new();
     private readonly int _scrollbackBytes;
     private TtyHostTransportInfo _transportInfo;
+    private InputTraceState? _inputTrace;
 
     public string Id { get; }
     public string? OwnerInstanceId { get; }
@@ -1201,9 +1293,30 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public async Task StartReadLoopAsync(CancellationToken ct)
+    public Task StartReadLoopAsync(CancellationToken ct)
+    {
+        return Task.Factory.StartNew(
+            () => RunReadLoop(ct),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+    }
+
+    private void RunReadLoop(CancellationToken ct)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(65536);
+        using var cancelRegistration = ct.Register(static state =>
+        {
+            try
+            {
+                ((IPtyConnection)state!).Dispose();
+            }
+            catch
+            {
+                // Best-effort cancellation for blocking PTY reads during shutdown.
+            }
+        }, _pty);
+
         try
         {
             while (!ct.IsCancellationRequested)
@@ -1211,14 +1324,23 @@ internal sealed class TerminalSession : IDisposable
                 int bytesRead;
                 try
                 {
-                    bytesRead = await _pty.ReaderStream.ReadAsync(buffer, ct).ConfigureAwait(false);
+                    bytesRead = _pty.ReaderStream.Read(buffer, 0, buffer.Length);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
                 catch (IOException ex)
                 {
+                    if (ct.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
                     Log.Exception(ex, "TerminalSession.ReadLoop");
                     break;
                 }
@@ -1228,21 +1350,25 @@ internal sealed class TerminalSession : IDisposable
                     break;
                 }
 
+                var ptyOutputReadAtMs = Environment.TickCount64;
                 var data = buffer.AsMemory(0, bytesRead);
                 Log.Verbose(() => string.Create(CultureInfo.InvariantCulture, $"[PTY-READ] {bytesRead} bytes"));
                 ulong sequenceStart;
+                ulong sequenceEndExclusive;
 
                 lock (_bufferLock)
                 {
                     sequenceStart = _outputBuffer.TotalBytesWritten;
                     _outputBuffer.Write(data.Span);
+                    sequenceEndExclusive = sequenceStart + (ulong)data.Length;
                 }
 
                 lock (_transportLock)
                 {
-                    _transportInfo.SourceSeq = sequenceStart + (ulong)data.Length;
+                    _transportInfo.SourceSeq = sequenceEndExclusive;
                 }
 
+                MarkInputTracePtyOutputRead(sequenceEndExclusive, ptyOutputReadAtMs);
                 OnOutput?.Invoke(sequenceStart, data);
             }
         }
@@ -1257,6 +1383,88 @@ internal sealed class TerminalSession : IDisposable
     {
         Log.Verbose(() => $"[PTY-WRITE] {data.Length} bytes");
         await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
+    }
+
+    public void BeginInputTrace(uint traceId, long markerReceivedAtMs, long inputReceivedAtMs)
+    {
+        if (traceId == 0)
+        {
+            return;
+        }
+
+        lock (_inputTraceLock)
+        {
+            _inputTrace = new InputTraceState(traceId, markerReceivedAtMs, inputReceivedAtMs);
+        }
+    }
+
+    public void MarkInputTracePtyWriteDone(uint traceId, long ptyWriteDoneAtMs)
+    {
+        lock (_inputTraceLock)
+        {
+            if (_inputTrace?.TraceId == traceId)
+            {
+                _inputTrace.PtyWriteDoneAtMs = ptyWriteDoneAtMs;
+            }
+        }
+    }
+
+    private void MarkInputTracePtyOutputRead(ulong sequenceEndExclusive, long ptyOutputReadAtMs)
+    {
+        lock (_inputTraceLock)
+        {
+            if (_inputTrace is null || _inputTrace.FirstOutputSequenceEndExclusive != 0)
+            {
+                return;
+            }
+
+            _inputTrace.FirstOutputSequenceEndExclusive = sequenceEndExclusive;
+            _inputTrace.PtyOutputReadAtMs = ptyOutputReadAtMs;
+        }
+    }
+
+    public uint GetInputTraceIdForOutput(ulong sequenceEndExclusive)
+    {
+        lock (_inputTraceLock)
+        {
+            return _inputTrace is not null &&
+                _inputTrace.FirstOutputSequenceEndExclusive == sequenceEndExclusive
+                ? _inputTrace.TraceId
+                : 0;
+        }
+    }
+
+    public bool TryCreateInputTraceOutputReport(
+        uint traceId,
+        ulong sequenceEndExclusive,
+        long ipcOutputEnqueuedAtMs,
+        long ipcOutputWriteDoneAtMs,
+        long ipcOutputFlushDoneAtMs,
+        out byte[] report)
+    {
+        lock (_inputTraceLock)
+        {
+            if (_inputTrace is null ||
+                _inputTrace.TraceId != traceId ||
+                _inputTrace.FirstOutputSequenceEndExclusive != sequenceEndExclusive)
+            {
+                report = [];
+                return false;
+            }
+
+            report = TtyHostProtocol.CreateInputTraceReport(new TtyHostInputTraceReport(
+                _inputTrace.TraceId,
+                _inputTrace.MarkerReceivedAtMs,
+                _inputTrace.InputReceivedAtMs,
+                _inputTrace.PtyWriteDoneAtMs,
+                _inputTrace.FirstOutputSequenceEndExclusive,
+                _inputTrace.PtyOutputReadAtMs,
+                ipcOutputEnqueuedAtMs,
+                ipcOutputWriteDoneAtMs,
+                ipcOutputFlushDoneAtMs));
+            _inputTrace = null;
+            return true;
+        }
     }
 
     public void Resize(int cols, int rows)

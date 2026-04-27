@@ -89,4 +89,9 @@ public sealed class HistoryPatchRequest
     /// Set label (null = not provided, "" = clear, "text" = set)
     /// </summary>
     public string? Label { get; init; }
+
+    /// <summary>
+    /// Set notes (null = not provided, "" = clear, "text" = set)
+    /// </summary>
+    public string? Notes { get; init; }
 }

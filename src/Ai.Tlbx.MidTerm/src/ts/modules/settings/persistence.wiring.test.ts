@@ -258,6 +258,18 @@ describe('settings persistence wiring', () => {
     );
   });
 
+  it('raises app and terminal transparency after a background image upload', () => {
+    expect(persistenceSource).toContain('const MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY = 50;');
+    expect(persistenceSource).toContain(
+      'uiTransparency: Math.max(current.uiTransparency, MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY),',
+    );
+    expect(persistenceSource).toContain(
+      'terminalTransparency: Math.max(\n        current.terminalTransparency ?? current.uiTransparency,\n        MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY,\n      ),',
+    );
+    expect(persistenceSource).toContain("'setting-ui-transparency-value'");
+    expect(persistenceSource).toContain("'setting-terminal-transparency-value'");
+  });
+
   it('keeps settings surfaces opaque under UI transparency', () => {
     expect(cssSource).toContain('background-color: var(--bg-settings-opaque, var(--bg-settings));');
     expect(cssSource).toContain('background: var(--bg-elevated-opaque, var(--bg-elevated));');
@@ -270,9 +282,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-terminal);');
     expect(cssSource).toContain('background: var(--bg-primary);');
     expect(cssSource).toContain('background: var(--terminal-ui-background, var(--terminal-bg));');
-    expect(cssSource).toContain(
-      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
-    );
+    expect(cssSource).toContain('--workspace-pane-background: var(--bg-primary);');
+    expect(cssSource).toContain('--workspace-pane-chrome-background: var(--bg-elevated);');
+    expect(cssSource).toContain('background-color: transparent;');
     expect(xtermCssSource).toContain(
       'background-color: var(--terminal-canvas-background, var(--bg-terminal));',
     );
@@ -290,11 +302,37 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain(
       'background-color: var(--sidebar-item-active-background, var(--bg-session-active));',
     );
-    expect(cssSource).toContain('--sidebar-item-text-shadow:');
-    expect(cssSource).toContain('text-shadow: var(--sidebar-item-text-shadow);');
-    expect(cssSource).toContain(
-      '--sidebar-item-text-shadow-color: var(--bg-sidebar-opaque, var(--bg-sidebar));',
-    );
+    expect(cssSource).toContain('--sidebar-readable-text-shadow:');
+    expect(cssSource).toContain('--sidebar-readable-icon-shadow:');
+    expect(cssSource).toContain('--sidebar-readable-text-color:');
+    expect(cssSource).toContain('--sidebar-readable-muted-text-color:');
+    expect(cssSource).toContain('--sidebar-readable-shadow-wide:');
+    expect(cssSource).toContain('--sidebar-readable-ellipsis-pad-x:');
+    expect(cssSource).toContain('body.has-app-background:not(.opaque-terminal-surfaces)');
+    expect(cssSource).toContain('.sidebar-nav-btn > .icon');
+    expect(cssSource).toContain('.session-group-toggle {');
+    expect(cssSource).toContain('.session-group-label {');
+    expect(cssSource).toContain('.spaces-tree-target-header {');
+    expect(cssSource).toContain('.spaces-tree-adhoc-list');
+    expect(cssSource).toContain('.spaces-tree-adhoc');
+    expect(cssSource).toContain('isolation: isolate;');
+    expect(cssSource).toContain('z-index: 1;');
+    expect(cssSource).toContain('z-index: 2;');
+    expect(cssSource).toContain('.spaces-tree-workspace-name');
+    expect(cssSource).toContain('.spaces-tree-workspace-branch');
+    expect(cssSource).toContain('.spaces-tree-workspace-badge');
+    expect(cssSource).toContain('.sidebar-title {');
+    expect(cssSource).toContain('.sidebar-brand,');
+    expect(cssSource).toContain('color: var(--sidebar-readable-text-color);');
+    expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color);');
+    expect(cssSource).toContain('text-shadow: var(--sidebar-readable-text-shadow);');
+    expect(cssSource).toContain('filter: var(--sidebar-readable-icon-shadow);');
+    expect(cssSource).not.toContain('--sidebar-readable-filter-shadow:');
+    expect(cssSource).not.toContain('filter: var(--sidebar-readable-filter-shadow);');
+    expect(cssSource).toContain('.footer-update-hint:not(.hidden)');
+    expect(cssSource).not.toMatch(/footer-update-hint[\s\S]{0,220}display:\s*inline-block/);
+    expect(cssSource).toContain('--sidebar-session-secondary-text: var(--sidebar-readable-muted-text-color);');
+    expect(cssSource).toContain('filter: none;');
   });
 
   it('keeps manager bar buttons readable under UI transparency', () => {

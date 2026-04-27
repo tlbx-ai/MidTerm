@@ -12,6 +12,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services;
 
 public sealed class HistoryService : IDisposable
@@ -126,6 +127,7 @@ public sealed class HistoryService : IDisposable
             WorkingDirectory = entry.WorkingDirectory,
             IsStarred = entry.IsStarred,
             Label = entry.Label,
+            Notes = entry.Notes,
             LastUsed = entry.LastUsed,
             Order = entry.Order,
             LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
@@ -145,6 +147,7 @@ public sealed class HistoryService : IDisposable
         string? commandLine,
         string workingDirectory,
         string? label = null,
+        string? notes = null,
         string? dedupeKey = null,
         string? launchMode = null,
         string? profile = null,
@@ -160,6 +163,7 @@ public sealed class HistoryService : IDisposable
         var normalizedLaunchOrigin = NormalizeLaunchOrigin(launchOrigin);
         var normalizedSurfaceType = NormalizeSurfaceType(surfaceType, normalizedLaunchMode, normalizedProfile);
         Log.Info(() => $"RecordEntry: shell={shellType}, exe={executable}, cmd={commandLine}, cwd={workingDirectory}, label={label}, dedupeKey={dedupeKey}, launchMode={normalizedLaunchMode}, profile={normalizedProfile}, launchOrigin={normalizedLaunchOrigin}, surfaceType={normalizedSurfaceType}");
+        var normalizedNotes = NormalizeNotes(notes);
 
         if (string.IsNullOrWhiteSpace(executable) || string.IsNullOrWhiteSpace(workingDirectory))
         {
@@ -205,6 +209,10 @@ public sealed class HistoryService : IDisposable
                 {
                     existing.Label = label;
                 }
+                if (notes is not null)
+                {
+                    existing.Notes = normalizedNotes;
+                }
             }
             else
             {
@@ -217,6 +225,7 @@ public sealed class HistoryService : IDisposable
                     WorkingDirectory = workingDirectory,
                     IsStarred = false,
                     Label = string.IsNullOrWhiteSpace(label) ? null : label,
+                    Notes = normalizedNotes,
                     LastUsed = DateTime.UtcNow,
                     LaunchMode = normalizedLaunchMode,
                     Profile = normalizedProfile,
@@ -276,6 +285,7 @@ public sealed class HistoryService : IDisposable
                 WorkingDirectory = entry.WorkingDirectory,
                 IsStarred = entry.IsStarred,
                 Label = entry.Label,
+                Notes = entry.Notes,
                 LastUsed = entry.LastUsed,
                 Order = entry.Order,
                 LaunchMode = NormalizeLaunchMode(entry.LaunchMode),
@@ -347,6 +357,28 @@ public sealed class HistoryService : IDisposable
 
         ScheduleSave();
         return true;
+    }
+
+    public bool SetNotes(string id, string? notes)
+    {
+        lock (_lock)
+        {
+            var entry = _history.Entries.FirstOrDefault(e => e.Id == id);
+            if (entry is null)
+            {
+                return false;
+            }
+
+            entry.Notes = NormalizeNotes(notes);
+        }
+
+        ScheduleSave();
+        return true;
+    }
+
+    private static string? NormalizeNotes(string? notes)
+    {
+        return SessionRegistry.NormalizeSessionNotes(notes);
     }
 
     public bool RemoveEntry(string id)

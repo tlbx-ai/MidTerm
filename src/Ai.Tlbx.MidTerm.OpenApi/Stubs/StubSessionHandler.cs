@@ -84,6 +84,13 @@ public class StubSessionHandler : ISessionHandler
     public Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto) =>
         Task.FromResult<IResult>(Results.Ok());
 
+    public Task<IResult> SetSessionNotesAsync(string id, SetSessionNotesRequest request) =>
+        Task.FromResult<IResult>(Results.Json(new SessionInfoDto
+        {
+            Id = id,
+            Notes = request.Notes
+        }));
+
     public Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request) =>
         Task.FromResult<IResult>(Results.Json(new SessionInfoDto
         {

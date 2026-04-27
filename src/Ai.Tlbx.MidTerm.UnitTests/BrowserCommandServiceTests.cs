@@ -385,6 +385,7 @@ public class BrowserCommandServiceTests
 
         Assert.Contains("disconnected", status, StringComparison.Ordinal);
         Assert.Contains("state: waiting", status, StringComparison.Ordinal);
+        Assert.Contains("bridge phase: preview-frame-disconnected", status, StringComparison.Ordinal);
         Assert.Contains("controllable: no", status, StringComparison.Ordinal);
         Assert.Contains("ui clients: 1", status, StringComparison.Ordinal);
         Assert.Contains("target configured: yes", status, StringComparison.Ordinal);
@@ -404,6 +405,7 @@ public class BrowserCommandServiceTests
             connectedUiClientCount: 0);
 
         Assert.Contains("state: waiting", status, StringComparison.Ordinal);
+        Assert.Contains("bridge phase: no-ui-client", status, StringComparison.Ordinal);
         Assert.Contains("ui clients: 0", status, StringComparison.Ordinal);
         Assert.Contains("/ws/state", status, StringComparison.Ordinal);
         Assert.Contains("dev browser cannot work", status, StringComparison.OrdinalIgnoreCase);
@@ -463,10 +465,12 @@ public class BrowserCommandServiceTests
         Assert.True(status.Connected);
         Assert.False(status.Controllable);
         Assert.Equal("waiting", status.State);
+        Assert.Equal("owner-offline", status.BridgePhase);
         Assert.Equal("browser-owner", status.OwnerBrowserId);
         Assert.False(status.OwnerConnected);
         Assert.Null(status.DefaultClient);
         Assert.Contains("owned by browser 'browser-owner'", status.StatusMessage ?? "", StringComparison.Ordinal);
+        Assert.Contains("mt_claim_preview", status.RecoveryHint ?? "", StringComparison.Ordinal);
     }
 
     [Fact]

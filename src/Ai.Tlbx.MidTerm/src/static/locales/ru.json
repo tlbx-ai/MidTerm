@@ -933,5 +933,9 @@
   "settings.diagnostics.terminalKeyLogHint": "Capture terminal Enter and modifier events so remap failures are directly visible.",
   "settings.diagnostics.terminalKeyLogEnabled": "Enable terminal key log",
   "settings.diagnostics.terminalKeyLogClear": "Clear log",
-  "settings.diagnostics.terminalKeyLogEmpty": "Enable terminal key log to capture Enter and modifier events."
+  "settings.diagnostics.terminalKeyLogEmpty": "Enable terminal key log to capture Enter and modifier events.",
+  "session.notes": "Заметки",
+  "session.expandNotes": "Показать заметки",
+  "session.collapseNotes": "Скрыть заметки",
+  "session.notesPlaceholder": "Заметки"
 }

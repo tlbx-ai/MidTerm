@@ -20,6 +20,7 @@ public sealed class BackgroundImageService
     };
 
     private const long MaxUploadBytes = 10 * 1024 * 1024;
+    private const int MinimumBackgroundImageTransparency = 50;
     private readonly SettingsService _settingsService;
 
     public BackgroundImageService(SettingsService settingsService)
@@ -119,6 +120,7 @@ public sealed class BackgroundImageService
         settings.BackgroundImageFileName = fileName;
         settings.BackgroundImageEnabled = true;
         settings.BackgroundImageRevision = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        EnsureMinimumBackgroundImageTransparency(settings);
         _settingsService.Save(settings);
 
         return GetInfo(settings);
@@ -139,5 +141,11 @@ public sealed class BackgroundImageService
         _settingsService.Save(settings);
 
         return GetInfo(settings);
+    }
+
+    private static void EnsureMinimumBackgroundImageTransparency(MidTermSettings settings)
+    {
+        settings.UiTransparency = Math.Max(settings.UiTransparency, MinimumBackgroundImageTransparency);
+        settings.TerminalTransparency = Math.Max(settings.TerminalTransparency, MinimumBackgroundImageTransparency);
     }
 }

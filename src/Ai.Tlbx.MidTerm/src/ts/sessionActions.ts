@@ -84,6 +84,7 @@ const log = createLogger('main');
 
 export interface SessionSelectionOptions {
   closeSettingsPanel?: boolean;
+  focusTerminal?: boolean;
 }
 
 interface SessionActionsDeps {
@@ -135,7 +136,7 @@ export function createSessionActionHandlers({
     });
   }
 
-  function selectHubSession(sessionId: string): boolean {
+  function selectHubSession(sessionId: string, focusTerminal: boolean): boolean {
     const sessionInfo = getHubSession(sessionId);
     if (!sessionInfo) {
       return true;
@@ -162,7 +163,9 @@ export function createSessionActionHandlers({
     attachHubChannel(sessionId);
     requestAnimationFrame(() => {
       refreshTerminalPresentation(sessionId, state);
-      state.terminal.focus();
+      if (focusTerminal) {
+        state.terminal.focus();
+      }
       if (!isTerminalViewingScrollback(state)) {
         scrollToBottom(sessionId);
       }
@@ -172,13 +175,17 @@ export function createSessionActionHandlers({
     return true;
   }
 
-  function selectLayoutSession(sessionId: string): boolean {
+  function selectLayoutSession(sessionId: string, focusTerminal: boolean): boolean {
     if (!isSessionInLayout(sessionId)) {
       return false;
     }
 
     suppressAllHeat(1500);
-    focusLayoutSession(sessionId);
+    if (focusTerminal) {
+      focusLayoutSession(sessionId);
+    } else {
+      $activeSessionId.set(sessionId);
+    }
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
     if (!isLensOnlySession(sessionInfo)) {
@@ -189,7 +196,7 @@ export function createSessionActionHandlers({
     return true;
   }
 
-  function selectStandaloneSession(sessionId: string): void {
+  function selectStandaloneSession(sessionId: string, focusTerminal: boolean): void {
     hideStandaloneTerminalContainers();
     $activeSessionId.set(sessionId);
     suppressAllHeat(1500);
@@ -231,7 +238,7 @@ export function createSessionActionHandlers({
             applyTerminalScalingSync(state);
           }
         }
-        if (activeTab !== 'agent') {
+        if (focusTerminal && activeTab !== 'agent') {
           state.terminal.focus();
         }
         if (isNewlyCreated || !isTerminalViewingScrollback(state)) {
@@ -252,18 +259,19 @@ export function createSessionActionHandlers({
     if (options?.closeSettingsPanel !== false) {
       closeSettings();
     }
+    const focusTerminal = options?.focusTerminal !== false;
 
     if (isHubSessionId(sessionId)) {
-      void selectHubSession(sessionId);
+      void selectHubSession(sessionId, focusTerminal);
       return;
     }
 
     detachHubChannel();
-    if (selectLayoutSession(sessionId)) {
+    if (selectLayoutSession(sessionId, focusTerminal)) {
       return;
     }
 
-    selectStandaloneSession(sessionId);
+    selectStandaloneSession(sessionId, focusTerminal);
   }
 
   function deleteSession(sessionId: string): void {
@@ -599,6 +607,7 @@ export function createSessionActionHandlers({
       workingDirectory: target.workingDirectory,
       isStarred: true,
       label,
+      notes: session.notes ?? null,
       dedupeKey: target.dedupeKey,
       launchMode: target.historyMode.launchMode,
       profile: target.historyMode.profile,

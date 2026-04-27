@@ -80,4 +80,24 @@ public sealed class BrowserUiBridgeTests
         Assert.Equal("", error);
         Assert.Equal("browser-a", ownerService.GetOwnerBrowserId("session-a", "default"));
     }
+
+    [Fact]
+    public void RequestClaim_ReassignsPreviewToConnectedMainBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "stale-browser");
+        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
+        var connectionToken = new object();
+
+        mainBrowser.Register("browser-a", connectionToken);
+        mainBrowser.Claim("browser-a");
+        bridge.RegisterListener("l1", "browser-a", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+
+        var ok = bridge.RequestClaim("session-a", "default", out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("browser-a", ownerService.GetOwnerBrowserId("session-a", "default"));
+    }
 }

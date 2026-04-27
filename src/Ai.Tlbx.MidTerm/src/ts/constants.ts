@@ -49,6 +49,8 @@ export const MUX_TYPE_DATA_LOSS = 0x0b; // Server -> Client: Background session 
 export const MUX_TYPE_PONG = 0x0c; // Server -> Client: Latency measurement pong
 export const MUX_TYPE_SYNC_COMPLETE = 0x0d; // Server -> Client: Initial buffer replay finished
 export const MUX_TYPE_VISIBLE_SESSIONS_HINT = 0x0e; // Client -> Server: Visible terminal sessions
+export const MUX_TYPE_INPUT_TRACE_MARKER = 0x0f; // Client -> Server: Sample next input for latency trace
+export const MUX_TYPE_INPUT_TRACE_RESULT = 0x10; // Server -> Client: Sampled input latency trace result
 
 // Custom WebSocket close codes (4000-4999 range)
 export const WS_CLOSE_AUTH_FAILED = 4401;
@@ -368,6 +370,7 @@ export const ICONS = {
   undock: '\ue920', // close_fullscreen
   fullscreen: '\ue90c', // expand (open fullscreen)
   inject: '\ue997', // magic-wand (tell AI about MidTerm)
+  notes: '\ue922', // pen-tool
 } as const;
 
 /** Creates an icon span element */

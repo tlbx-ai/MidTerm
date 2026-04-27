@@ -44,11 +44,15 @@ public static class MuxProtocol
     public const byte TypePong = 0x0C; // Server -> Client: latency measurement pong
     public const byte TypeSyncComplete = 0x0D; // Server -> Client: initial buffer replay finished
     public const byte TypeVisibleSessionsHint = 0x0E; // Client -> Server: visible terminal sessions for quick resume
+    public const byte TypeInputTraceMarker = 0x0F; // Client -> Server: sample the next input for latency tracing
+    public const byte TypeInputTraceResult = 0x10; // Server -> Client: sampled input latency trace result
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
     public const int CompressionThreshold = 8192; // Only compress payloads > 8KB (buffer replays)
     public const int CompressedOutputHeaderSize = 25; // HeaderSize + seq(8) + dims(4) + uncompressedLen(4)
+    public const int InputTraceMarkerPayloadSize = 4;
+    public const int InputTraceResultPayloadSize = 68;
 
     public const byte BufferRequestModeFullReplay = 0x00;
     public const byte BufferRequestModeQuickResume = 0x01;
@@ -388,6 +392,49 @@ public static class MuxProtocol
         return frame;
     }
 
+    public static bool TryParseInputTraceMarker(ReadOnlySpan<byte> payload, out uint traceId)
+    {
+        traceId = 0;
+        if (payload.Length < InputTraceMarkerPayloadSize)
+        {
+            return false;
+        }
+
+        traceId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        return traceId != 0;
+    }
+
+    public static byte[] CreateInputTraceResultFrame(string sessionId, MuxInputTraceResult result)
+    {
+        var frame = new byte[HeaderSize + InputTraceResultPayloadSize];
+        frame[0] = TypeInputTraceResult;
+        WriteSessionId(frame.AsSpan(1, 8), sessionId);
+
+        var payload = frame.AsSpan(HeaderSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[..4], result.TraceId);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(4, 8), result.FirstOutputSequenceEndExclusive);
+        WriteInt32(payload, 12, result.ServerReceiveToIpcStartMs);
+        WriteInt32(payload, 16, result.IpcWriteMs);
+        WriteInt32(payload, 20, result.ServerReceiveToMthostReceiveMs);
+        WriteInt32(payload, 24, result.ServerReceiveToPtyWriteDoneMs);
+        WriteInt32(payload, 28, result.PtyWriteDoneToPtyOutputReadMs);
+        WriteInt32(payload, 32, result.PtyOutputReadToMthostIpcEnqueuedMs);
+        WriteInt32(payload, 36, result.MthostIpcEnqueuedToWriteDoneMs);
+        WriteInt32(payload, 40, result.MthostIpcWriteDoneToFlushDoneMs);
+        WriteInt32(payload, 44, result.MthostIpcEnqueuedToServerOutputObservedMs);
+        WriteInt32(payload, 48, result.ServerReceiveToOutputObservedMs);
+        WriteInt32(payload, 52, result.OutputObservedToMuxQueuedMs);
+        WriteInt32(payload, 56, result.MuxQueuedToClientQueuedMs);
+        WriteInt32(payload, 60, result.ClientQueuedToWsFlushMs);
+        WriteInt32(payload, 64, result.ServerReceiveToWsFlushMs);
+        return frame;
+    }
+
+    private static void WriteInt32(Span<byte> payload, int offset, int value)
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(payload.Slice(offset, 4), value);
+    }
+
     public static HashSet<string> ParseVisibleSessionsHintPayload(ReadOnlySpan<byte> payload)
     {
         var sessionIds = new HashSet<string>(StringComparer.Ordinal);
@@ -432,3 +479,21 @@ public static class MuxProtocol
         return Encoding.ASCII.GetString(sessionIdBytes[..length]);
     }
 }
+
+public readonly record struct MuxInputTraceResult(
+    uint TraceId,
+    ulong FirstOutputSequenceEndExclusive,
+    int ServerReceiveToIpcStartMs,
+    int IpcWriteMs,
+    int ServerReceiveToMthostReceiveMs,
+    int ServerReceiveToPtyWriteDoneMs,
+    int PtyWriteDoneToPtyOutputReadMs,
+    int PtyOutputReadToMthostIpcEnqueuedMs,
+    int MthostIpcEnqueuedToWriteDoneMs,
+    int MthostIpcWriteDoneToFlushDoneMs,
+    int MthostIpcEnqueuedToServerOutputObservedMs,
+    int ServerReceiveToOutputObservedMs,
+    int OutputObservedToMuxQueuedMs,
+    int MuxQueuedToClientQueuedMs,
+    int ClientQueuedToWsFlushMs,
+    int ServerReceiveToWsFlushMs);

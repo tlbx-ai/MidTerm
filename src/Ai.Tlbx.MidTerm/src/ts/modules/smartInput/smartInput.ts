@@ -330,7 +330,7 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
         showInput,
         showStatus,
       });
-  const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;
+  const transparency = settings?.uiTransparency ?? 0;
 
   return {
     activeSessionId,
@@ -1421,7 +1421,7 @@ function createAutomationOverflowProxy(): HTMLButtonElement {
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    triggerAutomationOverflow();
+    triggerAutomationOverflow(btn);
   });
   return btn;
 }
@@ -1545,6 +1545,7 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   syncLensQuickSettingsControls();
 
   if (!layoutState.showStatus || !layoutState.activeSessionId) {
+    setAutomationOverflowProxyAnchor(null);
     setLensQuickSettingsSheetOpen(false);
     return;
   }
@@ -1559,6 +1560,7 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     return;
   }
 
+  setAutomationOverflowProxyAnchor(null);
   const renderedTerminalStatus = renderTerminalStatusRow({
     autoSendEnabled: canUseSmartInputVoiceSupport() && autoSendEnabled,
     footerStatusHost,

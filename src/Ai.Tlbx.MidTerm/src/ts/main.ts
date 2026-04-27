@@ -131,6 +131,7 @@ import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
   bindHubSettings,
   createRemoteSession,
+  getHubSidebarRenderSignature,
   initHubRuntime,
   isHubSessionId,
   refreshHubState,
@@ -183,6 +184,7 @@ import {
   createSession as apiCreateSession,
   bootstrapWorker,
   setSessionBookmark,
+  setSessionNotes,
 } from './api/client';
 import type { ShellType } from './api/types';
 
@@ -193,8 +195,9 @@ function attachBookmarkToSession(
   sessionId: string,
   bookmarkId: string | null,
   label: string | null,
+  notes: string | null = null,
 ): void {
-  if (!bookmarkId && !label) {
+  if (!bookmarkId && !label && !notes) {
     return;
   }
 
@@ -208,6 +211,11 @@ function attachBookmarkToSession(
     if (bookmarkId) {
       setSession({ ...session, bookmarkId });
       setSessionBookmark(sessionId, bookmarkId).catch(() => {});
+    }
+
+    if (notes) {
+      setSession({ ...session, bookmarkId: bookmarkId ?? session.bookmarkId, notes });
+      setSessionNotes(sessionId, notes).catch(() => {});
     }
 
     if (label) {
@@ -406,11 +414,16 @@ async function init(): Promise<void> {
   initSessionShareButton();
   initDockState();
   initHubRuntime();
+  let previousHubSidebarSignature = getHubSidebarRenderSignature();
   subscribeHubState(() => {
-    renderSessionList();
-    updateEmptyState();
-    updateMobileTitle();
-    syncMobileTabActionState();
+    const nextHubSidebarSignature = getHubSidebarRenderSignature();
+    if (previousHubSidebarSignature !== nextHubSidebarSignature) {
+      previousHubSidebarSignature = nextHubSidebarSignature;
+      renderSessionList();
+      updateEmptyState();
+      updateMobileTitle();
+      syncMobileTabActionState();
+    }
     renderHubSettings();
   });
 
@@ -925,7 +938,7 @@ async function spawnFromHistory(
           requestAnimationFrame(() => {
             switchTab(session.id, 'agent');
           });
-          attachBookmarkToSession(session.id, entry.id, entry.label ?? null);
+          attachBookmarkToSession(session.id, entry.id, entry.label ?? null, entry.notes ?? null);
         })
         .catch((e: unknown) => {
           log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
@@ -946,7 +959,7 @@ async function spawnFromHistory(
       setSession(data);
       newlyCreatedSessions.add(data.id);
       selectSession(data.id);
-      attachBookmarkToSession(data.id, entry.id, entry.label ?? null);
+      attachBookmarkToSession(data.id, entry.id, entry.label ?? null, entry.notes ?? null);
 
       if (entry.commandLine) {
         const replayCmd = buildReplayCommand(entry.executable, entry.commandLine);

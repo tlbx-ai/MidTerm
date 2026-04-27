@@ -48,9 +48,13 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain(
       "overflowBtn = document.getElementById('manager-bar-overflow') as HTMLButtonElement | null;",
     );
-    expect(managerBarSource).toContain('function toggleOverflowMenu(): void {');
+    expect(managerBarSource).toContain(
+      'function toggleOverflowMenu(anchor: HTMLElement | null = null): void {',
+    );
     expect(managerBarSource).toContain('function syncOverflowedButtons(): void {');
-    expect(managerBarSource).toContain("managerBar.classList.contains('hidden') && !isMobileSurface");
+    expect(managerBarSource).toContain(
+      "managerBar.classList.contains('hidden') && !isMobileSurface",
+    );
     expect(managerBarSource).toContain(
       'function getAvailableManagerRailWidth(managerBar: HTMLElement, addButton: HTMLElement): number {',
     );
@@ -65,7 +69,13 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain(
       "const actionButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item');",
     );
-    expect(managerBarSource).toContain('button.dataset.actionId = action.id;');
+    expect(managerBarSource).toContain('runButton.dataset.actionId = action.id;');
+    expect(managerBarSource).toContain(
+      "const menuButton = target?.closest<HTMLButtonElement>('.manager-bar-overflow-item-menu');",
+    );
+    expect(managerBarSource).toContain("row.className = 'manager-bar-overflow-row';");
+    expect(managerBarSource).toContain('menuButton.dataset.actionId = action.id;');
+    expect(managerBarSource).toContain("'.manager-btn, .manager-bar-overflow-row'");
     expect(managerBarSource).toContain("element.classList.add('manager-btn-overflow-hidden');");
     expect(managerBarSource).toContain(
       "if (target?.closest('.manager-btn') || target?.closest('.manager-bar-action-popover')) {",
@@ -108,24 +118,34 @@ describe('manager bar visibility', () => {
   });
 
   it('collapses the automation bar to overflow and hides add button on mobile Lens', () => {
-    expect(managerBarSource).toContain('function isMobileLensSurface(managerBar: HTMLElement): boolean {');
+    expect(managerBarSource).toContain(
+      'function isMobileLensSurface(managerBar: HTMLElement): boolean {',
+    );
     expect(managerBarSource).toContain("addButton.classList.toggle('hidden', mobileLens);");
     expect(managerBarSource).toContain("t('managerBar.addButton')");
     expect(managerBarSource).toContain('isMobileLensSurface(barEl)');
   });
 
   it('exports trigger hooks and proxy anchor for mobile status row proxy buttons', () => {
-    expect(managerBarSource).toContain('export function triggerAutomationOverflow(): void {');
+    expect(managerBarSource).toContain(
+      'export function triggerAutomationOverflow(anchor: HTMLElement | null = null): void {',
+    );
     expect(managerBarSource).toContain('export function triggerAddAutomation(): void {');
     expect(managerBarSource).toContain('export function setAutomationOverflowProxyAnchor(');
     expect(managerBarSource).toContain('let overflowProxyAnchorEl:');
-    expect(managerBarSource).toContain('overflowProxyAnchorEl ?? overflowBtn');
+    expect(managerBarSource).toContain('let activeOverflowAnchorEl:');
+    expect(managerBarSource).toContain('resolveUsableOverflowAnchor(overflowProxyAnchorEl)');
+    expect(managerBarSource).toContain('resolveUsableOverflowAnchor(overflowBtn)');
   });
 
   it('renders prompt queue items beside automation items in the same queue surface', () => {
     expect(managerBarSource).toContain("if (entry.kind === 'prompt') {");
-    expect(managerBarSource).toContain('function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {');
+    expect(managerBarSource).toContain(
+      'function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {',
+    );
     expect(managerBarSource).toContain("return t('managerBar.modal.singlePrompt');");
-    expect(managerBarSource).toContain('function usesTurnQueueForSession(sessionId: string): boolean {');
+    expect(managerBarSource).toContain(
+      'function usesTurnQueueForSession(sessionId: string): boolean {',
+    );
   });
 });

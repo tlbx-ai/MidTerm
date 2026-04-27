@@ -364,17 +364,77 @@ export function findSessionAtPoint(x: number, y: number): string | null {
 }
 
 function findStandaloneSessionAtPoint(x: number, y: number): string | null {
-  const container = dom.terminalsArea?.querySelector('.terminal-container:not(.hidden)');
-  if (!container || !isPointInRect(x, y, container.getBoundingClientRect())) {
+  const wrappers = dom.terminalsArea?.querySelectorAll<HTMLElement>(
+    '.session-wrapper:not(.hidden)',
+  );
+  if (wrappers) {
+    for (const wrapper of wrappers) {
+      const surface = getVisibleStandaloneSessionSurface(wrapper.dataset.sessionId ?? '');
+      if (surface && isPointInRect(x, y, surface.getBoundingClientRect())) {
+        return wrapper.dataset.sessionId ?? null;
+      }
+    }
+  }
+
+  const containers = dom.terminalsArea?.querySelectorAll<HTMLElement>(
+    '.terminal-container:not(.hidden)',
+  );
+  if (!containers) {
     return null;
   }
 
-  const id = container.id.replace('terminal-', '');
-  return id || null;
+  for (const container of containers) {
+    if (isPointInRect(x, y, container.getBoundingClientRect())) {
+      const id = container.id.replace('terminal-', '');
+      return id || null;
+    }
+  }
+
+  return null;
 }
 
 function isPointInRect(x: number, y: number, rect: DOMRect): boolean {
-  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  return (
+    hasRenderableArea(rect) &&
+    x >= rect.left &&
+    x <= rect.right &&
+    y >= rect.top &&
+    y <= rect.bottom
+  );
+}
+
+function hasRenderableArea(rect: DOMRect): boolean {
+  return rect.width > 0 && rect.height > 0;
+}
+
+function getRenderableRect(element: HTMLElement | null): DOMRect | null {
+  const rect = element?.getBoundingClientRect();
+  return rect && hasRenderableArea(rect) ? rect : null;
+}
+
+function getVisibleStandaloneSessionSurface(sessionId: string): HTMLElement | null {
+  if (!sessionId) {
+    return null;
+  }
+
+  const wrapper = getSessionWrapper(sessionId);
+  if (wrapper && !wrapper.classList.contains('hidden')) {
+    const activePanel = wrapper.querySelector<HTMLElement>('.session-tab-panel.active');
+    if (getRenderableRect(activePanel)) {
+      return activePanel;
+    }
+
+    if (getRenderableRect(wrapper)) {
+      return wrapper;
+    }
+  }
+
+  const container = document.getElementById(`terminal-${sessionId}`);
+  if (container && !container.classList.contains('hidden') && getRenderableRect(container)) {
+    return container;
+  }
+
+  return null;
 }
 
 /**
@@ -382,11 +442,9 @@ function isPointInRect(x: number, y: number, rect: DOMRect): boolean {
  */
 export function getSessionPaneRect(sessionId: string): DOMRect | null {
   if (!layoutRoot || !isLayoutActive()) {
-    // Standalone terminal
-    const container = document.getElementById(`terminal-${sessionId}`);
-    return container?.getBoundingClientRect() ?? null;
+    return getRenderableRect(getVisibleStandaloneSessionSurface(sessionId));
   }
 
   const pane = layoutRoot.querySelector(`.layout-leaf[data-session-id="${sessionId}"]`);
-  return pane?.getBoundingClientRect() ?? null;
+  return getRenderableRect(pane instanceof HTMLElement ? pane : null);
 }

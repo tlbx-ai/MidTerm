@@ -407,6 +407,22 @@ export async function setSessionBookmark(
   });
 }
 
+export async function setSessionNotes(id: string, notes: string | null): Promise<SessionInfoDto> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/notes`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ notes }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return (await response.json()) as SessionInfoDto;
+}
+
 export async function setSessionControl(id: string, agentControlled: boolean): Promise<void> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/control`, {
     method: 'PUT',

@@ -53,6 +53,20 @@ import {
   resetOutputRttTracker,
 } from './outputRttTracker';
 import {
+  clearInputLatencyTraceInFlight,
+  handleMuxInputTraceResultFrame,
+  maybeSendInputTraceMarker,
+  recordInputTraceOutputParsed,
+  recordInputTraceOutputReceived,
+  resetInputLatencyTraceRuntime,
+} from './inputLatencyTrace';
+export {
+  offInputLatencyTrace,
+  onInputLatencyTrace,
+  setInputLatencyTracingEnabled,
+} from './inputLatencyTrace';
+export type { InputLatencyTraceSnapshot } from './inputLatencyTrace';
+import {
   parseOutputFrame,
   parseCompressedOutputFrame,
   ReconnectController,
@@ -117,10 +131,7 @@ const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
 
-interface ReplaySuppressionState {
-  quietUntilMs: number;
-  hardUntilMs: number;
-}
+type ReplaySuppressionState = { quietUntilMs: number; hardUntilMs: number };
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -279,10 +290,7 @@ function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
 // Input Buffering (Issue #2: Lost keystrokes during reconnection)
 // =============================================================================
 
-interface PendingInput {
-  sessionId: string;
-  data: string;
-}
+type PendingInput = { sessionId: string; data: string };
 
 const pendingInputQueue: PendingInput[] = [];
 const MAX_PENDING_INPUT = 100;
@@ -307,10 +315,7 @@ async function refreshSessionList(): Promise<void> {
 // Latency Measurement (Ping/Pong)
 // =============================================================================
 
-export interface LatencyResult {
-  serverRtt: number | null;
-  mthostRtt: number | null;
-}
+export type LatencyResult = { serverRtt: number | null; mthostRtt: number | null };
 
 type PongCallback = (mode: number, rtt: number) => void;
 let pongCallback: PongCallback | null = null;
@@ -822,6 +827,7 @@ function writeTerminalData(
     const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
     snapshot.renderedSeq = maxSequence(snapshot.renderedSeq, sequenceEnd);
     measureCompletedOutputRtt(sessionId);
+    recordInputTraceOutputParsed(sessionId, sequenceEnd);
     onParsed?.();
   });
 }
@@ -1014,6 +1020,7 @@ function handleMuxOutputFrame(type: number, sessionId: string, payload: Uint8Arr
   }
 
   armOutputRttMeasurement(sessionId);
+  recordInputTraceOutputReceived(sessionId, payload);
   const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
   const termDataBytes = Math.max(0, payload.length - hdrBytes);
   if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
@@ -1222,6 +1229,7 @@ export function connectMuxWebSocket(): void {
     if (handleMuxOutputFrame(type, sessionId, payload)) return;
     if (handleMuxForegroundChangeFrame(type, sessionId, payload)) return;
     if (handleMuxPongFrame(type, payload)) return;
+    if (handleMuxInputTraceResultFrame(type, sessionId, payload)) return;
     void handleMuxDataLossFrame(type, sessionId, payload);
   };
 
@@ -1229,6 +1237,7 @@ export function connectMuxWebSocket(): void {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
     replaySuppressedSessions.clear();
+    clearInputLatencyTraceInFlight();
     thawReconnectFreeze();
 
     // Log close reason
@@ -1265,9 +1274,10 @@ export function sendInput(sessionId: string, data: string): void {
     return;
   }
 
+  const inputAtMs = performance.now();
   const state = sessionTerminals.get(sessionId);
   if (state) {
-    state.lastLocalInputAtMs = performance.now();
+    state.lastLocalInputAtMs = inputAtMs;
     showBurstCursor(state);
     scheduleBurstCursorShow(state);
   }
@@ -1286,6 +1296,7 @@ export function sendInput(sessionId: string, data: string): void {
     lastHintedSessionId = sessionId;
   }
 
+  maybeSendInputTraceMarker(sessionId, inputAtMs, sendFrame, encodeSessionId);
   recordInputTimestamp(sessionId);
 
   let asciiOnly = true;
@@ -1525,6 +1536,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   browserTransportSnapshots.clear();
   bracketedPasteState.clear();
   outputRttListeners.clear();
+  resetInputLatencyTraceRuntime(true);
   pendingInputQueue.length = 0;
   pendingYieldToMainResolves.length = 0;
   yieldToMainChannel?.port1.close();

@@ -26,7 +26,7 @@ public static class MtcliScriptWriter
         # MidTerm CLI helpers — auto-generated, do not edit.
         # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
         #
-        # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
+        # Auth token below is auto-generated and ephemeral (expires in ~3 days).
         # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
@@ -226,10 +226,21 @@ public static class MtcliScriptWriter
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         mt_navigate()   { _MREQUIRECTX "mt_navigate" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
-        # mt_open URL  — open URL in web preview panel, dock it, and wait until controllable
+        # mt_open [--claim] URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
-          local url="$1" open_out status
+          local claim=0 url="" open_out status
           _MREQUIRECTX "mt_open" || return $?
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --claim) claim=1 ;;
+              *) if [ -z "$url" ]; then url="$1"; else echo "usage: mt_open [--claim] URL" >&2; return 1; fi ;;
+            esac
+            shift
+          done
+          if [ -z "$url" ]; then echo "usage: mt_open [--claim] URL" >&2; return 1; fi
+          if [ $claim -eq 1 ]; then
+            mt_claim_preview >/dev/null || return $?
+          fi
           open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":false}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
@@ -251,6 +262,12 @@ public static class MtcliScriptWriter
         mt_target()     { _MREQUIRECTX "mt_target" || return $?; _MC "$_MT/api/webpreview/target$(_MQ)"; }
         mt_cookies()    { _MREQUIRECTX "mt_cookies" || return $?; _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
+        # mt_claim_preview  — explicitly assign this named preview to the connected MidTerm browser
+        mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
+        # mt_capabilities [--json]  — compact command/capability discovery for agents
+        mt_capabilities() { _MREQUIRECTX "mt_capabilities" || return $?; _MBB capabilities "$@"; }
+        # mt_inspect [--screenshot]  — compact page/status/proxy diagnostic bundle
+        mt_inspect() { _MREQUIRECTX "mt_inspect" || return $?; _MBB inspect "$@"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
         mt_clearcookies() { _MREQUIRECTX "mt_clearcookies" || return $?; _MBB clearcookies; _MC -X POST "$_MT/api/webpreview/cookies/clear$(_MQ)"; }
         # mt_clearstate  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
@@ -269,6 +286,8 @@ public static class MtcliScriptWriter
         }
         # mt_proxylog [LIMIT]  — last N proxy requests with full details (default 100)
         mt_proxylog()   { local n=${1:-100}; _MREQUIRECTX "mt_proxylog" || return $?; _MC "$_MT/api/webpreview/proxylog?sessionId=$(_MURLENC "$(_MSID)")&previewName=$(_MURLENC "$(_MPREVIEW)")&limit=$n"; }
+        # mt_proxylog_summary [LIMIT]  — compact proxy request status/error summary
+        mt_proxylog_summary() { local n=${1:-100}; _MREQUIRECTX "mt_proxylog_summary" || return $?; _MBB proxylog-summary --limit "$n"; }
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
         mt_apply_update() {
           local source="${1:-}" url="$_MT/api/update/apply"
@@ -515,7 +534,7 @@ public static class MtcliScriptWriter
         # MidTerm CLI helpers — auto-generated, do not edit.
         # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
         #
-        # Auth token below is auto-generated and ephemeral (expires in ~3 weeks).
+        # Auth token below is auto-generated and ephemeral (expires in ~3 days).
         # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
@@ -756,10 +775,13 @@ public static class MtcliScriptWriter
             _MRequireSessionContext "mt_navigate"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
         }
-        # Mt-Open -Url URL  — open URL in web preview panel, dock it, and wait until controllable
+        # Mt-Open [-Claim] -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
-            param([string]$Url)
+            param([string]$Url, [switch]$Claim)
             _MRequireSessionContext "mt_open"
+            if ($Claim) {
+                Mt-ClaimPreview | Out-Null
+            }
             $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$false}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
@@ -781,6 +803,12 @@ public static class MtcliScriptWriter
         function Mt-Target     { _MRequireSessionContext "mt_target"; _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
         function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
+        # Mt-ClaimPreview  — explicitly assign this named preview to the connected MidTerm browser
+        function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
+        # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
+        function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
+        # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
+        function Mt-Inspect { param([switch]$Screenshot) _MRequireSessionContext "mt_inspect"; if ($Screenshot) { _MBB inspect --screenshot } else { _MBB inspect } }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
         function Mt-ClearCookies { _MRequireSessionContext "mt_clearcookies"; _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
         # Mt-ClearState  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
@@ -799,6 +827,8 @@ public static class MtcliScriptWriter
         }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
         function Mt-ProxyLog   { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog"; _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
+        # Mt-ProxyLogSummary [-Limit N]  — compact proxy request status/error summary
+        function Mt-ProxyLogSummary { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog_summary"; _MBB proxylog-summary --limit $Limit }
         # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
         function Mt-ApplyUpdate {
             param([string]$Source)
@@ -1070,11 +1100,15 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_target -Value Mt-Target
         Set-Alias -Name mt_cookies -Value Mt-Cookies
         Set-Alias -Name mt_previews -Value Mt-Previews
+        Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
+        Set-Alias -Name mt_capabilities -Value Mt-Capabilities
+        Set-Alias -Name mt_inspect -Value Mt-Inspect
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
         Set-Alias -Name mt_clearstate -Value Mt-ClearState
         Set-Alias -Name mt_hardreload -Value Mt-HardReload
         Set-Alias -Name mt_preview_reset -Value Mt-PreviewReset
         Set-Alias -Name mt_proxylog -Value Mt-ProxyLog
+        Set-Alias -Name mt_proxylog_summary -Value Mt-ProxyLogSummary
         Set-Alias -Name mt_apply_update -Value Mt-ApplyUpdate
         Set-Alias -Name mt_sessions -Value Mt-Sessions
         Set-Alias -Name mt_buffer -Value Mt-Buffer

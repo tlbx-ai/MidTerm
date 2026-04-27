@@ -5,6 +5,7 @@
  */
 
 export * from './dom';
+export * from './domReconcile';
 export * from './cookies';
 export * from './protocol';
 export * from './reconnect';

@@ -243,9 +243,7 @@ describe('sessionDrag', () => {
 
     sessionItem.dataset.reorderScope = 'adhoc';
 
-    class FakeHTMLElement {}
-    Object.setPrototypeOf(targetItem, FakeHTMLElement.prototype);
-    vi.stubGlobal('HTMLElement', FakeHTMLElement);
+    Object.setPrototypeOf(targetItem, HTMLElement.prototype);
 
     vi.resetModules();
     const { initSessionDrag } = await import('./sessionDrag');
@@ -278,5 +276,115 @@ describe('sessionDrag', () => {
     expect(targetItem.classList.add).not.toHaveBeenCalled();
     expect(reorderSessions).not.toHaveBeenCalled();
     expect(persistSessionOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps unscoped space sessions dock-draggable without enabling sidebar reorder', async () => {
+    layoutActive = false;
+    mockSessions = [{ id: 'dragged' }, { id: 'target' }];
+    const targetItem = {
+      dataset: {
+        sessionId: 'target',
+        controlMode: 'human',
+      },
+      classList: {
+        add: vi.fn(),
+        remove: vi.fn(),
+      },
+      getBoundingClientRect(): DOMRect {
+        return {
+          left: 0,
+          top: 0,
+          right: 240,
+          bottom: 48,
+          width: 240,
+          height: 48,
+          x: 0,
+          y: 0,
+          toJSON(): Record<string, never> {
+            return {};
+          },
+        } as DOMRect;
+      },
+      closest(selector: string): any {
+        return selector === '.session-item' ? targetItem : null;
+      },
+    };
+
+    delete sessionItem.dataset.reorderScope;
+
+    Object.setPrototypeOf(targetItem, HTMLElement.prototype);
+
+    vi.resetModules();
+    const { initSessionDrag } = await import('./sessionDrag');
+
+    initSessionDrag();
+
+    sessionListListeners.dragstart?.({
+      target: sessionItem,
+      dataTransfer: {
+        effectAllowed: '',
+        setData: vi.fn(),
+        setDragImage: vi.fn(),
+      },
+    });
+
+    sessionListListeners.dragover?.({
+      preventDefault: vi.fn(),
+      clientY: 12,
+      target: targetItem,
+      dataTransfer: {
+        dropEffect: 'none',
+      },
+    });
+    sessionListListeners.drop?.({
+      preventDefault: vi.fn(),
+      target: targetItem,
+    });
+
+    expect(targetItem.classList.add).not.toHaveBeenCalled();
+    expect(reorderSessions).not.toHaveBeenCalled();
+    expect(persistSessionOrder).not.toHaveBeenCalled();
+
+    documentListeners.dragover?.({
+      clientX: 160,
+      clientY: 180,
+      preventDefault: vi.fn(),
+      dataTransfer: {
+        dropEffect: 'none',
+      },
+    });
+    expect(showDockOverlay).toHaveBeenCalledWith(160, 180, 'dragged');
+  });
+
+  it('does not start a session drag from notes or other interactive controls', async () => {
+    vi.resetModules();
+    const { initSessionDrag } = await import('./sessionDrag');
+
+    initSessionDrag();
+
+    const preventDefault = vi.fn();
+    sessionListListeners.dragstart?.({
+      target: {
+        closest: (selector: string) => (selector.includes('textarea') ? {} : null),
+      },
+      preventDefault,
+      dataTransfer: {
+        effectAllowed: '',
+        setData: vi.fn(),
+        setDragImage: vi.fn(),
+      },
+    });
+
+    documentListeners.dragover?.({
+      clientX: 160,
+      clientY: 180,
+      preventDefault: vi.fn(),
+      dataTransfer: {
+        dropEffect: 'none',
+      },
+    });
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(showDockOverlay).not.toHaveBeenCalled();
   });
 });

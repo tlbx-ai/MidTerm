@@ -593,6 +593,15 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapPut("/api/sessions/{id}/notes", (string id, SetSessionNotesRequest request) =>
+        {
+            if (!sessionManager.SetSessionNotes(id, request.Notes))
+            {
+                return Results.NotFound();
+            }
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, lensRuntime, id), AppJsonContext.Default.SessionInfoDto);
+        });
+
         app.MapPut("/api/sessions/{id}/control", (string id, SetSessionControlRequest request) =>
         {
             if (!sessionManager.SetAgentControlled(id, request.AgentControlled))

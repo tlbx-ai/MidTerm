@@ -77,6 +77,7 @@ type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
 const MAX_BACKGROUND_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_BACKGROUND_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+const MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY = 50;
 const DEFAULT_BOX_DRAWING_SCALE = 1;
 
 type MidTermWindow = Window &
@@ -1151,6 +1152,15 @@ function updateTransparencyValue(labelId: string, value: number): void {
   }
 }
 
+function syncTransparencyControl(controlId: string, labelId: string, value: number): void {
+  const control = document.getElementById(controlId) as HTMLInputElement | null;
+  if (control) {
+    control.value = String(value);
+  }
+
+  updateTransparencyValue(labelId, value);
+}
+
 function updatePercentageValue(labelId: string, value: number): void {
   const label = document.getElementById(labelId);
   if (label) {
@@ -1332,10 +1342,25 @@ async function handleBackgroundImageUpload(file: File): Promise<void> {
       backgroundImageEnabled: true,
       backgroundImageFileName: info.fileName ?? null,
       backgroundImageRevision: info.revision,
+      uiTransparency: Math.max(current.uiTransparency, MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY),
+      terminalTransparency: Math.max(
+        current.terminalTransparency ?? current.uiTransparency,
+        MIN_BACKGROUND_IMAGE_UPLOAD_TRANSPARENCY,
+      ),
     };
 
     $currentSettings.set(nextSettings);
     updateBackgroundImageUi(nextSettings);
+    syncTransparencyControl(
+      'setting-ui-transparency',
+      'setting-ui-transparency-value',
+      nextSettings.uiTransparency,
+    );
+    syncTransparencyControl(
+      'setting-terminal-transparency',
+      'setting-terminal-transparency-value',
+      nextSettings.terminalTransparency,
+    );
     applySettingsToTerminals();
   } catch (e) {
     log.error(() => `Background image upload failed: ${String(e)}`);

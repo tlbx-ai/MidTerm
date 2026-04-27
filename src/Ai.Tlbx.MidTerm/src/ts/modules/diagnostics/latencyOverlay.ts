@@ -10,10 +10,14 @@
 import {
   onOutputRtt,
   offOutputRtt,
+  onInputLatencyTrace,
+  offInputLatencyTrace,
   measureLatency,
   getLastFlushDelay,
   getLastServerIoRtt,
+  setInputLatencyTracingEnabled,
 } from '../comms/muxChannel';
+import type { InputLatencyTraceSnapshot } from '../comms/muxChannel';
 import { $activeSessionId, $isMainBrowser } from '../../stores';
 import { sessionTerminals } from '../../state';
 import { TERMINAL_PADDING } from '../../constants';
@@ -27,6 +31,12 @@ let pingInterval: ReturnType<typeof setInterval> | null = null;
 
 interface MetricElements {
   outputRtt: HTMLSpanElement;
+  inputTrace: HTMLSpanElement;
+  inputServer: HTMLSpanElement;
+  inputHost: HTMLSpanElement;
+  inputPtyOut: HTMLSpanElement;
+  inputIpcOut: HTMLSpanElement;
+  inputMux: HTMLSpanElement;
   serverRtt: HTMLSpanElement;
   mthostRtt: HTMLSpanElement;
   serverIo: HTMLSpanElement;
@@ -50,6 +60,8 @@ export function enableLatencyOverlay(): void {
   if (enabled) return;
   enabled = true;
   onOutputRtt(handleOutputRtt);
+  onInputLatencyTrace(handleInputLatencyTrace);
+  setInputLatencyTracingEnabled(true);
   ensureOverlay();
   attachToActiveSession();
   startPingLoop();
@@ -63,6 +75,8 @@ export function disableLatencyOverlay(): void {
   if (!enabled) return;
   enabled = false;
   offOutputRtt(handleOutputRtt);
+  offInputLatencyTrace(handleInputLatencyTrace);
+  setInputLatencyTracingEnabled(false);
   stopPingLoop();
   removeOverlay();
   if (unsubscribeSession) {
@@ -87,6 +101,12 @@ function ensureOverlay(): void {
 
   const rows = [
     { label: 'Out', id: 'outputRtt' },
+    { label: 'Trace', id: 'inputTrace' },
+    { label: 'SrvIn', id: 'inputServer' },
+    { label: 'TtyIn', id: 'inputHost' },
+    { label: 'PtyOut', id: 'inputPtyOut' },
+    { label: 'IpcOut', id: 'inputIpcOut' },
+    { label: 'MuxOut', id: 'inputMux' },
     { label: 'Srv', id: 'serverRtt' },
     { label: 'Host', id: 'mthostRtt' },
     { label: 'I/O', id: 'serverIo' },
@@ -345,6 +365,83 @@ function handleOutputRtt(sessionId: string, rtt: number): void {
   }
 
   setMetric(metricEls.outputRtt, rtt);
+}
+
+function formatTraceMs(value: number | null): string {
+  if (value === null || value < 0 || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  return value >= 100 ? value.toFixed(0) : value.toFixed(1);
+}
+
+function setTraceMetric(el: HTMLSpanElement, text: string, levelMs: number | null): void {
+  el.textContent = text;
+  if (levelMs === null || levelMs < 0 || !Number.isFinite(levelMs)) {
+    el.classList.remove('latency-good', 'latency-warn', 'latency-bad');
+    return;
+  }
+
+  applyColor(el, levelMs < 30 ? 'good' : levelMs < 100 ? 'warn' : 'bad');
+}
+
+function handleInputLatencyTrace(sessionId: string, trace: InputLatencyTraceSnapshot): void {
+  if (!metricEls || !enabled) return;
+
+  const activeId = $activeSessionId.get();
+  if (sessionId !== activeId) return;
+
+  if (currentSessionId !== sessionId) {
+    attachToActiveSession();
+  }
+
+  setTraceMetric(
+    metricEls.inputTrace,
+    `${formatTraceMs(trace.totalToXtermParsedMs)} ms`,
+    trace.totalToXtermParsedMs,
+  );
+  metricEls.inputTrace.title =
+    `trace=${trace.traceId} recv=${formatTraceMs(trace.browserToOutputReceiveMs)}ms ` +
+    `parse=${formatTraceMs(trace.browserReceiveToXtermParseMs)}ms`;
+
+  const serverText = `${formatTraceMs(trace.serverReceiveToIpcStartMs)}/${formatTraceMs(
+    trace.ipcWriteMs,
+  )} ms`;
+  setTraceMetric(metricEls.inputServer, serverText, trace.serverReceiveToIpcStartMs);
+  metricEls.inputServer.title = 'server receive to IPC start / IPC write';
+
+  const hostText = `${formatTraceMs(trace.serverReceiveToMthostReceiveMs)}/${formatTraceMs(
+    trace.serverReceiveToPtyWriteDoneMs,
+  )} ms`;
+  setTraceMetric(metricEls.inputHost, hostText, trace.serverReceiveToPtyWriteDoneMs);
+  metricEls.inputHost.title = 'server receive to mthost input receive / PTY write done';
+
+  const ptyOutText = `${formatTraceMs(trace.ptyWriteDoneToPtyOutputReadMs)}/${formatTraceMs(
+    trace.ptyOutputReadToMthostIpcEnqueuedMs,
+  )} ms`;
+  setTraceMetric(metricEls.inputPtyOut, ptyOutText, trace.ptyWriteDoneToPtyOutputReadMs);
+  metricEls.inputPtyOut.title =
+    'PTY write done to PTY output read / PTY output read to mthost IPC enqueue';
+
+  const ipcOutText = `${formatTraceMs(trace.mthostIpcEnqueuedToWriteDoneMs)}/${formatTraceMs(
+    trace.mthostIpcWriteDoneToFlushDoneMs,
+  )}/${formatTraceMs(trace.mthostIpcEnqueuedToServerOutputObservedMs)} ms`;
+  setTraceMetric(
+    metricEls.inputIpcOut,
+    ipcOutText,
+    trace.mthostIpcEnqueuedToServerOutputObservedMs,
+  );
+  metricEls.inputIpcOut.title =
+    'mthost IPC enqueue to write done / write done to flush done / enqueue to server output observed';
+
+  const muxText = `${formatTraceMs(trace.outputObservedToMuxQueuedMs)}/${formatTraceMs(
+    trace.muxQueuedToClientQueuedMs,
+  )}/${formatTraceMs(trace.clientQueuedToWsFlushMs)} ms`;
+  setTraceMetric(metricEls.inputMux, muxText, trace.clientQueuedToWsFlushMs);
+  metricEls.inputMux.title =
+    `server output observed->mux queue / mux queue->client queue / client queue->ws flush; ` +
+    `server->output=${formatTraceMs(trace.serverReceiveToOutputObservedMs)}ms ` +
+    `server->flush=${formatTraceMs(trace.serverReceiveToWsFlushMs)}ms`;
 }
 
 function setMetric(el: HTMLSpanElement, ms: number): void {

@@ -88,6 +88,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(LensWsTurnStartedMessage))]
 [JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(RenameSessionRequest))]
+[JsonSerializable(typeof(SetSessionNotesRequest))]
 [JsonSerializable(typeof(SetSessionControlRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
@@ -266,6 +267,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 // --- Browser ---
 [JsonSerializable(typeof(BrowserCommandRequest))]
 [JsonSerializable(typeof(BrowserCommandResponse))]
+[JsonSerializable(typeof(BrowserCapabilitiesResponse))]
 [JsonSerializable(typeof(BrowserStatusResponse))]
 [JsonSerializable(typeof(BrowserClientInfo))]
 [JsonSerializable(typeof(BrowserClientInfo[]))]
@@ -291,7 +293,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

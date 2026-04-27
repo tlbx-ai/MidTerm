@@ -31,10 +31,11 @@ export type BootstrapResponse = Schemas['BootstrapResponse'];
 export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 
 // Sessions
-export type SessionInfoDto = Schemas['SessionInfoDto'] & {
+export type SessionInfoDto = Omit<Schemas['SessionInfoDto'], 'notes'> & {
   lensOnly?: boolean;
   profileHint?: string | null;
   lensResumeThreadId?: string | null;
+  notes?: string | null;
   spaceId?: string | null;
   workspacePath?: string | null;
   surface?: string | null;
@@ -375,6 +376,7 @@ export type DirectoryListResponse = Schemas['DirectoryListResponse'];
 
 // History
 export type LaunchEntry = Schemas['LaunchEntry'] & {
+  notes?: string | null;
   launchOrigin?: string | null;
   surfaceType?: string | null;
   foregroundProcessName?: string | null;
@@ -383,6 +385,7 @@ export type LaunchEntry = Schemas['LaunchEntry'] & {
   foregroundProcessIdentity?: string | null;
 };
 export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
+  notes?: string | null;
   dedupeKey?: string | null;
   launchOrigin?: string | null;
   surfaceType?: 'trm' | 'cdx' | 'cld';

@@ -9,6 +9,10 @@ const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'),
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
 const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
+const terminalGapFillersSource = readFileSync(
+  path.join(__dirname, 'terminalGapFillers.ts'),
+  'utf8',
+);
 const terminalOptionsSource = readFileSync(path.join(__dirname, 'terminalOptions.ts'), 'utf8');
 
 describe('terminal surface wiring', () => {
@@ -16,18 +20,33 @@ describe('terminal surface wiring', () => {
     expect(constants).toContain('export const TERMINAL_PADDING = 0;');
     expect(appCss).toContain('.terminal-container {');
     expect(appCss).toContain('padding: 0;');
-    expect(appCss).toContain(
-      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
-    );
+    expect(appCss).toContain('background-color: transparent;');
   });
 
-  it('lets the xterm host cover floor-to-cell remainder space inside the panel', () => {
+  it('keeps the xterm host from becoming a transparency-affecting backing pane', () => {
     expect(appCss).toContain('.terminal-container .xterm {');
-    expect(appCss).toContain('min-width: 100%;');
-    expect(appCss).toContain('min-height: 100%;');
-    expect(appCss).toContain(
-      'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
+    expect(appCss).toContain('background-color: transparent;');
+    expect(appCss).toContain('z-index: 2;');
+  });
+
+  it('colors scaled terminal gaps with terminal canvas background without backing the xterm', () => {
+    expect(appCss).toContain('.terminal-gap-fill {');
+    expect(appCss).toContain('background: var(--terminal-gap-background');
+    expect(appCss).toContain('.terminal-gap-fill-right {');
+    expect(appCss).toContain('.terminal-gap-fill-bottom {');
+    expect(appCss).toContain('.terminal-gap-fill-corner {');
+    expect(scalingSource).toContain(
+      "import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';",
     );
+    expect(scalingSource).toContain('updateTerminalGapFillers(container, xterm, 1);');
+    expect(terminalGapFillersSource).toContain("'xterm-screen'");
+    expect(terminalGapFillersSource).toContain("'xterm-scrollable-element'");
+    expect(terminalGapFillersSource).toContain("'--terminal-gap-background'");
+    expect(terminalGapFillersSource).toContain('getBoundingClientRect');
+    expect(terminalGapFillersSource).toContain('formatCssPixelValue');
+    expect(terminalGapFillersSource).toContain("document.createElement('div')");
+    expect(terminalGapFillersSource).toContain("'--terminal-gap-right-width'");
+    expect(terminalGapFillersSource).toContain("'--terminal-gap-bottom-height'");
   });
 
   it('keeps terminal content above the Command Bay and refreshes when footer reserve changes', () => {

@@ -117,8 +117,13 @@ describe('agent view Lens wiring', () => {
 
   it('binds the Lens pane background to terminal transparency tokens', () => {
     expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
+    expect(css).toContain('.agent-chat-shell {\n  display: flex;');
+    expect(css).toContain('background: transparent;');
     expect(lensDesign).toContain(
       'Lens pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.',
+    );
+    expect(lensDesign).toContain(
+      'Terminal transparency should be applied once at the outer Lens pane surface.',
     );
   });
 

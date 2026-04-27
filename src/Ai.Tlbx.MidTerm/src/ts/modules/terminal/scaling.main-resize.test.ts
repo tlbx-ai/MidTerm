@@ -46,6 +46,7 @@ vi.mock('./presentationRefresh', () => ({
 }));
 
 type FakeElement = {
+  className?: string;
   style: Record<string, string>;
   classList: {
     contains: (name: string) => boolean;
@@ -53,6 +54,8 @@ type FakeElement = {
     remove: (name: string) => void;
   };
   querySelector: <T>(selector: string) => T | null;
+  appendChild?: (child: FakeElement) => FakeElement;
+  setAttribute?: (name: string, value: string) => void;
   getBoundingClientRect: () => { width: number; height: number };
   clientWidth?: number;
   clientHeight?: number;
@@ -71,6 +74,22 @@ function createClassList(initial: string[] = []) {
       classes.delete(name);
     },
   };
+}
+
+function createElementByClassName(className = ''): FakeElement {
+  return {
+    className,
+    style: {},
+    classList: createClassList(className.split(/\s+/).filter(Boolean)),
+    querySelector: () => null,
+    appendChild: (child) => child,
+    setAttribute: () => undefined,
+    getBoundingClientRect: () => ({ width: 0, height: 0 }),
+  };
+}
+
+function fakeElementHasClass(element: FakeElement, className: string): boolean {
+  return element.className?.split(/\s+/).includes(className) ?? false;
 }
 
 function createFitHarness() {
@@ -115,6 +134,7 @@ function createFitHarness() {
     },
   });
 
+  const children: FakeElement[] = [];
   const container = {
     style: {},
     clientWidth: 818,
@@ -124,7 +144,15 @@ function createFitHarness() {
     querySelector<T>(selector: string): T | null {
       if (selector === '.xterm') return xterm as T;
       if (selector === '.xterm-screen') return screen as T;
+      if (selector.startsWith('.')) {
+        const className = selector.slice(1);
+        return (children.find((child) => fakeElementHasClass(child, className)) as T) ?? null;
+      }
       return null;
+    },
+    appendChild(child: FakeElement): FakeElement {
+      children.push(child);
+      return child;
     },
     getBoundingClientRect: () => ({ width: 818, height: 488 }),
   } as FakeElement;
@@ -169,6 +197,7 @@ describe('fitSessionToScreen', () => {
     } as HTMLElement;
     bodyClasses = createClassList();
     globalThis.document = {
+      createElement: () => createElementByClassName(),
       getElementById: () => null,
       body: {
         classList: bodyClasses,

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
@@ -181,5 +182,53 @@ public class TtyHostProtocolTests
         Assert.NotNull(payload);
         Assert.Equal(TerminalReplayReason.MthostIpcOverflow, payload!.Reason);
         Assert.Equal(8192, payload.DroppedBytes);
+    }
+
+    [Fact]
+    public void InputTraceMarker_WritesFrame()
+    {
+        var frame = new byte[TtyHostProtocol.HeaderSize + TtyHostProtocol.InputTraceMarkerPayloadSize];
+
+        TtyHostProtocol.WriteInputTraceMarkerFrameInto(123U, frame);
+
+        Assert.True(TtyHostProtocol.TryReadHeader(frame, out var type, out var payloadLength));
+        Assert.Equal(TtyHostMessageType.InputTraceMarker, type);
+        Assert.Equal(TtyHostProtocol.InputTraceMarkerPayloadSize, payloadLength);
+        Assert.True(TtyHostProtocol.TryParseInputTraceMarker(
+            frame.AsSpan(TtyHostProtocol.HeaderSize, payloadLength),
+            out var traceId));
+        Assert.Equal(123U, traceId);
+    }
+
+    [Fact]
+    public void InputTraceReport_RoundTrips_Timestamps()
+    {
+        var frame = TtyHostProtocol.CreateInputTraceReport(new TtyHostInputTraceReport(
+            44U,
+            1000,
+            1002,
+            1003,
+            200UL,
+            1010,
+            1011,
+            1012,
+            1013));
+
+        Assert.True(TtyHostProtocol.TryReadHeader(frame, out var type, out var payloadLength));
+        Assert.Equal(TtyHostMessageType.InputTrace, type);
+        Assert.Equal(TtyHostProtocol.InputTraceReportPayloadSize, payloadLength);
+        Assert.Equal(44U, BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(TtyHostProtocol.HeaderSize, 4)));
+
+        var report = TtyHostProtocol.ParseInputTraceReport(frame.AsSpan(TtyHostProtocol.HeaderSize, payloadLength));
+        Assert.NotNull(report);
+        Assert.Equal(44U, report.Value.TraceId);
+        Assert.Equal(1000, report.Value.MarkerReceivedAtMs);
+        Assert.Equal(1002, report.Value.InputReceivedAtMs);
+        Assert.Equal(1003, report.Value.PtyWriteDoneAtMs);
+        Assert.Equal(200UL, report.Value.FirstOutputSequenceEndExclusive);
+        Assert.Equal(1010, report.Value.PtyOutputReadAtMs);
+        Assert.Equal(1011, report.Value.IpcOutputEnqueuedAtMs);
+        Assert.Equal(1012, report.Value.IpcOutputWriteDoneAtMs);
+        Assert.Equal(1013, report.Value.IpcOutputFlushDoneAtMs);
     }
 }

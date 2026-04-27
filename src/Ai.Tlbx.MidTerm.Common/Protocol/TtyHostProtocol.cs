@@ -15,6 +15,9 @@ public static class TtyHostProtocol
 {
     public const int HeaderSize = 5;
     public const int MaxPayloadSize = 1024 * 1024;
+    public const int InputTraceMarkerPayloadSize = 4;
+    public const int MinimumInputTraceReportPayloadSize = 28;
+    public const int InputTraceReportPayloadSize = 68;
 
     public static byte[] CreateInfoRequest()
     {
@@ -63,6 +66,25 @@ public static class TtyHostProtocol
         destination[0] = (byte)TtyHostMessageType.Input;
         BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(1, 4), data.Length);
         data.CopyTo(destination.Slice(HeaderSize));
+    }
+
+    public static void WriteInputTraceMarkerFrameInto(uint traceId, Span<byte> destination)
+    {
+        destination[0] = (byte)TtyHostMessageType.InputTraceMarker;
+        BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(1, 4), InputTraceMarkerPayloadSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(destination.Slice(HeaderSize, 4), traceId);
+    }
+
+    public static bool TryParseInputTraceMarker(ReadOnlySpan<byte> payload, out uint traceId)
+    {
+        traceId = 0;
+        if (payload.Length < InputTraceMarkerPayloadSize)
+        {
+            return false;
+        }
+
+        traceId = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        return traceId != 0;
     }
 
     /// <summary>
@@ -337,6 +359,46 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.Pong, payload.ToArray());
     }
 
+    public static byte[] CreateInputTraceReport(TtyHostInputTraceReport report)
+    {
+        var payload = new byte[InputTraceReportPayloadSize];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), report.TraceId);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(4, 8), report.MarkerReceivedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(12, 8), report.InputReceivedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(20, 8), report.PtyWriteDoneAtMs);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(28, 8), report.FirstOutputSequenceEndExclusive);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(36, 8), report.PtyOutputReadAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(44, 8), report.IpcOutputEnqueuedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(52, 8), report.IpcOutputWriteDoneAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(60, 8), report.IpcOutputFlushDoneAtMs);
+        return CreateFrame(TtyHostMessageType.InputTrace, payload);
+    }
+
+    public static TtyHostInputTraceReport? ParseInputTraceReport(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < MinimumInputTraceReportPayloadSize)
+        {
+            return null;
+        }
+
+        var traceId = BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]);
+        if (traceId == 0)
+        {
+            return null;
+        }
+
+        return new TtyHostInputTraceReport(
+            traceId,
+            BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(4, 8)),
+            BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(12, 8)),
+            BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(20, 8)),
+            payload.Length >= 36 ? BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(28, 8)) : 0,
+            payload.Length >= 44 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(36, 8)) : 0,
+            payload.Length >= 52 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(44, 8)) : 0,
+            payload.Length >= 60 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(52, 8)) : 0,
+            payload.Length >= 68 ? BinaryPrimitives.ReadInt64LittleEndian(payload.Slice(60, 8)) : 0);
+    }
+
     public static byte[] CreateDataLoss(TtyHostDataLossPayload payload)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.TtyHostDataLossPayload);
@@ -404,8 +466,23 @@ public enum TtyHostMessageType : byte
     Pong = 0x61,
 
     // Transport recovery
-    DataLoss = 0x62
+    DataLoss = 0x62,
+
+    // Input latency diagnostics
+    InputTraceMarker = 0x63,
+    InputTrace = 0x64
 }
+
+public readonly record struct TtyHostInputTraceReport(
+    uint TraceId,
+    long MarkerReceivedAtMs,
+    long InputReceivedAtMs,
+    long PtyWriteDoneAtMs,
+    ulong FirstOutputSequenceEndExclusive = 0,
+    long PtyOutputReadAtMs = 0,
+    long IpcOutputEnqueuedAtMs = 0,
+    long IpcOutputWriteDoneAtMs = 0,
+    long IpcOutputFlushDoneAtMs = 0);
 
 /// <summary>
 /// Session metadata exchanged between mt and mthost.
