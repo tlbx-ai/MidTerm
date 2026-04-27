@@ -9,6 +9,10 @@ const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'),
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
 const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
+const terminalGapFillersSource = readFileSync(
+  path.join(__dirname, 'terminalGapFillers.ts'),
+  'utf8',
+);
 const terminalOptionsSource = readFileSync(path.join(__dirname, 'terminalOptions.ts'), 'utf8');
 
 describe('terminal surface wiring', () => {
@@ -26,6 +30,20 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain(
       'background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
+  });
+
+  it('colors scaled terminal gaps with terminal canvas background without backing the xterm', () => {
+    expect(appCss).toContain('.terminal-gap-fill {');
+    expect(appCss).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
+    expect(appCss).toContain('.terminal-gap-fill-right {');
+    expect(appCss).toContain('.terminal-gap-fill-bottom {');
+    expect(appCss).toContain('.terminal-gap-fill-corner {');
+    expect(scalingSource).toContain(
+      "import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';",
+    );
+    expect(terminalGapFillersSource).toContain("document.createElement('div')");
+    expect(terminalGapFillersSource).toContain("'--terminal-gap-right-width'");
+    expect(terminalGapFillersSource).toContain("'--terminal-gap-bottom-height'");
   });
 
   it('keeps terminal content above the Command Bay and refreshes when footer reserve changes', () => {

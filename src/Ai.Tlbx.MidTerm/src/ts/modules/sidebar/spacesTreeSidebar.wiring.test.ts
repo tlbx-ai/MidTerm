@@ -62,7 +62,8 @@ describe('spacesTreeSidebar wiring', () => {
     expect(css).toContain('overflow-y: hidden;');
     expect(css).toContain('.session-notes-input:focus');
     expect(css).toContain('overflow-y: auto;');
-    expect(css).toContain('padding: 5px 0;');
+    expect(css).toContain('padding: 5px 2px;');
+    expect(css).toContain('margin-inline: -2px;');
     expect(css).not.toContain('text-shadow: var(--sidebar-item-text-shadow);');
   });
 
@@ -81,7 +82,7 @@ describe('spacesTreeSidebar wiring', () => {
     expect(css).toContain('color: var(--text-primary);');
     expect(css).toContain('transition: transform 0.14s ease;');
     expect(css).toContain('.session-control:hover .session-action-icon');
-    expect(css).toContain('transform: scale(1.22);');
+    expect(css).toContain('transform: scale(1.12);');
     expect(css).toContain('width: 28px;');
     expect(css).toContain('height: 28px;');
     expect(css).toContain('right: 0;');

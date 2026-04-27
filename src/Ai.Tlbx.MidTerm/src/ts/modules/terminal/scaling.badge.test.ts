@@ -66,18 +66,16 @@ function createClassList(initial: string[] = []) {
   };
 }
 
-function createButtonElement(): FakeElement {
+function createElementByClassName(className = ''): FakeElement {
   const attrs = new Map<string, string>();
   const listeners = new Map<string, () => void>();
   return {
+    className,
     style: {},
-    classList: createClassList(),
+    classList: createClassList(className.split(/\s+/).filter(Boolean)),
     querySelector: () => null,
     appendChild: (child) => child,
     remove() {
-      if (this.parentElement?.querySelector('.scaled-overlay') === this) {
-        this.parentElement.remove();
-      }
       this.parentElement = null;
     },
     setAttribute(name, value) {
@@ -91,8 +89,12 @@ function createButtonElement(): FakeElement {
   };
 }
 
+function fakeElementHasClass(element: FakeElement, className: string): boolean {
+  return element.className?.split(/\s+/).includes(className) ?? false;
+}
+
 function createTerminalHarness(cols: number, rows: number) {
-  let overlay: FakeElement | null = null;
+  const children: FakeElement[] = [];
   const terminal = {
     cols,
     rows,
@@ -145,20 +147,26 @@ function createTerminalHarness(cols: number, rows: number) {
     querySelector<T>(selector: string): T | null {
       if (selector === '.xterm') return xterm as T;
       if (selector === '.xterm-screen') return screen as T;
-      if (selector === '.scaled-overlay') return overlay as T;
+      if (selector.startsWith('.')) {
+        const className = selector.slice(1);
+        return (children.find((child) => fakeElementHasClass(child, className)) as T) ?? null;
+      }
       return null;
     },
     appendChild(child: FakeElement): FakeElement {
-      overlay = child;
+      children.push(child);
       child.parentElement = this;
       child.remove = () => {
-        overlay = null;
+        const index = children.indexOf(child);
+        if (index >= 0) {
+          children.splice(index, 1);
+        }
         child.parentElement = null;
       };
       return child;
     },
     remove(): void {
-      overlay = null;
+      children.length = 0;
     },
     setAttribute(): void {},
     addEventListener(): void {},
@@ -183,7 +191,9 @@ function createTerminalHarness(cols: number, rows: number) {
     state,
     terminal,
     xterm,
-    getOverlay: () => overlay,
+    container,
+    getOverlay: () => children.find((child) => fakeElementHasClass(child, 'scaled-overlay')) ?? null,
+    getGapFillers: () => children.filter((child) => fakeElementHasClass(child, 'terminal-gap-fill')),
   };
 }
 
@@ -199,7 +209,7 @@ describe('terminal scaling badge thresholds', () => {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
     globalThis.document = {
-      createElement: () => createButtonElement(),
+      createElement: () => createElementByClassName(),
       getElementById: () => null,
     } as Document;
     globalThis.localStorage = {
@@ -234,6 +244,10 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.getOverlay()?.innerHTML).toContain('terminal.scaledContent');
     expect(harness.getOverlay()?.innerHTML).toContain('terminal.makeReferenceScaleBrowser');
     expect(harness.xterm.style.transform).toContain('scale(');
+    expect(harness.xterm.style.transformOrigin).toBe('top left');
+    expect(harness.getGapFillers()).toHaveLength(3);
+    expect(harness.container.style['--terminal-gap-content-width']).toBe('818px');
+    expect(harness.container.style['--terminal-gap-bottom-height']).toBe('9px');
   });
 
   it('shows the follower badge on a one-column undersized mismatch', () => {

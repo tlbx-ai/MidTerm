@@ -2227,11 +2227,12 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 .session-notes-input {
   display: block;
-  width: 100%;
+  width: calc(100% + 4px);
   min-height: calc((var(--fs-sm) * 1.3) + 10px);
   max-height: calc((var(--fs-sm) * 1.3 * 5) + 10px);
   resize: none;
   box-sizing: border-box;
+  margin-inline: -2px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -2240,7 +2241,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   font-size: var(--fs-sm);
   line-height: 1.3;
   overflow-y: hidden;
-  padding: 5px 0;
+  padding: 5px 2px;
   outline: none;
 }
 
@@ -2299,7 +2300,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 .session-inject:hover .session-action-icon,
 .session-undock:hover .session-action-icon,
 .session-close:hover .session-action-icon {
-  transform: scale(1.22);
+  transform: scale(1.12);
 }
 
 .session-control.active:hover {
@@ -4300,11 +4301,39 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   margin-top: 48px;
 }
 
-/* Scaled terminal — centering is acceptable since scaling already loses pixel-perfection */
+/* Scaled terminal: anchor the visual terminal at the top-left, then fill exposed gaps explicitly. */
 .terminal-container.scaled {
   overflow: hidden;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.terminal-gap-fill {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--terminal-canvas-background, var(--terminal-bg));
+}
+
+.terminal-gap-fill-right {
+  top: 0;
+  left: var(--terminal-gap-content-width, 0px);
+  width: var(--terminal-gap-right-width, 0px);
+  height: var(--terminal-gap-content-height, 0px);
+}
+
+.terminal-gap-fill-bottom {
+  top: var(--terminal-gap-content-height, 0px);
+  left: 0;
+  width: var(--terminal-gap-content-width, 0px);
+  height: var(--terminal-gap-bottom-height, 0px);
+}
+
+.terminal-gap-fill-corner {
+  top: var(--terminal-gap-content-height, 0px);
+  left: var(--terminal-gap-content-width, 0px);
+  width: var(--terminal-gap-right-width, 0px);
+  height: var(--terminal-gap-bottom-height, 0px);
 }
 
 .scaled-overlay {

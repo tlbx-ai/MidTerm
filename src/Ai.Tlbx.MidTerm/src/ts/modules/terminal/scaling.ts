@@ -47,6 +47,7 @@ import { claimMainBrowser, sendResize } from '../comms';
 import { t } from '../i18n';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
+import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';
 
 const SCALE_TOLERANCE = 0.97;
 const MAX_TRANSIENT_FIT_RETRIES = 2;
@@ -541,12 +542,14 @@ function calculateOptimalDimensionsForViewportWithMeasurementRecovery(
 function clearTerminalScaling(state: Pick<TerminalState, 'container'>): void {
   const xterm = state.container.querySelector<HTMLElement>('.xterm');
   if (!xterm) {
+    clearTerminalGapFillers(state.container);
     return;
   }
 
   xterm.style.transform = '';
   xterm.style.transformOrigin = '';
   state.container.classList.remove('scaled');
+  clearTerminalGapFillers(state.container);
 }
 
 function calculateViewportFit(
@@ -843,6 +846,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   if (context.shouldApplyUndersizedState) {
     applyUndersizedTerminalState({
       container,
+      xterm,
       isMainBrowser,
       viewportMismatchTooSmall: context.viewportMismatchTooSmall,
       showOverlay,
@@ -989,13 +993,15 @@ function applyScaledDownTerminalState(args: {
   }
 
   xterm.style.transform = `scale(${scale})`;
-  xterm.style.transformOrigin = 'center center';
+  xterm.style.transformOrigin = 'top left';
   container.classList.add('scaled');
+  updateTerminalGapFillers(container, xterm, scale);
   showOverlay(buildScaledOverlayLabel(container, state, scale));
 }
 
 function applyUndersizedTerminalState(args: {
   container: HTMLElement;
+  xterm: HTMLElement;
   isMainBrowser: boolean;
   viewportMismatchTooSmall: boolean;
   showOverlay: (label: string) => void;
@@ -1005,6 +1011,7 @@ function applyUndersizedTerminalState(args: {
 }): void {
   const {
     container,
+    xterm,
     isMainBrowser,
     viewportMismatchTooSmall,
     showOverlay,
@@ -1013,6 +1020,7 @@ function applyUndersizedTerminalState(args: {
     clearOverlay,
   } = args;
   resetScaleState();
+  updateTerminalGapFillers(container, xterm, 1);
 
   if (viewportMismatchTooSmall) {
     if (isMainBrowser) {
@@ -1098,6 +1106,7 @@ function resetTerminalScaleState(container: HTMLElement, xterm: HTMLElement): vo
   xterm.style.transform = '';
   xterm.style.transformOrigin = '';
   container.classList.remove('scaled');
+  clearTerminalGapFillers(container);
 }
 
 /**
