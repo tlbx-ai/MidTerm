@@ -9,6 +9,11 @@ export const BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS = [
     fallbackText: 'Dark',
   },
   {
+    value: 'dark2',
+    translationKey: 'settings.options.colorSchemeDark2',
+    fallbackText: 'Dark2',
+  },
+  {
     value: 'light',
     translationKey: 'settings.options.themeLight',
     fallbackText: 'Light',

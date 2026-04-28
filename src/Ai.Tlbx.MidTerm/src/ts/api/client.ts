@@ -22,6 +22,7 @@ import type {
   WorkerBootstrapResponse,
   ProviderResumeCatalogEntryDto,
   SessionPromptRequest,
+  SessionBufferTextResponse,
   SessionStateResponse,
   LensTurnRequest,
   LensTurnStartResponse,
@@ -491,6 +492,24 @@ export async function getSessionState(
   url.searchParams.set('includeBuffer', includeBuffer ? 'true' : 'false');
 
   return fetchLensJson<SessionStateResponse>(url.toString(), 'Session state fetch failed.');
+}
+
+export async function getSessionBufferText(
+  id: string,
+  includeBase64 = false,
+): Promise<SessionBufferTextResponse> {
+  const url = new URL(
+    `/api/sessions/${encodeURIComponent(id)}/buffer/text`,
+    window.location.origin,
+  );
+  url.searchParams.set('includeBase64', includeBase64 ? 'true' : 'false');
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    await throwHttpError(response, 'Session buffer text fetch failed.');
+  }
+
+  return response.json() as Promise<SessionBufferTextResponse>;
 }
 
 export async function getSessionBufferTail(

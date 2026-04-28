@@ -5068,6 +5068,22 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   flex-shrink: 0;
 }
 
+.terminal-buffer-dump-actions {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.terminal-buffer-dump-actions .btn-secondary {
+  flex-shrink: 0;
+}
+
+.terminal-buffer-dump-actions .path-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .btn-icon.spinning .icon {
   animation: spin 0.8s linear infinite;
 }
