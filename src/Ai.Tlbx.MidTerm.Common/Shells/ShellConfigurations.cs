@@ -30,7 +30,8 @@ public abstract class ShellConfigurationBase : IShellConfiguration
         "DOTNET_WATCH_SUPPRESS_EMOJIS",
         "DOTNET_WATCH_RESTART_ON_RUDE_EDIT",
         "DOTNET_MODIFIABLE_ASSEMBLIES",
-        "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES"
+        "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES",
+        TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable
     ];
 
     public abstract ShellType ShellType { get; }
@@ -51,6 +52,7 @@ public abstract class ShellConfigurationBase : IShellConfiguration
     /// - FORCE_COLOR=3
     /// - CLICOLOR=1 / CLICOLOR_FORCE=1
     /// - PY_COLORS=1
+    /// - CLAUDE_CODE_TMUX_TRUECOLOR=1
     /// NO_COLOR is stripped from inherited environment to prevent accidental ANSI suppression.
     ///
     /// TERM=xterm-256color is chosen over xterm-direct because:
@@ -82,6 +84,7 @@ public abstract class ShellConfigurationBase : IShellConfiguration
         env["CLICOLOR"] = "1";
         env["CLICOLOR_FORCE"] = "1";
         env["PY_COLORS"] = "1";
+        env["CLAUDE_CODE_TMUX_TRUECOLOR"] = "1";
 
         if (OperatingSystem.IsWindows())
         {
