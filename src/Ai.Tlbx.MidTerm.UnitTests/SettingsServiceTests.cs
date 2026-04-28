@@ -206,6 +206,24 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_Dark2BuiltInTerminalColorScheme_IsPreserved()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var json = """
+        {
+          "terminalColorScheme": "dark2"
+        }
+        """;
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal("dark2", settings.TerminalColorScheme);
+    }
+
+    [Fact]
     public void Load_ExplicitTerminalEnterModeDefault_IsPreserved()
     {
         if (!OperatingSystem.IsWindows()) return;

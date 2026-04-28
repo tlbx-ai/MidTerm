@@ -143,7 +143,9 @@ export function isBuiltInTerminalColorSchemeName(name: string | null | undefined
 }
 
 export function getBuiltInTerminalTheme(name: string): TerminalTheme | null {
-  const theme = THEMES[name];
+  const normalizedName = name.trim().toLowerCase();
+  const themeKey = Object.keys(THEMES).find((key) => key.toLowerCase() === normalizedName);
+  const theme = themeKey ? THEMES[themeKey] : undefined;
   return theme ? cloneTerminalTheme(theme) : null;
 }
 

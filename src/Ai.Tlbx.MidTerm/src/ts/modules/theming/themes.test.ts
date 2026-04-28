@@ -147,6 +147,18 @@ describe('themes', () => {
     expect(theme.brightWhite).toBe('#FFFFFF');
   });
 
+  it('resolves built-in terminal color scheme names case-insensitively', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'Dark2',
+      }),
+    );
+
+    expect(theme.background).toBe('#000000');
+    expect(theme.foreground).toBe('#FFFFFF');
+    expect(theme.red).toBe('#FF0000');
+  });
+
   it('resolves the campbell palette', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
