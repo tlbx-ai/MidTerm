@@ -11,6 +11,7 @@ import { $activeSessionId, getSession } from '../../stores';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
+import { downloadActiveTerminalBufferDump } from './terminalBufferDump';
 import {
   clearTerminalKeyLog,
   getTerminalKeyLogLines,
@@ -34,6 +35,7 @@ export function initDiagnosticsPanel(): void {
   bindRestartButton();
   bindOverlayToggle();
   bindGitOverlayToggle();
+  bindTerminalBufferDumpButton();
   bindTerminalKeyLogControls();
 }
 
@@ -294,6 +296,35 @@ function bindGitOverlayToggle(): void {
       disableGitStatusOverlay();
       localStorage.removeItem('git-overlay-enabled');
     }
+  });
+}
+
+function bindTerminalBufferDumpButton(): void {
+  const btn = document.getElementById('btn-dump-terminal-buffer') as HTMLButtonElement | null;
+  const status = document.getElementById('diag-terminal-buffer-dump-status');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    void (async () => {
+      btn.disabled = true;
+      if (status) {
+        status.textContent = 'Preparing...';
+      }
+
+      try {
+        const filename = await downloadActiveTerminalBufferDump();
+        if (status) {
+          status.textContent = filename;
+        }
+      } catch (error) {
+        log.error(() => `Failed to download terminal buffer dump: ${String(error)}`);
+        if (status) {
+          status.textContent = 'Download failed';
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    })();
   });
 }
 

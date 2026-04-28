@@ -29,6 +29,7 @@ public sealed partial class MidTermSettingsPublic
     {
         "auto",
         "dark",
+        "dark2",
         "light",
         "campbell",
         "macTerminalDark",

@@ -128,6 +128,7 @@ public static class Program
             Console.WriteLine($"[mthost] Creating PTY: {shellConfig.ExecutablePath}");
             var environment = shellConfig.GetEnvironmentVariables();
             InjectTmuxEnvironment(environment, config);
+            TerminalEnvironmentOverrides.ApplyMarkedOverrides(environment);
             pty = PtyConnectionFactory.Create(
                 shellConfig.ExecutablePath,
                 shellConfig.Arguments,

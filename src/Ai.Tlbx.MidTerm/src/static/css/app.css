@@ -2174,7 +2174,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   align-items: center;
   justify-content: center;
   gap: 0;
-  padding: 0;
+  padding: 2px;
   overflow: hidden;
 }
 
@@ -2184,14 +2184,14 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   justify-content: center;
   width: 1em;
   height: 1em;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   flex-shrink: 0;
   transition: transform 0.14s ease;
 }
 
 .session-action-icon.text-icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .session-action-label {
@@ -5066,6 +5066,22 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 .path-value-row .btn-icon {
   flex-shrink: 0;
+}
+
+.terminal-buffer-dump-actions {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.terminal-buffer-dump-actions .btn-secondary {
+  flex-shrink: 0;
+}
+
+.terminal-buffer-dump-actions .path-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-icon.spinning .icon {

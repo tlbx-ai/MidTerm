@@ -9,6 +9,16 @@ const webglPatch = readFileSync(
 );
 const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 
+function getPatchSection(filePath: string): string {
+  const start = webglPatch.indexOf(`diff --git a/${filePath} `);
+  if (start < 0) {
+    return '';
+  }
+
+  const next = webglPatch.indexOf('\ndiff --git ', start + 1);
+  return next < 0 ? webglPatch.slice(start) : webglPatch.slice(start, next);
+}
+
 describe('WebGL transparency vendor patch', () => {
   it('keeps screenshot-readable WebGL while replacing stale transparent frames', () => {
     expect(managerSource).toContain('new WebglAddon(true)');
@@ -35,5 +45,24 @@ describe('WebGL transparency vendor patch', () => {
     );
     expect(webglPatch).not.toContain('shouldClearOpaqueRasterBackground');
     expect(webglPatch).not.toContain('Transparent canvas text rasterization breaks font smoothing');
+  });
+
+  it('keeps configurable box drawing glyph scale and style wired into WebGL', () => {
+    const customGlyphSourcePatch = getPatchSection(
+      'node_modules/@xterm/addon-webgl/src/CustomGlyphs.ts',
+    );
+    const webglCommonJsPatch = getPatchSection(
+      'node_modules/@xterm/addon-webgl/lib/addon-webgl.js',
+    );
+    const webglModulePatch = getPatchSection('node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs');
+
+    for (const patchSection of [customGlyphSourcePatch, webglCommonJsPatch, webglModulePatch]) {
+      expect(patchSection).toContain('__MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__');
+      expect(patchSection).toContain('__MIDTERM_XTERM_BOX_DRAWING_STYLE__');
+    }
+
+    expect(customGlyphSourcePatch).toContain('function getBoxDrawingStrokeScale');
+    expect(customGlyphSourcePatch).toContain('function remapBoxDrawingChar');
+    expect(customGlyphSourcePatch).toContain('Number.parseInt(fontWeight) * strokeScale');
   });
 });

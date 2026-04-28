@@ -61,6 +61,7 @@ export type ResizeRequest = Schemas['ResizeRequest'];
 export type ResizeResponse = Schemas['ResizeResponse'];
 export type SessionPromptRequest = Schemas['SessionPromptRequest'];
 export type SessionStateResponse = Schemas['SessionStateResponse'];
+export type SessionBufferTextResponse = Schemas['SessionBufferTextResponse'];
 export type AgentSessionFeedResponse = Schemas['AgentSessionFeedResponse'];
 export type AgentSessionVibeChip = Schemas['AgentSessionVibeChip'];
 export type AgentSessionVibeHeader = Schemas['AgentSessionVibeHeader'];

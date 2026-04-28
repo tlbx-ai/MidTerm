@@ -9,6 +9,11 @@ export const BUILT_IN_TERMINAL_COLOR_SCHEME_OPTIONS = [
     fallbackText: 'Dark',
   },
   {
+    value: 'dark2',
+    translationKey: 'settings.options.colorSchemeDark2',
+    fallbackText: 'Dark2',
+  },
+  {
     value: 'light',
     translationKey: 'settings.options.themeLight',
     fallbackText: 'Light',
@@ -138,7 +143,9 @@ export function isBuiltInTerminalColorSchemeName(name: string | null | undefined
 }
 
 export function getBuiltInTerminalTheme(name: string): TerminalTheme | null {
-  const theme = THEMES[name];
+  const normalizedName = name.trim().toLowerCase();
+  const themeKey = Object.keys(THEMES).find((key) => key.toLowerCase() === normalizedName);
+  const theme = themeKey ? THEMES[themeKey] : undefined;
   return theme ? cloneTerminalTheme(theme) : null;
 }
 

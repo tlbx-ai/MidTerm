@@ -126,6 +126,39 @@ describe('themes', () => {
     expect(theme.brightBlue).toBe('#D09AF9');
   });
 
+  it('resolves the dark2 direct color palette', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'dark2',
+      }),
+    );
+
+    expect(theme.background).toBe('#000000');
+    expect(theme.foreground).toBe('#FFFFFF');
+    expect(theme.black).toBe('#000000');
+    expect(theme.red).toBe('#FF0000');
+    expect(theme.green).toBe('#00FF00');
+    expect(theme.yellow).toBe('#FFFF00');
+    expect(theme.blue).toBe('#0000FF');
+    expect(theme.magenta).toBe('#FF00FF');
+    expect(theme.cyan).toBe('#00FFFF');
+    expect(theme.white).toBe('#FFFFFF');
+    expect(theme.brightRed).toBe('#FF0000');
+    expect(theme.brightWhite).toBe('#FFFFFF');
+  });
+
+  it('resolves built-in terminal color scheme names case-insensitively', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalColorScheme: 'Dark2',
+      }),
+    );
+
+    expect(theme.background).toBe('#000000');
+    expect(theme.foreground).toBe('#FFFFFF');
+    expect(theme.red).toBe('#FF0000');
+  });
+
   it('resolves the campbell palette', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({

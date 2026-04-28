@@ -368,6 +368,24 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripDark2BuiltInTerminalColorScheme()
+    {
+        var settings = new MidTermSettings
+        {
+            TerminalColorScheme = "dark2"
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal("dark2", publicSettings.TerminalColorScheme);
+
+        settings.TerminalColorScheme = "auto";
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("dark2", settings.TerminalColorScheme);
+    }
+
+    [Fact]
     public void ApplyTo_ClampsAndValidatesFontRenderingSettings()
     {
         var settings = new MidTermSettings

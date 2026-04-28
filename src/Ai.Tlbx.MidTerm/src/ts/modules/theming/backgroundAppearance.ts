@@ -11,6 +11,7 @@ import {
   isMobilePresentationContext,
   shouldRenderBackgroundImage,
 } from './backgroundVisibility';
+import { getTerminalThemeByName } from './terminalColorSchemes';
 
 const UI_BACKGROUND_VARIABLES: Array<{ name: string; boost?: number }> = [
   { name: '--bg-primary', boost: 0.16 },
@@ -83,6 +84,7 @@ export function getBackgroundImageUrl(revision: number): string {
 export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void {
   const root = document.documentElement;
   const palette = getCssThemePalette(settings.theme);
+  const terminalBackgroundColor = getTerminalBackgroundColor(settings, palette);
   const mobilePresentation = isMobilePresentationContext();
   const uiTransparency = mobilePresentation ? 0 : clamp(settings.uiTransparency, 0, 100);
   const terminalTransparency = mobilePresentation
@@ -111,7 +113,10 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
   }
 
   for (const variable of DERIVED_BACKGROUND_VARIABLES) {
-    const value = palette[variable.source];
+    const value =
+      variable.name === '--terminal-canvas-background'
+        ? terminalBackgroundColor
+        : palette[variable.source];
     const rgb = parseColor(value);
     if (!rgb) {
       continue;
@@ -140,6 +145,21 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     isMobileBackgroundSuppressed(settings),
   );
   document.body.classList.toggle('opaque-terminal-surfaces', terminalTransparency === 0);
+}
+
+function getTerminalBackgroundColor(
+  settings: MidTermSettingsPublic,
+  palette: Record<string, string>,
+): string {
+  const colorScheme = settings.terminalColorScheme;
+  const themeName = colorScheme === 'auto' ? settings.theme : colorScheme;
+  const terminalTheme = getTerminalThemeByName(settings, themeName);
+  if (terminalTheme) {
+    return terminalTheme.background;
+  }
+
+  const fallbackBackground = palette['--bg-terminal'];
+  return fallbackBackground || '#000000';
 }
 
 function parseColor(value: string | undefined): RgbColor | null {

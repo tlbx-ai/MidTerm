@@ -24,6 +24,12 @@ beforeEach(async () => {
     removeItem: () => {},
     clear: () => {},
   });
+  vi.doMock('./sessionList', () => ({
+    getSessionDisplayInfo: (session: Session) => ({
+      primary: session.name ?? session.terminalTitle ?? session.shellType ?? 'Terminal',
+      secondary: session.name ? (session.terminalTitle ?? session.shellType ?? null) : null,
+    }),
+  }));
 
   domRef = (await import('../../state')).dom;
   const displayModule = await import('./spacesTreeSidebarDisplay');
@@ -36,6 +42,7 @@ afterEach(() => {
     domRef.sessionList = null;
   }
   vi.unstubAllGlobals();
+  vi.doUnmock('./sessionList');
   domRef = null;
 });
 

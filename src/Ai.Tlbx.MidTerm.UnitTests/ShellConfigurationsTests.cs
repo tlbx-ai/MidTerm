@@ -14,6 +14,7 @@ public sealed class ShellConfigurationsTests
         using var modifiableAssemblies = new EnvironmentVariableScope("DOTNET_MODIFIABLE_ASSEMBLIES", "debug");
         using var hostingStartupAssemblies = new EnvironmentVariableScope("ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", "Microsoft.AspNetCore.Watch.BrowserRefresh");
         using var noColor = new EnvironmentVariableScope("NO_COLOR", "1");
+        using var terminalOverrideKeys = new EnvironmentVariableScope(TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable, "TERM");
 
         var env = new PwshShellConfiguration().GetEnvironmentVariables();
 
@@ -23,6 +24,7 @@ public sealed class ShellConfigurationsTests
         Assert.DoesNotContain("DOTNET_MODIFIABLE_ASSEMBLIES", env.Keys, StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain("ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", env.Keys, StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain("NO_COLOR", env.Keys, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable, env.Keys, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -37,6 +39,32 @@ public sealed class ShellConfigurationsTests
         Assert.Equal("1", env["CLICOLOR"]);
         Assert.Equal("1", env["CLICOLOR_FORCE"]);
         Assert.Equal("1", env["PY_COLORS"]);
+        Assert.Equal("1", env["CLAUDE_CODE_TMUX_TRUECOLOR"]);
+    }
+
+    [Fact]
+    public void ApplyMarkedOverrides_ReappliesUserTerminalEnvironmentLast()
+    {
+        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["TERM"] = "xterm-256color",
+            ["CLAUDE_CODE_TMUX_TRUECOLOR"] = "1",
+            [TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable] = "TERM\nCLAUDE_CODE_TMUX_TRUECOLOR"
+        };
+
+        TerminalEnvironmentOverrides.ApplyMarkedOverrides(
+            env,
+            "TERM\nCLAUDE_CODE_TMUX_TRUECOLOR",
+            key => key switch
+            {
+                "TERM" => "xterm-direct",
+                "CLAUDE_CODE_TMUX_TRUECOLOR" => "0",
+                _ => null
+            });
+
+        Assert.Equal("xterm-direct", env["TERM"]);
+        Assert.Equal("0", env["CLAUDE_CODE_TMUX_TRUECOLOR"]);
+        Assert.DoesNotContain(TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable, env.Keys);
     }
 
     private sealed class EnvironmentVariableScope : IDisposable

@@ -2583,6 +2583,24 @@
                       >
                       <input type="checkbox" id="diag-git-overlay-toggle" />
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="btn-dump-terminal-buffer"
+                        data-i18n="settings.diagnostics.terminalBufferDump"
+                        >Terminal buffer dump</label
+                      >
+                      <div class="path-value-row terminal-buffer-dump-actions">
+                        <button
+                          id="btn-dump-terminal-buffer"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.downloadTerminalBufferDump"
+                        >
+                          Download dump
+                        </button>
+                        <code class="path-value" id="diag-terminal-buffer-dump-status">-</code>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="settings-section">

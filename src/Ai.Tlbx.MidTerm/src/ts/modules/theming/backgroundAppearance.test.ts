@@ -52,6 +52,8 @@ function createSettings(
     Pick<
       MidTermSettingsPublic,
       | 'theme'
+      | 'terminalColorScheme'
+      | 'terminalColorSchemes'
       | 'uiTransparency'
       | 'terminalTransparency'
       | 'backgroundImageEnabled'
@@ -66,6 +68,8 @@ function createSettings(
 ): MidTermSettingsPublic {
   return {
     theme: 'dark',
+    terminalColorScheme: 'auto',
+    terminalColorSchemes: [],
     uiTransparency: 0,
     terminalTransparency: 0,
     backgroundImageEnabled: false,
@@ -174,6 +178,9 @@ describe('backgroundAppearance', () => {
     expect(appChromeAlpha).toBeCloseTo(0.925, 5);
     expect(textInputAlpha).toBeCloseTo(0.94, 5);
     expect(sidebarHoverAlpha).toBeCloseTo(0.82, 5);
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(12, 12, 12, 0.400)',
+    );
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#161821');
     expect(rootStyle.getPropertyValue('--bg-hover-opaque')).toBe('#2D3044');
@@ -194,6 +201,20 @@ describe('backgroundAppearance', () => {
     );
 
     expect(alphaOf(rootStyle.getPropertyValue('--app-chrome-background'))).toBeCloseTo(0.75, 5);
+  });
+
+  it('uses the selected terminal color scheme for the terminal canvas background', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        terminalColorScheme: 'dark2',
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(0, 0, 0, 1.000)',
+    );
+    expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
@@ -329,7 +350,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 1.000)');
     expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
     expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
-      'rgba(5, 5, 10, 1.000)',
+      'rgba(12, 12, 12, 1.000)',
     );
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
   });

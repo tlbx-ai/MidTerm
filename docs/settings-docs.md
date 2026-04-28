@@ -76,7 +76,7 @@ Current top-level order in the UI:
 - `Typography & Theme`
   `Font Size` — `fontSize`, `settings.json`, Immediate. Changes terminal font size for existing terminals and new-session sizing.
   `Font` — `fontFamily`, `settings.json`, Immediate. Chooses the terminal font family used for rendering and sizing.
-  `Terminal Colors` — `terminalColorScheme`, `settings.json`, Immediate. Chooses the active terminal palette. `auto` follows the UI theme.
+  `Terminal Colors` — `terminalColorScheme`, `settings.json`, Immediate. Chooses the active terminal palette. `auto` follows the UI theme; `Dark2` provides a pure black terminal background and direct RGB ANSI colors.
   `Custom Scheme Editor` — `terminalColorSchemes`, special writer, Immediate. Loads presets, creates blank schemes, edits palette fields, saves custom schemes, and deletes custom schemes.
   `Enable Ligatures` — `terminalLigaturesEnabled`, `settings.json`, Immediate. Enables ligatures in terminal rendering.
 - `Layout & Cursor`
@@ -222,6 +222,7 @@ This remains a mixed surface. It combines browser-local toggles, read-only trans
   `Server RTT / MTHost RTT / Active Session / Output RTT` — diagnostics APIs and live comms, read-only, Immediate.
   `Show overlay on terminal` — latency overlay toggle, `localStorage`, Immediate.
   `Show git debug overlay` — git debug overlay toggle, `localStorage`, Immediate.
+  `Terminal buffer dump` — downloads active terminal rendered scrollback, xterm cell color/style runs, and raw PTY output with visible escape bytes, action, Immediate.
 - `Terminal Transport`
   `Sequence / backlog / replay / reconnect / data-loss fields` — session state and browser transport snapshot, read-only, Immediate.
 - `File Paths`

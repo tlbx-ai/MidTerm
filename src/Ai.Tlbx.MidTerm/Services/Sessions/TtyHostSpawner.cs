@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models.Update;
 
 using Ai.Tlbx.MidTerm.Services.Updates;
@@ -225,14 +226,36 @@ public static class TtyHostSpawner
 
         var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,
             instanceId, ownerToken, scrollbackBytes, mtPort, mtToken, paneIndex, tmuxBinDir);
+        var ttyHostEnvironmentOverrides = AddTerminalEnvironmentOverrideKeyMarker(environmentOverrides);
 
 #pragma warning disable CA1416 // Validate platform compatibility (compile-time guard via WINDOWS constant)
 #if WINDOWS
-        return SpawnWindows(args, runAsUser, runAsUserSid, environmentOverrides);
+        return SpawnWindows(args, runAsUser, runAsUserSid, ttyHostEnvironmentOverrides);
 #else
-        return SpawnUnix(sessionId, args, runAsUser, environmentOverrides);
+        return SpawnUnix(sessionId, args, runAsUser, ttyHostEnvironmentOverrides);
 #endif
 #pragma warning restore CA1416
+    }
+
+    private static IReadOnlyDictionary<string, string?>? AddTerminalEnvironmentOverrideKeyMarker(
+        IReadOnlyDictionary<string, string?>? environmentOverrides)
+    {
+        if (environmentOverrides is null || environmentOverrides.Count == 0)
+        {
+            return environmentOverrides;
+        }
+
+        var serializedKeys = TerminalEnvironmentOverrides.SerializeOverrideKeys(environmentOverrides.Keys);
+        if (string.IsNullOrEmpty(serializedKeys))
+        {
+            return environmentOverrides;
+        }
+
+        var marked = new Dictionary<string, string?>(environmentOverrides, StringComparer.Ordinal)
+        {
+            [TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable] = serializedKeys
+        };
+        return marked;
     }
 
     internal static bool TryStartRedirectedProcess(
