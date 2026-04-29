@@ -312,6 +312,7 @@
   --bg-input: #242735; /* Alias for compatibility */
   --bg-dropdown: #242735; /* Alias for compatibility */
   --bg-elevated-opaque: #161821; /* Opaque modal/card shell */
+  --bg-sidebar-opaque: #05050a; /* Opaque sidebar/header shell */
   --bg-dropdown-opaque: #242735; /* Opaque dropdown/menu shell */
   --bg-session-hover-opaque: #1c1e2a; /* Sidebar item hover shell */
   --bg-session-active-opaque: #1c1e2a; /* Sidebar item active shell */
@@ -327,6 +328,12 @@
   --terminal-canvas-background: var(--bg-terminal);
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
+  --app-header-background:
+    linear-gradient(
+      var(--app-chrome-background, var(--bg-terminal)),
+      var(--app-chrome-background, var(--bg-terminal))
+    ),
+    var(--bg-sidebar-opaque, var(--bg-sidebar));
   --workspace-pane-background: var(--bg-primary);
   --workspace-pane-chrome-background: var(--bg-elevated);
   --text-input-background: var(--bg-input);
@@ -517,7 +524,7 @@
   --transition-fast: 0.1s;
   --transition-normal: 0.15s;
   --transition-slow: 0.3s;
-  --smart-input-control-height: 40px;
+  --smart-input-control-height: 42px;
   --adaptive-footer-reserved-height: 0px;
 
   --app-background-image: none;
@@ -722,7 +729,7 @@ body::before {
   box-sizing: border-box;
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
-  background-color: var(--app-chrome-background, var(--bg-terminal));
+  background: var(--app-header-background);
   position: relative;
 }
 
@@ -2912,7 +2919,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 .layout-leaf .session-tab-bar {
   border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
-  background: var(--app-chrome-background, var(--bg-terminal));
+  background: var(--app-header-background);
   padding: 0 4px;
 }
 
@@ -2952,7 +2959,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 .layout-leaf.focused .session-tab-bar {
   border-bottom-color: color-mix(in srgb, var(--accent-gold) 16%, transparent);
-  background: var(--app-chrome-background, var(--bg-terminal));
+  background: var(--app-header-background);
 }
 
 /* Dock overlay - shown during drag to indicate drop zones */
@@ -10433,6 +10440,7 @@ body.shared-session-mode .session-tab-bar {
   right: 0;
   bottom: 0;
   width: 400px;
+  max-width: 80%;
   background: var(--workspace-pane-background);
   border-left: 1px solid var(--border-color);
   display: flex;
@@ -11417,7 +11425,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 0;
-  background: var(--app-chrome-background, var(--bg-terminal));
+  background: var(--app-header-background);
   border-bottom: none;
   flex-shrink: 0;
   padding: 0 8px;
@@ -15832,7 +15840,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 
 .adaptive-footer-dock {
   --command-bay-gap: 6px;
-  --command-bay-control-height: 34px;
+  --command-bay-control-height: 36px;
   --command-bay-control-height-mobile: 44px;
   --command-bay-automation-chip-height: calc(var(--command-bay-control-height) * 0.85);
   --command-bay-automation-chip-font-size: calc(var(--command-bay-font-size) - 1pt);
@@ -15931,8 +15939,6 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 74%, transparent) 28%,
     color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent)
   );
-  -webkit-backdrop-filter: blur(12.6px) saturate(112%);
-  backdrop-filter: blur(12.6px) saturate(112%);
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {

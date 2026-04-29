@@ -24,8 +24,17 @@ import { isEmbeddedWebPreviewContext } from './webContext';
 const log = createLogger('webDock');
 
 const DOCK_MIN_WIDTH = 250;
-const DOCK_MAX_WIDTH = 800;
+const DOCK_MAX_WIDTH_RATIO = 0.8;
 const DOCK_WIDTH_KEY = 'mt-web-preview-dock-width';
+
+function getDockMaxWidth(panel: HTMLElement): number {
+  const availableWidth = panel.parentElement?.clientWidth ?? window.innerWidth;
+  return Math.max(DOCK_MIN_WIDTH, Math.floor(availableWidth * DOCK_MAX_WIDTH_RATIO));
+}
+
+function clampDockWidth(width: number, panel: HTMLElement): number {
+  return Math.max(DOCK_MIN_WIDTH, Math.min(getDockMaxWidth(panel), width));
+}
 
 function handleDockLayoutChange(): void {
   if ($isMainBrowser.get()) {
@@ -105,8 +114,8 @@ export function openWebPreviewDock(): void {
   const savedWidth = localStorage.getItem(DOCK_WIDTH_KEY);
   if (savedWidth) {
     const w = parseInt(savedWidth, 10);
-    if (w >= DOCK_MIN_WIDTH && w <= DOCK_MAX_WIDTH) {
-      dockPanel.style.width = `${w}px`;
+    if (w >= DOCK_MIN_WIDTH) {
+      dockPanel.style.width = `${clampDockWidth(w, dockPanel)}px`;
     }
   }
 
@@ -240,7 +249,7 @@ export function setupWebPreviewDockResize(): void {
   function updateResize(clientX: number): void {
     if (!isResizing) return;
     const delta = startX - clientX;
-    const newWidth = Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, startWidth + delta));
+    const newWidth = clampDockWidth(startWidth + delta, panel);
     panel.style.width = `${newWidth}px`;
   }
 

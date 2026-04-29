@@ -20,6 +20,16 @@ const lensResumeButtonSource = readFileSync(path.join(__dirname, 'lensResumeButt
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
 
+function getCssRule(selector: string): string {
+  const start = css.indexOf(`${selector} {`);
+  if (start < 0) {
+    return '';
+  }
+
+  const end = css.indexOf('\n}', start);
+  return end >= 0 ? css.slice(start, end + 2) : '';
+}
+
 describe('smart input tab wiring', () => {
   it('resyncs smart input visibility when non-Lens tabs activate', () => {
     expect(source).toContain("onTabActivated('agent', (sessionId) => {");
@@ -46,6 +56,14 @@ describe('smart input tab wiring', () => {
     expect(source).not.toContain(
       'const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;',
     );
+  });
+
+  it('keeps the Command Bay material unfrosted', () => {
+    const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
+
+    expect(glassRule).toContain("adaptive-footer-dock[data-material='glass']");
+    expect(glassRule).not.toContain('backdrop-filter');
+    expect(glassRule).not.toContain('-webkit-backdrop-filter');
   });
 
   it('keeps Lens quick settings hidden when the hidden attribute is set', () => {
@@ -166,7 +184,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
     expect(css).toContain('position: relative;');
     expect(css).toContain('z-index: 3;');
-    expect(css).toContain('--command-bay-control-height: 34px;');
+    expect(css).toContain('--smart-input-control-height: 42px;');
+    expect(css).toContain('--command-bay-control-height: 36px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
