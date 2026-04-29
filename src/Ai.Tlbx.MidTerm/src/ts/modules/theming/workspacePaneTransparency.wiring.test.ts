@@ -53,16 +53,24 @@ describe('workspace pane transparency wiring', () => {
     const focusedLayoutLeafSessionTabBarRule = getCssRule('.layout-leaf.focused .session-tab-bar');
 
     expect(css).toContain('--app-chrome-background: var(--bg-terminal);');
+    expect(css).toContain('--app-header-background:');
+    expect(css).toContain('var(--bg-sidebar-opaque, var(--bg-sidebar));');
     expect(sidebarHeaderRule).toContain(
-      'background-color: var(--app-chrome-background, var(--bg-terminal));',
+      'background: var(--app-header-background);',
     );
     expect(sessionTabBarRule).toContain(
-      'background-color: var(--app-chrome-background, var(--bg-terminal));',
+      'background: var(--app-header-background);',
     );
     expect(layoutLeafSessionTabBarRule).toContain(
-      'background-color: var(--app-chrome-background, var(--bg-terminal));',
+      'background: var(--app-header-background);',
     );
     expect(focusedLayoutLeafSessionTabBarRule).toContain(
+      'background: var(--app-header-background);',
+    );
+    expect(sidebarHeaderRule).not.toContain(
+      'background-color: var(--app-chrome-background, var(--bg-terminal));',
+    );
+    expect(sessionTabBarRule).not.toContain(
       'background-color: var(--app-chrome-background, var(--bg-terminal));',
     );
     expect(sessionTabBarRule).not.toContain(
