@@ -445,7 +445,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
   controlEntry('terminalEnterMode', 'setting-terminal-enter-mode', 'select', 'shiftEnterLineFeed', {
     editable: true,
     storage: 'settings.json',
-    validation: 'off, or remap Shift/Ctrl+Enter to Alt+Enter bytes in terminal',
+    validation: 'off, or remap modified Enter to newline-compatible bytes in terminal sessions',
     applyMode: 'immediate',
   }),
   controlEntry('scrollbackProtection', 'setting-scrollback-protection', 'checkbox', false, {

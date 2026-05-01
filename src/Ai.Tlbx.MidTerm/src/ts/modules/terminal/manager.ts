@@ -39,9 +39,10 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { initSearchForTerminal, isSearchVisible, cleanupSearchForTerminal } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import {
+  describeTerminalEnterOverrideBytes,
   getTerminalEnterOverride,
+  getTerminalEnterTarget,
   isTerminalEnterRemapEnabled,
-  isPowerShellEnterTarget,
   type EnterOverrideInput,
 } from './enterBehavior';
 import {
@@ -246,12 +247,11 @@ function recordTerminalKeyDebugEvent(
 function getSessionEnterOverride(sessionId: string, event: EnterOverrideInput): string | null {
   const foreground = getForegroundInfo(sessionId);
   const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
+
   return getTerminalEnterOverride(
     event,
     $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
-    isPowerShellEnterTarget(foreground.name, foreground.commandLine, sessionShellType)
-      ? 'powershell'
-      : 'default',
+    getTerminalEnterTarget(foreground.name, foreground.commandLine, sessionShellType),
   );
 }
 
@@ -526,7 +526,7 @@ function tryHandleTerminalEnterOverride(
     source,
     effectiveLogEvent,
     container,
-    `${effectiveParts.join(' ')} override=ESC+CR`,
+    `${effectiveParts.join(' ')} override=${describeTerminalEnterOverrideBytes(enterOverride)}`,
   );
 
   event.preventDefault();
@@ -538,7 +538,7 @@ function tryHandleTerminalEnterOverride(
     `${source}-sent`,
     effectiveLogEvent,
     container,
-    'send=ESC+CR',
+    `send=${describeTerminalEnterOverrideBytes(enterOverride)}`,
   );
   return true;
 }

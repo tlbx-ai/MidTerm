@@ -103,7 +103,7 @@ Current top-level order in the UI:
   `Copy on Select` — `copyOnSelect`, `settings.json`, Next event.
   `Right-Click Paste` — `rightClickPaste`, `settings.json`, Next event.
   `Copy/Paste Shortcuts` — `clipboardShortcuts`, `settings.json`, Next event.
-  `Shift/Ctrl+Enter = Alt+Enter in Terminal` — `terminalEnterMode`, `settings.json`, Immediate.
+  `Modified Enter = newline in Terminal` — `terminalEnterMode`, `settings.json`, Immediate.
   `Claude Code scrollback glitch protection` — `scrollbackProtection`, `settings.json`, Next event.
 
 ### AI Agents
