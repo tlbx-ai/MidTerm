@@ -37,6 +37,37 @@ $signtool = Find-SignTool
 Write-Host "Using signtool: $signtool" -ForegroundColor Cyan
 Write-Host "Running as user: $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)" -ForegroundColor Cyan
 
+function Find-CodeSigningCertificateThumbprint
+{
+    $now = Get-Date
+    $certs = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.HasPrivateKey -and
+            $_.NotAfter -gt $now -and
+            ($_.EnhancedKeyUsageList.FriendlyName -contains "Code Signing")
+        } |
+        Sort-Object NotAfter -Descending
+
+    $cert = @($certs | Where-Object { $_.Subject -like "*Open Source Developer Johannes Schmidt*" } | Select-Object -First 1)
+    if (-not $cert)
+    {
+        $cert = @($certs | Select-Object -First 1)
+    }
+
+    if (-not $cert)
+    {
+        throw "No valid code-signing certificate with a private key was found in the Windows certificate store."
+    }
+
+    Write-Host "Using code-signing certificate: $($cert.Subject)" -ForegroundColor Cyan
+    return $cert.Thumbprint
+}
+
+if (-not $Thumbprint)
+{
+    $Thumbprint = Find-CodeSigningCertificateThumbprint
+}
+
 # ── Validate staging path and binaries ───────────────────────────────────────
 
 $mtPath = Join-Path $StagingPath "mt.exe"
@@ -71,14 +102,7 @@ else
 # ── Build signtool arguments ─────────────────────────────────────────────────
 
 $signArgs = @("sign")
-if ($Thumbprint)
-{
-    $signArgs += "/sha1", $Thumbprint
-}
-else
-{
-    $signArgs += "/a"
-}
+$signArgs += "/sha1", $Thumbprint
 $signArgs += "/tr", $TimestampServer
 $signArgs += "/td", "sha256"
 $signArgs += "/fd", "sha256"
