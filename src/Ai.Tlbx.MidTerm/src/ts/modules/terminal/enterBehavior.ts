@@ -8,7 +8,7 @@
 // Keep the legacy persisted values for compatibility with existing settings.json
 // files, but treat them as a simple off/on remap toggle in the terminal UI.
 export type TerminalEnterMode = 'default' | 'shiftEnterLineFeed';
-export type TerminalEnterTarget = 'default' | 'powershell';
+export type TerminalEnterTarget = 'default' | 'powershell' | 'codex';
 
 export interface EnterOverrideInput {
   key?: string;
@@ -22,7 +22,12 @@ export interface EnterOverrideInput {
   metaKey: boolean;
 }
 
+const CSI_U_SHIFT_ENTER = '\x1b[13;2u';
 const META_ENTER = '\x1b\r';
+
+function containsCodexToken(value: string): boolean {
+  return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
+}
 
 export function isPowerShellEnterTarget(
   foregroundName?: string | null,
@@ -36,8 +41,45 @@ export function isPowerShellEnterTarget(
   );
 }
 
+export function isCodexEnterTarget(
+  foregroundName?: string | null,
+  foregroundCommandLine?: string | null,
+  shellType?: string | null,
+): boolean {
+  const haystack =
+    `${foregroundName ?? ''} ${foregroundCommandLine ?? ''} ${shellType ?? ''}`.toLowerCase();
+
+  return haystack.includes('@openai/codex') || containsCodexToken(haystack);
+}
+
+export function getTerminalEnterTarget(
+  foregroundName?: string | null,
+  foregroundCommandLine?: string | null,
+  shellType?: string | null,
+): TerminalEnterTarget {
+  if (isCodexEnterTarget(foregroundName, foregroundCommandLine, shellType)) {
+    return 'codex';
+  }
+
+  return isPowerShellEnterTarget(foregroundName, foregroundCommandLine, shellType)
+    ? 'powershell'
+    : 'default';
+}
+
 export function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
   return mode === 'shiftEnterLineFeed';
+}
+
+export function describeTerminalEnterOverrideBytes(value: string): string {
+  if (value === CSI_U_SHIFT_ENTER) {
+    return 'CSIu-ShiftEnter';
+  }
+
+  if (value === META_ENTER) {
+    return 'ESC+CR';
+  }
+
+  return `bytes=${JSON.stringify(value)}`;
 }
 
 function isEnterKey(input: EnterOverrideInput): boolean {
@@ -57,10 +99,19 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
   mode: TerminalEnterMode,
-  _target: TerminalEnterTarget = 'default',
+  target: TerminalEnterTarget = 'default',
 ): string | null {
   if (!isEnterKey(input)) {
     return null;
+  }
+
+  if (
+    target === 'codex' &&
+    isTerminalEnterRemapEnabled(mode) &&
+    !input.metaKey &&
+    (input.altKey || input.ctrlKey || input.shiftKey)
+  ) {
+    return CSI_U_SHIFT_ENTER;
   }
 
   if (

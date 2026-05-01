@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getTerminalEnterOverride,
+  isCodexEnterTarget,
   isPowerShellEnterTarget,
   type EnterOverrideInput,
 } from './enterBehavior';
@@ -73,11 +74,45 @@ describe('getTerminalEnterOverride', () => {
     ).toBe('\x1b\r');
   });
 
+  it('maps modified Enter to an explicit Shift+Enter sequence for Codex sessions', () => {
+    expect(
+      getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'shiftEnterLineFeed', 'codex'),
+    ).toBe('\x1b[13;2u');
+    expect(
+      getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed', 'codex'),
+    ).toBe('\x1b[13;2u');
+    expect(
+      getTerminalEnterOverride(key('Enter', { altKey: true }), 'shiftEnterLineFeed', 'codex'),
+    ).toBe('\x1b[13;2u');
+    expect(getTerminalEnterOverride(key('Enter'), 'shiftEnterLineFeed', 'codex')).toBeNull();
+  });
+
   it('leaves Alt+Enter and plain Enter on the xterm default path', () => {
     expect(getTerminalEnterOverride(key('Enter'), 'shiftEnterLineFeed')).toBeNull();
     expect(
       getTerminalEnterOverride(key('Enter', { altKey: true }), 'shiftEnterLineFeed'),
     ).toBeNull();
+  });
+});
+
+describe('isCodexEnterTarget', () => {
+  it('detects Codex foreground processes', () => {
+    expect(isCodexEnterTarget('codex', null)).toBe(true);
+    expect(isCodexEnterTarget('codex.exe', null)).toBe(true);
+    expect(
+      isCodexEnterTarget(
+        null,
+        'node C:\\Users\\johan\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js --yolo',
+      ),
+    ).toBe(true);
+    expect(isCodexEnterTarget(null, 'C:\\Users\\johan\\AppData\\Roaming\\npm\\codex.cmd')).toBe(
+      true,
+    );
+  });
+
+  it('does not treat unrelated processes as Codex', () => {
+    expect(isCodexEnterTarget('pwsh.exe', null)).toBe(false);
+    expect(isCodexEnterTarget('bash', '/bin/bash')).toBe(false);
   });
 });
 

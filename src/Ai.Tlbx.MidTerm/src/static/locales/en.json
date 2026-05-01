@@ -433,7 +433,7 @@
   "settings.behavior.copyOnSelect": "Copy on Select",
   "settings.behavior.rightClickPaste": "Right-Click Paste",
   "settings.behavior.clipboardShortcuts": "Copy/Paste Shortcuts",
-  "settings.behavior.terminalEnterMode": "Shift/Ctrl+Enter = Alt+Enter in Terminal",
+  "settings.behavior.terminalEnterMode": "Modified Enter = newline in Terminal",
   "settings.behavior.smoothScrolling": "Smooth Scrolling",
   "settings.behavior.gpuRendering": "GPU Rendering (WebGL)",
   "settings.behavior.inputMode": "Input Mode",
