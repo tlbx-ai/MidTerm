@@ -22,7 +22,6 @@ export interface EnterOverrideInput {
   metaKey: boolean;
 }
 
-const CSI_U_SHIFT_ENTER = '\x1b[13;2u';
 const META_ENTER = '\x1b\r';
 
 function containsCodexToken(value: string): boolean {
@@ -71,10 +70,6 @@ export function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
 }
 
 export function describeTerminalEnterOverrideBytes(value: string): string {
-  if (value === CSI_U_SHIFT_ENTER) {
-    return 'CSIu-ShiftEnter';
-  }
-
   if (value === META_ENTER) {
     return 'ESC+CR';
   }
@@ -106,19 +101,10 @@ export function getTerminalEnterOverride(
   }
 
   if (
-    target === 'codex' &&
     isTerminalEnterRemapEnabled(mode) &&
+    (target === 'codex' || !input.altKey) &&
     !input.metaKey &&
-    (input.altKey || input.ctrlKey || input.shiftKey)
-  ) {
-    return CSI_U_SHIFT_ENTER;
-  }
-
-  if (
-    isTerminalEnterRemapEnabled(mode) &&
-    !input.altKey &&
-    !input.metaKey &&
-    (input.ctrlKey || input.shiftKey)
+    (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
     return META_ENTER;
   }

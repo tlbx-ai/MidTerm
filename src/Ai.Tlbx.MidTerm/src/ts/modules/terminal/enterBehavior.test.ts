@@ -74,16 +74,16 @@ describe('getTerminalEnterOverride', () => {
     ).toBe('\x1b\r');
   });
 
-  it('maps modified Enter to an explicit Shift+Enter sequence for Codex sessions', () => {
+  it('maps modified Enter to Alt+Enter-compatible bytes for Codex sessions', () => {
     expect(
       getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\x1b[13;2u');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\x1b[13;2u');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(key('Enter', { altKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\x1b[13;2u');
+    ).toBe('\x1b\r');
     expect(getTerminalEnterOverride(key('Enter'), 'shiftEnterLineFeed', 'codex')).toBeNull();
   });
 
