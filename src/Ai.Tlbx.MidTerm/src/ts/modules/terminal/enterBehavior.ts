@@ -23,7 +23,7 @@ export interface EnterOverrideInput {
 }
 
 const META_ENTER = '\x1b\r';
-const BRACKETED_PASTE_NEWLINE = '\x1b[200~\n\x1b[201~';
+const LINE_FEED = '\n';
 
 function containsCodexToken(value: string): boolean {
   return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
@@ -74,8 +74,8 @@ export function describeTerminalEnterOverrideBytes(value: string): string {
   if (value === META_ENTER) {
     return 'ESC+CR';
   }
-  if (value === BRACKETED_PASTE_NEWLINE) {
-    return 'bracketed-paste-LF';
+  if (value === LINE_FEED) {
+    return 'LF';
   }
 
   return `bytes=${JSON.stringify(value)}`;
@@ -111,7 +111,7 @@ export function getTerminalEnterOverride(
     (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
     if (target === 'codex') {
-      return BRACKETED_PASTE_NEWLINE;
+      return LINE_FEED;
     }
 
     return META_ENTER;
