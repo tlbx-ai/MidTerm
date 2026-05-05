@@ -46,7 +46,6 @@ type GitSelection = GitFileSelection | GitCommitSelection | null;
 
 interface GitPanelState {
   sessionId: string;
-  repoRoot?: string | undefined;
   container: HTMLElement;
   status: GitStatusResponse | null;
   expandedSections: Set<PanelSectionId>;
@@ -67,14 +66,14 @@ interface TreeNode {
 const panelStates = new Map<string, GitPanelState>();
 const HISTORY_PAGE_SIZE = 20;
 
-export function createGitPanel(container: HTMLElement, sessionId: string, repoRoot?: string): void {
-  const state = createPanelState(container, sessionId, repoRoot);
-  panelStates.set(getPanelKey(sessionId, repoRoot), state);
+export function createGitPanel(container: HTMLElement, sessionId: string): void {
+  const state = createPanelState(container, sessionId);
+  panelStates.set(sessionId, state);
   renderPanel(state);
 }
 
 export function updateGitStatus(sessionId: string, status: GitStatusResponse): void {
-  const state = panelStates.get(getPanelKey(sessionId, status.repoRoot));
+  const state = panelStates.get(sessionId);
   if (!state) return;
   state.status = status;
   syncHistoryFromStatus(state, status);
@@ -82,28 +81,23 @@ export function updateGitStatus(sessionId: string, status: GitStatusResponse): v
   renderPanel(state);
 }
 
-export async function refreshGitPanel(sessionId: string, repoRoot?: string): Promise<void> {
-  const status = await fetchGitStatus(sessionId, repoRoot);
+export async function refreshGitPanel(sessionId: string): Promise<void> {
+  const status = await fetchGitStatus(sessionId);
   if (status) {
     updateGitStatus(sessionId, status);
   }
 }
 
-export async function renderGitPanelInto(
-  container: HTMLElement,
-  sessionId: string,
-  repoRoot?: string,
-): Promise<void> {
-  const key = getPanelKey(sessionId, repoRoot);
-  let state = panelStates.get(key);
+export async function renderGitPanelInto(container: HTMLElement, sessionId: string): Promise<void> {
+  let state = panelStates.get(sessionId);
   if (!state) {
-    state = createPanelState(container, sessionId, repoRoot);
-    panelStates.set(key, state);
+    state = createPanelState(container, sessionId);
+    panelStates.set(sessionId, state);
   } else {
     state.container = container;
   }
 
-  const status = await fetchGitStatus(sessionId, repoRoot);
+  const status = await fetchGitStatus(sessionId);
   if (status) {
     state.status = status;
     syncHistoryFromStatus(state, status);
@@ -113,21 +107,16 @@ export async function renderGitPanelInto(
   renderPanel(state);
 }
 
-export async function showCommitInGitPanel(
-  sessionId: string,
-  hash: string,
-  repoRoot?: string,
-): Promise<void> {
-  const key = getPanelKey(sessionId, repoRoot);
-  let state = panelStates.get(key);
+export async function showCommitInGitPanel(sessionId: string, hash: string): Promise<void> {
+  let state = panelStates.get(sessionId);
   if (!state) {
     const container = document.getElementById('git-dock')?.querySelector('.git-dock-body');
     if (!(container instanceof HTMLElement)) {
       return;
     }
 
-    await renderGitPanelInto(container, sessionId, repoRoot);
-    state = panelStates.get(key);
+    await renderGitPanelInto(container, sessionId);
+    state = panelStates.get(sessionId);
     if (!state) {
       return;
     }
@@ -137,21 +126,12 @@ export async function showCommitInGitPanel(
 }
 
 export function destroyGitPanel(sessionId: string): void {
-  for (const key of panelStates.keys()) {
-    if (key === sessionId || key.startsWith(`${sessionId}|`)) {
-      panelStates.delete(key);
-    }
-  }
+  panelStates.delete(sessionId);
 }
 
-function createPanelState(
-  container: HTMLElement,
-  sessionId: string,
-  repoRoot?: string,
-): GitPanelState {
+function createPanelState(container: HTMLElement, sessionId: string): GitPanelState {
   return {
     sessionId,
-    repoRoot,
     container,
     status: null,
     expandedSections: new Set<PanelSectionId>(),
@@ -160,10 +140,6 @@ function createPanelState(
     historyCount: HISTORY_PAGE_SIZE,
     hasMoreHistory: false,
   };
-}
-
-function getPanelKey(sessionId: string, repoRoot?: string): string {
-  return repoRoot ? `${sessionId}|${repoRoot}` : sessionId;
 }
 
 function syncHistoryFromStatus(state: GitPanelState, status: GitStatusResponse): void {
@@ -839,13 +815,8 @@ async function openFileSelection(
     return;
   }
 
-  const diff = await fetchDiffView(
-    state.sessionId,
-    state.repoRoot,
-    selection.path,
-    selection.scope,
-  );
-  const currentSelection = panelStates.get(getPanelKey(state.sessionId, state.repoRoot))?.selection;
+  const diff = await fetchDiffView(state.sessionId, selection.path, selection.scope);
+  const currentSelection = panelStates.get(state.sessionId)?.selection;
   if (
     !currentSelection ||
     currentSelection.kind !== 'file' ||
@@ -945,8 +916,8 @@ async function openCommitSelection(state: GitPanelState, hash: string): Promise<
   };
   renderPanel(state);
 
-  const details = await fetchCommitDetails(state.sessionId, state.repoRoot, hash);
-  const currentSelection = panelStates.get(getPanelKey(state.sessionId, state.repoRoot))?.selection;
+  const details = await fetchCommitDetails(state.sessionId, hash);
+  const currentSelection = panelStates.get(state.sessionId)?.selection;
   if (!currentSelection || currentSelection.kind !== 'commit' || currentSelection.hash !== hash) {
     return;
   }
@@ -963,7 +934,7 @@ async function openCommitSelection(state: GitPanelState, hash: string): Promise<
 
 async function loadMoreHistory(state: GitPanelState): Promise<void> {
   const nextCount = state.historyCount + HISTORY_PAGE_SIZE;
-  const entries = await fetchGitLog(state.sessionId, state.repoRoot, nextCount);
+  const entries = await fetchGitLog(state.sessionId, nextCount);
   if (entries.length === 0) {
     state.hasMoreHistory = false;
     renderPanel(state);

@@ -24,6 +24,8 @@ export interface EnterOverrideInput {
 
 const META_ENTER = '\x1b\r';
 const LINE_FEED = '\n';
+const CODEX_ENTER_KEY_CODE = 13;
+const KITTY_KEY_PRESS_EVENT_TYPE = 1;
 
 function containsCodexToken(value: string): boolean {
   return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
@@ -77,6 +79,10 @@ export function describeTerminalEnterOverrideBytes(value: string): string {
   if (value === LINE_FEED) {
     return 'LF';
   }
+  if (value.startsWith('\x1b[13;') && value.endsWith(':1u')) {
+    const modifierMask = value.slice('\x1b[13;'.length, -':1u'.length);
+    return `CSI-u Enter mask=${modifierMask} press`;
+  }
 
   return `bytes=${JSON.stringify(value)}`;
 }
@@ -90,6 +96,21 @@ function isEnterKey(input: EnterOverrideInput): boolean {
     input.which === 13 ||
     input.charCode === 13
   );
+}
+
+function getKittyModifierMask(input: EnterOverrideInput): number {
+  let modifierBits = 0;
+  if (input.shiftKey) {
+    modifierBits |= 1;
+  }
+  if (input.altKey) {
+    modifierBits |= 2;
+  }
+  if (input.ctrlKey) {
+    modifierBits |= 4;
+  }
+
+  return modifierBits + 1;
 }
 
 /**
@@ -111,7 +132,9 @@ export function getTerminalEnterOverride(
     (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
     if (target === 'codex') {
-      return LINE_FEED;
+      return `\x1b[${CODEX_ENTER_KEY_CODE};${getKittyModifierMask(
+        input,
+      )}:${KITTY_KEY_PRESS_EVENT_TYPE}u`;
     }
 
     return META_ENTER;

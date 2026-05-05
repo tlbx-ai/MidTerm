@@ -5,10 +5,6 @@
  */
 
 export interface GitStatusResponse {
-  label?: string | undefined;
-  role?: string | undefined;
-  source?: string | undefined;
-  isPrimary?: boolean | undefined;
   branch: string;
   ahead: number;
   behind: number;
@@ -21,19 +17,6 @@ export interface GitStatusResponse {
   repoRoot: string;
   totalAdditions: number;
   totalDeletions: number;
-}
-
-export interface GitRepoBinding {
-  repoRoot: string;
-  label: string;
-  role: string;
-  source: string;
-  isPrimary: boolean;
-  status?: GitStatusResponse | null | undefined;
-}
-
-export interface GitRepoListResponse {
-  repos: GitRepoBinding[];
 }
 
 export interface GitFileEntry {
@@ -99,7 +82,6 @@ export interface GitWsMessage {
   type: string;
   sessionId: string;
   status?: GitStatusResponse;
-  repos?: GitRepoBinding[];
   diff?: string;
   error?: string;
 }

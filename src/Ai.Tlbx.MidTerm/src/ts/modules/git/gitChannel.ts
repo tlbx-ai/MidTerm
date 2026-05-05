@@ -6,8 +6,8 @@
 
 import { createLogger } from '../logging';
 import { ReconnectController, createWsUrl } from '../../utils';
-import { fetchGitRepos, fetchGitStatus } from './gitApi';
-import type { GitRepoBinding, GitWsMessage, GitStatusResponse } from './types';
+import { fetchGitStatus } from './gitApi';
+import type { GitWsMessage, GitStatusResponse } from './types';
 
 const log = createLogger('gitChannel');
 const gitReconnect = new ReconnectController();
@@ -15,7 +15,6 @@ const gitReconnect = new ReconnectController();
 let ws: WebSocket | null = null;
 const subscribedSessions = new Set<string>();
 let statusCallback: ((sessionId: string, status: GitStatusResponse) => void) | null = null;
-let reposCallback: ((sessionId: string, repos: GitRepoBinding[]) => void) | null = null;
 
 export type GitDiagEvent = {
   type: string;
@@ -62,12 +61,6 @@ export function setGitStatusCallback(
   statusCallback = cb;
 }
 
-export function setGitReposCallback(
-  cb: (sessionId: string, repos: GitRepoBinding[]) => void,
-): void {
-  reposCallback = cb;
-}
-
 export function connectGitWebSocket(): void {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
@@ -90,10 +83,6 @@ export function connectGitWebSocket(): void {
         const summary = `${msg.status.branch} +${msg.status.staged.length} ~${msg.status.modified.length} ?${msg.status.untracked.length}`;
         emitDiag('status', `${msg.sessionId.substring(0, 8)}: ${summary}`);
         statusCallback?.(msg.sessionId, msg.status);
-      } else if (msg.type === 'repos' && msg.repos && msg.sessionId) {
-        cancelFallback(msg.sessionId);
-        emitDiag('repos', `${msg.sessionId.substring(0, 8)}: ${msg.repos.length}`);
-        reposCallback?.(msg.sessionId, msg.repos);
       }
     } catch (e) {
       log.error(() => `Failed to parse git WS message: ${String(e)}`);
@@ -132,35 +121,13 @@ function scheduleFallback(sessionId: string): void {
   const timer = window.setTimeout(() => {
     pendingFallbacks.delete(sessionId);
     emitDiag('fallback', `REST fallback for ${sessionId.substring(0, 8)}`);
-    void fetchGitRepos(sessionId).then((response) => {
-      if (response?.repos.length) {
-        reposCallback?.(sessionId, response.repos);
-        for (const repo of response.repos) {
-          if (repo.status) {
-            statusCallback?.(sessionId, repo.status);
-          }
-        }
-        emitDiag('fallback-ok', `${response.repos.length} repos`);
-        return;
-      }
-
-      void fetchGitStatus(sessionId).then((status) => {
-        if (status) {
-          emitDiag('fallback-ok', status.branch);
-          statusCallback?.(sessionId, status);
-        } else {
-          emitDiag('fallback-err', `no status for ${sessionId.substring(0, 8)}`);
-        }
-      });
-    }).catch(() => {
-      void fetchGitStatus(sessionId).then((status) => {
-        if (status) {
-          emitDiag('fallback-ok', status.branch);
-          statusCallback?.(sessionId, status);
+    void fetchGitStatus(sessionId).then((status) => {
+      if (status) {
+        emitDiag('fallback-ok', status.branch);
+        statusCallback?.(sessionId, status);
       } else {
         emitDiag('fallback-err', `no status for ${sessionId.substring(0, 8)}`);
       }
-    });
     });
   }, 3000);
   pendingFallbacks.set(sessionId, timer);
