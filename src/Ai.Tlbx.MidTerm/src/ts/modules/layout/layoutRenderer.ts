@@ -25,6 +25,7 @@ import {
   getActiveTab,
   getSessionWrapper,
   reparentTerminalContainer,
+  switchTab,
 } from '../sessionTabs';
 
 let layoutRoot: HTMLElement | null = null;
@@ -190,15 +191,18 @@ function moveSessionWrappersToLayout(): void {
     if (!sessionId) return;
     layoutSessionIds.add(sessionId);
 
-    const state = sessionTerminals.get(sessionId);
-    if (state) {
-      reparentTerminalContainer(sessionId, state.container);
-      state.container.classList.remove('hidden');
-    }
-
     ensureSessionWrapper(sessionId);
     const wrapper = getSessionWrapper(sessionId);
     if (!wrapper) return;
+
+    const state = sessionTerminals.get(sessionId);
+    if (state) {
+      if (getActiveTab(sessionId) !== 'terminal') {
+        switchTab(sessionId, 'terminal');
+      }
+      reparentTerminalContainer(sessionId, state.container);
+      state.container.classList.remove('hidden');
+    }
 
     wrapper.classList.remove('hidden');
     (pane as HTMLElement).replaceChildren(wrapper);

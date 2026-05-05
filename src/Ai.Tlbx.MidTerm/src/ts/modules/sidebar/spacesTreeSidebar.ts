@@ -55,6 +55,7 @@ import {
   getSessionDisplayName as getLegacySessionDisplayName,
 } from './sessionList';
 import { getSessionControlMode } from './sessionListLogic';
+import { isSessionInLayout, undockSession } from '../layout/layoutStore';
 import {
   syncSpacesTreeSidebarSessionProcessInfo,
   syncSpacesTreeSidebarSessionProcessInfoElement,
@@ -1046,6 +1047,9 @@ function configureSidebarSessionNode(
   } else {
     delete item.dataset.parentId;
   }
+  if (isSessionInLayout(entry.id)) {
+    classNames.push('in-layout');
+  }
 
   item.className = classNames.join(' ');
   item.dataset.sessionId = entry.id;
@@ -1094,6 +1098,8 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
     t('session.pinToQuickLaunch'),
     t('session.notes'),
     t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
+    isSessionInLayout(entry.id),
+    t('session.removeFromLayout'),
     t('session.rename'),
     t('session.close'),
   ].join('\u001f');
@@ -1158,6 +1164,24 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
       toggleSessionNotes(entry.id);
     });
     actions.appendChild(notesButton);
+  }
+
+  if (entry.machineId === null && isSessionInLayout(entry.id)) {
+    const undockButton = document.createElement('button');
+    undockButton.className = 'session-undock';
+    undockButton.setAttribute('role', 'menuitem');
+    undockButton.title = t('session.removeFromLayout');
+    undockButton.setAttribute('aria-label', t('session.removeFromLayout'));
+    undockButton.innerHTML = `
+      <span class="session-action-icon">${icon('undock')}</span>
+      <span class="session-action-label">${escapeHtml(t('session.removeFromLayout'))}</span>
+    `;
+    undockButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      undockSession(entry.id);
+    });
+    actions.appendChild(undockButton);
   }
 
   const renameButton = document.createElement('button');

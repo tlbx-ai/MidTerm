@@ -116,4 +116,14 @@ describe('spacesTreeSidebar wiring', () => {
     );
     expect(source).toContain("reorderScope !== ''");
   });
+
+  it('keeps the active spaces sidebar wired to layout detach actions', () => {
+    expect(source).toContain(
+      "import { isSessionInLayout, undockSession } from '../layout/layoutStore'",
+    );
+    expect(source).toContain("classNames.push('in-layout')");
+    expect(source).toContain("undockButton.className = 'session-undock'");
+    expect(source).toContain('undockSession(entry.id)');
+    expect(source).toContain("t('session.removeFromLayout')");
+  });
 });

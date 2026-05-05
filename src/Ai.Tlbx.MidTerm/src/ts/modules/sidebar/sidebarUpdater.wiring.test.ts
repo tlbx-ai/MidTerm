@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync(path.join(__dirname, 'sidebarUpdater.ts'), 'utf8');
 
 describe('sidebarUpdater wiring', () => {
-  it('does not rebuild the sidebar for layout-only changes', () => {
-    expect(source).not.toContain('$layout');
-    expect(source).not.toContain('unsubscribeLayout');
+  it('rerenders layout-sensitive session rows when the split layout changes', () => {
+    expect(source).toContain('$layout');
+    expect(source).toContain('unsubscribeLayout = $layout.subscribe');
+    expect(source).toContain('unsubscribeLayout?.()');
   });
 
   it('narrows settings-triggered sidebar rebuilds to sidebar-relevant settings', () => {
