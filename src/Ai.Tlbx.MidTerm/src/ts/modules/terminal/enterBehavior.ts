@@ -81,7 +81,7 @@ export function describeTerminalEnterOverrideBytes(value: string): string {
   return `bytes=${JSON.stringify(value)}`;
 }
 
-export function shouldPasteTerminalEnterOverride(
+export function shouldRouteTerminalEnterOverrideThroughXtermInput(
   target: TerminalEnterTarget,
   value: string,
 ): boolean {
@@ -93,8 +93,8 @@ export function describeTerminalEnterOverrideDelivery(
   value: string,
 ): string {
   const description = describeTerminalEnterOverrideBytes(value);
-  return shouldPasteTerminalEnterOverride(target, value)
-    ? `xterm-paste ${description}`
+  return shouldRouteTerminalEnterOverrideThroughXtermInput(target, value)
+    ? `xterm-input ${description}`
     : description;
 }
 
@@ -112,7 +112,7 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 /**
  * Returns the raw terminal bytes to send when MidTerm overrides Enter.
  *
- * Codex line breaks are delivered through xterm's paste/input pipeline in
+ * Codex line breaks are delivered through xterm's input pipeline in
  * manager.ts, so LF here represents the intended text payload rather than a
  * direct Windows console key-event encoding.
  */

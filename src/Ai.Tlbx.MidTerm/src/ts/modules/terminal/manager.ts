@@ -43,7 +43,7 @@ import {
   getTerminalEnterOverride,
   getTerminalEnterTarget,
   isTerminalEnterRemapEnabled,
-  shouldPasteTerminalEnterOverride,
+  shouldRouteTerminalEnterOverrideThroughXtermInput,
   type EnterOverrideInput,
   type TerminalEnterTarget,
 } from './enterBehavior';
@@ -301,11 +301,11 @@ function cancelTerminalInputEvent(event: Event): false {
 function deliverTerminalEnterOverride(
   sessionId: string,
   bytes: string,
-  pasteThroughXterm: boolean,
+  routeThroughXtermInput: boolean,
 ): void {
-  const state = pasteThroughXterm ? sessionTerminals.get(sessionId) : null;
+  const state = routeThroughXtermInput ? sessionTerminals.get(sessionId) : null;
   if (state?.terminal) {
-    state.terminal.paste(bytes);
+    state.terminal.input(bytes, true);
   } else {
     sendInput(sessionId, bytes);
   }
@@ -536,7 +536,7 @@ function tryHandleTerminalEnterOverride(
     return false;
   }
   const [enterOverrideBytes, enterOverrideTarget] = enterOverride;
-  const pasteThroughXterm = shouldPasteTerminalEnterOverride(
+  const routeThroughXtermInput = shouldRouteTerminalEnterOverrideThroughXtermInput(
     enterOverrideTarget,
     enterOverrideBytes,
   );
@@ -557,7 +557,7 @@ function tryHandleTerminalEnterOverride(
   event.stopPropagation();
   event.stopImmediatePropagation();
   enterOverrideSuppress.markTerminalEnterOverrideHandled(sessionId);
-  deliverTerminalEnterOverride(sessionId, enterOverrideBytes, pasteThroughXterm);
+  deliverTerminalEnterOverride(sessionId, enterOverrideBytes, routeThroughXtermInput);
   recordTerminalKeyDebugEvent(
     sessionId,
     `${source}-sent`,
