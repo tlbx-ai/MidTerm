@@ -542,7 +542,8 @@ public static class BrowserEndpoints
                 "mt_outline [depth]",
                 "mt_text [selector]",
                 "mt_query <selector> --text",
-                "mt_exec <js>"
+                "mt_exec <js>",
+                "mt_repo list|add|remove|refresh"
             ],
             DiagnosticCommands =
             [
@@ -565,6 +566,7 @@ public static class BrowserEndpoints
             [
                 "Browser commands require a configured preview target, an attached MidTerm UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
                 "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
+                "Use mt_repo to bind extra git repositories to the current session so MidTerm shows multiple repo status blocks in the IDE bar.",
                 "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
             ]
         };

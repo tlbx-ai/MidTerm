@@ -31,6 +31,7 @@ export {
   isTabVisible,
   setCommandsClickHandler,
   setGitClickHandler,
+  setGitRepoActionHandlers,
   setActionVisible,
   setShareClickHandler,
   setTabVisible,

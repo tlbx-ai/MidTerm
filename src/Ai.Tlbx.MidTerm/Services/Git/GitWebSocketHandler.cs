@@ -75,8 +75,7 @@ public sealed class GitWebSocketHandler
             {
                 foreach (var sessionId in subscribedSessions)
                 {
-                    var sessionRepo = _gitWatcher.GetRepoRoot(sessionId);
-                    if (string.Equals(sessionRepo, repoRoot, StringComparison.OrdinalIgnoreCase))
+                    if (_gitWatcher.SessionHasRepo(sessionId, repoRoot))
                     {
                         _ = SendMessageAsync(new GitWsMessage
                         {
@@ -188,17 +187,6 @@ public sealed class GitWebSocketHandler
                         isNew = subscribedSessions.Add(sessionId);
                     }
 
-                    var cached = _gitWatcher.GetCachedStatus(sessionId);
-                    if (cached is not null)
-                    {
-                        await sendMessage(new GitWsMessage
-                        {
-                            Type = "status",
-                            SessionId = sessionId,
-                            Status = cached
-                        });
-                    }
-
                     if (_gitWatcher.GetRepoRoot(sessionId) is null)
                     {
                         var session = _sessionManager.GetSession(sessionId);
@@ -208,15 +196,21 @@ public sealed class GitWebSocketHandler
                         }
                     }
 
+                    await sendMessage(new GitWsMessage
+                    {
+                        Type = "repos",
+                        SessionId = sessionId,
+                        Repos = _gitWatcher.GetRepoBindings(sessionId)
+                    });
+
                     if (isNew)
                     {
                         _gitWatcher.Subscribe(sessionId);
                     }
 
-                    var repoRoot = _gitWatcher.GetRepoRoot(sessionId);
-                    if (repoRoot is not null)
+                    foreach (var repo in _gitWatcher.GetRepoBindings(sessionId))
                     {
-                        _ = _gitWatcher.RefreshStatusAsync(repoRoot);
+                        _ = _gitWatcher.RefreshStatusAsync(repo.RepoRoot);
                     }
                     break;
 

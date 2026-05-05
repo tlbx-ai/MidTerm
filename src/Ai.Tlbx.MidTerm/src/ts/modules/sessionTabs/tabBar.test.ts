@@ -207,6 +207,7 @@ describe('tabBar', () => {
       recentCommits: [],
       stashCount: 0,
       repoRoot: '/repo',
+      label: 'repo',
       totalAdditions: 7,
       totalDeletions: 3,
     } as any);
@@ -215,6 +216,7 @@ describe('tabBar', () => {
     expect(gitButton.querySelector('.git-indicator-stats')?.innerHTML).toContain('-3');
     expect(gitButton.querySelector('.git-indicator-branch')?.textContent).toBe('feature/git-chip');
     expect(gitButton.querySelector('.git-indicator-status')?.textContent).toBe('~1');
+    expect(gitButton.querySelector('.git-indicator-label')?.textContent).toBe('repo');
   });
 
   it('forces hidden tabs out of layout even when tab CSS uses display flex', async () => {

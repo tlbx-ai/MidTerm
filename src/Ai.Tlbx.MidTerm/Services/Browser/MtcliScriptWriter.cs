@@ -266,6 +266,39 @@ public static class MtcliScriptWriter
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
         # mt_capabilities [--json]  — compact command/capability discovery for agents
         mt_capabilities() { _MREQUIRECTX "mt_capabilities" || return $?; _MBB capabilities "$@"; }
+        # mt_repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        mt_repo() {
+          local action="${1:-list}"
+          [ $# -gt 0 ] && shift
+          _MREQUIRECTX "mt_repo" || return $?
+          case "$action" in
+            list|status)
+              _MC "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")"
+              ;;
+            add)
+              local path="${1:-}" role="${2:-target}"
+              [ -n "$path" ] || { echo "Usage: mt_repo add PATH [ROLE]" >&2; return 1; }
+              _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\"}" "$_MT/api/git/repos"
+              ;;
+            remove|rm)
+              local root="${1:-}"
+              [ -n "$root" ] || { echo "Usage: mt_repo remove REPO_ROOT" >&2; return 1; }
+              _MC -X DELETE "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")&repoRoot=$(_MURLENC "$root")"
+              ;;
+            refresh)
+              local root="${1:-}"
+              if [ -n "$root" ]; then
+                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"repoRoot\":\"$(_ME "$root")\"}" "$_MT/api/git/repos/refresh"
+              else
+                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\"}" "$_MT/api/git/repos/refresh"
+              fi
+              ;;
+            *)
+              echo "Usage: mt_repo list|status|add PATH [ROLE]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
+              return 1
+              ;;
+          esac
+        }
         # mt_inspect [--screenshot]  — compact page/status/proxy diagnostic bundle
         mt_inspect() { _MREQUIRECTX "mt_inspect" || return $?; _MBB inspect "$@"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
@@ -807,6 +840,36 @@ public static class MtcliScriptWriter
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
         # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
         function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
+        # Mt-Repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        function Mt-Repo {
+            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target")
+            _MRequireSessionContext "mt_repo"
+            switch ($Action.ToLowerInvariant()) {
+                "list" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
+                "status" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
+                "add" {
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo add PATH [ROLE]" }
+                    _MJ -d (_MH @{sessionId=(_MSID); path=$PathOrRoot; role=$Role}) "$script:_MT/api/git/repos"
+                    return
+                }
+                "remove" {
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
+                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    return
+                }
+                "rm" {
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
+                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    return
+                }
+                "refresh" {
+                    $body = if ($PathOrRoot) { @{sessionId=(_MSID); repoRoot=$PathOrRoot} } else { @{sessionId=(_MSID)} }
+                    _MJ -d (_MH $body) "$script:_MT/api/git/repos/refresh"
+                    return
+                }
+                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE]|remove REPO_ROOT|refresh [REPO_ROOT]" }
+            }
+        }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
         function Mt-Inspect { param([switch]$Screenshot) _MRequireSessionContext "mt_inspect"; if ($Screenshot) { _MBB inspect --screenshot } else { _MBB inspect } }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
@@ -1102,6 +1165,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_previews -Value Mt-Previews
         Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
         Set-Alias -Name mt_capabilities -Value Mt-Capabilities
+        Set-Alias -Name mt_repo -Value Mt-Repo
         Set-Alias -Name mt_inspect -Value Mt-Inspect
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
         Set-Alias -Name mt_clearstate -Value Mt-ClearState

@@ -19,7 +19,7 @@ import {
 } from './tabBar';
 import { $activeSessionId, $isMainBrowser, $processStates, $sessionList } from '../../stores';
 import { sessionTerminals } from '../../state';
-import type { GitStatusResponse } from '../git/types';
+import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import type { Session } from '../../types';
 import { isSessionInLayout } from '../layout/layoutStore';
 import {
@@ -424,7 +424,7 @@ export function setActionButtonActive(actionId: IdeBarActionId, active: boolean)
  */
 export function updateGitIndicatorForSession(
   sessionId: string,
-  status: GitStatusResponse | null,
+  status: GitRepoBinding[] | GitStatusResponse | null,
 ): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) return;

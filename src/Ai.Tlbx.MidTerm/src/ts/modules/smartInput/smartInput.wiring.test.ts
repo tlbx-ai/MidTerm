@@ -20,6 +20,10 @@ const lensResumeButtonSource = readFileSync(path.join(__dirname, 'lensResumeButt
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
 
+function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
 function getCssRule(selector: string): string {
   const start = css.indexOf(`${selector} {`);
   if (start < 0) {
@@ -266,8 +270,10 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);',
     );
-    expect(css).toContain(
-      'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+      ),
     );
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
     expect(css).toContain('var(--terminal-line-height, 1)');

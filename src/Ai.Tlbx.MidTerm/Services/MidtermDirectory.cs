@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "22";
+    private const string GuidanceVersion = "23";
 
     private static int _port;
     private static AuthService? _authService;
@@ -192,6 +192,7 @@ public static class MidtermDirectory
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
         | `mt_clearstate` | Clear the current preview's cookies, storage, cache, and service workers |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
+        | `mt_repo list\|status\|add\|remove\|refresh` | Session-scoped multi-repo Git tracking for the IDE bar and `/api/git` |
         | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
@@ -219,6 +220,17 @@ public static class MidtermDirectory
         1. **Inspect**: `mt_outline` → drill down with `mt_text` or `mt_attrs`
         2. **Act**: `mt_fill`, `mt_submit`, `mt_click`, `mt_exec`
         3. **Verify**: `mt_wait` → `mt_text`
+
+        ## Multi-Repo Git Tracking
+
+        MidTerm can track more than one Git repository for the current terminal session. The session cwd repo is automatic; extra repos are ad hoc session bindings and appear as additional Git blocks in the IDE bar.
+
+        | Command | What it does |
+        |---------|-------------|
+        | `mt_repo list` / `mt_repo status` | List tracked repos and cached status for the current session |
+        | `mt_repo add <path> [role]` | Add another repo, for example `mt_repo add Q:/repos/Jpa target` |
+        | `mt_repo refresh [repoRoot]` | Refresh one repo or all tracked repos |
+        | `mt_repo remove <repoRoot>` | Remove an extra repo binding; the primary cwd repo stays automatic |
         """;
 
     private const string AgentsMdContent =
@@ -276,6 +288,12 @@ public static class MidtermDirectory
         mt_attention → mt_tail SESSION_ID 80 → mt_prompt SESSION_ID "status update?" → mt_activity SESSION_ID
         mt_bootstrap "DAI worker" "Q:/repos/DAI2" codex approvals
 
+        ## Track multiple Git repositories in one session
+
+        mt_repo list → mt_repo add "Q:/repos/Jpa" target → mt_repo refresh → check the IDE bar Git blocks
+
+        `mt_repo` bindings are session-scoped and ad hoc. Use them when a worker edits or observes a second repo so MidTerm shows both repo states side by side in the IDE bar. The cwd repo remains automatic; `mt_repo remove REPO_ROOT` only removes extra bindings.
+
         ## Debug proxy issues
 
         mt_proxylog 10 — check status codes, upstream URLs, WebSocket connections
@@ -311,6 +329,7 @@ public static class MidtermDirectory
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
+        - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; use it before falling back to ad hoc shell git checks when MidTerm should show multiple repo states
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands
         - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
         - After a MidTerm web update, the browser frontend can close while your terminal keeps running in mthost; reopen MidTerm from the terminal and run mt_open again for the current preview instead of recreating the session
