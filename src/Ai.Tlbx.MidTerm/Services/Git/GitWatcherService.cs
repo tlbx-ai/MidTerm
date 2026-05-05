@@ -292,11 +292,20 @@ public sealed class GitWatcherService : IDisposable
             sessionId,
             _ => new ConcurrentDictionary<string, GitRepoBinding>(StringComparer.OrdinalIgnoreCase));
 
-        if (repos.TryAdd(repoRoot, new GitRepoBinding
+        var nextLabel = string.IsNullOrWhiteSpace(label) ? Path.GetFileName(repoRoot) : label.Trim();
+        var nextRole = string.IsNullOrWhiteSpace(role) ? "target" : role.Trim();
+
+        if (repos.TryGetValue(repoRoot, out var existing))
+        {
+            existing.Label = nextLabel;
+            existing.Role = nextRole;
+            existing.Source = source;
+        }
+        else if (repos.TryAdd(repoRoot, new GitRepoBinding
         {
             RepoRoot = repoRoot,
-            Label = string.IsNullOrWhiteSpace(label) ? Path.GetFileName(repoRoot) : label.Trim(),
-            Role = string.IsNullOrWhiteSpace(role) ? "target" : role.Trim(),
+            Label = nextLabel,
+            Role = nextRole,
             Source = source,
             IsPrimary = false
         }))

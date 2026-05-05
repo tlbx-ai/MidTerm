@@ -90,8 +90,8 @@ function buildGitStatsMarkup(additions: number, deletions: number): string {
 
 interface GitIndicatorViewModel {
   repoRoot: string;
-  labelText: string;
-  branchText: string;
+  primaryText: string;
+  tertiaryText: string;
   statusText: string;
   additions: number;
   deletions: number;
@@ -198,8 +198,8 @@ function buildGitIndicatorViewModel(
     const labelText = repo?.repoRoot ? repo.label || repo.role : '';
     return {
       repoRoot: repo?.repoRoot ?? '',
-      labelText,
-      branchText: t('git.noRepoShort'),
+      primaryText: labelText || t('git.noRepoShort'),
+      tertiaryText: '',
       statusText: '',
       additions: 0,
       deletions: 0,
@@ -234,7 +234,10 @@ function buildGitIndicatorViewModel(
 
   const branchText = status.branch || 'HEAD';
   const labelText =
-    status.label || repo?.label || getRepoNameFromRoot(status.repoRoot) || repo?.role || '';
+    repo?.label || status.label || getRepoNameFromRoot(status.repoRoot) || repo?.role || '';
+  const isPrimary = status.isPrimary ?? repo?.isPrimary === true;
+  const primaryText = isPrimary ? branchText : labelText || branchText;
+  const tertiaryText = isPrimary ? labelText : branchText;
   const additions = status.totalAdditions;
   const deletions = status.totalDeletions;
   const title =
@@ -245,15 +248,15 @@ function buildGitIndicatorViewModel(
 
   return {
     repoRoot: status.repoRoot,
-    labelText,
-    branchText,
+    primaryText,
+    tertiaryText,
     statusText,
     additions,
     deletions,
     title,
     isEmpty: false,
-    isPrimary: status.isPrimary ?? repo?.isPrimary === true,
-    canRemove: !(status.isPrimary ?? repo?.isPrimary === true) && Boolean(status.repoRoot),
+    isPrimary,
+    canRemove: !isPrimary && Boolean(status.repoRoot),
   };
 }
 
@@ -266,7 +269,7 @@ function getRepoNameFromRoot(repoRoot: string): string {
 function statusToRepoBinding(status: GitStatusResponse): GitRepoBinding {
   return {
     repoRoot: status.repoRoot,
-    label: status.label || status.role || status.branch || 'repo',
+    label: status.label || getRepoNameFromRoot(status.repoRoot) || status.role || 'repo',
     role: status.role || (status.isPrimary ? 'cwd' : 'target'),
     source: status.source || 'auto',
     isPrimary: status.isPrimary !== false,
@@ -314,9 +317,9 @@ function patchGitChip(btn: HTMLButtonElement, repo: GitRepoBinding): void {
   if (!branchSpan || !separatorSpan || !statusSpan || !statsSpan) return;
 
   if (labelSpan) {
-    labelSpan.textContent = viewModel.labelText;
+    labelSpan.textContent = viewModel.tertiaryText;
   }
-  branchSpan.textContent = viewModel.branchText;
+  branchSpan.textContent = viewModel.primaryText;
   statusSpan.textContent = viewModel.statusText;
   separatorSpan.textContent = viewModel.statusText ? '/' : '';
   statsSpan.innerHTML = buildGitStatsMarkup(viewModel.additions, viewModel.deletions);

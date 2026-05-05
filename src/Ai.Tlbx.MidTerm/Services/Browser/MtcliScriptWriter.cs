@@ -276,9 +276,9 @@ public static class MtcliScriptWriter
               _MC "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")"
               ;;
             add)
-              local path="${1:-}" role="${2:-target}"
-              [ -n "$path" ] || { echo "Usage: mt_repo add PATH [ROLE]" >&2; return 1; }
-              _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\"}" "$_MT/api/git/repos"
+              local path="${1:-}" role="${2:-target}" label="${3:-}"
+              [ -n "$path" ] || { echo "Usage: mt_repo add PATH [ROLE] [LABEL]" >&2; return 1; }
+              _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\",\"label\":\"$(_ME "$label")\"}" "$_MT/api/git/repos"
               ;;
             remove|rm)
               local root="${1:-}"
@@ -294,7 +294,7 @@ public static class MtcliScriptWriter
               fi
               ;;
             *)
-              echo "Usage: mt_repo list|status|add PATH [ROLE]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
+              echo "Usage: mt_repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
               return 1
               ;;
           esac
@@ -842,14 +842,14 @@ public static class MtcliScriptWriter
         function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
         # Mt-Repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
         function Mt-Repo {
-            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target")
+            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label)
             _MRequireSessionContext "mt_repo"
             switch ($Action.ToLowerInvariant()) {
                 "list" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
                 "status" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
                 "add" {
-                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo add PATH [ROLE]" }
-                    _MJ -d (_MH @{sessionId=(_MSID); path=$PathOrRoot; role=$Role}) "$script:_MT/api/git/repos"
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo add PATH [ROLE] [LABEL]" }
+                    _MJ -d (_MH @{sessionId=(_MSID); path=$PathOrRoot; role=$Role; label=$Label}) "$script:_MT/api/git/repos"
                     return
                 }
                 "remove" {
@@ -867,7 +867,7 @@ public static class MtcliScriptWriter
                     _MJ -d (_MH $body) "$script:_MT/api/git/repos/refresh"
                     return
                 }
-                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE]|remove REPO_ROOT|refresh [REPO_ROOT]" }
+                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" }
             }
         }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
