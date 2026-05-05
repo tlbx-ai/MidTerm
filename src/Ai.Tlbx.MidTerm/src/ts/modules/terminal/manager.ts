@@ -4,7 +4,6 @@
  * Handles xterm.js terminal lifecycle, creation, destruction,
  * and event binding for terminal sessions.
  */
-
 import type { Session, TerminalState } from '../../types';
 import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
@@ -50,6 +49,7 @@ import {
   updateEnterModifierLatch,
   type EnterModifierLatchState,
 } from './enterModifierLatch';
+import * as enterOverrideSuppress from './enterOverrideSuppress';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
 
@@ -77,7 +77,6 @@ import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha
 import { shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
-
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 import { handleOsc7Cwd } from '../process';
@@ -86,7 +85,6 @@ import { getActiveTab } from '../sessionTabs';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 
 let showBellNotification: (sessionId: string) => void = () => {};
-
 export function setShowBellCallback(cb: (sessionId: string) => void): void {
   showBellNotification = cb;
 }
@@ -334,10 +332,6 @@ function updateSessionEnterModifierLatch(
   );
 }
 
-function clearSessionEnterModifierLatch(sessionId: string): void {
-  enterModifierLatches.delete(sessionId);
-}
-
 function isTerminalInputOwnerElement(element: Element | null): element is HTMLTextAreaElement {
   return (
     element instanceof HTMLTextAreaElement &&
@@ -532,6 +526,7 @@ function tryHandleTerminalEnterOverride(
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
+  enterOverrideSuppress.markTerminalEnterOverrideHandled(sessionId);
   sendInput(sessionId, enterOverride);
   recordTerminalKeyDebugEvent(
     sessionId,
@@ -897,7 +892,7 @@ export function createTerminalForSession(
       });
       xtermTextarea.addEventListener('blur', () => {
         setTerminalVisualFocus(state, false);
-        clearSessionEnterModifierLatch(sessionId);
+        enterModifierLatches.delete(sessionId);
       });
     }
     inputProxy.addEventListener('focus', () => {
@@ -905,7 +900,7 @@ export function createTerminalForSession(
     });
     inputProxy.addEventListener('blur', () => {
       setTerminalVisualFocus(state, false);
-      clearSessionEnterModifierLatch(sessionId);
+      enterModifierLatches.delete(sessionId);
     });
 
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
@@ -1155,6 +1150,7 @@ export function setupTerminalEvents(
     pasteToTerminal,
     sessionId,
     shouldCaptureTerminalKey,
+    wasEnterOverrideHandledRecently: enterOverrideSuppress.wasTerminalEnterOverrideHandledRecently,
     terminal,
     tryHandleTerminalEnterOverride,
     updateSessionEnterModifierLatch,
@@ -1210,7 +1206,8 @@ export function destroyTerminalForSession(sessionId: string): void {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  clearSessionEnterModifierLatch(sessionId);
+  enterModifierLatches.delete(sessionId);
+  enterOverrideSuppress.clearTerminalEnterOverrideHandled(sessionId);
 
   // Clean up xterm event disposables
   if (state.disposables) {

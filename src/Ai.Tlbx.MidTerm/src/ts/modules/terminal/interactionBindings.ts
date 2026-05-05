@@ -41,6 +41,7 @@ interface TerminalInteractionBindingArgs {
   pasteToTerminal: (sessionId: string, text: string, bracketedPasteMode?: boolean) => Promise<void>;
   sessionId: string;
   shouldCaptureTerminalKey: (container: HTMLDivElement, target: EventTarget | null) => boolean;
+  wasEnterOverrideHandledRecently: (sessionId: string) => boolean;
   terminal: Terminal;
   tryHandleTerminalEnterOverride: (
     sessionId: string,
@@ -69,6 +70,7 @@ export function bindTerminalInteractionHandlers({
   pasteToTerminal,
   sessionId,
   shouldCaptureTerminalKey,
+  wasEnterOverrideHandledRecently,
   terminal,
   tryHandleTerminalEnterOverride,
   updateSessionEnterModifierLatch,
@@ -334,6 +336,53 @@ export function bindTerminalInteractionHandlers({
     }
 
     const inputEvent = event as InputEvent;
+    const clearTerminalInputValue = (): void => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        event.target.value = '';
+      }
+    };
+    const buildSyntheticEnterKeydown = (): KeyboardEvent => {
+      const synthetic = Object.create(inputEvent) as KeyboardEvent;
+      Object.defineProperties(synthetic, {
+        altKey: { value: false },
+        charCode: { value: 13 },
+        code: { value: 'Enter' },
+        ctrlKey: { value: false },
+        key: { value: 'Enter' },
+        keyCode: { value: 13 },
+        metaKey: { value: false },
+        shiftKey: { value: false },
+        type: { value: 'keydown' },
+        which: { value: 13 },
+      });
+      return synthetic;
+    };
+
+    if (inputEvent.inputType === 'insertLineBreak' || inputEvent.inputType === 'insertParagraph') {
+      if (keyDownHandled || wasEnterOverrideHandledRecently(sessionId)) {
+        clearTerminalInputValue();
+        cancelTerminalInputEvent(event);
+        return;
+      }
+
+      if (
+        tryHandleTerminalEnterOverride(
+          sessionId,
+          buildSyntheticEnterKeydown(),
+          container,
+          'audit-input-enter',
+        )
+      ) {
+        unprocessedDeadKey = false;
+        clearTerminalInputValue();
+        cancelTerminalInputEvent(event);
+        return;
+      }
+
+      clearTerminalInputValue();
+      return;
+    }
+
     if (
       inputEvent.data &&
       inputEvent.inputType === 'insertText' &&
@@ -350,9 +399,7 @@ export function bindTerminalInteractionHandlers({
       return;
     }
 
-    if (event.target instanceof HTMLTextAreaElement) {
-      event.target.value = '';
-    }
+    clearTerminalInputValue();
   };
 
   const terminalKeyAuditKeyupHandler = (event: KeyboardEvent) => {

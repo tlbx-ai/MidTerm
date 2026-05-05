@@ -6,8 +6,9 @@
  * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
-import type { GitStatusResponse } from '../git/types';
+import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import { t } from '../i18n';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 
 export type SessionTabId = 'terminal' | 'agent' | 'files';
 
@@ -88,15 +89,30 @@ function buildGitStatsMarkup(additions: number, deletions: number): string {
 }
 
 interface GitIndicatorViewModel {
+  repoRoot: string;
+  labelText: string;
   branchText: string;
   statusText: string;
   additions: number;
   deletions: number;
   title: string;
   isEmpty: boolean;
+  isPrimary: boolean;
+  canRemove: boolean;
 }
 
-function createGitIndicatorButton(onClick: () => void): HTMLButtonElement {
+type GitIndicatorInput = GitRepoBinding[] | GitStatusResponse | null;
+
+interface GitRepoActionHandlers {
+  add?: (sessionId: string) => void;
+  remove?: (sessionId: string, repoRoot: string) => void;
+  refresh?: (sessionId: string, repoRoot?: string) => void;
+}
+
+const gitChipStatuses = new WeakMap<HTMLElement, GitStatusResponse | null>();
+let gitRepoActionHandlers: GitRepoActionHandlers = {};
+
+function createGitIndicatorButton(sessionId: string): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.className = 'ide-bar-btn git-indicator';
   btn.dataset.action = 'git';
@@ -120,8 +136,43 @@ function createGitIndicatorButton(onClick: () => void): HTMLButtonElement {
   btn.appendChild(meta);
   btn.title = t('sessionTabs.git');
   btn.setAttribute('aria-label', t('sessionTabs.git'));
-  btn.addEventListener('click', onClick);
+  btn.addEventListener('click', () => {
+    const repoRoot = gitChipStatuses.get(btn)?.repoRoot;
+    gitClickHandler?.(repoRoot);
+  });
+  btn.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    const repoRoot = gitChipStatuses.get(btn)?.repoRoot;
+    if (repoRoot) {
+      gitRepoActionHandlers.refresh?.(sessionId, repoRoot);
+    }
+  });
   return btn;
+}
+
+function createGitIndicatorGroup(sessionId: string): HTMLDivElement {
+  const group = document.createElement('div');
+  group.className = 'git-indicator-group';
+  group.dataset.action = 'git';
+  group.dataset.sessionId = sessionId;
+
+  const strip = document.createElement('div');
+  strip.className = 'git-indicator-strip';
+  group.appendChild(strip);
+
+  const overflow = document.createElement('button');
+  overflow.className = 'ide-bar-btn git-indicator-overflow';
+  overflow.type = 'button';
+  overflow.title = 'Git repositories';
+  overflow.setAttribute('aria-label', 'Git repositories');
+  overflow.textContent = '+';
+  overflow.addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleGitRepoPopover(group, sessionId);
+  });
+  group.appendChild(overflow);
+
+  return group;
 }
 
 function hasGitStatus(status: GitStatusResponse | null): status is GitStatusResponse {
@@ -132,15 +183,23 @@ function hasGitStatus(status: GitStatusResponse | null): status is GitStatusResp
   return Boolean(status.repoRoot || status.branch);
 }
 
-function buildGitIndicatorViewModel(status: GitStatusResponse | null): GitIndicatorViewModel {
+function buildGitIndicatorViewModel(
+  repo: GitRepoBinding | null,
+  status: GitStatusResponse | null,
+): GitIndicatorViewModel {
   if (!hasGitStatus(status)) {
+    const labelText = repo?.label || repo?.role || t('git.noRepoShort');
     return {
+      repoRoot: repo?.repoRoot ?? '',
+      labelText,
       branchText: t('git.noRepoShort'),
       statusText: '',
       additions: 0,
       deletions: 0,
-      title: `${t('sessionTabs.git')}: ${t('git.noRepoShort')}`,
+      title: `${t('sessionTabs.git')}: ${labelText}`,
       isEmpty: true,
+      isPrimary: repo?.isPrimary === true,
+      canRemove: repo?.isPrimary !== true && Boolean(repo?.repoRoot),
     };
   }
 
@@ -167,20 +226,26 @@ function buildGitIndicatorViewModel(status: GitStatusResponse | null): GitIndica
   }
 
   const branchText = status.branch || 'HEAD';
+  const labelText = status.label || repo?.label || repo?.role || branchText;
   const additions = status.totalAdditions;
   const deletions = status.totalDeletions;
   const title =
-    `${t('sessionTabs.git')}: ${branchText}` +
+    `${t('sessionTabs.git')}: ${labelText} / ${branchText}` +
     (statusText ? ` / ${statusText}` : '') +
-    `, +${additions} -${deletions}`;
+    `, +${additions} -${deletions}` +
+    (status.repoRoot ? `\n${status.repoRoot}` : '');
 
   return {
+    repoRoot: status.repoRoot,
+    labelText,
     branchText,
     statusText,
     additions,
     deletions,
     title,
     isEmpty: false,
+    isPrimary: status.isPrimary ?? repo?.isPrimary === true,
+    canRemove: !(status.isPrimary ?? repo?.isPrimary === true) && Boolean(status.repoRoot),
   };
 }
 

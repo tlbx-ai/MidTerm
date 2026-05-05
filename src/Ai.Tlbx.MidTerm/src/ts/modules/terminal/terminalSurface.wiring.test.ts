@@ -9,6 +9,14 @@ const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'),
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
 const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
+const interactionBindingsSource = readFileSync(
+  path.join(__dirname, 'interactionBindings.ts'),
+  'utf8',
+);
+const enterOverrideSuppressSource = readFileSync(
+  path.join(__dirname, 'enterOverrideSuppress.ts'),
+  'utf8',
+);
 const terminalGapFillersSource = readFileSync(
   path.join(__dirname, 'terminalGapFillers.ts'),
   'utf8',
@@ -76,6 +84,21 @@ describe('terminal surface wiring', () => {
     );
     expect(managerSource).toContain(
       'if (isEmbeddedWebPreviewContext() || isSearchVisible() || hasNonTerminalFocus()) return;',
+    );
+  });
+
+  it('routes browser textarea line-break input through the terminal Enter override path', () => {
+    expect(interactionBindingsSource).toContain("inputEvent.inputType === 'insertLineBreak'");
+    expect(interactionBindingsSource).toContain("inputEvent.inputType === 'insertParagraph'");
+    expect(interactionBindingsSource).toContain("'audit-input-enter'");
+    expect(interactionBindingsSource).toContain('wasEnterOverrideHandledRecently');
+    expect(interactionBindingsSource).toContain('const buildSyntheticEnterKeydown = ()');
+    expect(interactionBindingsSource).toContain("key: { value: 'Enter' }");
+    expect(interactionBindingsSource).toContain("type: { value: 'keydown' }");
+    expect(managerSource).toContain('function tryHandleTerminalEnterOverride(');
+    expect(managerSource).toContain('markTerminalEnterOverrideHandled(sessionId);');
+    expect(enterOverrideSuppressSource).toContain(
+      'const ENTER_OVERRIDE_INPUT_EVENT_SUPPRESS_MS = 250;',
     );
   });
 });
