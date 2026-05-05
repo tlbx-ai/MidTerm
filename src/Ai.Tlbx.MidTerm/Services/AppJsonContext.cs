@@ -17,6 +17,8 @@ using Ai.Tlbx.MidTerm.Models.Security;
 using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Spaces;
+using Ai.Tlbx.MidTerm.Models.Git;
+using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
@@ -242,6 +244,31 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<HubUpdateRolloutItem>))]
 [JsonSerializable(typeof(HubUpdateRolloutResponse))]
 
+// --- Git ---
+[JsonSerializable(typeof(GitStatusResponse))]
+[JsonSerializable(typeof(GitRepoBinding))]
+[JsonSerializable(typeof(GitRepoBinding[]))]
+[JsonSerializable(typeof(GitRepoListResponse))]
+[JsonSerializable(typeof(GitRepoBindRequest))]
+[JsonSerializable(typeof(GitRepoRefreshRequest))]
+[JsonSerializable(typeof(GitFileEntry))]
+[JsonSerializable(typeof(GitFileEntry[]))]
+[JsonSerializable(typeof(GitLogEntry))]
+[JsonSerializable(typeof(GitLogEntry[]))]
+[JsonSerializable(typeof(GitDiffViewResponse))]
+[JsonSerializable(typeof(GitDiffFileView))]
+[JsonSerializable(typeof(GitDiffFileView[]))]
+[JsonSerializable(typeof(GitDiffHunk))]
+[JsonSerializable(typeof(GitDiffHunk[]))]
+[JsonSerializable(typeof(GitDiffLine))]
+[JsonSerializable(typeof(GitDiffLine[]))]
+[JsonSerializable(typeof(GitCommitDetailsResponse))]
+[JsonSerializable(typeof(GitWsMessage))]
+[JsonSerializable(typeof(GitDebugResponse))]
+[JsonSerializable(typeof(GitDebugSessionInfo))]
+[JsonSerializable(typeof(GitDebugSessionInfo[]))]
+[JsonSerializable(typeof(GitCommandLog))]
+
 // --- WebPreview ---
 [JsonSerializable(typeof(WebPreviewTargetRequest))]
 [JsonSerializable(typeof(WebPreviewTargetResponse))]
@@ -293,8 +320,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
-
 
 
 
