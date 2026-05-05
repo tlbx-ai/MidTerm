@@ -118,6 +118,7 @@ public sealed class GitWatcherService : IDisposable
     }
 
     public event Action<string, GitStatusResponse>? OnStatusChanged;
+    public event Action<string>? OnReposChanged;
 
     public async Task RegisterSessionAsync(string sessionId, string? workingDir)
     {
@@ -139,21 +140,33 @@ public sealed class GitWatcherService : IDisposable
         repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
         Log.Verbose(() => $"[Git] RegisterSession({sessionId}): repoRoot={repoRoot}");
 
+        var changed = true;
+
         if (_sessionToRepo.TryGetValue(sessionId, out var existing))
         {
             if (string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
             {
                 Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
-                return;
+                changed = false;
             }
-
-            ReleaseRepo(existing);
+            else
+            {
+                ReleaseRepo(existing);
+            }
         }
 
-        _sessionToRepo[sessionId] = repoRoot;
-        AddRef(repoRoot, workingDir);
+        if (changed)
+        {
+            _sessionToRepo[sessionId] = repoRoot;
+            AddRef(repoRoot, workingDir);
+        }
 
         await RefreshStatusAsync(repoRoot);
+        if (changed)
+        {
+            OnReposChanged?.Invoke(sessionId);
+        }
+
         Log.Verbose(() => $"[Git] RegisterSession({sessionId}): refresh complete, cached={_watchers.TryGetValue(repoRoot, out var w) && w.CachedStatus is not null}");
     }
 
@@ -297,9 +310,15 @@ public sealed class GitWatcherService : IDisposable
 
         if (repos.TryGetValue(repoRoot, out var existing))
         {
-            existing.Label = nextLabel;
-            existing.Role = nextRole;
-            existing.Source = source;
+            if (!string.Equals(existing.Label, nextLabel, StringComparison.Ordinal)
+                || !string.Equals(existing.Role, nextRole, StringComparison.Ordinal)
+                || !string.Equals(existing.Source, source, StringComparison.Ordinal))
+            {
+                existing.Label = nextLabel;
+                existing.Role = nextRole;
+                existing.Source = source;
+                OnReposChanged?.Invoke(sessionId);
+            }
         }
         else if (repos.TryAdd(repoRoot, new GitRepoBinding
         {
@@ -318,6 +337,8 @@ public sealed class GitWatcherService : IDisposable
                     StartPolling(repoRoot, watcher);
                 }
             }
+
+            OnReposChanged?.Invoke(sessionId);
         }
 
         await RefreshStatusAsync(repoRoot);
@@ -344,6 +365,7 @@ public sealed class GitWatcherService : IDisposable
         }
 
         ReleaseRepo(resolved);
+        OnReposChanged?.Invoke(sessionId);
         return true;
     }
 

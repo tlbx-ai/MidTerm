@@ -88,7 +88,26 @@ public sealed class GitWebSocketHandler
             }
         }
 
+        void OnReposChanged(string sessionId)
+        {
+            lock (subscribedSessions)
+            {
+                if (!subscribedSessions.Contains(sessionId))
+                {
+                    return;
+                }
+            }
+
+            _ = SendMessageAsync(new GitWsMessage
+            {
+                Type = "repos",
+                SessionId = sessionId,
+                Repos = _gitWatcher.GetRepoBindings(sessionId)
+            });
+        }
+
         _gitWatcher.OnStatusChanged += OnStatusChanged;
+        _gitWatcher.OnReposChanged += OnReposChanged;
 
         try
         {
@@ -131,6 +150,7 @@ public sealed class GitWebSocketHandler
         finally
         {
             _gitWatcher.OnStatusChanged -= OnStatusChanged;
+            _gitWatcher.OnReposChanged -= OnReposChanged;
 
             lock (subscribedSessions)
             {
