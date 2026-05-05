@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- terminal manager is a legacy integration hub; this hotfix keeps the xterm/Codex input change scoped. */
 /**
  * Terminal Manager Module
  *
@@ -38,11 +39,13 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { initSearchForTerminal, isSearchVisible, cleanupSearchForTerminal } from './search';
 import { applyTerminalScrollbarStyleClass, normalizeScrollbarStyle } from './scrollbarStyle';
 import {
-  describeTerminalEnterOverrideBytes,
+  describeTerminalEnterOverrideDelivery,
   getTerminalEnterOverride,
   getTerminalEnterTarget,
   isTerminalEnterRemapEnabled,
+  shouldPasteTerminalEnterOverride,
   type EnterOverrideInput,
+  type TerminalEnterTarget,
 } from './enterBehavior';
 import {
   applyEnterModifierLatch,
@@ -242,15 +245,20 @@ function recordTerminalKeyDebugEvent(
   recordTerminalKeyLog(logEntry);
 }
 
-function getSessionEnterOverride(sessionId: string, event: EnterOverrideInput): string | null {
+function getSessionEnterOverride(
+  sessionId: string,
+  event: EnterOverrideInput,
+): [bytes: string, target: TerminalEnterTarget] | null {
   const foreground = getForegroundInfo(sessionId);
   const sessionShellType = $sessions.get()[sessionId]?.shellType ?? null;
-
-  return getTerminalEnterOverride(
+  const target = getTerminalEnterTarget(foreground.name, foreground.commandLine, sessionShellType);
+  const bytes = getTerminalEnterOverride(
     event,
     $currentSettings.get()?.terminalEnterMode ?? 'shiftEnterLineFeed',
-    getTerminalEnterTarget(foreground.name, foreground.commandLine, sessionShellType),
+    target,
   );
+
+  return bytes === null ? null : [bytes, target];
 }
 
 function isTerminalKeyAuditEnabled(): boolean {
@@ -288,6 +296,19 @@ function cancelTerminalInputEvent(event: Event): false {
     event.stopImmediatePropagation();
   }
   return false;
+}
+
+function deliverTerminalEnterOverride(
+  sessionId: string,
+  bytes: string,
+  pasteThroughXterm: boolean,
+): void {
+  const state = pasteThroughXterm ? sessionTerminals.get(sessionId) : null;
+  if (state?.terminal) {
+    state.terminal.paste(bytes);
+  } else {
+    sendInput(sessionId, bytes);
+  }
 }
 
 function updateSessionEnterModifierLatch(
@@ -514,26 +535,35 @@ function tryHandleTerminalEnterOverride(
     );
     return false;
   }
+  const [enterOverrideBytes, enterOverrideTarget] = enterOverride;
+  const pasteThroughXterm = shouldPasteTerminalEnterOverride(
+    enterOverrideTarget,
+    enterOverrideBytes,
+  );
+  const deliveryDescription = describeTerminalEnterOverrideDelivery(
+    enterOverrideTarget,
+    enterOverrideBytes,
+  );
 
   recordTerminalKeyDebugEvent(
     sessionId,
     source,
     effectiveLogEvent,
     container,
-    `${effectiveParts.join(' ')} override=${describeTerminalEnterOverrideBytes(enterOverride)}`,
+    `${effectiveParts.join(' ')} override=${deliveryDescription}`,
   );
 
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
   enterOverrideSuppress.markTerminalEnterOverrideHandled(sessionId);
-  sendInput(sessionId, enterOverride);
+  deliverTerminalEnterOverride(sessionId, enterOverrideBytes, pasteThroughXterm);
   recordTerminalKeyDebugEvent(
     sessionId,
     `${source}-sent`,
     effectiveLogEvent,
     container,
-    `send=${describeTerminalEnterOverrideBytes(enterOverride)}`,
+    `send=${deliveryDescription}`,
   );
   return true;
 }

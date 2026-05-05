@@ -101,4 +101,10 @@ describe('terminal surface wiring', () => {
       'const ENTER_OVERRIDE_INPUT_EVENT_SUPPRESS_MS = 250;',
     );
   });
+
+  it('delivers Codex Enter overrides through xterm paste instead of direct protocol bytes', () => {
+    expect(managerSource).toContain('shouldPasteTerminalEnterOverride(');
+    expect(managerSource).toContain('state.terminal.paste(bytes);');
+    expect(managerSource).toContain('describeTerminalEnterOverrideDelivery(');
+  });
 });

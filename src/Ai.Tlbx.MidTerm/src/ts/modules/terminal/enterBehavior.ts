@@ -24,8 +24,6 @@ export interface EnterOverrideInput {
 
 const META_ENTER = '\x1b\r';
 const LINE_FEED = '\n';
-const CODEX_ENTER_KEY_CODE = 13;
-const KITTY_KEY_PRESS_EVENT_TYPE = 1;
 
 function containsCodexToken(value: string): boolean {
   return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
@@ -79,12 +77,25 @@ export function describeTerminalEnterOverrideBytes(value: string): string {
   if (value === LINE_FEED) {
     return 'LF';
   }
-  if (value.startsWith('\x1b[13;') && value.endsWith(':1u')) {
-    const modifierMask = value.slice('\x1b[13;'.length, -':1u'.length);
-    return `CSI-u Enter mask=${modifierMask} press`;
-  }
 
   return `bytes=${JSON.stringify(value)}`;
+}
+
+export function shouldPasteTerminalEnterOverride(
+  target: TerminalEnterTarget,
+  value: string,
+): boolean {
+  return target === 'codex' && value === LINE_FEED;
+}
+
+export function describeTerminalEnterOverrideDelivery(
+  target: TerminalEnterTarget,
+  value: string,
+): string {
+  const description = describeTerminalEnterOverrideBytes(value);
+  return shouldPasteTerminalEnterOverride(target, value)
+    ? `xterm-paste ${description}`
+    : description;
 }
 
 function isEnterKey(input: EnterOverrideInput): boolean {
@@ -98,23 +109,12 @@ function isEnterKey(input: EnterOverrideInput): boolean {
   );
 }
 
-function getKittyModifierMask(input: EnterOverrideInput): number {
-  let modifierBits = 0;
-  if (input.shiftKey) {
-    modifierBits |= 1;
-  }
-  if (input.altKey) {
-    modifierBits |= 2;
-  }
-  if (input.ctrlKey) {
-    modifierBits |= 4;
-  }
-
-  return modifierBits + 1;
-}
-
 /**
  * Returns the raw terminal bytes to send when MidTerm overrides Enter.
+ *
+ * Codex line breaks are delivered through xterm's paste/input pipeline in
+ * manager.ts, so LF here represents the intended text payload rather than a
+ * direct Windows console key-event encoding.
  */
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
@@ -132,9 +132,7 @@ export function getTerminalEnterOverride(
     (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
     if (target === 'codex') {
-      return `\x1b[${CODEX_ENTER_KEY_CODE};${getKittyModifierMask(
-        input,
-      )}:${KITTY_KEY_PRESS_EVENT_TYPE}u`;
+      return LINE_FEED;
     }
 
     return META_ENTER;

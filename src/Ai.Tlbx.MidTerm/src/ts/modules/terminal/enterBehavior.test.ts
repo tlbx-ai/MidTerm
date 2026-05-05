@@ -74,23 +74,23 @@ describe('getTerminalEnterOverride', () => {
     ).toBe('\x1b\r');
   });
 
-  it('maps modified Enter to Kitty CSI-u press events for Codex sessions', () => {
+  it('maps modified Enter to line-feed payloads for Codex sessions', () => {
     expect(
       getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\x1b[13;2:1u');
+    ).toBe('\n');
     expect(
       getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\x1b[13;5:1u');
+    ).toBe('\n');
     expect(
       getTerminalEnterOverride(key('Enter', { altKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\x1b[13;3:1u');
+    ).toBe('\n');
     expect(
       getTerminalEnterOverride(
         key('Enter', { ctrlKey: true, shiftKey: true }),
         'shiftEnterLineFeed',
         'codex',
       ),
-    ).toBe('\x1b[13;6:1u');
+    ).toBe('\n');
     expect(getTerminalEnterOverride(key('Enter'), 'shiftEnterLineFeed', 'codex')).toBeNull();
   });
 
