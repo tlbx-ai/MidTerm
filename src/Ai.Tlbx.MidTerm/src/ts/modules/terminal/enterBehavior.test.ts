@@ -74,23 +74,23 @@ describe('getTerminalEnterOverride', () => {
     ).toBe('\x1b\r');
   });
 
-  it('maps modified Enter to line-feed payloads for Codex sessions', () => {
+  it('maps modified Enter to a Codex paste-burst newline sequence', () => {
     expect(
       getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\n');
+    ).toBe(' \r\x7f');
     expect(
       getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\n');
+    ).toBe(' \r\x7f');
     expect(
       getTerminalEnterOverride(key('Enter', { altKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe('\n');
+    ).toBe(' \r\x7f');
     expect(
       getTerminalEnterOverride(
         key('Enter', { ctrlKey: true, shiftKey: true }),
         'shiftEnterLineFeed',
         'codex',
       ),
-    ).toBe('\n');
+    ).toBe(' \r\x7f');
     expect(getTerminalEnterOverride(key('Enter'), 'shiftEnterLineFeed', 'codex')).toBeNull();
   });
 

@@ -102,9 +102,9 @@ describe('terminal surface wiring', () => {
     );
   });
 
-  it('delivers Codex Enter overrides through xterm input instead of direct protocol bytes', () => {
+  it('keeps Codex Enter overrides on the direct session-input path', () => {
     expect(managerSource).toContain('shouldRouteTerminalEnterOverrideThroughXtermInput(');
-    expect(managerSource).toContain('state.terminal.input(bytes, true);');
+    expect(managerSource).toContain('sendInput(sessionId, bytes);');
     expect(managerSource).toContain('describeTerminalEnterOverrideDelivery(');
   });
 });

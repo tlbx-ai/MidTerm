@@ -23,7 +23,7 @@ export interface EnterOverrideInput {
 }
 
 const META_ENTER = '\x1b\r';
-const LINE_FEED = '\n';
+const CODEX_PASTE_BURST_NEWLINE = ' \r\x7f';
 
 function containsCodexToken(value: string): boolean {
   return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
@@ -74,18 +74,18 @@ export function describeTerminalEnterOverrideBytes(value: string): string {
   if (value === META_ENTER) {
     return 'ESC+CR';
   }
-  if (value === LINE_FEED) {
-    return 'LF';
+  if (value === CODEX_PASTE_BURST_NEWLINE) {
+    return 'codex-paste-burst-LF';
   }
 
   return `bytes=${JSON.stringify(value)}`;
 }
 
 export function shouldRouteTerminalEnterOverrideThroughXtermInput(
-  target: TerminalEnterTarget,
-  value: string,
+  _target: TerminalEnterTarget,
+  _value: string,
 ): boolean {
-  return target === 'codex' && value === LINE_FEED;
+  return false;
 }
 
 export function describeTerminalEnterOverrideDelivery(
@@ -112,9 +112,10 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 /**
  * Returns the raw terminal bytes to send when MidTerm overrides Enter.
  *
- * Codex line breaks are delivered through xterm's input pipeline in
- * manager.ts, so LF here represents the intended text payload rather than a
- * direct Windows console key-event encoding.
+ * Codex on Windows treats multiline paste bursts differently from isolated
+ * Enter bytes. The space/Enter/Backspace sequence starts Codex's paste-burst
+ * detector, lets Enter become a newline inside that burst, then removes the
+ * temporary space. Net effect in the composer: only a line break.
  */
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
@@ -132,7 +133,7 @@ export function getTerminalEnterOverride(
     (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
     if (target === 'codex') {
-      return LINE_FEED;
+      return CODEX_PASTE_BURST_NEWLINE;
     }
 
     return META_ENTER;
