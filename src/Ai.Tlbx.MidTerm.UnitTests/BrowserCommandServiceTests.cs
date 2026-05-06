@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Models.Browser;
+using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Xunit;
 
@@ -471,6 +472,91 @@ public class BrowserCommandServiceTests
         Assert.Null(status.DefaultClient);
         Assert.Contains("owned by browser 'browser-owner'", status.StatusMessage ?? "", StringComparison.Ordinal);
         Assert.Contains("mt_claim_preview", status.RecoveryHint ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetStatus_WithOfflineOwnerAndMainPreviewClient_ReclaimsMainBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "stale-browser");
+        var connectionToken = new object();
+        mainBrowser.Register("browser-main:tab-1", connectionToken);
+        mainBrowser.Claim("browser-main:tab-1");
+        var service = new BrowserCommandService(mainBrowser, ownerService);
+
+        Assert.True(service.TryRegisterClient(
+            "c1",
+            "session-a",
+            "default",
+            "preview-follower",
+            _ => { },
+            browserId: "browser-follower:tab-2",
+            isVisible: true));
+        Assert.True(service.TryRegisterClient(
+            "c2",
+            "session-a",
+            "default",
+            "preview-main",
+            _ => { },
+            browserId: "browser-main:tab-1",
+            isVisible: true,
+            hasFocus: true,
+            isTopLevel: true));
+
+        var status = service.GetStatus(
+            "https://localhost:5001/",
+            sessionId: "session-a",
+            previewName: "default",
+            connectedUiClientCount: 2);
+
+        Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.Equal("ready", status.State);
+        Assert.Equal("ready", status.BridgePhase);
+        Assert.True(status.OwnerConnected);
+        Assert.Equal("browser-main:tab-1", status.OwnerBrowserId);
+        Assert.Equal("preview-main", status.DefaultClient?.PreviewId);
+        Assert.Equal("browser-main:tab-1", ownerService.GetOwnerBrowserId("session-a", "default"));
+    }
+
+    [Fact]
+    public async Task ExecuteCommandAsync_WithCookieOwnerAndTabScopedPreviewClient_RoutesByStableClientPart()
+    {
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "browser-a");
+        var service = new BrowserCommandService(previewOwnerService: ownerService);
+        BrowserWsMessage? captured = null;
+
+        Assert.True(service.TryRegisterClient(
+            "c1",
+            "session-a",
+            "default",
+            "preview-a",
+            msg =>
+            {
+                captured = msg;
+                service.ReceiveResult(new BrowserWsResult
+                {
+                    Id = msg.Id,
+                    Success = true,
+                    Result = "ok",
+                    PreviewId = "preview-a"
+                });
+            },
+            browserId: "browser-a:tab-1"));
+
+        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "url",
+            SessionId = "session-a",
+            PreviewName = "default"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("ok", result.Result);
+        Assert.NotNull(captured);
+        Assert.Equal("preview-a", captured!.PreviewId);
     }
 
     [Fact]

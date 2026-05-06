@@ -140,7 +140,9 @@ public sealed class BrowserUiBridge
         var target = SelectClaimListener(listeners);
         if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
         {
-            error = "A MidTerm browser UI is connected, but it did not report a browser identity. Reload the MidTerm tab, then retry mt_claim_preview.";
+            error = listeners.Length > 1
+                ? "Multiple MidTerm browser UIs are connected, but none is the leading browser. Claim leading-browser ownership in the intended tab, then retry mt_claim_preview."
+                : "A MidTerm browser UI is connected, but it did not report a browser identity. Reload the MidTerm tab, then retry mt_claim_preview.";
             return false;
         }
 
@@ -167,17 +169,10 @@ public sealed class BrowserUiBridge
             listeners = _listeners.Values.ToArray();
         }
 
-        var resolvedOwnerBrowserId = _previewOwnerService?.ResolveOwnerBrowserId(
-            sessionId,
-            previewName,
-            listeners.Select(listener => listener.BrowserId));
-
-        if (!string.IsNullOrWhiteSpace(resolvedOwnerBrowserId))
+        var currentOwnerBrowserId = _previewOwnerService?.GetOwnerBrowserId(sessionId, previewName);
+        if (!string.IsNullOrWhiteSpace(currentOwnerBrowserId))
         {
-            var ownerListener = listeners
-                .Where(listener => string.Equals(listener.BrowserId, resolvedOwnerBrowserId, StringComparison.Ordinal))
-                .OrderByDescending(listener => listener.ConnectedAtUtc)
-                .FirstOrDefault();
+            var ownerListener = SelectListenerByBrowserId(listeners, currentOwnerBrowserId);
             if (ownerListener is not null)
             {
                 target = ownerListener;
@@ -185,7 +180,16 @@ public sealed class BrowserUiBridge
                 return true;
             }
 
-            error = $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{resolvedOwnerBrowserId}', but that MidTerm browser is not currently attached to /ws/state.";
+            var replacement = SelectClaimListener(listeners);
+            if (replacement is not null && !string.IsNullOrWhiteSpace(replacement.BrowserId))
+            {
+                _previewOwnerService?.Claim(sessionId, previewName, replacement.BrowserId);
+                target = replacement;
+                error = "";
+                return true;
+            }
+
+            error = $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{currentOwnerBrowserId}', but that MidTerm browser is not currently attached to /ws/state and no connected leading browser can reclaim it deterministically.";
             target = null!;
             return false;
         }
@@ -195,7 +199,7 @@ public sealed class BrowserUiBridge
         if (!string.IsNullOrWhiteSpace(mainBrowserId))
         {
             var mainCandidates = candidates
-                .Where(listener => string.Equals(listener.BrowserId, mainBrowserId, StringComparison.Ordinal))
+                .Where(listener => BrowserIdentity.AreSameBrowser(listener.BrowserId, mainBrowserId))
                 .ToArray();
             if (mainCandidates.Length > 0)
             {
@@ -223,7 +227,7 @@ public sealed class BrowserUiBridge
         if (!string.IsNullOrWhiteSpace(mainBrowserId))
         {
             var mainCandidates = candidates
-                .Where(listener => string.Equals(listener.BrowserId, mainBrowserId, StringComparison.Ordinal))
+                .Where(listener => BrowserIdentity.AreSameBrowser(listener.BrowserId, mainBrowserId))
                 .ToArray();
             if (mainCandidates.Length > 0)
             {
@@ -231,7 +235,39 @@ public sealed class BrowserUiBridge
             }
         }
 
-        return candidates
+        var candidateArray = candidates.ToArray();
+        var distinctBrowserClients = candidateArray
+            .Select(listener => listener.BrowserId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
+            .Select(BrowserIdentity.GetClientPart)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (distinctBrowserClients.Length > 1)
+        {
+            return null;
+        }
+
+        return candidateArray
+            .OrderByDescending(listener => listener.ConnectedAtUtc)
+            .FirstOrDefault();
+    }
+
+    private static ListenerRegistration? SelectListenerByBrowserId(
+        ListenerRegistration[] listeners,
+        string browserId)
+    {
+        var exact = listeners
+            .Where(listener => string.Equals(listener.BrowserId, browserId, StringComparison.Ordinal))
+            .OrderByDescending(listener => listener.ConnectedAtUtc)
+            .FirstOrDefault();
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        return listeners
+            .Where(listener => BrowserIdentity.AreSameBrowser(listener.BrowserId, browserId))
             .OrderByDescending(listener => listener.ConnectedAtUtc)
             .FirstOrDefault();
     }

@@ -656,11 +656,6 @@ public sealed class StateWebSocketHandler
             clientId = Guid.NewGuid().ToString("N");
         }
 
-        if (string.IsNullOrWhiteSpace(tabId))
-        {
-            return clientId;
-        }
-
-        return $"{clientId}:{tabId}";
+        return BrowserIdentity.Build(clientId, tabId) ?? clientId;
     }
 }

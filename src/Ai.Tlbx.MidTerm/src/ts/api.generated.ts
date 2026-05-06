@@ -3770,6 +3770,7 @@ export interface components {
     BrowserPreviewClientRequest: {
       sessionId?: null | string;
       previewName?: null | string;
+      tabId?: null | string;
     };
     BrowserPreviewClientResponse: {
       sessionId: null | string;

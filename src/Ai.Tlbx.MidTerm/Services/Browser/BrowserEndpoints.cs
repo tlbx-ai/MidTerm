@@ -80,15 +80,18 @@ public static class BrowserEndpoints
             }
 
             var preview = webPreviewService.EnsurePreviewSession(request.SessionId, request.PreviewName);
+            var browserId = BrowserIdentity.Build(
+                ctx.Request.Cookies["mt-client-id"],
+                request.TabId ?? ctx.Request.Query["tabId"].FirstOrDefault());
             var created = previewRegistry.Create(
                 preview.SessionId,
                 preview.PreviewName,
                 preview.RouteKey,
-                ctx.Request.Cookies["mt-client-id"]);
+                browserId);
             previewOwnerService.ClaimIfMissing(
                 preview.SessionId,
                 preview.PreviewName,
-                ctx.Request.Cookies["mt-client-id"]);
+                browserId);
             var response = new BrowserPreviewClientResponse
             {
                 SessionId = created.SessionId,

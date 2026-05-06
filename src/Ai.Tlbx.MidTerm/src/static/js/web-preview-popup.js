@@ -55,6 +55,27 @@
   var owningSession = null;
   var screenshotInFlight = false;
 
+  function getOrCreateTabId() {
+    var name = 'mt-tab-id';
+    try {
+      var existing = window.sessionStorage ? window.sessionStorage.getItem(name) : null;
+      if (existing) {
+        return existing;
+      }
+
+      var id =
+        window.crypto && typeof window.crypto.randomUUID === 'function'
+          ? window.crypto.randomUUID()
+          : String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+      if (window.sessionStorage) {
+        window.sessionStorage.setItem(name, id);
+      }
+      return id;
+    } catch (_) {
+      return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+    }
+  }
+
   function createPreviewFrame() {
     var iframe = document.createElement('iframe');
     iframe.id = 'preview-frame';
@@ -539,6 +560,7 @@
         body: JSON.stringify({
           sessionId: sessionId,
           previewName: previewName,
+          tabId: getOrCreateTabId(),
         }),
       });
 

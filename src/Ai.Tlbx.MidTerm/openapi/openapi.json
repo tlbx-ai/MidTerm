@@ -3579,6 +3579,12 @@
               "null",
               "string"
             ]
+          },
+          "tabId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

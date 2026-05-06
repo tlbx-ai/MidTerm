@@ -448,7 +448,18 @@ public sealed class BrowserCommandService
             : null;
         ownerBrowserId = resolvedOwnerBrowserId ?? ownerBrowserId;
         var ownerConnected = !string.IsNullOrWhiteSpace(ownerBrowserId)
-            && matches.Any(client => string.Equals(client.BrowserId, ownerBrowserId, StringComparison.Ordinal));
+            && matches.Any(client => BrowserIdentity.AreSameBrowser(client.BrowserId, ownerBrowserId));
+        var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
+        if (!ownerConnected
+            && !string.IsNullOrWhiteSpace(ownerBrowserId)
+            && TrySelectMainBrowserClient(matches, mainBrowserId, out var mainOwnedClient)
+            && !string.IsNullOrWhiteSpace(mainOwnedClient.BrowserId))
+        {
+            _previewOwnerService?.Claim(sessionId, previewName, mainOwnedClient.BrowserId);
+            ownerBrowserId = mainOwnedClient.BrowserId;
+            ownerConnected = true;
+        }
+
         if (matches.Length == 0)
         {
             var message = BuildUnavailableStatusMessage(
@@ -501,7 +512,6 @@ public sealed class BrowserCommandService
             };
         }
 
-        var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
         var resolutionCandidates = SelectResolutionCandidates(matches, ownerBrowserId);
         var resolved = TryResolveDefaultClient(resolutionCandidates, out var client);
         var isAmbiguous = !resolved && string.IsNullOrWhiteSpace(ownerBrowserId);
@@ -864,11 +874,25 @@ public sealed class BrowserCommandService
                 return false;
             }
 
+            var scopedMatches = matches;
             var ownerBrowserId = _previewOwnerService?.ResolveOwnerBrowserId(
                 request.SessionId,
                 request.PreviewName,
-                matches.Select(client => client.BrowserId));
-            matches = SelectResolutionCandidates(matches, ownerBrowserId);
+                scopedMatches.Select(client => client.BrowserId));
+            matches = SelectResolutionCandidates(scopedMatches, ownerBrowserId);
+            if (matches.Length == 0
+                && !string.IsNullOrWhiteSpace(ownerBrowserId)
+                && TrySelectMainBrowserClient(
+                    scopedMatches,
+                    _mainBrowserService?.GetMainBrowserId(),
+                    out var mainOwnedClient)
+                && !string.IsNullOrWhiteSpace(mainOwnedClient.BrowserId))
+            {
+                _previewOwnerService?.Claim(request.SessionId, request.PreviewName, mainOwnedClient.BrowserId);
+                ownerBrowserId = mainOwnedClient.BrowserId;
+                matches = SelectResolutionCandidates(scopedMatches, ownerBrowserId);
+            }
+
             if (matches.Length == 0 && !string.IsNullOrWhiteSpace(ownerBrowserId))
             {
                 error = BuildOwnerUnavailableStatusMessage(
@@ -929,7 +953,7 @@ public sealed class BrowserCommandService
         }
 
         var ownerClients = clients
-            .Where(client => string.Equals(client.BrowserId, ownerBrowserId, StringComparison.Ordinal))
+            .Where(client => BrowserIdentity.AreSameBrowser(client.BrowserId, ownerBrowserId))
             .ToArray();
         return ownerClients.Length > 0 ? ownerClients : [];
     }
@@ -951,7 +975,7 @@ public sealed class BrowserCommandService
         }
 
         var main = clients
-            .Where(c => string.Equals(c.BrowserId, mainBrowserId, StringComparison.Ordinal))
+            .Where(c => BrowserIdentity.AreSameBrowser(c.BrowserId, mainBrowserId))
             .ToArray();
         return main.Length > 0 ? main : clients;
     }
@@ -973,6 +997,8 @@ public sealed class BrowserCommandService
         var distinctBrowserIds = preferred
             .Select(c => c.BrowserId)
             .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
+            .Select(BrowserIdentity.GetClientPart)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
@@ -997,7 +1023,7 @@ public sealed class BrowserCommandService
             BrowserId = client.BrowserId,
             ConnectedAtUtc = client.ConnectedAtUtc,
             IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
-                && string.Equals(client.BrowserId, mainBrowserId, StringComparison.Ordinal),
+                && BrowserIdentity.AreSameBrowser(client.BrowserId, mainBrowserId),
             IsVisible = client.IsVisible,
             HasFocus = client.HasFocus,
             IsTopLevel = client.IsTopLevel
@@ -1023,6 +1049,32 @@ public sealed class BrowserCommandService
         }
 
         return score;
+    }
+
+    private static bool TrySelectMainBrowserClient(
+        BrowserClient[] clients,
+        string? mainBrowserId,
+        out BrowserClient client)
+    {
+        client = null!;
+        if (string.IsNullOrWhiteSpace(mainBrowserId))
+        {
+            return false;
+        }
+
+        var mainClients = clients
+            .Where(c => BrowserIdentity.AreSameBrowser(c.BrowserId, mainBrowserId))
+            .ToArray();
+        if (mainClients.Length == 0)
+        {
+            return false;
+        }
+
+        client = mainClients
+            .OrderByDescending(c => string.Equals(c.BrowserId, mainBrowserId, StringComparison.Ordinal))
+            .ThenByDescending(c => c.ConnectedAtUtc)
+            .First();
+        return true;
     }
 
     private sealed class BrowserClient

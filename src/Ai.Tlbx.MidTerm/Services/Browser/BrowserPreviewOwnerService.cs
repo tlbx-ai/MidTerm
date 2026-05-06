@@ -40,7 +40,7 @@ public sealed class BrowserPreviewOwnerService
         {
             if (_owners.TryGetValue(key, out var currentOwner))
             {
-                if (distinctCandidates.Contains(currentOwner, StringComparer.Ordinal))
+                if (distinctCandidates.Any(candidate => BrowserIdentity.AreSameBrowser(candidate, currentOwner)))
                 {
                     return currentOwner;
                 }
