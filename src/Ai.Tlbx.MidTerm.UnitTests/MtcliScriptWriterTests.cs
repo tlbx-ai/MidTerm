@@ -84,6 +84,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("_MWAITCONTROLLABLE()", shell, StringComparison.Ordinal);
         Assert.Contains("_MURLENC()", shell, StringComparison.Ordinal);
         Assert.Contains("/api/browser/status-text", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_navigate() {", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_navigate failed: preview did not become controllable.", shell, StringComparison.Ordinal);
+        Assert.Contains("\"$_MT/api/browser/open\"", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_navigate()   { _MREQUIRECTX \"mt_navigate\" || return $?; _MJ", shell, StringComparison.Ordinal);
         Assert.Contains("mt_open() {", shell, StringComparison.Ordinal);
         Assert.Contains("local claim=0 url=\"\" open_out status", shell, StringComparison.Ordinal);
         Assert.Contains("--claim) claim=1", shell, StringComparison.Ordinal);
@@ -111,6 +115,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function script:_MStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("function script:_MWaitForControllableStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("/api/browser/status-text", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Navigate {", powershell, StringComparison.Ordinal);
+        Assert.Contains("usage: mt_navigate URL", powershell, StringComparison.Ordinal);
+        Assert.Contains("mt_navigate failed: preview did not become controllable.", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("-X PUT \"$script:_MT/api/webpreview/target\"", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Open {", powershell, StringComparison.Ordinal);
         Assert.Contains("param([string]$Url, [switch]$Claim)", powershell, StringComparison.Ordinal);
         Assert.Contains("Mt-ClaimPreview | Out-Null", powershell, StringComparison.Ordinal);

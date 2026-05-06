@@ -225,7 +225,24 @@ public static class MtcliScriptWriter
         # Web preview (dev browser)
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
-        mt_navigate()   { _MREQUIRECTX "mt_navigate" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
+        # mt_navigate URL  — navigate the active dev browser preview and wait until controllable
+        mt_navigate() {
+          local url="${1:-}" open_out status
+          _MREQUIRECTX "mt_navigate" || return $?
+          if [ -z "$url" ]; then echo "usage: mt_navigate URL" >&2; return 1; fi
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
+            local code=$?
+            [ -n "$open_out" ] && printf '%s\n' "$open_out"
+            return $code
+          }
+          [ -n "$open_out" ] && printf '%s\n' "$open_out"
+          status=$(_MWAITCONTROLLABLE 25) || {
+            local code=$?
+            [ -n "$status" ] && printf '%s\n' "$status" >&2
+            echo "mt_navigate failed: preview did not become controllable." >&2
+            return $code
+          }
+        }
         # mt_open [--claim] URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
           local claim=0 url="" open_out status
@@ -806,7 +823,22 @@ public static class MtcliScriptWriter
         function Mt-Navigate {
             param([string]$Url)
             _MRequireSessionContext "mt_navigate"
-            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
+            if ([string]::IsNullOrWhiteSpace($Url)) {
+                Write-Error "usage: mt_navigate URL"
+                return
+            }
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
+            if ($openResponse) {
+                $openResponse
+            }
+            $status = _MWaitForControllableStatus
+            if (-not $status.Ready) {
+                if ($status.Output) {
+                    throw $status.Output
+                }
+
+                throw "mt_navigate failed: preview did not become controllable."
+            }
         }
         # Mt-Open [-Claim] -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
