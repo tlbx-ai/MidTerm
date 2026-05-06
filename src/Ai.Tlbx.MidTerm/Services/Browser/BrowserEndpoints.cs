@@ -148,7 +148,7 @@ public static class BrowserEndpoints
             var sessionId = NormalizeOptional(request.SessionId);
             var previewName = NormalizeOptional(request.PreviewName);
             var url = request.Url ?? "";
-            var activateSession = request.ActivateSession ?? false;
+            var activateSession = request.ActivateSession ?? true;
             if (string.IsNullOrWhiteSpace(sessionId))
             {
                 return Results.BadRequest("sessionId required");

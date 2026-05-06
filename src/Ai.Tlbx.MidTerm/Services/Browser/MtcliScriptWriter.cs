@@ -241,7 +241,7 @@ public static class MtcliScriptWriter
           if [ $claim -eq 1 ]; then
             mt_claim_preview >/dev/null || return $?
           fi
-          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":false}" "$_MT/api/browser/open") || {
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
             return $code
@@ -815,7 +815,7 @@ public static class MtcliScriptWriter
             if ($Claim) {
                 Mt-ClaimPreview | Out-Null
             }
-            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$false}) "$script:_MT/api/browser/open"
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
             }

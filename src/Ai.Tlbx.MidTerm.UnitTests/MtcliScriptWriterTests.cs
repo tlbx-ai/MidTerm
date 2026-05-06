@@ -94,7 +94,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("$(_MSID)", shell, StringComparison.Ordinal);
         Assert.Contains("previewName", shell, StringComparison.Ordinal);
         Assert.Contains("$(_MPREVIEW)", shell, StringComparison.Ordinal);
-        Assert.Contains("\\\"activateSession\\\":false", shell, StringComparison.Ordinal);
+        Assert.Contains("\\\"activateSession\\\":true", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Context", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Preview", powershell, StringComparison.Ordinal);
@@ -127,7 +127,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_inspect -Value Mt-Inspect", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);
         Assert.Contains("previewName=(_MPreview)", powershell, StringComparison.Ordinal);
-        Assert.Contains("activateSession=$false", powershell, StringComparison.Ordinal);
+        Assert.Contains("activateSession=$true", powershell, StringComparison.Ordinal);
         Assert.Contains("_normalized_cmd=\"${_cmd#mt_}\"", shell, StringComparison.Ordinal);
         Assert.Contains("_normalized_cmd=\"${_cmd#mt-}\"", shell, StringComparison.Ordinal);
         Assert.Contains("command -v \"mt_$_normalized_cmd\"", shell, StringComparison.Ordinal);
