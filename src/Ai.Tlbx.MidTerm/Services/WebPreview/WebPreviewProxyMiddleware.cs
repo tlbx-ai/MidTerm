@@ -128,7 +128,15 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){}
             return false;
           }
-          function mkStore(){
+          function mtStoragePrefix(name){
+            var route="default";
+            try{
+              var match=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              if(match&&match[1])route=decodeURIComponent(match[1]);
+            }catch(e){}
+            return "__midterm_webpreview__"+route+"__"+name+"__";
+          }
+          function mkMemoryStore(){
             var data=Object.create(null);
             var api={
               getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null;},
@@ -140,13 +148,49 @@ public sealed partial class WebPreviewProxyMiddleware
             try{Object.defineProperty(api,"length",{configurable:true,get:function(){return Object.keys(data).length;}});}catch(e){}
             return api;
           }
-          function ensureStore(name){
-            try{var existing=window[name];if(existing)return existing;}catch(e){}
-            var fallback=mkStore();
-            if(!dprop(window,name,function(){return fallback;})){
-              try{window[name]=fallback;}catch(e){}
+          function mkStore(name){
+            var nativeStore=null,prefix=mtStoragePrefix(name);
+            try{nativeStore=window[name];}catch(e){}
+            if(!nativeStore||typeof nativeStore.getItem!=="function"||typeof nativeStore.setItem!=="function"){
+              return mkMemoryStore();
             }
-            return fallback;
+            var api={
+              getItem:function(k){return nativeStore.getItem(prefix+String(k));},
+              setItem:function(k,v){nativeStore.setItem(prefix+String(k),String(v));},
+              removeItem:function(k){nativeStore.removeItem(prefix+String(k));},
+              clear:function(){
+                var keys=[];
+                for(var i=0;i<nativeStore.length;i++){
+                  var key=nativeStore.key(i);
+                  if(key&&key.indexOf(prefix)===0)keys.push(key);
+                }
+                keys.forEach(function(k){nativeStore.removeItem(k);});
+              },
+              key:function(i){
+                var scoped=[];
+                for(var j=0;j<nativeStore.length;j++){
+                  var key=nativeStore.key(j);
+                  if(key&&key.indexOf(prefix)===0)scoped.push(key.slice(prefix.length));
+                }
+                return i>=0&&i<scoped.length?scoped[i]:null;
+              }
+            };
+            try{Object.defineProperty(api,"length",{configurable:true,get:function(){
+              var count=0;
+              for(var i=0;i<nativeStore.length;i++){
+                var key=nativeStore.key(i);
+                if(key&&key.indexOf(prefix)===0)count++;
+              }
+              return count;
+            }});}catch(e){}
+            return api;
+          }
+          function ensureStore(name){
+            var scoped=mkStore(name);
+            if(!dprop(window,name,function(){return scoped;})){
+              try{window[name]=scoped;}catch(e){}
+            }
+            return scoped;
           }
           function mkSwContainer(){
             var reg={

@@ -113,6 +113,23 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_WebStorage_IsScopedPerPreviewRoute()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function mtStoragePrefix(name)", script, StringComparison.Ordinal);
+        Assert.Contains("__midterm_webpreview__", script, StringComparison.Ordinal);
+        Assert.Contains("match=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
+        Assert.Contains("return nativeStore.getItem(prefix+String(k));", script, StringComparison.Ordinal);
+        Assert.Contains("ensureStore(\"localStorage\")", script, StringComparison.Ordinal);
+        Assert.Contains("ensureStore(\"sessionStorage\")", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_ScreenshotCapture_NormalizesColorFunctionsBeforeHtml2Canvas()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(
