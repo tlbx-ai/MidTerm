@@ -96,7 +96,9 @@ public static class LensProviderEventCompaction
                 Model = source.QuickSettingsUpdated.Model,
                 Effort = source.QuickSettingsUpdated.Effort,
                 PlanMode = LensQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
-                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode)
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
+                ModelOptions = LensQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
+                EffortOptions = LensQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new LensProviderRequestOpenedPayload
             {

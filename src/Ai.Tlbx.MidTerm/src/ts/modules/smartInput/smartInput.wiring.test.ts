@@ -438,6 +438,19 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-lens-action {');
   });
 
+  it('exposes quiet Lens controls without raw slash-command labels', () => {
+    expect(source).not.toContain("'/model'");
+    expect(source).not.toContain("'/plan'");
+    expect(source).not.toContain("'/goal'");
+    expect(source).not.toContain('openLensModelPicker();');
+    expect(source).toContain("createLensActionButton(\n      'Plan'");
+    expect(source).toContain('toggleLensPlanMode(sessionId);');
+    expect(source).toContain("createLensActionButton(\n        'Goal'");
+    expect(source).toContain('void prepareLensGoal(sessionId);');
+    expect(source).toContain('await setLensGoal(sessionId, { objective });');
+    expect(viewSource).toContain("['xhigh', 'XHigh']");
+  });
+
   it('hides inline tools on mobile Lens sessions', () => {
     expect(source).toContain(
       'if (layoutState.lensActive && layoutState.isMobile && inlineToolHost) {',
@@ -449,6 +462,12 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('function renderMobileTerminalStatusRow(');
     expect(source).toContain("leftCluster.className = 'adaptive-footer-status-left';");
     expect(source).toContain("rightCluster.className = 'adaptive-footer-status-right';");
+    expect(source).toContain('event.stopPropagation();');
+    expect(source).toContain('setLensQuickSettingsSheetOpen(!lensQuickSettingsSheetOpen);');
+    expect(source).toContain(
+      "lensQuickSettingsRow.classList.contains('smart-input-lens-settings-sheet')",
+    );
+    expect(source).toContain('footerStatusHost.appendChild(lensQuickSettingsRow);');
     expect(source).toContain('expanded: layoutState.touchControlsExpanded,');
     expect(source).toContain('setTouchKeysExpanded(!layoutState.touchControlsExpanded);');
     expect(source).toContain('createAutomationOverflowProxy()');

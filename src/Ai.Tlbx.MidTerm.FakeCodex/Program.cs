@@ -62,6 +62,33 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     RecordMethod(launchCapture, method);
                     PersistLaunchCapture(capturePath, launchCapture);
                     continue;
+                case "model/list":
+                    RecordMethod(launchCapture, method);
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new
+                        {
+                            data = new[]
+                            {
+                                new
+                                {
+                                    id = "gpt-5.3-codex",
+                                    displayName = "GPT-5.3 Codex",
+                                    isDefault = true,
+                                    supportedReasoningEfforts = new[]
+                                    {
+                                        new { reasoningEffort = "low" },
+                                        new { reasoningEffort = "medium" },
+                                        new { reasoningEffort = "high" }
+                                    }
+                                }
+                            }
+                        }
+                    }).ConfigureAwait(false);
+                    continue;
                 case "thread/start":
                     RecordMethod(launchCapture, method);
                     if (root.TryGetProperty("params", out var threadStartParams) && threadStartParams.ValueKind == JsonValueKind.Object)

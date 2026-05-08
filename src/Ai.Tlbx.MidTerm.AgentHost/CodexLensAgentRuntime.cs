@@ -117,6 +117,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.goal.set" => await SetGoalAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolveRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported Codex command '{command.Type}'.")
@@ -190,6 +191,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
         await SendCodexRequestAsync("initialize", BuildCodexInitializeRequest, ct).ConfigureAwait(false);
         await WriteCodexMessageAsync(BuildCodexInitializedNotification(), ct).ConfigureAwait(false);
+        await TryRefreshModelCatalogAsync(ct).ConfigureAwait(false);
         var (threadResult, providerThreadId, resumedExistingThread) = await OpenThreadAsync(
             attach,
             _quickSettings,
@@ -292,7 +294,9 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                         Model = _quickSettings.Model,
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
-                        PermissionMode = _quickSettings.PermissionMode
+                        PermissionMode = _quickSettings.PermissionMode,
+                        ModelOptions = LensQuickSettings.CloneOptions(_quickSettings.ModelOptions),
+                        EffortOptions = LensQuickSettings.CloneOptions(_quickSettings.EffortOptions)
                     }
                 }
             },
@@ -327,6 +331,31 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 SessionId = command.SessionId,
                 Status = "accepted",
                 TurnId = turnId
+            });
+    }
+
+    private async Task<HostCommandOutcome> SetGoalAsync(LensHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        var request = command.SetGoal ?? throw new InvalidOperationException("thread.goal.set payload is required.");
+        var objective = LensQuickSettings.NormalizeOptionalValue(request.Objective);
+        if (objective is null)
+        {
+            throw new InvalidOperationException("Goal objective is required.");
+        }
+
+        await SendCodexRequestAsync(
+            "thread/goal/set",
+            id => BuildCodexThreadGoalSetRequest(id, _providerThreadId!, objective),
+            ct).ConfigureAwait(false);
+
+        return Accepted(
+            command.CommandId,
+            command.SessionId,
+            accepted: new LensCommandAcceptedResponse
+            {
+                SessionId = command.SessionId,
+                Status = "accepted"
             });
     }
 
@@ -716,6 +745,37 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     {
                         Message = "Codex context window updated.",
                         Detail = detail
+                    };
+                }));
+                break;
+            }
+
+            case "thread/goal/updated":
+            {
+                var objective = GetString(payload, "goal", "objective") ?? "Goal updated.";
+                var status = GetString(payload, "goal", "status");
+                var statusSuffix = string.IsNullOrWhiteSpace(status)
+                    ? string.Empty
+                    : $" ({status})";
+                _emit(CreateEvent("thread.goal.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = $"Goal updated{statusSuffix}: {objective}",
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "thread/goal/cleared":
+            {
+                _emit(CreateEvent("thread.goal.cleared", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Goal cleared.",
+                        Detail = BuildCompactJsonDetail(payload)
                     };
                 }));
                 break;
@@ -1504,7 +1564,8 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
     private async Task<JsonElement> SendCodexRequestAsync(
         string method,
         Func<string, string> messageFactory,
-        CancellationToken ct)
+        CancellationToken ct,
+        TimeSpan? timeout = null)
     {
         var id = Interlocked.Increment(ref _nextRequestId).ToString(CultureInfo.InvariantCulture);
         var pending = new TaskCompletionSource<JsonRpcReply>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1513,15 +1574,22 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         await WriteCodexMessageAsync(messageFactory(id), ct).ConfigureAwait(false);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdown.Token);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(20));
-        await using var _ = timeoutCts.Token.Register(() => pending.TrySetCanceled(timeoutCts.Token));
-        var reply = await pending.Task.ConfigureAwait(false);
-        if (reply.IsError)
+        timeoutCts.CancelAfter(timeout ?? TimeSpan.FromSeconds(20));
+        await using var timeoutRegistration = timeoutCts.Token.Register(() => pending.TrySetCanceled(timeoutCts.Token));
+        try
         {
-            throw new InvalidOperationException(reply.ErrorMessage ?? $"{method} failed.");
-        }
+            var reply = await pending.Task.ConfigureAwait(false);
+            if (reply.IsError)
+            {
+                throw new InvalidOperationException(reply.ErrorMessage ?? $"{method} failed.");
+            }
 
-        return reply.Payload;
+            return reply.Payload;
+        }
+        finally
+        {
+            _pendingRequests.TryRemove(id, out _);
+        }
     }
 
     private async Task WriteCodexMessageAsync(string payload, CancellationToken ct)
@@ -1725,6 +1793,149 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return (threadResult, providerThreadId, resumedExistingThread);
     }
 
+    private async Task TryRefreshModelCatalogAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await SendCodexRequestAsync(
+                "model/list",
+                BuildCodexModelListRequest,
+                ct,
+                TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            var modelOptions = ReadCodexModelOptions(result);
+            if (modelOptions.Count == 0)
+            {
+                return;
+            }
+
+            _quickSettings.ModelOptions = modelOptions;
+            _quickSettings.EffortOptions = ReadCodexEffortOptions(
+                result,
+                _quickSettings.Model,
+                modelOptions.FirstOrDefault(static option => option.IsDefault)?.Value);
+        }
+        catch
+        {
+            // Codex may run older app-server builds. Keep the static frontend fallback quiet.
+        }
+    }
+
+    private static List<LensQuickSettingsOption> ReadCodexModelOptions(JsonElement result)
+    {
+        if (!result.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var options = new List<LensQuickSettingsOption>();
+        using (var models = data.EnumerateArray())
+        {
+            while (models.MoveNext())
+            {
+                var model = models.Current;
+                var value = GetString(model, "id") ?? GetString(model, "model");
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                if (GetBoolean(model, "hidden") == true)
+                {
+                    continue;
+                }
+
+                var label = GetString(model, "displayName") ?? GetString(model, "name") ?? value;
+                var description = GetString(model, "description") ?? GetString(model, "shortDescription");
+                if (options.Any(existing => string.Equals(existing.Value, value, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                options.Add(new LensQuickSettingsOption
+                {
+                    Value = value.Trim(),
+                    Label = string.IsNullOrWhiteSpace(label) ? value.Trim() : label.Trim(),
+                    Description = LensQuickSettings.NormalizeOptionalValue(description),
+                    Hidden = false,
+                    IsDefault = GetBoolean(model, "isDefault") == true
+                });
+            }
+        }
+
+        return options;
+    }
+
+    private static List<LensQuickSettingsOption> ReadCodexEffortOptions(
+        JsonElement result,
+        string? selectedModel,
+        string? defaultModel)
+    {
+        if (!result.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        JsonElement? selected = null;
+        using (var models = data.EnumerateArray())
+        {
+            while (models.MoveNext())
+            {
+                var model = models.Current;
+                var value = GetString(model, "id") ?? GetString(model, "model");
+                if (!string.IsNullOrWhiteSpace(selectedModel) &&
+                    string.Equals(value, selectedModel, StringComparison.Ordinal))
+                {
+                    selected = model;
+                    break;
+                }
+
+                if (selected is null && !string.IsNullOrWhiteSpace(defaultModel) &&
+                    string.Equals(value, defaultModel, StringComparison.Ordinal))
+                {
+                    selected = model;
+                }
+
+                if (selected is null && GetBoolean(model, "isDefault") == true)
+                {
+                    selected = model;
+                }
+
+                selected ??= model;
+            }
+        }
+
+        if (selected is not { } selectedModelElement ||
+            !selectedModelElement.TryGetProperty("supportedReasoningEfforts", out var efforts) ||
+            efforts.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var options = new List<LensQuickSettingsOption>();
+        using (var effortItems = efforts.EnumerateArray())
+        {
+            while (effortItems.MoveNext())
+            {
+                var effort = effortItems.Current;
+                var value = GetString(effort, "reasoningEffort") ?? GetString(effort, "value");
+                if (string.IsNullOrWhiteSpace(value) ||
+                    options.Any(existing => string.Equals(existing.Value, value, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                options.Add(new LensQuickSettingsOption
+                {
+                    Value = value.Trim(),
+                    Label = HumanizeReasoningEffort(value),
+                    Description = LensQuickSettings.NormalizeOptionalValue(GetString(effort, "description"))
+                });
+            }
+        }
+
+        return options;
+    }
+
     private async Task<string?> TryResolvePreferredLoadedThreadIdAsync(CancellationToken ct)
     {
         var result = await SendCodexRequestAsync(
@@ -1858,6 +2069,22 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         });
     }
 
+    private static string BuildCodexModelListRequest(string id)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "model/list");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteBoolean("includeHidden", false);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
     private static string BuildCodexThreadStartRequest(string id, string cwd, string permissionMode)
     {
         return BuildJsonString(writer =>
@@ -1872,6 +2099,23 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
             writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("experimentalRawEvents", false);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexThreadGoalSetRequest(string id, string threadId, string objective)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", id);
+            writer.WriteString("method", "thread/goal/set");
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            writer.WriteString("threadId", threadId);
+            writer.WriteString("objective", objective);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2149,12 +2393,15 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         var defaultPermissionMode = LensProviderRuntimeConfiguration.GetCodexYoloDefault()
             ? LensQuickSettings.PermissionModeAuto
             : LensQuickSettings.PermissionModeManual;
-        return LensQuickSettings.CreateSummary(
+        var quickSettings = LensQuickSettings.CreateSummary(
             request.Model ?? LensProviderRuntimeConfiguration.GetCodexDefaultModel(),
             request.Effort,
             request.PlanMode,
             request.PermissionMode,
             defaultPermissionMode);
+        quickSettings.ModelOptions = LensQuickSettings.CloneOptions(_quickSettings.ModelOptions);
+        quickSettings.EffortOptions = LensQuickSettings.CloneOptions(_quickSettings.EffortOptions);
+        return quickSettings;
     }
 
     private async Task ReopenThreadAsync(string permissionMode, CancellationToken ct)
@@ -2357,9 +2604,11 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         var pathext = Environment.GetEnvironmentVariable("PATHEXT");
-        var extensions = string.IsNullOrWhiteSpace(pathext)
-            ? [".exe", ".cmd", ".bat"]
-            : pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var extensions = new List<string> { ".exe", ".cmd", ".bat", ".ps1" };
+        if (!string.IsNullOrWhiteSpace(pathext))
+        {
+            extensions.AddRange(pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
 
         return extensions
             .Select(ext => commandName + ext.ToLowerInvariant())
@@ -2390,6 +2639,35 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     StandardErrorEncoding = Utf8NoBom,
                     StandardInputEncoding = Utf8NoBom
                 };
+            }
+
+            if (extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "pwsh",
+                    WorkingDirectory = workingDirectory,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Utf8NoBom,
+                    StandardErrorEncoding = Utf8NoBom,
+                    StandardInputEncoding = Utf8NoBom
+                };
+                startInfo.ArgumentList.Add("-NoLogo");
+                startInfo.ArgumentList.Add("-NoProfile");
+                startInfo.ArgumentList.Add("-ExecutionPolicy");
+                startInfo.ArgumentList.Add("Bypass");
+                startInfo.ArgumentList.Add("-File");
+                startInfo.ArgumentList.Add(binaryPath);
+                foreach (var argument in arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    startInfo.ArgumentList.Add(argument);
+                }
+
+                return startInfo;
             }
         }
 
@@ -2946,6 +3224,20 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         };
     }
 
+    private static string HumanizeReasoningEffort(string effort)
+    {
+        return effort.Trim().ToLowerInvariant() switch
+        {
+            "none" => "None",
+            "minimal" => "Minimal",
+            "low" => "Low",
+            "medium" => "Medium",
+            "high" => "High",
+            "xhigh" => "Extra high",
+            _ => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(effort.Replace('_', ' ').Trim())
+        };
+    }
+
     private static string HumanizeRequestType(string requestType)
     {
         return requestType switch
@@ -3067,17 +3359,6 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         public string? Detail { get; set; }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 

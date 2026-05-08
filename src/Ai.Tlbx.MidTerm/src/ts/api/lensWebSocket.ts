@@ -3,6 +3,7 @@ import {
   type LensHistoryDelta,
   type LensHistoryPatch,
   type LensHistorySnapshot,
+  type LensGoalSetRequest,
   type LensHistoryWindowResponse,
   type LensInterruptRequest,
   type LensRequestDecisionRequest,
@@ -19,6 +20,7 @@ type LensWsRequestAction =
   | 'history.window.get'
   | 'turn.submit'
   | 'turn.interrupt'
+  | 'thread.goal.set'
   | 'request.approve'
   | 'request.decline'
   | 'request.resolve'
@@ -465,6 +467,13 @@ export async function interruptLensTurnWs(
   request: LensInterruptRequest,
 ): Promise<LensCommandAcceptedResponse> {
   return requestCommandAccepted('turn.interrupt', sessionId, { interrupt: request });
+}
+
+export async function setLensGoalWs(
+  sessionId: string,
+  request: LensGoalSetRequest,
+): Promise<LensCommandAcceptedResponse> {
+  return requestCommandAccepted('thread.goal.set', sessionId, { goalSet: request });
 }
 
 export async function approveLensRequestWs(

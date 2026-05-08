@@ -454,6 +454,7 @@ The canonical history contract must satisfy the following:
   - effort
   - plan mode
   - permission or approval mode
+- Codex Lens should expose low-chrome slash-equivalent action buttons for `/model`, `/plan`, and `/goal` directly in the quick-settings rail. `/model` opens the model picker, `/plan` toggles the next-turn plan-mode setting, and `/goal` prepares the provider goal command in the composer so the operator can set the objective without remembering command syntax.
 - These quick controls should be MidTerm-owned canonical settings, not scraped provider-native menus.
 - Provider-specific meaning and transport mapping for those controls must stay in the C# Lens runtime layer.
 - The TypeScript Lens UI should render the common quick-settings surface from the canonical model without branching deeply on provider quirks.
@@ -635,6 +636,7 @@ Status in this branch/work item:
 - implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Lens quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: provider-scoped remembered default Lens models are now persisted in MidTerm-owned settings and seed new Lens sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists
+- implemented: Codex Lens exposes `/model`, `/plan`, and `/goal` action buttons inside the quick-settings rail; `/model` opens the Lens model picker, `/plan` toggles plan mode, and `/goal` prepares a goal command in the composer while Codex goal update/clear notifications are canonized as runtime messages instead of unknown fallback rows
 - implemented: desktop Lens quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Lens quick settings remain hidden unless the active session is an explicit Lens surface; ordinary terminal sessions and no-session empty states never show Lens-only quick controls
 - implemented: Lens plain `Esc` now interrupts active Lens turns from the composer, touch-controller, focused Lens surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap

@@ -1,5 +1,6 @@
 import type {
   LensAttachmentReference,
+  LensQuickSettingsOption,
   LensQuickSettingsSummary,
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
@@ -75,7 +76,37 @@ function cloneQuickSettings(settings: LensQuickSettingsSummary): LensQuickSettin
     effort: settings.effort ?? null,
     planMode: normalizePlanMode(settings.planMode),
     permissionMode: normalizePermissionMode(settings.permissionMode),
+    modelOptions: cloneQuickSettingsOptions(settings.modelOptions),
+    effortOptions: cloneQuickSettingsOptions(settings.effortOptions),
   };
+}
+
+function cloneQuickSettingsOptions(
+  options: readonly LensQuickSettingsOption[] | null | undefined,
+): LensQuickSettingsOption[] {
+  if (!options) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const cloned: LensQuickSettingsOption[] = [];
+  for (const option of options) {
+    const value = normalizeOptionalValue(option.value);
+    if (!value || seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+    cloned.push({
+      value,
+      label: normalizeOptionalValue(option.label) ?? value,
+      description: normalizeOptionalValue(option.description),
+      hidden: option.hidden === true,
+      isDefault: option.isDefault === true,
+    });
+  }
+
+  return cloned;
 }
 
 function dispatchQuickSettingsChange(
@@ -143,7 +174,12 @@ function writeProviderStickyQuickSettings(
   try {
     localStorage.setItem(
       `${QUICK_SETTINGS_PROVIDER_STORAGE_PREFIX}${provider}`,
-      JSON.stringify(cloneQuickSettings(settings)),
+      JSON.stringify({
+        model: settings.model ?? null,
+        effort: settings.effort ?? null,
+        planMode: normalizePlanMode(settings.planMode),
+        permissionMode: normalizePermissionMode(settings.permissionMode),
+      }),
     );
   } catch {
     // Ignore quota/storage failures and keep the in-memory session draft.
@@ -301,6 +337,8 @@ function normalizeQuickSettings(
     permissionMode: normalizePermissionMode(
       settings?.permissionMode ?? resolveDefaultPermissionMode(provider),
     ),
+    modelOptions: cloneQuickSettingsOptions(settings?.modelOptions),
+    effortOptions: cloneQuickSettingsOptions(settings?.effortOptions),
   };
 }
 

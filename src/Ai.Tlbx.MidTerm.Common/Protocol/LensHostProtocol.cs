@@ -13,6 +13,17 @@ public sealed class LensQuickSettingsPayload
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = LensQuickSettings.PlanModeOff;
     public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
+    public List<LensQuickSettingsOption> ModelOptions { get; set; } = [];
+    public List<LensQuickSettingsOption> EffortOptions { get; set; } = [];
+}
+
+public sealed class LensQuickSettingsOption
+{
+    public string Value { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public bool Hidden { get; set; }
+    public bool IsDefault { get; set; }
 }
 
 public sealed class LensQuestion
@@ -149,6 +160,26 @@ public static class LensQuickSettings
         };
     }
 
+    public static List<LensQuickSettingsOption> CloneOptions(IEnumerable<LensQuickSettingsOption>? options)
+    {
+        if (options is null)
+        {
+            return [];
+        }
+
+        return options
+            .Where(static option => !string.IsNullOrWhiteSpace(option.Value))
+            .Select(static option => new LensQuickSettingsOption
+            {
+                Value = option.Value.Trim(),
+                Label = string.IsNullOrWhiteSpace(option.Label) ? option.Value.Trim() : option.Label.Trim(),
+                Description = NormalizeOptionalValue(option.Description),
+                Hidden = option.Hidden,
+                IsDefault = option.IsDefault
+            })
+            .ToList();
+    }
+
     public static LensQuickSettingsPayload ToPayload(LensQuickSettingsSummary summary)
     {
         ArgumentNullException.ThrowIfNull(summary);
@@ -158,7 +189,9 @@ public static class LensQuickSettings
             Model = NormalizeOptionalValue(summary.Model),
             Effort = NormalizeOptionalValue(summary.Effort),
             PlanMode = NormalizePlanMode(summary.PlanMode),
-            PermissionMode = NormalizePermissionMode(summary.PermissionMode)
+            PermissionMode = NormalizePermissionMode(summary.PermissionMode),
+            ModelOptions = CloneOptions(summary.ModelOptions),
+            EffortOptions = CloneOptions(summary.EffortOptions)
         };
     }
 
@@ -185,6 +218,8 @@ public sealed class LensQuickSettingsSummary
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = LensQuickSettings.PlanModeOff;
     public string PermissionMode { get; set; } = LensQuickSettings.PermissionModeManual;
+    public List<LensQuickSettingsOption> ModelOptions { get; set; } = [];
+    public List<LensQuickSettingsOption> EffortOptions { get; set; } = [];
 }
 
 public sealed class LensStreamsSummary
@@ -290,6 +325,11 @@ public sealed class LensTurnRequest
     public List<LensTerminalReplayStep> TerminalReplay { get; set; } = [];
 }
 
+public sealed class LensGoalSetRequest
+{
+    public string Objective { get; set; } = string.Empty;
+}
+
 public sealed class LensAttachmentReference
 {
     public string Kind { get; set; } = "file";
@@ -361,6 +401,7 @@ public sealed class LensWsRequestMessage
     public LensInterruptRequest? Interrupt { get; set; }
     public LensRequestDecisionRequest? RequestDecision { get; set; }
     public LensUserInputAnswerRequest? UserInputAnswer { get; set; }
+    public LensGoalSetRequest? GoalSet { get; set; }
 }
 
 public sealed class LensWsSubscriptionMessage
@@ -460,6 +501,7 @@ public sealed class LensHostCommandEnvelope
     public LensInterruptRequest? InterruptTurn { get; set; }
     public LensRequestResolutionCommand? ResolveRequest { get; set; }
     public LensUserInputResolutionCommand? ResolveUserInput { get; set; }
+    public LensGoalSetRequest? SetGoal { get; set; }
     public LensHostHistoryWindowRequest? HistoryWindow { get; set; }
 }
 
@@ -504,6 +546,7 @@ public sealed class LensHostHistoryPatchEnvelope
 [JsonSerializable(typeof(LensRequestResolutionCommand))]
 [JsonSerializable(typeof(LensUserInputResolutionCommand))]
 [JsonSerializable(typeof(LensTurnRequest))]
+[JsonSerializable(typeof(LensGoalSetRequest))]
 [JsonSerializable(typeof(LensAttachmentReference))]
 [JsonSerializable(typeof(LensTurnStartResponse))]
 [JsonSerializable(typeof(LensInterruptRequest))]
@@ -521,6 +564,7 @@ public sealed class LensHostHistoryPatchEnvelope
 [JsonSerializable(typeof(LensWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(LensQuickSettingsPayload))]
 [JsonSerializable(typeof(LensQuickSettingsSummary))]
+[JsonSerializable(typeof(LensQuickSettingsOption))]
 [JsonSerializable(typeof(LensQuestion))]
 [JsonSerializable(typeof(List<LensQuestion>))]
 [JsonSerializable(typeof(LensQuestionOption))]
@@ -549,8 +593,6 @@ public sealed class LensHostHistoryPatchEnvelope
 public partial class LensHostJsonContext : JsonSerializerContext
 {
 }
-
-
 
 
 

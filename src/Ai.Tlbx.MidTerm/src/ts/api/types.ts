@@ -109,9 +109,21 @@ export interface LensInterruptRequest {
   turnId?: string | null;
 }
 
+export interface LensGoalSetRequest {
+  objective: string;
+}
+
 export interface LensAnsweredQuestion {
   questionId: string;
   answers: string[];
+}
+
+export interface LensQuickSettingsOption {
+  value: string;
+  label: string;
+  description?: string | null;
+  hidden?: boolean;
+  isDefault?: boolean;
 }
 
 export interface LensQuickSettingsPayload {
@@ -119,6 +131,8 @@ export interface LensQuickSettingsPayload {
   effort?: string | null;
   planMode: string;
   permissionMode: string;
+  modelOptions?: LensQuickSettingsOption[];
+  effortOptions?: LensQuickSettingsOption[];
 }
 
 export interface LensQuickSettingsSummary {
@@ -126,6 +140,8 @@ export interface LensQuickSettingsSummary {
   effort?: string | null;
   planMode: string;
   permissionMode: string;
+  modelOptions?: LensQuickSettingsOption[];
+  effortOptions?: LensQuickSettingsOption[];
 }
 
 export interface LensQuestionOption {

@@ -206,6 +206,21 @@ public sealed class SessionLensRuntimeService : IAsyncDisposable, ISessionLensHe
         return await _hostRuntime.InterruptTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
+    public async Task<LensCommandAcceptedResponse> SetGoalAsync(
+        string sessionId,
+        LensGoalSetRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!_hostRuntime.OwnsSession(sessionId))
+        {
+            throw new InvalidOperationException("Lens runtime is not attached.");
+        }
+
+        return await _hostRuntime.SetGoalAsync(sessionId, request, ct).ConfigureAwait(false);
+    }
+
     public async Task<LensCommandAcceptedResponse> ResolveRequestAsync(
         string sessionId,
         string requestId,

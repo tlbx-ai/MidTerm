@@ -372,6 +372,7 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                     "attach",
                     "turn.start",
                     "turn.interrupt",
+                    "thread.goal.set",
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
@@ -559,7 +560,9 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
                 Model = lensEvent.QuickSettingsUpdated.Model,
                 Effort = lensEvent.QuickSettingsUpdated.Effort,
                 PlanMode = LensQuickSettings.NormalizePlanMode(lensEvent.QuickSettingsUpdated.PlanMode),
-                PermissionMode = LensQuickSettings.NormalizePermissionMode(lensEvent.QuickSettingsUpdated.PermissionMode)
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(lensEvent.QuickSettingsUpdated.PermissionMode),
+                ModelOptions = LensQuickSettings.CloneOptions(lensEvent.QuickSettingsUpdated.ModelOptions),
+                EffortOptions = LensQuickSettings.CloneOptions(lensEvent.QuickSettingsUpdated.EffortOptions)
             },
             RequestOpened = lensEvent.RequestOpened is null ? null : new LensProviderRequestOpenedPayload
             {
@@ -725,8 +728,6 @@ internal sealed class LensAgentHostServer : IAsyncDisposable
         }
     }
 }
-
-
 
 
 

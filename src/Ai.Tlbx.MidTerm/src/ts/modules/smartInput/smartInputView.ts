@@ -7,6 +7,7 @@ export const TOOL_ORDER: ToolKind[] = ['mic', 'attach', 'photo'];
 export interface LensQuickSettingsOption {
   value: string;
   label: string;
+  description?: string | null;
 }
 
 export interface SmartInputDomRefs {
@@ -88,9 +89,12 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   lensEffortSelect.className = 'smart-input-lens-control';
   for (const [value, label] of [
     ['', 'Default'],
+    ['none', 'None'],
+    ['minimal', 'Minimal'],
     ['low', 'Low'],
     ['medium', 'Medium'],
     ['high', 'High'],
+    ['xhigh', 'XHigh'],
   ] as const) {
     const option = document.createElement('option');
     option.value = value;
@@ -414,7 +418,7 @@ export function setLensQuickSettingsDropdownOptions(
   options: readonly LensQuickSettingsOption[],
 ): void {
   const nextSignature = options
-    .map((option) => `${option.value}\u0000${option.label}`)
+    .map((option) => `${option.value}\u0000${option.label}\u0000${option.description ?? ''}`)
     .join('\u0001');
   if (select.dataset.midtermOptionsSignature === nextSignature) {
     return;
@@ -427,6 +431,9 @@ export function setLensQuickSettingsDropdownOptions(
     const optionEl = document.createElement('option');
     optionEl.value = option.value;
     optionEl.textContent = option.label;
+    if (option.description) {
+      optionEl.title = option.description;
+    }
     select.appendChild(optionEl);
   }
 
@@ -532,6 +539,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
       optionButton.className = 'manager-bar-action-popover-btn smart-input-lens-dropdown-option';
       optionButton.dataset.value = option.value;
       optionButton.textContent = option.textContent || option.value;
+      optionButton.title = option.title || option.textContent || option.value;
       optionButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();

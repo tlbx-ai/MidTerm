@@ -1,13 +1,17 @@
 export interface LensModelOption {
   value: string;
   label: string;
+  description?: string | null;
 }
 
 const CODEX_MODEL_PRESETS = [
-  'gpt-5',
+  'gpt-5.5',
   'gpt-5.4',
   'gpt-5.4-mini',
   'gpt-5.3-codex',
+  'gpt-5.3-codex-spark',
+  'gpt-5.2',
+  'gpt-5',
   'gpt-5.4-codex',
 ] as const;
 
@@ -25,6 +29,7 @@ export function getLensModelOptions(args: {
   provider: string | null | undefined;
   currentValues?: readonly (string | null | undefined)[];
   defaultLabel?: string | null | undefined;
+  catalogOptions?: readonly LensModelOption[] | null | undefined;
 }): LensModelOption[] {
   const normalizedDefaultLabel = normalizeOptionValue(args.defaultLabel);
   const options: LensModelOption[] = [
@@ -34,8 +39,13 @@ export function getLensModelOptions(args: {
     },
   ];
 
-  for (const preset of getProviderModelPresets(args.provider)) {
-    options.push({ value: preset, label: preset });
+  const catalogOptions = normalizeCatalogOptions(args.catalogOptions);
+  if (catalogOptions.length > 0) {
+    options.push(...catalogOptions);
+  } else {
+    for (const preset of getProviderModelPresets(args.provider)) {
+      options.push({ value: preset, label: preset });
+    }
   }
 
   for (const value of args.currentValues ?? []) {
@@ -48,6 +58,77 @@ export function getLensModelOptions(args: {
   }
 
   return options;
+}
+
+export function getLensEffortOptions(args: {
+  currentValues?: readonly (string | null | undefined)[];
+  catalogOptions?: readonly LensModelOption[] | null | undefined;
+}): LensModelOption[] {
+  const options: LensModelOption[] = [{ value: '', label: 'Default' }];
+  const catalogOptions = normalizeCatalogOptions(args.catalogOptions);
+  if (catalogOptions.length > 0) {
+    options.push(...catalogOptions);
+  } else {
+    for (const preset of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']) {
+      options.push({ value: preset, label: humanizeEffort(preset) });
+    }
+  }
+
+  for (const value of args.currentValues ?? []) {
+    const normalized = normalizeOptionValue(value);
+    if (!normalized || options.some((option) => option.value === normalized)) {
+      continue;
+    }
+
+    options.push({ value: normalized, label: humanizeEffort(normalized) });
+  }
+
+  return options;
+}
+
+function normalizeCatalogOptions(
+  catalogOptions: readonly LensModelOption[] | null | undefined,
+): LensModelOption[] {
+  if (!catalogOptions) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const options: LensModelOption[] = [];
+  for (const option of catalogOptions) {
+    const value = normalizeOptionValue(option.value);
+    if (!value || seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+    options.push({
+      value,
+      label: normalizeOptionValue(option.label) ?? value,
+      description: normalizeOptionValue(option.description),
+    });
+  }
+
+  return options;
+}
+
+function humanizeEffort(value: string): string {
+  switch (value.trim().toLowerCase()) {
+    case 'none':
+      return 'None';
+    case 'minimal':
+      return 'Minimal';
+    case 'low':
+      return 'Low';
+    case 'medium':
+      return 'Medium';
+    case 'high':
+      return 'High';
+    case 'xhigh':
+      return 'Extra high';
+    default:
+      return value;
+  }
 }
 
 function getProviderModelPresets(provider: string | null | undefined): readonly string[] {

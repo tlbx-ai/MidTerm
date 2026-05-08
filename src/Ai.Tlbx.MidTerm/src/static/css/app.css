@@ -16873,8 +16873,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: var(--command-bay-gap);
-  padding: 4px 10px;
+  gap: 4px;
+  padding: 4px 8px;
   position: relative;
   white-space: nowrap;
 }
@@ -16902,17 +16902,24 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-lens-action {
-  border: 1px solid transparent;
-  background: transparent;
-  padding: 0 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--command-bay-border) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--command-bay-surface) 82%, transparent);
+  padding: 0 10px;
+  min-width: 52px;
   min-height: 24px;
-  color: var(--command-bay-text);
+  color: var(--command-bay-muted);
   font-family: var(--font-ui);
   font-size: var(--command-bay-font-size);
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition:
     color 0.16s ease,
+    border-color 0.16s ease,
     transform 0.16s ease,
     opacity 0.16s ease,
     background-color 0.16s ease;
@@ -16921,6 +16928,14 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .smart-input-lens-action:hover,
 .smart-input-lens-action:focus-visible {
   color: var(--command-bay-text);
+  border-color: color-mix(in srgb, var(--accent-blue) 38%, var(--command-bay-border));
+  background: color-mix(in srgb, var(--command-bay-surface-hover) 82%, transparent);
+}
+
+.smart-input-lens-action[aria-pressed='true'] {
+  color: color-mix(in srgb, var(--accent-blue) 88%, white 12%);
+  border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--command-bay-border));
+  background: color-mix(in srgb, var(--accent-blue) 13%, var(--command-bay-surface));
 }
 
 .smart-input-lens-action:active {
@@ -17004,8 +17019,14 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 
 .adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-actions {
   width: 100%;
-  justify-content: flex-end;
+  justify-content: stretch;
   padding: 0;
+  gap: 8px;
+}
+
+.adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-action {
+  flex: 1 1 0;
+  min-height: 34px;
 }
 
 .adaptive-footer-status[data-lens-compact='true'] .smart-input-lens-actions::before {

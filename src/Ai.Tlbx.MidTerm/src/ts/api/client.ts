@@ -27,6 +27,7 @@ import type {
   LensTurnRequest,
   LensTurnStartResponse,
   LensInterruptRequest,
+  LensGoalSetRequest,
   LensCommandAcceptedResponse,
   LensHistoryDelta,
   LensRequestDecisionRequest,
@@ -51,6 +52,7 @@ import {
   getLensHistoryWindowWs,
   interruptLensTurnWs,
   openLensHistorySocket,
+  setLensGoalWs,
   updateLensHistorySocketWindow,
   resolveLensUserInputWs,
   submitLensTurnWs,
@@ -562,6 +564,13 @@ export async function interruptLensTurn(
   request: LensInterruptRequest,
 ): Promise<LensCommandAcceptedResponse> {
   return interruptLensTurnWs(id, request);
+}
+
+export async function setLensGoal(
+  id: string,
+  request: LensGoalSetRequest,
+): Promise<LensCommandAcceptedResponse> {
+  return setLensGoalWs(id, request);
 }
 
 export async function approveLensRequest(

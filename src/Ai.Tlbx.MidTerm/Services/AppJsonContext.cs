@@ -71,6 +71,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ProviderResumeCatalogEntryDto))]
 [JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
 [JsonSerializable(typeof(LensTurnRequest))]
+[JsonSerializable(typeof(LensGoalSetRequest))]
 [JsonSerializable(typeof(LensAttachmentReference))]
 [JsonSerializable(typeof(List<LensAttachmentReference>))]
 [JsonSerializable(typeof(LensTerminalReplayStep))]
@@ -114,6 +115,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(AgentSessionVibeTerminal))]
 [JsonSerializable(typeof(AgentSessionFeedResponse))]
 [JsonSerializable(typeof(LensQuickSettingsPayload))]
+[JsonSerializable(typeof(LensQuickSettingsOption))]
 [JsonSerializable(typeof(LensQuestion))]
 [JsonSerializable(typeof(List<LensQuestion>))]
 [JsonSerializable(typeof(LensQuestionOption))]
@@ -320,8 +322,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
-
 
 
 

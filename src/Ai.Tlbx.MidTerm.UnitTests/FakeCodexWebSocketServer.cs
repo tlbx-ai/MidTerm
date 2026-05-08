@@ -195,6 +195,31 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                     case "initialized":
                         break;
 
+                    case "model/list" when id is not null:
+                        await SendJsonAsync(socket, new
+                        {
+                            id,
+                            result = new
+                            {
+                                data = new[]
+                                {
+                                    new
+                                    {
+                                        id = "gpt-5.3-codex",
+                                        displayName = "GPT-5.3 Codex",
+                                        isDefault = true,
+                                        supportedReasoningEfforts = new[]
+                                        {
+                                            new { reasoningEffort = "low" },
+                                            new { reasoningEffort = "medium" },
+                                            new { reasoningEffort = "high" }
+                                        }
+                                    }
+                                }
+                            }
+                        }, _shutdown.Token).ConfigureAwait(false);
+                        break;
+
                     case "thread/loaded/list" when id is not null:
                         await SendJsonAsync(socket, new
                         {

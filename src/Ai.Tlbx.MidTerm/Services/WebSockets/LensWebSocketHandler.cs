@@ -417,6 +417,23 @@ public sealed class LensWebSocketHandler
                     break;
                 }
 
+                case "thread.goal.set":
+                {
+                    var response = await _lensRuntime.SetGoalAsync(
+                        request.SessionId,
+                        request.GoalSet ?? new LensGoalSetRequest(),
+                        CancellationToken.None).ConfigureAwait(false);
+                    await sendCommandAccepted(
+                        new LensWsCommandAcceptedMessage
+                        {
+                            Id = request.Id,
+                            SessionId = request.SessionId,
+                            Response = response
+                        },
+                        AppJsonContext.Default.LensWsCommandAcceptedMessage).ConfigureAwait(false);
+                    break;
+                }
+
                 case "request.approve":
                 {
                     var response = await _lensRuntime.ResolveRequestAsync(

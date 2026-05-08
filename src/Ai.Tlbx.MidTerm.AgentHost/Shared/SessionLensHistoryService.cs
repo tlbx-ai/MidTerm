@@ -1203,6 +1203,8 @@ public sealed partial class SessionLensHistoryService
         state.QuickSettings.Effort = LensQuickSettings.NormalizeOptionalValue(quickSettings.Effort);
         state.QuickSettings.PlanMode = LensQuickSettings.NormalizePlanMode(quickSettings.PlanMode);
         state.QuickSettings.PermissionMode = LensQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode);
+        state.QuickSettings.ModelOptions = LensQuickSettings.CloneOptions(quickSettings.ModelOptions);
+        state.QuickSettings.EffortOptions = LensQuickSettings.CloneOptions(quickSettings.EffortOptions);
     }
 
     private static void ApplyPlanUpdate(LensConversationState state, LensProviderEvent lensEvent)
@@ -2001,7 +2003,9 @@ public sealed partial class SessionLensHistoryService
                 Model = source.QuickSettingsUpdated.Model,
                 Effort = source.QuickSettingsUpdated.Effort,
                 PlanMode = LensQuickSettings.NormalizePlanMode(source.QuickSettingsUpdated.PlanMode),
-                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode)
+                PermissionMode = LensQuickSettings.NormalizePermissionMode(source.QuickSettingsUpdated.PermissionMode),
+                ModelOptions = LensQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
+                EffortOptions = LensQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new LensProviderRequestOpenedPayload
             {
@@ -2149,7 +2153,9 @@ public sealed partial class SessionLensHistoryService
             Model = LensQuickSettings.NormalizeOptionalValue(source.Model),
             Effort = LensQuickSettings.NormalizeOptionalValue(source.Effort),
             PlanMode = LensQuickSettings.NormalizePlanMode(source.PlanMode),
-            PermissionMode = LensQuickSettings.NormalizePermissionMode(source.PermissionMode)
+            PermissionMode = LensQuickSettings.NormalizePermissionMode(source.PermissionMode),
+            ModelOptions = LensQuickSettings.CloneOptions(source.ModelOptions),
+            EffortOptions = LensQuickSettings.CloneOptions(source.EffortOptions)
         };
     }
 
@@ -2159,6 +2165,8 @@ public sealed partial class SessionLensHistoryService
         target.Effort = LensQuickSettings.NormalizeOptionalValue(source.Effort);
         target.PlanMode = LensQuickSettings.NormalizePlanMode(source.PlanMode);
         target.PermissionMode = LensQuickSettings.NormalizePermissionMode(source.PermissionMode);
+        target.ModelOptions = LensQuickSettings.CloneOptions(source.ModelOptions);
+        target.EffortOptions = LensQuickSettings.CloneOptions(source.EffortOptions);
     }
 
     private static LensStreamsSummary CloneStreamsSummary(LensStreamsSummary source)
@@ -4033,8 +4041,6 @@ public sealed class SessionLensHistoryPatchSubscription : IDisposable
         _state.Close();
     }
 }
-
-
 
 
 

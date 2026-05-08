@@ -1200,6 +1200,35 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
                     StandardInputEncoding = Utf8NoBom
                 };
             }
+
+            if (extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "pwsh",
+                    WorkingDirectory = workingDirectory,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Utf8NoBom,
+                    StandardErrorEncoding = Utf8NoBom,
+                    StandardInputEncoding = Utf8NoBom
+                };
+                startInfo.ArgumentList.Add("-NoLogo");
+                startInfo.ArgumentList.Add("-NoProfile");
+                startInfo.ArgumentList.Add("-ExecutionPolicy");
+                startInfo.ArgumentList.Add("Bypass");
+                startInfo.ArgumentList.Add("-File");
+                startInfo.ArgumentList.Add(binaryPath);
+                foreach (var argument in arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    startInfo.ArgumentList.Add(argument);
+                }
+
+                return startInfo;
+            }
         }
 
         return new ProcessStartInfo
@@ -1345,8 +1374,6 @@ internal sealed class ClaudeLensAgentRuntime : ILensAgentRuntime
     }
 
 }
-
-
 
 
 

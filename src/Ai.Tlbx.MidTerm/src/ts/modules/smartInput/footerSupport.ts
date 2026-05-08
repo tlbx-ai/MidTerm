@@ -1,4 +1,5 @@
 import { $voiceServerPassword } from '../../stores';
+import type { LensQuickSettingsOption, LensQuickSettingsSummary } from '../../api/types';
 import { t } from '../i18n';
 import {
   getLensQuickSettingsDraft,
@@ -7,7 +8,7 @@ import {
   getLensResolvedProviderModel,
 } from '../lens/quickSettings';
 import { hasInterruptibleLensTurnWork } from '../lens/input';
-import { getLensModelOptions } from '../lens/modelOptions';
+import { getLensEffortOptions, getLensModelOptions } from '../lens/modelOptions';
 import { isDevMode } from '../sidebar/voiceSection';
 import {
   ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
@@ -138,6 +139,15 @@ export function syncLensQuickSettingsControls(args: {
       provider,
       currentValues: [draft.model, effective.model],
       defaultLabel: resolvedProviderModel,
+      catalogOptions: preferQuickSettingsOptions(draft, effective, 'modelOptions'),
+    }),
+  );
+
+  setLensQuickSettingsDropdownOptions(
+    lensEffortSelect,
+    getLensEffortOptions({
+      currentValues: [draft.effort, effective.effort],
+      catalogOptions: preferQuickSettingsOptions(draft, effective, 'effortOptions'),
     }),
   );
 
@@ -157,6 +167,15 @@ export function syncLensQuickSettingsControls(args: {
     });
     lensSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
+}
+
+function preferQuickSettingsOptions(
+  draft: LensQuickSettingsSummary,
+  effective: LensQuickSettingsSummary,
+  key: 'modelOptions' | 'effortOptions',
+): readonly LensQuickSettingsOption[] | undefined {
+  const draftOptions = draft[key];
+  return draftOptions && draftOptions.length > 0 ? draftOptions : effective[key];
 }
 
 function syncLensQuickSettingSelect(select: HTMLSelectElement, nextValue: string): void {

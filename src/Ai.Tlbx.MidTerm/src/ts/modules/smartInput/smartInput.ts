@@ -13,6 +13,7 @@ import {
   $settingsOpen,
   $voiceServerPassword,
 } from '../../stores';
+import { setLensGoal } from '../../api/client';
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
@@ -26,6 +27,7 @@ import {
 import {
   LENS_QUICK_SETTINGS_CHANGED_EVENT,
   getLensQuickSettingsDraft,
+  getLensQuickSettingsProvider,
   setLensQuickSettingsDraft,
 } from '../lens/quickSettings';
 import {
@@ -161,6 +163,7 @@ let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
 let lensQuickSettingsSheetOpen = false;
+let lensGoalComposeSessionId: string | null = null;
 let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
 let suppressNextToolsToggleClick = false;
@@ -1648,7 +1651,9 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   summaryBtn.textContent = formatLensQuickSettingsSummary(draft);
   summaryBtn.dataset.planMode = draft.planMode;
   summaryBtn.setAttribute('aria-expanded', lensQuickSettingsSheetOpen ? 'true' : 'false');
-  summaryBtn.addEventListener('click', () => {
+  summaryBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     setLensQuickSettingsSheetOpen(!lensQuickSettingsSheetOpen);
   });
   lensSettingsSummaryBtn = summaryBtn;
@@ -1684,10 +1689,96 @@ function syncLensQuickSettingsActions(sessionId: string): void {
   }
 
   lensQuickSettingsActions.replaceChildren();
+  const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);
+  const draft = getLensQuickSettingsDraft(sessionId);
+  const provider = getLensQuickSettingsProvider(sessionId);
+  lensQuickSettingsActions.appendChild(
+    createLensActionButton(
+      'Plan',
+      t('smartInput.lensPlanCommand'),
+      () => {
+        toggleLensPlanMode(sessionId);
+      },
+      quickSettingsLocked,
+      { pressed: draft.planMode === 'on' },
+    ),
+  );
+  if (provider === 'codex') {
+    lensQuickSettingsActions.appendChild(
+      createLensActionButton(
+        'Goal',
+        t('smartInput.lensGoalCommand'),
+        () => {
+          void prepareLensGoal(sessionId);
+        },
+        false,
+        { pressed: lensGoalComposeSessionId === sessionId },
+      ),
+    );
+  }
   const resumeButton = createLensResumeButton(sessionId, lensResumeConversationHandler);
-  lensQuickSettingsActions.hidden = !resumeButton;
   if (resumeButton) {
     lensQuickSettingsActions.appendChild(resumeButton);
+  }
+  lensQuickSettingsActions.hidden = lensQuickSettingsActions.childElementCount === 0;
+}
+
+function createLensActionButton(
+  label: string,
+  title: string,
+  onClick: () => void,
+  disabled: boolean,
+  options: { pressed?: boolean } = {},
+): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'smart-input-lens-action';
+  button.textContent = label;
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.setAttribute('aria-pressed', options.pressed ? 'true' : 'false');
+  button.disabled = disabled;
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!disabled) {
+      onClick();
+    }
+  });
+  return button;
+}
+
+async function prepareLensGoal(sessionId: string): Promise<void> {
+  if (!activeTextarea) {
+    return;
+  }
+
+  const currentText = activeTextarea.value.trim();
+  if (currentText.length === 0) {
+    lensGoalComposeSessionId = sessionId;
+    activeTextarea.placeholder = 'Set Lens goal...';
+    activeTextarea.focus({ preventScroll: true });
+    syncLensQuickSettingsActions(sessionId);
+    return;
+  }
+
+  await submitLensGoal(sessionId, currentText, activeTextarea);
+}
+
+async function submitLensGoal(
+  sessionId: string,
+  objective: string,
+  textarea: HTMLTextAreaElement,
+): Promise<void> {
+  try {
+    await setLensGoal(sessionId, { objective });
+    lensGoalComposeSessionId = null;
+    pushCurrentPromptToHistory(sessionId);
+    clearSubmittedSmartInputState(sessionId, textarea);
+    showDropToast('Goal set.');
+    syncLensQuickSettingsActions(sessionId);
+  } catch (error) {
+    showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
   }
 }
 
@@ -1758,6 +1849,12 @@ function setLensQuickSettingsSheetOpen(open: boolean): void {
   }
   if (lensQuickSettingsRow) {
     lensQuickSettingsRow.hidden = !open;
+    if (lensQuickSettingsRow.classList.contains('smart-input-lens-settings-sheet')) {
+      footerStatusHost?.classList.toggle('adaptive-footer-status-sheet-open', open);
+      if (open && footerStatusHost && !footerStatusHost.contains(lensQuickSettingsRow)) {
+        footerStatusHost.appendChild(lensQuickSettingsRow);
+      }
+    }
   }
   if (!footerResizeObserver) {
     queueFooterReserveSync();
@@ -2153,6 +2250,16 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     } catch (error) {
       showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
     }
+    return;
+  }
+
+  if (lensGoalComposeSessionId === sessionId) {
+    if (lensAttachments.length > 0) {
+      showDropToast('Goals use text only.');
+      return;
+    }
+
+    await submitLensGoal(sessionId, renderedText, ta);
     return;
   }
 

@@ -489,6 +489,40 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<LensCommandAcceptedResponse> SetGoalAsync(
+        string sessionId,
+        LensGoalSetRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(
+                state,
+                commandId => new LensHostCommandEnvelope
+                {
+                    CommandId = commandId,
+                    SessionId = sessionId,
+                    Type = "thread.goal.set",
+                    SetGoal = request
+                },
+                ct).ConfigureAwait(false);
+
+            return result.Accepted ?? new LensCommandAcceptedResponse
+            {
+                SessionId = sessionId,
+                Status = result.Status
+            };
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<LensCommandAcceptedResponse> ResolveUserInputAsync(
         string sessionId,
         string requestId,
@@ -1356,7 +1390,9 @@ public sealed class SessionLensHostRuntimeService : IAsyncDisposable
             Model = source.Model,
             Effort = source.Effort,
             PlanMode = source.PlanMode,
-            PermissionMode = source.PermissionMode
+            PermissionMode = source.PermissionMode,
+            ModelOptions = LensQuickSettings.CloneOptions(source.ModelOptions),
+            EffortOptions = LensQuickSettings.CloneOptions(source.EffortOptions)
         };
     }
 
@@ -2126,8 +2162,6 @@ internal sealed class SubscriptionState
         }
     }
 }
-
-
 
 
 
