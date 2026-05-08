@@ -492,6 +492,43 @@ public sealed class WebPreviewService
         }
     }
 
+    public void StoreResponseCookies(string routeKey, Uri responseUri, HttpResponseMessage response)
+    {
+        if (!TryGetStateByRouteKey(routeKey, out var state)
+            || !response.Headers.TryGetValues("Set-Cookie", out var setCookies))
+        {
+            return;
+        }
+
+        lock (state.ClientLock)
+        {
+            foreach (var rawCookie in setCookies)
+            {
+                if (!TryParseCookie(rawCookie, responseUri, out var cookie))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (string.IsNullOrEmpty(cookie.Domain))
+                    {
+                        state.CookieContainer.Add(responseUri, cookie);
+                    }
+                    else
+                    {
+                        state.CookieContainer.Add(cookie);
+                    }
+                }
+                catch (CookieException)
+                {
+                }
+            }
+
+            PersistCookiesLocked(state, responseUri);
+        }
+    }
+
     public List<WebPreviewProxyLogEntry> GetLogEntries(string sessionId, string? previewName = null, int limit = MaxLogEntries)
     {
         return TryGetState(sessionId, previewName, out var state)
@@ -746,11 +783,11 @@ public sealed class WebPreviewService
 
     private PreviewHttpInvoker CreateHttpClientForState(PreviewState state, CookieContainer cookieContainer)
     {
+        _ = cookieContainer;
         SocketsHttpHandler? handler = new()
         {
             AllowAutoRedirect = false,
-            UseCookies = true,
-            CookieContainer = cookieContainer,
+            UseCookies = false,
             AutomaticDecompression = DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(10),
             SslOptions = new SslClientAuthenticationOptions

@@ -1870,6 +1870,14 @@ public sealed partial class WebPreviewProxyMiddleware
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
             var requestMessage = buildRequest(currentMethod, currentUrl);
+            if (requestMessage.RequestUri is not null)
+            {
+                var cookieHeader = _service.GetForwardedCookieHeader(routeKey, requestMessage.RequestUri);
+                if (!string.IsNullOrWhiteSpace(cookieHeader))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                }
+            }
 
             try
             {
@@ -1890,6 +1898,17 @@ public sealed partial class WebPreviewProxyMiddleware
                 LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 504, null);
+            }
+
+            if (upstreamResponse is not null && Uri.TryCreate(currentUrl, UriKind.Absolute, out var responseUri))
+            {
+                _service.StoreResponseCookies(routeKey, responseUri, upstreamResponse);
+            }
+
+            if (upstreamResponse is null)
+            {
+                requestMessage.Dispose();
+                return (null, 502, null);
             }
 
             var statusCode = (int)upstreamResponse.StatusCode;
