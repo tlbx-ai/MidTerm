@@ -94,6 +94,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_claim_preview >/dev/null", shell, StringComparison.Ordinal);
         Assert.Contains("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", shell, StringComparison.Ordinal);
+        Assert.Contains("selected visible: yes", shell, StringComparison.Ordinal);
         Assert.Contains("sessionId", shell, StringComparison.Ordinal);
         Assert.Contains("$(_MSID)", shell, StringComparison.Ordinal);
         Assert.Contains("previewName", shell, StringComparison.Ordinal);
@@ -125,6 +126,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
         Assert.Contains("$status = _MWaitForControllableStatus", powershell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", powershell, StringComparison.Ordinal);
+        Assert.Contains("selected visible: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("Get-Command $candidate -ErrorAction SilentlyContinue", powershell, StringComparison.Ordinal);
         Assert.Contains("Unknown MidTerm CLI command: $cmd", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_context -Value Mt-Context", powershell, StringComparison.Ordinal);

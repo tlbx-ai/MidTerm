@@ -184,7 +184,8 @@ public static class BrowserEndpoints
                 previewName,
                 connectedUiClientCount: uiBridge.ConnectedBrowserCount);
 
-            return status.Controllable
+            var ready = status.Controllable && status.DefaultClient?.IsVisible == true;
+            return ready
                 ? Results.Text(statusText)
                 : Results.Text(statusText, statusCode: 409);
         });

@@ -130,7 +130,7 @@ public static class MtcliScriptWriter
         }
         _MSTATUSREADY() {
           case "${1:-}" in
-            *"controllable: yes"*) return 0 ;;
+            *"controllable: yes"*"selected visible: yes"*) return 0 ;;
             *) return 1 ;;
           esac
         }
@@ -731,7 +731,7 @@ public static class MtcliScriptWriter
         }
         function script:_MStatusIsControllable {
             param([string]$Output)
-            return $Output -like "*controllable: yes*"
+            return $Output -like "*controllable: yes*" -and $Output -like "*selected visible: yes*"
         }
         function script:_MWaitForControllableStatus {
             param([int]$Attempts = 25, [int]$DelayMs = 200)
