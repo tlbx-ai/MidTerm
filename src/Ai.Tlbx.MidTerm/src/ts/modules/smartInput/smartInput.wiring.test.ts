@@ -142,6 +142,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('showAutomation');
     expect(source).toContain('showStatus');
     expect(source).toContain('syncFooterRailOrder(layoutState);');
+    expect(layoutSource).toContain('if (state.isMobile && state.lensActive) {');
+    expect(layoutSource).toContain("return ['status', 'primary', 'context', 'automation'];");
     expect(layoutSource).toContain("return ['primary', 'status', 'context', 'automation'];");
     expect(layoutSource).toContain("return ['primary', 'context', 'automation', 'status'];");
     expect(layoutSource).not.toContain("return ['primary', 'automation', 'context', 'status'];");
@@ -162,7 +164,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('ResizeObserver');
     expect(footerSupportSource).toContain('setAdaptiveFooterReservedHeight(');
     expect(footerSupportSource).toContain('window.dispatchEvent(');
-    expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
+    expect(source).toContain('function scrollFooterDockForTextareaFocus(): void {');
+    expect(source).toContain('shouldKeepFocusedComposerVisibleOnMobileLens() ? footerDock.scrollHeight : 0');
     expect(viewSource).toContain("sendBtn.addEventListener('dblclick', args.onSendDoubleClick);");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
     expect(source).toContain(
@@ -482,5 +485,18 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.adaptive-footer-status-left {');
     expect(css).toContain('.adaptive-footer-status-right {');
     expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .manager-bar {");
+  });
+
+  it('keeps mobile Lens status awareness and bottom-jump chrome out of the keyboard overlap zone', () => {
+    expect(css).toContain(
+      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='lens'] .adaptive-footer-status {",
+    );
+    expect(css).toContain(
+      "body.keyboard-visible\n  .adaptive-footer-dock[data-device='mobile'][data-surface='lens']\n  .adaptive-footer-primary {",
+    );
+    expect(css).toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(css).toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(source).toContain('function shouldKeepFocusedComposerVisibleOnMobileLens(): boolean {');
+    expect(source).toContain("document.body.classList.contains('keyboard-visible')");
   });
 });

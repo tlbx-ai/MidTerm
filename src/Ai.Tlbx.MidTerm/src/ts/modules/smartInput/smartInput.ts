@@ -1089,6 +1089,27 @@ function shouldAllowProgrammaticSmartInputFocus(): boolean {
   return !isEmbeddedWebPreviewContext();
 }
 
+function shouldKeepFocusedComposerVisibleOnMobileLens(): boolean {
+  const sessionId = $activeSessionId.get();
+  return (
+    Boolean(sessionId) &&
+    isLensActiveSession(sessionId) &&
+    isMobileViewport() &&
+    document.body.classList.contains('keyboard-visible')
+  );
+}
+
+function scrollFooterDockForTextareaFocus(): void {
+  if (!footerDock) {
+    return;
+  }
+
+  footerDock.scrollTo({
+    top: shouldKeepFocusedComposerVisibleOnMobileLens() ? footerDock.scrollHeight : 0,
+    behavior: 'auto',
+  });
+}
+
 function createDockedDOM(): void {
   ensureFooterHosts();
   if (!footerPrimaryHost || !footerContextHost || !footerStatusHost) {
@@ -1188,7 +1209,7 @@ function createDockedDOM(): void {
     onTextareaFocus: () => {
       queueFooterReserveSync();
       requestAnimationFrame(() => {
-        footerDock?.scrollTo({ top: 0, behavior: 'auto' });
+        scrollFooterDockForTextareaFocus();
       });
     },
     onTextareaBeforeInput: (event, textarea) => {

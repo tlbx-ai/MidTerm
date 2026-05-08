@@ -12074,7 +12074,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .agent-scroll-to-bottom {
   position: absolute;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));
   z-index: 2;
   min-height: 34px;
   padding: 0 12px;
@@ -14192,7 +14192,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
   .agent-scroll-to-bottom {
     right: 12px;
-    bottom: 12px;
+    bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));
     min-height: 28px;
     padding: 0 12px;
     font-size: 0.72rem;
@@ -17302,6 +17302,22 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-foot
     color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 92%, transparent) 78%,
     transparent
   );
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='lens'] .adaptive-footer-status {
+  top: 0;
+  bottom: auto;
+  order: -1;
+}
+
+body.keyboard-visible
+  .adaptive-footer-dock[data-device='mobile'][data-surface='lens']
+  .adaptive-footer-primary {
+  position: static;
+  top: auto;
+  z-index: auto;
+  padding-top: 0;
+  background: none;
 }
 
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-lens-settings-sheet {

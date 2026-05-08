@@ -6,12 +6,12 @@ import {
 } from './layout';
 
 describe('smart input adaptive footer layout helpers', () => {
-  it('keeps mobile terminal status controls above the expanded keys rail without changing Lens order', () => {
+  it('keeps mobile Lens status awareness ahead of the composer while terminal mobile keeps status after primary', () => {
     expect(getAdaptiveFooterRailSequence({ lensActive: true, isMobile: true })).toEqual([
+      'status',
       'primary',
       'context',
       'automation',
-      'status',
     ]);
     expect(getAdaptiveFooterRailSequence({ lensActive: false, isMobile: true })).toEqual([
       'primary',

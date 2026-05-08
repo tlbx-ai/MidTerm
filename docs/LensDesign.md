@@ -444,11 +444,13 @@ The canonical history contract must satisfy the following:
 - MidTerm's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
 - On mobile, Lens should keep model/effort/plan awareness always visible in the dock status rail and may reveal the full editable quick-settings surface as a compact sheet from that status row.
+- When the mobile soft keyboard is open, Lens should keep that compact status rail ahead of the composer so model/effort/plan awareness stays reachable without hiding the prompt.
 - When desktop width becomes constrained enough that the inline quick-settings rail would overflow, Lens should fall back to that same summary-plus-sheet pattern instead of letting controls spill off screen.
 - Manager automation should occupy at most one dock row and one visual line, with overflow or truncation behavior instead of wrapping into a second toolbar band.
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Lens content.
 - Only the prompt textbox's extra multiline growth may expand upward over the pane as overlay chrome; the rest of the Command Bay must remain pane-reserving once the collapsed dock reserve is established.
 - On Android and iOS, the Command Bay must remain visible above the on-screen keyboard; if vertical space tightens, the dock should compress or scroll internally while keeping the prompt row and status awareness reachable.
+- Lens floating live-edge affordances such as "Back to bottom" must clear the reserved Command Bay footprint instead of covering the prompt dock on mobile.
 - The common quick-settings surface should cover:
   - model
   - effort
@@ -624,6 +626,7 @@ Status in this branch/work item:
 - implemented: Lens and Terminal now share one adaptive footer dock shell with ordered primary/context/automation/status rails instead of separate smart-input and manager bars
 - implemented: the dock reserves only its collapsed footer height; multiline input growth expands upward as overlay chrome instead of shrinking the active pane
 - implemented: desktop Lens quick settings now live in the dock status rail as a compact translucent control line, while mobile keeps a persistent summary row and reveals the editable controls as a compact sheet
+- implemented: mobile Lens now orders the compact status rail ahead of the composer lane, and keyboard-visible Lens keeps that summary rail reachable without dropping it below the prompt
 - implemented: Lens model quick settings now use provider-scoped populated lists instead of a freeform textbox, while preserving current non-preset models already present in session state
 - implemented: Lens quick-settings dropdowns no longer rebuild and resync on every no-op footer refresh; unchanged option lists and unchanged selected values now stay quiet so idle Lens sessions avoid repeated `midterm:options` and `midterm:sync` event churn
 - implemented: constrained desktop Lens layouts now collapse quick settings into the same summary-plus-sheet pattern used on mobile instead of allowing the inline rail to run off screen
@@ -663,6 +666,7 @@ Status in this branch/work item:
 - implemented: the separate progress navigator now keeps a visible thumb/track treatment even when accent variables or advanced color functions are unavailable, so the Lens-owned scrollbar does not disappear into a transparent rail
 - implemented: the progress navigator now stays in layout as a stateful Lens rail instead of relying on `hidden` attribute toggles for visibility, which prevents reused session shells from collapsing the navigator out of existence
 - implemented: touch-sized Lens layouts now widen the progress navigator to a 44px-class hit target with a stronger mobile rail treatment so direct scrubbing does not require precision taps
+- implemented: the Lens "Back to bottom" control now clears the reserved Command Bay footprint so mobile prompt chrome does not overlap that live-edge action
 - implemented: desktop Lens progress navigation now uses a thinner low-chrome rail with a darker thumb, while touch-sized layouts keep the same subdued theme but preserve the 44px-class interaction target
 - implemented: the progress navigator thumb now top-clamps when the first canonical history item is top-aligned in the pane and bottom-clamps when the latest item is bottom-aligned, instead of always presenting the visible-range midpoint
 - implemented: visible-range math now resolves the actual on-screen slice even for short retained windows that remain fully materialized, so the progress navigator and traces do not collapse to the retained-window midpoint during local scrolling through tall content
