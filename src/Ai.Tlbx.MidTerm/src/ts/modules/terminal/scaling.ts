@@ -1483,6 +1483,9 @@ export function setupVisualViewport(): void {
       document.body.classList.toggle('keyboard-visible', kbVisible);
     }
 
+    if (typeof Reflect.get(window, 'dispatchEvent') === 'function')
+      window.dispatchEvent(new Event('midterm:visual-viewport-changed'));
+
     if ($isMainBrowser.get()) {
       autoResizeAllTerminalsImmediate();
     } else {

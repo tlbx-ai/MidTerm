@@ -115,6 +115,7 @@ let lensTurnLifecycleBound = false;
 let lensActiveSessionBound = false;
 let lensSelectionGuardBound = false;
 let lensForegroundRecoveryBound = false;
+let lensVisualViewportRecoveryBound = false;
 let lensForegroundRecoveryPending = false;
 
 function createHistoryWindowRevision(sessionId: string): string {
@@ -266,6 +267,7 @@ export function initAgentView(): void {
   bindActiveLensSessionRendering();
   bindLensSelectionGuard();
   bindLensForegroundRecovery();
+  bindLensVisualViewportRecovery();
   onTabActivated('agent', (sessionId, panel) => {
     ensureAgentViewSkeleton(sessionId, panel, (targetSessionId) => {
       void handleLensEscape(targetSessionId);
@@ -361,6 +363,7 @@ export function resetAgentViewRuntimeForTests(): void {
   lensActiveSessionBound = false;
   lensSelectionGuardBound = false;
   lensForegroundRecoveryBound = false;
+  lensVisualViewportRecoveryBound = false;
   lensForegroundRecoveryPending = false;
 }
 
@@ -1409,6 +1412,44 @@ function bindLensForegroundRecovery(): void {
   window.addEventListener('focus', recoverForegroundLensState);
   window.addEventListener('pageshow', recoverForegroundLensState);
   lensForegroundRecoveryBound = true;
+}
+
+function bindLensVisualViewportRecovery(): void {
+  if (
+    lensVisualViewportRecoveryBound ||
+    typeof window === 'undefined' ||
+    typeof window.addEventListener !== 'function'
+  ) {
+    return;
+  }
+
+  const recoverActiveLensViewport = () => {
+    const sessionId = $activeSessionId.get();
+    if (!sessionId || getActiveTab(sessionId) !== 'agent') {
+      return;
+    }
+
+    const state = viewStates.get(sessionId);
+    const viewport = state?.historyViewport;
+    if (!state || !viewport) {
+      return;
+    }
+
+    state.historyViewportSyncSuppressUntil = 0;
+    state.historyLastVoidSyncScrollTop = null;
+    state.historyWindowTargetCount = resolveLensHistoryWindowTargetCount(
+      viewport,
+      Math.max(LENS_HISTORY_WINDOW_SIZE, state.historyWindowCount),
+      state.historyObservedHeights.values(),
+    );
+    syncHistoryProgressNavigator(sessionId);
+    queueUrgentHistoryWindowViewportSync(sessionId, state);
+    renderCurrentAgentView(sessionId, { immediate: true });
+  };
+
+  window.addEventListener('midterm:visual-viewport-changed', recoverActiveLensViewport);
+  window.addEventListener('resize', recoverActiveLensViewport);
+  lensVisualViewportRecoveryBound = true;
 }
 
 function scheduleHistoryRender(sessionId: string): void {
