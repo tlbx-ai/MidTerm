@@ -880,12 +880,13 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){res.success=false;res.error=e.message||String(e);}
             bws.send(JSON.stringify(res));
           }
-          var bwsReconnectTimer=0,bwsStateKey="";
+          var bwsReconnectTimer=0,bwsStateKey="",bwsVisibleOverride=null;
           function curBwsState(){
             var hasFocus=false,topLevel=false;
             try{hasFocus=!!document.hasFocus();}catch(e){}
             try{topLevel=window.top===window.self;}catch(e){}
-            return {visible:document.visibilityState==="visible",focus:hasFocus,topLevel:topLevel};
+            var visible=bwsVisibleOverride!==null?bwsVisibleOverride:document.visibilityState==="visible";
+            return {visible:visible,focus:hasFocus,topLevel:topLevel};
           }
           function curBwsStateKey(){
             var s=curBwsState();
@@ -912,7 +913,11 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           window.addEventListener("message",function(e){
             var d=e&&e.data;
-            if(d&&d.type==="mt-refresh-browser-state")refreshBwsState(d.force===true);
+            if(d&&d.type==="mt-refresh-browser-state"){
+              if(d.visible===true)bwsVisibleOverride=true;
+              else if(d.visible===false)bwsVisibleOverride=false;
+              refreshBwsState(d.force===true);
+            }
           });
           function connectBws(){
             try{

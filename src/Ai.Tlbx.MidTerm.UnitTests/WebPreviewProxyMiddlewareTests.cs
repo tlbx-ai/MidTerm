@@ -200,7 +200,10 @@ public class WebPreviewProxyMiddlewareTests
 
         Assert.Contains("mt-refresh-browser-state", script, StringComparison.Ordinal);
         Assert.Contains("function refreshBwsState(force)", script, StringComparison.Ordinal);
-        Assert.Contains("if(d&&d.type===\"mt-refresh-browser-state\")refreshBwsState(d.force===true);", script, StringComparison.Ordinal);
+        Assert.Contains("bwsVisibleOverride", script, StringComparison.Ordinal);
+        Assert.Contains("if(d.visible===true)bwsVisibleOverride=true;", script, StringComparison.Ordinal);
+        Assert.Contains("else if(d.visible===false)bwsVisibleOverride=false;", script, StringComparison.Ordinal);
+        Assert.Contains("refreshBwsState(d.force===true);", script, StringComparison.Ordinal);
     }
 
     [Theory]

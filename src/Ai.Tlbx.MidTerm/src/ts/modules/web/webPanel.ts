@@ -594,10 +594,13 @@ function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFram
   return null;
 }
 
-function refreshVisiblePreviewBridge(frame: HTMLIFrameElement): void {
+function refreshPreviewBridgeVisibility(frame: HTMLIFrameElement, visible: boolean): void {
   const postRefresh = (): void => {
     try {
-      frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state', force: true }, '*');
+      frame.contentWindow?.postMessage(
+        { type: 'mt-refresh-browser-state', force: true, visible },
+        '*',
+      );
     } catch {
       // Ignore cross-origin or not-yet-loaded frames; the next load creates a fresh bridge.
     }
@@ -620,9 +623,7 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.classList.toggle('hidden', !isActive);
     frame.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     frame.tabIndex = isActive ? 0 : -1;
-    if (isActive) {
-      refreshVisiblePreviewBridge(frame);
-    }
+    refreshPreviewBridgeVisibility(frame, isActive);
   }
 }
 

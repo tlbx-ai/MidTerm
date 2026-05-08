@@ -153,8 +153,9 @@ describe('webPanel preview tabs', () => {
 
     expect(source).toContain("const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;");
     expect(source).toContain(
-      "frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state', force: true }, '*');",
+      "{ type: 'mt-refresh-browser-state', force: true, visible }",
     );
+    expect(source).toContain('refreshPreviewBridgeVisibility(frame, isActive);');
   });
 
   it('wires a close button only for non-default preview tabs', () => {
