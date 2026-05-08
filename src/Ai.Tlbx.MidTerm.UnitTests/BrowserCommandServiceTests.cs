@@ -627,4 +627,45 @@ public class BrowserCommandServiceTests
         Assert.NotNull(status.DefaultClient);
         Assert.True(status.DefaultClient!.ConnectedAtUtc >= notBefore);
     }
+
+    [Fact]
+    public async Task WaitForControllableAsync_WhenVisibleClientRequired_IgnoresHiddenClientUntilVisibleAttach()
+    {
+        var service = new BrowserCommandService();
+
+        var waitingTask = service.WaitForControllableAsync(
+            "https://example.com/",
+            sessionId: "session-a",
+            previewName: "default",
+            requireVisibleClient: true,
+            timeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        await Task.Delay(40);
+        Assert.True(service.TryRegisterClient(
+            "hidden",
+            "session-a",
+            "default",
+            "preview-hidden",
+            _ => { },
+            isVisible: false));
+
+        await Task.Delay(40);
+        Assert.False(waitingTask.IsCompleted);
+
+        Assert.True(service.TryRegisterClient(
+            "visible",
+            "session-a",
+            "default",
+            "preview-visible",
+            _ => { },
+            isVisible: true));
+
+        var status = await waitingTask;
+
+        Assert.True(status.Connected);
+        Assert.True(status.Controllable);
+        Assert.True(status.DefaultClient?.IsVisible);
+        Assert.Equal("preview-visible", status.DefaultClient?.PreviewId);
+    }
 }

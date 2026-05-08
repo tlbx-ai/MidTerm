@@ -189,6 +189,19 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("\"routeKey=\"+encodeURIComponent(routeMatch[1])", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void UrlRewriteScript_BrowserBridge_RefreshesStateWhenDockedFrameBecomesVisible()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("mt-refresh-browser-state", script, StringComparison.Ordinal);
+        Assert.Contains("if(d&&d.type===\"mt-refresh-browser-state\")refreshBwsState();", script, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
     [InlineData("?__mtTargetRevision=1", "")]

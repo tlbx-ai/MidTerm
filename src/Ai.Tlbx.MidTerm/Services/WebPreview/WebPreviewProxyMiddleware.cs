@@ -910,6 +910,10 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             schedBwsReconnect(50);
           }
+          window.addEventListener("message",function(e){
+            var d=e&&e.data;
+            if(d&&d.type==="mt-refresh-browser-state")refreshBwsState();
+          });
           function connectBws(){
             try{
               if(bws&&(bws.readyState===0||bws.readyState===1))return;

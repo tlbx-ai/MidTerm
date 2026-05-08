@@ -148,6 +148,12 @@ describe('webPanel browser status indicator', () => {
 });
 
 describe('webPanel preview tabs', () => {
+  it('asks the embedded bridge to refresh browser state when a frame is shown', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
+
+    expect(source).toContain("frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state' }, '*');");
+  });
+
   it('wires a close button only for non-default preview tabs', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 

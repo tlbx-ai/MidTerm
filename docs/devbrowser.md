@@ -119,6 +119,8 @@ Preview control ownership is now backend-owned per `(sessionId, previewName)` in
 
 Agents can explicitly recover from stale preview ownership with `mt_claim_preview` or `mt_open --claim <url>`. Normal `mt_open <url>` also reclaims a stale owner to the attached leading browser and activates the target session before it docks the preview, so two connected MidTerm tabs or an inactive source session cannot leave CLI browser automation stranded on an offline tab. The claim path assigns the selected `(sessionId, previewName)` to the connected leading MidTerm browser UI listener, then normal `open`, `reload`, and browser-command routing use that owner. `mt_status` now includes a compact `bridge phase` field such as `no-ui-client`, `no-target`, `owner-offline`, `preview-frame-disconnected`, `ambiguous-preview`, or `ready`, plus a one-line recovery hint.
 
+`mt_open` and `/api/browser/open` require the selected browser bridge to reconnect from a visible preview frame before they report success. When the dock activates a hidden iframe, the parent posts `mt-refresh-browser-state` into that frame so the injected bridge immediately refreshes its visibility/focus flags and reconnects if needed. This prevents agents from receiving a false-ready result from a stale hidden frame while the user-visible dev browser has not visibly moved.
+
 For token-efficient discovery and diagnostics, agents should prefer:
 
 - `mt_capabilities` / `mt_capabilities --json` for available commands, current status, and recommended recovery commands

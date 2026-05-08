@@ -600,6 +600,15 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.classList.toggle('hidden', !isActive);
     frame.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     frame.tabIndex = isActive ? 0 : -1;
+    if (isActive) {
+      requestAnimationFrame(() => {
+        try {
+          frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state' }, '*');
+        } catch {
+          // Ignore cross-origin or not-yet-loaded frames; the next load creates a fresh bridge.
+        }
+      });
+    }
   }
 }
 

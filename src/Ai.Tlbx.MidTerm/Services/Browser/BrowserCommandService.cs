@@ -279,6 +279,11 @@ public sealed class BrowserCommandService
             lines.Add("hint: The preview target is set, but no controllable browser has attached yet. Open the preview panel in MidTerm or wait for it to finish docking.");
         }
 
+        if (status.Controllable && status.DefaultClient?.IsVisible == false)
+        {
+            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. Re-run mt_open so MidTerm docks and refreshes the visible dev browser frame.");
+        }
+
         if (status.State == "waiting" && !string.IsNullOrWhiteSpace(status.OwnerBrowserId) && !status.OwnerConnected)
         {
             lines.Add($"hint: Preview control is currently owned by browser '{status.OwnerBrowserId}', but that browser is not attached right now.");
@@ -330,6 +335,7 @@ public sealed class BrowserCommandService
         string? previewName = null,
         string? previewId = null,
         DateTimeOffset? requireClientConnectedAfterUtc = null,
+        bool requireVisibleClient = false,
         Func<int>? connectedUiClientCountProvider = null,
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
@@ -354,8 +360,10 @@ public sealed class BrowserCommandService
             var hasFreshClient = requireClientConnectedAfterUtc is null
                 || (snapshot.DefaultClientConnectedAtUtc is { } connectedAt
                     && connectedAt >= requireClientConnectedAfterUtc.Value);
+            var hasVisibleClient = !requireVisibleClient
+                || latest.DefaultClient?.IsVisible == true;
 
-            if (latest.Controllable && hasFreshClient)
+            if (latest.Controllable && hasFreshClient && hasVisibleClient)
             {
                 return latest;
             }
