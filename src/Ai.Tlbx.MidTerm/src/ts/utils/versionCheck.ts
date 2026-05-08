@@ -17,7 +17,7 @@ import {
 
 const log = createLogger('version');
 
-let checkInFlight = false;
+let checkInFlight: Promise<boolean> | null = null;
 
 function getCurrentDocumentAssetVersion(): string | null {
   if (typeof document === 'undefined') {
@@ -55,7 +55,7 @@ async function fetchServerAssetVersion(): Promise<string | null> {
   return value ? decodeURIComponent(value) : null;
 }
 
-async function handleSourceDevVersionMismatch(currentAssetVersion: string): Promise<void> {
+async function handleSourceDevVersionMismatch(currentAssetVersion: string): Promise<boolean> {
   const serverAssetVersion = await fetchServerAssetVersion();
   if (serverAssetVersion && serverAssetVersion !== currentAssetVersion) {
     log.info(
@@ -63,10 +63,11 @@ async function handleSourceDevVersionMismatch(currentAssetVersion: string): Prom
         `Source-dev asset mismatch: client=${currentAssetVersion}, server=${serverAssetVersion}`,
     );
     requestFrontendRefresh();
-    return;
+    return true;
   }
 
   clearFrontendRefreshState();
+  return false;
 }
 
 function resolveFrontendRefreshPolicy(
@@ -89,18 +90,20 @@ function resolveFrontendRefreshPolicy(
   };
 }
 
-async function handleReleasedAssetVersionMismatch(): Promise<void> {
+async function handleReleasedAssetVersionMismatch(options?: {
+  forceReloadOnMismatch?: boolean;
+}): Promise<boolean> {
   const [{ data, response }, detailsResult] = await Promise.all([
     getVersion(),
     getVersionDetails().catch(() => null),
   ]);
   if (!response.ok || !data) {
-    return;
+    return false;
   }
 
   if (data === JS_BUILD_VERSION) {
     clearFrontendRefreshState();
-    return;
+    return false;
   }
 
   const refreshPolicy = resolveFrontendRefreshPolicy(detailsResult);
@@ -113,30 +116,51 @@ async function handleReleasedAssetVersionMismatch(): Promise<void> {
     updateType: refreshPolicy.updateType,
   });
 
-  if (!refreshPolicy.protocolCompatible) {
+  if (options?.forceReloadOnMismatch === true || !refreshPolicy.protocolCompatible) {
     requestFrontendRefresh();
+    return true;
   }
+
+  return false;
 }
 
 /**
  * Check if server version differs from frontend version and coordinate a safe
  * shell refresh policy for the current tab.
+ * Returns true when a reload was requested and callers must stop processing
+ * the current command in the stale shell.
  */
-export async function checkVersionAndReload(): Promise<void> {
-  if (checkInFlight) return;
-  checkInFlight = true;
+export async function checkVersionAndReload(options?: {
+  forceReloadOnMismatch?: boolean;
+}): Promise<boolean> {
+  if (checkInFlight) {
+    const reloadRequested = await checkInFlight;
+    if (reloadRequested || options?.forceReloadOnMismatch !== true) {
+      return reloadRequested;
+    }
+  }
+
+  const checkPromise = (async (): Promise<boolean> => {
+    try {
+      const currentAssetVersion = getCurrentDocumentAssetVersion();
+      if (currentAssetVersion && isSourceDevAssetVersion(currentAssetVersion)) {
+        return await handleSourceDevVersionMismatch(currentAssetVersion);
+      }
+
+      return await handleReleasedAssetVersionMismatch(options);
+    } catch {
+      // Network error during version check - ignore, will retry on next reconnect
+      return false;
+    }
+  })();
+
+  checkInFlight = checkPromise;
 
   try {
-    const currentAssetVersion = getCurrentDocumentAssetVersion();
-    if (currentAssetVersion && isSourceDevAssetVersion(currentAssetVersion)) {
-      await handleSourceDevVersionMismatch(currentAssetVersion);
-      return;
-    }
-
-    await handleReleasedAssetVersionMismatch();
-  } catch {
-    // Network error during version check - ignore, will retry on next reconnect
+    return await checkPromise;
   } finally {
-    checkInFlight = false;
+    if (checkInFlight === checkPromise) {
+      checkInFlight = null;
+    }
   }
 }
