@@ -254,6 +254,56 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void RewriteRefererForUpstream_RememberedLeakedPath_UsesTargetOrigin()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://demo.kilv.de/"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/login");
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var rewritten = middleware.RewriteRefererForUpstream(
+            "https://midterm.local/login?ReturnUrl=%2F",
+            routeKey,
+            new Uri("https://demo.kilv.de/"));
+
+        Assert.Equal("https://demo.kilv.de/login?ReturnUrl=%2F", rewritten);
+    }
+
+    [Fact]
+    public void BuildInjectedBaseHref_BlazorDocument_PreservesUpstreamBaseHref()
+    {
+        const string html = """
+            <html><head><base href="/"></head><body>
+            <!--Blazor:{"type":"server","descriptor":"abc"}-->
+            <script src="_framework/blazor.web.js"></script>
+            </body></html>
+            """;
+
+        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
+            "/webpreview/route-1",
+            "https://demo.kilv.de/login?ReturnUrl=%2F",
+            "/",
+            html);
+
+        Assert.Equal("/", baseHref);
+    }
+
+    [Fact]
+    public void BuildInjectedBaseHref_NonBlazorDocument_UsesProxyBaseHref()
+    {
+        const string html = "<html><head><base href=\"/\"></head><body>plain</body></html>";
+
+        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
+            "/webpreview/route-1",
+            "https://example.com/docs/page",
+            "/",
+            html);
+
+        Assert.Equal("/webpreview/route-1/", baseHref);
+    }
+
+    [Fact]
     public void CollectProxyPathPrefixes_RewrittenHtml_PrimesServerRootAssetPrefixes()
     {
         const string html = """

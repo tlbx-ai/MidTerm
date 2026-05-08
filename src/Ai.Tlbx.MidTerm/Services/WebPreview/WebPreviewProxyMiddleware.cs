@@ -1436,6 +1436,17 @@ public sealed partial class WebPreviewProxyMiddleware
         var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
+        // Capture this before URL rewriting removes or changes the upstream base tag.
+        // Blazor's navigation manager compares location.href against document.baseURI;
+        // forcing the base into /webpreview/... breaks apps that legitimately move the
+        // browser URL back to their own root path, e.g. /login.
+        string? originalBaseHref = null;
+        var baseMatch = BaseHrefValueRegex().Match(html);
+        if (baseMatch.Success)
+        {
+            originalBaseHref = baseMatch.Groups[1].Value;
+        }
+
         // Rewrite root-relative URLs to go through the proxy.
         // <base href> only handles truly relative URLs (foo/bar.js),
         // but root-relative URLs (/path/to/file) need explicit rewriting.
@@ -1465,17 +1476,6 @@ public sealed partial class WebPreviewProxyMiddleware
         // whose HTML points at server-root assets like /_astro/*.
         PrimeRootFallbacksFromHtml(routeKey, html);
 
-        // Extract the original <base href> value before removing — Blazor and other
-        // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
-        // Recomputing from the final URL loses trailing-slash semantics when the server
-        // doesn't redirect /path → /path/.
-        string? originalBaseHref = null;
-        var baseMatch = BaseHrefValueRegex().Match(html);
-        if (baseMatch.Success)
-        {
-            originalBaseHref = baseMatch.Groups[1].Value;
-        }
-
         // Remove any existing <base> tags to avoid duplicates — we inject our own
         html = ExistingBaseTagRegex().Replace(html, "");
 
@@ -1486,19 +1486,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Build proxy-prefixed base href. Trust the upstream's <base href> value — it knows
         // how its assets are served (root vs subpath). Just prefix with /webpreview.
-        string baseHref;
-        if (originalBaseHref is not null)
-        {
-            var basePath = originalBaseHref.TrimEnd('/');
-            if (basePath.Length == 0 || basePath == "/")
-                baseHref = routePrefix + "/";
-            else
-                baseHref = routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
-        }
-        else
-        {
-            baseHref = ComputeBaseHref(routePrefix, finalUrl);
-        }
+        var baseHref = BuildInjectedBaseHref(routePrefix, finalUrl, originalBaseHref, html);
 
         // Rewrite inline ESM specifiers before the browser resolves them.
         html = RewriteRootRelativeModuleSpecifiers(html, routePrefix, reloadToken);
@@ -1525,6 +1513,55 @@ public sealed partial class WebPreviewProxyMiddleware
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix + directory;
+    }
+
+    internal static string BuildInjectedBaseHref(string routePrefix, string? finalUrl, string? originalBaseHref, string html)
+    {
+        if (ShouldPreserveUpstreamBaseHref(html, originalBaseHref))
+        {
+            return NormalizeBaseHref(originalBaseHref!);
+        }
+
+        if (originalBaseHref is not null)
+        {
+            var basePath = originalBaseHref.TrimEnd('/');
+            if (basePath.Length == 0 || basePath == "/")
+                return routePrefix + "/";
+
+            return routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+        }
+
+        return ComputeBaseHref(routePrefix, finalUrl);
+    }
+
+    internal static bool ShouldPreserveUpstreamBaseHref(string html, string? originalBaseHref)
+    {
+        if (string.IsNullOrWhiteSpace(originalBaseHref))
+        {
+            return false;
+        }
+
+        return html.Contains("<!--Blazor:", StringComparison.Ordinal)
+            || html.Contains("_framework/blazor.", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("/_blazor/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeBaseHref(string baseHref)
+    {
+        var trimmed = baseHref.Trim();
+        if (trimmed.Length == 0)
+        {
+            return "/";
+        }
+
+        if (trimmed.EndsWith("/", StringComparison.Ordinal)
+            || trimmed.AsSpan().Contains('#')
+            || trimmed.AsSpan().Contains('?'))
+        {
+            return trimmed;
+        }
+
+        return trimmed + "/";
     }
 
     private static Uri BuildRequestedFileUri(Uri targetUri, string requestPath)
@@ -1742,6 +1779,13 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (!TryParseProxyRoute(refererUri.AbsolutePath, out var refererRouteKey, out var refererRemainingPath))
         {
+            if (_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out var leakedRouteKey)
+                && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
+                && leakedTargetUri is not null)
+            {
+                return BuildUpstreamUrlFromPath(leakedTargetUri, BuildUpstreamPath(leakedTargetUri, refererUri.AbsolutePath), refererUri.Query);
+            }
+
             return refererValue;
         }
 
