@@ -900,9 +900,9 @@ public sealed partial class WebPreviewProxyMiddleware
             if(bwsReconnectTimer)return;
             bwsReconnectTimer=setTimeout(function(){bwsReconnectTimer=0;connectBws();},delay||0);
           }
-          function refreshBwsState(){
+          function refreshBwsState(force){
             var nextKey=curBwsStateKey();
-            if(nextKey===bwsStateKey)return;
+            if(!force&&nextKey===bwsStateKey)return;
             bwsStateKey=nextKey;
             if(bws&&(bws.readyState===0||bws.readyState===1)){
               try{bws.close();}catch(e){}
@@ -912,7 +912,7 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           window.addEventListener("message",function(e){
             var d=e&&e.data;
-            if(d&&d.type==="mt-refresh-browser-state")refreshBwsState();
+            if(d&&d.type==="mt-refresh-browser-state")refreshBwsState(d.force===true);
           });
           function connectBws(){
             try{

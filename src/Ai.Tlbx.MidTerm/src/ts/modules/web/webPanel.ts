@@ -105,6 +105,7 @@ let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
+const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;
 let statusRefreshTimer: number | null = null;
 let screenshotInFlight = false;
 type PreviewReloadMode = 'soft' | 'force' | 'hard';
@@ -593,6 +594,25 @@ function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFram
   return null;
 }
 
+function refreshVisiblePreviewBridge(frame: HTMLIFrameElement): void {
+  const postRefresh = (): void => {
+    try {
+      frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state', force: true }, '*');
+    } catch {
+      // Ignore cross-origin or not-yet-loaded frames; the next load creates a fresh bridge.
+    }
+  };
+
+  for (const delayMs of PREVIEW_VISIBILITY_REFRESH_DELAYS_MS) {
+    if (delayMs === 0) {
+      requestAnimationFrame(postRefresh);
+      continue;
+    }
+
+    window.setTimeout(postRefresh, delayMs);
+  }
+}
+
 function setVisiblePreviewFrame(frameKey: string | null): void {
   activeFrameKey = frameKey;
   for (const [key, frame] of previewFrames) {
@@ -601,13 +621,7 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     frame.tabIndex = isActive ? 0 : -1;
     if (isActive) {
-      requestAnimationFrame(() => {
-        try {
-          frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state' }, '*');
-        } catch {
-          // Ignore cross-origin or not-yet-loaded frames; the next load creates a fresh bridge.
-        }
-      });
+      refreshVisiblePreviewBridge(frame);
     }
   }
 }

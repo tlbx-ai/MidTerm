@@ -151,7 +151,10 @@ describe('webPanel preview tabs', () => {
   it('asks the embedded bridge to refresh browser state when a frame is shown', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 
-    expect(source).toContain("frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state' }, '*');");
+    expect(source).toContain("const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;");
+    expect(source).toContain(
+      "frame.contentWindow?.postMessage({ type: 'mt-refresh-browser-state', force: true }, '*');",
+    );
   });
 
   it('wires a close button only for non-default preview tabs', () => {

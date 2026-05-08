@@ -199,7 +199,8 @@ public class WebPreviewProxyMiddlewareTests
         var script = Assert.IsType<string>(field?.GetRawConstantValue());
 
         Assert.Contains("mt-refresh-browser-state", script, StringComparison.Ordinal);
-        Assert.Contains("if(d&&d.type===\"mt-refresh-browser-state\")refreshBwsState();", script, StringComparison.Ordinal);
+        Assert.Contains("function refreshBwsState(force)", script, StringComparison.Ordinal);
+        Assert.Contains("if(d&&d.type===\"mt-refresh-browser-state\")refreshBwsState(d.force===true);", script, StringComparison.Ordinal);
     }
 
     [Theory]
