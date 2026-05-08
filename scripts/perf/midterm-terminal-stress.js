@@ -1,0 +1,156 @@
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const raf = () => new Promise((resolve) => requestAnimationFrame(resolve));
+const twoRaf = async () => {
+  await raf();
+  await raf();
+};
+
+async function waitFor(predicate, timeoutMs = 15000, intervalMs = 100) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    const value = predicate();
+    if (value) return value;
+    await sleep(intervalMs);
+  }
+  throw new Error('Timed out waiting for scenario condition.');
+}
+
+async function requestJson(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs || 10000);
+  try {
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`${options.method || 'GET'} ${url} failed: ${response.status}`);
+    }
+    if (response.status === 204) return null;
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sessionItem(sessionId) {
+  return document.querySelector(`.session-item[data-session-id="${CSS.escape(sessionId)}"]`);
+}
+
+async function switchToSession(sessionId) {
+  const item = await waitFor(() => sessionItem(sessionId), 10000);
+  const started = performance.now();
+  item.scrollIntoView({ block: 'nearest' });
+  item.click();
+  await waitFor(() => window.mmDebug?.activeId === sessionId, 8000, 50);
+  await twoRaf();
+  return performance.now() - started;
+}
+
+async function main() {
+  const result = {
+    startedAt: new Date().toISOString(),
+    createdSessionIds: [],
+    switchDurationsMs: [],
+    outputCommands: 0,
+    xtermCountPeak: 0,
+    cleanupDeleted: 0,
+    step: 'init',
+  };
+
+  window.__midtermPerfScenario = result;
+  await waitFor(() => window.mmDebug && document.querySelector('.terminal-page'), 20000);
+
+  try {
+    result.step = 'create-sessions';
+    for (let i = 0; i < 3; i += 1) {
+      const session = await requestJson('/api/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ cols: 120, rows: 34, shell: 'pwsh' }),
+      });
+      result.createdSessionIds.push(session.id);
+      await requestJson(`/api/sessions/${encodeURIComponent(session.id)}/name`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: `perf-terminal-${i + 1}` }),
+      });
+      await waitFor(() => sessionItem(session.id), 15000);
+    }
+
+    result.step = 'emit-output';
+    for (const [index, sessionId] of result.createdSessionIds.entries()) {
+      const command =
+        "$ProgressPreference='SilentlyContinue'; " +
+        `1..900 | ForEach-Object { "perf-${index + 1}-$($_) " + ('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' * 3) }; ` +
+        "'done'";
+      await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/input/text`, {
+        method: 'POST',
+        body: JSON.stringify({ text: command, appendNewline: true }),
+      });
+      result.outputCommands += 1;
+    }
+
+    await sleep(2500);
+
+    result.step = 'switch-standalone';
+    for (let i = 0; i < 45; i += 1) {
+      const sessionId = result.createdSessionIds[i % result.createdSessionIds.length];
+      result.switchDurationsMs.push(await switchToSession(sessionId));
+      result.xtermCountPeak = Math.max(result.xtermCountPeak, document.querySelectorAll('.xterm').length);
+    }
+
+    if (result.createdSessionIds.length >= 2 && window.mmDebug?.layout?.dock) {
+      result.step = 'dock-switch';
+      window.mmDebug.layout.dock(result.createdSessionIds[0], result.createdSessionIds[1], 'right');
+      await twoRaf();
+      for (let i = 0; i < 12; i += 1) {
+        const sessionId = result.createdSessionIds[i % 2];
+        const started = performance.now();
+        window.mmDebug.layout.focus(sessionId);
+        await twoRaf();
+        result.switchDurationsMs.push(performance.now() - started);
+      }
+    }
+
+    result.xtermCountPeak = Math.max(result.xtermCountPeak, document.querySelectorAll('.xterm').length);
+    result.step = 'complete';
+    result.completedAt = new Date().toISOString();
+    return result;
+  } finally {
+    result.step = `cleanup-after-${result.step}`;
+    for (const sessionId of result.createdSessionIds) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (response.ok) result.cleanupDeleted += 1;
+      } catch {
+        // Best-effort cleanup. The scenario result records how many sessions were deleted.
+      }
+    }
+    await sleep(1000);
+    const durations = [...result.switchDurationsMs].sort((a, b) => a - b);
+    const percentile = (p) => durations.length
+      ? durations[Math.min(durations.length - 1, Math.floor(durations.length * p))]
+      : null;
+    result.switchStats = {
+      count: durations.length,
+      p50Ms: percentile(0.5),
+      p95Ms: percentile(0.95),
+      maxMs: durations.length ? durations[durations.length - 1] : null,
+    };
+    if (window.__codexChromePerf) {
+      window.__codexChromePerf.scenario = result;
+    }
+  }
+}
+
+return await Promise.race([
+  main(),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('MidTerm terminal stress scenario timeout')), 75000)),
+]);
