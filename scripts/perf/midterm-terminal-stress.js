@@ -8,7 +8,7 @@ const twoRaf = async () => {
 async function waitFor(predicate, timeoutMs = 15000, intervalMs = 100) {
   const deadline = performance.now() + timeoutMs;
   while (performance.now() < deadline) {
-    const value = predicate();
+    const value = await predicate();
     if (value) return value;
     await sleep(intervalMs);
   }
@@ -35,8 +35,30 @@ async function requestJson(url, options = {}) {
   }
 }
 
+async function fetchSessionIds() {
+  const response = await requestJson('/api/sessions', { timeoutMs: 12000 });
+  return new Set((response?.sessions || []).map((session) => session.id).filter(Boolean));
+}
+
 function sessionItem(sessionId) {
   return document.querySelector(`.session-item[data-session-id="${CSS.escape(sessionId)}"]`);
+}
+
+function collectDomCounts() {
+  const selectors = [
+    '.session-item',
+    '[data-session-id]',
+    '.session-terminal-wrapper',
+    '.terminal-container',
+    '.xterm',
+    '.xterm-screen',
+    '.xterm-rows > div',
+    '.xterm-viewport',
+    '.session-tab-bar',
+    '.layout-pane',
+    '[data-tab-panel]',
+  ];
+  return Object.fromEntries(selectors.map((selector) => [selector, document.querySelectorAll(selector).length]));
 }
 
 async function switchToSession(sessionId) {
@@ -49,9 +71,57 @@ async function switchToSession(sessionId) {
   return performance.now() - started;
 }
 
+async function createSessionViaUi(knownIds) {
+  const button =
+    document.getElementById('btn-new-session') ||
+    document.getElementById('btn-create-terminal') ||
+    document.getElementById('btn-new-session-mobile');
+  if (!button) {
+    throw new Error('No New Session button found.');
+  }
+
+  button.click();
+  let launcherClicked = false;
+  const sessionId = await waitFor(async () => {
+    const ids = await fetchSessionIds();
+    for (const id of ids) {
+      if (!knownIds.has(id)) {
+        knownIds.add(id);
+        return id;
+      }
+    }
+
+    if (!launcherClicked) {
+      const launcherAction = document.querySelector(
+        '.session-launcher-provider-action[data-provider="terminal"][data-launch-mode="new"]',
+      );
+      if (launcherAction instanceof HTMLElement && !launcherAction.hasAttribute('disabled')) {
+        launcherClicked = true;
+        launcherAction.scrollIntoView({ block: 'nearest' });
+        launcherAction.click();
+      }
+    }
+
+    return null;
+  }, 20000, 250);
+
+  await waitFor(() => sessionItem(sessionId), 20000);
+  return sessionId;
+}
+
 async function main() {
   const result = {
     startedAt: new Date().toISOString(),
+    href: location.href,
+    title: document.title,
+    userAgent: navigator.userAgent,
+    visibilityState: document.visibilityState,
+    serviceVersion: null,
+    appVersionText: null,
+    settingsFrontendVersionText: null,
+    visibleVersionTexts: [],
+    initialDomCounts: null,
+    finalDomCounts: null,
     createdSessionIds: [],
     switchDurationsMs: [],
     outputCommands: 0,
@@ -62,20 +132,25 @@ async function main() {
 
   window.__midtermPerfScenario = result;
   await waitFor(() => window.mmDebug && document.querySelector('.terminal-page'), 20000);
+  result.serviceVersion = await fetch('/api/version').then((response) => response.text());
+  result.appVersionText = document.getElementById('app-version')?.textContent?.trim() || null;
+  result.settingsFrontendVersionText =
+    document.getElementById('version-frontend')?.textContent?.trim() || null;
+  result.visibleVersionTexts = Array.from(
+    new Set((document.body?.innerText.match(/(?:v)?9\.8\.\d+(?:-dev)?/g) || []).slice(-12)),
+  );
+  result.initialDomCounts = collectDomCounts();
 
   try {
     result.step = 'create-sessions';
+    const knownIds = await fetchSessionIds();
     for (let i = 0; i < 3; i += 1) {
-      const session = await requestJson('/api/sessions', {
-        method: 'POST',
-        body: JSON.stringify({ cols: 120, rows: 34, shell: 'pwsh' }),
-      });
-      result.createdSessionIds.push(session.id);
-      await requestJson(`/api/sessions/${encodeURIComponent(session.id)}/name`, {
+      const sessionId = await createSessionViaUi(knownIds);
+      result.createdSessionIds.push(sessionId);
+      await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/name`, {
         method: 'PUT',
         body: JSON.stringify({ name: `perf-terminal-${i + 1}` }),
       });
-      await waitFor(() => sessionItem(session.id), 15000);
     }
 
     result.step = 'emit-output';
@@ -144,6 +219,7 @@ async function main() {
       p95Ms: percentile(0.95),
       maxMs: durations.length ? durations[durations.length - 1] : null,
     };
+    result.finalDomCounts = collectDomCounts();
     if (window.__codexChromePerf) {
       window.__codexChromePerf.scenario = result;
     }

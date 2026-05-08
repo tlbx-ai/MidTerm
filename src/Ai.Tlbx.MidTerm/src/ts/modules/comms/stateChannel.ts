@@ -21,6 +21,7 @@ import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
+import { destroySessionWrapper } from '../sessionTabs';
 import { applyTerminalScaling } from '../terminal/scaling';
 import { handleSessionClosed } from '../layout';
 import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
@@ -316,6 +317,7 @@ function removeClosedSessions(validSessions: readonly (Session & { id: string })
   sessionTerminals.forEach((_, id) => {
     if (!newIds.has(id) && !hiddenSessionIds.has(id)) {
       handleSessionClosed(id);
+      destroySessionWrapper(id);
       destroyTerminalForSession(id);
       newlyCreatedSessions.delete(id);
     }

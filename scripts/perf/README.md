@@ -10,7 +10,7 @@ This folder contains browser-side scenarios for Chrome/CDP profiling. They are m
 
 `midterm-terminal-stress.js` exercises the main operator path:
 
-- create three real terminal sessions through the MidTerm API
+- create three real terminal sessions through the visible MidTerm UI and session launcher
 - emit terminal output into each session
 - switch rapidly between visible sessions through the actual sidebar DOM
 - exercise dock-layout focus switching
@@ -32,24 +32,39 @@ pwsh -File "$env:USERPROFILE\.codex\skills\chrome-perf\scripts\Invoke-ChromePerf
   -MaxDomNodeGrowth 3000
 ```
 
+For a repeated outer-shell campaign, use:
+
+```powershell
+pwsh -File Q:\repos\MidTermReleaseHotfix-987-csiu\scripts\perf\run-midterm-outer-shell-perf.ps1 `
+  -Url https://127.0.0.1:2100/ `
+  -Runs 10 `
+  -DurationSeconds 1 `
+  -FreezeSeconds 1 `
+  -IgnoreCertificateErrors
+```
+
 ## Baseline Evidence
 
 Last validated local service: `9.8.27-dev`.
 
-Successful run:
+Successful post-fix 10-run source outer-shell campaign:
 
 ```text
-C:\Users\johan\.codex\artifacts\chrome-perf\20260508-145539-midterm-terminal-stress-background\summary.json
+C:\Users\johan\.codex\artifacts\chrome-perf\midterm-outer-shell-10run-20260508-153132\aggregate-summary.json
 ```
 
-Observed result:
+Observed aggregate:
 
-- JS heap delta after scenario cleanup and forced GC: `+4.33 MB`
-- DOM node delta after cleanup: `+564`
-- long tasks: `4`, max `104 ms`
-- RAF p95: `33.4 ms`
-- session switch p95: `53.2 ms`, max `67.8 ms`
-- background/restore two-RAF latency: `29.2 ms`
-- created sessions cleaned up: `3/3`
+- completed runs: `10/10`, failures: `0`
+- JS heap delta after scenario cleanup and forced GC: avg `+2.98 MB`, p95 `+3.20 MB`
+- DOM node delta after cleanup: avg `+593.7`, p95 `+683`
+- session-tab bars after cleanup: `0` in every run
+- `[data-session-id]` nodes after cleanup: `0` in every run
+- xterms after cleanup: `0` in every run
+- long task max: avg `109.8 ms`, p95 `120 ms`
+- RAF p95: `16.8 ms`
+- session switch p95: avg `41.36 ms`, p95 `48.2 ms`
+- background/restore two-RAF latency: avg `24.23 ms`, p95 `28.4 ms`
+- created sessions cleaned up: `3/3` in every run
 
 This is a smoke baseline, not a proof that leaks cannot exist. Treat regressions in heap, DOM node count, listener count, p95 switch latency, or long-task count as candidates for focused trace/CPU-profile inspection.
