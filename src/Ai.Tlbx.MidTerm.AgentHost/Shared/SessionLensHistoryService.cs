@@ -1508,6 +1508,7 @@ public sealed partial class SessionLensHistoryService
             "command_execution_approval" => "Command approval",
             "file_read_approval" => "File read approval",
             "file_change_approval" => "File change approval",
+            "permissions_approval" => "Permissions approval",
             "interview" => "Interview",
             _ => requestType
         };
@@ -4041,7 +4042,6 @@ public sealed class SessionLensHistoryPatchSubscription : IDisposable
         _state.Close();
     }
 }
-
 
 
 

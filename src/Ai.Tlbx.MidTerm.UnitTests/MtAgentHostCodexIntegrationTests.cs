@@ -285,6 +285,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Equal("on-request", capture.ThreadStartApprovalPolicy);
             Assert.Equal("workspace-write", capture.ThreadStartSandbox);
             Assert.False(capture.ThreadStartExperimentalRawEvents);
+            Assert.False(capture.ThreadStartPersistExtendedHistory);
         }
         finally
         {
@@ -296,6 +297,105 @@ public sealed class MtAgentHostCodexIntegrationTests
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             Environment.SetEnvironmentVariable("MIDTERM_LENS_CODEX_YOLO_DEFAULT", originalYoloDefault);
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_CanResolveFakeCodexPermissionApprovalRequest()
+    {
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-permissions",
+                SessionId = "session-permissions",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-permissions",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-permissions");
+            _ = await WaitForReadyWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-permissions");
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-permissions",
+                SessionId = "session-permissions",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Inspect repo and ask permission.",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-permissions");
+            _ = await LensHostTestClient.ReadUntilMatchAsync(
+                process.StandardOutput,
+                pendingPatches,
+                patch => patch.Patch.RequestUpserts.Any(static request => request.Kind == "permissions_approval" && request.State == "open"),
+                maxPatches: 40,
+                timeout: TimeSpan.FromSeconds(10));
+
+            var permissionWindow = await LensHostTestClient.GetHistoryWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-permissions",
+                count: 96);
+            Assert.Contains("protocol-v2.txt", permissionWindow.Streams.UnifiedDiff, StringComparison.Ordinal);
+            Assert.Contains("from patch updated", permissionWindow.Streams.UnifiedDiff, StringComparison.Ordinal);
+            var request = Assert.Single(permissionWindow.Requests, request => request.Kind == "permissions_approval" && request.State == "open");
+            Assert.Contains("Permissions approval", request.KindLabel, StringComparison.Ordinal);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-resolve-permissions",
+                SessionId = "session-permissions",
+                Type = "request.resolve",
+                ResolveRequest = new LensRequestResolutionCommand
+                {
+                    RequestId = request.RequestId,
+                    Decision = "accept"
+                }
+            });
+
+            var resolveResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-resolve-permissions");
+            Assert.Equal("accepted", resolveResult.Status);
+
+            var resolveWindow = await WaitForTurnStateWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-permissions",
+                "completed");
+            Assert.Contains(resolveWindow.Requests, entry => entry.RequestId == request.RequestId && entry.Decision == "accept");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
         }
     }
 
@@ -426,6 +526,91 @@ public sealed class MtAgentHostCodexIntegrationTests
                 "session-remote",
                 "completed");
             Assert.Contains("Remote Codex shared-runtime reply.", LensHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_MapsCodexProtocolV2RemoteControlAndPatchNotifications()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start(
+            loadedThreadId: "thread-remote-protocol-v2-1",
+            assistantReply: "Remote Codex protocol v2 reply.",
+            emitTurnIds: true,
+            emitProtocolV2Surface: true);
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+
+        try
+        {
+            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Contains("codex", hello.Providers);
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-protocol-v2",
+                SessionId = "session-protocol-v2",
+                Type = "runtime.attach",
+                AttachRuntime = new LensAttachRuntimeRequest
+                {
+                    SessionId = "session-protocol-v2",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = SessionAgentAttachPoint.CodexProvider,
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true,
+                        Source = "test",
+                        PreferredThreadId = "thread-remote-protocol-v2-1"
+                    },
+                    ResumeThreadId = "thread-remote-protocol-v2-1"
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-protocol-v2");
+            _ = await WaitForReadyWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-protocol-v2");
+
+            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            {
+                CommandId = "cmd-turn-protocol-v2",
+                SessionId = "session-protocol-v2",
+                Type = "turn.start",
+                StartTurn = new LensTurnRequest
+                {
+                    Text = "Continue and emit protocol v2 notifications.",
+                    Attachments = []
+                }
+            });
+
+            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-protocol-v2");
+            var turnWindow = await WaitForTurnStateWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-protocol-v2",
+                "completed");
+
+            Assert.Contains(turnWindow.Notices, notice => notice.Message.Contains("remote-control status: connected", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(turnWindow.Notices, notice => notice.Type == "runtime.warning" && notice.Message.Contains("Fake Codex protocol warning", StringComparison.Ordinal));
+            Assert.Contains("protocol-v2.txt", turnWindow.Streams.UnifiedDiff, StringComparison.Ordinal);
+            Assert.Contains("from patch updated", turnWindow.Streams.UnifiedDiff, StringComparison.Ordinal);
+            Assert.Contains("protocol command output", turnWindow.Streams.CommandOutput, StringComparison.Ordinal);
         }
         finally
         {
@@ -1283,5 +1468,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         public string? ThreadStartSandbox { get; set; }
 
         public bool? ThreadStartExperimentalRawEvents { get; set; }
+
+        public bool? ThreadStartPersistExtendedHistory { get; set; }
     }
 }

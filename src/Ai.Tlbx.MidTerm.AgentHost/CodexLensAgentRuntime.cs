@@ -369,7 +369,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         var decision = NormalizeApprovalDecision(resolution.Decision);
-        await WriteCodexMessageAsync(BuildCodexApprovalResponse(pending.JsonRpcId, decision), ct).ConfigureAwait(false);
+        await WriteCodexMessageAsync(BuildCodexApprovalResponse(pending, decision), ct).ConfigureAwait(false);
 
         return Accepted(
             command.CommandId,
@@ -627,18 +627,13 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return;
         }
 
-        if (method.Contains("requestApproval", StringComparison.OrdinalIgnoreCase))
+        if (TryResolveCodexApprovalRequestType(method, out var requestType))
         {
             var turnId = ResolveTurnId(payload);
             var itemId = ResolveItemId(payload);
             var requestId = "approval-" + jsonRpcId;
-            var requestType = method.Contains("commandExecution", StringComparison.OrdinalIgnoreCase)
-                ? "command_execution_approval"
-                : method.Contains("fileRead", StringComparison.OrdinalIgnoreCase)
-                    ? "file_read_approval"
-                    : "file_change_approval";
             var requestTypeLabel = HumanizeRequestType(requestType);
-            var detail = BuildCodexItemDetail(payload);
+            var detail = BuildCodexApprovalDetail(method, payload);
             _pendingApprovals[requestId] = new PendingCodexApproval
             {
                 RequestId = requestId,
@@ -647,7 +642,8 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 RequestTypeLabel = requestTypeLabel,
                 TurnId = turnId,
                 ItemId = itemId,
-                Detail = detail
+                Detail = detail,
+                Payload = payload.Clone()
             };
 
             _emit(CreateEvent("request.opened", turnId, itemId, requestId, "codex.app-server.request", method, payload, lensEvent =>
@@ -662,6 +658,14 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             return;
         }
 
+        _emit(CreateEvent("server.request.unsupported", ResolveTurnId(payload), ResolveItemId(payload), "unsupported-" + jsonRpcId, "codex.app-server.request", method, payload, lensEvent =>
+        {
+            lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+            {
+                Message = $"Unsupported Codex server request: {method}",
+                Detail = BuildCompactJsonDetail(payload)
+            };
+        }));
         _ = WriteCodexMessageAsync(BuildCodexUnsupportedRequestResponse(jsonRpcId, method), CancellationToken.None);
     }
 
@@ -894,6 +898,50 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                 break;
             }
 
+            case "item/fileChange/patchUpdated":
+            {
+                var diff = BuildCodexPatchUpdatedDiff(payload);
+                if (!string.IsNullOrWhiteSpace(diff))
+                {
+                    _emit(CreateEvent("diff.updated", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
+                    {
+                        lensEvent.DiffUpdated = new LensProviderDiffUpdatedPayload
+                        {
+                            UnifiedDiff = diff
+                        };
+                    }));
+                }
+
+                _emit(CreateEvent("item.updated", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.Item = new LensProviderItemPayload
+                    {
+                        ItemType = "file_change",
+                        Status = "in_progress",
+                        Title = "File change updated",
+                        Detail = BuildCodexPatchUpdatedSummary(payload) ?? diff
+                    };
+                }));
+                break;
+            }
+
+            case "serverRequest/resolved":
+            {
+                if (!TryEmitCodexServerRequestResolved(payload, method))
+                {
+                    _emit(CreateEvent("server.request.resolved", ResolveTurnId(payload), null, GetString(payload, "requestId"), "codex.app-server.notification", method, payload, lensEvent =>
+                    {
+                        lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                        {
+                            Message = "Codex resolved a server request.",
+                            Detail = BuildCompactJsonDetail(payload)
+                        };
+                    }));
+                }
+
+                break;
+            }
+
             case "item/agentMessage/delta":
                 EmitContentDelta(method, payload, "assistant_text");
                 break;
@@ -913,6 +961,37 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             case "item/fileChange/outputDelta":
                 EmitContentDelta(method, payload, "file_change_output");
                 break;
+
+            case "command/exec/outputDelta":
+            {
+                EmitEncodedOutputDelta(method, payload, "command_output");
+                break;
+            }
+
+            case "process/outputDelta":
+            {
+                EmitEncodedOutputDelta(method, payload, "process_output");
+                break;
+            }
+
+            case "process/exited":
+            {
+                var processHandle = GetString(payload, "processHandle") ?? "process";
+                var exitCode = GetLong(payload, "exitCode");
+                var stdout = GetString(payload, "stdout");
+                var stderr = GetString(payload, "stderr");
+                _emit(CreateEvent("process.exited", ResolveTurnId(payload), processHandle, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.Item = new LensProviderItemPayload
+                    {
+                        ItemType = "command_execution",
+                        Status = exitCode is 0 or null ? "completed" : "failed",
+                        Title = exitCode is null ? "Process exited" : $"Process exited with code {exitCode.Value.ToString(CultureInfo.InvariantCulture)}",
+                        Detail = JoinNonEmpty(stdout, stderr, BuildCompactJsonDetail(payload))
+                    };
+                }));
+                break;
+            }
 
             case "item/plan/delta":
             {
@@ -1126,6 +1205,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             }
 
             case "item/completed":
+            case "rawResponseItem/completed":
             {
                 var turnId = ResolveTurnId(payload);
                 var itemId = ResolveItemId(payload);
@@ -1179,6 +1259,62 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     {
                         Message = $"Codex rerouted the model from {fromModel} to {toModel}.",
                         Detail = reason
+                    };
+                }));
+                break;
+            }
+
+            case "remoteControl/status/changed":
+            {
+                var status = GetString(payload, "status") ?? "unknown";
+                var environmentId = GetString(payload, "environmentId");
+                _emit(CreateEvent("remote-control.status.changed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = $"Codex remote-control status: {status}.",
+                        Detail = string.IsNullOrWhiteSpace(environmentId) ? null : $"Environment: {environmentId}"
+                    };
+                }));
+                break;
+            }
+
+            case "warning":
+            case "guardianWarning":
+            {
+                var message = GetString(payload, "message") ?? (method == "guardianWarning" ? "Codex guardian warning." : "Codex warning.");
+                _emit(CreateEvent(method == "guardianWarning" ? "guardian.warning" : "runtime.warning", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = message,
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "model/verification":
+            {
+                _emit(CreateEvent("model.verification", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex model verification updated.",
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "app/list/updated":
+            {
+                _emit(CreateEvent("app.list.updated", null, null, null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = "Codex app list updated.",
+                        Detail = BuildCompactJsonDetail(payload)
                     };
                 }));
                 break;
@@ -1282,7 +1418,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
 
             case "thread/realtime/started":
             case "thread/realtime/itemAdded":
+            case "thread/realtime/transcript/delta":
+            case "thread/realtime/transcript/done":
             case "thread/realtime/outputAudio/delta":
+            case "thread/realtime/sdp":
             case "thread/realtime/error":
             case "thread/realtime/closed":
             {
@@ -1291,6 +1430,28 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
                     lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
                     {
                         Message = HumanizeRealtimeEvent(method),
+                        Detail = BuildCompactJsonDetail(payload)
+                    };
+                }));
+                break;
+            }
+
+            case "account/login/completed":
+            case "externalAgentConfig/import/completed":
+            case "fs/changed":
+            case "skills/changed":
+            case "windows/worldWritableWarning":
+            case "windowsSandbox/setupCompleted":
+            case "hook/started":
+            case "hook/completed":
+            case "fuzzyFileSearch/sessionUpdated":
+            case "fuzzyFileSearch/sessionCompleted":
+            {
+                _emit(CreateEvent(MapCodexRuntimeNoticeEventType(method), ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
+                {
+                    lensEvent.RuntimeMessage = new LensProviderRuntimeMessagePayload
+                    {
+                        Message = HumanizeCodexRuntimeNotice(method),
                         Detail = BuildCompactJsonDetail(payload)
                     };
                 }));
@@ -1327,6 +1488,25 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         }
 
         _emit(CreateEvent("content.delta", ResolveTurnId(payload), ResolveItemId(payload), null, "codex.app-server.notification", method, payload, lensEvent =>
+        {
+            lensEvent.ContentDelta = new LensProviderContentDeltaPayload
+            {
+                StreamKind = streamKind,
+                Delta = delta
+            };
+        }));
+    }
+
+    private void EmitEncodedOutputDelta(string method, JsonElement payload, string streamKind)
+    {
+        var delta = DecodeBase64Utf8(GetString(payload, "deltaBase64"));
+        if (string.IsNullOrWhiteSpace(delta))
+        {
+            return;
+        }
+
+        var processId = GetString(payload, "processId") ?? GetString(payload, "processHandle");
+        _emit(CreateEvent("content.delta", ResolveTurnId(payload), processId, null, "codex.app-server.notification", method, payload, lensEvent =>
         {
             lensEvent.ContentDelta = new LensProviderContentDeltaPayload
             {
@@ -2099,6 +2279,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
             writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("experimentalRawEvents", false);
+            writer.WriteBoolean("persistExtendedHistory", false);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2265,7 +2446,14 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         });
     }
 
-    private static string BuildCodexApprovalResponse(string jsonRpcId, string decision)
+    private static string BuildCodexApprovalResponse(PendingCodexApproval pending, string decision)
+    {
+        return string.Equals(pending.RequestType, "permissions_approval", StringComparison.Ordinal)
+            ? BuildCodexPermissionApprovalResponse(pending.JsonRpcId, decision, pending.Payload)
+            : BuildCodexReviewDecisionResponse(pending.JsonRpcId, decision);
+    }
+
+    private static string BuildCodexReviewDecisionResponse(string jsonRpcId, string decision)
     {
         return BuildJsonString(writer =>
         {
@@ -2275,6 +2463,36 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             writer.WritePropertyName("result");
             writer.WriteStartObject();
             writer.WriteString("decision", decision);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static string BuildCodexPermissionApprovalResponse(string jsonRpcId, string decision, JsonElement payload)
+    {
+        return BuildJsonString(writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jsonrpc", "2.0");
+            writer.WriteString("id", jsonRpcId);
+            writer.WritePropertyName("result");
+            writer.WriteStartObject();
+            writer.WritePropertyName("permissions");
+            if (decision is "accept" or "acceptForSession" &&
+                payload.ValueKind == JsonValueKind.Object &&
+                payload.TryGetProperty("permissions", out var permissions) &&
+                permissions.ValueKind == JsonValueKind.Object)
+            {
+                permissions.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteStartObject();
+                writer.WriteEndObject();
+            }
+
+            writer.WriteString("scope", decision == "acceptForSession" ? "session" : "turn");
+            writer.WriteBoolean("strictAutoReview", false);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2687,6 +2905,167 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         };
     }
 
+    private static bool TryResolveCodexApprovalRequestType(string method, out string requestType)
+    {
+        if (method.Contains("commandExecution", StringComparison.OrdinalIgnoreCase) ||
+            method.Equals("execCommandApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            requestType = "command_execution_approval";
+            return true;
+        }
+
+        if (method.Contains("fileRead", StringComparison.OrdinalIgnoreCase))
+        {
+            requestType = "file_read_approval";
+            return true;
+        }
+
+        if (method.Contains("fileChange", StringComparison.OrdinalIgnoreCase) ||
+            method.Equals("applyPatchApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            requestType = "file_change_approval";
+            return true;
+        }
+
+        if (method.Contains("permissions", StringComparison.OrdinalIgnoreCase) &&
+            method.Contains("requestApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            requestType = "permissions_approval";
+            return true;
+        }
+
+        requestType = string.Empty;
+        return false;
+    }
+
+    private static string BuildCodexApprovalDetail(string method, JsonElement payload)
+    {
+        var primary = BuildCodexItemDetail(payload);
+        var reason = GetString(payload, "reason");
+        var cwd = GetString(payload, "cwd");
+        var command = ReadCodexCommandText(payload);
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(primary))
+        {
+            parts.Add(primary);
+        }
+
+        if (!string.IsNullOrWhiteSpace(command) &&
+            !parts.Any(part => string.Equals(part, command, StringComparison.Ordinal)))
+        {
+            parts.Add(command);
+        }
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            parts.Add("Reason: " + reason.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(cwd))
+        {
+            parts.Add("cwd: " + cwd.Trim());
+        }
+
+        if (method.Contains("permissions", StringComparison.OrdinalIgnoreCase))
+        {
+            var permissions = GetObject(payload, "permissions");
+            if (permissions is not null)
+            {
+                parts.Add("Permissions: " + permissions.Value.GetRawText());
+            }
+        }
+
+        return parts.Count == 0 ? BuildCompactJsonDetail(payload) ?? string.Empty : string.Join("\n", parts);
+    }
+
+    private bool TryEmitCodexServerRequestResolved(JsonElement payload, string method)
+    {
+        var jsonRpcId = GetString(payload, "requestId");
+        if (string.IsNullOrWhiteSpace(jsonRpcId))
+        {
+            return false;
+        }
+
+        var approval = _pendingApprovals.Values.FirstOrDefault(pending => string.Equals(pending.JsonRpcId, jsonRpcId, StringComparison.Ordinal));
+        if (approval is not null && _pendingApprovals.TryRemove(approval.RequestId, out approval))
+        {
+            _emit(CreateEvent("request.resolved", approval.TurnId, approval.ItemId, approval.RequestId, "codex.app-server.notification", method, payload, lensEvent =>
+            {
+                lensEvent.RequestResolved = new LensProviderRequestResolvedPayload
+                {
+                    RequestType = approval.RequestType,
+                    Decision = "resolved"
+                };
+            }));
+            return true;
+        }
+
+        var userInput = _pendingUserInputs.Values.FirstOrDefault(pending => string.Equals(pending.JsonRpcId, jsonRpcId, StringComparison.Ordinal));
+        if (userInput is not null && _pendingUserInputs.TryRemove(userInput.RequestId, out userInput))
+        {
+            _emit(CreateEvent("user-input.resolved", userInput.TurnId, userInput.ItemId, userInput.RequestId, "codex.app-server.notification", method, payload, lensEvent =>
+            {
+                lensEvent.UserInputResolved = new LensProviderUserInputResolvedPayload
+                {
+                    Answers = []
+                };
+            }));
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? BuildCodexPatchUpdatedSummary(JsonElement payload)
+    {
+        if (payload.ValueKind != JsonValueKind.Object ||
+            !payload.TryGetProperty("changes", out var changes) ||
+            changes.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        using var changeItems = changes.EnumerateArray();
+        while (changeItems.MoveNext())
+        {
+            var change = changeItems.Current;
+            var path = GetString(change, "path");
+            var kind = GetString(change, "kind");
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            parts.Add(string.IsNullOrWhiteSpace(kind) ? path.Trim() : $"{kind.Trim()}: {path.Trim()}");
+        }
+
+        return parts.Count == 0 ? null : string.Join("\n", parts);
+    }
+
+    private static string BuildCodexPatchUpdatedDiff(JsonElement payload)
+    {
+        if (payload.ValueKind != JsonValueKind.Object ||
+            !payload.TryGetProperty("changes", out var changes) ||
+            changes.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        var diffs = new List<string>();
+        using var changeItems = changes.EnumerateArray();
+        while (changeItems.MoveNext())
+        {
+            var diff = GetString(changeItems.Current, "diff");
+            if (!string.IsNullOrWhiteSpace(diff))
+            {
+                diffs.Add(diff.TrimEnd());
+            }
+        }
+
+        return diffs.Count == 0 ? string.Empty : string.Join("\n\n", diffs);
+    }
+
     private static string BuildCodexItemDetail(JsonElement payload)
     {
         var item = GetObject(payload, "item") ?? payload;
@@ -3049,6 +3428,23 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         return string.IsNullOrWhiteSpace(raw) ? null : raw;
     }
 
+    private static string? DecodeBase64Utf8(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(value));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
     private static string? JoinNonEmpty(params string?[] values)
     {
         var filtered = values
@@ -3064,7 +3460,10 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         {
             "thread/realtime/started" => "thread.realtime.started",
             "thread/realtime/itemAdded" => "thread.realtime.item-added",
+            "thread/realtime/transcript/delta" => "thread.realtime.transcript.delta",
+            "thread/realtime/transcript/done" => "thread.realtime.transcript.done",
             "thread/realtime/outputAudio/delta" => "thread.realtime.audio.delta",
+            "thread/realtime/sdp" => "thread.realtime.sdp",
             "thread/realtime/error" => "thread.realtime.error",
             "thread/realtime/closed" => "thread.realtime.closed",
             _ => "runtime.warning"
@@ -3077,10 +3476,41 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         {
             "thread/realtime/started" => "Codex realtime session started.",
             "thread/realtime/itemAdded" => "Codex realtime item added.",
+            "thread/realtime/transcript/delta" => "Codex realtime transcript updated.",
+            "thread/realtime/transcript/done" => "Codex realtime transcript completed.",
             "thread/realtime/outputAudio/delta" => "Codex realtime audio updated.",
+            "thread/realtime/sdp" => "Codex realtime session description updated.",
             "thread/realtime/error" => "Codex realtime session reported an error.",
             "thread/realtime/closed" => "Codex realtime session closed.",
             _ => "Codex realtime update."
+        };
+    }
+
+    private static string MapCodexRuntimeNoticeEventType(string method)
+    {
+        return method switch
+        {
+            "windows/worldWritableWarning" => "runtime.warning",
+            "thread/realtime/error" => "runtime.warning",
+            _ => "runtime.message"
+        };
+    }
+
+    private static string HumanizeCodexRuntimeNotice(string method)
+    {
+        return method switch
+        {
+            "account/login/completed" => "Codex account login completed.",
+            "externalAgentConfig/import/completed" => "Codex imported external agent configuration.",
+            "fs/changed" => "Codex observed file-system changes.",
+            "skills/changed" => "Codex skills changed.",
+            "windows/worldWritableWarning" => "Codex reported a world-writable Windows path warning.",
+            "windowsSandbox/setupCompleted" => "Codex Windows sandbox setup completed.",
+            "hook/started" => "Codex hook started.",
+            "hook/completed" => "Codex hook completed.",
+            "fuzzyFileSearch/sessionUpdated" => "Codex file-search session updated.",
+            "fuzzyFileSearch/sessionCompleted" => "Codex file-search session completed.",
+            _ => "Codex runtime notice."
         };
     }
 
@@ -3245,6 +3675,7 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
             "command_execution_approval" => "Command approval",
             "file_read_approval" => "File read approval",
             "file_change_approval" => "File change approval",
+            "permissions_approval" => "Permissions approval",
             "interview" => "Interview",
             _ => requestType
         };
@@ -3357,8 +3788,6 @@ internal sealed class CodexLensAgentRuntime : ILensAgentRuntime
         public string? TurnId { get; set; }
         public string? ItemId { get; set; }
         public string? Detail { get; set; }
+        public JsonElement Payload { get; set; }
     }
 }
-
-
-

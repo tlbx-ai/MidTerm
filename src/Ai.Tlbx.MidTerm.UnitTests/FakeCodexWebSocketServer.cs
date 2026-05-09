@@ -26,7 +26,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitMcpToolProgress,
         bool emitUnknownAgentNotification,
         bool emitBackgroundTerminalWaitNotification,
-        bool emitMcpStartupStatus)
+        bool emitMcpStartupStatus,
+        bool emitProtocolV2Surface)
     {
         Endpoint = endpoint;
         LoadedThreadId = loadedThreadId;
@@ -38,6 +39,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         EmitUnknownAgentNotification = emitUnknownAgentNotification;
         EmitBackgroundTerminalWaitNotification = emitBackgroundTerminalWaitNotification;
         EmitMcpStartupStatus = emitMcpStartupStatus;
+        EmitProtocolV2Surface = emitProtocolV2Surface;
         _listener.Prefixes.Add(ToHttpPrefix(endpoint));
         _listener.Start();
         _acceptLoopTask = Task.Run(AcceptLoopAsync, _shutdown.Token);
@@ -63,6 +65,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public bool EmitMcpStartupStatus { get; }
 
+    public bool EmitProtocolV2Surface { get; }
+
     public static FakeCodexWebSocketServer Start(
         string loadedThreadId,
         string assistantReply,
@@ -72,7 +76,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
         bool emitMcpToolProgress = false,
         bool emitUnknownAgentNotification = false,
         bool emitBackgroundTerminalWaitNotification = false,
-        bool emitMcpStartupStatus = false)
+        bool emitMcpStartupStatus = false,
+        bool emitProtocolV2Surface = false)
     {
         var endpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{GetFreePort()}/");
         return new FakeCodexWebSocketServer(
@@ -85,7 +90,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
             emitMcpToolProgress,
             emitUnknownAgentNotification,
             emitBackgroundTerminalWaitNotification,
-            emitMcpStartupStatus);
+            emitMcpStartupStatus,
+            emitProtocolV2Surface);
     }
 
     public async ValueTask DisposeAsync()
@@ -103,6 +109,41 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
         await Task.WhenAll(_clientTasks.ToArray()).ConfigureAwait(false);
         _shutdown.Dispose();
+    }
+
+    private async Task SendProtocolV2SurfaceNotificationsAsync(WebSocket socket, string? turnId = null)
+    {
+        if (!EmitProtocolV2Surface)
+        {
+            return;
+        }
+
+        await SendJsonAsync(socket, new
+        {
+            method = "remoteControl/status/changed",
+            @params = new
+            {
+                status = "connected",
+                environmentId = "fake-codex-env-1"
+            }
+        }, _shutdown.Token).ConfigureAwait(false);
+        await SendJsonAsync(socket, new
+        {
+            method = "warning",
+            @params = new
+            {
+                turnId,
+                message = "Fake Codex protocol warning."
+            }
+        }, _shutdown.Token).ConfigureAwait(false);
+        await SendJsonAsync(socket, new
+        {
+            method = "app/list/updated",
+            @params = new
+            {
+                apps = Array.Empty<object>()
+            }
+        }, _shutdown.Token).ConfigureAwait(false);
     }
 
     private async Task AcceptLoopAsync()
@@ -257,6 +298,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
+                        await SendProtocolV2SurfaceNotificationsAsync(socket).ConfigureAwait(false);
                         break;
 
                     case "thread/start" when id is not null:
@@ -284,6 +326,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
+                        await SendProtocolV2SurfaceNotificationsAsync(socket).ConfigureAwait(false);
                         break;
 
                     case "turn/start" when id is not null:
@@ -496,6 +539,51 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 delta = AssistantReply
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (EmitProtocolV2Surface)
+                        {
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "item/fileChange/patchUpdated",
+                                @params = new
+                                {
+                                    turnId,
+                                    itemId = "item-file-change-remote-1",
+                                    changes = new object[]
+                                    {
+                                        new
+                                        {
+                                            path = "protocol-v2.txt",
+                                            kind = "update",
+                                            diff = "--- a/protocol-v2.txt\n+++ b/protocol-v2.txt\n@@ -1 +1 @@\n-old\n+from patch updated"
+                                        }
+                                    }
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "command/exec/outputDelta",
+                                @params = new
+                                {
+                                    processId = "exec-remote-1",
+                                    stream = "stdout",
+                                    deltaBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes("protocol command output")),
+                                    capReached = false
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                            await SendJsonAsync(socket, new
+                            {
+                                method = "process/exited",
+                                @params = new
+                                {
+                                    processHandle = "exec-remote-1",
+                                    exitCode = 0,
+                                    stdout = "",
+                                    stdoutCapReached = false,
+                                    stderr = "",
+                                    stderrCapReached = false
+                                }
+                            }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         if (EmitRichHistoryItems)
                         {
                             await SendJsonAsync(socket, new
