@@ -13,7 +13,7 @@ import {
   LENS_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
 } from './historyViewport';
-import { traceRenderedLensHistoryWindow } from './historyTrace';
+import { traceLensHistoryScroll, traceRenderedLensHistoryWindow } from './historyTrace';
 import type { LensHistoryRequestSummary, LensHistorySnapshot } from '../../api/client';
 import {
   captureViewportAnchor,
@@ -101,6 +101,7 @@ type HistoryRenderDeps = {
 const HISTORY_PLACEHOLDER_TARGET_BLOCK_HEIGHT_PX = 960;
 const HISTORY_PLACEHOLDER_MAX_BLOCKS = 10;
 const PROGRAMMATIC_HISTORY_VIEWPORT_SYNC_SUPPRESS_MS = 200;
+const USER_HISTORY_GAP_RECOVERY_GRACE_MS = 900;
 
 export type HistoryWindowViewportMetrics = VirtualizerWindowViewportMetrics;
 
@@ -727,6 +728,7 @@ function hasIntersectingRenderedHistoryEntry(
 }
 
 function recoverViewportFromRenderedHistoryGap(
+  sessionId: string,
   viewport: HTMLDivElement,
   state: SessionLensViewState,
 ): boolean {
@@ -763,6 +765,16 @@ function recoverViewportFromRenderedHistoryGap(
     return false;
   }
 
+  traceLensHistoryScroll({
+    sessionId,
+    reason: 'gap-snap',
+    scrollTop: viewport.scrollTop,
+    clientHeight: viewport.clientHeight,
+    scrollHeight: viewport.scrollHeight,
+    historyWindowStart: state.snapshot?.historyWindowStart,
+    historyWindowEnd: state.snapshot?.historyWindowEnd,
+    historyCount: state.snapshot?.historyCount,
+  });
   suppressViewportWindowSync(state);
   return syncViewportScrollPosition(viewport, viewport.scrollTop + nearestOffsetTopPx - 24);
 }
@@ -1098,6 +1110,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function adjustBrowseViewportIfNeeded(
+    sessionId: string,
     viewport: HTMLDivElement,
     state: SessionLensViewState | undefined,
   ): boolean {
@@ -1118,6 +1131,22 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return false;
     }
 
+    const userScrollInProgress =
+      Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
+    if (userScrollInProgress && !hasIntersectingRenderedHistoryEntry(viewport, state)) {
+      traceLensHistoryScroll({
+        sessionId,
+        reason: 'gap-wait',
+        scrollTop: viewport.scrollTop,
+        clientHeight: viewport.clientHeight,
+        scrollHeight: viewport.scrollHeight,
+        historyWindowStart: state.snapshot?.historyWindowStart,
+        historyWindowEnd: state.snapshot?.historyWindowEnd,
+        historyCount: state.snapshot?.historyCount,
+      });
+      return false;
+    }
+
     if (state.historyRenderedNodes.size === 0) {
       return false;
     }
@@ -1126,7 +1155,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return false;
     }
 
-    return recoverViewportFromRenderedHistoryGap(viewport, state);
+    return recoverViewportFromRenderedHistoryGap(sessionId, viewport, state);
   }
 
   function restorePendingHistoryJumpTarget(
@@ -1184,7 +1213,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const jumpViewportAdjusted = state ? restorePendingHistoryJumpTarget(viewport, state) : false;
     const browseViewportAdjusted = jumpViewportAdjusted
       ? false
-      : adjustBrowseViewportIfNeeded(viewport, state);
+      : adjustBrowseViewportIfNeeded(sessionId, viewport, state);
     const hasPlaceholderRanges =
       state !== undefined &&
       (state.historyLeadingPlaceholders.length > 0 || state.historyTrailingPlaceholders.length > 0);

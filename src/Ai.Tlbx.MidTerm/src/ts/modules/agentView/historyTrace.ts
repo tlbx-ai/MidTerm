@@ -12,6 +12,8 @@ type LensHistoryFetchReason =
   | 'stream-window'
   | 'hidden-compact';
 
+type LensHistoryScrollReason = 'fast-wheel' | 'gap-wait' | 'gap-snap';
+
 type TraceSessionState = {
   lastShowKey: string | null;
   lastWindowStart: number | null;
@@ -26,6 +28,18 @@ type TraceShowArgs = {
   visibleStart: number;
   visibleEnd: number;
   pinnedToBottom: boolean;
+};
+
+type TraceScrollArgs = {
+  sessionId: string;
+  reason: LensHistoryScrollReason;
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+  deltaYPx?: number | undefined;
+  historyWindowStart?: number | undefined;
+  historyWindowEnd?: number | undefined;
+  historyCount?: number | undefined;
 };
 
 const traceSessionState = new Map<string, TraceSessionState>();
@@ -272,6 +286,30 @@ export function traceLensHistoryPush(
   parts.push(`seq ${delta.latestSequence}`);
   parts.push(`total ${delta.historyCount}`);
   trace(sessionId, parts.join(' '));
+}
+
+export function traceLensHistoryScroll(args: TraceScrollArgs): void {
+  if (!shouldTraceLensHistory()) {
+    return;
+  }
+
+  const parts = [
+    'scroll',
+    args.reason,
+    `top ${Math.round(args.scrollTop)}`,
+    `height ${Math.round(args.clientHeight)}/${Math.round(args.scrollHeight)}`,
+  ];
+  if (typeof args.deltaYPx === 'number' && Number.isFinite(args.deltaYPx)) {
+    parts.push(`dy ${Math.round(args.deltaYPx)}`);
+  }
+  if (typeof args.historyWindowStart === 'number' && typeof args.historyWindowEnd === 'number') {
+    parts.push(formatRange(args.historyWindowStart, args.historyWindowEnd));
+  }
+  if (typeof args.historyCount === 'number') {
+    parts.push(`total ${args.historyCount}`);
+  }
+
+  trace(args.sessionId, parts.join(' '));
 }
 
 export function traceLensHistoryShow(args: TraceShowArgs): void {

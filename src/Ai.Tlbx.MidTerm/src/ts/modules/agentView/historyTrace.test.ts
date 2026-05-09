@@ -4,6 +4,7 @@ import {
   resetLensHistoryTrace,
   traceLensHistoryFetch,
   traceLensHistoryPush,
+  traceLensHistoryScroll,
   traceLensHistoryShow,
 } from './historyTrace';
 
@@ -265,5 +266,23 @@ describe('historyTrace', () => {
       '[LensHistory session-] show #3-#23 view #3-#10 custom discard #1-#2',
     );
     expect(consoleDebug).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs fast scroll diagnostics with viewport and retained window context', () => {
+    traceLensHistoryScroll({
+      sessionId: 'session-1',
+      reason: 'fast-wheel',
+      scrollTop: 4242.4,
+      clientHeight: 640,
+      scrollHeight: 18000,
+      deltaYPx: -1280.7,
+      historyWindowStart: 120,
+      historyWindowEnd: 180,
+      historyCount: 360,
+    });
+
+    expect(consoleDebug).toHaveBeenCalledWith(
+      '[LensHistory session-] scroll fast-wheel top 4242 height 640/18000 dy -1281 #121-#180 total 360',
+    );
   });
 });

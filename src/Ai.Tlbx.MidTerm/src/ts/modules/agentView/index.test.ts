@@ -6785,6 +6785,118 @@ describe('agentView dev errors', () => {
     expect(render.shouldRenderForViewportScroll(state)).toBe(true);
   });
 
+  it('does not snap back to old rendered rows during a recent fast user scroll gap', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2000,
+      scrollHeight: 6000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606 })),
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const syncViewportHistoryWindow = vi.fn();
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 80,
+        historyCount: 400,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyLastScrollMetrics: null,
+      historyLastUserScrollIntentAt: Date.now(),
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({ top: -1200, bottom: -1100, height: 100 })),
+        }),
+      ),
+      createHistorySpacer: vi.fn(),
+      createHistoryPlaceholderBlock: vi.fn((args: any) =>
+        createMockDomNode({
+          className: 'agent-history-placeholder',
+          style: { height: `${args.heightPx}px` },
+          dataset: { direction: args.direction },
+          querySelector: vi.fn(() => null),
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+      syncViewportHistoryWindow,
+    });
+
+    const entries = Array.from({ length: 80 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+
+    expect(historyViewport.scrollTop).toBe(2000);
+    expect(syncViewportHistoryWindow).toHaveBeenCalledWith('s1');
+  });
+
   it('requests a viewport-centered history sync when placeholders fill the viewport without a concrete row', async () => {
     const { createAgentHistoryRender } = await import('./historyRender');
 

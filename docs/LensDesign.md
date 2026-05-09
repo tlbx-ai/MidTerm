@@ -232,6 +232,7 @@ The canonical history contract must satisfy the following:
 - When Lens uses a dedicated history scrollbar, that scrollbar should operate in canonical index space and must not treat rendered DOM height as the source of truth for navigation position.
 - Dragging the dedicated history scrollbar should scrub directly in canonical progress space and should coalesce toward the latest target. Stale preview or hydrate fetches must not overwrite a newer navigator target.
 - Wheel, trackpad, keyboard, and touch scrolling on the history pane itself should stay native and pixel-based inside the currently materialized kernel; fetch/grow/prune work must preserve the visible anchor so that local reading motion does not shake when the retained window expands or trims.
+- Fast wheel bursts may temporarily land inside placeholder-only retained-history gaps; Lens should log that transition, urgently fetch the viewport-centered canonical window, and must not snap the user back to the nearest previously rendered row while the user scroll is still in progress.
 - Passive rerenders must not clear an active text selection inside Lens. If the user is selecting or holding a non-collapsed selection in the history pane, Lens should defer non-forced DOM replacement until that selection is cleared.
 
 ### 11. Terminal-font monospace usage

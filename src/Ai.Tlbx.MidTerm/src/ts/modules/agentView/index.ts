@@ -59,6 +59,7 @@ import {
   traceLensHistoryCompact,
   traceLensHistoryFetch,
   traceLensHistoryPush,
+  traceLensHistoryScroll,
 } from './historyTrace';
 import { prepareLensForForeground, syncAgentViewPresentation } from './viewPresentation';
 import {
@@ -108,6 +109,8 @@ const viewStates = new Map<string, SessionLensViewState>();
 const LENS_HISTORY_WINDOW_SIZE = 80;
 const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
+const HISTORY_FAST_WHEEL_DELTA_MIN_PX = 480;
+const HISTORY_WHEEL_LINE_DELTA_PX = 40;
 const HISTORY_NAVIGATOR_PREVIEW_COUNT = 5;
 const HISTORY_NAVIGATOR_PREVIEW_THROTTLE_MS = 80;
 const HISTORY_NAVIGATOR_HYDRATE_IDLE_MS = 120;
@@ -743,6 +746,18 @@ function resolveHistoryKeyboardStepPx(state: SessionLensViewState): number {
   );
 }
 
+function resolveHistoryWheelDeltaYPx(event: WheelEvent, viewport: HTMLDivElement): number {
+  if (event.deltaMode === 1) {
+    return event.deltaY * HISTORY_WHEEL_LINE_DELTA_PX;
+  }
+
+  if (event.deltaMode === 2) {
+    return event.deltaY * Math.max(1, viewport.clientHeight);
+  }
+
+  return event.deltaY;
+}
+
 function clearHistoryNavigatorPreviewTimer(state: SessionLensViewState): void {
   if (state.historyNavigatorPreviewHandle === null) {
     return;
@@ -1136,7 +1151,26 @@ function bindHistoryViewport(sessionId: string, state: SessionLensViewState): vo
     'wheel',
     (event) => {
       markUserScrollIntent();
-      if (event.deltaY < 0) {
+      const deltaYPx = resolveHistoryWheelDeltaYPx(event, viewport);
+      const fastWheelThresholdPx = Math.max(
+        HISTORY_FAST_WHEEL_DELTA_MIN_PX,
+        Math.round(Math.max(1, viewport.clientHeight) * 0.75),
+      );
+      if (Math.abs(deltaYPx) >= fastWheelThresholdPx) {
+        const snapshot = viewStates.get(sessionId)?.snapshot;
+        traceLensHistoryScroll({
+          sessionId,
+          reason: 'fast-wheel',
+          scrollTop: viewport.scrollTop,
+          clientHeight: viewport.clientHeight,
+          scrollHeight: viewport.scrollHeight,
+          deltaYPx,
+          historyWindowStart: snapshot?.historyWindowStart,
+          historyWindowEnd: snapshot?.historyWindowEnd,
+          historyCount: snapshot?.historyCount,
+        });
+      }
+      if (deltaYPx < 0) {
         detachFollowForExplicitBrowseIntent();
       }
     },
