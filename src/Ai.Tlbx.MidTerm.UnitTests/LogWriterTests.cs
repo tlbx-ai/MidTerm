@@ -12,19 +12,14 @@ public sealed class LogWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDirectory);
 
+        using (var logger = CreateLogger())
         {
-            using var logger = new Logger("mt", _tempDirectory, new LogRotationPolicy
-            {
-                MaxFileSizeBytes = 80,
-                MaxFileCount = 10,
-                MaxDirectorySizeBytes = 1024 * 1024
-            });
-
-            logger.MinLevel = LogSeverity.Info;
             logger.Info(() => new string('A', 60));
-            Thread.Sleep(250);
+        }
+
+        using (var logger = CreateLogger())
+        {
             logger.Info(() => new string('B', 60));
-            Thread.Sleep(250);
         }
 
         var logFiles = Directory.GetFiles(_tempDirectory, "mt-*.log")
@@ -36,6 +31,18 @@ public sealed class LogWriterTests : IDisposable
         Assert.EndsWith(".001.log", logFiles[1], StringComparison.OrdinalIgnoreCase);
         Assert.Contains("AAAA", File.ReadAllText(logFiles[0]), StringComparison.Ordinal);
         Assert.Contains("BBBB", File.ReadAllText(logFiles[1]), StringComparison.Ordinal);
+    }
+
+    private Logger CreateLogger()
+    {
+        var logger = new Logger("mt", _tempDirectory, new LogRotationPolicy
+        {
+            MaxFileSizeBytes = 80,
+            MaxFileCount = 10,
+            MaxDirectorySizeBytes = 1024 * 1024
+        });
+        logger.MinLevel = LogSeverity.Info;
+        return logger;
     }
 
     public void Dispose()
