@@ -10889,6 +10889,10 @@ body.shared-session-mode .session-tab-bar {
   pointer-events: auto;
 }
 
+body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboard {
+  position: absolute;
+}
+
 .dev-soft-keyboard[hidden] {
   display: none;
 }

@@ -26,10 +26,17 @@ export function initDevSoftKeyboardSimulator(): void {
   if (!button || !keyboard) return;
 
   button.addEventListener('click', () => {
+    const previewKeyboard = getActivePreviewKeyboard();
+    if (previewKeyboard) {
+      previewKeyboard.toggle();
+      button.setAttribute('aria-pressed', String(previewKeyboard.isActive()));
+      return;
+    }
+
     if (active) {
       hideDevSoftKeyboard();
     } else {
-      showDevSoftKeyboard();
+      showContainedPreviewKeyboard();
     }
   });
 
@@ -51,6 +58,41 @@ export function initDevSoftKeyboardSimulator(): void {
     },
     isActive: () => active,
   };
+}
+
+function getActivePreviewKeyboard(): Window['mtDevSoftKeyboard'] | null {
+  const iframe = document.querySelector<HTMLIFrameElement>('.web-preview-iframe:not(.hidden)');
+  if (!iframe?.contentWindow) {
+    return null;
+  }
+
+  try {
+    return iframe.contentWindow.mtDevSoftKeyboard ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function showContainedPreviewKeyboard(height = calculateKeyboardHeight()): void {
+  const keyboard = document.getElementById('dev-soft-keyboard');
+  const button = document.getElementById('dev-soft-keyboard-toggle') as HTMLButtonElement | null;
+  const previewBody = document.querySelector<HTMLElement>('.web-preview-dock-body');
+
+  if (!keyboard || !previewBody) {
+    showDevSoftKeyboard(height);
+    return;
+  }
+
+  active = true;
+  keyboardHeight = height;
+  document.documentElement.style.setProperty('--midterm-dev-soft-keyboard-height', `${height}px`);
+  document.body.classList.add('dev-soft-keyboard-preview-fallback');
+  previewBody.appendChild(keyboard);
+  keyboard.hidden = false;
+  keyboard.setAttribute('aria-hidden', 'false');
+  if (button) {
+    button.setAttribute('aria-pressed', 'true');
+  }
 }
 
 export function showDevSoftKeyboard(height = calculateKeyboardHeight()): void {
@@ -115,6 +157,7 @@ export function hideDevSoftKeyboard(): void {
     'keyboard-visible',
     'mobile-terminal-vertical-stable',
     'dev-soft-keyboard-active',
+    'dev-soft-keyboard-preview-fallback',
   );
 
   if (appEl) {
