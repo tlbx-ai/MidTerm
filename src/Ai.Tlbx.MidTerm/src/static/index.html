@@ -118,6 +118,24 @@
       <button id="btn-dismiss-warning" class="warning-dismiss">&times;</button>
     </div>
 
+    <div id="dev-soft-keyboard" class="dev-soft-keyboard" aria-hidden="true" hidden>
+      <div class="dev-soft-keyboard-row">
+        <span>q</span><span>w</span><span>e</span><span>r</span><span>t</span><span>y</span
+        ><span>u</span><span>i</span><span>o</span><span>p</span>
+      </div>
+      <div class="dev-soft-keyboard-row">
+        <span>a</span><span>s</span><span>d</span><span>f</span><span>g</span><span>h</span
+        ><span>j</span><span>k</span><span>l</span>
+      </div>
+      <div class="dev-soft-keyboard-row">
+        <span>z</span><span>x</span><span>c</span><span>v</span><span>b</span><span>n</span
+        ><span>m</span>
+      </div>
+      <div class="dev-soft-keyboard-row dev-soft-keyboard-row-wide">
+        <span>123</span><span class="dev-soft-key-space"></span><span>ret</span>
+      </div>
+    </div>
+
     <div id="app" class="terminal-page">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-resize-grip" id="sidebar-resize-grip"></div>
@@ -2927,6 +2945,16 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 title="Clear cookies"
               >
                 &#x1f36a;
+              </button>
+              <button
+                class="btn-icon dev-soft-keyboard-toggle"
+                id="dev-soft-keyboard-toggle"
+                type="button"
+                title="Toggle simulated soft keyboard"
+                aria-pressed="false"
+                aria-label="Toggle simulated soft keyboard"
+              >
+                &#x2328;
               </button>
               <button class="btn-icon" id="web-preview-clear-state" title="Clear state">
                 &#x1f5d1;

@@ -10853,6 +10853,89 @@ body.shared-session-mode .session-tab-bar {
 /* web-preview-dock mobile override handled in main 768px block */
 
 /* =============================================
+   Dev Soft Keyboard Simulator
+   ============================================= */
+
+.dev-soft-keyboard-toggle {
+  display: inline-flex;
+}
+
+.dev-soft-keyboard-toggle.hidden {
+  display: none;
+}
+
+.dev-soft-keyboard-toggle[aria-pressed='true'] {
+  color: var(--text-primary);
+  background: var(--bg-active);
+  border-color: var(--accent-blue-25);
+}
+
+.dev-soft-keyboard {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--midterm-dev-soft-keyboard-height, 300px);
+  z-index: 250;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, var(--text-primary) 18%);
+  background: color-mix(in srgb, var(--bg-elevated) 94%, var(--bg-primary) 6%);
+  box-shadow: 0 -10px 28px var(--shadow-color-md);
+  pointer-events: auto;
+}
+
+.dev-soft-keyboard[hidden] {
+  display: none;
+}
+
+.dev-soft-keyboard-row {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.dev-soft-keyboard-row:nth-child(2) {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  width: 90%;
+}
+
+.dev-soft-keyboard-row:nth-child(3) {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 76%;
+}
+
+.dev-soft-keyboard-row-wide {
+  grid-template-columns: 1fr 5fr 1fr;
+  width: 92%;
+}
+
+.dev-soft-keyboard-row span {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-hover) 76%, var(--text-primary) 4%);
+  color: var(--text-secondary);
+  font:
+    600 13px/1 var(--font-system),
+    sans-serif;
+  user-select: none;
+}
+
+.dev-soft-keyboard-row .dev-soft-key-space {
+  background: color-mix(in srgb, var(--bg-active) 80%, var(--text-primary) 4%);
+}
+
+/* =============================================
    Middle Manager Bar
    ============================================= */
 
