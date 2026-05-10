@@ -602,10 +602,10 @@
                 class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
                 id="btn-mobile-web"
                 data-i18n-title="sessionTabs.web"
-                title="Web Preview"
+                title="Browser"
               >
                 <span class="mobile-actions-symbol">&#x1f310;</span>
-                <span class="mobile-actions-label" data-i18n="sessionTabs.web">Web Preview</span>
+                <span class="mobile-actions-label" data-i18n="sessionTabs.web">Browser</span>
               </button>
               <button
                 class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
@@ -2920,7 +2920,7 @@ Enable terminal key log to capture Enter and modifier events.</pre
         <aside id="web-preview-dock" class="web-preview-dock hidden">
           <div class="web-preview-dock-resize-grip"></div>
           <div class="web-preview-dock-header">
-            <span class="web-preview-dock-title" data-i18n="webPreview.title">Web Preview</span>
+            <span class="web-preview-dock-title" data-i18n="webPreview.title">Dev Browser</span>
             <div class="web-preview-dock-actions">
               <button
                 class="btn-icon"
@@ -2937,35 +2937,6 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 title="Screenshot to terminal"
               >
                 &#x1f4f7;
-              </button>
-              <button
-                class="btn-icon"
-                id="web-preview-clear-cookies"
-                data-i18n-title="webPreview.clearCookies"
-                title="Clear cookies"
-              >
-                &#x1f36a;
-              </button>
-              <button
-                class="btn-icon dev-soft-keyboard-toggle"
-                id="dev-soft-keyboard-toggle"
-                type="button"
-                title="Toggle simulated soft keyboard"
-                aria-pressed="false"
-                aria-label="Toggle simulated soft keyboard"
-              >
-                &#x2328;
-              </button>
-              <button class="btn-icon" id="web-preview-clear-state" title="Clear state">
-                &#x1f5d1;
-              </button>
-              <button
-                class="btn-icon"
-                id="web-preview-refresh"
-                data-i18n-title="webPreview.refresh"
-                title="Refresh"
-              >
-                &#x21bb;
               </button>
               <button
                 class="btn-icon"
@@ -2987,15 +2958,35 @@ Enable terminal key log to capture Enter and modifier events.</pre
               placeholder="type URL here"
               spellcheck="false"
             />
-            <span
-              id="web-preview-status-indicator"
-              class="web-preview-status-indicator hidden"
-              tabindex="0"
-              role="img"
-              aria-hidden="true"
-              title=""
-              >!</span
+            <button
+              class="btn-icon dev-soft-keyboard-toggle"
+              id="dev-soft-keyboard-toggle"
+              type="button"
+              title="Toggle simulated soft keyboard"
+              aria-pressed="false"
+              aria-label="Toggle simulated soft keyboard"
             >
+              &#x2328;
+            </button>
+            <button
+              class="btn-icon"
+              id="web-preview-refresh"
+              data-i18n-title="webPreview.refresh"
+              title="Refresh"
+            >
+              &#x21bb;
+            </button>
+            <button
+              class="btn-icon"
+              id="web-preview-clear-cookies"
+              data-i18n-title="webPreview.clearCookies"
+              title="Clear cookies"
+            >
+              &#x1f36a;
+            </button>
+            <button class="btn-icon" id="web-preview-clear-state" title="Clear state">
+              &#x1f5d1;
+            </button>
             <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
           </div>
           <div

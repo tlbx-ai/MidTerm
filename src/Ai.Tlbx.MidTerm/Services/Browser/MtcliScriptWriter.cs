@@ -213,6 +213,15 @@ public static class MtcliScriptWriter
         mt_log()     { local f=${1:-all}; _MBB log "$f"; }
         # mt_text [SELECTOR]  — page text content (default: body)
         mt_text()    { local s="${1:-body}"; _MBB query "$s" --text; }
+        # mt_scroll [SELECTOR] [DELTA_Y|top|bottom|left|right] [DELTA_X]  — scroll page or container
+        mt_scroll() {
+          local selector="${1:-window}" value="${2:-600}" dx="${3:-}"
+          if [[ "$selector" =~ ^(-?[0-9]+([.][0-9]+)?|top|bottom|left|right)$ ]]; then
+            value="$selector"
+            selector="window"
+          fi
+          if [ -n "$dx" ]; then _MBB scroll "$selector" "$value" "$dx"; else _MBB scroll "$selector" "$value"; fi
+        }
         # mt_submit [FORM_SELECTOR]  — submit form via JS (default: first form)
         mt_submit()  { local s="${1:-form}"; _MBB submit "$s"; }
         # mt_url  — upstream page URL (not proxy URL)
@@ -810,6 +819,16 @@ public static class MtcliScriptWriter
         function Mt-Log     { param([string]$Filter = "all") _MBB log $Filter }
         # Mt-Text [-Selector CSS_SELECTOR]  — page text content (default: body)
         function Mt-Text    { param([string]$Selector = "body") _MBB query $Selector --text }
+        # Mt-Scroll [-Selector CSS_SELECTOR] [-DeltaY N] [-DeltaX N] [-To top|bottom|left|right]  — scroll page or container
+        function Mt-Scroll {
+            param([string]$Selector = "window", [double]$DeltaY = 600, [double]$DeltaX = 0, [string]$To)
+            $value = if ($To) {
+                $To
+            } else {
+                "$($DeltaY.ToString([System.Globalization.CultureInfo]::InvariantCulture)) $($DeltaX.ToString([System.Globalization.CultureInfo]::InvariantCulture))"
+            }
+            _MBB scroll $Selector $value
+        }
         # Mt-Submit [-Selector FORM_SELECTOR]  — submit form via JS (default: first form)
         function Mt-Submit  { param([string]$Selector = "form") _MBB submit $Selector }
         # Mt-Url  — upstream page URL (not proxy URL)
@@ -1184,6 +1203,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_css -Value Mt-Css
         Set-Alias -Name mt_log -Value Mt-Log
         Set-Alias -Name mt_text -Value Mt-Text
+        Set-Alias -Name mt_scroll -Value Mt-Scroll
         Set-Alias -Name mt_submit -Value Mt-Submit
         Set-Alias -Name mt_url -Value Mt-Url
         Set-Alias -Name mt_links -Value Mt-Links

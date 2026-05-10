@@ -10521,7 +10521,7 @@ body.shared-session-mode .session-tab-bar {
   border-bottom-color: transparent;
   background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
   color: var(--text-secondary);
-  border-radius: 10px 10px 0 0;
+  border-radius: 8px 8px 0 0;
   display: inline-flex;
   align-items: stretch;
   min-width: 0;
@@ -10625,11 +10625,14 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-dock-url-bar .btn-icon {
+  flex: 0 0 auto;
+  min-width: 30px;
+  height: 28px;
   background: none;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 4px;
   font-size: var(--fs-md);
 }

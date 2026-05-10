@@ -119,8 +119,8 @@ const translations: Record<string, string> = {
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
   'sessionTabs.share': 'Share',
-  'sessionTabs.web': 'Web Preview',
-  'sessionTabs.webShort': 'WEB',
+  'sessionTabs.web': 'Browser',
+  'sessionTabs.webShort': 'Browser',
   'git.noRepoShort': 'No repo',
   'git.cleanShort': 'Clean',
 };
@@ -170,7 +170,7 @@ describe('tabBar', () => {
 
     expect(buttons.map((button) => button.dataset.action)).toEqual(['web', 'share', 'git']);
     expect(buttons.slice(0, 2).map((button) => button.children[1]?.textContent)).toEqual([
-      'WEB',
+      'Browser',
       'Share',
     ]);
     expect(buttons[2]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');

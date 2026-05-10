@@ -35,7 +35,6 @@ import {
 } from './previewProxyUrl';
 import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
-  DEFAULT_PREVIEW_NAME,
   getActiveDockedClient,
   getActivePreview,
   getActivePreviewName,
@@ -183,20 +182,18 @@ export function renderPreviewTabs(): void {
     });
     tab.appendChild(button);
 
-    if (preview.previewName !== DEFAULT_PREVIEW_NAME) {
-      const closeButton = document.createElement('button');
-      closeButton.type = 'button';
-      closeButton.className = 'web-preview-tab-close';
-      closeButton.textContent = '×';
-      closeButton.title = `Close ${label}`;
-      closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
-      closeButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        previewTabCloseHandler?.(preview.previewName);
-      });
-      tab.appendChild(closeButton);
-    }
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'web-preview-tab-close';
+    closeButton.textContent = '×';
+    closeButton.title = `Close ${label}`;
+    closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
+    closeButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      previewTabCloseHandler?.(preview.previewName);
+    });
+    tab.appendChild(closeButton);
 
     previewTabs.appendChild(tab);
   }

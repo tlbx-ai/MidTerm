@@ -3,7 +3,7 @@
  *
  * Creates and manages the session bar UI for each session.
  * Tabs: Primary session surface | Files
- * Right-aligned actions: WEB | Share | Git dock toggle
+ * Right-aligned actions: Browser | Share | Git dock toggle
  */
 
 import type { GitRepoBinding, GitStatusResponse } from '../git/types';

@@ -208,7 +208,7 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  claim               Explicitly claim preview ownership for this browser UI\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  claim               Explicitly claim preview ownership for this browser UI\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
@@ -406,6 +406,13 @@ public static class BrowserEndpoints
             return ToJsonResult(result);
         });
 
+        app.MapPost("/api/browser/scroll", async (BrowserCommandRequest request, HttpContext ctx) =>
+        {
+            var cmd = WithCommand(request, "scroll");
+            var result = await commandService.ExecuteCommandAsync(cmd, ctx.RequestAborted);
+            return ToJsonResult(result);
+        });
+
         app.MapPost("/api/browser/exec", async (BrowserCommandRequest request, HttpContext ctx) =>
         {
             var cmd = WithCommand(request, "exec");
@@ -546,6 +553,7 @@ public static class BrowserEndpoints
                 "mt_inspect",
                 "mt_outline [depth]",
                 "mt_text [selector]",
+                "mt_scroll [selector] [deltaY|top|bottom]",
                 "mt_query <selector> --text",
                 "mt_exec <js>",
                 "mt_repo list|add|remove|refresh"
@@ -743,6 +751,12 @@ public static class BrowserEndpoints
             {
                 Command = "click",
                 Selector = GetPositional(args, 1)
+            },
+            "scroll" => new BrowserCommandRequest
+            {
+                Command = "scroll",
+                Selector = GetScrollSelector(args),
+                Value = BuildScrollValue(args)
             },
             "fill" => new BrowserCommandRequest
             {
@@ -949,6 +963,50 @@ public static class BrowserEndpoints
             pos++;
         }
         return null;
+    }
+
+    private static string? GetScrollSelector(List<string> args)
+    {
+        var first = GetPositional(args, 1);
+        var second = GetPositional(args, 2);
+        if (first is null)
+        {
+            return null;
+        }
+
+        return second is null && IsScrollValue(first) ? null : first;
+    }
+
+    private static string? BuildScrollValue(List<string> args)
+    {
+        var first = GetPositional(args, 1);
+        var second = GetPositional(args, 2);
+        var third = GetPositional(args, 3);
+        if (first is null)
+        {
+            return null;
+        }
+
+        if (second is null && IsScrollValue(first))
+        {
+            return first;
+        }
+
+        if (second is null)
+        {
+            return null;
+        }
+
+        return third is null ? second : second + " " + third;
+    }
+
+    private static bool IsScrollValue(string value)
+    {
+        return value.Equals("top", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("bottom", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("left", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("right", StringComparison.OrdinalIgnoreCase)
+            || double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
     }
 
     private static string? GetFlagValue(List<string> args, string flag)
