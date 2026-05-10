@@ -290,11 +290,11 @@ function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: numbe
   document.addEventListener('touchcancel', restoreOverlay, { once: true, capture: true });
 }
 
-function scrollViewport(s: TouchScrollState, deltaY: number): void {
-  const remainingDeltaY = consumeMobileStableTerminalShellScroll(s, deltaY);
-  if (Math.abs(remainingDeltaY) < 0.5) return;
+export function scrollViewport(s: TouchScrollState, deltaY: number): void {
+  panMobileStableTerminalShellScroll(s, deltaY);
+  if (Math.abs(deltaY) < 0.5) return;
   if (s.cellHeight <= 0) return;
-  s.scrollAccumulator += remainingDeltaY / s.cellHeight;
+  s.scrollAccumulator += deltaY / s.cellHeight;
   const lines = Math.trunc(s.scrollAccumulator);
   if (lines !== 0) {
     s.terminal.scrollLines(lines);
@@ -302,24 +302,24 @@ function scrollViewport(s: TouchScrollState, deltaY: number): void {
   }
 }
 
-export function consumeMobileStableTerminalShellScroll(
+export function panMobileStableTerminalShellScroll(
   s: Pick<TouchScrollState, 'overlay'>,
   deltaY: number,
 ): number {
   const container = s.overlay.parentElement;
   if (!container?.classList.contains('mobile-terminal-vertical-stable')) {
-    return deltaY;
+    return 0;
   }
 
   const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
   if (maxScrollTop <= 0) {
-    return deltaY;
+    return 0;
   }
 
   const previousScrollTop = container.scrollTop;
   const nextScrollTop = Math.max(0, Math.min(maxScrollTop, previousScrollTop + deltaY));
   container.scrollTop = nextScrollTop;
-  return deltaY - (container.scrollTop - previousScrollTop);
+  return container.scrollTop - previousScrollTop;
 }
 
 function cancelLongPress(s: TouchScrollState): void {
