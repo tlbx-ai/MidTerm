@@ -13,3 +13,4 @@ export * from './fontSize';
 export * from './launchSizing';
 export { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 export { initMobilePiP } from './mobilePiP';
+export { initDevSoftKeyboardSimulator } from './devSoftKeyboardSimulator';

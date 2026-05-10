@@ -639,6 +639,39 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
                   el.click();res.result="clicked";
                   break;}
+                case"scroll":{
+                  var s=(msg.selector||"").trim();
+                  var el=!s||s==="window"||s==="document"||s==="body"
+                    ? (document.scrollingElement||document.documentElement)
+                    : document.querySelector(s);
+                  if(!el){res.success=false;res.error="scroll target not found: "+s;break;}
+                  var raw=(msg.value||"").trim().toLowerCase();
+                  var dx=0,dy=0,mode="by";
+                  if(!raw){dy=600;}
+                  else if(raw==="top"||raw==="bottom"||raw==="left"||raw==="right"){mode=raw;}
+                  else{
+                    var parts=raw.split(/[,\s]+/).filter(Boolean);
+                    dy=parseFloat(parts[0]||"0")||0;
+                    dx=parseFloat(parts[1]||"0")||0;
+                  }
+                  if(mode==="top")el.scrollTop=0;
+                  else if(mode==="bottom")el.scrollTop=el.scrollHeight;
+                  else if(mode==="left")el.scrollLeft=0;
+                  else if(mode==="right")el.scrollLeft=el.scrollWidth;
+                  else if(typeof el.scrollBy==="function")el.scrollBy({top:dy,left:dx,behavior:"auto"});
+                  else{el.scrollTop+=dy;el.scrollLeft+=dx;}
+                  el.dispatchEvent(new Event("scroll",{bubbles:true}));
+                  window.dispatchEvent(new Event("scroll"));
+                  res.result=JSON.stringify({
+                    selector:s||"window",
+                    scrollTop:el.scrollTop,
+                    scrollLeft:el.scrollLeft,
+                    scrollHeight:el.scrollHeight,
+                    scrollWidth:el.scrollWidth,
+                    clientHeight:el.clientHeight,
+                    clientWidth:el.clientWidth
+                  });
+                  break;}
                 case"fill":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var el=document.querySelector(msg.selector);

@@ -169,6 +169,7 @@ public static class MidtermDirectory
         | `mt_click <sel>` | Click element |
         | `mt_fill <sel> <val>` | Fill input field |
         | `mt_submit [sel]` | Submit form (default: first form) |
+        | `mt_scroll [sel] [deltaY\|top\|bottom] [deltaX]` | Scroll page or a scrollable container |
         | `mt_exec <js>` | Execute JS in page context |
         | `mt_wait <sel> [timeout]` | Wait for element (default 5s) |
         | `mt_log [error\|warn\|all]` | Console log buffer |

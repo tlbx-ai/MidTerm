@@ -218,6 +218,32 @@ function Test-Administrator
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-WindowsPowerShellPath
+{
+    $systemRoot = $env:SystemRoot
+    if ([string]::IsNullOrWhiteSpace($systemRoot))
+    {
+        $systemRoot = $env:windir
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($systemRoot))
+    {
+        $candidate = Join-Path $systemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (Test-Path $candidate)
+        {
+            return $candidate
+        }
+    }
+
+    $command = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($command -and $command.Source)
+    {
+        return $command.Source
+    }
+
+    return "powershell.exe"
+}
+
 function Get-CurrentUserInfo
 {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -1498,7 +1524,7 @@ function Register-Uninstall
         DisplayVersion = $Version
         Publisher = $Publisher
         InstallLocation = $InstallDir
-        UninstallString = "pwsh -ExecutionPolicy Bypass -File `"$uninstallScript`""
+        UninstallString = "`"$(Get-WindowsPowerShellPath)`" -NoProfile -ExecutionPolicy Bypass -File `"$uninstallScript`""
         DisplayIcon = Join-Path $InstallDir $WebBinaryName
         NoModify = 1
         NoRepair = 1
@@ -1730,14 +1756,11 @@ if ($asService)
         if ($trustCert) { $baseArguments += "-TrustCert" }
         if ($Dev) { $baseArguments += "-Dev" }
 
-        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
-            (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-        } else {
-            (Get-Command powershell -ErrorAction Stop).Source
-        }
+        $psExe = Get-WindowsPowerShellPath
         # Elevate with UAC and stream output via a temp log file.
-        # We intentionally use RunAs only; the built-in Windows path is more
-        # predictable than optional "sudo" support across different machines.
+        # Use Windows PowerShell for the elevated leg because it is present on
+        # supported Windows systems. Per-user or Store pwsh aliases can fail
+        # after UAC when the elevated account cannot resolve the user's alias.
         $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
         if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
 
@@ -1759,6 +1782,7 @@ if ($asService)
                     if ($lines -and $lines.Count -gt $linesRead)
                     {
                         $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                        $linesRead = $lines.Count
                     }
                 }
             }
@@ -1771,6 +1795,7 @@ if ($asService)
                 if ($lines -and $lines.Count -gt $linesRead)
                 {
                     $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                    $linesRead = $lines.Count
                 }
             }
 

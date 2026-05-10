@@ -31,7 +31,10 @@ function applyVisualViewportShellGeometry(
   viewportHeight: number,
   appEl: HTMLElement | null,
 ): void {
+  const viewportTop = Math.max(0, visualViewport.offsetTop);
   if (appEl) {
+    appEl.style.top = `${viewportTop}px`;
+    appEl.style.bottom = 'auto';
     appEl.style.height = `${viewportHeight}px`;
     appEl.style.maxHeight = `${viewportHeight}px`;
   }
@@ -46,7 +49,7 @@ function applyVisualViewportShellGeometry(
   );
   document.documentElement.style.setProperty(
     '--midterm-visual-viewport-offset-top',
-    `${visualViewport.offsetTop}px`,
+    `${viewportTop}px`,
   );
   document.body.style.height = `${viewportHeight}px`;
   document.body.style.maxHeight = `${viewportHeight}px`;

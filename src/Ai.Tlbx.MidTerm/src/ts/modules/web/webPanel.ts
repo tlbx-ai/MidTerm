@@ -35,7 +35,6 @@ import {
 } from './previewProxyUrl';
 import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
-  DEFAULT_PREVIEW_NAME,
   getActiveDockedClient,
   getActivePreview,
   getActivePreviewName,
@@ -106,6 +105,7 @@ let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;
+const PREVIEW_TAB_CHANGED_EVENT = 'midterm:web-preview-active-tab-changed';
 let statusRefreshTimer: number | null = null;
 let screenshotInFlight = false;
 type PreviewReloadMode = 'soft' | 'force' | 'hard';
@@ -182,20 +182,18 @@ export function renderPreviewTabs(): void {
     });
     tab.appendChild(button);
 
-    if (preview.previewName !== DEFAULT_PREVIEW_NAME) {
-      const closeButton = document.createElement('button');
-      closeButton.type = 'button';
-      closeButton.className = 'web-preview-tab-close';
-      closeButton.textContent = '×';
-      closeButton.title = `Close ${label}`;
-      closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
-      closeButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        previewTabCloseHandler?.(preview.previewName);
-      });
-      tab.appendChild(closeButton);
-    }
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'web-preview-tab-close';
+    closeButton.textContent = '×';
+    closeButton.title = `Close ${label}`;
+    closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
+    closeButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      previewTabCloseHandler?.(preview.previewName);
+    });
+    tab.appendChild(closeButton);
 
     previewTabs.appendChild(tab);
   }
@@ -625,6 +623,7 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.tabIndex = isActive ? 0 : -1;
     refreshPreviewBridgeVisibility(frame, isActive);
   }
+  window.dispatchEvent(new CustomEvent(PREVIEW_TAB_CHANGED_EVENT, { detail: { frameKey } }));
 }
 
 function postCookieBridgeResponse(

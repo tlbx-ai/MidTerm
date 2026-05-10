@@ -34,6 +34,7 @@ import {
   setupGlobalFocusReclaim,
   handleClipboardPaste,
   initMobilePiP,
+  initDevSoftKeyboardSimulator,
   resolveLaunchDimensions,
 } from './modules/terminal';
 import {
@@ -410,6 +411,7 @@ async function init(): Promise<void> {
   initTouchController();
   initSmartInput();
   initMobilePiP();
+  initDevSoftKeyboardSimulator();
   initManagerBar();
   initSessionTabs();
   initAgentView();

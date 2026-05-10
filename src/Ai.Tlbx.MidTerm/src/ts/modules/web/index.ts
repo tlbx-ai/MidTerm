@@ -31,7 +31,7 @@ import {
   initDetach,
   isDetachedOpenForSession,
 } from './webDetach';
-import { deleteWebPreviewSession, listWebPreviewSessions } from './webApi';
+import { clearWebPreviewTarget, deleteWebPreviewSession, listWebPreviewSessions } from './webApi';
 import {
   DEFAULT_PREVIEW_NAME,
   getSessionPreview,
@@ -162,6 +162,12 @@ export async function closeActivePreview(previewName: string): Promise<void> {
 
   const normalized = previewName.trim() || DEFAULT_PREVIEW_NAME;
   if (normalized === DEFAULT_PREVIEW_NAME) {
+    closeDetachedPreview(sessionId, normalized);
+    destroyPreviewFrame(sessionId, normalized);
+    await clearWebPreviewTarget(sessionId, normalized);
+    removeSessionPreview(sessionId, normalized);
+    renderPreviewTabs();
+    await syncActiveWebPreview();
     return;
   }
 

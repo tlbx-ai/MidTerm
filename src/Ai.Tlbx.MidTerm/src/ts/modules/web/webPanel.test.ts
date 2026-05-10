@@ -163,13 +163,12 @@ describe('webPanel preview tabs', () => {
     expect(source).toContain('refreshPreviewBridgeVisibility(frame, isActive);');
   });
 
-  it('wires a close button only for non-default preview tabs', () => {
+  it('wires a close button for every preview tab', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 
     expect(source).toContain(
       'let previewTabCloseHandler: ((previewName: string) => void) | null = null;',
     );
-    expect(source).toContain('if (preview.previewName !== DEFAULT_PREVIEW_NAME) {');
     expect(source).toContain("closeButton.className = 'web-preview-tab-close';");
     expect(source).toContain('previewTabCloseHandler?.(preview.previewName);');
   });

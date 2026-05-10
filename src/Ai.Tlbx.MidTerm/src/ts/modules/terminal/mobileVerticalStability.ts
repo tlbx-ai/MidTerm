@@ -91,10 +91,36 @@ export function syncMobileVerticalStableTerminals(): void {
     }
 
     if (!wasActive || !wasScrollable || nearBottom) {
-      requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight;
-      });
+      pinMobileStableTerminalShellToBottom(state, { force: true });
     }
+  });
+}
+
+export function pinMobileStableTerminalShellToBottom(
+  state: Pick<TerminalState, 'container'>,
+  options: { force?: boolean } = {},
+): void {
+  if (!mobileVerticalStabilityActive || !isMobileTerminalViewport()) {
+    return;
+  }
+
+  const container = state.container;
+  if (!container.classList.contains('mobile-terminal-vertical-stable')) {
+    return;
+  }
+
+  const nearBottom =
+    container.scrollHeight - container.scrollTop - container.clientHeight <=
+    MOBILE_VERTICAL_BOTTOM_STICKY_PX;
+  if (!options.force && !nearBottom) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
   });
 }
 

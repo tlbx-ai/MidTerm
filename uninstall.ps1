@@ -85,6 +85,32 @@ function Test-Administrator
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-WindowsPowerShellPath
+{
+    $systemRoot = $env:SystemRoot
+    if ([string]::IsNullOrWhiteSpace($systemRoot))
+    {
+        $systemRoot = $env:windir
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($systemRoot))
+    {
+        $candidate = Join-Path $systemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (Test-Path $candidate)
+        {
+            return $candidate
+        }
+    }
+
+    $command = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($command -and $command.Source)
+    {
+        return $command.Source
+    }
+
+    return "powershell.exe"
+}
+
 function Resolve-OriginalContext
 {
     if (-not $OriginalUserProfile)
@@ -412,8 +438,9 @@ if ($serviceTraces)
         $tempScript = Join-Path $env:TEMP "mt-uninstall-elevated.ps1"
         Invoke-CompatibleWebRequest -Uri $scriptUrl -OutFile $tempScript
 
-        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        $psExe = Get-WindowsPowerShellPath
         $baseArguments = @(
+            "-NoProfile",
             "-ExecutionPolicy", "Bypass",
             "-File", $tempScript,
             "-Elevated",
