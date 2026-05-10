@@ -10,6 +10,8 @@ public sealed class GitWatcherService : IDisposable
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
     private readonly ConcurrentDictionary<string, RepoWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _sessionToRepo = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, GitRepoBinding>> _sessionExtraRepos = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _subscribedSessions = new(StringComparer.Ordinal);
     private static readonly SemaphoreSlim _globalRefreshThrottle = new(2, 2);
 
     private sealed class RepoWatcher : IDisposable
@@ -116,6 +118,7 @@ public sealed class GitWatcherService : IDisposable
     }
 
     public event Action<string, GitStatusResponse>? OnStatusChanged;
+    public event Action<string>? OnReposChanged;
 
     public async Task RegisterSessionAsync(string sessionId, string? workingDir)
     {
@@ -137,26 +140,55 @@ public sealed class GitWatcherService : IDisposable
         repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
         Log.Verbose(() => $"[Git] RegisterSession({sessionId}): repoRoot={repoRoot}");
 
-        if (_sessionToRepo.TryGetValue(sessionId, out var existing)
-            && string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
+        var changed = true;
+
+        if (_sessionToRepo.TryGetValue(sessionId, out var existing))
         {
-            Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
-            return;
+            if (string.Equals(existing, repoRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                Log.Verbose(() => $"[Git] RegisterSession({sessionId}): already registered for {repoRoot}");
+                changed = false;
+            }
+            else
+            {
+                ReleaseRepo(existing);
+            }
         }
 
-        UnregisterSession(sessionId);
-
-        _sessionToRepo[sessionId] = repoRoot;
-        var watcher = _watchers.GetOrAdd(repoRoot, root => CreateWatcher(root, workingDir));
-        Interlocked.Increment(ref watcher.RefCount);
+        if (changed)
+        {
+            _sessionToRepo[sessionId] = repoRoot;
+            AddRef(repoRoot, workingDir);
+        }
 
         await RefreshStatusAsync(repoRoot);
+        if (changed)
+        {
+            OnReposChanged?.Invoke(sessionId);
+        }
+
         Log.Verbose(() => $"[Git] RegisterSession({sessionId}): refresh complete, cached={_watchers.TryGetValue(repoRoot, out var w) && w.CachedStatus is not null}");
     }
 
     public void UnregisterSession(string sessionId)
     {
-        if (!_sessionToRepo.TryRemove(sessionId, out var repoRoot)) return;
+        _subscribedSessions.TryRemove(sessionId, out _);
+        if (_sessionToRepo.TryRemove(sessionId, out var repoRoot))
+        {
+            ReleaseRepo(repoRoot);
+        }
+
+        if (_sessionExtraRepos.TryRemove(sessionId, out var repos))
+        {
+            foreach (var repo in repos.Keys)
+            {
+                ReleaseRepo(repo);
+            }
+        }
+    }
+
+    private void ReleaseRepo(string repoRoot)
+    {
         if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
 
         if (Interlocked.Decrement(ref watcher.RefCount) <= 0)
@@ -168,16 +200,195 @@ public sealed class GitWatcherService : IDisposable
         }
     }
 
-    public GitStatusResponse? GetCachedStatus(string sessionId)
+    private RepoWatcher AddRef(string repoRoot, string workingDir)
     {
-        if (!_sessionToRepo.TryGetValue(sessionId, out var repoRoot)) return null;
-        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return null;
+        var watcher = _watchers.GetOrAdd(repoRoot, root => CreateWatcher(root, workingDir));
+        Interlocked.Increment(ref watcher.RefCount);
+        return watcher;
+    }
+
+    public GitStatusResponse? GetCachedStatus(string sessionId, string? repoRoot = null)
+    {
+        var resolved = ResolveRepoRoot(sessionId, repoRoot);
+        if (resolved is null) return null;
+        if (!_watchers.TryGetValue(resolved, out var watcher)) return null;
         return watcher.CachedStatus;
     }
 
     public string? GetRepoRoot(string sessionId)
     {
         return _sessionToRepo.TryGetValue(sessionId, out var root) ? root : null;
+    }
+
+    public string? ResolveRepoRoot(string sessionId, string? repoRoot)
+    {
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return GetRepoRoot(sessionId);
+        }
+
+        var full = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
+        if (SessionHasRepo(sessionId, full))
+        {
+            return full;
+        }
+
+        return null;
+    }
+
+    public bool SessionHasRepo(string sessionId, string repoRoot)
+    {
+        if (_sessionToRepo.TryGetValue(sessionId, out var primary)
+            && string.Equals(primary, repoRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return _sessionExtraRepos.TryGetValue(sessionId, out var repos)
+            && repos.ContainsKey(repoRoot);
+    }
+
+    public string[] GetSessionIdsForRepo(string repoRoot)
+    {
+        var ids = new List<string>();
+        foreach (var pair in _sessionToRepo)
+        {
+            if (string.Equals(pair.Value, repoRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                ids.Add(pair.Key);
+            }
+        }
+
+        foreach (var pair in _sessionExtraRepos)
+        {
+            if (pair.Value.ContainsKey(repoRoot))
+            {
+                ids.Add(pair.Key);
+            }
+        }
+
+        return ids.Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    public GitRepoBinding[] GetRepoBindings(string sessionId)
+    {
+        var result = new List<GitRepoBinding>();
+        if (_sessionToRepo.TryGetValue(sessionId, out var primary))
+        {
+            result.Add(CreateBinding(primary, "cwd", "auto", true));
+        }
+
+        if (_sessionExtraRepos.TryGetValue(sessionId, out var extra))
+        {
+            result.AddRange(extra.Values.OrderBy(repo => repo.Label, StringComparer.OrdinalIgnoreCase)
+                .Select(repo => CreateBinding(repo.RepoRoot, repo.Role, repo.Source, false, repo.Label)));
+        }
+
+        return result.ToArray();
+    }
+
+    public async Task<GitRepoBinding[]?> AddSessionRepoAsync(string sessionId, string path, string? label, string? role, string source)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        var fullPath = Path.GetFullPath(path.Trim());
+        var repoRoot = await GitCommandRunner.GetRepoRootAsync(fullPath);
+        if (repoRoot is null) return null;
+
+        repoRoot = Path.GetFullPath(repoRoot).TrimEnd(Path.DirectorySeparatorChar);
+        if (_sessionToRepo.TryGetValue(sessionId, out var primary)
+            && string.Equals(primary, repoRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return GetRepoBindings(sessionId);
+        }
+
+        var repos = _sessionExtraRepos.GetOrAdd(
+            sessionId,
+            _ => new ConcurrentDictionary<string, GitRepoBinding>(StringComparer.OrdinalIgnoreCase));
+
+        var nextLabel = string.IsNullOrWhiteSpace(label) ? Path.GetFileName(repoRoot) : label.Trim();
+        var nextRole = string.IsNullOrWhiteSpace(role) ? "target" : role.Trim();
+
+        if (repos.TryGetValue(repoRoot, out var existing))
+        {
+            if (!string.Equals(existing.Label, nextLabel, StringComparison.Ordinal)
+                || !string.Equals(existing.Role, nextRole, StringComparison.Ordinal)
+                || !string.Equals(existing.Source, source, StringComparison.Ordinal))
+            {
+                existing.Label = nextLabel;
+                existing.Role = nextRole;
+                existing.Source = source;
+                OnReposChanged?.Invoke(sessionId);
+            }
+        }
+        else if (repos.TryAdd(repoRoot, new GitRepoBinding
+        {
+            RepoRoot = repoRoot,
+            Label = nextLabel,
+            Role = nextRole,
+            Source = source,
+            IsPrimary = false
+        }))
+        {
+            AddRef(repoRoot, fullPath);
+            if (_subscribedSessions.ContainsKey(sessionId) && _watchers.TryGetValue(repoRoot, out var watcher))
+            {
+                if (Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+                {
+                    StartPolling(repoRoot, watcher);
+                }
+            }
+
+            OnReposChanged?.Invoke(sessionId);
+        }
+
+        await RefreshStatusAsync(repoRoot);
+        return GetRepoBindings(sessionId);
+    }
+
+    public bool RemoveSessionRepo(string sessionId, string repoRoot)
+    {
+        var resolved = ResolveRepoRoot(sessionId, repoRoot);
+        if (resolved is null || string.Equals(resolved, GetRepoRoot(sessionId), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!_sessionExtraRepos.TryGetValue(sessionId, out var repos) || !repos.TryRemove(resolved, out _))
+        {
+            return false;
+        }
+
+        if (_subscribedSessions.ContainsKey(sessionId) && _watchers.TryGetValue(resolved, out var watcher)
+            && Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
+        {
+            watcher.StopPolling();
+        }
+
+        ReleaseRepo(resolved);
+        OnReposChanged?.Invoke(sessionId);
+        return true;
+    }
+
+    private GitRepoBinding CreateBinding(string repoRoot, string role, string source, bool isPrimary, string? label = null)
+    {
+        var status = _watchers.TryGetValue(repoRoot, out var watcher) ? watcher.CachedStatus : null;
+        if (status is not null)
+        {
+            status.Label = label ?? Path.GetFileName(repoRoot);
+            status.Role = role;
+            status.Source = source;
+            status.IsPrimary = isPrimary;
+        }
+
+        return new GitRepoBinding
+        {
+            RepoRoot = repoRoot,
+            Label = label ?? Path.GetFileName(repoRoot),
+            Role = role,
+            Source = source,
+            IsPrimary = isPrimary,
+            Status = status
+        };
     }
 
     public async Task RefreshStatusAsync(string repoRoot)
@@ -335,21 +546,27 @@ public sealed class GitWatcherService : IDisposable
 
     public void Subscribe(string sessionId)
     {
-        if (!_sessionToRepo.TryGetValue(sessionId, out var repoRoot)) return;
-        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
-        if (Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+        _subscribedSessions[sessionId] = 1;
+        foreach (var repoRoot in GetRepoBindings(sessionId).Select(repo => repo.RepoRoot))
         {
-            StartPolling(repoRoot, watcher);
+            if (_watchers.TryGetValue(repoRoot, out var watcher)
+                && Interlocked.Increment(ref watcher.SubscriberCount) == 1)
+            {
+                StartPolling(repoRoot, watcher);
+            }
         }
     }
 
     public void Unsubscribe(string sessionId)
     {
-        if (!_sessionToRepo.TryGetValue(sessionId, out var repoRoot)) return;
-        if (!_watchers.TryGetValue(repoRoot, out var watcher)) return;
-        if (Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
+        _subscribedSessions.TryRemove(sessionId, out _);
+        foreach (var repoRoot in GetRepoBindings(sessionId).Select(repo => repo.RepoRoot))
         {
-            watcher.StopPolling();
+            if (_watchers.TryGetValue(repoRoot, out var watcher)
+                && Interlocked.Decrement(ref watcher.SubscriberCount) <= 0)
+            {
+                watcher.StopPolling();
+            }
         }
     }
 
@@ -406,5 +623,7 @@ public sealed class GitWatcherService : IDisposable
         }
         _watchers.Clear();
         _sessionToRepo.Clear();
+        _sessionExtraRepos.Clear();
+        _subscribedSessions.Clear();
     }
 }

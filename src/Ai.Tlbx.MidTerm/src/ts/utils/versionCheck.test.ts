@@ -41,7 +41,9 @@ describe('versionCheck', () => {
         }
 
         return {
-          getAttribute: vi.fn((name: string) => (name === 'src' ? `/js/terminal.min.js?v=${version}` : null)),
+          getAttribute: vi.fn((name: string) =>
+            name === 'src' ? `/js/terminal.min.js?v=${version}` : null,
+          ),
         };
       }),
     });
@@ -62,8 +64,9 @@ describe('versionCheck', () => {
     mocks.getVersionDetails.mockResolvedValue({ data: { protocol: 1, webOnly: true } });
 
     const { checkVersionAndReload } = await import('./versionCheck');
-    await checkVersionAndReload();
+    const reloadRequested = await checkVersionAndReload();
 
+    expect(reloadRequested).toBe(false);
     expect(mocks.clearFrontendRefreshState).toHaveBeenCalledTimes(1);
     expect(mocks.setFrontendRefreshState).not.toHaveBeenCalled();
     expect(mocks.requestFrontendRefresh).not.toHaveBeenCalled();
@@ -77,13 +80,55 @@ describe('versionCheck', () => {
     mocks.getVersionDetails.mockResolvedValue({ data: { protocol: 1, webOnly: true } });
 
     const { checkVersionAndReload } = await import('./versionCheck');
-    await checkVersionAndReload();
+    const reloadRequested = await checkVersionAndReload();
 
+    expect(reloadRequested).toBe(false);
     expect(mocks.setFrontendRefreshState).toHaveBeenCalledWith('1.1.0', {
       status: 'available',
       updateType: 'webOnly',
     });
     expect(mocks.requestFrontendRefresh).not.toHaveBeenCalled();
+  });
+
+  it('forces reload on a compatible mismatch when the caller requires a current shell', async () => {
+    mocks.getVersion.mockResolvedValue({
+      data: '1.1.0',
+      response: { ok: true },
+    });
+    mocks.getVersionDetails.mockResolvedValue({ data: { protocol: 1, webOnly: true } });
+
+    const { checkVersionAndReload } = await import('./versionCheck');
+    const reloadRequested = await checkVersionAndReload({ forceReloadOnMismatch: true });
+
+    expect(reloadRequested).toBe(true);
+    expect(mocks.setFrontendRefreshState).toHaveBeenCalledWith('1.1.0', {
+      status: 'available',
+      updateType: 'webOnly',
+    });
+    expect(mocks.requestFrontendRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('reruns with force when a browser command arrives during a non-forcing check', async () => {
+    let resolveFirstVersion!: (value: { data: string; response: { ok: boolean } }) => void;
+    const firstVersion = new Promise<{ data: string; response: { ok: boolean } }>((resolve) => {
+      resolveFirstVersion = resolve;
+    });
+
+    mocks.getVersion
+      .mockReturnValueOnce(firstVersion)
+      .mockResolvedValueOnce({ data: '1.1.0', response: { ok: true } });
+    mocks.getVersionDetails.mockResolvedValue({ data: { protocol: 1, webOnly: true } });
+
+    const { checkVersionAndReload } = await import('./versionCheck');
+    const nonForcingCheck = checkVersionAndReload();
+    const forcingCheck = checkVersionAndReload({ forceReloadOnMismatch: true });
+
+    resolveFirstVersion({ data: '1.1.0', response: { ok: true } });
+
+    await expect(nonForcingCheck).resolves.toBe(false);
+    await expect(forcingCheck).resolves.toBe(true);
+    expect(mocks.getVersion).toHaveBeenCalledTimes(2);
+    expect(mocks.requestFrontendRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('forces a refresh when the live mux protocol is no longer compatible', async () => {
@@ -94,8 +139,9 @@ describe('versionCheck', () => {
     mocks.getVersionDetails.mockResolvedValue({ data: { protocol: 2, webOnly: false } });
 
     const { checkVersionAndReload } = await import('./versionCheck');
-    await checkVersionAndReload();
+    const reloadRequested = await checkVersionAndReload();
 
+    expect(reloadRequested).toBe(true);
     expect(mocks.setFrontendRefreshState).toHaveBeenCalledWith('2.0.0', {
       status: 'required',
       updateType: 'unknown',
@@ -107,14 +153,15 @@ describe('versionCheck', () => {
     setCurrentAssetVersion('dev-123');
     mocks.fetch.mockResolvedValue({
       ok: true,
-      text: vi.fn().mockResolvedValue(
-        '<!doctype html><script src="/js/terminal.min.js?v=dev-123"></script>',
-      ),
+      text: vi
+        .fn()
+        .mockResolvedValue('<!doctype html><script src="/js/terminal.min.js?v=dev-123"></script>'),
     });
 
     const { checkVersionAndReload } = await import('./versionCheck');
-    await checkVersionAndReload();
+    const reloadRequested = await checkVersionAndReload();
 
+    expect(reloadRequested).toBe(false);
     expect(mocks.fetch).toHaveBeenCalledWith('/index.html', { cache: 'no-store' });
     expect(mocks.clearFrontendRefreshState).toHaveBeenCalledTimes(1);
     expect(mocks.setFrontendRefreshState).not.toHaveBeenCalled();
@@ -125,14 +172,15 @@ describe('versionCheck', () => {
     setCurrentAssetVersion('dev-123');
     mocks.fetch.mockResolvedValue({
       ok: true,
-      text: vi.fn().mockResolvedValue(
-        '<!doctype html><script src="/js/terminal.min.js?v=dev-456"></script>',
-      ),
+      text: vi
+        .fn()
+        .mockResolvedValue('<!doctype html><script src="/js/terminal.min.js?v=dev-456"></script>'),
     });
 
     const { checkVersionAndReload } = await import('./versionCheck');
-    await checkVersionAndReload();
+    const reloadRequested = await checkVersionAndReload();
 
+    expect(reloadRequested).toBe(true);
     expect(mocks.requestFrontendRefresh).toHaveBeenCalledTimes(1);
     expect(mocks.clearFrontendRefreshState).not.toHaveBeenCalled();
     expect(mocks.setFrontendRefreshState).not.toHaveBeenCalled();

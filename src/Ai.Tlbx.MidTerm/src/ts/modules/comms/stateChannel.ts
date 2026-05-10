@@ -21,6 +21,7 @@ import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
+import { destroySessionWrapper } from '../sessionTabs';
 import { applyTerminalScaling } from '../terminal/scaling';
 import { handleSessionClosed } from '../layout';
 import { updateEmptyState, updateMobileTitle } from '../sidebar/sessionList';
@@ -249,7 +250,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
   }
 
   if (data.type === 'browser-ui') {
-    handleBrowserUiCommand(data);
+    void handleBrowserUiCommand(data);
     return;
   }
 
@@ -316,6 +317,7 @@ function removeClosedSessions(validSessions: readonly (Session & { id: string })
   sessionTerminals.forEach((_, id) => {
     if (!newIds.has(id) && !hiddenSessionIds.has(id)) {
       handleSessionClosed(id);
+      destroySessionWrapper(id);
       destroyTerminalForSession(id);
       newlyCreatedSessions.delete(id);
     }
@@ -359,7 +361,7 @@ function syncSessionTerminalState(session: Session & { id: string }): void {
     return;
   }
 
-  if (!session.lensOnly) {
+  if (!session.appServerControlOnly) {
     createTerminalForSession(session.id, session);
   }
 }
@@ -572,13 +574,17 @@ export async function sendCommand<T = unknown>(
 /**
  * Handle browser UI commands from the server (detach, dock, viewport).
  */
-function handleBrowserUiCommand(msg: BrowserUiMessage): void {
+async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   if (isEmbeddedWebPreviewContext()) {
     log.verbose(() => `Ignoring browser-ui command inside embedded preview: ${msg.command}`);
     return;
   }
 
-  void checkVersionAndReload();
+  const reloadRequested = await checkVersionAndReload({ forceReloadOnMismatch: true });
+  if (reloadRequested) {
+    log.info(() => `Browser UI command deferred until frontend reload: ${msg.command}`);
+    return;
+  }
 
   switch (msg.command) {
     case 'detach':

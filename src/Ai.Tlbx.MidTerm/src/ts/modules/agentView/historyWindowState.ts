@@ -1,10 +1,13 @@
-import { updateLensHistoryStreamWindow, type LensHistorySnapshot } from '../../api/client';
-import type { SessionLensViewState } from './types';
-import { buildLensHistoryEntries } from './historyProcessing';
-import { applyLensHistoryWindowState } from './snapshotState';
+import {
+  updateAppServerControlHistoryStreamWindow,
+  type AppServerControlHistorySnapshot,
+} from '../../api/client';
+import type { SessionAppServerControlViewState } from './types';
+import { buildAppServerControlHistoryEntries } from './historyProcessing';
+import { applyAppServerControlHistoryWindowState } from './snapshotState';
 
-export function hasRenderableLensHistory(
-  snapshot: LensHistorySnapshot | null | undefined,
+export function hasRenderableAppServerControlHistory(
+  snapshot: AppServerControlHistorySnapshot | null | undefined,
 ): boolean {
   if (!snapshot) {
     return false;
@@ -12,7 +15,7 @@ export function hasRenderableLensHistory(
 
   return (
     snapshot.latestSequence > 0 ||
-    buildLensHistoryEntries(snapshot).length > 0 ||
+    buildAppServerControlHistoryEntries(snapshot).length > 0 ||
     snapshot.items.length > 0 ||
     snapshot.requests.length > 0 ||
     Boolean(snapshot.streams.assistantText.trim()) ||
@@ -25,10 +28,10 @@ export function hasRenderableLensHistory(
   );
 }
 
-export function applyFetchedLensHistoryWindow(
+export function applyFetchedAppServerControlHistoryWindow(
   sessionId: string,
-  state: SessionLensViewState,
-  snapshot: LensHistorySnapshot,
+  state: SessionAppServerControlViewState,
+  snapshot: AppServerControlHistorySnapshot,
 ): boolean {
   const currentSnapshot = state.snapshot;
   const windowRevision = snapshot.windowRevision ?? null;
@@ -44,19 +47,19 @@ export function applyFetchedLensHistoryWindow(
     return false;
   }
 
-  applyLensHistoryWindowState(state, snapshot);
+  applyAppServerControlHistoryWindowState(state, snapshot);
   state.snapshot = snapshot;
   state.historyWindowRevision = windowRevision ?? state.historyWindowRevision;
   if (state.disconnectStream) {
     if (state.historyWindowViewportWidth == null) {
-      updateLensHistoryStreamWindow(
+      updateAppServerControlHistoryStreamWindow(
         sessionId,
         state.historyWindowStart,
         state.historyWindowCount,
         state.historyWindowRevision ?? undefined,
       );
     } else {
-      updateLensHistoryStreamWindow(
+      updateAppServerControlHistoryStreamWindow(
         sessionId,
         state.historyWindowStart,
         state.historyWindowCount,

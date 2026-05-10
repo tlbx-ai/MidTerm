@@ -42,7 +42,7 @@ declare global {
         isSessionInLayout: (sessionId: string) => boolean;
         readonly rootVisible: boolean;
       };
-      readonly lens: {
+      readonly appServerControl: {
         readonly scenarios: readonly ('mixed' | 'tables' | 'long' | 'workflow')[];
         showScenario: (
           sessionId: string,

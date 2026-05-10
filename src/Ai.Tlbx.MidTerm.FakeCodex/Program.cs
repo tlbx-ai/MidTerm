@@ -5,6 +5,7 @@ using System.Text;
 var threadId = "thread-fake-1";
 var turnId = "turn-fake-1";
 var approvalRequestId = "srv-approval-1";
+var permissionRequestId = "srv-permission-1";
 var userInputRequestId = "srv-user-input-1";
 var lastAssistant = string.Empty;
 var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CAPTURE_PATH");
@@ -62,6 +63,33 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     RecordMethod(launchCapture, method);
                     PersistLaunchCapture(capturePath, launchCapture);
                     continue;
+                case "model/list":
+                    RecordMethod(launchCapture, method);
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new
+                        {
+                            data = new[]
+                            {
+                                new
+                                {
+                                    id = "gpt-5.3-codex",
+                                    displayName = "GPT-5.3 Codex",
+                                    isDefault = true,
+                                    supportedReasoningEfforts = new[]
+                                    {
+                                        new { reasoningEffort = "low" },
+                                        new { reasoningEffort = "medium" },
+                                        new { reasoningEffort = "high" }
+                                    }
+                                }
+                            }
+                        }
+                    }).ConfigureAwait(false);
+                    continue;
                 case "thread/start":
                     RecordMethod(launchCapture, method);
                     if (root.TryGetProperty("params", out var threadStartParams) && threadStartParams.ValueKind == JsonValueKind.Object)
@@ -70,6 +98,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         launchCapture.ThreadStartApprovalPolicy = GetString(threadStartParams, "approvalPolicy");
                         launchCapture.ThreadStartSandbox = GetString(threadStartParams, "sandbox");
                         launchCapture.ThreadStartExperimentalRawEvents = GetBoolean(threadStartParams, "experimentalRawEvents");
+                        launchCapture.ThreadStartPersistExtendedHistory = GetBoolean(threadStartParams, "persistExtendedHistory");
                     }
 
                     PersistLaunchCapture(capturePath, launchCapture);
@@ -100,6 +129,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         launchCapture.ThreadResumeThreadId = GetString(threadResumeParams, "threadId");
                         launchCapture.ThreadResumeApprovalPolicy = GetString(threadResumeParams, "approvalPolicy");
                         launchCapture.ThreadResumeSandbox = GetString(threadResumeParams, "sandbox");
+                        launchCapture.ThreadResumePersistExtendedHistory = GetBoolean(threadResumeParams, "persistExtendedHistory");
                     }
 
                     PersistLaunchCapture(capturePath, launchCapture);
@@ -129,6 +159,7 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                     var (imageCount, hasFileRef, textValue) = GetInputStats(root);
                     lastAssistant = $"Fake Codex reply. images={imageCount.ToString(CultureInfo.InvariantCulture)} fileRefs={hasFileRef.ToString().ToLowerInvariant()} text={textValue}";
                     var requestUserInput = textValue.Contains("ask user", StringComparison.OrdinalIgnoreCase);
+                    var requestPermission = textValue.Contains("ask permission", StringComparison.OrdinalIgnoreCase);
 
                     await WriteJsonAsync(new
                     {
@@ -220,6 +251,25 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                             unifiedDiff = "--- a/file.txt\n+++ b/file.txt\n@@\n-old\n+new\n"
                         }
                     }).ConfigureAwait(false);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        method = "item/fileChange/patchUpdated",
+                        @params = new
+                        {
+                            turnId,
+                            itemId = "item-file-change-1",
+                            changes = new object[]
+                            {
+                                new
+                                {
+                                    path = "protocol-v2.txt",
+                                    kind = "update",
+                                    diff = "--- a/protocol-v2.txt\n+++ b/protocol-v2.txt\n@@ -1 +1 @@\n-old\n+from patch updated"
+                                }
+                            }
+                        }
+                    }).ConfigureAwait(false);
 
                     if (requestUserInput)
                     {
@@ -245,6 +295,28 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                                             new { label = "Fast", description = "Fast mode" }
                                         }
                                     }
+                                }
+                            }
+                        }).ConfigureAwait(false);
+                    }
+                    else if (requestPermission)
+                    {
+                        await WriteJsonAsync(new
+                        {
+                            jsonrpc = "2.0",
+                            id = permissionRequestId,
+                            method = "item/permissions/requestApproval",
+                            @params = new
+                            {
+                                threadId,
+                                turnId,
+                                itemId = "item-permission-1",
+                                cwd = Directory.GetCurrentDirectory(),
+                                reason = "Fake Codex needs expanded permissions.",
+                                permissions = new
+                                {
+                                    network = new { enabled = true },
+                                    fileSystem = new { read = Array.Empty<string>(), write = Array.Empty<string>() }
                                 }
                             }
                         }).ConfigureAwait(false);
@@ -297,6 +369,34 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             var id = idElement.ToString();
             if (string.Equals(id, approvalRequestId, StringComparison.Ordinal))
             {
+                await WriteJsonAsync(new
+                {
+                    jsonrpc = "2.0",
+                    method = "turn/completed",
+                    @params = new
+                    {
+                        turn = new
+                        {
+                            id = turnId,
+                            status = "completed"
+                        }
+                    }
+                }).ConfigureAwait(false);
+                continue;
+            }
+
+            if (string.Equals(id, permissionRequestId, StringComparison.Ordinal))
+            {
+                await WriteJsonAsync(new
+                {
+                    jsonrpc = "2.0",
+                    method = "serverRequest/resolved",
+                    @params = new
+                    {
+                        threadId,
+                        requestId = permissionRequestId
+                    }
+                }).ConfigureAwait(false);
                 await WriteJsonAsync(new
                 {
                     jsonrpc = "2.0",
@@ -526,6 +626,8 @@ internal sealed class FakeCodexLaunchCapture
 
     public bool? ThreadStartExperimentalRawEvents { get; set; }
 
+    public bool? ThreadStartPersistExtendedHistory { get; set; }
+
     public string? ThreadResumeCwd { get; set; }
 
     public string? ThreadResumeThreadId { get; set; }
@@ -533,4 +635,6 @@ internal sealed class FakeCodexLaunchCapture
     public string? ThreadResumeApprovalPolicy { get; set; }
 
     public string? ThreadResumeSandbox { get; set; }
+
+    public bool? ThreadResumePersistExtendedHistory { get; set; }
 }

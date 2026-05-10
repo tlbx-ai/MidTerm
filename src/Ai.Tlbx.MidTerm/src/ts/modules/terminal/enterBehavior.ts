@@ -22,8 +22,8 @@ export interface EnterOverrideInput {
   metaKey: boolean;
 }
 
-const CSI_U_SHIFT_ENTER = '\x1b[13;2u';
 const META_ENTER = '\x1b\r';
+const CODEX_PASTE_BURST_NEWLINE = ' \r\x7f';
 
 function containsCodexToken(value: string): boolean {
   return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
@@ -71,15 +71,31 @@ export function isTerminalEnterRemapEnabled(mode: TerminalEnterMode): boolean {
 }
 
 export function describeTerminalEnterOverrideBytes(value: string): string {
-  if (value === CSI_U_SHIFT_ENTER) {
-    return 'CSIu-ShiftEnter';
-  }
-
   if (value === META_ENTER) {
     return 'ESC+CR';
   }
+  if (value === CODEX_PASTE_BURST_NEWLINE) {
+    return 'codex-paste-burst-LF';
+  }
 
   return `bytes=${JSON.stringify(value)}`;
+}
+
+export function shouldRouteTerminalEnterOverrideThroughXtermInput(
+  _target: TerminalEnterTarget,
+  _value: string,
+): boolean {
+  return false;
+}
+
+export function describeTerminalEnterOverrideDelivery(
+  target: TerminalEnterTarget,
+  value: string,
+): string {
+  const description = describeTerminalEnterOverrideBytes(value);
+  return shouldRouteTerminalEnterOverrideThroughXtermInput(target, value)
+    ? `xterm-input ${description}`
+    : description;
 }
 
 function isEnterKey(input: EnterOverrideInput): boolean {
@@ -95,6 +111,11 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 
 /**
  * Returns the raw terminal bytes to send when MidTerm overrides Enter.
+ *
+ * Codex on Windows treats multiline paste bursts differently from isolated
+ * Enter bytes. The space/Enter/Backspace sequence starts Codex's paste-burst
+ * detector, lets Enter become a newline inside that burst, then removes the
+ * temporary space. Net effect in the composer: only a line break.
  */
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
@@ -106,20 +127,15 @@ export function getTerminalEnterOverride(
   }
 
   if (
-    target === 'codex' &&
     isTerminalEnterRemapEnabled(mode) &&
+    (target === 'codex' || !input.altKey) &&
     !input.metaKey &&
-    (input.altKey || input.ctrlKey || input.shiftKey)
+    (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
-    return CSI_U_SHIFT_ENTER;
-  }
+    if (target === 'codex') {
+      return CODEX_PASTE_BURST_NEWLINE;
+    }
 
-  if (
-    isTerminalEnterRemapEnabled(mode) &&
-    !input.altKey &&
-    !input.metaKey &&
-    (input.ctrlKey || input.shiftKey)
-  ) {
     return META_ENTER;
   }
 

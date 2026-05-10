@@ -384,9 +384,11 @@ internal static partial class AiCliCommandLocator
         }
 
         var pathext = Environment.GetEnvironmentVariable("PATHEXT");
-        var extensions = string.IsNullOrWhiteSpace(pathext)
-            ? [".exe", ".cmd", ".bat", ".ps1"]
-            : pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var extensions = new List<string> { ".exe", ".cmd", ".bat", ".ps1" };
+        if (!string.IsNullOrWhiteSpace(pathext))
+        {
+            extensions.AddRange(pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
 
         return extensions
             .Select(ext => commandName + ext.ToLowerInvariant())

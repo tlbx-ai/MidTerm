@@ -17,10 +17,10 @@ public sealed partial class MidTermSettingsPublic
     public string DefaultWorkingDirectory { get; set; } = "";
     public string TerminalEnvironmentVariables { get; set; } = "";
     public bool CodexYoloDefault { get; set; } = false;
-    public string CodexDefaultLensModel { get; set; } = "";
+    public string CodexDefaultAppServerControlModel { get; set; } = "";
     public string CodexEnvironmentVariables { get; set; } = "";
     public bool ClaudeDangerouslySkipPermissionsDefault { get; set; } = false;
-    public string ClaudeDefaultLensModel { get; set; } = "";
+    public string ClaudeDefaultAppServerControlModel { get; set; } = "";
     public string ClaudeEnvironmentVariables { get; set; } = "";
     public string AgentMessageFontFamily { get; set; } = "default";
     public bool ShowAgentMessageTimestamps { get; set; } = false;

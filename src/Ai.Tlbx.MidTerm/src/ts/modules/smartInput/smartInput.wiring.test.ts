@@ -7,7 +7,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const source = readFileSync(path.join(__dirname, 'smartInput.ts'), 'utf8');
 const metricsSource = readFileSync(path.join(__dirname, 'smartInputMetrics.ts'), 'utf8');
-const submissionSource = readFileSync(path.join(__dirname, 'lensAttachmentSubmission.ts'), 'utf8');
+const submissionSource = readFileSync(
+  path.join(__dirname, 'appServerControlAttachmentSubmission.ts'),
+  'utf8',
+);
 const layoutSource = readFileSync(path.join(__dirname, 'layout.ts'), 'utf8');
 const keyBindingsSource = readFileSync(path.join(__dirname, 'smartInputKeyBindings.ts'), 'utf8');
 const textareaShortcutsSource = readFileSync(
@@ -16,9 +19,16 @@ const textareaShortcutsSource = readFileSync(
 );
 const viewSource = readFileSync(path.join(__dirname, 'smartInputView.ts'), 'utf8');
 const footerSupportSource = readFileSync(path.join(__dirname, 'footerSupport.ts'), 'utf8');
-const lensResumeButtonSource = readFileSync(path.join(__dirname, 'lensResumeButton.ts'), 'utf8');
+const appServerControlResumeButtonSource = readFileSync(
+  path.join(__dirname, 'appServerControlResumeButton.ts'),
+  'utf8',
+);
 const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'utf8');
 const html = readFileSync(path.join(__dirname, '../../../static/index.html'), 'utf8');
+
+function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
 
 function getCssRule(selector: string): string {
   const start = css.indexOf(`${selector} {`);
@@ -31,7 +41,7 @@ function getCssRule(selector: string): string {
 }
 
 describe('smart input tab wiring', () => {
-  it('resyncs smart input visibility when non-Lens tabs activate', () => {
+  it('resyncs smart input visibility when non-AppServerControl tabs activate', () => {
     expect(source).toContain("onTabActivated('agent', (sessionId) => {");
     expect(source).toContain("onTabActivated('terminal', (sessionId) => {");
     expect(source).toContain("onTabActivated('files', (sessionId) => {");
@@ -42,12 +52,12 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('function shouldAllowProgrammaticSmartInputFocus(): boolean {');
     expect(source).toContain('return !isEmbeddedWebPreviewContext();');
     expect(source).toContain(
-      'isLensActiveSession(sessionId) && shouldAllowProgrammaticSmartInputFocus()',
+      'isAppServerControlActiveSession(sessionId) && shouldAllowProgrammaticSmartInputFocus()',
     );
     expect(source).toContain('syncSmartInputVisibility(shouldAllowProgrammaticSmartInputFocus());');
   });
 
-  it('does not rely on agent deactivation timing to hide Lens-only controls', () => {
+  it('does not rely on agent deactivation timing to hide AppServerControl-only controls', () => {
     expect(source).not.toContain("onTabDeactivated('agent'");
   });
 
@@ -66,26 +76,29 @@ describe('smart input tab wiring', () => {
     expect(glassRule).not.toContain('-webkit-backdrop-filter');
   });
 
-  it('keeps Lens quick settings hidden when the hidden attribute is set', () => {
-    expect(css).toContain('.smart-input-lens-settings[hidden] {');
-    expect(css).toContain('.smart-input-lens-actions[hidden] {');
+  it('keeps AppServerControl quick settings hidden when the hidden attribute is set', () => {
+    expect(css).toContain('.smart-input-appServerControl-settings[hidden] {');
+    expect(css).toContain('.smart-input-appServerControl-actions[hidden] {');
     expect(css).toContain('display: none !important;');
-    expect(css).toContain('.adaptive-footer-dock .smart-input-lens-dropdown-menu {');
+    expect(css).toContain('.adaptive-footer-dock .smart-input-appServerControl-dropdown-menu {');
     expect(css).toContain(
-      '.smart-input-lens-dropdown.smart-input-lens-dropdown-open-up .smart-input-lens-dropdown-menu {',
+      '.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up .smart-input-appServerControl-dropdown-menu {',
     );
     expect(css).toContain('position: absolute;');
     expect(css).toContain('z-index: 5;');
-    expect(viewSource).toContain('createLensQuickSettingsDropdown(lensModelSelect)');
-    expect(viewSource).toContain('createLensQuickSettingsDropdown(lensEffortSelect)');
+    expect(viewSource).toContain('createAppServerControlQuickSettingsDropdown(');
+    expect(viewSource).toContain('appServerControlModelSelect,');
     expect(viewSource).toContain(
-      "lensQuickSettingsActions.className = 'smart-input-lens-actions';",
+      'createAppServerControlQuickSettingsDropdown(appServerControlEffortSelect)',
     );
     expect(viewSource).toContain(
-      'manager-bar-action-popover smart-input-lens-dropdown-menu hidden',
+      "appServerControlQuickSettingsActions.className = 'smart-input-appServerControl-actions';",
     );
     expect(viewSource).toContain(
-      "wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);",
+      'manager-bar-action-popover smart-input-appServerControl-dropdown-menu hidden',
+    );
+    expect(viewSource).toContain(
+      "wrapper.classList.toggle('smart-input-appServerControl-dropdown-open-up', openUp);",
     );
     expect(viewSource).toContain("document.addEventListener('scroll', updateMenuPlacement, true);");
     expect(viewSource).toContain('trigger.disabled = disabled;');
@@ -94,7 +107,7 @@ describe('smart input tab wiring', () => {
     );
   });
 
-  it('avoids no-op Lens quick-setting dropdown churn during footer resync', () => {
+  it('avoids no-op AppServerControl quick-setting dropdown churn during footer resync', () => {
     expect(viewSource).toContain('if (select.dataset.midtermOptionsSignature === nextSignature) {');
     expect(viewSource).toContain('select.dataset.midtermOptionsSignature = nextSignature;');
     expect(viewSource).toContain("select.dispatchEvent(new Event('midterm:options'));");
@@ -104,22 +117,18 @@ describe('smart input tab wiring', () => {
     expect(footerSupportSource).toContain("select.dispatchEvent(new Event('midterm:sync'));");
   });
 
-  it('locks Lens quick settings while turns are running or queued', () => {
-    expect(source).toContain('hasInterruptibleLensTurnWork');
+  it('locks AppServerControl quick settings while turns are running or queued', () => {
+    expect(source).toContain('hasInterruptibleAppServerControlTurnWork');
     expect(footerSupportSource).toContain(
-      'const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);',
+      'const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);',
+    );
+    expect(footerSupportSource).toContain('appServerControlModelSelect,\n    quickSettingsLocked,');
+    expect(footerSupportSource).toContain('appServerControlEffortSelect,\n    quickSettingsLocked,');
+    expect(footerSupportSource).toContain(
+      'setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, quickSettingsLocked);',
     );
     expect(footerSupportSource).toContain(
-      'setLensQuickSettingsDropdownDisabled(lensModelSelect, quickSettingsLocked);',
-    );
-    expect(footerSupportSource).toContain(
-      'setLensQuickSettingsDropdownDisabled(lensEffortSelect, quickSettingsLocked);',
-    );
-    expect(footerSupportSource).toContain(
-      'setLensQuickSettingsDropdownDisabled(lensPlanSelect, quickSettingsLocked);',
-    );
-    expect(footerSupportSource).toContain(
-      'setLensQuickSettingsDropdownDisabled(lensPermissionSelect, quickSettingsLocked);',
+      'appServerControlPermissionSelect,\n    quickSettingsLocked,',
     );
   });
 
@@ -138,6 +147,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('showAutomation');
     expect(source).toContain('showStatus');
     expect(source).toContain('syncFooterRailOrder(layoutState);');
+    expect(layoutSource).toContain('if (state.isMobile && state.appServerControlActive) {');
+    expect(layoutSource).toContain("return ['status', 'primary', 'context', 'automation'];");
     expect(layoutSource).toContain("return ['primary', 'status', 'context', 'automation'];");
     expect(layoutSource).toContain("return ['primary', 'context', 'automation', 'status'];");
     expect(layoutSource).not.toContain("return ['primary', 'automation', 'context', 'status'];");
@@ -158,7 +169,10 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('ResizeObserver');
     expect(footerSupportSource).toContain('setAdaptiveFooterReservedHeight(');
     expect(footerSupportSource).toContain('window.dispatchEvent(');
-    expect(source).toContain("footerDock?.scrollTo({ top: 0, behavior: 'auto' });");
+    expect(source).toContain('function scrollFooterDockForTextareaFocus(): void {');
+    expect(source).toContain(
+      'shouldKeepFocusedComposerVisibleOnMobileAppServerControl() ? footerDock.scrollHeight : 0',
+    );
     expect(viewSource).toContain("sendBtn.addEventListener('dblclick', args.onSendDoubleClick);");
     expect(source).toContain('AUTO_SEND_LONG_PRESS_MS');
     expect(source).toContain(
@@ -181,12 +195,15 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
     expect(css).toContain('.adaptive-footer-status.adaptive-footer-status-sheet-open {');
     expect(css).toContain('.adaptive-footer-context-toggle {');
-    expect(css).toContain(".adaptive-footer-status[data-lens-compact='true'] {");
+    expect(css).toContain(".adaptive-footer-status[data-appServerControl-compact='true'] {");
     expect(css).toContain('position: relative;');
     expect(css).toContain('z-index: 3;');
     expect(css).toContain('--smart-input-control-height: 42px;');
     expect(css).toContain('--command-bay-control-height: 36px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
+    expect(css).toContain('--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));');
+    expect(css).toContain('font-size: var(--smart-input-mobile-text-size);');
+    expect(css).toContain('padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;');
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
     expect(viewSource).toContain(
@@ -199,18 +216,20 @@ describe('smart input tab wiring', () => {
     );
   });
 
-  it('keeps staged attachment drafts available in both Lens and terminal composers', () => {
-    expect(source).toContain('lensAttachmentDrafts');
+  it('keeps staged attachment drafts available in both AppServerControl and terminal composers', () => {
+    expect(source).toContain('appServerControlAttachmentDrafts');
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
     expect(source).toContain('shouldConvertPastedTextToSmartInputReference');
-    expect(source).toContain('addLensComposerTextReference');
+    expect(source).toContain('addAppServerControlComposerTextReference');
     expect(source).toContain('prepareSmartInputTerminalTurn');
-    expect(source).toContain('void openLensDraftAttachment(currentSessionId, attachment);');
+    expect(source).toContain(
+      'void openAppServerControlDraftAttachment(currentSessionId, attachment);',
+    );
     expect(source).toContain('enqueueCommandBayTurn');
     expect(source).not.toContain('await handleFileDrop(files);');
     expect(source).not.toContain(
-      'isLensActiveSession(sessionId) &&\n        clipboardDataMayContainLensComposerImage',
+      'isAppServerControlActiveSession(sessionId) &&\n        clipboardDataMayContainAppServerControlComposerImage',
     );
     expect(submissionSource).toContain('prepareSmartInputOutboundPrompt');
     expect(submissionSource).toContain(
@@ -227,11 +246,14 @@ describe('smart input tab wiring', () => {
       "footerStatusHost.classList.add('adaptive-footer-status-sheet-open');",
     );
     expect(source).toContain('return args.touchControlsAvailable;');
-    expect(source).toContain('shouldUseCompactLensStatusRail(layoutState)');
+    expect(source).toContain('shouldUseCompactAppServerControlStatusRail(layoutState)');
     expect(source).toContain('dockedBar.appendChild(dom.inputRow);');
     expect(source).toContain('let toolsPanelOpen = false;');
     expect(source).toContain('let suppressNextToolsToggleClick = false;');
     expect(source).toContain('setToolsPanelOpen(!toolsPanelOpen);');
+    expect(source).toContain(
+      "toolsPanel.parentElement?.classList.toggle('smart-input-row-tools-open', shouldOpen);",
+    );
     expect(source).toContain(
       'const preserveTextareaFocus = document.activeElement === activeTextarea;',
     );
@@ -244,7 +266,13 @@ describe('smart input tab wiring', () => {
     expect(source).not.toContain("nextToolsToggleBtn.addEventListener('pointerdown'");
     expect(viewSource).toContain('inputRow.appendChild(toolsPanel);');
     expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
-    expect(css).toContain('.smart-input-lens-settings-sheet {');
+    expect(css).toContain('.smart-input-row.smart-input-row-tools-open {');
+    expect(css).toContain(
+      '.smart-input-row.smart-input-row-tools-open .smart-input-tools-surface:not([hidden]) {',
+    );
+    expect(css).toContain('position: static;');
+    expect(css).toContain('flex: 1 0 100%;');
+    expect(css).toContain('.smart-input-appServerControl-settings-sheet {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.adaptive-footer-primary {');
     expect(css).toContain('.smart-input-editor {');
@@ -266,8 +294,10 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);',
     );
-    expect(css).toContain(
-      'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+      ),
     );
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
     expect(css).toContain('var(--terminal-line-height, 1)');
@@ -361,15 +391,15 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('openFileInputPicker(sharedPhotoInput);');
   });
 
-  it('routes Escape through the Lens interrupt handler instead of treating it like a text key', () => {
+  it('routes Escape through the AppServerControl interrupt handler instead of treating it like a text key', () => {
     expect(source).toContain('bindSmartInputGlobalKeyBindings({');
-    expect(source).toContain('hasInterruptibleLensTurnWork(sessionId)');
+    expect(source).toContain('hasInterruptibleAppServerControlTurnWork(sessionId)');
     expect(keyBindingsSource).toContain('document.addEventListener(');
     expect(keyBindingsSource).toContain("'keydown'");
     expect(keyBindingsSource).toContain('event.stopImmediatePropagation();');
     expect(keyBindingsSource).toContain('true,');
     expect(source).toContain("event.key === 'Escape'");
-    expect(source).toContain('void handleLensEscape(sessionId);');
+    expect(source).toContain('void handleAppServerControlEscape(sessionId);');
   });
 
   it('submits from the command bay only on bare Enter', () => {
@@ -387,7 +417,7 @@ describe('smart input tab wiring', () => {
     expect(source).not.toContain("if (event.key === 'Enter' && !event.shiftKey) {");
   });
 
-  it('captures Shift+Tab by active surface so Lens toggles plan mode and Terminal receives backtab', () => {
+  it('captures Shift+Tab by active surface so AppServerControl toggles plan mode and Terminal receives backtab', () => {
     expect(source).toContain("import { getActiveTab, onTabActivated } from '../sessionTabs';");
     expect(source).toContain(
       "import { resolveSmartInputShiftTabAction } from './smartInputTextareaShortcuts';",
@@ -397,9 +427,9 @@ describe('smart input tab wiring', () => {
     );
     expect(source).toContain('const shiftTabAction = resolveSmartInputShiftTabAction(');
     expect(source).toContain('if (handleSmartInputShiftTabShortcut(event)) {');
-    expect(source).toContain('toggleLensPlanMode(sessionId);');
+    expect(source).toContain('toggleAppServerControlPlanMode(sessionId);');
     expect(source).toContain("sendInput(sessionId, '\\x1b[Z');");
-    expect(textareaShortcutsSource).toContain("return 'toggle-lens-plan-mode';");
+    expect(textareaShortcutsSource).toContain("return 'toggle-appServerControl-plan-mode';");
     expect(textareaShortcutsSource).toContain("return 'forward-to-terminal';");
   });
 
@@ -418,23 +448,54 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('submitQueuedTurn: enqueueCommandBayTurn,');
   });
 
-  it('adds a space-scoped provider resume action to the Lens Command Bay status rail', () => {
-    expect(source).toContain('setLensResumeConversationHandler');
-    expect(source).toContain('createLensResumeButton');
-    expect(source).toContain('syncLensQuickSettingsActions(sessionId);');
+  it('adds a space-scoped provider resume action to the AppServerControl Command Bay status rail', () => {
+    expect(source).toContain('setAppServerControlResumeConversationHandler');
+    expect(source).toContain('createAppServerControlResumeButton');
+    expect(source).toContain('syncAppServerControlQuickSettingsActions(sessionId);');
     expect(source).toContain('shouldIgnoreFooterTransientUiDocumentClickSupport(target)');
     expect(footerSupportSource).toContain("target.closest('.provider-resume-picker-overlay')");
-    expect(lensResumeButtonSource).toContain(
-      "button.className = 'smart-input-lens-action smart-input-lens-resume';",
+    expect(appServerControlResumeButtonSource).toContain(
+      "button.className = 'smart-input-appServerControl-action smart-input-appServerControl-resume';",
     );
-    expect(lensResumeButtonSource).toContain('session?.spaceId');
-    expect(css).toContain('.smart-input-lens-actions {');
-    expect(css).toContain('.smart-input-lens-action {');
+    expect(appServerControlResumeButtonSource).toContain('session?.spaceId');
+    expect(css).toContain('.smart-input-appServerControl-actions {');
+    expect(css).toContain('.smart-input-appServerControl-action {');
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-field:nth-of-type\(4\),[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-actions \{[\s\S]*?display: none;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-settings \{[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-settings \{[\s\S]*?width: fit-content;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock[\s\S]*?\.smart-input-appServerControl-field[\s\S]*?\+ \.smart-input-appServerControl-field::before \{[\s\S]*?display: none;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-dropdown-trigger \{[\s\S]*?width: clamp\(84px, 28vw, 118px\);[\s\S]*?min-height: 32px;[\s\S]*?border-radius: 8px;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-status\.adaptive-footer-status-sheet-open[\s\S]*?\.adaptive-footer-status-summary-appServerControl,[\s\S]*?\.adaptive-footer-status\.adaptive-footer-status-sheet-open[\s\S]*?\.adaptive-footer-status-automation-proxy \{[\s\S]*?display: none;/s,
+    );
   });
 
-  it('hides inline tools on mobile Lens sessions', () => {
+  it('exposes quiet AppServerControl controls without raw slash-command labels', () => {
+    expect(source).not.toContain("'/model'");
+    expect(source).not.toContain("'/plan'");
+    expect(source).not.toContain("'/goal'");
+    expect(source).not.toContain('openAppServerControlModelPicker();');
+    expect(source).toContain("createAppServerControlActionButton(\n      'Plan'");
+    expect(source).toContain('toggleAppServerControlPlanMode(sessionId);');
+    expect(source).toContain("createAppServerControlActionButton(\n        'Goal'");
+    expect(source).toContain('void prepareAppServerControlGoal(sessionId);');
+    expect(source).toContain('await setAppServerControlGoal(sessionId, { objective });');
+    expect(viewSource).toContain("['xhigh', 'XHigh']");
+  });
+
+  it('hides inline tools on mobile AppServerControl sessions', () => {
     expect(source).toContain(
-      'if (layoutState.lensActive && layoutState.isMobile && inlineToolHost) {',
+      'if (layoutState.appServerControlActive && layoutState.isMobile && inlineToolHost) {',
     );
     expect(source).toContain('inlineToolHost.hidden = true;');
   });
@@ -443,6 +504,13 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('function renderMobileTerminalStatusRow(');
     expect(source).toContain("leftCluster.className = 'adaptive-footer-status-left';");
     expect(source).toContain("rightCluster.className = 'adaptive-footer-status-right';");
+    expect(source).toContain('event.stopPropagation();');
+    expect(source).toContain(
+      'setAppServerControlQuickSettingsSheetOpen(!appServerControlQuickSettingsSheetOpen);',
+    );
+    expect(source).toContain('appServerControlQuickSettingsRow.classList.contains(');
+    expect(source).toContain("'smart-input-appServerControl-settings-sheet',");
+    expect(source).toContain('footerStatusHost.appendChild(appServerControlQuickSettingsRow);');
     expect(source).toContain('expanded: layoutState.touchControlsExpanded,');
     expect(source).toContain('setTouchKeysExpanded(!layoutState.touchControlsExpanded);');
     expect(source).toContain('createAutomationOverflowProxy()');
@@ -451,11 +519,34 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('triggerAutomationOverflow(btn)');
     expect(source).toContain('setAutomationOverflowProxyAnchor(null)');
     expect(source).toContain('triggerAddAutomation()');
+    expect(viewSource).toContain('adaptive-footer-status-toggle-icon');
+    expect(viewSource).toContain('adaptive-footer-status-toggle-label');
     expect(source).toContain(
       "managerBar?.classList.toggle('hidden', !layoutState.showAutomation || layoutState.isMobile)",
     );
     expect(css).toContain('.adaptive-footer-status-left {');
     expect(css).toContain('.adaptive-footer-status-right {');
     expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .manager-bar {");
+    expect(css).toContain(
+      "body.keyboard-visible\n  .adaptive-footer-dock[data-device='mobile'][data-surface='terminal']\n  .adaptive-footer-status {",
+    );
+    expect(css).toContain(
+      "body.keyboard-visible\n  .adaptive-footer-dock[data-device='mobile'][data-surface='terminal']\n  .adaptive-footer-status-toggle-label {",
+    );
+  });
+
+  it('keeps mobile AppServerControl status awareness and bottom-jump chrome out of the keyboard overlap zone', () => {
+    expect(css).toContain(
+      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl'] .adaptive-footer-status {",
+    );
+    expect(css).toContain(
+      "body.keyboard-visible\n  .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl']\n  .adaptive-footer-primary {",
+    );
+    expect(css).toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(css).toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(source).toContain(
+      'function shouldKeepFocusedComposerVisibleOnMobileAppServerControl(): boolean {',
+    );
+    expect(source).toContain("document.body.classList.contains('keyboard-visible')");
   });
 });

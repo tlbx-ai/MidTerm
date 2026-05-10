@@ -16,9 +16,9 @@ public sealed class AiCliCapabilityService
         _settingsService = settingsService;
     }
 
-    public async Task<AiCliCapabilitySnapshot> DescribeAsync(string profile, bool lensOnly = false, CancellationToken ct = default)
+    public async Task<AiCliCapabilitySnapshot> DescribeAsync(string profile, bool appServerControlOnly = false, CancellationToken ct = default)
     {
-        var cacheKey = $"{profile}\n{(lensOnly ? "lens" : "terminal")}";
+        var cacheKey = $"{profile}\n{(appServerControlOnly ? "appServerControl" : "terminal")}";
         CachedSnapshot? cached;
         lock (_syncRoot)
         {
@@ -29,7 +29,7 @@ public sealed class AiCliCapabilityService
             }
         }
 
-        var snapshot = await BuildSnapshotAsync(profile, lensOnly, ResolveConfiguredUserProfileDirectory(), ct).ConfigureAwait(false);
+        var snapshot = await BuildSnapshotAsync(profile, appServerControlOnly, ResolveConfiguredUserProfileDirectory(), ct).ConfigureAwait(false);
         var next = new CachedSnapshot(DateTimeOffset.UtcNow.Add(CacheLifetime), snapshot);
         lock (_syncRoot)
         {
@@ -39,12 +39,12 @@ public sealed class AiCliCapabilityService
         return next.CloneSnapshot();
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildSnapshotAsync(string profile, bool lensOnly, string? userProfileDirectory, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildSnapshotAsync(string profile, bool appServerControlOnly, string? userProfileDirectory, CancellationToken ct)
     {
         return profile switch
         {
-            AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, lensOnly, ct).ConfigureAwait(false),
-            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, lensOnly, ct).ConfigureAwait(false),
+            AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
+            AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
             AiCliProfileService.OpenCodeProfile => BuildOpenCodeSnapshot(),
             AiCliProfileService.GenericAiProfile => BuildGenericSnapshot(),
             AiCliProfileService.ShellProfile => BuildShellSnapshot(),
@@ -52,22 +52,22 @@ public sealed class AiCliCapabilityService
         };
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(string? userProfileDirectory, bool lensOnly, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildCodexSnapshotAsync(string? userProfileDirectory, bool appServerControlOnly, CancellationToken ct)
     {
         var binaryPath = AiCliCommandLocator.FindExecutableInPath("codex", userProfileDirectory);
         if (binaryPath is null)
         {
-            if (lensOnly)
+            if (appServerControlOnly)
             {
                 return BuildSnapshot(
                     "native-required",
                     "attention",
-                    "Lens runtime unavailable",
-                    "Explicit Codex Lens sessions require the Codex CLI plus its structured app-server runtime on this machine.",
+                    "App Server Controller runtime unavailable",
+                    "Explicit Codex App Server Controller sessions require the Codex CLI plus its structured app-server runtime on this machine.",
                     [
                         CreateCapability("cli", "Codex CLI", "missing", "Missing", "MidTerm could not find `codex` on PATH."),
-                        CreateCapability("native", "Codex app-server", "missing", "Missing", "Without `codex app-server`, this explicit Lens session cannot become live."),
-                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                        CreateCapability("native", "Codex app-server", "missing", "Missing", "Without `codex app-server`, this explicit App Server Controller session cannot become live."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
             }
 
@@ -86,17 +86,17 @@ public sealed class AiCliCapabilityService
         var probe = await ProbeAsync(binaryPath, "app-server --help", ct).ConfigureAwait(false);
         if (probe.Success)
         {
-            if (lensOnly)
+            if (appServerControlOnly)
             {
                 return BuildSnapshot(
                     "native-ready",
                     "positive",
-                    "Lens runtime ready",
-                    "This explicit Codex Lens session can attach through `mtagenthost` to Codex's structured app-server runtime.",
+                    "App Server Controller runtime ready",
+                    "This explicit Codex App Server Controller session can attach through `mtagenthost` to Codex's structured app-server runtime.",
                     [
                         CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
-                        CreateCapability("native", "Codex app-server", "ready", "Ready", "The structured Codex runtime is available for explicit Lens sessions."),
-                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                        CreateCapability("native", "Codex app-server", "ready", "Ready", "The structured Codex runtime is available for explicit App Server Controller sessions."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
             }
 
@@ -112,17 +112,17 @@ public sealed class AiCliCapabilityService
                 ]);
         }
 
-        if (lensOnly)
+        if (appServerControlOnly)
         {
             return BuildSnapshot(
                 "native-gated",
                 "warning",
-                "Lens runtime blocked",
-                "Codex CLI exists, but `codex app-server` did not answer cleanly, so this explicit Lens session cannot become live yet.",
+                "App Server Controller runtime blocked",
+                "Codex CLI exists, but `codex app-server` did not answer cleanly, so this explicit App Server Controller session cannot become live yet.",
                 [
                     CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Codex app-server", "gated", "Gated", BuildProbeDetail(probe, "The structured Codex runtime is not reliably available yet.")),
-                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                 ]);
         }
 
@@ -138,22 +138,22 @@ public sealed class AiCliCapabilityService
             ]);
     }
 
-    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(string? userProfileDirectory, bool lensOnly, CancellationToken ct)
+    private static async Task<AiCliCapabilitySnapshot> BuildClaudeSnapshotAsync(string? userProfileDirectory, bool appServerControlOnly, CancellationToken ct)
     {
         var binaryPath = AiCliCommandLocator.FindExecutableInPath("claude", userProfileDirectory);
         if (binaryPath is null)
         {
-            if (lensOnly)
+            if (appServerControlOnly)
             {
                 return BuildSnapshot(
                     "native-required",
                     "attention",
-                    "Lens runtime unavailable",
-                    "Explicit Claude Lens sessions require the Claude CLI plus its structured runtime support on this machine.",
+                    "App Server Controller runtime unavailable",
+                    "Explicit Claude App Server Controller sessions require the Claude CLI plus its structured runtime support on this machine.",
                     [
                         CreateCapability("cli", "Claude CLI", "missing", "Missing", "MidTerm could not find `claude` on PATH."),
-                        CreateCapability("native", "Claude structured runtime", "missing", "Missing", "Without structured Claude runtime support, this explicit Lens session cannot become live."),
-                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                        CreateCapability("native", "Claude structured runtime", "missing", "Missing", "Without structured Claude runtime support, this explicit App Server Controller session cannot become live."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
             }
 
@@ -175,17 +175,17 @@ public sealed class AiCliCapabilityService
 
         if (probe.Success && advertisesSdk)
         {
-            if (lensOnly)
+            if (appServerControlOnly)
             {
                 return BuildSnapshot(
                     "native-ready",
                     "positive",
-                    "Lens runtime ready",
-                    "This explicit Claude Lens session can attach through `mtagenthost` to Claude's structured runtime.",
+                    "App Server Controller runtime ready",
+                    "This explicit Claude App Server Controller session can attach through `mtagenthost` to Claude's structured runtime.",
                     [
                         CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                         CreateCapability("native", "Claude structured runtime", "ready", "Ready", "This machine advertises structured Claude runtime support."),
-                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
             }
 
@@ -201,19 +201,19 @@ public sealed class AiCliCapabilityService
                 ]);
         }
 
-        if (lensOnly)
+        if (appServerControlOnly)
         {
             return BuildSnapshot(
                 "native-gated",
                 "warning",
-                "Lens runtime blocked",
-                "Claude CLI exists, but structured runtime support is not available cleanly enough for this explicit Lens session yet.",
+                "App Server Controller runtime blocked",
+                "Claude CLI exists, but structured runtime support is not available cleanly enough for this explicit App Server Controller session yet.",
                 [
                     CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Claude structured runtime", "gated", "Gated", advertisesSdk
                         ? "The CLI mentions structured runtime support, but the probe did not complete cleanly."
                         : "This CLI build does not clearly advertise structured runtime support yet."),
-                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit Lens sessions do not own an `mthost` terminal.")
+                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                 ]);
         }
 
@@ -265,7 +265,7 @@ public sealed class AiCliCapabilityService
             "terminal-only",
             "fallback",
             "Terminal only",
-            "This session currently looks like a plain shell, so the Agent view is only a light telemetry lens over the terminal.",
+            "This session currently looks like a plain shell, so the Agent view is only a light telemetry appServerControl over the terminal.",
             [
                 CreateCapability("runtime", "AI runtime", "missing", "Missing", "MidTerm does not currently detect an interactive agent in the foreground."),
                 CreateCapability("native", "Native events", "missing", "Missing", "No structured provider lane can attach while the session is just a shell."),
@@ -339,15 +339,7 @@ public sealed class AiCliCapabilityService
     {
         using var process = new Process
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
+            StartInfo = CreateProbeStartInfo(fileName, arguments)
         };
 
         try
@@ -403,6 +395,44 @@ public sealed class AiCliCapabilityService
         }
     }
 
+    private static ProcessStartInfo CreateProbeStartInfo(string fileName, string arguments)
+    {
+        if (OperatingSystem.IsWindows() &&
+            Path.GetExtension(fileName).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "pwsh",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoLogo");
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-ExecutionPolicy");
+            startInfo.ArgumentList.Add("Bypass");
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(fileName);
+            foreach (var argument in arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            return startInfo;
+        }
+
+        return new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = arguments,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+    }
+
     private sealed record ProbeResult(bool Success, string Output);
 
     private sealed record CachedSnapshot(DateTimeOffset ExpiresAt, AiCliCapabilitySnapshot Snapshot)
@@ -440,7 +470,7 @@ public sealed class AiCliCapabilityService
             return null;
         }
 
-        return LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
+        return AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
     }
 }
 

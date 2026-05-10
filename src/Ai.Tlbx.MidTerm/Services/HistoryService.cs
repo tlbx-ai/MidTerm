@@ -490,8 +490,8 @@ public sealed class HistoryService : IDisposable
 
     private static string NormalizeLaunchMode(string? launchMode)
     {
-        return string.Equals(launchMode, LaunchEntryLaunchModes.Lens, StringComparison.OrdinalIgnoreCase)
-            ? LaunchEntryLaunchModes.Lens
+        return string.Equals(launchMode, LaunchEntryLaunchModes.AppServerControl, StringComparison.OrdinalIgnoreCase)
+            ? LaunchEntryLaunchModes.AppServerControl
             : LaunchEntryLaunchModes.Terminal;
     }
 
@@ -523,7 +523,7 @@ public sealed class HistoryService : IDisposable
             HistorySurfaceTypes.Terminal => HistorySurfaceTypes.Terminal,
             HistorySurfaceTypes.Codex => HistorySurfaceTypes.Codex,
             HistorySurfaceTypes.Claude => HistorySurfaceTypes.Claude,
-            _ => NormalizeLaunchMode(launchMode) == LaunchEntryLaunchModes.Lens
+            _ => NormalizeLaunchMode(launchMode) == LaunchEntryLaunchModes.AppServerControl
                 ? NormalizeProfile(profile) == "claude"
                     ? HistorySurfaceTypes.Claude
                     : HistorySurfaceTypes.Codex

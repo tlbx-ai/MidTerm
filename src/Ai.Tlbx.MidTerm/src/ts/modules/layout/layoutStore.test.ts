@@ -125,24 +125,24 @@ describe('layoutStore server sync', () => {
     expect(stores.$focusedSessionId.get()).toBe('session-b');
   });
 
-  it('docks onto Lens sessions without creating a terminal surface for the Lens target', async () => {
+  it('docks onto AppServerControl sessions without creating a terminal surface for the AppServerControl target', async () => {
     const { stores, layoutStore } = await loadHarness();
     stores.$sessions.set({
       'terminal-session': {
         id: 'terminal-session',
         cols: 120,
         rows: 30,
-        lensOnly: false,
+        appServerControlOnly: false,
       } as any,
-      'lens-session': {
-        id: 'lens-session',
+      'appServerControl-session': {
+        id: 'appServerControl-session',
         cols: 0,
         rows: 0,
-        lensOnly: true,
+        appServerControlOnly: true,
       } as any,
     });
 
-    layoutStore.dockSession('lens-session', 'terminal-session', 'left');
+    layoutStore.dockSession('appServerControl-session', 'terminal-session', 'left');
 
     expect(mocks.createTerminalForSession).toHaveBeenCalledTimes(1);
     expect(mocks.createTerminalForSession).toHaveBeenCalledWith(
@@ -154,7 +154,7 @@ describe('layoutStore server sync', () => {
       direction: 'horizontal',
       children: [
         { type: 'leaf', sessionId: 'terminal-session' },
-        { type: 'leaf', sessionId: 'lens-session' },
+        { type: 'leaf', sessionId: 'appServerControl-session' },
       ],
     });
   });

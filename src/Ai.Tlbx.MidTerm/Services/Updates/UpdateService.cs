@@ -31,7 +31,7 @@ public sealed partial class UpdateService : IDisposable
 
     private readonly HttpClient _httpClient;
     private readonly SettingsService _settingsService;
-    private readonly SessionLensHostRuntimeService? _lensHostRuntime;
+    private readonly SessionAppServerControlHostRuntimeService? _appServerControlHostRuntime;
     private readonly ConcurrentDictionary<string, Action<UpdateInfo>> _updateListeners = new(StringComparer.Ordinal);
     private readonly Timer _checkTimer;
     private readonly string _currentVersion;
@@ -51,10 +51,10 @@ public sealed partial class UpdateService : IDisposable
     {
     }
 
-    public UpdateService(SettingsService settingsService, SessionLensHostRuntimeService? lensHostRuntime)
+    public UpdateService(SettingsService settingsService, SessionAppServerControlHostRuntimeService? appServerControlHostRuntime)
     {
         _settingsService = settingsService;
-        _lensHostRuntime = lensHostRuntime;
+        _appServerControlHostRuntime = appServerControlHostRuntime;
         _httpClient = SharedHttpClient;
 
         _currentVersion = GetCurrentVersion();
@@ -790,11 +790,11 @@ public sealed partial class UpdateService : IDisposable
 
         if (updateType == UpdateType.Full)
         {
-            if (_lensHostRuntime is not null)
+            if (_appServerControlHostRuntime is not null)
             {
                 try
                 {
-                    var terminatedHosts = await _lensHostRuntime.TerminateAllOwnedHostsAsync().ConfigureAwait(false);
+                    var terminatedHosts = await _appServerControlHostRuntime.TerminateAllOwnedHostsAsync().ConfigureAwait(false);
                     AppendUpdateLog(
                         artifacts.LogPath,
                         terminatedHosts == 0
@@ -813,7 +813,7 @@ public sealed partial class UpdateService : IDisposable
             {
                 AppendUpdateLog(
                     artifacts.LogPath,
-                    "No live Lens host runtime service was available; external full-update steps will terminate mtagenthost if needed.");
+                    "No live App Server Controller host runtime service was available; external full-update steps will terminate mtagenthost if needed.");
             }
         }
 

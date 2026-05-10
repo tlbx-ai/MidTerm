@@ -16,9 +16,9 @@ describe('preview sandbox policy', () => {
   });
 
   it('keeps localhost previews unsandboxed outside dev mode', () => {
-    expect(
-      shouldForceSandboxForTarget('http://localhost:3000/app', 'https://midterm.local'),
-    ).toBe(false);
+    expect(shouldForceSandboxForTarget('http://localhost:3000/app', 'https://midterm.local')).toBe(
+      false,
+    );
   });
 
   it('keeps same-host previews unsandboxed outside dev mode', () => {

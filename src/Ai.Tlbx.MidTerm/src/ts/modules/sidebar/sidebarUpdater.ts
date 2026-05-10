@@ -4,7 +4,7 @@
  * Keeps the sidebar tree in sync with session, layout, hub, and settings changes.
  */
 
-import { $sessions, $activeSessionId, $currentSettings } from '../../stores';
+import { $sessions, $activeSessionId, $currentSettings, $layout } from '../../stores';
 import type { MidTermSettingsPublic, Session } from '../../types';
 import { createLogger } from '../logging';
 import {
@@ -27,6 +27,7 @@ let initialized = false;
 let unsubscribeSessions: (() => void) | null = null;
 let unsubscribeActiveSession: (() => void) | null = null;
 let unsubscribeSettings: (() => void) | null = null;
+let unsubscribeLayout: (() => void) | null = null;
 let previousSessions: Record<string, Session> | null = null;
 let previousSidebarSettingsSignature: string | null = null;
 
@@ -90,6 +91,11 @@ export function initializeSidebarUpdater(): void {
     updateMobileTitle();
   });
 
+  unsubscribeLayout = $layout.subscribe(() => {
+    renderSessionList();
+    updateMobileTitle();
+  });
+
   unsubscribeSettings = $currentSettings.subscribe((settings) => {
     const nextSignature = getSidebarSettingsSignature(settings);
     if (previousSidebarSettingsSignature === nextSignature) {
@@ -106,6 +112,8 @@ export function cleanupSidebarUpdater(): void {
   unsubscribeSessions = null;
   unsubscribeActiveSession?.();
   unsubscribeActiveSession = null;
+  unsubscribeLayout?.();
+  unsubscribeLayout = null;
   unsubscribeSettings?.();
   unsubscribeSettings = null;
   initialized = false;

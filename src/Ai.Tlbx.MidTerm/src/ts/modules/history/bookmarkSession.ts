@@ -6,11 +6,11 @@ export function getBookmarkSurfaceType(
   session: Session,
   profile: 'codex' | 'claude' | null,
 ): 'trm' | 'cdx' | 'cld' {
-  if (session.lensOnly && profile === 'claude') {
+  if (session.appServerControlOnly && profile === 'claude') {
     return 'cld';
   }
 
-  if (session.lensOnly && profile === 'codex') {
+  if (session.appServerControlOnly && profile === 'codex') {
     return 'cdx';
   }
 

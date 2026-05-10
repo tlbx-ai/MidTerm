@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const sendLensTurn = vi.fn();
+const sendAppServerControlTurn = vi.fn();
 const pasteToTerminal = vi.fn();
-const isLensActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
+const isAppServerControlActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
 const fetchMock = vi.fn();
-const submitLensTurn = vi.fn((sessionId: string, request: unknown) =>
-  sendLensTurn(sessionId, request),
+const submitAppServerControlTurn = vi.fn((sessionId: string, request: unknown) =>
+  sendAppServerControlTurn(sessionId, request),
 );
 
 class FakeFileReader {
@@ -35,13 +35,17 @@ vi.mock('../../stores', () => ({
 }));
 
 vi.mock('../../api/client', () => ({
-  sendLensTurn,
+  sendAppServerControlTurn,
 }));
 
-vi.mock('../lens/input', () => ({
-  isLensActiveSession,
-  submitLensTurn,
-  createLensTurnRequest: (text: string, attachments: unknown[] = [], sessionId?: string) => ({
+vi.mock('../appServerControl/input', () => ({
+  isAppServerControlActiveSession,
+  submitAppServerControlTurn,
+  createAppServerControlTurnRequest: (
+    text: string,
+    attachments: unknown[] = [],
+    sessionId?: string,
+  ) => ({
     text,
     attachments,
     sessionId,
@@ -68,24 +72,21 @@ vi.mock('../logging', () => ({
 
 describe('fileDrop', () => {
   beforeEach(() => {
-    sendLensTurn.mockReset();
-    submitLensTurn.mockClear();
+    sendAppServerControlTurn.mockReset();
+    submitAppServerControlTurn.mockClear();
     pasteToTerminal.mockReset();
-    isLensActiveSession.mockReset();
+    isAppServerControlActiveSession.mockReset();
     fetchMock.mockReset();
-    isLensActiveSession.mockReturnValue(false);
+    isAppServerControlActiveSession.mockReturnValue(false);
     vi.stubGlobal('HTMLElement', class HTMLElement {});
     vi.stubGlobal('FileReader', FakeFileReader as unknown as typeof FileReader);
-    vi.stubGlobal(
-      'document',
-      {
-        getElementById: () => null,
-        querySelector: () => null,
-        body: {
-          appendChild: vi.fn(),
-        },
-      } as unknown as Document,
-    );
+    vi.stubGlobal('document', {
+      getElementById: () => null,
+      querySelector: () => null,
+      body: {
+        appendChild: vi.fn(),
+      },
+    } as unknown as Document);
     vi.stubGlobal(
       'fetch',
       fetchMock.mockImplementation(async () => ({
@@ -94,19 +95,16 @@ describe('fileDrop', () => {
       })),
     );
     vi.stubGlobal('window', { isSecureContext: true } as Window & typeof globalThis);
-    vi.stubGlobal(
-      'navigator',
-      {
-        clipboard: {
-          read: vi.fn(async () => []),
-          readText: vi.fn(async () => ''),
-        },
-      } as Navigator,
-    );
+    vi.stubGlobal('navigator', {
+      clipboard: {
+        read: vi.fn(async () => []),
+        readText: vi.fn(async () => ''),
+      },
+    } as Navigator);
   });
 
-  it('routes Smart Input attachments through the prompt API while Lens is active', async () => {
-    isLensActiveSession.mockReturnValue(true);
+  it('routes Smart Input attachments through the prompt API while AppServerControl is active', async () => {
+    isAppServerControlActiveSession.mockReturnValue(true);
     const { handleFileDrop } = await import('./fileDrop');
 
     const files = [
@@ -116,8 +114,8 @@ describe('fileDrop', () => {
 
     await handleFileDrop(files);
 
-    expect(sendLensTurn).toHaveBeenCalledTimes(1);
-    expect(sendLensTurn).toHaveBeenCalledWith(
+    expect(sendAppServerControlTurn).toHaveBeenCalledTimes(1);
+    expect(sendAppServerControlTurn).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({
         text: expect.stringContaining('File "note.txt":\nhello from note'),
@@ -134,7 +132,7 @@ describe('fileDrop', () => {
     expect(pasteToTerminal).not.toHaveBeenCalled();
   });
 
-  it('keeps terminal paste behavior when Lens is not active', async () => {
+  it('keeps terminal paste behavior when AppServerControl is not active', async () => {
     const { handleFileDrop } = await import('./fileDrop');
 
     const files = [
@@ -144,7 +142,7 @@ describe('fileDrop', () => {
 
     await handleFileDrop(files);
 
-    expect(sendLensTurn).not.toHaveBeenCalled();
+    expect(sendAppServerControlTurn).not.toHaveBeenCalled();
     expect(pasteToTerminal).toHaveBeenNthCalledWith(1, 's1', 'plain text', false);
     expect(pasteToTerminal).toHaveBeenNthCalledWith(2, 's1', 'Q:/repo/uploads/pic.png', true);
   });
@@ -157,15 +155,12 @@ describe('fileDrop', () => {
         getType: vi.fn(async () => new Blob(['png'], { type: 'image/png' })),
       },
     ]);
-    vi.stubGlobal(
-      'navigator',
-      {
-        clipboard: {
-          read,
-          readText: vi.fn(async () => ''),
-        },
-      } as Navigator,
-    );
+    vi.stubGlobal('navigator', {
+      clipboard: {
+        read,
+        readText: vi.fn(async () => ''),
+      },
+    } as Navigator);
 
     const result = await handleClipboardPaste('s1', {
       foregroundName: 'codex',

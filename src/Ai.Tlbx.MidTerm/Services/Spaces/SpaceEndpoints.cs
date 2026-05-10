@@ -13,7 +13,7 @@ public static class SpaceEndpoints
         TtyHostSessionManager sessionManager,
         SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
-        SessionLensRuntimeService lensRuntime,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
         WorkerSessionRegistryService workerSessionRegistry)
     {
         app.MapGet("/api/spaces", async (bool? includeWorkspaces, bool? pinnedOnly, CancellationToken ct) =>
@@ -151,7 +151,7 @@ public static class SpaceEndpoints
                 var sessionId = creation.Session!.Id;
                 ApplySessionSpaceMetadata(sessionManager, sessionId, id, workspacePath, surface);
                 return Results.Json(
-                    BuildSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionId),
+                    BuildSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionId),
                     AppJsonContext.Default.SessionInfoDto);
             }
 
@@ -171,7 +171,7 @@ public static class SpaceEndpoints
             var sessionIdForWorker = session.Id;
             ApplySessionSpaceMetadata(sessionManager, sessionIdForWorker, id, workspacePath, surface);
             sessionManager.SetAgentControlled(sessionIdForWorker, false);
-            sessionManager.SetLensOnly(sessionIdForWorker, true);
+            sessionManager.SetAppServerControlOnly(sessionIdForWorker, true);
             sessionManager.SetProfileHint(sessionIdForWorker, surface);
             workerSessionRegistry.Register(
                 sessionIdForWorker,
@@ -188,7 +188,7 @@ public static class SpaceEndpoints
                 guidanceInjected: false);
 
             return Results.Json(
-                BuildSessionDto(sessionManager, sessionSupervisor, lensRuntime, sessionIdForWorker),
+                BuildSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionIdForWorker),
                 AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -231,14 +231,14 @@ public static class SpaceEndpoints
     private static SessionInfoDto BuildSessionDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensRuntimeService lensRuntime,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
         string sessionId)
     {
         var response = sessionManager.GetSessionList();
         foreach (var session in response.Sessions)
         {
             session.Supervisor = sessionSupervisor.Describe(session);
-            session.HasLensHistory = lensRuntime.HasHistory(session.Id);
+            session.HasAppServerControlHistory = appServerControlRuntime.HasHistory(session.Id);
         }
 
         return response.Sessions.First(session => string.Equals(session.Id, sessionId, StringComparison.Ordinal));

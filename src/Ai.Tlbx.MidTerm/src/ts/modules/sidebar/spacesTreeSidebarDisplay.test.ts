@@ -11,7 +11,7 @@ function makeSession(overrides: Partial<Session>): Session {
     name: null,
     terminalTitle: null,
     shellType: 'pwsh',
-    lensOnly: false,
+    appServerControlOnly: false,
     ...overrides,
   } as Session;
 }
@@ -88,9 +88,7 @@ describe('spaces tree sidebar display sync', () => {
     };
     domRef!.sessionList = host as unknown as HTMLElement;
 
-    expect(
-      syncDisplayText(makeSession({ name: 'worker', terminalTitle: 'Codex ⠙' })),
-    ).toBe(true);
+    expect(syncDisplayText(makeSession({ name: 'worker', terminalTitle: 'Codex ⠙' }))).toBe(true);
     expect(title.textContent).toBe('worker');
     expect(subtitle.textContent).toBe('Codex ⠙');
   });

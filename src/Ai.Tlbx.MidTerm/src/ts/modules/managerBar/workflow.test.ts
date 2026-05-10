@@ -96,18 +96,10 @@ describe('managerBar workflow', () => {
 
     expect(ignoreUntil).toBe(triggeredAt + MANAGER_BAR_POST_TRIGGER_IGNORE_HEAT_MS);
     expect(
-      isManagerBarCooldownReady(
-        MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD,
-        ignoreUntil - 1,
-        ignoreUntil,
-      ),
+      isManagerBarCooldownReady(MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD, ignoreUntil - 1, ignoreUntil),
     ).toBe(false);
     expect(
-      isManagerBarCooldownReady(
-        MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD,
-        ignoreUntil,
-        ignoreUntil,
-      ),
+      isManagerBarCooldownReady(MANAGER_BAR_COOLDOWN_HEAT_THRESHOLD, ignoreUntil, ignoreUntil),
     ).toBe(true);
     expect(isManagerBarCooldownReady(0.26, ignoreUntil, ignoreUntil)).toBe(false);
   });

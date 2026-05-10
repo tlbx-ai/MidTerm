@@ -80,15 +80,18 @@ public static class BrowserEndpoints
             }
 
             var preview = webPreviewService.EnsurePreviewSession(request.SessionId, request.PreviewName);
+            var browserId = BrowserIdentity.Build(
+                ctx.Request.Cookies["mt-client-id"],
+                request.TabId ?? ctx.Request.Query["tabId"].FirstOrDefault());
             var created = previewRegistry.Create(
                 preview.SessionId,
                 preview.PreviewName,
                 preview.RouteKey,
-                ctx.Request.Cookies["mt-client-id"]);
+                browserId);
             previewOwnerService.ClaimIfMissing(
                 preview.SessionId,
                 preview.PreviewName,
-                ctx.Request.Cookies["mt-client-id"]);
+                browserId);
             var response = new BrowserPreviewClientResponse
             {
                 SessionId = created.SessionId,
@@ -145,7 +148,7 @@ public static class BrowserEndpoints
             var sessionId = NormalizeOptional(request.SessionId);
             var previewName = NormalizeOptional(request.PreviewName);
             var url = request.Url ?? "";
-            var activateSession = request.ActivateSession ?? false;
+            var activateSession = request.ActivateSession ?? true;
             if (string.IsNullOrWhiteSpace(sessionId))
             {
                 return Results.BadRequest("sessionId required");
@@ -171,6 +174,7 @@ public static class BrowserEndpoints
                 sessionId,
                 previewName,
                 requireClientConnectedAfterUtc: DateTimeOffset.UtcNow,
+                requireVisibleClient: true,
                 connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
                 cancellationToken: cancellationToken);
 
@@ -180,7 +184,8 @@ public static class BrowserEndpoints
                 previewName,
                 connectedUiClientCount: uiBridge.ConnectedBrowserCount);
 
-            return status.Controllable
+            var ready = status.Controllable && status.DefaultClient?.IsVisible == true;
+            return ready
                 ? Results.Text(statusText)
                 : Results.Text(statusText, statusCode: 409);
         });
@@ -542,7 +547,8 @@ public static class BrowserEndpoints
                 "mt_outline [depth]",
                 "mt_text [selector]",
                 "mt_query <selector> --text",
-                "mt_exec <js>"
+                "mt_exec <js>",
+                "mt_repo list|add|remove|refresh"
             ],
             DiagnosticCommands =
             [
@@ -565,6 +571,7 @@ public static class BrowserEndpoints
             [
                 "Browser commands require a configured preview target, an attached MidTerm UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
                 "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
+                "Use mt_repo to bind extra git repositories to the current session so MidTerm shows multiple repo status blocks in the IDE bar.",
                 "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
             ]
         };

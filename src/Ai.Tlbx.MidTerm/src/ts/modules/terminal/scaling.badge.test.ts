@@ -137,7 +137,9 @@ function createTerminalHarness(
       return null;
     },
     getElementsByClassName(className: string) {
-      return { item: (index: number) => (className === 'xterm-screen' && index === 0 ? screen : null) };
+      return {
+        item: (index: number) => (className === 'xterm-screen' && index === 0 ? screen : null),
+      };
     },
   } as FakeElement;
 
@@ -204,8 +206,10 @@ function createTerminalHarness(
     terminal,
     xterm,
     container,
-    getOverlay: () => children.find((child) => fakeElementHasClass(child, 'scaled-overlay')) ?? null,
-    getGapFillers: () => children.filter((child) => fakeElementHasClass(child, 'terminal-gap-fill')),
+    getOverlay: () =>
+      children.find((child) => fakeElementHasClass(child, 'scaled-overlay')) ?? null,
+    getGapFillers: () =>
+      children.filter((child) => fakeElementHasClass(child, 'terminal-gap-fill')),
   };
 }
 

@@ -23,12 +23,14 @@ describe('mobile responsive chrome wiring', () => {
 
   it('toggles merged mobile topbar state from the active session', () => {
     expect(mainSource).toContain("from './modules/sessionTabs/mobileActions'");
-    expect(mobileActionsSource).toContain("title?.toggleAttribute('hidden', Boolean(activeSessionId));");
+    expect(mobileActionsSource).toContain(
+      "title?.toggleAttribute('hidden', Boolean(activeSessionId));",
+    );
     expect(mobileActionsSource).toContain(
       "topbar?.classList.toggle('has-mobile-tabs', Boolean(activeSessionId));",
     );
     expect(mobileActionsSource).toContain("resolveSessionSurfaceMode(activeSession) === 'agent'");
-    expect(mobileActionsSource).toContain("activeSessionId !== null &&");
+    expect(mobileActionsSource).toContain('activeSessionId !== null &&');
     expect(mobileActionsSource).toContain("isTabAvailable(activeSessionId, 'agent');");
   });
 
@@ -44,17 +46,19 @@ describe('mobile responsive chrome wiring', () => {
     expect(css).toContain('.adaptive-footer-dock .manager-bar:not(.hidden) {');
     expect(css).toContain('.adaptive-footer-context .touch-controller.embedded {');
     expect(css).toContain('.adaptive-footer-context .touch-controller.embedded .touch-dismiss {');
-    expect(css).toContain(
-      ".adaptive-footer-dock[data-device='mobile'] .manager-bar {",
-    );
+    expect(css).toContain(".adaptive-footer-dock[data-device='mobile'] .manager-bar {");
     expect(css).toContain('--command-bay-control-height-mobile: 44px;');
-    expect(css).toContain('--command-bay-control-height: var(--command-bay-control-height-mobile);');
+    expect(css).toContain(
+      '--command-bay-control-height: var(--command-bay-control-height-mobile);',
+    );
     expect(css).toContain('min-height: 46px;');
     expect(css).toContain('grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));');
     expect(css).toContain('.adaptive-footer-context .smart-input-tools-strip {');
-    expect(css).toContain("bottom: calc(100% + var(--command-bay-gap));");
+    expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
     expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {");
-    expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {");
+    expect(css).toContain(
+      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {",
+    );
     expect(css).toContain('position: sticky;');
   });
 });

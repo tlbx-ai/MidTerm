@@ -31,7 +31,7 @@
       - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol/runtime code)
       - Changed mux WebSocket binary protocol format
       - Changed named pipe protocol between mt and mthost
-      - Changed Lens runtime IPC/attach contracts
+      - Changed AppServerControl runtime IPC/attach contracts
       - Changed any IPC mechanism
 
     Answer 'no' if ONLY these changed:
@@ -39,7 +39,7 @@
       - CSS/HTML
       - REST API endpoints
       - Web-only C# code
-      - Lens/UI changes that do not require refreshing installed host binaries
+      - AppServerControl/UI changes that do not require refreshing installed host binaries
 
     When 'yes': Full update. Running installs refresh both mthost and mtagenthost.
     When 'no':  Web-only update. Running installs preserve their current mthost and mtagenthost.

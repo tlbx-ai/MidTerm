@@ -2,11 +2,11 @@ import { checkFilePaths, registerFilePaths } from '../../api/client';
 import type { FilePathInfo } from '../../types';
 import { t } from '../i18n';
 import { showDropToast } from '../terminal';
-import type { LensComposerDraftAttachment } from './lensAttachments';
+import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
 
-export async function openLensDraftAttachment(
+export async function openAppServerControlDraftAttachment(
   sessionId: string,
-  attachment: LensComposerDraftAttachment,
+  attachment: AppServerControlComposerDraftAttachment,
 ): Promise<void> {
   const path = attachment.uploadedPath;
   if (!path) {

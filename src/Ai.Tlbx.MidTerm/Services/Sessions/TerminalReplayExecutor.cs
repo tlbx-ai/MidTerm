@@ -9,7 +9,7 @@ internal static class TerminalReplayExecutor
     internal const int SubmitDelayMs = 200;
 
     public static async Task ExecuteAsync(
-        IReadOnlyList<LensTerminalReplayStep> steps,
+        IReadOnlyList<AppServerControlTerminalReplayStep> steps,
         Func<byte[], CancellationToken, Task> sendInputAsync,
         Func<string, string?, CancellationToken, Task<bool>> pasteImageAsync,
         Func<int, CancellationToken, Task> delayAsync,

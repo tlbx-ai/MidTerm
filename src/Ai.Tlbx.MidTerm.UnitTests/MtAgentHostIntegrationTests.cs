@@ -6,8 +6,10 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MtAgentHostIntegrationTests
 {
+    private const string LegacyV1HostProtocolVersion = "app-server-control-host-v1";
+
     [Fact]
-    public async Task SyntheticMtAgentHost_StreamsTypedLensProtocolOverStdio()
+    public async Task SyntheticMtAgentHost_StreamsTypedAppServerControlProtocolOverStdio()
     {
         var hostDll = ResolveAgentHostDll();
         Assert.True(File.Exists(hostDll), $"Expected mtagenthost build output at '{hostDll}'.");
@@ -27,20 +29,20 @@ public sealed class MtAgentHostIntegrationTests
         };
 
         process.Start();
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Equal(LensHostProtocol.CurrentVersion, hello.ProtocolVersion);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
             Assert.Contains("codex", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach",
                 SessionId = "session-1",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-1",
                     Provider = "codex",
@@ -48,11 +50,11 @@ public sealed class MtAgentHostIntegrationTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
             Assert.Equal("cmd-attach", attachResult.CommandId);
             Assert.Equal("accepted", attachResult.Status);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.Session.State, "ready", StringComparison.Ordinal) &&
@@ -60,7 +62,7 @@ public sealed class MtAgentHostIntegrationTests
                 maxPatches: 4,
                 timeout: TimeSpan.FromSeconds(10));
 
-            var attachWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var attachWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -70,30 +72,30 @@ public sealed class MtAgentHostIntegrationTests
             Assert.Equal("active", attachWindow.Thread.State);
             Assert.False(string.IsNullOrWhiteSpace(attachWindow.Thread.ThreadId));
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn",
                 SessionId = "session-1",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = "Inspect the repo and propose a patch.",
                     Attachments = []
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn");
             Assert.NotNull(turnResult.TurnStarted);
             Assert.Equal("accepted", turnResult.TurnStarted!.Status);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => patch.Patch.RequestUpserts.Count > 0,
                 maxPatches: 12,
                 timeout: TimeSpan.FromSeconds(10));
 
-            var turnWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var turnWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -108,22 +110,22 @@ public sealed class MtAgentHostIntegrationTests
             Assert.Equal("approval", request.Kind);
             Assert.Equal("open", request.State);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-resolve",
                 SessionId = "session-1",
                 Type = "request.resolve",
-                ResolveRequest = new LensRequestResolutionCommand
+                ResolveRequest = new AppServerControlRequestResolutionCommand
                 {
                     RequestId = request.RequestId,
                     Decision = "accept"
                 }
             });
 
-            var resolveResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-resolve");
+            var resolveResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-resolve");
             Assert.Equal("accepted", resolveResult.Status);
 
-            var resolveWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var resolveWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -131,6 +133,71 @@ public sealed class MtAgentHostIntegrationTests
                 count: 64);
             Assert.Equal("running", resolveWindow.CurrentTurn.State);
             Assert.Contains(resolveWindow.Requests, entry => entry.RequestId == request.RequestId && entry.Decision == "accept");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+        }
+    }
+
+    [Fact]
+    public async Task SyntheticMtAgentHost_RejectsLegacyV1HostProtocol()
+    {
+        var hostDll = ResolveAgentHostDll();
+        Assert.True(File.Exists(hostDll), $"Expected mtagenthost build output at '{hostDll}'.");
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"\"{hostDll}\" --stdio --synthetic codex",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+
+        try
+        {
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Equal("app-server-control-host-v2", hello.ProtocolVersion);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                ProtocolVersion = LegacyV1HostProtocolVersion,
+                CommandId = "cmd-legacy-v1",
+                SessionId = "session-legacy-v1",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-legacy-v1",
+                    Provider = "codex",
+                    WorkingDirectory = "Q:\\repos\\MidtermJpa"
+                }
+            });
+
+            var result = await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput,
+                pendingPatches,
+                "cmd-legacy-v1");
+
+            Assert.Equal("cmd-legacy-v1", result.CommandId);
+            Assert.Equal("session-legacy-v1", result.SessionId);
+            Assert.Equal("rejected", result.Status);
+            Assert.Contains("Unsupported protocol version", result.Message, StringComparison.Ordinal);
+            Assert.Contains(LegacyV1HostProtocolVersion, result.Message, StringComparison.Ordinal);
         }
         finally
         {

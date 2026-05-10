@@ -62,7 +62,7 @@ export function shouldReclaimTerminalFocusOnMouseUp(
     return false;
   }
 
-  // Lens owns its own reading and keyboard interaction surface. Let text selection
+  // AppServerControl owns its own reading and keyboard interaction surface. Let text selection
   // and follow-up pointer interactions complete without forcing terminal focus back in.
   if (element.closest?.('.agent-view-panel') != null) {
     return false;

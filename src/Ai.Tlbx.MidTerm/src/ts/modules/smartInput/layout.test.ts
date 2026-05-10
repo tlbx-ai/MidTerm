@@ -1,30 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  calculateAdaptiveFooterReservedHeight,
-  getAdaptiveFooterRailSequence,
-} from './layout';
+import { calculateAdaptiveFooterReservedHeight, getAdaptiveFooterRailSequence } from './layout';
 
 describe('smart input adaptive footer layout helpers', () => {
-  it('keeps mobile terminal status controls above the expanded keys rail without changing Lens order', () => {
-    expect(getAdaptiveFooterRailSequence({ lensActive: true, isMobile: true })).toEqual([
-      'primary',
-      'context',
-      'automation',
-      'status',
-    ]);
-    expect(getAdaptiveFooterRailSequence({ lensActive: false, isMobile: true })).toEqual([
-      'primary',
-      'status',
-      'context',
-      'automation',
-    ]);
-    expect(getAdaptiveFooterRailSequence({ lensActive: true, isMobile: false })).toEqual([
-      'primary',
-      'context',
-      'automation',
-      'status',
-    ]);
+  it('keeps mobile AppServerControl status awareness ahead of the composer while terminal mobile keeps status after primary', () => {
+    expect(getAdaptiveFooterRailSequence({ appServerControlActive: true, isMobile: true })).toEqual(
+      ['status', 'primary', 'context', 'automation'],
+    );
+    expect(
+      getAdaptiveFooterRailSequence({ appServerControlActive: false, isMobile: true }),
+    ).toEqual(['primary', 'status', 'context', 'automation']);
+    expect(
+      getAdaptiveFooterRailSequence({ appServerControlActive: true, isMobile: false }),
+    ).toEqual(['primary', 'context', 'automation', 'status']);
   });
 
   it('keeps multiline textarea growth out of the reserved pane height', () => {

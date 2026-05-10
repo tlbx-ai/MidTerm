@@ -6,8 +6,9 @@
  * Right-aligned actions: WEB | Share | Git dock toggle
  */
 
-import type { GitStatusResponse } from '../git/types';
+import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import { t } from '../i18n';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 
 export type SessionTabId = 'terminal' | 'agent' | 'files';
 
@@ -88,17 +89,32 @@ function buildGitStatsMarkup(additions: number, deletions: number): string {
 }
 
 interface GitIndicatorViewModel {
-  branchText: string;
+  repoRoot: string;
+  primaryText: string;
+  tertiaryText: string;
   statusText: string;
   additions: number;
   deletions: number;
   title: string;
   isEmpty: boolean;
+  isPrimary: boolean;
+  canRemove: boolean;
 }
 
-function createGitIndicatorButton(onClick: () => void): HTMLButtonElement {
+type GitIndicatorInput = GitRepoBinding[] | GitStatusResponse | null;
+
+interface GitRepoActionHandlers {
+  add?: (sessionId: string) => void;
+  remove?: (sessionId: string, repoRoot: string) => void;
+  refresh?: (sessionId: string, repoRoot?: string) => void;
+}
+
+const gitChipModels = new WeakMap<HTMLElement, Pick<GitIndicatorViewModel, 'repoRoot'> | null>();
+let gitRepoActionHandlers: GitRepoActionHandlers = {};
+
+function createGitIndicatorButton(sessionId: string): HTMLButtonElement {
   const btn = document.createElement('button');
-  btn.className = 'ide-bar-btn git-indicator';
+  btn.className = 'ide-bar-btn git-indicator git-repo-chip';
   btn.dataset.action = 'git';
   btn.appendChild(createActionIcon(GIT_BUTTON_ICON));
 
@@ -115,13 +131,54 @@ function createGitIndicatorButton(onClick: () => void): HTMLButtonElement {
   secondaryLine.className = 'git-indicator-line git-indicator-line-secondary git-indicator-stats';
   secondaryLine.innerHTML = buildGitStatsMarkup(0, 0);
 
+  const tertiaryLine = document.createElement('span');
+  tertiaryLine.className = 'git-indicator-line git-indicator-line-repo';
+  tertiaryLine.appendChild(createTextNode('git-indicator-label', ''));
+
   meta.appendChild(primaryLine);
   meta.appendChild(secondaryLine);
+  meta.appendChild(tertiaryLine);
   btn.appendChild(meta);
   btn.title = t('sessionTabs.git');
   btn.setAttribute('aria-label', t('sessionTabs.git'));
-  btn.addEventListener('click', onClick);
+  btn.addEventListener('click', () => {
+    const repoRoot = gitChipModels.get(btn)?.repoRoot;
+    gitClickHandler?.(repoRoot);
+  });
+  btn.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    const repoRoot = gitChipModels.get(btn)?.repoRoot;
+    if (repoRoot) {
+      gitRepoActionHandlers.refresh?.(sessionId, repoRoot);
+    }
+  });
   return btn;
+}
+
+function createGitIndicatorGroup(sessionId: string): HTMLDivElement {
+  const group = document.createElement('div');
+  group.className = 'git-indicator-group';
+  group.dataset.action = 'git';
+  group.dataset.sessionId = sessionId;
+
+  const strip = document.createElement('div');
+  strip.className = 'git-indicator-strip';
+  renderGitRepoChips(strip, sessionId, normalizeGitIndicatorRepos(null));
+  group.appendChild(strip);
+
+  const overflow = document.createElement('button');
+  overflow.className = 'ide-bar-btn git-indicator-overflow';
+  overflow.type = 'button';
+  overflow.title = 'Git repositories';
+  overflow.setAttribute('aria-label', 'Git repositories');
+  overflow.textContent = '+';
+  overflow.addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleGitRepoPopover(group, sessionId);
+  });
+  group.appendChild(overflow);
+
+  return group;
 }
 
 function hasGitStatus(status: GitStatusResponse | null): status is GitStatusResponse {
@@ -132,15 +189,24 @@ function hasGitStatus(status: GitStatusResponse | null): status is GitStatusResp
   return Boolean(status.repoRoot || status.branch);
 }
 
-function buildGitIndicatorViewModel(status: GitStatusResponse | null): GitIndicatorViewModel {
+// eslint-disable-next-line complexity -- the git chip compresses conflicts, dirty state, sync state, and empty repos into one compact view model.
+function buildGitIndicatorViewModel(
+  repo: GitRepoBinding | null,
+  status: GitStatusResponse | null,
+): GitIndicatorViewModel {
   if (!hasGitStatus(status)) {
+    const labelText = repo?.repoRoot ? repo.label || repo.role : '';
     return {
-      branchText: t('git.noRepoShort'),
+      repoRoot: repo?.repoRoot ?? '',
+      primaryText: labelText || t('git.noRepoShort'),
+      tertiaryText: '',
       statusText: '',
       additions: 0,
       deletions: 0,
-      title: `${t('sessionTabs.git')}: ${t('git.noRepoShort')}`,
+      title: `${t('sessionTabs.git')}: ${labelText}`,
       isEmpty: true,
+      isPrimary: repo?.isPrimary === true,
+      canRemove: repo?.isPrimary !== true && Boolean(repo?.repoRoot),
     };
   }
 
@@ -167,21 +233,225 @@ function buildGitIndicatorViewModel(status: GitStatusResponse | null): GitIndica
   }
 
   const branchText = status.branch || 'HEAD';
+  const labelText =
+    repo?.label || status.label || getRepoNameFromRoot(status.repoRoot) || repo?.role || '';
+  const isPrimary = status.isPrimary ?? repo?.isPrimary === true;
+  const primaryText = isPrimary ? branchText : labelText || branchText;
+  const tertiaryText = isPrimary ? labelText : branchText;
   const additions = status.totalAdditions;
   const deletions = status.totalDeletions;
   const title =
-    `${t('sessionTabs.git')}: ${branchText}` +
+    `${t('sessionTabs.git')}: ${labelText} / ${branchText}` +
     (statusText ? ` / ${statusText}` : '') +
-    `, +${additions} -${deletions}`;
+    `, +${additions} -${deletions}` +
+    (status.repoRoot ? `\n${status.repoRoot}` : '');
 
   return {
-    branchText,
+    repoRoot: status.repoRoot,
+    primaryText,
+    tertiaryText,
     statusText,
     additions,
     deletions,
     title,
     isEmpty: false,
+    isPrimary,
+    canRemove: !isPrimary && Boolean(status.repoRoot),
   };
+}
+
+function getRepoNameFromRoot(repoRoot: string): string {
+  const trimmed = repoRoot.replace(/[\\/]+$/, '');
+  const parts = trimmed.split(/[\\/]/);
+  return parts[parts.length - 1] ?? '';
+}
+
+function statusToRepoBinding(status: GitStatusResponse): GitRepoBinding {
+  return {
+    repoRoot: status.repoRoot,
+    label: status.label || getRepoNameFromRoot(status.repoRoot) || status.role || 'repo',
+    role: status.role || (status.isPrimary ? 'cwd' : 'target'),
+    source: status.source || 'auto',
+    isPrimary: status.isPrimary !== false,
+    status,
+  };
+}
+
+function normalizeGitIndicatorRepos(input: GitIndicatorInput): GitRepoBinding[] {
+  if (!input) {
+    return [
+      {
+        repoRoot: '',
+        label: t('git.noRepoShort'),
+        role: '',
+        source: '',
+        isPrimary: true,
+        status: null,
+      },
+    ];
+  }
+
+  if (Array.isArray(input)) {
+    return input;
+  }
+
+  return hasGitStatus(input) ? [statusToRepoBinding(input)] : [];
+}
+
+function createGitChip(sessionId: string, repo: GitRepoBinding): HTMLButtonElement {
+  const btn = createGitIndicatorButton(sessionId);
+  patchGitChip(btn, repo);
+  return btn;
+}
+
+function patchGitChip(btn: HTMLButtonElement, repo: GitRepoBinding): void {
+  const status = repo.status ?? null;
+  const viewModel = buildGitIndicatorViewModel(repo, status);
+  gitChipModels.set(btn, { repoRoot: viewModel.repoRoot });
+
+  const branchSpan = btn.querySelector('.git-indicator-branch');
+  const labelSpan = btn.querySelector('.git-indicator-label');
+  const separatorSpan = btn.querySelector('.git-indicator-separator');
+  const statusSpan = btn.querySelector('.git-indicator-status');
+  const statsSpan = btn.querySelector('.git-indicator-stats');
+  if (!branchSpan || !separatorSpan || !statusSpan || !statsSpan) return;
+
+  if (labelSpan) {
+    labelSpan.textContent = viewModel.tertiaryText;
+  }
+  branchSpan.textContent = viewModel.primaryText;
+  statusSpan.textContent = viewModel.statusText;
+  separatorSpan.textContent = viewModel.statusText ? '/' : '';
+  statsSpan.innerHTML = buildGitStatsMarkup(viewModel.additions, viewModel.deletions);
+  btn.dataset.repoRoot = viewModel.repoRoot;
+  btn.title = viewModel.title;
+  btn.setAttribute('aria-label', viewModel.title);
+  btn.classList.toggle('git-indicator-empty', viewModel.isEmpty);
+  btn.classList.toggle('git-indicator-primary', viewModel.isPrimary);
+  btn.classList.toggle('git-indicator-removable', viewModel.canRemove);
+}
+
+function renderGitRepoChips(strip: HTMLElement, sessionId: string, repos: GitRepoBinding[]): void {
+  if (typeof strip.insertBefore !== 'function') {
+    const fakeChildren = (strip as unknown as { children?: unknown }).children;
+    if (Array.isArray(fakeChildren)) {
+      fakeChildren.length = 0;
+    }
+    for (const repo of repos) {
+      strip.appendChild(createGitChip(sessionId, repo));
+    }
+    return;
+  }
+
+  reconcileKeyedChildren(strip, repos, {
+    key: (repo) => repo.repoRoot || repo.label,
+    create: (repo) => createGitChip(sessionId, repo),
+    patch: (element, repo) => {
+      patchGitChip(element, repo);
+    },
+  });
+}
+
+function toggleGitRepoPopover(group: HTMLElement, sessionId: string): void {
+  const existing = group.querySelector<HTMLElement>('.git-repo-popover');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  document.querySelectorAll('.git-repo-popover').forEach((node) => {
+    node.remove();
+  });
+  const repos = normalizeGitIndicatorRepos(readGitIndicatorData(group));
+  const popover = document.createElement('div');
+  popover.className = 'manager-bar-action-popover git-repo-popover';
+  popover.innerHTML = buildGitRepoPopoverHtml(repos);
+  popover.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest<HTMLButtonElement>('[data-git-repo-action]');
+    if (!button) return;
+    const action = button.dataset.gitRepoAction;
+    const repoRoot = button.dataset.repoRoot;
+    if (action === 'add') {
+      gitRepoActionHandlers.add?.(sessionId);
+    } else if (action === 'refresh') {
+      gitRepoActionHandlers.refresh?.(sessionId, repoRoot);
+    } else if (action === 'remove' && repoRoot) {
+      gitRepoActionHandlers.remove?.(sessionId, repoRoot);
+    } else if (action === 'open' && repoRoot) {
+      gitClickHandler?.(repoRoot);
+      popover.remove();
+    }
+  });
+  group.appendChild(popover);
+}
+
+function readGitIndicatorData(group: HTMLElement): GitRepoBinding[] {
+  const raw = group.dataset.gitRepos;
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(raw) as GitRepoBinding[];
+  } catch {
+    return [];
+  }
+}
+
+function buildGitRepoPopoverHtml(repos: GitRepoBinding[]): string {
+  const rows =
+    repos.length === 0
+      ? '<div class="git-repo-popover-empty">No repository tracked</div>'
+      : repos
+          .map((repo) => {
+            const status = repo.status ?? null;
+            const branch = status?.branch || 'HEAD';
+            const changeCount = status
+              ? status.staged.length +
+                status.modified.length +
+                status.untracked.length +
+                status.conflicted.length
+              : 0;
+            const removeButton = repo.isPrimary
+              ? ''
+              : `<button type="button" class="git-repo-menu-btn" data-git-repo-action="remove" data-repo-root="${escapeAttribute(repo.repoRoot)}">Remove</button>`;
+            return `<div class="git-repo-popover-row">
+              <button type="button" class="git-repo-popover-main" data-git-repo-action="open" data-repo-root="${escapeAttribute(repo.repoRoot)}">
+                <span class="git-repo-popover-label">${escapeHtml(repo.label || repo.role)}</span>
+                <span class="git-repo-popover-meta">${escapeHtml(branch)} · ${changeCount}</span>
+              </button>
+              <button type="button" class="git-repo-menu-btn" data-git-repo-action="refresh" data-repo-root="${escapeAttribute(repo.repoRoot)}">Refresh</button>
+              ${removeButton}
+            </div>`;
+          })
+          .join('');
+
+  return `<div class="git-repo-popover-list">${rows}</div>
+    <div class="git-repo-popover-actions">
+      <button type="button" class="git-repo-menu-btn git-repo-add" data-git-repo-action="add">Add repo</button>
+    </div>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value);
 }
 
 function createActionButton(
@@ -203,15 +473,19 @@ function createActionButton(
   return btn;
 }
 
-let gitClickHandler: (() => void) | null = null;
+let gitClickHandler: ((repoRoot?: string) => void) | null = null;
 let webClickHandler: (() => void) | null = null;
 let shareClickHandler: ((sessionId: string) => void) | null = null;
 export function setCommandsClickHandler(_handler: () => void): void {
   // Commands is temporarily hidden from the IDE bar, so registration is ignored.
 }
 
-export function setGitClickHandler(handler: () => void): void {
+export function setGitClickHandler(handler: (repoRoot?: string) => void): void {
   gitClickHandler = handler;
+}
+
+export function setGitRepoActionHandlers(handlers: GitRepoActionHandlers): void {
+  gitRepoActionHandlers = handlers;
 }
 
 export function setWebClickHandler(handler: () => void): void {
@@ -286,8 +560,8 @@ export function createTabBar(
   );
   actions.appendChild(shareBtn);
 
-  const gitBtn = createGitIndicatorButton(() => gitClickHandler?.());
-  actions.appendChild(gitBtn);
+  const gitGroup = createGitIndicatorGroup(sessionId);
+  actions.appendChild(gitGroup);
 
   bar.appendChild(actions);
 
@@ -361,21 +635,23 @@ export function updateCwd(bar: HTMLDivElement, cwd: string): void {
   }
 }
 
-export function updateGitIndicator(bar: HTMLDivElement, status: GitStatusResponse | null): void {
-  const button = bar.querySelector<HTMLButtonElement>('.git-indicator');
-  const branchSpan = bar.querySelector('.git-indicator-branch');
-  const separatorSpan = bar.querySelector('.git-indicator-separator');
-  const statusSpan = bar.querySelector('.git-indicator-status');
-  const statsSpan = bar.querySelector('.git-indicator-stats');
-  if (!button || !branchSpan || !separatorSpan || !statusSpan || !statsSpan) return;
+export function updateGitIndicator(bar: HTMLDivElement, input: GitIndicatorInput): void {
+  const group = bar.querySelector<HTMLElement>('.git-indicator-group');
+  const strip = group?.querySelector<HTMLElement>('.git-indicator-strip');
+  const overflow = group?.querySelector<HTMLButtonElement>('.git-indicator-overflow');
+  if (!group || !strip || !overflow) return;
 
-  const viewModel = buildGitIndicatorViewModel(status);
+  const repos = normalizeGitIndicatorRepos(input);
+  const visibleRepos = repos.slice(0, 3);
+  renderGitRepoChips(strip, group.dataset.sessionId ?? '', visibleRepos);
+  group.dataset.gitRepos = JSON.stringify(repos);
+  group.classList.toggle('git-indicator-group-empty', repos.length === 0);
+  overflow.hidden = false;
+  overflow.textContent = repos.length > 3 ? `+${repos.length - 3}` : '+';
+  overflow.title = repos.length > 3 ? `${repos.length - 3} more repositories` : 'Git repositories';
 
-  branchSpan.textContent = viewModel.branchText;
-  statusSpan.textContent = viewModel.statusText;
-  separatorSpan.textContent = viewModel.statusText ? '/' : '';
-  statsSpan.innerHTML = buildGitStatsMarkup(viewModel.additions, viewModel.deletions);
-  button.title = viewModel.title;
-  button.setAttribute('aria-label', viewModel.title);
-  button.classList.toggle('git-indicator-empty', viewModel.isEmpty);
+  const openPopover = group.querySelector<HTMLElement>('.git-repo-popover');
+  if (openPopover) {
+    openPopover.innerHTML = buildGitRepoPopoverHtml(repos);
+  }
 }

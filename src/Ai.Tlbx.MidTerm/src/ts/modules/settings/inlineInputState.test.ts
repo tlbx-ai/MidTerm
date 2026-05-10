@@ -1,8 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  syncInlineTextInputWrappers,
-  updateInlineTextInputWrapperState,
-} from './inlineInputState';
+import { syncInlineTextInputWrappers, updateInlineTextInputWrapperState } from './inlineInputState';
 
 class MockClassList {
   private readonly _classes = new Set<string>();

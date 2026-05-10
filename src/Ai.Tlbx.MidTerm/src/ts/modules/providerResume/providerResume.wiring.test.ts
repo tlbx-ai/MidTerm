@@ -11,7 +11,7 @@ const css = readFileSync(path.join(__dirname, '../../../static/css/app.css'), 'u
 describe('provider resume picker wiring', () => {
   it('loads provider-owned resume candidates through the shared picker helper', () => {
     expect(source).toContain('getProviderResumeCandidates');
-    expect(source).toContain("scope: activeScope");
+    expect(source).toContain('scope: activeScope');
     expect(source).toContain('Resume Conversation');
     expect(source).toContain('This folder');
     expect(source).toContain('All');

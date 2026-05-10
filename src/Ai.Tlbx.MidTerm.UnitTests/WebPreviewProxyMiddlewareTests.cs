@@ -113,6 +113,23 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_WebStorage_IsScopedPerPreviewRoute()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function mtStoragePrefix(name)", script, StringComparison.Ordinal);
+        Assert.Contains("__midterm_webpreview__", script, StringComparison.Ordinal);
+        Assert.Contains("match=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
+        Assert.Contains("return nativeStore.getItem(prefix+String(k));", script, StringComparison.Ordinal);
+        Assert.Contains("ensureStore(\"localStorage\")", script, StringComparison.Ordinal);
+        Assert.Contains("ensureStore(\"sessionStorage\")", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_ScreenshotCapture_NormalizesColorFunctionsBeforeHtml2Canvas()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(
@@ -170,6 +187,23 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("document.cookie=\"mt-preview-ctx=\"+encodeURIComponent(JSON.stringify(mtCtx))", script, StringComparison.Ordinal);
         Assert.Contains("routeMatch=(location.pathname||\"\").match(/^\\/webpreview\\/([^/]+)/)", script, StringComparison.Ordinal);
         Assert.Contains("\"routeKey=\"+encodeURIComponent(routeMatch[1])", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UrlRewriteScript_BrowserBridge_RefreshesStateWhenDockedFrameBecomesVisible()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("mt-refresh-browser-state", script, StringComparison.Ordinal);
+        Assert.Contains("function refreshBwsState(force)", script, StringComparison.Ordinal);
+        Assert.Contains("bwsVisibleOverride", script, StringComparison.Ordinal);
+        Assert.Contains("if(d.visible===true)bwsVisibleOverride=true;", script, StringComparison.Ordinal);
+        Assert.Contains("else if(d.visible===false)bwsVisibleOverride=false;", script, StringComparison.Ordinal);
+        Assert.Contains("refreshBwsState(d.force===true);", script, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -234,6 +268,56 @@ public class WebPreviewProxyMiddlewareTests
             new Uri("https://example.com/dashboard"));
 
         Assert.Equal(referer, rewritten);
+    }
+
+    [Fact]
+    public void RewriteRefererForUpstream_RememberedLeakedPath_UsesTargetOrigin()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://demo.kilv.de/"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        service.RememberLeakedPathRoute(routeKey, "/login");
+        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+
+        var rewritten = middleware.RewriteRefererForUpstream(
+            "https://midterm.local/login?ReturnUrl=%2F",
+            routeKey,
+            new Uri("https://demo.kilv.de/"));
+
+        Assert.Equal("https://demo.kilv.de/login?ReturnUrl=%2F", rewritten);
+    }
+
+    [Fact]
+    public void BuildInjectedBaseHref_BlazorDocument_PreservesUpstreamBaseHref()
+    {
+        const string html = """
+            <html><head><base href="/"></head><body>
+            <!--Blazor:{"type":"server","descriptor":"abc"}-->
+            <script src="_framework/blazor.web.js"></script>
+            </body></html>
+            """;
+
+        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
+            "/webpreview/route-1",
+            "https://demo.kilv.de/login?ReturnUrl=%2F",
+            "/",
+            html);
+
+        Assert.Equal("/", baseHref);
+    }
+
+    [Fact]
+    public void BuildInjectedBaseHref_NonBlazorDocument_UsesProxyBaseHref()
+    {
+        const string html = "<html><head><base href=\"/\"></head><body>plain</body></html>";
+
+        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
+            "/webpreview/route-1",
+            "https://example.com/docs/page",
+            "/",
+            html);
+
+        Assert.Equal("/webpreview/route-1/", baseHref);
     }
 
     [Fact]

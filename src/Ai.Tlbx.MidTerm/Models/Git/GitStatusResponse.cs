@@ -2,6 +2,10 @@ namespace Ai.Tlbx.MidTerm.Models.Git;
 
 public sealed class GitStatusResponse
 {
+    public string Label { get; set; } = "";
+    public string Role { get; set; } = "";
+    public string Source { get; set; } = "";
+    public bool IsPrimary { get; set; }
     public string Branch { get; set; } = "";
     public int Ahead { get; set; }
     public int Behind { get; set; }
@@ -14,6 +18,35 @@ public sealed class GitStatusResponse
     public string RepoRoot { get; set; } = "";
     public int TotalAdditions { get; set; }
     public int TotalDeletions { get; set; }
+}
+
+public sealed class GitRepoBinding
+{
+    public string RepoRoot { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Role { get; set; } = "";
+    public string Source { get; set; } = "";
+    public bool IsPrimary { get; set; }
+    public GitStatusResponse? Status { get; set; }
+}
+
+public sealed class GitRepoListResponse
+{
+    public GitRepoBinding[] Repos { get; set; } = [];
+}
+
+public sealed class GitRepoBindRequest
+{
+    public string SessionId { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string? Label { get; set; }
+    public string? Role { get; set; }
+}
+
+public sealed class GitRepoRefreshRequest
+{
+    public string SessionId { get; set; } = "";
+    public string? RepoRoot { get; set; }
 }
 
 public sealed class GitFileEntry

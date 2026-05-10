@@ -63,7 +63,7 @@ public sealed class HistoryServiceTests : IDisposable
     }
 
     [Fact]
-    public void RecordEntry_PersistsLensModeAndProfile()
+    public void RecordEntry_PersistsAppServerControlModeAndProfile()
     {
         if (!OperatingSystem.IsWindows()) return;
 
@@ -74,14 +74,14 @@ public sealed class HistoryServiceTests : IDisposable
             "codex",
             null,
             @"Q:\repo",
-            launchMode: LaunchEntryLaunchModes.Lens,
+            launchMode: LaunchEntryLaunchModes.AppServerControl,
             profile: "codex");
 
         Assert.NotNull(id);
 
         var entry = service.GetEntry(id!);
         Assert.NotNull(entry);
-        Assert.Equal(LaunchEntryLaunchModes.Lens, entry!.LaunchMode);
+        Assert.Equal(LaunchEntryLaunchModes.AppServerControl, entry!.LaunchMode);
         Assert.Equal("codex", entry.Profile);
         Assert.Equal(HistorySurfaceTypes.Codex, entry.SurfaceType);
     }
@@ -127,7 +127,7 @@ public sealed class HistoryServiceTests : IDisposable
             "codex",
             null,
             @"Q:\repo",
-            launchMode: LaunchEntryLaunchModes.Lens,
+            launchMode: LaunchEntryLaunchModes.AppServerControl,
             profile: "codex",
             launchOrigin: "Ad-Hoc",
             surfaceType: HistorySurfaceTypes.Codex);

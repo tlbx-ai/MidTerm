@@ -1,7 +1,7 @@
 export interface SmartInputVisibilityState {
   activeSessionId: string | null | undefined;
   inputMode: string | null | undefined;
-  lensActive: boolean;
+  appServerControlActive: boolean;
 }
 
 export function shouldShowDockedSmartInput(state: SmartInputVisibilityState): boolean {
@@ -9,13 +9,13 @@ export function shouldShowDockedSmartInput(state: SmartInputVisibilityState): bo
     return false;
   }
 
-  if (state.lensActive) {
+  if (state.appServerControlActive) {
     return true;
   }
 
   return state.inputMode === 'smartinput' || state.inputMode === 'both';
 }
 
-export function shouldShowLensQuickSettings(state: SmartInputVisibilityState): boolean {
-  return Boolean(state.activeSessionId) && state.lensActive;
+export function shouldShowAppServerControlQuickSettings(state: SmartInputVisibilityState): boolean {
+  return Boolean(state.activeSessionId) && state.appServerControlActive;
 }

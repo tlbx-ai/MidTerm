@@ -75,7 +75,7 @@ describe('layoutRenderer dock target geometry', () => {
   it('uses the visible active session panel for standalone dock overlay geometry', async () => {
     const panelRect = makeRect(12, 40, 640, 420);
     const wrapper = {
-      dataset: { sessionId: 'lens-session' },
+      dataset: { sessionId: 'appServerControl-session' },
       classList: { contains: vi.fn(() => false) },
       querySelector: (selector: string) =>
         selector === '.session-tab-panel.active'
@@ -85,7 +85,7 @@ describe('layoutRenderer dock target geometry', () => {
           : null,
       getBoundingClientRect: () => makeRect(12, 0, 640, 460),
     };
-    wrappersBySession.set('lens-session', wrapper);
+    wrappersBySession.set('appServerControl-session', wrapper);
     terminalsArea = {
       querySelectorAll: (selector: string) =>
         selector === '.session-wrapper:not(.hidden)' ? [wrapper] : [],
@@ -93,8 +93,8 @@ describe('layoutRenderer dock target geometry', () => {
 
     const { findSessionAtPoint, getSessionPaneRect } = await import('./layoutRenderer');
 
-    expect(findSessionAtPoint(24, 64)).toBe('lens-session');
-    expect(getSessionPaneRect('lens-session')).toBe(panelRect);
+    expect(findSessionAtPoint(24, 64)).toBe('appServerControl-session');
+    expect(getSessionPaneRect('appServerControl-session')).toBe(panelRect);
   });
 
   it('falls back to legacy visible terminal containers when no wrapper exists', async () => {

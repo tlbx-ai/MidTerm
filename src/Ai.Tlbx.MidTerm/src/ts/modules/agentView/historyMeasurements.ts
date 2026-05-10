@@ -1,5 +1,5 @@
 import { estimateHistoryEntryHeight } from './historyContent';
-import type { LensHistoryEntry, SessionLensViewState } from './types';
+import type { AppServerControlHistoryEntry, SessionAppServerControlViewState } from './types';
 import {
   activateVirtualizerMeasurementBucket,
   recordMeasuredItemSize,
@@ -9,7 +9,7 @@ import {
   type VirtualizerMeasurementState,
 } from '../../utils/virtualizer';
 
-function ensureMeasurementBucketState(state: SessionLensViewState): void {
+function ensureMeasurementBucketState(state: SessionAppServerControlViewState): void {
   const mutableState = state as {
     historyMeasuredHeightsByBucket?: Map<number, Map<string, number>>;
     historyObservedHeightsByBucket?: Map<number, Map<string, number>>;
@@ -29,7 +29,9 @@ function ensureMeasurementBucketState(state: SessionLensViewState): void {
   state.historyObservedHeights = mutableState.historyObservedHeights;
 }
 
-function createMeasurementStateAdapter(state: SessionLensViewState): VirtualizerMeasurementState {
+function createMeasurementStateAdapter(
+  state: SessionAppServerControlViewState,
+): VirtualizerMeasurementState {
   return {
     measuredSizes: state.historyMeasuredHeights,
     observedSizes: state.historyObservedHeights,
@@ -42,7 +44,7 @@ function createMeasurementStateAdapter(state: SessionLensViewState): Virtualizer
 }
 
 function syncMeasurementStateAdapter(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   adapter: VirtualizerMeasurementState,
 ): void {
   state.historyMeasuredHeights = adapter.measuredSizes;
@@ -74,7 +76,7 @@ export function resolveHistoryWindowViewportWidth(
 }
 
 export function activateHistoryMeasurementBucket(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   clientWidth: number,
 ): number {
   ensureMeasurementBucketState(state);
@@ -85,7 +87,7 @@ export function activateHistoryMeasurementBucket(
 }
 
 export function recordHistoryMeasuredHeight(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   entryId: string,
   measuredHeight: number,
   clientWidth: number,
@@ -104,7 +106,7 @@ export function resolveRepresentativeHistoryEntryHeight(
 }
 
 export function resolveHistoryEstimatedEntryHeight(
-  entry: LensHistoryEntry,
+  entry: AppServerControlHistoryEntry,
   clientWidth: number,
 ): number {
   return (
@@ -114,8 +116,8 @@ export function resolveHistoryEstimatedEntryHeight(
 }
 
 export function resolveHistoryViewportEntryHeight(
-  entry: LensHistoryEntry,
-  state: SessionLensViewState | undefined,
+  entry: AppServerControlHistoryEntry,
+  state: SessionAppServerControlViewState | undefined,
   clientWidth: number,
 ): number {
   const estimatedHeight = resolveHistoryEstimatedEntryHeight(entry, clientWidth);

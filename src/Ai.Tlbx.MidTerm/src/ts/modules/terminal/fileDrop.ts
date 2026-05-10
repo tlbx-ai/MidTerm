@@ -6,8 +6,12 @@
  */
 
 import { $activeSessionId } from '../../stores';
-import type { LensAttachmentReference } from '../../api/types';
-import { createLensTurnRequest, isLensActiveSession, submitLensTurn } from '../lens/input';
+import type { AppServerControlAttachmentReference } from '../../api/types';
+import {
+  createAppServerControlTurnRequest,
+  isAppServerControlActiveSession,
+  submitAppServerControlTurn,
+} from '../appServerControl/input';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
 import { t } from '../i18n';
@@ -109,7 +113,7 @@ interface TransferOverlayController {
 
 interface FileDropProcessingState {
   uploadedPaths: string[];
-  lensAttachments: LensAttachmentReference[];
+  appServerControlAttachments: AppServerControlAttachmentReference[];
   textSnippets: string[];
 }
 
@@ -441,7 +445,7 @@ export async function handleFileDrop(files: FileList): Promise<void> {
   if (!activeId || files.length === 0) return;
 
   const fileList = Array.from(files);
-  const lensActive = isLensActiveSession(activeId);
+  const appServerControlActive = isAppServerControlActiveSession(activeId);
   const needsUpload = fileList.some((file) => isImageFile(file.name) || isRejectedFile(file.name));
   const needsLongTextTransfer = fileList.some(
     (file) =>
@@ -454,23 +458,31 @@ export async function handleFileDrop(files: FileList): Promise<void> {
       ? showTransferOverlay(
           activeId,
           needsUpload
-            ? t(lensActive ? 'fileDrop.uploadingToLens' : 'fileDrop.uploadingToTerminal')
-            : t(lensActive ? 'fileDrop.transferringTextLens' : 'fileDrop.transferringText'),
+            ? t(
+                appServerControlActive
+                  ? 'fileDrop.uploadingToAppServerControl'
+                  : 'fileDrop.uploadingToTerminal',
+              )
+            : t(
+                appServerControlActive
+                  ? 'fileDrop.transferringTextAppServerControl'
+                  : 'fileDrop.transferringText',
+              ),
         )
       : null;
   const state: FileDropProcessingState = {
     uploadedPaths: [],
-    lensAttachments: [],
+    appServerControlAttachments: [],
     textSnippets: [],
   };
 
   try {
     for (const file of fileList) {
-      await processDroppedFile(file, activeId, lensActive, overlay, state);
+      await processDroppedFile(file, activeId, appServerControlActive, overlay, state);
     }
 
-    if (lensActive) {
-      await flushLensDropState(activeId, overlay, state);
+    if (appServerControlActive) {
+      await flushAppServerControlDropState(activeId, overlay, state);
       return;
     }
 
@@ -483,28 +495,28 @@ export async function handleFileDrop(files: FileList): Promise<void> {
 async function processDroppedFile(
   file: File,
   sessionId: string,
-  lensActive: boolean,
+  appServerControlActive: boolean,
   overlay: TransferOverlayController | null,
   state: FileDropProcessingState,
 ): Promise<void> {
   if (isImageFile(file.name)) {
-    await uploadDroppedFile(file, sessionId, lensActive, 'image', state);
+    await uploadDroppedFile(file, sessionId, appServerControlActive, 'image', state);
     return;
   }
 
   if (isRejectedFile(file.name)) {
-    await uploadDroppedFile(file, sessionId, lensActive, 'file', state);
+    await uploadDroppedFile(file, sessionId, appServerControlActive, 'file', state);
     return;
   }
 
-  await processDroppedTextFile(file, sessionId, lensActive, overlay, state);
+  await processDroppedTextFile(file, sessionId, appServerControlActive, overlay, state);
 }
 
 async function uploadDroppedFile(
   file: File,
   sessionId: string,
-  lensActive: boolean,
-  kind: LensAttachmentReference['kind'],
+  appServerControlActive: boolean,
+  kind: AppServerControlAttachmentReference['kind'],
   state: FileDropProcessingState,
 ): Promise<void> {
   const path = await uploadFile(sessionId, file);
@@ -513,11 +525,11 @@ async function uploadDroppedFile(
   }
 
   state.uploadedPaths.push(path);
-  if (!lensActive) {
+  if (!appServerControlActive) {
     return;
   }
 
-  state.lensAttachments.push({
+  state.appServerControlAttachments.push({
     kind,
     path,
     mimeType: file.type || null,
@@ -528,7 +540,7 @@ async function uploadDroppedFile(
 async function processDroppedTextFile(
   file: File,
   sessionId: string,
-  lensActive: boolean,
+  appServerControlActive: boolean,
   overlay: TransferOverlayController | null,
   state: FileDropProcessingState,
 ): Promise<void> {
@@ -540,7 +552,7 @@ async function processDroppedTextFile(
   try {
     const content = await readFileAsText(file);
     const sanitized = sanitizePasteContent(content);
-    if (lensActive) {
+    if (appServerControlActive) {
       state.textSnippets.push(`File "${file.name}":\n${sanitized}`);
       return;
     }
@@ -553,20 +565,20 @@ async function processDroppedTextFile(
   }
 }
 
-async function flushLensDropState(
+async function flushAppServerControlDropState(
   sessionId: string,
   overlay: TransferOverlayController | null,
   state: FileDropProcessingState,
 ): Promise<void> {
   const promptText = state.textSnippets.join('\n\n').trim();
-  if (promptText.length === 0 && state.lensAttachments.length === 0) {
+  if (promptText.length === 0 && state.appServerControlAttachments.length === 0) {
     return;
   }
 
-  overlay?.setLabel(t('fileDrop.transferringToLens'));
-  await submitLensTurn(
+  overlay?.setLabel(t('fileDrop.transferringToAppServerControl'));
+  await submitAppServerControlTurn(
     sessionId,
-    createLensTurnRequest(promptText, state.lensAttachments, sessionId),
+    createAppServerControlTurnRequest(promptText, state.appServerControlAttachments, sessionId),
   );
 }
 

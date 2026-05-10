@@ -105,12 +105,10 @@ describe('update runtime', () => {
   });
 
   it('reloads after an update only when the expected server version is live', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce({ ok: true } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        text: vi.fn().mockResolvedValue('1.2.3'),
-      } as unknown as Response);
+    mocks.fetch.mockResolvedValueOnce({ ok: true } as Response).mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue('1.2.3'),
+    } as unknown as Response);
 
     const runtime = await import('./runtime');
     runtime.beginServerRestartLifecycle('update', {
@@ -124,12 +122,10 @@ describe('update runtime', () => {
   });
 
   it('waits when health is back but the old server version is still responding', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce({ ok: true } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        text: vi.fn().mockResolvedValue('1.2.2'),
-      } as unknown as Response);
+    mocks.fetch.mockResolvedValueOnce({ ok: true } as Response).mockResolvedValueOnce({
+      ok: true,
+      text: vi.fn().mockResolvedValue('1.2.2'),
+    } as unknown as Response);
 
     const runtime = await import('./runtime');
     runtime.beginServerRestartLifecycle('update', {

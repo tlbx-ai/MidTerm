@@ -16,23 +16,23 @@ public sealed class TerminalReplayExecutorTests
 
         await TerminalReplayExecutor.ExecuteAsync(
             [
-                new LensTerminalReplayStep
+                new AppServerControlTerminalReplayStep
                 {
                     Kind = "text",
                     Text = "Test "
                 },
-                new LensTerminalReplayStep
+                new AppServerControlTerminalReplayStep
                 {
                     Kind = "image",
                     Path = "Q:/repo/.midterm/uploads/image_1.png",
                     MimeType = "image/png"
                 },
-                new LensTerminalReplayStep
+                new AppServerControlTerminalReplayStep
                 {
                     Kind = "text",
                     Text = " and another "
                 },
-                new LensTerminalReplayStep
+                new AppServerControlTerminalReplayStep
                 {
                     Kind = "image",
                     Path = "Q:/repo/.midterm/uploads/image_2.png",
@@ -75,7 +75,7 @@ public sealed class TerminalReplayExecutorTests
 
         await TerminalReplayExecutor.ExecuteAsync(
             [
-                new LensTerminalReplayStep
+                new AppServerControlTerminalReplayStep
                 {
                     Kind = "image",
                     Path = "Q:/repo/.midterm/uploads/image_1.png",
@@ -105,7 +105,7 @@ public sealed class TerminalReplayExecutorTests
             await File.WriteAllTextAsync(tempFile, "alpha\nbeta");
             await TerminalReplayExecutor.ExecuteAsync(
                 [
-                    new LensTerminalReplayStep
+                    new AppServerControlTerminalReplayStep
                     {
                         Kind = "textFile",
                         Path = tempFile,

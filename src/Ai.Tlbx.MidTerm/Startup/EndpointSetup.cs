@@ -764,7 +764,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         TtyHostSessionManager sessionManager,
         TtyHostMuxConnectionManager muxManager,
         SessionSupervisorService sessionSupervisor,
-        SessionLensRuntimeService lensRuntime,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
         UpdateService updateService,
         SettingsService settingsService,
         AuthService authService,
@@ -781,8 +781,8 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, lensRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
-        var lensHandler = new LensWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionLensRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, appServerControlRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
+        var appServerControlHandler = new AppServerControlWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionAppServerControlRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
         var browserHandler = new BrowserWebSocketHandler(
@@ -834,9 +834,9 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 return;
             }
 
-            if (path == "/ws/lens")
+            if (path == "/ws/app-server-control")
             {
-                await lensHandler.HandleAsync(context);
+                await appServerControlHandler.HandleAsync(context);
                 return;
             }
 

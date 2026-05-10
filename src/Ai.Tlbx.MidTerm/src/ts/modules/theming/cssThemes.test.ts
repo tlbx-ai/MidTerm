@@ -68,10 +68,7 @@ describe('CSS_THEMES CTA tokens', () => {
   it('defines CTA tokens for every theme palette', () => {
     for (const [themeName, palette] of Object.entries(CSS_THEMES)) {
       for (const token of requiredCtaTokens) {
-        expect(
-          palette[token],
-          `Missing token ${token} in theme ${themeName}`,
-        ).toBeTruthy();
+        expect(palette[token], `Missing token ${token} in theme ${themeName}`).toBeTruthy();
       }
     }
   });

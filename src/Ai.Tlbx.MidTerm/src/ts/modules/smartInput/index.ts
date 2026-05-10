@@ -13,6 +13,6 @@ export {
   isSmartInputMode,
   isBothMode,
   removeSmartInputSessionState,
-  setLensResumeConversationHandler,
+  setAppServerControlResumeConversationHandler,
 } from './smartInput';
 export { startHistoryion, stopHistoryion } from './transcription';

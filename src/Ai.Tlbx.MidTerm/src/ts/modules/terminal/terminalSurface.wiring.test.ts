@@ -9,8 +9,20 @@ const appCss = readFileSync(path.join(__dirname, '../../../static/css/app.css'),
 const constants = readFileSync(path.join(__dirname, '../../constants.ts'), 'utf8');
 const managerSource = readFileSync(path.join(__dirname, 'manager.ts'), 'utf8');
 const scalingSource = readFileSync(path.join(__dirname, 'scaling.ts'), 'utf8');
+const interactionBindingsSource = readFileSync(
+  path.join(__dirname, 'interactionBindings.ts'),
+  'utf8',
+);
+const enterOverrideSuppressSource = readFileSync(
+  path.join(__dirname, 'enterOverrideSuppress.ts'),
+  'utf8',
+);
 const terminalGapFillersSource = readFileSync(
   path.join(__dirname, 'terminalGapFillers.ts'),
+  'utf8',
+);
+const mobileVerticalStabilitySource = readFileSync(
+  path.join(__dirname, 'mobileVerticalStability.ts'),
   'utf8',
 );
 const terminalOptionsSource = readFileSync(path.join(__dirname, 'terminalOptions.ts'), 'utf8');
@@ -54,6 +66,12 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(scalingSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
     expect(scalingSource).toContain('scheduleFooterReserveResize();');
+    expect(mobileVerticalStabilitySource).toContain('mobileVerticalStabilityActive');
+    expect(scalingSource).toContain('shouldPreserveMobileTerminalRows');
+    expect(appCss).toContain(
+      'body.mobile-terminal-vertical-stable .terminal-container.mobile-terminal-vertical-stable',
+    );
+    expect(appCss).toContain('overflow: hidden auto;');
   });
 
   it('wires custom box-drawing glyph rendering to persisted terminal settings', () => {
@@ -61,12 +79,12 @@ describe('terminal surface wiring', () => {
     expect(terminalOptionsSource).toContain('customGlyphs: currentSettings?.customGlyphs ?? true,');
   });
 
-  it('does not reclaim terminal focus from Lens, Files, or interactive Command Bay mouseup flows', () => {
+  it('does not reclaim terminal focus from AppServerControl, Files, or interactive Command Bay mouseup flows', () => {
     expect(managerSource).toContain('const FOCUS_RECLAIM_EXEMPT_SELECTOR = [');
     expect(managerSource).toContain("'.adaptive-footer-dock'");
-    expect(managerSource).toContain("'[data-tab-panel=\"agent\"]'");
+    expect(managerSource).toContain('\'[data-tab-panel="agent"]\'');
     expect(managerSource).toContain('function hasActiveDocumentSelection(): boolean {');
-    expect(managerSource).toContain('return getActiveTab(activeSessionId) !== \'terminal\';');
+    expect(managerSource).toContain("return getActiveTab(activeSessionId) !== 'terminal';");
     expect(managerSource).toContain('if (!target || shouldSkipGlobalFocusReclaim(target)) {');
   });
 
@@ -77,5 +95,26 @@ describe('terminal surface wiring', () => {
     expect(managerSource).toContain(
       'if (isEmbeddedWebPreviewContext() || isSearchVisible() || hasNonTerminalFocus()) return;',
     );
+  });
+
+  it('routes browser textarea line-break input through the terminal Enter override path', () => {
+    expect(interactionBindingsSource).toContain("inputEvent.inputType === 'insertLineBreak'");
+    expect(interactionBindingsSource).toContain("inputEvent.inputType === 'insertParagraph'");
+    expect(interactionBindingsSource).toContain("'audit-input-enter'");
+    expect(interactionBindingsSource).toContain('wasEnterOverrideHandledRecently');
+    expect(interactionBindingsSource).toContain('const buildSyntheticEnterKeydown = ()');
+    expect(interactionBindingsSource).toContain("key: { value: 'Enter' }");
+    expect(interactionBindingsSource).toContain("type: { value: 'keydown' }");
+    expect(managerSource).toContain('function tryHandleTerminalEnterOverride(');
+    expect(managerSource).toContain('markTerminalEnterOverrideHandled(sessionId);');
+    expect(enterOverrideSuppressSource).toContain(
+      'const ENTER_OVERRIDE_INPUT_EVENT_SUPPRESS_MS = 250;',
+    );
+  });
+
+  it('keeps Codex Enter overrides on the direct session-input path', () => {
+    expect(managerSource).toContain('shouldRouteTerminalEnterOverrideThroughXtermInput(');
+    expect(managerSource).toContain('sendInput(sessionId, bytes);');
+    expect(managerSource).toContain('describeTerminalEnterOverrideDelivery(');
   });
 });

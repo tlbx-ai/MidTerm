@@ -128,7 +128,15 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){}
             return false;
           }
-          function mkStore(){
+          function mtStoragePrefix(name){
+            var route="default";
+            try{
+              var match=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              if(match&&match[1])route=decodeURIComponent(match[1]);
+            }catch(e){}
+            return "__midterm_webpreview__"+route+"__"+name+"__";
+          }
+          function mkMemoryStore(){
             var data=Object.create(null);
             var api={
               getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null;},
@@ -140,13 +148,49 @@ public sealed partial class WebPreviewProxyMiddleware
             try{Object.defineProperty(api,"length",{configurable:true,get:function(){return Object.keys(data).length;}});}catch(e){}
             return api;
           }
-          function ensureStore(name){
-            try{var existing=window[name];if(existing)return existing;}catch(e){}
-            var fallback=mkStore();
-            if(!dprop(window,name,function(){return fallback;})){
-              try{window[name]=fallback;}catch(e){}
+          function mkStore(name){
+            var nativeStore=null,prefix=mtStoragePrefix(name);
+            try{nativeStore=window[name];}catch(e){}
+            if(!nativeStore||typeof nativeStore.getItem!=="function"||typeof nativeStore.setItem!=="function"){
+              return mkMemoryStore();
             }
-            return fallback;
+            var api={
+              getItem:function(k){return nativeStore.getItem(prefix+String(k));},
+              setItem:function(k,v){nativeStore.setItem(prefix+String(k),String(v));},
+              removeItem:function(k){nativeStore.removeItem(prefix+String(k));},
+              clear:function(){
+                var keys=[];
+                for(var i=0;i<nativeStore.length;i++){
+                  var key=nativeStore.key(i);
+                  if(key&&key.indexOf(prefix)===0)keys.push(key);
+                }
+                keys.forEach(function(k){nativeStore.removeItem(k);});
+              },
+              key:function(i){
+                var scoped=[];
+                for(var j=0;j<nativeStore.length;j++){
+                  var key=nativeStore.key(j);
+                  if(key&&key.indexOf(prefix)===0)scoped.push(key.slice(prefix.length));
+                }
+                return i>=0&&i<scoped.length?scoped[i]:null;
+              }
+            };
+            try{Object.defineProperty(api,"length",{configurable:true,get:function(){
+              var count=0;
+              for(var i=0;i<nativeStore.length;i++){
+                var key=nativeStore.key(i);
+                if(key&&key.indexOf(prefix)===0)count++;
+              }
+              return count;
+            }});}catch(e){}
+            return api;
+          }
+          function ensureStore(name){
+            var scoped=mkStore(name);
+            if(!dprop(window,name,function(){return scoped;})){
+              try{window[name]=scoped;}catch(e){}
+            }
+            return scoped;
           }
           function mkSwContainer(){
             var reg={
@@ -836,12 +880,13 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){res.success=false;res.error=e.message||String(e);}
             bws.send(JSON.stringify(res));
           }
-          var bwsReconnectTimer=0,bwsStateKey="";
+          var bwsReconnectTimer=0,bwsStateKey="",bwsVisibleOverride=null;
           function curBwsState(){
             var hasFocus=false,topLevel=false;
             try{hasFocus=!!document.hasFocus();}catch(e){}
             try{topLevel=window.top===window.self;}catch(e){}
-            return {visible:document.visibilityState==="visible",focus:hasFocus,topLevel:topLevel};
+            var visible=bwsVisibleOverride!==null?bwsVisibleOverride:document.visibilityState==="visible";
+            return {visible:visible,focus:hasFocus,topLevel:topLevel};
           }
           function curBwsStateKey(){
             var s=curBwsState();
@@ -856,9 +901,9 @@ public sealed partial class WebPreviewProxyMiddleware
             if(bwsReconnectTimer)return;
             bwsReconnectTimer=setTimeout(function(){bwsReconnectTimer=0;connectBws();},delay||0);
           }
-          function refreshBwsState(){
+          function refreshBwsState(force){
             var nextKey=curBwsStateKey();
-            if(nextKey===bwsStateKey)return;
+            if(!force&&nextKey===bwsStateKey)return;
             bwsStateKey=nextKey;
             if(bws&&(bws.readyState===0||bws.readyState===1)){
               try{bws.close();}catch(e){}
@@ -866,6 +911,14 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             schedBwsReconnect(50);
           }
+          window.addEventListener("message",function(e){
+            var d=e&&e.data;
+            if(d&&d.type==="mt-refresh-browser-state"){
+              if(d.visible===true)bwsVisibleOverride=true;
+              else if(d.visible===false)bwsVisibleOverride=false;
+              refreshBwsState(d.force===true);
+            }
+          });
           function connectBws(){
             try{
               if(bws&&(bws.readyState===0||bws.readyState===1))return;
@@ -1392,6 +1445,17 @@ public sealed partial class WebPreviewProxyMiddleware
         var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
+        // Capture this before URL rewriting removes or changes the upstream base tag.
+        // Blazor's navigation manager compares location.href against document.baseURI;
+        // forcing the base into /webpreview/... breaks apps that legitimately move the
+        // browser URL back to their own root path, e.g. /login.
+        string? originalBaseHref = null;
+        var baseMatch = BaseHrefValueRegex().Match(html);
+        if (baseMatch.Success)
+        {
+            originalBaseHref = baseMatch.Groups[1].Value;
+        }
+
         // Rewrite root-relative URLs to go through the proxy.
         // <base href> only handles truly relative URLs (foo/bar.js),
         // but root-relative URLs (/path/to/file) need explicit rewriting.
@@ -1421,17 +1485,6 @@ public sealed partial class WebPreviewProxyMiddleware
         // whose HTML points at server-root assets like /_astro/*.
         PrimeRootFallbacksFromHtml(routeKey, html);
 
-        // Extract the original <base href> value before removing — Blazor and other
-        // frameworks rely on precise base URI (e.g., <base href="/kicoach/">).
-        // Recomputing from the final URL loses trailing-slash semantics when the server
-        // doesn't redirect /path → /path/.
-        string? originalBaseHref = null;
-        var baseMatch = BaseHrefValueRegex().Match(html);
-        if (baseMatch.Success)
-        {
-            originalBaseHref = baseMatch.Groups[1].Value;
-        }
-
         // Remove any existing <base> tags to avoid duplicates — we inject our own
         html = ExistingBaseTagRegex().Replace(html, "");
 
@@ -1442,19 +1495,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Build proxy-prefixed base href. Trust the upstream's <base href> value — it knows
         // how its assets are served (root vs subpath). Just prefix with /webpreview.
-        string baseHref;
-        if (originalBaseHref is not null)
-        {
-            var basePath = originalBaseHref.TrimEnd('/');
-            if (basePath.Length == 0 || basePath == "/")
-                baseHref = routePrefix + "/";
-            else
-                baseHref = routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
-        }
-        else
-        {
-            baseHref = ComputeBaseHref(routePrefix, finalUrl);
-        }
+        var baseHref = BuildInjectedBaseHref(routePrefix, finalUrl, originalBaseHref, html);
 
         // Rewrite inline ESM specifiers before the browser resolves them.
         html = RewriteRootRelativeModuleSpecifiers(html, routePrefix, reloadToken);
@@ -1481,6 +1522,55 @@ public sealed partial class WebPreviewProxyMiddleware
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix + directory;
+    }
+
+    internal static string BuildInjectedBaseHref(string routePrefix, string? finalUrl, string? originalBaseHref, string html)
+    {
+        if (ShouldPreserveUpstreamBaseHref(html, originalBaseHref))
+        {
+            return NormalizeBaseHref(originalBaseHref!);
+        }
+
+        if (originalBaseHref is not null)
+        {
+            var basePath = originalBaseHref.TrimEnd('/');
+            if (basePath.Length == 0 || basePath == "/")
+                return routePrefix + "/";
+
+            return routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+        }
+
+        return ComputeBaseHref(routePrefix, finalUrl);
+    }
+
+    internal static bool ShouldPreserveUpstreamBaseHref(string html, string? originalBaseHref)
+    {
+        if (string.IsNullOrWhiteSpace(originalBaseHref))
+        {
+            return false;
+        }
+
+        return html.Contains("<!--Blazor:", StringComparison.Ordinal)
+            || html.Contains("_framework/blazor.", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("/_blazor/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeBaseHref(string baseHref)
+    {
+        var trimmed = baseHref.Trim();
+        if (trimmed.Length == 0)
+        {
+            return "/";
+        }
+
+        if (trimmed.EndsWith("/", StringComparison.Ordinal)
+            || trimmed.AsSpan().Contains('#')
+            || trimmed.AsSpan().Contains('?'))
+        {
+            return trimmed;
+        }
+
+        return trimmed + "/";
     }
 
     private static Uri BuildRequestedFileUri(Uri targetUri, string requestPath)
@@ -1698,6 +1788,13 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (!TryParseProxyRoute(refererUri.AbsolutePath, out var refererRouteKey, out var refererRemainingPath))
         {
+            if (_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out var leakedRouteKey)
+                && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
+                && leakedTargetUri is not null)
+            {
+                return BuildUpstreamUrlFromPath(leakedTargetUri, BuildUpstreamPath(leakedTargetUri, refererUri.AbsolutePath), refererUri.Query);
+            }
+
             return refererValue;
         }
 
@@ -1782,6 +1879,14 @@ public sealed partial class WebPreviewProxyMiddleware
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
             var requestMessage = buildRequest(currentMethod, currentUrl);
+            if (requestMessage.RequestUri is not null)
+            {
+                var cookieHeader = _service.GetForwardedCookieHeader(routeKey, requestMessage.RequestUri);
+                if (!string.IsNullOrWhiteSpace(cookieHeader))
+                {
+                    requestMessage.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+                }
+            }
 
             try
             {
@@ -1802,6 +1907,17 @@ public sealed partial class WebPreviewProxyMiddleware
                 LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
                 return (null, 504, null);
+            }
+
+            if (upstreamResponse is not null && Uri.TryCreate(currentUrl, UriKind.Absolute, out var responseUri))
+            {
+                _service.StoreResponseCookies(routeKey, responseUri, upstreamResponse);
+            }
+
+            if (upstreamResponse is null)
+            {
+                requestMessage.Dispose();
+                return (null, 502, null);
             }
 
             var statusCode = (int)upstreamResponse.StatusCode;

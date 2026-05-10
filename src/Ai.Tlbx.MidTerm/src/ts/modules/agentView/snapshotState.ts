@@ -1,16 +1,20 @@
-import type { LensHistoryDelta, LensHistoryItem, LensHistorySnapshot } from '../../api/client';
-import type { LensAttachmentReference } from '../../api/types';
-import type { SessionLensViewState } from './types';
+import type {
+  AppServerControlHistoryDelta,
+  AppServerControlHistoryItem,
+  AppServerControlHistorySnapshot,
+} from '../../api/client';
+import type { AppServerControlAttachmentReference } from '../../api/types';
+import type { SessionAppServerControlViewState } from './types';
 
 function cloneHistoryAttachments(
-  attachments: readonly LensAttachmentReference[] | undefined,
-): LensAttachmentReference[] {
+  attachments: readonly AppServerControlAttachmentReference[] | undefined,
+): AppServerControlAttachmentReference[] {
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
-export function applyLensHistoryWindowState(
-  state: SessionLensViewState,
-  snapshot: LensHistorySnapshot,
+export function applyAppServerControlHistoryWindowState(
+  state: SessionAppServerControlViewState,
+  snapshot: AppServerControlHistorySnapshot,
 ): void {
   const windowStart =
     typeof snapshot.historyWindowStart === 'number' ? snapshot.historyWindowStart : 0;
@@ -25,7 +29,7 @@ export function applyLensHistoryWindowState(
 }
 
 export function collapseSnapshotToLatestWindow(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   targetWindowCount: number,
 ): void {
   const snapshot = state.snapshot;
@@ -50,9 +54,9 @@ export function collapseSnapshotToLatestWindow(
   state.historyWindowTargetCount = Math.max(1, targetWindowCount);
 }
 
-export function applyCanonicalLensDelta(
-  state: SessionLensViewState,
-  delta: LensHistoryDelta,
+export function applyCanonicalAppServerControlDelta(
+  state: SessionAppServerControlViewState,
+  delta: AppServerControlHistoryDelta,
 ): boolean {
   const snapshot = state.snapshot;
   if (!snapshot) {
@@ -86,10 +90,10 @@ export function applyCanonicalLensDelta(
 }
 
 function applyHistoryWindowDelta(
-  state: SessionLensViewState,
-  snapshot: LensHistorySnapshot,
+  state: SessionAppServerControlViewState,
+  snapshot: AppServerControlHistorySnapshot,
   previousHistoryCount: number,
-  upserts: readonly LensHistoryItem[],
+  upserts: readonly AppServerControlHistoryItem[],
   removals: readonly string[],
 ): boolean {
   const currentWindowStart = snapshot.historyWindowStart;
@@ -143,7 +147,7 @@ function resolveHistoryWindowRefreshRequirement(
   wasLiveEdge: boolean,
   currentWindowStart: number,
   currentWindowEnd: number,
-  upserts: readonly LensHistoryItem[],
+  upserts: readonly AppServerControlHistoryItem[],
   removals: readonly string[],
   entryIndexById: ReadonlyMap<string, number>,
 ): boolean {
@@ -161,7 +165,7 @@ function resolveHistoryWindowRefreshRequirement(
 }
 
 function applyHistoryEntryRemovals(
-  entries: LensHistoryItem[],
+  entries: AppServerControlHistoryItem[],
   entryIndexById: Map<string, number>,
   removals: readonly string[],
 ): void {
@@ -178,9 +182,9 @@ function applyHistoryEntryRemovals(
 }
 
 function applyHistoryEntryUpserts(
-  entries: LensHistoryItem[],
+  entries: AppServerControlHistoryItem[],
   entryIndexById: Map<string, number>,
-  upserts: readonly LensHistoryItem[],
+  upserts: readonly AppServerControlHistoryItem[],
   wasLiveEdge: boolean,
   currentWindowStart: number,
   currentWindowEnd: number,
@@ -208,8 +212,8 @@ function applyHistoryEntryUpserts(
 }
 
 function applyHistoryWindowEntries(
-  snapshot: LensHistorySnapshot,
-  entries: readonly LensHistoryItem[],
+  snapshot: AppServerControlHistorySnapshot,
+  entries: readonly AppServerControlHistoryItem[],
   wasLiveEdge: boolean,
   currentWindowStart: number,
   currentWindowEnd: number,
@@ -229,8 +233,8 @@ function applyHistoryWindowEntries(
 }
 
 function applyLiveEdgeHistoryWindow(
-  snapshot: LensHistorySnapshot,
-  entries: readonly LensHistoryItem[],
+  snapshot: AppServerControlHistorySnapshot,
+  entries: readonly AppServerControlHistoryItem[],
   targetWindowCount: number,
 ): void {
   const trimmedEntries =
@@ -242,7 +246,7 @@ function applyLiveEdgeHistoryWindow(
 
 function reindexHistoryEntryMap(
   entryIndexById: Map<string, number>,
-  entries: readonly LensHistoryItem[],
+  entries: readonly AppServerControlHistoryItem[],
 ): void {
   entryIndexById.clear();
   entries.forEach((entry, index) => {
@@ -251,10 +255,10 @@ function reindexHistoryEntryMap(
 }
 
 function upsertSnapshotItems(
-  current: readonly LensHistorySnapshot['items'][number][],
-  upserts: readonly LensHistorySnapshot['items'][number][],
+  current: readonly AppServerControlHistorySnapshot['items'][number][],
+  upserts: readonly AppServerControlHistorySnapshot['items'][number][],
   removals: readonly string[],
-): LensHistorySnapshot['items'] {
+): AppServerControlHistorySnapshot['items'] {
   const next = new Map(current.map((item) => [item.itemId, cloneSnapshotItemSummary(item)]));
 
   for (const itemId of removals) {
@@ -271,10 +275,10 @@ function upsertSnapshotItems(
 }
 
 function upsertSnapshotRequests(
-  current: readonly LensHistorySnapshot['requests'][number][],
-  upserts: readonly LensHistorySnapshot['requests'][number][],
+  current: readonly AppServerControlHistorySnapshot['requests'][number][],
+  upserts: readonly AppServerControlHistorySnapshot['requests'][number][],
   removals: readonly string[],
-): LensHistorySnapshot['requests'] {
+): AppServerControlHistorySnapshot['requests'] {
   const next = new Map(
     current.map((request) => [request.requestId, cloneSnapshotRequestSummary(request)]),
   );
@@ -293,9 +297,9 @@ function upsertSnapshotRequests(
 }
 
 function upsertSnapshotNotices(
-  current: readonly LensHistorySnapshot['notices'][number][],
-  upserts: readonly LensHistorySnapshot['notices'][number][],
-): LensHistorySnapshot['notices'] {
+  current: readonly AppServerControlHistorySnapshot['notices'][number][],
+  upserts: readonly AppServerControlHistorySnapshot['notices'][number][],
+): AppServerControlHistorySnapshot['notices'] {
   const next = new Map(
     current.map((notice) => [notice.eventId, cloneSnapshotRuntimeNotice(notice)]),
   );
@@ -309,7 +313,9 @@ function upsertSnapshotNotices(
   );
 }
 
-function cloneSnapshotHistoryEntry(entry: LensHistoryItem): LensHistoryItem {
+function cloneSnapshotHistoryEntry(
+  entry: AppServerControlHistoryItem,
+): AppServerControlHistoryItem {
   return {
     ...entry,
     attachments: cloneHistoryAttachments(entry.attachments),
@@ -319,8 +325,8 @@ function cloneSnapshotHistoryEntry(entry: LensHistoryItem): LensHistoryItem {
 }
 
 function cloneSnapshotItemSummary(
-  item: LensHistorySnapshot['items'][number],
-): LensHistorySnapshot['items'][number] {
+  item: AppServerControlHistorySnapshot['items'][number],
+): AppServerControlHistorySnapshot['items'][number] {
   return {
     ...item,
     turnId: item.turnId ?? null,
@@ -331,8 +337,8 @@ function cloneSnapshotItemSummary(
 }
 
 function cloneSnapshotRequestSummary(
-  request: LensHistorySnapshot['requests'][number],
-): LensHistorySnapshot['requests'][number] {
+  request: AppServerControlHistorySnapshot['requests'][number],
+): AppServerControlHistorySnapshot['requests'][number] {
   return {
     ...request,
     turnId: request.turnId ?? null,
@@ -350,8 +356,8 @@ function cloneSnapshotRequestSummary(
 }
 
 function cloneSnapshotRuntimeNotice(
-  notice: LensHistorySnapshot['notices'][number],
-): LensHistorySnapshot['notices'][number] {
+  notice: AppServerControlHistorySnapshot['notices'][number],
+): AppServerControlHistorySnapshot['notices'][number] {
   return {
     ...notice,
     detail: notice.detail ?? null,
@@ -359,8 +365,8 @@ function cloneSnapshotRuntimeNotice(
 }
 
 function cloneSnapshotSessionSummary(
-  session: LensHistorySnapshot['session'],
-): LensHistorySnapshot['session'] {
+  session: AppServerControlHistorySnapshot['session'],
+): AppServerControlHistorySnapshot['session'] {
   return {
     ...session,
     reason: session.reason ?? null,
@@ -370,16 +376,16 @@ function cloneSnapshotSessionSummary(
 }
 
 function cloneSnapshotThreadSummary(
-  thread: LensHistorySnapshot['thread'],
-): LensHistorySnapshot['thread'] {
+  thread: AppServerControlHistorySnapshot['thread'],
+): AppServerControlHistorySnapshot['thread'] {
   return {
     ...thread,
   };
 }
 
 function cloneSnapshotTurnSummary(
-  turn: LensHistorySnapshot['currentTurn'],
-): LensHistorySnapshot['currentTurn'] {
+  turn: AppServerControlHistorySnapshot['currentTurn'],
+): AppServerControlHistorySnapshot['currentTurn'] {
   return {
     ...turn,
     turnId: turn.turnId ?? null,
@@ -391,8 +397,8 @@ function cloneSnapshotTurnSummary(
 }
 
 function cloneSnapshotQuickSettingsSummary(
-  quickSettings: LensHistorySnapshot['quickSettings'] | null | undefined,
-): LensHistorySnapshot['quickSettings'] {
+  quickSettings: AppServerControlHistorySnapshot['quickSettings'] | null | undefined,
+): AppServerControlHistorySnapshot['quickSettings'] {
   return {
     model: quickSettings?.model ?? null,
     effort: quickSettings?.effort ?? null,
@@ -402,8 +408,8 @@ function cloneSnapshotQuickSettingsSummary(
 }
 
 function cloneSnapshotStreamsSummary(
-  streams: LensHistorySnapshot['streams'],
-): LensHistorySnapshot['streams'] {
+  streams: AppServerControlHistorySnapshot['streams'],
+): AppServerControlHistorySnapshot['streams'] {
   return {
     ...streams,
   };

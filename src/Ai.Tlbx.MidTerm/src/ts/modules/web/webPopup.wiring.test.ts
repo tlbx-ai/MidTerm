@@ -25,15 +25,15 @@ describe('web preview popup wiring', () => {
   });
 
   it('drives detached tabs and url changes through the existing preview APIs', () => {
-    expect(script).toContain("async function loadOwningSession()");
+    expect(script).toContain('async function loadOwningSession()');
     expect(script).toContain("var response = await fetch('/api/sessions');");
     expect(script).toContain('function getOwningSessionDisplayInfo()');
     expect(script).toContain('var screenshotInFlight = false;');
     expect(script).toContain("screenshotButton.classList.add('web-preview-action-working');");
     expect(script).toContain("setActionMessage('error', 'Screenshot failed:");
-    expect(script).toContain("/api/webpreview/previews?");
-    expect(script).toContain("/api/browser/preview-client");
-    expect(script).toContain("/api/webpreview/target");
+    expect(script).toContain('/api/webpreview/previews?');
+    expect(script).toContain('/api/browser/preview-client');
+    expect(script).toContain('/api/webpreview/target');
     expect(script).toContain('function renderTabs()');
     expect(script).toContain('async function selectPreview(previewName)');
     expect(script).toContain('async function handleGo()');

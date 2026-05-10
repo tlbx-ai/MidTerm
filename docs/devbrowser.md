@@ -113,10 +113,13 @@ Preview control ownership is now backend-owned per `(sessionId, previewName)` in
 - the first browser that creates or bootstraps a named preview becomes that preview's control owner
 - browser commands and browser-UI instructions for that named preview route to the owned browser first
 - if the owner disappears and exactly one other browser remains attached for that preview, MidTerm reassigns ownership to that sole remaining browser deterministically
-- if the owner disappears and multiple different browsers remain attached, the preview stays non-controllable instead of silently picking one by focus or recency
+- if the owner disappears and the explicit leading browser is attached, MidTerm reassigns ownership to the leading browser deterministically
+- if the owner disappears and multiple different non-leading browsers remain attached, the preview stays non-controllable instead of silently picking one by focus or recency
 - presentation state such as docked vs detached mode, viewport size, and scroll position remains browser-local and is not replicated globally
 
-Agents can explicitly recover from stale preview ownership with `mt_claim_preview` or `mt_open --claim <url>`. The claim path assigns the selected `(sessionId, previewName)` to the connected MidTerm browser UI listener, then normal `open`, `reload`, and browser-command routing use that owner. `mt_status` now includes a compact `bridge phase` field such as `no-ui-client`, `no-target`, `owner-offline`, `preview-frame-disconnected`, `ambiguous-preview`, or `ready`, plus a one-line recovery hint.
+Agents can explicitly recover from stale preview ownership with `mt_claim_preview` or `mt_open --claim <url>`. Normal `mt_open <url>` also reclaims a stale owner to the attached leading browser and activates the target session before it docks the preview, so two connected MidTerm tabs or an inactive source session cannot leave CLI browser automation stranded on an offline tab. The claim path assigns the selected `(sessionId, previewName)` to the connected leading MidTerm browser UI listener, then normal `open`, `reload`, and browser-command routing use that owner. `mt_status` now includes a compact `bridge phase` field such as `no-ui-client`, `no-target`, `owner-offline`, `preview-frame-disconnected`, `ambiguous-preview`, or `ready`, plus a one-line recovery hint.
+
+`mt_open` and `/api/browser/open` require the selected browser bridge to reconnect from a visible preview frame before they report success. When the dock activates a hidden iframe, the parent posts `mt-refresh-browser-state` into that frame so the injected bridge immediately refreshes its visibility/focus flags and reconnects if needed. This prevents agents from receiving a false-ready result from a stale hidden frame while the user-visible dev browser has not visibly moved.
 
 For token-efficient discovery and diagnostics, agents should prefer:
 

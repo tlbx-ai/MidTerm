@@ -104,7 +104,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return entry is null ? null : CloneEntry(entry);
     }
 
-    public ManagerBarQueueEntryDto? EnqueuePrompt(string sessionId, LensTurnRequest turn)
+    public ManagerBarQueueEntryDto? EnqueuePrompt(string sessionId, AppServerControlTurnRequest turn)
     {
         if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
         {
@@ -123,7 +123,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
     public async Task<(bool Accepted, ManagerBarQueueEntryDto? Entry)> SubmitPromptAsync(
         string sessionId,
-        LensTurnRequest turn,
+        AppServerControlTurnRequest turn,
         CancellationToken cancellationToken = default)
     {
         if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
@@ -132,7 +132,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         }
 
         ManagerBarQueueEntryDto? queuedEntry = null;
-        LensTurnRequest? immediateTurn = null;
+        AppServerControlTurnRequest? immediateTurn = null;
         lock (_lock)
         {
             if (CanDispatchImmediatelyLocked(trimmedSessionId))
@@ -898,7 +898,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                && string.Equals(action.Trigger.Kind, "fireAndForget", StringComparison.Ordinal);
     }
 
-    private static string NormalizeQueueKind(string? kind, ManagerBarButton? action, LensTurnRequest? turn)
+    private static string NormalizeQueueKind(string? kind, ManagerBarButton? action, AppServerControlTurnRequest? turn)
     {
         if (string.Equals(kind, PromptQueueKind, StringComparison.Ordinal))
         {
@@ -1032,14 +1032,14 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             : new PendingQueueDispatch(entry.SessionId, AutomationQueueKind, prompt, null);
     }
 
-    private static LensTurnRequest? NormalizeTurn(LensTurnRequest? turn)
+    private static AppServerControlTurnRequest? NormalizeTurn(AppServerControlTurnRequest? turn)
     {
         if (turn is null)
         {
             return null;
         }
 
-        var normalized = new LensTurnRequest
+        var normalized = new AppServerControlTurnRequest
         {
             Text = string.IsNullOrWhiteSpace(turn.Text) ? null : turn.Text.Trim(),
             Model = string.IsNullOrWhiteSpace(turn.Model) ? null : turn.Model.Trim(),
@@ -1049,12 +1049,12 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             Attachments = turn.Attachments?
                 .Select(CloneAttachment)
                 .Where(static attachment => attachment is not null)
-                .Cast<LensAttachmentReference>()
+                .Cast<AppServerControlAttachmentReference>()
                 .ToList() ?? [],
             TerminalReplay = turn.TerminalReplay?
                 .Select(CloneTerminalReplayStep)
                 .Where(static step => step is not null)
-                .Cast<LensTerminalReplayStep>()
+                .Cast<AppServerControlTerminalReplayStep>()
                 .ToList() ?? []
         };
 
@@ -1065,19 +1065,19 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             : normalized;
     }
 
-    private static LensTurnRequest? CloneTurn(LensTurnRequest? turn)
+    private static AppServerControlTurnRequest? CloneTurn(AppServerControlTurnRequest? turn)
     {
         return NormalizeTurn(turn);
     }
 
-    private static LensAttachmentReference? CloneAttachment(LensAttachmentReference? attachment)
+    private static AppServerControlAttachmentReference? CloneAttachment(AppServerControlAttachmentReference? attachment)
     {
         if (attachment is null || string.IsNullOrWhiteSpace(attachment.Path))
         {
             return null;
         }
 
-        return new LensAttachmentReference
+        return new AppServerControlAttachmentReference
         {
             Kind = string.IsNullOrWhiteSpace(attachment.Kind) ? "file" : attachment.Kind.Trim(),
             Path = attachment.Path.Trim(),
@@ -1086,7 +1086,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         };
     }
 
-    private static LensTerminalReplayStep? CloneTerminalReplayStep(LensTerminalReplayStep? step)
+    private static AppServerControlTerminalReplayStep? CloneTerminalReplayStep(AppServerControlTerminalReplayStep? step)
     {
         if (step is null)
         {
@@ -1100,26 +1100,26 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
         return kind switch
         {
-            "text" when !string.IsNullOrEmpty(text) => new LensTerminalReplayStep
+            "text" when !string.IsNullOrEmpty(text) => new AppServerControlTerminalReplayStep
             {
                 Kind = "text",
                 Text = text,
                 UseBracketedPaste = step.UseBracketedPaste
             },
-            "image" when !string.IsNullOrWhiteSpace(path) => new LensTerminalReplayStep
+            "image" when !string.IsNullOrWhiteSpace(path) => new AppServerControlTerminalReplayStep
             {
                 Kind = "image",
                 Path = path,
                 MimeType = mimeType,
                 UseBracketedPaste = step.UseBracketedPaste
             },
-            "filePath" when !string.IsNullOrWhiteSpace(path) => new LensTerminalReplayStep
+            "filePath" when !string.IsNullOrWhiteSpace(path) => new AppServerControlTerminalReplayStep
             {
                 Kind = "filePath",
                 Path = path,
                 UseBracketedPaste = step.UseBracketedPaste
             },
-            "textFile" when !string.IsNullOrWhiteSpace(path) => new LensTerminalReplayStep
+            "textFile" when !string.IsNullOrWhiteSpace(path) => new AppServerControlTerminalReplayStep
             {
                 Kind = "textFile",
                 Path = path,
@@ -1133,16 +1133,16 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         string SessionId,
         string Kind,
         string? Prompt,
-        LensTurnRequest? Turn);
+        AppServerControlTurnRequest? Turn);
 
     private bool TryNormalizePromptSubmission(
         string? sessionId,
-        LensTurnRequest? turn,
+        AppServerControlTurnRequest? turn,
         out string trimmedSessionId,
-        out LensTurnRequest normalizedTurn)
+        out AppServerControlTurnRequest normalizedTurn)
     {
         trimmedSessionId = string.Empty;
-        normalizedTurn = new LensTurnRequest();
+        normalizedTurn = new AppServerControlTurnRequest();
         if (string.IsNullOrWhiteSpace(sessionId) || turn is null)
         {
             return false;
@@ -1187,7 +1187,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return true;
     }
 
-    private ManagerBarQueueEntryDto EnqueuePromptLocked(string sessionId, LensTurnRequest normalizedTurn)
+    private ManagerBarQueueEntryDto EnqueuePromptLocked(string sessionId, AppServerControlTurnRequest normalizedTurn)
     {
         var entry = new ManagerBarQueueEntryDto
         {

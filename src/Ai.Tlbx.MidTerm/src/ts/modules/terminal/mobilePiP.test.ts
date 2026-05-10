@@ -224,7 +224,10 @@ describe('mobilePiP heat tracking', () => {
     pipDocument = new DocumentMock();
 
     activeSessionStore.set('session-a');
-    sessionListStore.set([{ id: 'session-a', name: 'Session A' }, { id: 'session-b', name: 'Session B' }]);
+    sessionListStore.set([
+      { id: 'session-a', name: 'Session A' },
+      { id: 'session-b', name: 'Session B' },
+    ]);
     sessionTerminals.clear();
     sessionTerminals.set('session-a', {
       terminal: {
@@ -255,7 +258,9 @@ describe('mobilePiP heat tracking', () => {
 
     let liveHeat = 0;
     let displayedHeat = 0;
-    getSessionHeatMock.mockImplementation((sessionId: string) => (sessionId === 'session-a' ? liveHeat : 0));
+    getSessionHeatMock.mockImplementation((sessionId: string) =>
+      sessionId === 'session-a' ? liveHeat : 0,
+    );
     getDisplayedSessionHeatMock.mockImplementation((sessionId: string) =>
       sessionId === 'session-a' ? displayedHeat : 0,
     );
@@ -336,19 +341,17 @@ describe('mobilePiP heat tracking', () => {
     expect(getRateElement().textContent).toBe('. idle');
     expect(getRootElement().classList.contains('heat-idle')).toBe(true);
 
-    (globalThis as Record<string, (liveHeat: number, displayedHeat: number) => void>).__setHeatState(
-      1,
-      1,
-    );
+    (
+      globalThis as Record<string, (liveHeat: number, displayedHeat: number) => void>
+    ).__setHeatState(1, 1);
     runIntervals();
 
     expect(getRateElement().textContent).toBe('^ live');
     expect(getRootElement().classList.contains('heat-up')).toBe(true);
 
-    (globalThis as Record<string, (liveHeat: number, displayedHeat: number) => void>).__setHeatState(
-      0,
-      0.6,
-    );
+    (
+      globalThis as Record<string, (liveHeat: number, displayedHeat: number) => void>
+    ).__setHeatState(0, 0.6);
     runIntervals();
 
     expect(getRateElement().textContent).toBe('v cooling');

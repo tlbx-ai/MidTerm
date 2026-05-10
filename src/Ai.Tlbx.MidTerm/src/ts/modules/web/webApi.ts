@@ -5,6 +5,7 @@
  */
 
 import { isEmbeddedWebPreviewContext } from './webContext';
+import { getOrCreateTabId } from '../../utils/cookies';
 
 export interface WebPreviewSessionInfo {
   sessionId: string;
@@ -292,7 +293,7 @@ export async function createBrowserPreviewClient(
     const res = await fetch('/api/browser/preview-client', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, previewName }),
+      body: JSON.stringify({ sessionId, previewName, tabId: getOrCreateTabId() }),
     });
     if (!res.ok) {
       return null;

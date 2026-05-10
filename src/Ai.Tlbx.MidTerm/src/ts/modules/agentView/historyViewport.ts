@@ -4,10 +4,10 @@ import type {
   HistoryScrollMetrics,
   HistoryScrollMode,
   HistoryVirtualWindow,
-  LensHistoryEntry,
-  SessionLensViewState,
+  AppServerControlHistoryEntry,
+  SessionAppServerControlViewState,
 } from './types';
-import { DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG } from './historyVirtualizer';
+import { DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG } from './historyVirtualizer';
 import {
   buildVirtualizerWindowKey,
   computeVirtualWindow as computeVirtualizerWindow,
@@ -16,21 +16,22 @@ import {
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 export const HISTORY_VIRTUALIZE_AFTER = 50;
-export const LENS_HISTORY_OVERSCAN_ITEMS = DEFAULT_LENS_HISTORY_VIRTUALIZER_CONFIG.overscanItems;
-export const LENS_HISTORY_INDEX_SCROLL_STEP_PX = 4;
+export const APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS =
+  DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG.overscanItems;
+export const APP_SERVER_CONTROL_HISTORY_INDEX_SCROLL_STEP_PX = 4;
 
-type HistoryHeightResolver = (entry: LensHistoryEntry, index: number) => number;
+type HistoryHeightResolver = (entry: AppServerControlHistoryEntry, index: number) => number;
 
 export function stabilizeHistoryEntryOrder(
-  entries: readonly LensHistoryEntry[],
-): LensHistoryEntry[] {
+  entries: readonly AppServerControlHistoryEntry[],
+): AppServerControlHistoryEntry[] {
   return [...entries].sort(
     (left, right) => left.order - right.order || left.id.localeCompare(right.id),
   );
 }
 
 /**
- * Protects the user's reading position during streaming turns so Lens only
+ * Protects the user's reading position during streaming turns so AppServerControl only
  * auto-pins when they are effectively already following the live edge.
  */
 export function isScrollContainerNearBottom(position: {
@@ -88,7 +89,7 @@ export function isHistoryScrollModePinned(mode: HistoryScrollMode): boolean {
 }
 
 export function setHistoryScrollMode(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   mode: HistoryScrollMode,
 ): HistoryScrollMode {
   state.historyScrollMode = mode;
@@ -97,11 +98,11 @@ export function setHistoryScrollMode(
 }
 
 /**
- * Virtualizes long histories across viewport sizes so Lens keeps a bounded
+ * Virtualizes long histories across viewport sizes so AppServerControl keeps a bounded
  * DOM even during extended agent runs.
  */
 export function computeHistoryVirtualWindow(
-  entries: ReadonlyArray<LensHistoryEntry>,
+  entries: ReadonlyArray<AppServerControlHistoryEntry>,
   scrollTop: number,
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
@@ -118,18 +119,18 @@ export function computeHistoryVirtualWindow(
 
   const resolveHeight =
     resolveEntryHeight ??
-    ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
+    ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
   return computeVirtualizerWindow({
     items: entries,
     scrollTop,
     clientHeight,
-    overscanItems: LENS_HISTORY_OVERSCAN_ITEMS,
+    overscanItems: APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
     resolveItemSize: (entry, index) => resolveHeight(entry, index),
   });
 }
 
 export function computeHistoryVisibleRange(
-  entries: ReadonlyArray<LensHistoryEntry>,
+  entries: ReadonlyArray<AppServerControlHistoryEntry>,
   scrollTop: number,
   clientHeight: number,
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
@@ -137,7 +138,7 @@ export function computeHistoryVisibleRange(
 ): HistoryIndexRange {
   const resolveHeight =
     resolveEntryHeight ??
-    ((entry: LensHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
+    ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
   return computeVirtualizerVisibleRange({
     items: entries,
     scrollTop,
@@ -151,7 +152,7 @@ export function buildHistoryVirtualWindowKey(window: HistoryVirtualWindow): stri
   return buildVirtualizerWindowKey(window);
 }
 
-export function hasActiveLensSelectionInPanel(
+export function hasActiveAppServerControlSelectionInPanel(
   panel: ParentNode | null | undefined,
   selection:
     | Pick<Selection, 'rangeCount' | 'isCollapsed' | 'getRangeAt'>

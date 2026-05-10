@@ -130,7 +130,7 @@ public static class MtcliScriptWriter
         }
         _MSTATUSREADY() {
           case "${1:-}" in
-            *"controllable: yes"*) return 0 ;;
+            *"controllable: yes"*"selected visible: yes"*) return 0 ;;
             *) return 1 ;;
           esac
         }
@@ -225,7 +225,24 @@ public static class MtcliScriptWriter
         # Web preview (dev browser)
         _ME() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/ }"; printf '%s' "$s"; }
         _MJE() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
-        mt_navigate()   { _MREQUIRECTX "mt_navigate" || return $?; _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$1")\"}" -X PUT "$_MT/api/webpreview/target"; }
+        # mt_navigate URL  — navigate the active dev browser preview and wait until controllable
+        mt_navigate() {
+          local url="${1:-}" open_out status
+          _MREQUIRECTX "mt_navigate" || return $?
+          if [ -z "$url" ]; then echo "usage: mt_navigate URL" >&2; return 1; fi
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
+            local code=$?
+            [ -n "$open_out" ] && printf '%s\n' "$open_out"
+            return $code
+          }
+          [ -n "$open_out" ] && printf '%s\n' "$open_out"
+          status=$(_MWAITCONTROLLABLE 25) || {
+            local code=$?
+            [ -n "$status" ] && printf '%s\n' "$status" >&2
+            echo "mt_navigate failed: preview did not become controllable." >&2
+            return $code
+          }
+        }
         # mt_open [--claim] URL  — open URL in web preview panel, dock it, and wait until controllable
         mt_open() {
           local claim=0 url="" open_out status
@@ -241,7 +258,7 @@ public static class MtcliScriptWriter
           if [ $claim -eq 1 ]; then
             mt_claim_preview >/dev/null || return $?
           fi
-          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":false}" "$_MT/api/browser/open") || {
+          open_out=$(_MJR -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"url\":\"$(_ME "$url")\",\"activateSession\":true}" "$_MT/api/browser/open") || {
             local code=$?
             [ -n "$open_out" ] && printf '%s\n' "$open_out"
             return $code
@@ -266,6 +283,39 @@ public static class MtcliScriptWriter
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
         # mt_capabilities [--json]  — compact command/capability discovery for agents
         mt_capabilities() { _MREQUIRECTX "mt_capabilities" || return $?; _MBB capabilities "$@"; }
+        # mt_repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        mt_repo() {
+          local action="${1:-list}"
+          [ $# -gt 0 ] && shift
+          _MREQUIRECTX "mt_repo" || return $?
+          case "$action" in
+            list|status)
+              _MC "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")"
+              ;;
+            add)
+              local path="${1:-}" role="${2:-target}" label="${3:-}"
+              [ -n "$path" ] || { echo "Usage: mt_repo add PATH [ROLE] [LABEL]" >&2; return 1; }
+              _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\",\"label\":\"$(_ME "$label")\"}" "$_MT/api/git/repos"
+              ;;
+            remove|rm)
+              local root="${1:-}"
+              [ -n "$root" ] || { echo "Usage: mt_repo remove REPO_ROOT" >&2; return 1; }
+              _MC -X DELETE "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")&repoRoot=$(_MURLENC "$root")"
+              ;;
+            refresh)
+              local root="${1:-}"
+              if [ -n "$root" ]; then
+                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"repoRoot\":\"$(_ME "$root")\"}" "$_MT/api/git/repos/refresh"
+              else
+                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\"}" "$_MT/api/git/repos/refresh"
+              fi
+              ;;
+            *)
+              echo "Usage: mt_repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
+              return 1
+              ;;
+          esac
+        }
         # mt_inspect [--screenshot]  — compact page/status/proxy diagnostic bundle
         mt_inspect() { _MREQUIRECTX "mt_inspect" || return $?; _MBB inspect "$@"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
@@ -681,7 +731,7 @@ public static class MtcliScriptWriter
         }
         function script:_MStatusIsControllable {
             param([string]$Output)
-            return $Output -like "*controllable: yes*"
+            return $Output -like "*controllable: yes*" -and $Output -like "*selected visible: yes*"
         }
         function script:_MWaitForControllableStatus {
             param([int]$Attempts = 25, [int]$DelayMs = 200)
@@ -773,7 +823,22 @@ public static class MtcliScriptWriter
         function Mt-Navigate {
             param([string]$Url)
             _MRequireSessionContext "mt_navigate"
-            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url}) -X PUT "$script:_MT/api/webpreview/target"
+            if ([string]::IsNullOrWhiteSpace($Url)) {
+                Write-Error "usage: mt_navigate URL"
+                return
+            }
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
+            if ($openResponse) {
+                $openResponse
+            }
+            $status = _MWaitForControllableStatus
+            if (-not $status.Ready) {
+                if ($status.Output) {
+                    throw $status.Output
+                }
+
+                throw "mt_navigate failed: preview did not become controllable."
+            }
         }
         # Mt-Open [-Claim] -Url URL  — open URL in web preview panel, dock it, and wait until controllable
         function Mt-Open {
@@ -782,7 +847,7 @@ public static class MtcliScriptWriter
             if ($Claim) {
                 Mt-ClaimPreview | Out-Null
             }
-            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$false}) "$script:_MT/api/browser/open"
+            $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=$true}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
             }
@@ -807,6 +872,36 @@ public static class MtcliScriptWriter
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
         # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
         function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
+        # Mt-Repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        function Mt-Repo {
+            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label)
+            _MRequireSessionContext "mt_repo"
+            switch ($Action.ToLowerInvariant()) {
+                "list" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
+                "status" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
+                "add" {
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo add PATH [ROLE] [LABEL]" }
+                    _MJ -d (_MH @{sessionId=(_MSID); path=$PathOrRoot; role=$Role; label=$Label}) "$script:_MT/api/git/repos"
+                    return
+                }
+                "remove" {
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
+                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    return
+                }
+                "rm" {
+                    if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
+                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    return
+                }
+                "refresh" {
+                    $body = if ($PathOrRoot) { @{sessionId=(_MSID); repoRoot=$PathOrRoot} } else { @{sessionId=(_MSID)} }
+                    _MJ -d (_MH $body) "$script:_MT/api/git/repos/refresh"
+                    return
+                }
+                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" }
+            }
+        }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
         function Mt-Inspect { param([switch]$Screenshot) _MRequireSessionContext "mt_inspect"; if ($Screenshot) { _MBB inspect --screenshot } else { _MBB inspect } }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
@@ -1102,6 +1197,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_previews -Value Mt-Previews
         Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
         Set-Alias -Name mt_capabilities -Value Mt-Capabilities
+        Set-Alias -Name mt_repo -Value Mt-Repo
         Set-Alias -Name mt_inspect -Value Mt-Inspect
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
         Set-Alias -Name mt_clearstate -Value Mt-ClearState

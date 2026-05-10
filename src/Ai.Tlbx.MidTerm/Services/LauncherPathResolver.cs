@@ -9,7 +9,7 @@ internal static class LauncherPathResolver
     {
         if (OperatingSystem.IsWindows())
         {
-            var configuredProfile = LensHostEnvironmentResolver.ResolveWindowsProfileDirectory(
+            var configuredProfile = AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectory(
                 settings.RunAsUser,
                 settings.RunAsUserSid);
 

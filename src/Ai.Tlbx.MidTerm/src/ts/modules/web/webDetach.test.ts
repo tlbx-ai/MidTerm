@@ -33,7 +33,9 @@ vi.mock('./webSessionState', () => ({
   getSessionPreview: vi.fn(),
   setSessionDockedClient: vi.fn(),
   setSessionMode: vi.fn(),
-  setSessionSelectedPreviewName: vi.fn((_sessionId: string, previewName?: string) => previewName ?? 'default'),
+  setSessionSelectedPreviewName: vi.fn(
+    (_sessionId: string, previewName?: string) => previewName ?? 'default',
+  ),
   setSessionUrl: vi.fn(),
 }));
 

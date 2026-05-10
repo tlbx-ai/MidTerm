@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildProxyUrl, sanitizePreviewDisplayUrl, stripInternalPreviewQueryParams } from './previewProxyUrl';
+import {
+  buildProxyUrl,
+  sanitizePreviewDisplayUrl,
+  stripInternalPreviewQueryParams,
+} from './previewProxyUrl';
 
 describe('previewProxyUrl', () => {
   it('removes internal preview parameters from display URLs', () => {

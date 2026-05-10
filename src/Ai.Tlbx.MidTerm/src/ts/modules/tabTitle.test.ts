@@ -11,9 +11,7 @@ import { cleanupTabTitle, initTabTitle } from './tabTitle';
 
 const originalDocument = globalThis.document;
 
-function setSettings(
-  partial: Partial<Pick<MidTermSettingsPublic, 'tabTitleMode'>>,
-): void {
+function setSettings(partial: Partial<Pick<MidTermSettingsPublic, 'tabTitleMode'>>): void {
   $currentSettings.set(partial as MidTermSettingsPublic);
 }
 

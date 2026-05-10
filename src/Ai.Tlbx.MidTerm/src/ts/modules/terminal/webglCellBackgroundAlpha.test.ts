@@ -10,9 +10,7 @@ function createSettings(
   partial: Partial<
     Pick<
       MidTermSettingsPublic,
-      | 'terminalTransparency'
-      | 'terminalCellBackgroundTransparency'
-      | 'uiTransparency'
+      'terminalTransparency' | 'terminalCellBackgroundTransparency' | 'uiTransparency'
     >
   >,
 ): MidTermSettingsPublic {

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const tabActivatedCallbacks = new Map<string, (sessionId: string, panel: HTMLDivElement) => void>();
-const processListeners: Array<(sessionId: string, state: { foregroundCwd: string | null }) => void> = [];
+const processListeners: Array<
+  (sessionId: string, state: { foregroundCwd: string | null }) => void
+> = [];
 
 const createTreeViewMock = vi.fn();
 const setTreeRootMock = vi.fn();
@@ -26,7 +28,9 @@ vi.mock('../sessionTabs', () => ({
 }));
 
 vi.mock('../process', () => ({
-  addProcessStateListener: (callback: (sessionId: string, state: { foregroundCwd: string | null }) => void) => {
+  addProcessStateListener: (
+    callback: (sessionId: string, state: { foregroundCwd: string | null }) => void,
+  ) => {
     processListeners.push(callback);
     return () => {};
   },

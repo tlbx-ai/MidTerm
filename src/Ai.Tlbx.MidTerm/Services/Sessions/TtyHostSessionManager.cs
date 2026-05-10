@@ -848,9 +848,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetAgentControlled(sessionId, agentControlled);
     }
 
-    public bool SetLensOnly(string sessionId, bool lensOnly)
+    public bool SetAppServerControlOnly(string sessionId, bool appServerControlOnly)
     {
-        return _registry.SetLensOnly(sessionId, lensOnly);
+        return _registry.SetAppServerControlOnly(sessionId, appServerControlOnly);
     }
 
     public bool SetProfileHint(string sessionId, string? profile)
@@ -868,9 +868,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.GetLaunchOrigin(sessionId);
     }
 
-    public bool SetLensResumeThreadId(string sessionId, string? resumeThreadId)
+    public bool SetAppServerControlResumeThreadId(string sessionId, string? resumeThreadId)
     {
-        return _registry.SetLensResumeThreadId(sessionId, resumeThreadId);
+        return _registry.SetAppServerControlResumeThreadId(sessionId, resumeThreadId);
     }
 
     public bool SetSpaceId(string sessionId, string? spaceId)

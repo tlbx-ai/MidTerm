@@ -105,17 +105,17 @@ public sealed class SessionSupervisorServiceTests
     }
 
     [Fact]
-    public void Describe_ReturnsBusyTurnForRunningLensTurnWithoutTerminalBytes()
+    public void Describe_ReturnsBusyTurnForRunningAppServerControlTurnWithoutTerminalBytes()
     {
         var service = CreateService(
-            lensHeatSource: new FakeLensHeatSource(new SessionLensHeatSnapshot
+            appServerControlHeatSource: new FakeAppServerControlHeatSource(new SessionAppServerControlHeatSnapshot
             {
                 CurrentHeat = 1,
                 LastActivityAt = DateTimeOffset.UtcNow.AddSeconds(-30)
             }));
         var session = new SessionInfoDto
         {
-            Id = "lens1",
+            Id = "appServerControl1",
             IsRunning = true,
             ShellType = "pwsh",
             ForegroundName = "codex"
@@ -130,20 +130,20 @@ public sealed class SessionSupervisorServiceTests
 
     private static SessionSupervisorService CreateService(
         SessionTelemetryService? telemetry = null,
-        ISessionLensHeatSource? lensHeatSource = null)
+        ISessionAppServerControlHeatSource? appServerControlHeatSource = null)
     {
         var heatService = new SessionHeatService(
             telemetry ?? new SessionTelemetryService(),
-            lensHeatSource ?? new FakeLensHeatSource(SessionLensHeatSnapshot.Cold));
+            appServerControlHeatSource ?? new FakeAppServerControlHeatSource(SessionAppServerControlHeatSnapshot.Cold));
 
         return new SessionSupervisorService(
             heatService,
             new AiCliProfileService());
     }
 
-    private sealed class FakeLensHeatSource(SessionLensHeatSnapshot snapshot) : ISessionLensHeatSource
+    private sealed class FakeAppServerControlHeatSource(SessionAppServerControlHeatSnapshot snapshot) : ISessionAppServerControlHeatSource
     {
-        public SessionLensHeatSnapshot GetHeatSnapshot(string sessionId) => snapshot;
+        public SessionAppServerControlHeatSnapshot GetHeatSnapshot(string sessionId) => snapshot;
     }
 }
 

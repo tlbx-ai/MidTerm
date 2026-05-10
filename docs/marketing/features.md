@@ -13,7 +13,7 @@ MidTerm runs on your own machine as a small self-hosted web terminal workspace. 
 | Problem | MidTerm answer |
 | --- | --- |
 | SSH is blocked, awkward on mobile, or hard to expose safely | Browser-based HTTPS access with built-in authentication, TLS, and optional service install |
-| AI coding agents run for a long time and need supervision | Persistent terminal sessions, activity indicators, session notes, Command Bay input, browser previews, and agent-oriented Lens work |
+| AI coding agents run for a long time and need supervision | Persistent terminal sessions, activity indicators, session notes, Command Bay input, browser previews, and agent-oriented Agent Controller Session work |
 | Local dev servers need visual validation | Session-scoped web previews with named browser contexts, proxying, DOM inspection, screenshots, logs, and automation helpers |
 | Cloud terminals move API keys and source context away from your machine | MidTerm stays local; your shells, credentials, repos, and hardware stay under your control |
 | Terminal workflows sprawl across tmux, browser tabs, editors, git tools, and scripts | One browser workspace combines terminal panes, files, git inspection, command runners, previews, diagnostics, and mobile controls |
@@ -25,7 +25,7 @@ MidTerm is not just a terminal-in-a-tab. The current product is a browser termin
 - **Terminal workspace:** multiple persistent sessions, split layouts, manual terminal sizing, activity heat, terminal search, paste/upload flows, and cross-device viewing.
 - **Sidebar:** session list, quick session creation, session notes, process/cwd detail, drag reorder, layout docking, update cards, network/share information, and mobile navigation.
 - **Per-session work area:** Terminal, Files, Git, Commands, web preview, sharing, and agent-oriented surfaces bound to the active session.
-- **Command Bay / Automation Bar:** an adaptive footer input and quick-action area for sending text, running saved actions, attaching files, voice/touch entry, and Lens composition.
+- **Command Bay / Automation Bar:** an adaptive footer input and quick-action area for sending text, running saved actions, attaching files, voice/touch entry, and Agent Controller Session composition.
 - **Web preview:** isolated named browser contexts per session with reverse proxying, detached/docked views, viewport overrides, screenshots, DOM tools, proxy logs, and automation.
 - **Settings and operations:** appearance, behavior, update channel, security, certificates, diagnostics, API keys, logs, and restart/shutdown controls.
 
@@ -123,7 +123,7 @@ MidTerm is not just a terminal-in-a-tab. The current product is a browser termin
 
 | Feature | Details |
 | --- | --- |
-| Shared footer dock | Terminal and Lens share an adaptive active-session footer rather than separate disconnected input strips. |
+| Shared footer dock | Terminal and Agent Controller Session share an adaptive active-session footer rather than separate disconnected input strips. |
 | Smart Input | Smart Input can replace direct terminal focus, coexist with terminal typing, keep per-session drafts, auto-grow upward, send on Enter, and insert newlines on Shift+Enter. |
 | Multiline overlay growth | Recent Command Bay commits extended prompt overlay growth while preserving the active viewport. |
 | Quick actions | Automation buttons can send text to the active terminal, optionally send Enter, and be added, renamed, deleted, or mirrored into mobile actions. |
@@ -150,18 +150,18 @@ MidTerm is not just a terminal-in-a-tab. The current product is a browser termin
 | Self-preview | Dev mode can run previews on a secondary origin and supports previewing MidTerm itself. |
 | Recent diagnostics | `v9.6.8-dev` improved dev browser diagnostics; recent helpers fail loudly when a scoped preview cannot be controlled instead of silently using the wrong target. |
 
-## Lens And Agent-Oriented Workflows
+## Agent Controller Session And Agent-Oriented Workflows
 
 | Feature | Details |
 | --- | --- |
-| Explicit surface boundary | Normal terminal sessions stay Terminal sessions. Running `codex` or `claude` in a shell does not automatically convert the session into Lens. |
-| Provider-backed runtime intent | Lens is designed around provider-backed runtime events through `mtagenthost`, not scraping PTY output. |
-| Canonical history | Lens keeps provider history as backend-owned canonical history and renders bounded history windows in the browser. |
+| Explicit surface boundary | Normal terminal sessions stay Terminal sessions. Running `codex` or `claude` in a shell does not automatically convert the session into Agent Controller Session. |
+| Provider-backed runtime intent | Agent Controller Session is designed around provider-backed runtime events through `mtagenthost`, not scraping PTY output. |
+| Canonical history | Agent Controller Session keeps provider history as backend-owned canonical history and renders bounded history windows in the browser. |
 | Virtualized history | Recent work hardened upward scroll, mobile history rendering, scroll recovery, viewport-centered refetch, and progress-based navigation. |
-| Turn-bound settings | Lens quick settings lock to turn boundaries so configuration changes do not split active turns. |
-| Surface-aware keys | Shift+Tab is surface-aware: Lens can use it for plan mode while Terminal receives raw backtab behavior. |
-| Recovery states | Recent Lens work improved recovery, progress navigator behavior, shell-repair cleanup, and browse-window handling. |
-| Command Bay integration | Lens composition uses the same adaptive footer infrastructure as terminal Smart Input, keeping the workspace model unified. |
+| Turn-bound settings | Agent Controller Session quick settings lock to turn boundaries so configuration changes do not split active turns. |
+| Surface-aware keys | Shift+Tab is surface-aware: Agent Controller Session can use it for plan mode while Terminal receives raw backtab behavior. |
+| Recovery states | Recent Agent Controller Session work improved recovery, progress navigator behavior, shell-repair cleanup, and browse-window handling. |
+| Command Bay integration | Agent Controller Session composition uses the same adaptive footer infrastructure as terminal Smart Input, keeping the workspace model unified. |
 
 ## Diagnostics And Operator Tooling
 
@@ -205,7 +205,7 @@ Representative commits analyzed:
 | `c144773f`, `0984bde3` | Add and split input latency tracing diagnostics. |
 | `cc1b59d5` | Stabilize sidebar DOM updates. |
 | `8d8f1300` | Unify file previews and guard large clipboard loads. |
-| `f2583998` | Improve Lens recovery and settings organization. |
+| `f2583998` | Improve Agent Controller Session recovery and settings organization. |
 
 ## Target Use Cases
 

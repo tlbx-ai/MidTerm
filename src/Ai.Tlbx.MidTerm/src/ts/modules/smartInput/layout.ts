@@ -1,7 +1,7 @@
 export type AdaptiveFooterRailKey = 'primary' | 'automation' | 'context' | 'status';
 
 export interface AdaptiveFooterRailSequenceState {
-  lensActive: boolean;
+  appServerControlActive: boolean;
   isMobile: boolean;
 }
 
@@ -17,7 +17,11 @@ export const ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT =
 export function getAdaptiveFooterRailSequence(
   state: AdaptiveFooterRailSequenceState,
 ): AdaptiveFooterRailKey[] {
-  if (state.isMobile && !state.lensActive) {
+  if (state.isMobile && state.appServerControlActive) {
+    return ['status', 'primary', 'context', 'automation'];
+  }
+
+  if (state.isMobile && !state.appServerControlActive) {
     return ['primary', 'status', 'context', 'automation'];
   }
 

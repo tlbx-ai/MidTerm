@@ -1,7 +1,10 @@
-import type { LensHistoryItem, LensHistorySnapshot } from '../../api/client';
-import type { LensAttachmentReference } from '../../api/types';
+import type {
+  AppServerControlHistoryItem,
+  AppServerControlHistorySnapshot,
+} from '../../api/client';
+import type { AppServerControlAttachmentReference } from '../../api/types';
 
-export type LensDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
+export type AppServerControlDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
 
 type HistoryKind =
   | 'user'
@@ -19,19 +22,19 @@ type DebugScenarioItemFactory = (
   itemType: string,
   detail: string,
   updatedAt: string,
-) => LensHistorySnapshot['items'][number];
+) => AppServerControlHistorySnapshot['items'][number];
 
 interface DebugScenarioContent {
-  items: LensHistorySnapshot['items'];
-  requests: LensHistorySnapshot['requests'];
+  items: AppServerControlHistorySnapshot['items'];
+  requests: AppServerControlHistorySnapshot['requests'];
   assistantText: string;
-  currentTurnState: LensHistorySnapshot['currentTurn']['state'];
+  currentTurnState: AppServerControlHistorySnapshot['currentTurn']['state'];
   currentTurnStateLabel: string;
 }
 
 function cloneHistoryAttachments(
-  attachments: readonly LensAttachmentReference[] | undefined,
-): LensAttachmentReference[] {
+  attachments: readonly AppServerControlAttachmentReference[] | undefined,
+): AppServerControlAttachmentReference[] {
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
@@ -65,8 +68,8 @@ function buildDebugScenarioHistory(args: {
   generatedAt: string;
   turnId: string;
   currentTurnState: string;
-  items: LensHistorySnapshot['items'];
-  requests: LensHistorySnapshot['requests'];
+  items: AppServerControlHistorySnapshot['items'];
+  requests: AppServerControlHistorySnapshot['requests'];
   assistantText: string;
   reasoningText: string;
   reasoningSummaryText: string;
@@ -74,8 +77,8 @@ function buildDebugScenarioHistory(args: {
   commandOutput: string;
   fileChangeOutput: string;
   unifiedDiff: string;
-}): LensHistoryItem[] {
-  const historyEntries: LensHistoryItem[] = [];
+}): AppServerControlHistoryItem[] {
+  const historyEntries: AppServerControlHistoryItem[] = [];
   let order = 1;
 
   for (const item of args.items) {
@@ -160,7 +163,7 @@ function buildTablesDebugScenario(
       createItem(
         'user-debug-table',
         'user_message',
-        'Stress the Lens history with wide markdown tables and dense comparisons.',
+        'Stress the AppServerControl history with wide markdown tables and dense comparisons.',
         at(-180000),
       ),
     ],
@@ -170,15 +173,15 @@ function buildTablesDebugScenario(
       '',
       '| Lane | Mode | State | Last token burst | Scrollback | CPU peak | First paint | Attach P95 | Model | Owner | Queue | Notes |',
       '| :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: | :--- | :--- | ---: | :--- |',
-      '| Alpha | Lens | Streaming | 1420 | 18233 | 68% | 118 ms | 880 ms | gpt-5.4 | Codex | 0 | Long answer with code and tables kept live while the operator watches scrollback |',
+      '| Alpha | AppServerControl | Streaming | 1420 | 18233 | 68% | 118 ms | 880 ms | gpt-5.4 | Codex | 0 | Long answer with code and tables kept live while the operator watches scrollback |',
       '| Beta | Terminal | Idle | 0 | 932 | 12% | 74 ms | 140 ms | none | Human | 1 | Waiting for next prompt and preserving shell ownership |',
-      '| Gamma | Lens | Blocked | 17 | 4112 | 31% | 129 ms | 1420 ms | gpt-5.4-mini | Codex | 3 | Approval request open and should stay visible even when the assistant lane is busy |',
-      '| Delta | Lens | Replaying | 921 | 15540 | 54% | 105 ms | 650 ms | claude-opus | Claude | 0 | Canonical history restored from MidTerm and replayed into the history lane |',
+      '| Gamma | AppServerControl | Blocked | 17 | 4112 | 31% | 129 ms | 1420 ms | gpt-5.4-mini | Codex | 3 | Approval request open and should stay visible even when the assistant lane is busy |',
+      '| Delta | AppServerControl | Replaying | 921 | 15540 | 54% | 105 ms | 650 ms | claude-opus | Claude | 0 | Canonical history restored from MidTerm and replayed into the history lane |',
       '',
       '| Metric | P50 | P95 | P99 | Target | Last good build | Regressed by | Notes |',
       '| --- | ---: | ---: | ---: | ---: | :--- | :--- | :--- |',
       '| First paint | 118 ms | 212 ms | 356 ms | 150 ms | v8.7.41-dev | +9 ms | Still acceptable in the local source loop |',
-      '| Lens attach | 420 ms | 880 ms | 1420 ms | 600 ms | v8.7.39-dev | +140 ms | Regression only visible on native-runtime-blocked sessions |',
+      '| AppServerControl attach | 420 ms | 880 ms | 1420 ms | 600 ms | v8.7.39-dev | +140 ms | Regression only visible on native-runtime-blocked sessions |',
       '| Snapshot rebuild | 34 ms | 68 ms | 110 ms | 50 ms | v8.7.50-dev | -6 ms | Fast enough once canonical history exists |',
       '',
       '| Render mode | Benefit | Risk |',
@@ -329,9 +332,9 @@ function buildMixedDebugScenario(
       },
     ],
     assistantText: [
-      'The current Lens pass is tuned for operators instead of messenger chrome.',
+      'The current AppServerControl pass is tuned for operators instead of messenger chrome.',
       '',
-      `![Inline Lens media preview](${heroImageUrl})`,
+      `![Inline AppServerControl media preview](${heroImageUrl})`,
       '',
       '| Surface | Goal | Status |',
       '| :--- | :--- | :---: |',
@@ -351,13 +354,13 @@ function buildMixedDebugScenario(
   };
 }
 
-function buildLensDebugScenarioContent(
-  scenario: LensDebugScenarioName,
+function buildAppServerControlDebugScenarioContent(
+  scenario: AppServerControlDebugScenarioName,
   createItem: DebugScenarioItemFactory,
   at: (offsetMs: number) => string,
   heroImageUrl: string,
 ): DebugScenarioContent {
-  const builders: Record<LensDebugScenarioName, () => DebugScenarioContent> = {
+  const builders: Record<AppServerControlDebugScenarioName, () => DebugScenarioContent> = {
     mixed: () => buildMixedDebugScenario(createItem, at, heroImageUrl),
     tables: () => buildTablesDebugScenario(createItem, at),
     long: () => buildLongDebugScenario(createItem, at),
@@ -367,12 +370,12 @@ function buildLensDebugScenarioContent(
   return builders[scenario]();
 }
 
-export function buildLensDebugScenario(
+export function buildAppServerControlDebugScenario(
   sessionId: string,
-  scenario: LensDebugScenarioName,
+  scenario: AppServerControlDebugScenarioName,
   origin: string,
 ): {
-  snapshot: LensHistorySnapshot;
+  snapshot: AppServerControlHistorySnapshot;
 } {
   const now = Date.now();
   const at = (offsetMs: number) => new Date(now + offsetMs).toISOString();
@@ -383,7 +386,7 @@ export function buildLensDebugScenario(
     itemType: string,
     detail: string,
     updatedAt: string,
-  ): LensHistorySnapshot['items'][number] => ({
+  ): AppServerControlHistorySnapshot['items'][number] => ({
     itemId,
     turnId: 'turn-debug',
     itemType,
@@ -395,7 +398,7 @@ export function buildLensDebugScenario(
   });
 
   const { items, requests, assistantText, currentTurnState, currentTurnStateLabel } =
-    buildLensDebugScenarioContent(scenario, createItem, at, heroImageUrl);
+    buildAppServerControlDebugScenarioContent(scenario, createItem, at, heroImageUrl);
   const reasoningText =
     scenario === 'workflow'
       ? 'Need the operator choice before touching the file so the patch posture is explicit.'
@@ -433,7 +436,7 @@ export function buildLensDebugScenario(
         reason:
           scenario === 'long'
             ? 'Long synthetic history loaded for history virtualization.'
-            : 'Lens debug scenario loaded from the browser console.',
+            : 'AppServerControl debug scenario loaded from the browser console.',
         lastError: null,
         lastEventAt: at(0),
       },

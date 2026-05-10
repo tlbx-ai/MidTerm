@@ -58,19 +58,19 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         var runtime = new FakeRuntime(["session-1"]);
         await using (var initial = new ManagerBarQueueService(_stateDir, runtime, _timeProvider))
         {
-            var entry = initial.EnqueuePrompt("session-1", new LensTurnRequest
+            var entry = initial.EnqueuePrompt("session-1", new AppServerControlTurnRequest
             {
                 Text = "Summarize the diff.",
                 Attachments = [],
                 TerminalReplay =
                 [
-                    new LensTerminalReplayStep
+                    new AppServerControlTerminalReplayStep
                     {
                         Kind = "text",
                         Text = "Summarize ",
                         UseBracketedPaste = true
                     },
-                    new LensTerminalReplayStep
+                    new AppServerControlTerminalReplayStep
                     {
                         Kind = "image",
                         Path = "Q:/repo/.midterm/uploads/image.png",
@@ -108,7 +108,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var (accepted, entry) = await service.SubmitPromptAsync(
             "session-1",
-            new LensTurnRequest
+            new AppServerControlTurnRequest
             {
                 Text = "status"
             });
@@ -131,7 +131,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var (accepted, entry) = await service.SubmitPromptAsync(
             "session-1",
-            new LensTurnRequest
+            new AppServerControlTurnRequest
             {
                 Text = "status"
             });
@@ -155,7 +155,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var (accepted, entry) = await service.SubmitPromptAsync(
             "session-1",
-            new LensTurnRequest
+            new AppServerControlTurnRequest
             {
                 Text = "status"
             });
@@ -167,7 +167,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task SubmitPromptAsync_FastTracksLensPromptWhenTurnHasReturnedToUser()
+    public async Task SubmitPromptAsync_FastTracksAppServerControlPromptWhenTurnHasReturnedToUser()
     {
         var runtime = new FakeRuntime(["session-1"])
         {
@@ -179,7 +179,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var (accepted, entry) = await service.SubmitPromptAsync(
             "session-1",
-            new LensTurnRequest
+            new AppServerControlTurnRequest
             {
                 Text = "queued turn"
             });
@@ -192,7 +192,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task SubmitPromptAsync_QueuesLensPromptWhenTurnIsStillRunning()
+    public async Task SubmitPromptAsync_QueuesAppServerControlPromptWhenTurnIsStillRunning()
     {
         var runtime = new FakeRuntime(["session-1"])
         {
@@ -204,7 +204,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         var (accepted, entry) = await service.SubmitPromptAsync(
             "session-1",
-            new LensTurnRequest
+            new AppServerControlTurnRequest
             {
                 Text = "queued turn"
             });
@@ -216,7 +216,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task SubmitActionAsync_FastTracksImmediateLensActionWhenTurnHasReturnedToUser()
+    public async Task SubmitActionAsync_FastTracksImmediateAppServerControlActionWhenTurnHasReturnedToUser()
     {
         var runtime = new FakeRuntime(["session-1"])
         {
@@ -246,7 +246,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task SubmitActionAsync_QueuesImmediateLensActionWhenTurnIsStillRunning()
+    public async Task SubmitActionAsync_QueuesImmediateAppServerControlActionWhenTurnIsStillRunning()
     {
         var runtime = new FakeRuntime(["session-1"])
         {
@@ -346,8 +346,8 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
         service.Start();
 
-        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "first" });
-        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "second" });
+        service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "first" });
+        service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "second" });
 
         await Task.Delay(1200);
 
@@ -374,7 +374,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
         service.Start();
 
-        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "status" });
+        service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "status" });
 
         await Task.Delay(1200);
         Assert.Empty(runtime.SentPrompts);
@@ -386,7 +386,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ProcessLoop_WaitsForLensTurnToReturnBeforeSendingQueuedTurn()
+    public async Task ProcessLoop_WaitsForAppServerControlTurnToReturnBeforeSendingQueuedTurn()
     {
         var runtime = new FakeRuntime(["session-1"])
         {
@@ -397,7 +397,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
         service.Start();
 
-        service.EnqueuePrompt("session-1", new LensTurnRequest { Text = "queued turn" });
+        service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "queued turn" });
 
         await Task.Delay(1200);
         Assert.Empty(runtime.SentTurns);
@@ -449,7 +449,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         public bool UsesTurnQueueValue { get; set; }
         public bool TurnQueueReady { get; set; } = true;
         public List<string> SentPrompts { get; } = [];
-        public List<LensTurnRequest> SentTurns { get; } = [];
+        public List<AppServerControlTurnRequest> SentTurns { get; } = [];
 
         public FakeRuntime(IEnumerable<string> sessionIds)
         {
@@ -491,7 +491,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             return Task.CompletedTask;
         }
 
-        public Task SendTurnAsync(string sessionId, LensTurnRequest request, CancellationToken cancellationToken)
+        public Task SendTurnAsync(string sessionId, AppServerControlTurnRequest request, CancellationToken cancellationToken)
         {
             if (!UsesTurnQueueValue)
             {
@@ -503,7 +503,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
                 return Task.CompletedTask;
             }
 
-            SentTurns.Add(new LensTurnRequest
+            SentTurns.Add(new AppServerControlTurnRequest
             {
                 Text = request.Text,
                 Model = request.Model,
@@ -511,7 +511,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
                 PlanMode = request.PlanMode,
                 PermissionMode = request.PermissionMode,
                 TerminalReplay = request.TerminalReplay
-                    .Select(static step => new LensTerminalReplayStep
+                    .Select(static step => new AppServerControlTerminalReplayStep
                     {
                         Kind = step.Kind,
                         Text = step.Text,
@@ -521,7 +521,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
                     })
                     .ToList(),
                 Attachments = request.Attachments
-                    .Select(static attachment => new LensAttachmentReference
+                    .Select(static attachment => new AppServerControlAttachmentReference
                     {
                         Kind = attachment.Kind,
                         Path = attachment.Path,

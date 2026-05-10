@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Models.History;
 public static class LaunchEntryLaunchModes
 {
     public const string Terminal = "terminal";
-    public const string Lens = "lens";
+    public const string AppServerControl = "appServerControl";
 }
 
 public static class HistorySurfaceTypes

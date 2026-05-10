@@ -1,15 +1,14 @@
 import { t } from '../i18n';
-import { normalizeLensProvider, resolveLensLayoutMode } from './activationHelpers';
-import type { LensDebugScenarioName } from './debugScenario';
+import {
+  normalizeAppServerControlProvider,
+  resolveAppServerControlLayoutMode,
+} from './activationHelpers';
+import type { AppServerControlDebugScenarioName } from './debugScenario';
 
-export const LENS_DEBUG_SCENARIO_NAMES: readonly LensDebugScenarioName[] = [
-  'mixed',
-  'tables',
-  'long',
-  'workflow',
-];
+export const APP_SERVER_CONTROL_DEBUG_SCENARIO_NAMES: readonly AppServerControlDebugScenarioName[] =
+  ['mixed', 'tables', 'long', 'workflow'];
 
-function lensText(key: string, fallback: string): string {
+function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   if (!translated || translated === key) {
     return fallback;
@@ -18,9 +17,13 @@ function lensText(key: string, fallback: string): string {
   return translated;
 }
 
-export function normalizeLensDebugScenarioName(scenario: string): LensDebugScenarioName {
-  return LENS_DEBUG_SCENARIO_NAMES.includes(scenario as LensDebugScenarioName)
-    ? (scenario as LensDebugScenarioName)
+export function normalizeAppServerControlDebugScenarioName(
+  scenario: string,
+): AppServerControlDebugScenarioName {
+  return APP_SERVER_CONTROL_DEBUG_SCENARIO_NAMES.includes(
+    scenario as AppServerControlDebugScenarioName,
+  )
+    ? (scenario as AppServerControlDebugScenarioName)
     : 'mixed';
 }
 
@@ -45,7 +48,7 @@ export function ensureAgentViewSkeleton(
               role="scrollbar"
               data-ready="false"
               tabindex="-1"
-              aria-label="${lensText('lens.history.indexScroll', 'History navigation scrollbar')}"
+              aria-label="${appServerControlText('appServerControl.history.indexScroll', 'History navigation scrollbar')}"
               aria-disabled="true"
               aria-valuemin="1"
               aria-valuemax="1"
@@ -55,7 +58,7 @@ export function ensureAgentViewSkeleton(
               <div class="agent-history-progress-thumb" data-agent-field="history-progress-thumb"></div>
             </div>
           </div>
-          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${lensText('lens.scrollToBottom', 'Back to bottom')}</button>
+          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${appServerControlText('appServerControl.scrollToBottom', 'Back to bottom')}</button>
           <section class="agent-composer-shell" data-agent-field="composer-shell" hidden>
             <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
             <div class="agent-composer-host" data-agent-field="composer-host"></div>
@@ -90,6 +93,6 @@ function syncAgentViewPresentation(
   panel: HTMLDivElement,
   provider: string | null | undefined = null,
 ): void {
-  panel.dataset.lensProvider = normalizeLensProvider(provider);
-  panel.dataset.lensLayout = resolveLensLayoutMode(provider);
+  panel.dataset.appServerControlProvider = normalizeAppServerControlProvider(provider);
+  panel.dataset.appServerControlLayout = resolveAppServerControlLayoutMode(provider);
 }

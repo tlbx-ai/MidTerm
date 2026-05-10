@@ -100,4 +100,81 @@ public sealed class BrowserUiBridgeTests
         Assert.Equal("", error);
         Assert.Equal("browser-a", ownerService.GetOwnerBrowserId("session-a", "default"));
     }
+
+    [Fact]
+    public void RequestOpen_WithOfflineOwner_ReclaimsConnectedMainBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "stale-browser");
+        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
+        var connectionToken = new object();
+        string? openedUrl = null;
+
+        mainBrowser.Register("browser-main:tab-1", connectionToken);
+        mainBrowser.Claim("browser-main:tab-1");
+        bridge.RegisterListener(
+            "l1",
+            "browser-follower:tab-2",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => throw new Xunit.Sdk.XunitException("wrong listener"));
+        bridge.RegisterListener(
+            "l2",
+            "browser-main:tab-1",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, url, _) => openedUrl = url);
+
+        var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("https://example.com", openedUrl);
+        Assert.Equal("browser-main:tab-1", ownerService.GetOwnerBrowserId("session-a", "default"));
+    }
+
+    [Fact]
+    public void RequestOpen_MatchesOwnerByStableClientPartDuringUpgrade()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "browser-a");
+        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
+        string? openedUrl = null;
+
+        bridge.RegisterListener(
+            "l1",
+            "browser-a:tab-1",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, url, _) => openedUrl = url);
+
+        var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("https://example.com", openedUrl);
+    }
+
+    [Fact]
+    public void RequestOpen_WithOfflineOwnerAndMultipleNonLeadingBrowsers_ReturnsHelpfulError()
+    {
+        var mainBrowser = new MainBrowserService();
+        var ownerService = new BrowserPreviewOwnerService();
+        ownerService.Claim("session-a", "default", "stale-browser");
+        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
+
+        bridge.RegisterListener("l1", "browser-a:tab-1", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+        bridge.RegisterListener("l2", "browser-b:tab-2", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+
+        var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
+
+        Assert.False(ok);
+        Assert.Contains("leading browser", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("stale-browser", ownerService.GetOwnerBrowserId("session-a", "default"));
+    }
 }

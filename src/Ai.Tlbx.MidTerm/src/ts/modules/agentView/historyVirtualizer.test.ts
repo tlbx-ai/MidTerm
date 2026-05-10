@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  resolveLensHistoryFetchAheadItems,
-  resolveLensHistoryWindowTargetCount,
+  resolveAppServerControlHistoryFetchAheadItems,
+  resolveAppServerControlHistoryWindowTargetCount,
 } from './historyVirtualizer';
 
 describe('historyVirtualizer', () => {
   it('enforces a minimum retained fetch-ahead margin of 20 items', () => {
     expect(
-      resolveLensHistoryFetchAheadItems({
+      resolveAppServerControlHistoryFetchAheadItems({
         overscanItems: 12,
         fetchAheadItems: 4,
       }),
     ).toBe(20);
     expect(
-      resolveLensHistoryFetchAheadItems({
+      resolveAppServerControlHistoryFetchAheadItems({
         overscanItems: 12,
         fetchAheadItems: 30,
       }),
@@ -22,7 +22,7 @@ describe('historyVirtualizer', () => {
   });
 
   it('sizes the retained history window with at least 20 items of margin on each side', () => {
-    const count = resolveLensHistoryWindowTargetCount(
+    const count = resolveAppServerControlHistoryWindowTargetCount(
       { clientHeight: 600 } as HTMLDivElement,
       10,
       [150, 150, 150],

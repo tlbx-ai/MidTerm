@@ -71,7 +71,10 @@ describe('sessionList grouping', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.attentionCount).toBe(1);
-    expect(groups[0]?.sessions.map((session) => session.id)).toEqual(['agent-blocked', 'agent-busy']);
+    expect(groups[0]?.sessions.map((session) => session.id)).toEqual([
+      'agent-blocked',
+      'agent-busy',
+    ]);
   });
 
   it('hides group headers when only human sessions are visible', () => {
@@ -254,9 +257,11 @@ describe('sessionList grouping', () => {
     const activeItem = syncSessionItemActiveStates(root as any, 'session-c');
 
     expect(activeItem?.dataset.sessionId).toBe('session-c');
-    expect(items.filter((item) => item.classList.contains('active')).map((item) => item.dataset.sessionId)).toEqual([
-      'session-c',
-    ]);
+    expect(
+      items
+        .filter((item) => item.classList.contains('active'))
+        .map((item) => item.dataset.sessionId),
+    ).toEqual(['session-c']);
     expect(items[0]?.getAttribute('aria-current')).toBe('false');
     expect(items[2]?.getAttribute('aria-current')).toBe('true');
   });

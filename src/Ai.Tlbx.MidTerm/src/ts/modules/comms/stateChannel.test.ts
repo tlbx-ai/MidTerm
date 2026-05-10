@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => ({
   markLayoutPersistenceReady: vi.fn(),
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
-  checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
+  checkVersionAndReload: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('../../utils', () => ({
@@ -203,7 +203,7 @@ async function loadHarness() {
       previewName?.trim() ? previewName.trim() : 'default',
   );
   mocks.syncActiveWebPreview.mockResolvedValue(undefined);
-  mocks.checkVersionAndReload.mockResolvedValue(undefined);
+  mocks.checkVersionAndReload.mockResolvedValue(false);
 
   resetStateChannelRuntimeForTests();
   stores.$activeSessionId.set('user1234');
@@ -283,6 +283,9 @@ describe('stateChannel browser-ui handling', () => {
       'http://localhost:3000',
     );
     expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
+    expect(mocks.checkVersionAndReload).toHaveBeenCalledWith({
+      forceReloadOnMismatch: true,
+    });
     expect(mocks.upsertSessionPreview).toHaveBeenCalledWith({
       sessionId: 'agent5678',
       previewName: 'default',
@@ -291,6 +294,32 @@ describe('stateChannel browser-ui handling', () => {
       active: true,
       targetRevision: 1,
     });
+  });
+
+  it('defers browser open commands when a frontend reload was requested', async () => {
+    const { ws } = await loadHarness();
+    mocks.checkVersionAndReload.mockResolvedValueOnce(true);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'browser-ui',
+        command: 'open',
+        sessionId: 'agent5678',
+        previewName: 'default',
+        url: 'http://localhost:3000',
+        activateSession: true,
+      }),
+    } as MessageEvent<string>);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.checkVersionAndReload).toHaveBeenCalledWith({
+      forceReloadOnMismatch: true,
+    });
+    expect(mocks.setWebPreviewTarget).not.toHaveBeenCalled();
+    expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+    expect(mocks.selectSession).not.toHaveBeenCalled();
   });
 
   it('does not switch sessions when browser open explicitly disables activation', async () => {
@@ -377,15 +406,15 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.syncActiveWebPreview).toHaveBeenCalledTimes(1);
   });
 
-  it('skips proactive terminal creation for lens-only sessions', async () => {
+  it('skips proactive terminal creation for appServerControl-only sessions', async () => {
     await loadHarness();
 
     handleStateUpdate([
       {
-        id: 'lens-1',
+        id: 'appServerControl-1',
         cols: 120,
         rows: 30,
-        lensOnly: true,
+        appServerControlOnly: true,
         foregroundPid: null,
         foregroundName: null,
         foregroundCommandLine: null,
@@ -406,7 +435,7 @@ describe('stateChannel browser-ui handling', () => {
         id: 'session-a',
         cols: 120,
         rows: 30,
-        lensOnly: false,
+        appServerControlOnly: false,
         foregroundPid: null,
         foregroundName: null,
         foregroundCommandLine: null,
@@ -416,7 +445,7 @@ describe('stateChannel browser-ui handling', () => {
         id: 'session-b',
         cols: 120,
         rows: 30,
-        lensOnly: false,
+        appServerControlOnly: false,
         foregroundPid: null,
         foregroundName: null,
         foregroundCommandLine: null,
@@ -438,7 +467,7 @@ describe('stateChannel browser-ui handling', () => {
           id: 'session-a',
           cols: 120,
           rows: 30,
-          lensOnly: false,
+          appServerControlOnly: false,
           foregroundPid: null,
           foregroundName: null,
           foregroundCommandLine: null,
@@ -448,7 +477,7 @@ describe('stateChannel browser-ui handling', () => {
           id: 'session-b',
           cols: 120,
           rows: 30,
-          lensOnly: false,
+          appServerControlOnly: false,
           foregroundPid: null,
           foregroundName: null,
           foregroundCommandLine: null,

@@ -40,7 +40,7 @@ public sealed class SessionAgentFeedService
                 "info",
                 "bootstrap",
                 string.IsNullOrWhiteSpace(launchCommand)
-                    ? $"{PrettifyProfile(profile)} Lens session started in MidTerm."
+                    ? $"{PrettifyProfile(profile)} App Server Controller session started in MidTerm."
                     : $"{PrettifyProfile(profile)} worker started in MidTerm.",
                 string.IsNullOrWhiteSpace(launchCommand)
                     ? BuildBootstrapDetail(slashCommands, guidanceInjected)

@@ -39,7 +39,10 @@ describe('fileLinks hot-path throttling', () => {
       },
     } as never);
 
-    scanOutputForPaths('sess1', new TextEncoder().encode('Q:\\repos\\MidTermWorkspace3\\src\\main.ts'));
+    scanOutputForPaths(
+      'sess1',
+      new TextEncoder().encode('Q:\\repos\\MidTermWorkspace3\\src\\main.ts'),
+    );
     await vi.runAllTimersAsync();
 
     expect(mocks.registerFilePaths).not.toHaveBeenCalled();

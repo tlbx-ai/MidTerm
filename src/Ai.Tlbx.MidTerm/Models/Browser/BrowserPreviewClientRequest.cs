@@ -4,4 +4,5 @@ public sealed class BrowserPreviewClientRequest
 {
     public string? SessionId { get; init; }
     public string? PreviewName { get; init; }
+    public string? TabId { get; init; }
 }

@@ -1,16 +1,21 @@
-import { normalizeLensProvider, resolveLensLayoutMode } from './activationHelpers';
+import {
+  normalizeAppServerControlProvider,
+  resolveAppServerControlLayoutMode,
+} from './activationHelpers';
 import { setHistoryScrollMode } from './historyViewport';
-import type { SessionLensViewState } from './types';
+import type { SessionAppServerControlViewState } from './types';
 
 export function syncAgentViewPresentation(
   panel: HTMLDivElement,
   provider: string | null | undefined = null,
 ): void {
-  panel.dataset.lensProvider = normalizeLensProvider(provider);
-  panel.dataset.lensLayout = resolveLensLayoutMode(provider);
+  panel.dataset.appServerControlProvider = normalizeAppServerControlProvider(provider);
+  panel.dataset.appServerControlLayout = resolveAppServerControlLayoutMode(provider);
 }
 
-export function prepareLensForForeground(state: SessionLensViewState): void {
+export function prepareAppServerControlForForeground(
+  state: SessionAppServerControlViewState,
+): void {
   if (
     state.historyScrollMode === 'restore-anchor' &&
     state.pendingHistoryPrependAnchor === null &&

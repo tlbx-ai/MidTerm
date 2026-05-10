@@ -34,9 +34,9 @@ public sealed class SessionInfoDto
     public string? Surface { get; set; }
     public bool IsAdHoc { get; set; }
     public bool AgentControlled { get; set; }
-    public bool LensOnly { get; set; }
+    public bool AppServerControlOnly { get; set; }
     public string? ProfileHint { get; set; }
-    public string? LensResumeThreadId { get; set; }
-    public bool HasLensHistory { get; set; }
+    public string? AppServerControlResumeThreadId { get; set; }
+    public bool HasAppServerControlHistory { get; set; }
     public SessionSupervisorInfoDto? Supervisor { get; set; }
 }

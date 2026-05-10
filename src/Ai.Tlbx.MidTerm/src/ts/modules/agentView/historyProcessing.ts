@@ -1,14 +1,14 @@
 import { t } from '../i18n';
 import type {
-  LensHistoryRequestSummary,
-  LensHistoryRuntimeNotice,
-  LensHistorySnapshot,
-  LensHistoryItem,
+  AppServerControlHistoryRequestSummary,
+  AppServerControlHistoryRuntimeNotice,
+  AppServerControlHistorySnapshot,
+  AppServerControlHistoryItem,
 } from '../../api/client';
 import type {
-  LensAttachmentReference,
-  LensInlineFileReference,
-  LensInlineImagePreview,
+  AppServerControlAttachmentReference,
+  AppServerControlInlineFileReference,
+  AppServerControlInlineImagePreview,
 } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import {
@@ -28,14 +28,14 @@ import {
 } from './historyContent';
 import type {
   HistoryKind,
-  LensActivationIssue,
-  LensHistoryEntry,
-  LensRuntimeStatsSummary,
-  PendingLensTurn,
-  SessionLensViewState,
+  AppServerControlActivationIssue,
+  AppServerControlHistoryEntry,
+  AppServerControlRuntimeStatsSummary,
+  PendingAppServerControlTurn,
+  SessionAppServerControlViewState,
 } from './types';
 
-function lensText(key: string, fallback: string): string {
+function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   return !translated || translated === key ? fallback : translated;
 }
@@ -83,24 +83,26 @@ const COMMAND_HISTORY_ITEM_TYPES = new Set([
 ]);
 
 export function cloneHistoryAttachments(
-  attachments: readonly LensAttachmentReference[] | undefined,
-): LensAttachmentReference[] {
+  attachments: readonly AppServerControlAttachmentReference[] | undefined,
+): AppServerControlAttachmentReference[] {
   return attachments?.map((attachment) => ({ ...attachment })) ?? [];
 }
 
 function cloneFileMentions(
-  fileMentions: readonly LensInlineFileReference[] | undefined,
-): LensInlineFileReference[] {
+  fileMentions: readonly AppServerControlInlineFileReference[] | undefined,
+): AppServerControlInlineFileReference[] {
   return fileMentions?.map((mention) => ({ ...mention })) ?? [];
 }
 
 function cloneImagePreviews(
-  imagePreviews: readonly LensInlineImagePreview[] | undefined,
-): LensInlineImagePreview[] {
+  imagePreviews: readonly AppServerControlInlineImagePreview[] | undefined,
+): AppServerControlInlineImagePreview[] {
   return imagePreviews?.map((preview) => ({ ...preview })) ?? [];
 }
 
-export function buildLensHistoryEntries(snapshot: LensHistorySnapshot): LensHistoryEntry[] {
+export function buildAppServerControlHistoryEntries(
+  snapshot: AppServerControlHistorySnapshot,
+): AppServerControlHistoryEntry[] {
   const historyEntries = Array.isArray(snapshot.history) ? snapshot.history : [];
   if (historyEntries.length === 0) {
     return [];
@@ -110,9 +112,9 @@ export function buildLensHistoryEntries(snapshot: LensHistorySnapshot): LensHist
     .map((entry) => {
       const kind = normalizeSnapshotHistoryKind(entry.kind);
       const statusLabel = entry.streaming
-        ? lensText('lens.status.streaming', 'Streaming')
+        ? appServerControlText('appServerControl.status.streaming', 'Streaming')
         : prettify(entry.status || kind);
-      const mapped: LensHistoryEntry = {
+      const mapped: AppServerControlHistoryEntry = {
         id: entry.entryId,
         order: entry.order,
         kind,
@@ -146,9 +148,9 @@ export function buildLensHistoryEntries(snapshot: LensHistorySnapshot): LensHist
       return mapped;
     })
     .filter((entry) => shouldShowUnknownAgentMessages() || !isUnknownAgentFallbackEntry(entry))
-    .filter((entry) => !isSuppressedLensRuntimeNoticeEntry(entry))
+    .filter((entry) => !isSuppressedAppServerControlRuntimeNoticeEntry(entry))
     .sort((left, right) => left.order - right.order)
-    .reduce<LensHistoryEntry[]>(mergeCommandOutputHistoryEntries, [])
+    .reduce<AppServerControlHistoryEntry[]>(mergeCommandOutputHistoryEntries, [])
     .filter(
       (entry) =>
         entry.body.trim() ||
@@ -163,19 +165,22 @@ export function buildLensHistoryEntries(snapshot: LensHistorySnapshot): LensHist
 function resolveHistoryEntryLabel(kind: HistoryKind, itemType: string | null | undefined): string {
   switch (normalizeHistoryItemType(itemType)) {
     case 'agentstate':
-      return lensText('lens.label.agentState', 'Agent State');
+      return appServerControlText('appServerControl.label.agentState', 'Agent State');
     case 'agenterror':
-      return lensText('lens.label.agentError', 'Agent Error');
+      return appServerControlText('appServerControl.label.agentError', 'Agent Error');
     default:
       return historyLabel(kind);
   }
 }
 
 export function preservePersistentCommandEntries(
-  entries: readonly LensHistoryEntry[],
-  previousEntries: readonly LensHistoryEntry[],
-  snapshot: Pick<LensHistorySnapshot, 'historyWindowEnd' | 'historyWindowStart'> | null | undefined,
-): LensHistoryEntry[] {
+  entries: readonly AppServerControlHistoryEntry[],
+  previousEntries: readonly AppServerControlHistoryEntry[],
+  snapshot:
+    | Pick<AppServerControlHistorySnapshot, 'historyWindowEnd' | 'historyWindowStart'>
+    | null
+    | undefined,
+): AppServerControlHistoryEntry[] {
   if (entries.length === 0 && previousEntries.length === 0) {
     return [];
   }
@@ -185,7 +190,7 @@ export function preservePersistentCommandEntries(
     return [...entries];
   }
 
-  const rememberedByKey = new Map<string, LensHistoryEntry>();
+  const rememberedByKey = new Map<string, AppServerControlHistoryEntry>();
   for (const entry of rememberedEntries) {
     for (const key of buildPersistentCommandKeys(entry)) {
       if (!rememberedByKey.has(key)) {
@@ -214,7 +219,7 @@ export function preservePersistentCommandEntries(
       continue;
     }
 
-    nextEntries.push(cloneLensHistoryEntry(remembered));
+    nextEntries.push(cloneAppServerControlHistoryEntry(remembered));
     for (const key of keys) {
       seenKeys.add(key);
     }
@@ -226,7 +231,7 @@ export function preservePersistentCommandEntries(
 }
 
 function isCommandExecutionSnapshotEntry(
-  entry: Pick<LensHistoryItem, 'kind' | 'itemType'>,
+  entry: Pick<AppServerControlHistoryItem, 'kind' | 'itemType'>,
 ): boolean {
   return (
     normalizeSnapshotHistoryKind(entry.kind) === 'tool' &&
@@ -235,7 +240,7 @@ function isCommandExecutionSnapshotEntry(
   );
 }
 
-function applyDirectCommandPresentation(entry: LensHistoryEntry): void {
+function applyDirectCommandPresentation(entry: AppServerControlHistoryEntry): void {
   const commandPresentation = resolveCommandPresentation(entry);
   if (!commandPresentation) {
     return;
@@ -247,7 +252,10 @@ function applyDirectCommandPresentation(entry: LensHistoryEntry): void {
 }
 
 function resolveCommandPresentation(
-  entry: Pick<LensHistoryEntry, 'body' | 'commandOutputTail' | 'commandText' | 'sourceItemType'>,
+  entry: Pick<
+    AppServerControlHistoryEntry,
+    'body' | 'commandOutputTail' | 'commandText' | 'sourceItemType'
+  >,
 ): { commandText: string; commandOutputTail: string[] } | null {
   const normalizedType = normalizeHistoryItemType(entry.sourceItemType);
   if (normalizedType === 'commandexecution') {
@@ -277,7 +285,7 @@ function resolveCommandPresentation(
   return parseCommandOutputBody(entry.body);
 }
 
-function isPersistentCommandEntry(entry: LensHistoryEntry): boolean {
+function isPersistentCommandEntry(entry: AppServerControlHistoryEntry): boolean {
   if (entry.kind !== 'tool') {
     return false;
   }
@@ -293,11 +301,13 @@ function shouldShowUnknownAgentMessages(): boolean {
   return $currentSettings.get()?.showUnknownAgentMessages !== false;
 }
 
-function isUnknownAgentFallbackEntry(entry: Pick<LensHistoryEntry, 'sourceItemType'>): boolean {
+function isUnknownAgentFallbackEntry(
+  entry: Pick<AppServerControlHistoryEntry, 'sourceItemType'>,
+): boolean {
   return normalizeHistoryItemType(entry.sourceItemType) === 'unknownagentmessage';
 }
 
-function buildPersistentCommandKeys(entry: LensHistoryEntry): string[] {
+function buildPersistentCommandKeys(entry: AppServerControlHistoryEntry): string[] {
   if (!isPersistentCommandEntry(entry)) {
     return [];
   }
@@ -305,7 +315,7 @@ function buildPersistentCommandKeys(entry: LensHistoryEntry): string[] {
   return buildCommandLookupKeys(entry);
 }
 
-function buildCommandLookupKeys(entry: LensHistoryEntry): string[] {
+function buildCommandLookupKeys(entry: AppServerControlHistoryEntry): string[] {
   const keys = new Set<string>();
   const commandText = (entry.commandText ?? '').trim();
   const normalizedCommandText = normalizeComparableHistoryText(commandText);
@@ -325,9 +335,9 @@ function buildCommandLookupKeys(entry: LensHistoryEntry): string[] {
 }
 
 function resolveRememberedCommandEntry(
-  entry: LensHistoryEntry,
-  rememberedByKey: ReadonlyMap<string, LensHistoryEntry>,
-): LensHistoryEntry | null {
+  entry: AppServerControlHistoryEntry,
+  rememberedByKey: ReadonlyMap<string, AppServerControlHistoryEntry>,
+): AppServerControlHistoryEntry | null {
   if (entry.kind !== 'tool') {
     return null;
   }
@@ -343,9 +353,9 @@ function resolveRememberedCommandEntry(
 }
 
 function mergePersistentCommandEntry(
-  entry: LensHistoryEntry,
-  remembered: LensHistoryEntry | null,
-): LensHistoryEntry {
+  entry: AppServerControlHistoryEntry,
+  remembered: AppServerControlHistoryEntry | null,
+): AppServerControlHistoryEntry {
   if (!remembered || entry.kind !== 'tool') {
     return entry;
   }
@@ -374,8 +384,8 @@ function mergePersistentCommandEntry(
 }
 
 function resolveMergedCommandOutputTail(
-  entry: LensHistoryEntry,
-  remembered: LensHistoryEntry,
+  entry: AppServerControlHistoryEntry,
+  remembered: AppServerControlHistoryEntry,
 ): string[] {
   return (entry.commandOutputTail?.length ?? 0) > 0
     ? [...(entry.commandOutputTail ?? [])]
@@ -383,8 +393,8 @@ function resolveMergedCommandOutputTail(
 }
 
 function shouldForcePersistentCommandPresentation(
-  entry: LensHistoryEntry,
-  remembered: LensHistoryEntry,
+  entry: AppServerControlHistoryEntry,
+  remembered: AppServerControlHistoryEntry,
   nextCommandText: string,
   nextCommandOutputTail: readonly string[],
 ): boolean {
@@ -396,8 +406,11 @@ function shouldForcePersistentCommandPresentation(
 }
 
 function shouldRetainMissingCommandEntry(
-  entry: LensHistoryEntry,
-  snapshot: Pick<LensHistorySnapshot, 'historyWindowEnd' | 'historyWindowStart'> | null | undefined,
+  entry: AppServerControlHistoryEntry,
+  snapshot:
+    | Pick<AppServerControlHistorySnapshot, 'historyWindowEnd' | 'historyWindowStart'>
+    | null
+    | undefined,
 ): boolean {
   if (!snapshot) {
     return true;
@@ -407,8 +420,10 @@ function shouldRetainMissingCommandEntry(
   return absoluteIndex >= snapshot.historyWindowStart && absoluteIndex < snapshot.historyWindowEnd;
 }
 
-function cloneLensHistoryEntry(entry: LensHistoryEntry): LensHistoryEntry {
-  const cloned: LensHistoryEntry = {
+function cloneAppServerControlHistoryEntry(
+  entry: AppServerControlHistoryEntry,
+): AppServerControlHistoryEntry {
+  const cloned: AppServerControlHistoryEntry = {
     ...entry,
     attachments: cloneHistoryAttachments(entry.attachments),
     commandOutputTail: [...(entry.commandOutputTail ?? [])],
@@ -422,8 +437,8 @@ function cloneLensHistoryEntry(entry: LensHistoryEntry): LensHistoryEntry {
 }
 
 function findMatchingCommandExecutionIndex(
-  mergedEntries: readonly LensHistoryEntry[],
-  entry: LensHistoryEntry,
+  mergedEntries: readonly AppServerControlHistoryEntry[],
+  entry: AppServerControlHistoryEntry,
 ): number {
   for (let index = mergedEntries.length - 1; index >= 0; index -= 1) {
     const candidate = mergedEntries[index];
@@ -445,9 +460,9 @@ function findMatchingCommandExecutionIndex(
 }
 
 function mergeCommandOutputHistoryEntries(
-  mergedEntries: LensHistoryEntry[],
-  entry: LensHistoryEntry,
-): LensHistoryEntry[] {
+  mergedEntries: AppServerControlHistoryEntry[],
+  entry: AppServerControlHistoryEntry,
+): AppServerControlHistoryEntry[] {
   if (!isCommandOutputHistoryEntry(entry)) {
     mergedEntries.push(entry);
     return mergedEntries;
@@ -474,8 +489,8 @@ function mergeCommandOutputHistoryEntries(
   return mergedEntries;
 }
 
-export function isSuppressedLensRuntimeNoticeEntry(
-  entry: Pick<LensHistoryEntry, 'kind' | 'title' | 'body'>,
+export function isSuppressedAppServerControlRuntimeNoticeEntry(
+  entry: Pick<AppServerControlHistoryEntry, 'kind' | 'title' | 'body'>,
 ): boolean {
   if (!['system', 'notice'].includes(normalizeSnapshotHistoryKind(entry.kind))) {
     return false;
@@ -485,21 +500,31 @@ export function isSuppressedLensRuntimeNoticeEntry(
   const body = normalizeComparableHistoryText(entry.body);
   const contextMarker = normalizeComparableHistoryText('Codex context window updated.');
   const rateLimitMarker = normalizeComparableHistoryText('Codex rate limits updated.');
+  const skillsChangedMarker = normalizeComparableHistoryText('Codex skills changed.');
   return (
     title === contextMarker ||
     body === contextMarker ||
     title === rateLimitMarker ||
     body === rateLimitMarker ||
+    title === skillsChangedMarker ||
+    body === skillsChangedMarker ||
+    body === `${skillsChangedMarker} {}` ||
+    body.startsWith(normalizeComparableHistoryText('Codex remote-control status:')) ||
+    isAppServerControlProviderLifecycleNotice(body) ||
     body.includes(normalizeComparableHistoryText('last turn in/out')) ||
     body.includes('"ratelimits"') ||
     body.includes('"usedpercent"')
   );
 }
 
-export function buildLensRuntimeStats(
-  snapshot: LensHistorySnapshot,
-): LensRuntimeStatsSummary | null {
-  const stats: LensRuntimeStatsSummary = {
+function isAppServerControlProviderLifecycleNotice(normalizedBody: string): boolean {
+  return /^[a-z][a-z0-9_.-]* (?:starting|ready)\.$/i.test(normalizedBody);
+}
+
+export function buildAppServerControlRuntimeStats(
+  snapshot: AppServerControlHistorySnapshot,
+): AppServerControlRuntimeStatsSummary | null {
+  const stats: AppServerControlRuntimeStatsSummary = {
     windowUsedTokens: null,
     windowTokenLimit: null,
     accumulatedInputTokens: 0,
@@ -513,13 +538,13 @@ export function buildLensRuntimeStats(
       ? snapshot.notices
       : snapshot.history
           .filter((entry) =>
-            isSuppressedLensRuntimeNoticeEntry({
+            isSuppressedAppServerControlRuntimeNoticeEntry({
               kind: normalizeSnapshotHistoryKind(entry.kind),
               title: entry.title ?? '',
               body: entry.body,
             }),
           )
-          .map<LensHistoryRuntimeNotice>((entry) => ({
+          .map<AppServerControlHistoryRuntimeNotice>((entry) => ({
             eventId: entry.entryId,
             type: normalizeSnapshotHistoryKind(entry.kind),
             message: entry.title ?? '',
@@ -550,7 +575,7 @@ export function buildLensRuntimeStats(
 }
 
 function parseCodexContextWindowNotice(
-  notice: Pick<LensHistoryRuntimeNotice, 'message' | 'detail'>,
+  notice: Pick<AppServerControlHistoryRuntimeNotice, 'message' | 'detail'>,
 ): {
   usedTokens: number | null;
   windowTokens: number;
@@ -608,7 +633,7 @@ function parseCodexContextWindowNotice(
 }
 
 function parseCodexRateLimitNotice(
-  notice: Pick<LensHistoryRuntimeNotice, 'message' | 'detail'>,
+  notice: Pick<AppServerControlHistoryRuntimeNotice, 'message' | 'detail'>,
 ): { primaryUsedPercent: number | null; secondaryUsedPercent: number | null } | null {
   if (
     normalizeComparableHistoryText(notice.message) !==
@@ -640,17 +665,17 @@ function parseCodexRateLimitNotice(
   }
 }
 
-export function applyOptimisticLensTurns(
-  snapshot: LensHistorySnapshot,
-  entries: readonly LensHistoryEntry[],
-  optimisticTurns: readonly PendingLensTurn[],
-): { entries: LensHistoryEntry[]; optimisticTurns: PendingLensTurn[] } {
+export function applyOptimisticAppServerControlTurns(
+  snapshot: AppServerControlHistorySnapshot,
+  entries: readonly AppServerControlHistoryEntry[],
+  optimisticTurns: readonly PendingAppServerControlTurn[],
+): { entries: AppServerControlHistoryEntry[]; optimisticTurns: PendingAppServerControlTurn[] } {
   if (optimisticTurns.length === 0) {
     return { entries: [...entries], optimisticTurns: [] };
   }
 
   const optimisticEntries = [...entries];
-  const remainingTurns: PendingLensTurn[] = [];
+  const remainingTurns: PendingAppServerControlTurn[] = [];
   let nextOrder =
     optimisticEntries.reduce((maxOrder, entry) => Math.max(maxOrder, entry.order), 0) + 1;
 
@@ -713,11 +738,11 @@ export function applyOptimisticLensTurns(
   };
 }
 
-export function withInlineLensStatus(
-  snapshot: LensHistorySnapshot,
-  entries: LensHistoryEntry[],
+export function withInlineAppServerControlStatus(
+  snapshot: AppServerControlHistorySnapshot,
+  entries: AppServerControlHistoryEntry[],
   streamConnected: boolean,
-): LensHistoryEntry[] {
+): AppServerControlHistoryEntry[] {
   const hasConversation = entries.some((entry) =>
     ['user', 'assistant', 'tool', 'request', 'plan', 'diff'].includes(entry.kind),
   );
@@ -725,11 +750,14 @@ export function withInlineLensStatus(
     snapshot.session.lastError?.trim() ||
     snapshot.session.reason?.trim() ||
     (streamConnected
-      ? lensText(
-          'lens.status.connectedWaiting',
-          'Lens is connected to MidTerm and waiting for history content.',
+      ? appServerControlText(
+          'appServerControl.status.connectedWaiting',
+          'AppServerControl is connected to MidTerm and waiting for history content.',
         )
-      : lensText('lens.status.reconnecting', 'Lens is reconnecting to MidTerm.'));
+      : appServerControlText(
+          'appServerControl.status.reconnecting',
+          'AppServerControl is reconnecting to MidTerm.',
+        ));
 
   if ((!statusBody || hasConversation) && !snapshot.session.lastError) {
     return entries;
@@ -741,19 +769,21 @@ export function withInlineLensStatus(
       order: Number.MIN_SAFE_INTEGER,
       kind: snapshot.session.lastError ? 'notice' : 'system',
       tone: snapshot.session.lastError ? 'attention' : streamConnected ? 'positive' : 'warning',
-      label: lensText('lens.label.midterm', 'MidTerm'),
+      label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
       title: '',
       body: statusBody,
-      meta: streamConnected ? '' : lensText('lens.status.connecting', 'Connecting'),
+      meta: streamConnected
+        ? ''
+        : appServerControlText('appServerControl.status.connecting', 'Connecting'),
     },
     ...entries,
   ];
 }
 
 export function withLiveAssistantState(
-  snapshot: LensHistorySnapshot,
-  entries: LensHistoryEntry[],
-): LensHistoryEntry[] {
+  snapshot: AppServerControlHistorySnapshot,
+  entries: AppServerControlHistoryEntry[],
+): AppServerControlHistoryEntry[] {
   if (snapshot.currentTurn.state !== 'running' && snapshot.currentTurn.state !== 'in_progress') {
     return entries;
   }
@@ -784,10 +814,10 @@ export function withLiveAssistantState(
 }
 
 export function withTrailingBusyIndicator(
-  snapshot: LensHistorySnapshot,
-  entries: LensHistoryEntry[],
-  requests: readonly LensHistoryRequestSummary[],
-): LensHistoryEntry[] {
+  snapshot: AppServerControlHistorySnapshot,
+  entries: AppServerControlHistoryEntry[],
+  requests: readonly AppServerControlHistoryRequestSummary[],
+): AppServerControlHistoryEntry[] {
   const currentTurnState = (snapshot.currentTurn.state || '').toLowerCase();
   const sessionState = (snapshot.session.state || '').toLowerCase();
   if (
@@ -813,12 +843,14 @@ export function withTrailingBusyIndicator(
     body: resolveBusyIndicatorLabelFromSnapshotItems(snapshot),
     meta: '',
     busyIndicator: true,
-    busyElapsedText: formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot)),
+    busyElapsedText: formatAppServerControlTurnDuration(resolveBusyIndicatorElapsedMs(snapshot)),
   });
   return nextEntries;
 }
 
-function resolveBusyIndicatorLabelFromSnapshotItems(snapshot: LensHistorySnapshot): string {
+function resolveBusyIndicatorLabelFromSnapshotItems(
+  snapshot: AppServerControlHistorySnapshot,
+): string {
   const currentTurnId = snapshot.currentTurn.turnId ?? null;
   const items = Array.isArray(snapshot.items) ? snapshot.items : [];
 
@@ -838,7 +870,7 @@ function resolveBusyIndicatorLabelFromSnapshotItems(snapshot: LensHistorySnapsho
     }
   }
 
-  return lensText('lens.status.working', 'Working');
+  return appServerControlText('appServerControl.status.working', 'Working');
 }
 
 function isBusyIndicatorItemCandidate(item: unknown, currentTurnId: string | null): boolean {
@@ -877,7 +909,7 @@ function normalizeBusyIndicatorItemType(itemType: unknown): string {
 }
 
 function resolveBusyIndicatorLabelFromItem(
-  snapshot: LensHistorySnapshot,
+  snapshot: AppServerControlHistorySnapshot,
   item: unknown,
   currentTurnId: string | null,
 ): string {
@@ -924,7 +956,7 @@ function isBusyIndicatorCommandLikeText(value: string): boolean {
 }
 
 function matchesBusyIndicatorSuppressedTurnText(
-  snapshot: LensHistorySnapshot,
+  snapshot: AppServerControlHistorySnapshot,
   label: string,
   currentTurnId: string | null,
 ): boolean {
@@ -963,7 +995,7 @@ function matchesBusyIndicatorSuppressedTurnText(
   });
 }
 
-function resolveBusyIndicatorElapsedMs(snapshot: LensHistorySnapshot): number | null {
+function resolveBusyIndicatorElapsedMs(snapshot: AppServerControlHistorySnapshot): number | null {
   const startedAt = snapshot.currentTurn.startedAt ?? null;
   if (!startedAt) {
     return null;
@@ -974,8 +1006,8 @@ function resolveBusyIndicatorElapsedMs(snapshot: LensHistorySnapshot): number | 
 }
 
 function maybeRememberCompletedTurnDuration(
-  snapshot: LensHistorySnapshot,
-  state: SessionLensViewState,
+  snapshot: AppServerControlHistorySnapshot,
+  state: SessionAppServerControlViewState,
 ): void {
   const turnId = snapshot.currentTurn.turnId ?? null;
   const startedAt = snapshot.currentTurn.startedAt ?? null;
@@ -1003,14 +1035,14 @@ function maybeRememberCompletedTurnDuration(
     tone: 'info',
     label: '',
     title: '',
-    body: `(Turn took ${formatLensTurnDuration(durationMs)})`,
+    body: `(Turn took ${formatAppServerControlTurnDuration(durationMs)})`,
     meta: '',
     sourceTurnId: turnId,
     turnDurationNote: true,
   });
 }
 
-function pruneCompletedTurnDurationEntries(state: SessionLensViewState): void {
+function pruneCompletedTurnDurationEntries(state: SessionAppServerControlViewState): void {
   const turnIds = [...state.completedTurnDurationEntries.keys()];
   for (const staleTurnId of turnIds.slice(0, Math.max(0, turnIds.length - 64))) {
     state.completedTurnDurationEntries.delete(staleTurnId);
@@ -1018,9 +1050,9 @@ function pruneCompletedTurnDurationEntries(state: SessionLensViewState): void {
 }
 
 function appendTurnDurationEntries(
-  entries: readonly LensHistoryEntry[],
-  state: SessionLensViewState,
-): LensHistoryEntry[] {
+  entries: readonly AppServerControlHistoryEntry[],
+  state: SessionAppServerControlViewState,
+): AppServerControlHistoryEntry[] {
   if (state.completedTurnDurationEntries.size === 0) {
     return [...entries];
   }
@@ -1048,19 +1080,19 @@ function appendTurnDurationEntries(
 }
 
 export function withTurnDurationNotes(
-  snapshot: LensHistorySnapshot,
-  entries: LensHistoryEntry[],
-  state: SessionLensViewState,
-): LensHistoryEntry[] {
+  snapshot: AppServerControlHistorySnapshot,
+  entries: AppServerControlHistoryEntry[],
+  state: SessionAppServerControlViewState,
+): AppServerControlHistoryEntry[] {
   maybeRememberCompletedTurnDuration(snapshot, state);
   pruneCompletedTurnDurationEntries(state);
   return appendTurnDurationEntries(entries, state);
 }
 
 export function syncBusyIndicatorTicker(args: {
-  snapshot: LensHistorySnapshot;
-  state: SessionLensViewState;
-  entries: readonly LensHistoryEntry[];
+  snapshot: AppServerControlHistorySnapshot;
+  state: SessionAppServerControlViewState;
+  entries: readonly AppServerControlHistoryEntry[];
   renderCurrentAgentView: (sessionId: string, options?: { immediate?: boolean }) => void;
   updateBusyIndicatorElapsed: (sessionId: string, elapsedText: string) => boolean;
 }): void {
@@ -1079,7 +1111,7 @@ export function syncBusyIndicatorTicker(args: {
 
   state.busyIndicatorTickHandle = window.setTimeout(() => {
     state.busyIndicatorTickHandle = null;
-    const elapsedText = formatLensTurnDuration(resolveBusyIndicatorElapsedMs(snapshot));
+    const elapsedText = formatAppServerControlTurnDuration(resolveBusyIndicatorElapsedMs(snapshot));
     if (!updateBusyIndicatorElapsed(snapshot.sessionId, elapsedText)) {
       renderCurrentAgentView(snapshot.sessionId, { immediate: true });
       return;
@@ -1090,20 +1122,20 @@ export function syncBusyIndicatorTicker(args: {
 }
 
 export function withActivationIssueNotice(
-  entries: LensHistoryEntry[],
-  issue: LensActivationIssue | null,
-): LensHistoryEntry[] {
+  entries: AppServerControlHistoryEntry[],
+  issue: AppServerControlActivationIssue | null,
+): AppServerControlHistoryEntry[] {
   if (!issue) {
     return entries;
   }
 
   return [
     {
-      id: `lens-issue:${issue.kind}`,
+      id: `appServerControl-issue:${issue.kind}`,
       order: Number.MIN_SAFE_INTEGER,
       kind: issue.tone === 'attention' ? 'notice' : 'system',
       tone: issue.tone,
-      label: lensText('lens.label.midterm', 'MidTerm'),
+      label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
       title: issue.title,
       body: issue.body,
       meta: issue.meta,
@@ -1113,7 +1145,9 @@ export function withActivationIssueNotice(
   ];
 }
 
-export function buildActivationHistoryEntries(state: SessionLensViewState): LensHistoryEntry[] {
+export function buildActivationHistoryEntries(
+  state: SessionAppServerControlViewState,
+): AppServerControlHistoryEntry[] {
   if (state.activationTrace.length === 0) {
     return [
       {
@@ -1121,13 +1155,13 @@ export function buildActivationHistoryEntries(state: SessionLensViewState): Lens
         order: 0,
         kind: 'system',
         tone: state.activationState === 'failed' ? 'attention' : 'warning',
-        label: lensText('lens.label.midterm', 'MidTerm'),
+        label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
         title: '',
-        body: state.activationDetail || 'Waiting for Lens boot steps…',
+        body: state.activationDetail || 'Waiting for AppServerControl boot steps…',
         meta:
           state.activationState === 'failed'
-            ? lensText('lens.status.failed', 'Failed')
-            : lensText('lens.status.connecting', 'Connecting'),
+            ? appServerControlText('appServerControl.status.failed', 'Failed')
+            : appServerControlText('appServerControl.status.connecting', 'Connecting'),
       },
     ];
   }
@@ -1145,7 +1179,7 @@ export function buildActivationHistoryEntries(state: SessionLensViewState): Lens
     order: index,
     kind: entry.tone === 'attention' ? ('notice' as const) : ('system' as const),
     tone: entry.tone,
-    label: lensText('lens.label.midterm', 'MidTerm'),
+    label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
     title: '',
     body: entry.detail,
     meta: entry.meta,
@@ -1164,7 +1198,7 @@ export function shouldHideStatusInMeta(kind: HistoryKind, statusLabel: string): 
   return true;
 }
 
-export function formatLensTurnDuration(durationMs: number | null | undefined): string {
+export function formatAppServerControlTurnDuration(durationMs: number | null | undefined): string {
   if (durationMs === null || durationMs === undefined || !Number.isFinite(durationMs)) {
     return '0s';
   }

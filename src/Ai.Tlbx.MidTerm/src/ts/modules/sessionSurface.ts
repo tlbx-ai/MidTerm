@@ -4,7 +4,7 @@ export type SessionSurfaceMode = 'terminal' | 'agent';
 export type SessionAgentProfile = 'codex' | 'claude' | null;
 
 export interface SessionSurfaceLike {
-  lensOnly?: boolean | null;
+  appServerControlOnly?: boolean | null;
   profileHint?: string | null;
   supervisor?: {
     profile?: string | null;
@@ -22,7 +22,7 @@ export function resolveSessionAgentProfile(
 }
 
 export function isAgentSurfaceSession(session: SessionSurfaceLike | null | undefined): boolean {
-  return session?.lensOnly === true;
+  return session?.appServerControlOnly === true;
 }
 
 export function resolveSessionSurfaceMode(

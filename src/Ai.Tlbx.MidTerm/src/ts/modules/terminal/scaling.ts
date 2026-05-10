@@ -48,10 +48,17 @@ import { t } from '../i18n';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
 import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';
+import {
+  isMobileTerminalViewport,
+  observeMobileVerticalViewportChange,
+  rememberCurrentMobileViewportSnapshot,
+  setMobileVerticalStability,
+  shouldPreserveMobileTerminalRows,
+  syncMobileVerticalStableTerminals,
+} from './mobileVerticalStability';
 
 const SCALE_TOLERANCE = 0.97;
 const MAX_TRANSIENT_FIT_RETRIES = 2;
-
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 export { isTerminalViewingScrollback } from './scrollback';
 
@@ -677,24 +684,6 @@ function resizeTerminalToFit(
   }
 }
 
-function hasEditableElementFocus(): boolean {
-  const activeElement = document.activeElement as {
-    tagName?: string | null;
-    isContentEditable?: boolean | null;
-  } | null;
-  if (!activeElement || typeof activeElement.tagName !== 'string') {
-    return false;
-  }
-
-  const tagName = activeElement.tagName.toUpperCase();
-  return (
-    tagName === 'INPUT' ||
-    tagName === 'TEXTAREA' ||
-    tagName === 'SELECT' ||
-    activeElement.isContentEditable === true
-  );
-}
-
 function isSoftKeyboardVisible(): boolean {
   return document.body.classList.contains('keyboard-visible');
 }
@@ -737,8 +726,10 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
   }
 
   const { cols, rows, cellWidth, cellHeight } = fit;
-  resizeTerminalToFit(state, sessionId, cols, rows);
+  const rowsToApply = shouldPreserveMobileTerminalRows(state, cols) ? state.terminal.rows : rows;
+  resizeTerminalToFit(state, sessionId, cols, rowsToApply);
   applyTerminalScalingSync(state);
+  syncMobileVerticalStableTerminals();
 
   logResizeDiagnostics(
     'manual-resize',
@@ -750,7 +741,7 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     cellHeight,
     'existing-terminal',
     cols,
-    rows,
+    rowsToApply,
     state,
   );
   if (!isSoftKeyboardVisible()) {
@@ -787,13 +778,14 @@ function fitTerminalToContainerInternal(
   }
 
   const { cols, rows } = fit;
+  const rowsToApply = shouldPreserveMobileTerminalRows(state, cols) ? state.terminal.rows : rows;
 
   // Resize terminal and notify server
   try {
-    if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
-      state.terminal.resize(cols, rows);
+    if (state.terminal.cols !== cols || state.terminal.rows !== rowsToApply) {
+      state.terminal.resize(cols, rowsToApply);
       state.serverCols = cols;
-      state.serverRows = rows;
+      state.serverRows = rowsToApply;
       sendResize(sessionId, state.terminal.cols, state.terminal.rows);
     }
   } catch {
@@ -804,6 +796,7 @@ function fitTerminalToContainerInternal(
   clearTerminalScaling(state);
   const overlay = state.container.querySelector<HTMLElement>('.scaled-overlay');
   if (overlay) overlay.remove();
+  syncMobileVerticalStableTerminals();
 }
 
 /**
@@ -1157,6 +1150,8 @@ export function rescaleAllTerminalsImmediate(): void {
  * For layout panes, resizes to pane size. For standalone, resizes to screen.
  */
 function autoResizeAllTerminalsInternal(): void {
+  syncMobileVerticalStableTerminals();
+
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
@@ -1244,6 +1239,10 @@ function scheduleMainBrowserResize(): void {
   requestAnimationFrame(() => {
     _mainResizeScheduled = false;
     if (!$isMainBrowser.get()) return;
+    if (observeMobileVerticalViewportChange()) {
+      syncMobileVerticalStableTerminals();
+      return;
+    }
     autoResizeAllTerminalsImmediate();
   });
 }
@@ -1256,6 +1255,11 @@ function scheduleFooterReserveResize(): void {
   footerReserveResizeQueued = true;
   requestAnimationFrame(() => {
     footerReserveResizeQueued = false;
+    if (isMobileTerminalViewport()) {
+      setMobileVerticalStability(true);
+      return;
+    }
+
     if ($isMainBrowser.get()) {
       autoResizeAllTerminalsImmediate();
       return;
@@ -1298,6 +1302,11 @@ export function handleDockLayoutChange(): void {
   dockChangeScheduled = true;
   requestAnimationFrame(() => {
     dockChangeScheduled = false;
+    if (isMobileTerminalViewport()) {
+      setMobileVerticalStability(true);
+      return;
+    }
+
     if ($isMainBrowser.get()) {
       autoResizeAllTerminalsImmediate();
     } else {
@@ -1325,54 +1334,82 @@ function periodicResizeCheck(): void {
   const activeId = $activeSessionId.get();
 
   sessionTerminals.forEach((state, sessionId) => {
-    if (!state.opened) return;
-
-    if (isTerminalViewingScrollback(state)) {
-      applyTerminalScaling(sessionId, state);
-      return;
-    }
-
-    const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
-
-    // Skip standalone sessions that aren't active — dock layout in DOM
-    // reflects the active session's config, not theirs.
-    if (!layoutPane && sessionId !== activeId) return;
-
-    const container = layoutPane ?? dom.terminalsArea;
-    if (!container) return;
-
-    const termCols = state.terminal.cols;
-    const termRows = state.terminal.rows;
-    if (termCols <= 0 || termRows <= 0) return;
-
-    const optimal = calculateOptimalDimensionsForViewportWithMeasurementRecovery(
-      state,
-      container,
-      !!layoutPane,
-    );
-    if (!optimal) return;
-    const optimalCols = optimal.cols;
-    const optimalRows = optimal.rows;
-
-    if (termCols !== optimalCols || termRows !== optimalRows) {
-      const session = sessions[sessionId];
-      const name = session?.name ?? sessionId.substring(0, 8);
-      details.push(`${name}: ${termCols}×${termRows} → ${optimalCols}×${optimalRows}`);
-      try {
-        state.terminal.resize(optimalCols, optimalRows);
-        state.serverCols = optimalCols;
-        state.serverRows = optimalRows;
-        sendResize(sessionId, optimalCols, optimalRows);
-      } catch {
-        // terminal may be disposed
-      }
-      requestAnimationFrame(() => {
-        applyTerminalScalingSync(state);
-      });
-    }
+    const detail = applyPeriodicTerminalResizeCheck(state, sessionId, activeId, sessions);
+    if (detail) details.push(detail);
   });
 
   lastPeriodicCheckResult = details.length > 0 ? details.join('; ') : 'no change';
+}
+
+function applyPeriodicTerminalResizeCheck(
+  state: TerminalState,
+  sessionId: string,
+  activeId: string | null,
+  sessions: ReturnType<typeof $sessions.get>,
+): string | null {
+  if (!state.opened) return null;
+
+  if (isTerminalViewingScrollback(state)) {
+    applyTerminalScaling(sessionId, state);
+    return null;
+  }
+
+  const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
+  if (!layoutPane && sessionId !== activeId) return null;
+
+  const container = layoutPane ?? dom.terminalsArea;
+  if (!container) return null;
+
+  const termCols = state.terminal.cols;
+  const termRows = state.terminal.rows;
+  if (termCols <= 0 || termRows <= 0) return null;
+
+  const optimal = calculateOptimalDimensionsForViewportWithMeasurementRecovery(
+    state,
+    container,
+    !!layoutPane,
+  );
+  if (!optimal) return null;
+
+  return applyPeriodicTerminalResizeDiff(state, sessionId, sessions, optimal);
+}
+
+function applyPeriodicTerminalResizeDiff(
+  state: TerminalState,
+  sessionId: string,
+  sessions: ReturnType<typeof $sessions.get>,
+  optimal: { cols: number; rows: number },
+): string | null {
+  const termCols = state.terminal.cols;
+  const termRows = state.terminal.rows;
+  const optimalCols = optimal.cols;
+  const optimalRows = optimal.rows;
+
+  if (termCols === optimalCols && shouldPreserveMobileTerminalRows(state, optimalCols)) {
+    syncMobileVerticalStableTerminals();
+    return null;
+  }
+
+  if (termCols === optimalCols && termRows === optimalRows) {
+    return null;
+  }
+
+  const rowsToApply = shouldPreserveMobileTerminalRows(state, optimalCols) ? termRows : optimalRows;
+  try {
+    state.terminal.resize(optimalCols, rowsToApply);
+    state.serverCols = optimalCols;
+    state.serverRows = rowsToApply;
+    sendResize(sessionId, optimalCols, rowsToApply);
+  } catch {
+    // terminal may be disposed
+  }
+  requestAnimationFrame(() => {
+    applyTerminalScalingSync(state);
+  });
+
+  const session = sessions[sessionId];
+  const name = session?.name ?? sessionId.substring(0, 8);
+  return `${name}: ${termCols}×${termRows} → ${optimalCols}×${rowsToApply}`;
 }
 
 /**
@@ -1383,6 +1420,10 @@ function periodicResizeCheck(): void {
  */
 export function setupResizeObserver(): void {
   window.addEventListener('resize', () => {
+    if (observeMobileVerticalViewportChange()) {
+      return;
+    }
+
     if ($isMainBrowser.get()) {
       autoResizeAllTerminals();
     } else {
@@ -1414,6 +1455,7 @@ export function setupResizeObserver(): void {
   $isMainBrowser.subscribe((isMain) => {
     if (isMain && periodicResizeInterval === undefined) {
       requestAnimationFrame(() => {
+        rememberCurrentMobileViewportSnapshot();
         ensureMainBrowserContainerResizeObserver();
         autoResizeAllTerminalsImmediate();
       });
@@ -1425,72 +1467,4 @@ export function setupResizeObserver(): void {
       requestAnimationFrame(rescaleAllTerminalsImmediate);
     }
   });
-}
-
-/**
- * Set up visual viewport handling for mobile keyboard appearance.
- * Constrains the .terminal-page height to the visual viewport so the entire
- * flex layout (topbar, terminals, touch controller) fits above the keyboard.
- * Also toggles a 'keyboard-visible' class on body to hide UI chrome.
- */
-export function setupVisualViewport(): void {
-  if (!window.visualViewport) return;
-
-  const vv = window.visualViewport;
-  let lastHeight = 0;
-  let baselineHeight = Math.max(window.innerHeight, vv.height);
-  const KEYBOARD_RATIO_THRESHOLD = 0.88;
-  const KEYBOARD_PIXEL_THRESHOLD = 120;
-  const appEl = document.querySelector<HTMLElement>('.terminal-page');
-
-  const update = () => {
-    const vh = vv.height;
-    if (vh > baselineHeight) {
-      baselineHeight = vh;
-    }
-    if (Math.abs(vh - lastHeight) < 1) return;
-    lastHeight = vh;
-
-    if (appEl) {
-      appEl.style.height = `${vh}px`;
-      appEl.style.maxHeight = `${vh}px`;
-    }
-
-    // Lock root/body to visual viewport height to prevent dragging hidden
-    // off-screen space (common when soft keyboard is open in mobile PWAs).
-    document.documentElement.style.height = `${vh}px`;
-    document.documentElement.style.maxHeight = `${vh}px`;
-    document.documentElement.style.setProperty('--midterm-visual-viewport-height', `${vh}px`);
-    document.documentElement.style.setProperty(
-      '--midterm-visual-viewport-offset-top',
-      `${vv.offsetTop}px`,
-    );
-    document.body.style.height = `${vh}px`;
-    document.body.style.maxHeight = `${vh}px`;
-
-    if (vv.offsetTop !== 0 && !hasEditableElementFocus()) {
-      window.scrollTo(0, 0);
-    }
-
-    const heightDrop = baselineHeight - vh;
-    document.documentElement.style.setProperty(
-      '--midterm-soft-keyboard-height',
-      `${Math.max(0, heightDrop)}px`,
-    );
-    const kbVisible =
-      vh < baselineHeight * KEYBOARD_RATIO_THRESHOLD && heightDrop >= KEYBOARD_PIXEL_THRESHOLD;
-    if (kbVisible !== document.body.classList.contains('keyboard-visible')) {
-      document.body.classList.toggle('keyboard-visible', kbVisible);
-    }
-
-    if ($isMainBrowser.get()) {
-      autoResizeAllTerminalsImmediate();
-    } else {
-      rescaleAllTerminals();
-    }
-  };
-
-  vv.addEventListener('resize', update);
-  vv.addEventListener('scroll', update);
-  update();
 }

@@ -34,8 +34,8 @@ public static class Program
                 return 1;
             }
 
-            var endpoint = LensHostEndpoint.GetSessionEndpoint(instanceId, sessionId, Environment.ProcessId);
-            await using var ipcServer = new LensAgentHostServer(syntheticProvider, instanceId, ownerToken);
+            var endpoint = AppServerControlHostEndpoint.GetSessionEndpoint(instanceId, sessionId, Environment.ProcessId);
+            await using var ipcServer = new AppServerControlAgentHostServer(syntheticProvider, instanceId, ownerToken);
             await ipcServer.RunIpcAsync(endpoint).ConfigureAwait(false);
             return 0;
         }
@@ -46,7 +46,7 @@ public static class Program
             return 1;
         }
 
-        await using var server = new LensAgentHostServer(syntheticProvider);
+        await using var server = new AppServerControlAgentHostServer(syntheticProvider);
         await server.RunStdioAsync().ConfigureAwait(false);
         return 0;
     }

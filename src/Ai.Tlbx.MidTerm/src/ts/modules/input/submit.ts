@@ -1,12 +1,19 @@
 import { sendInput } from '../comms';
-import { createLensTurnRequest, isLensActiveSession, submitQueuedLensTurn } from '../lens/input';
+import {
+  createAppServerControlTurnRequest,
+  isAppServerControlActiveSession,
+  submitQueuedAppServerControlTurn,
+} from '../appServerControl/input';
 import { pasteToTerminal } from '../terminal';
 
 const SESSION_TEXT_SUBMIT_DELAY_MS = 200;
 
 export async function submitSessionText(sessionId: string, text: string): Promise<void> {
-  if (isLensActiveSession(sessionId)) {
-    await submitQueuedLensTurn(sessionId, createLensTurnRequest(text, [], sessionId));
+  if (isAppServerControlActiveSession(sessionId)) {
+    await submitQueuedAppServerControlTurn(
+      sessionId,
+      createAppServerControlTurnRequest(text, [], sessionId),
+    );
     return;
   }
 

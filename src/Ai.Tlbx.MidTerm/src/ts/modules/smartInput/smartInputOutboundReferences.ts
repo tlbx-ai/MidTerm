@@ -1,30 +1,33 @@
 import type {
-  LensAttachmentReference,
-  LensTerminalReplayStep,
-  LensTurnRequest,
+  AppServerControlAttachmentReference,
+  AppServerControlTerminalReplayStep,
+  AppServerControlTurnRequest,
 } from '../../api/types';
-import type { LensComposerDraftAttachment } from './lensAttachments';
-import { buildLensComposerAttachmentFileUrl, toLensAttachmentReference } from './lensAttachments';
+import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
+import {
+  buildAppServerControlComposerAttachmentFileUrl,
+  toAppServerControlAttachmentReference,
+} from './appServerControlAttachments';
 import type { SmartInputComposerDraft, SmartInputComposerPart } from './smartInputComposerDraft';
 
 export interface PrepareSmartInputOutboundPromptArgs {
   sessionId: string;
   draft: SmartInputComposerDraft;
-  attachments: readonly LensComposerDraftAttachment[];
+  attachments: readonly AppServerControlComposerDraftAttachment[];
   uploadFailureMessage: string;
   attachmentReadFailureMessage: string;
   uploadFile: (sessionId: string, file: File) => Promise<string | null>;
 }
 
 export interface PreparedSmartInputOutboundPrompt {
-  attachments: LensAttachmentReference[];
+  attachments: AppServerControlAttachmentReference[];
   text: string;
 }
 
 export interface PrepareSmartInputTerminalTurnArgs {
   sessionId: string;
   draft: SmartInputComposerDraft;
-  attachments: readonly LensComposerDraftAttachment[];
+  attachments: readonly AppServerControlComposerDraftAttachment[];
   bracketedPasteModeEnabled: boolean;
   uploadFailureMessage: string;
   uploadFile: (sessionId: string, file: File) => Promise<string | null>;
@@ -43,7 +46,9 @@ export async function prepareSmartInputOutboundPrompt(
 
   const attachments = args.attachments
     .filter((attachment) => attachment.referenceKind !== 'text')
-    .map((attachment, index) => toLensAttachmentReference(attachment, uploadedPaths[index] ?? ''));
+    .map((attachment, index) =>
+      toAppServerControlAttachmentReference(attachment, uploadedPaths[index] ?? ''),
+    );
 
   const referencedTextBlocks: string[] = [];
   const seenExtraReferenceIds = new Set<string>();
@@ -72,11 +77,11 @@ export async function prepareSmartInputOutboundPrompt(
 
 export async function prepareSmartInputTerminalTurn(
   args: PrepareSmartInputTerminalTurnArgs,
-): Promise<LensTurnRequest> {
+): Promise<AppServerControlTurnRequest> {
   const uploadedPaths = await Promise.all(
     args.attachments.map((attachment) => ensureUploadedAttachmentPath(args, attachment)),
   );
-  const attachmentById = new Map<string, LensComposerDraftAttachment>();
+  const attachmentById = new Map<string, AppServerControlComposerDraftAttachment>();
   const attachmentPathById = new Map<string, string>();
   args.attachments.forEach((attachment, index) => {
     attachmentById.set(attachment.id, attachment);
@@ -84,7 +89,7 @@ export async function prepareSmartInputTerminalTurn(
   });
 
   const referencedAttachmentIds = new Set<string>();
-  const replay: LensTerminalReplayStep[] = [];
+  const replay: AppServerControlTerminalReplayStep[] = [];
   const previewParts: string[] = [];
 
   for (const part of args.draft.parts) {
@@ -139,7 +144,7 @@ export async function prepareSmartInputTerminalTurn(
 
 async function ensureUploadedAttachmentPath(
   args: PrepareSmartInputOutboundPromptArgs | PrepareSmartInputTerminalTurnArgs,
-  attachment: LensComposerDraftAttachment,
+  attachment: AppServerControlComposerDraftAttachment,
 ): Promise<string> {
   if (attachment.uploadedPath) {
     return attachment.uploadedPath;
@@ -194,12 +199,15 @@ function buildTextReferenceBlock(token: string, text: string): string {
   return `${token}\n${text}`;
 }
 
-function getAttachmentReferenceToken(attachment: LensComposerDraftAttachment): string {
+function getAttachmentReferenceToken(attachment: AppServerControlComposerDraftAttachment): string {
   const label = attachment.referenceLabel?.trim() || attachment.displayName.trim() || 'Attachment';
   return `[${label}]`;
 }
 
-function appendTerminalReplayText(replay: LensTerminalReplayStep[], text: string): void {
+function appendTerminalReplayText(
+  replay: AppServerControlTerminalReplayStep[],
+  text: string,
+): void {
   if (!text) {
     return;
   }
@@ -217,8 +225,8 @@ function appendTerminalReplayText(replay: LensTerminalReplayStep[], text: string
 }
 
 function appendTerminalReplayAttachment(
-  replay: LensTerminalReplayStep[],
-  attachment: LensComposerDraftAttachment,
+  replay: AppServerControlTerminalReplayStep[],
+  attachment: AppServerControlComposerDraftAttachment,
   path: string,
   bracketedPasteModeEnabled: boolean,
 ): void {
@@ -248,7 +256,7 @@ function appendTerminalReplayAttachment(
 
 async function loadAttachmentTextContent(
   args: PrepareSmartInputOutboundPromptArgs,
-  attachment: LensComposerDraftAttachment,
+  attachment: AppServerControlComposerDraftAttachment,
   path: string,
 ): Promise<string> {
   if (attachment.file) {
@@ -259,7 +267,9 @@ async function loadAttachmentTextContent(
     throw new Error(args.attachmentReadFailureMessage);
   }
 
-  const response = await fetch(buildLensComposerAttachmentFileUrl(args.sessionId, path));
+  const response = await fetch(
+    buildAppServerControlComposerAttachmentFileUrl(args.sessionId, path),
+  );
   if (!response.ok) {
     throw new Error(args.attachmentReadFailureMessage);
   }

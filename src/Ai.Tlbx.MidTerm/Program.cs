@@ -337,7 +337,7 @@ public class Program
         ShareEndpoints.MapShareEndpoints(app, shareGrantService, sessionManager, settingsService);
         var clipboardService = app.Services.GetRequiredService<ClipboardService>();
         var webPreviewService = app.Services.GetRequiredService<WebPreviewService>();
-        var lensRuntime = app.Services.GetRequiredService<SessionLensRuntimeService>();
+        var appServerControlRuntime = app.Services.GetRequiredService<SessionAppServerControlRuntimeService>();
         var codexHandoff = app.Services.GetRequiredService<SessionCodexHandoffService>();
         var providerResumeCatalog = app.Services.GetRequiredService<ProviderResumeCatalogService>();
         var agentVibe = app.Services.GetRequiredService<SessionAgentVibeService>();
@@ -352,7 +352,7 @@ public class Program
             sessionTelemetry,
             agentFeed,
             sessionSupervisor,
-            lensRuntime,
+            appServerControlRuntime,
             codexHandoff,
             providerResumeCatalog,
             agentVibe,
@@ -364,7 +364,7 @@ public class Program
             sessionManager,
             agentFeed,
             sessionSupervisor,
-            lensRuntime,
+            appServerControlRuntime,
             workerSessionRegistry);
         SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
@@ -398,7 +398,7 @@ public class Program
             sessionManager,
             muxManager,
             sessionSupervisor,
-            lensRuntime,
+            appServerControlRuntime,
             updateService,
             settingsService,
             authService,
@@ -445,7 +445,7 @@ public class Program
         managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         tmuxLayoutBridge?.UpdateLayout(layoutSnapshot.Root);
-        await lensRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
+        await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
         sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 
         async Task CleanupAsync()

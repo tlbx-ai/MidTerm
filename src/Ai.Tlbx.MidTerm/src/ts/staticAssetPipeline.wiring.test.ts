@@ -10,10 +10,7 @@ const projectRoot = path.resolve(__dirname, '../..');
 const frontendBuildSource = readFileSync(path.join(projectRoot, 'frontend-build.ps1'), 'utf8');
 const projectSource = readFileSync(path.join(projectRoot, 'Ai.Tlbx.MidTerm.csproj'), 'utf8');
 const compressedStaticFilesSource = readFileSync(
-  path.join(
-    projectRoot,
-    'Services/StaticFiles/CompressedStaticFilesMiddleware.cs',
-  ),
+  path.join(projectRoot, 'Services/StaticFiles/CompressedStaticFilesMiddleware.cs'),
   'utf8',
 );
 const indexHtml = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');

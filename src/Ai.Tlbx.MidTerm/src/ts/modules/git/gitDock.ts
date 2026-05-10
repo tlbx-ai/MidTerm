@@ -27,6 +27,7 @@ const DOCK_WIDTH_KEY = 'mt-git-dock-width';
 
 let activeUnsub: (() => void) | null = null;
 let currentDockSessionId: string | null = null;
+let currentDockRepoRoot: string | undefined;
 
 function closeFileViewerDockIfOpen(): void {
   if (!$fileViewerDocked.get()) return;
@@ -43,21 +44,26 @@ function closeCommandsDockIfOpen(): void {
   }
 }
 
-export function toggleGitDock(sessionId: string): void {
+export function toggleGitDock(sessionId: string, repoRoot?: string): void {
   if ($gitPanelDocked.get()) {
-    closeGitDock();
+    if (currentDockSessionId === sessionId && currentDockRepoRoot === repoRoot) {
+      closeGitDock();
+    } else {
+      openGitDock(sessionId, repoRoot);
+    }
   } else {
-    openGitDock(sessionId);
+    openGitDock(sessionId, repoRoot);
   }
 }
 
-export function openGitDock(sessionId: string): void {
+export function openGitDock(sessionId: string, repoRoot?: string): void {
   closeFileViewerDockIfOpen();
   closeCommandsDockIfOpen();
 
   $gitPanelDocked.set(true);
   setActionButtonActive('git', true);
   currentDockSessionId = sessionId;
+  currentDockRepoRoot = repoRoot;
 
   const dockPanel = document.getElementById('git-dock');
   const app = document.getElementById('app');
@@ -78,7 +84,7 @@ export function openGitDock(sessionId: string): void {
   if (body) {
     body.innerHTML = '';
     subscribeToSession(sessionId);
-    void renderGitPanelInto(body, sessionId);
+    void renderGitPanelInto(body, sessionId, repoRoot);
   }
 
   adjustInnerDockPositions();
@@ -89,6 +95,7 @@ export function openGitDock(sessionId: string): void {
   activeUnsub = $activeSessionId.subscribe((newId) => {
     if (!$gitPanelDocked.get() || !newId) return;
     currentDockSessionId = newId;
+    currentDockRepoRoot = undefined;
     const dockBody = document
       .getElementById('git-dock')
       ?.querySelector('.git-dock-body') as HTMLElement | null;
@@ -102,15 +109,20 @@ export function openGitDock(sessionId: string): void {
   log.info(() => 'Git dock opened');
 }
 
-export async function openGitCommitDock(sessionId: string, hash: string): Promise<void> {
-  openGitDock(sessionId);
-  await showCommitInGitPanel(sessionId, hash);
+export async function openGitCommitDock(
+  sessionId: string,
+  hash: string,
+  repoRoot?: string,
+): Promise<void> {
+  openGitDock(sessionId, repoRoot);
+  await showCommitInGitPanel(sessionId, hash, repoRoot);
 }
 
 export function closeGitDock(): void {
   activeUnsub?.();
   activeUnsub = null;
   currentDockSessionId = null;
+  currentDockRepoRoot = undefined;
 
   $gitPanelDocked.set(false);
   setActionButtonActive('git', false);
@@ -208,7 +220,7 @@ export function setupGitDockResize(): void {
 
   refreshBtn?.addEventListener('click', () => {
     if (!$gitPanelDocked.get() || !currentDockSessionId) return;
-    void refreshGitPanel(currentDockSessionId);
+    void refreshGitPanel(currentDockSessionId, currentDockRepoRoot);
   });
 
   closeBtn?.addEventListener('click', () => {

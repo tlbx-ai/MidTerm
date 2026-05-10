@@ -31,9 +31,7 @@ describe('WebGL transparency vendor patch', () => {
   });
 
   it('premultiplies transparent rectangle colors for Chrome canvas compositing', () => {
-    expect(webglPatch).toContain(
-      'outColor = vec4(v_color.rgb * v_color.a, v_color.a);',
-    );
+    expect(webglPatch).toContain('outColor = vec4(v_color.rgb * v_color.a, v_color.a);');
   });
 
   it('keeps transparent glyph atlas edges alpha-correct over transparent cells', () => {

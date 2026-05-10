@@ -89,7 +89,10 @@ import {
   toggleHistoryDropdown,
   type LaunchEntry,
 } from './modules/history';
-import { isLensHistoryEntry, normalizeHistoryLensProfile } from './modules/history/launchMode';
+import {
+  isAppServerControlHistoryEntry,
+  normalizeHistoryAppServerControlProfile,
+} from './modules/history/launchMode';
 import { getForegroundInfo, addProcessStateListener } from './modules/process';
 import { buildReplayCommand } from './modules/sidebar/processDisplay';
 import {
@@ -110,11 +113,15 @@ import {
   initLayoutPersistence,
   getLayoutRoot,
 } from './modules/layout';
-import { initSessionTabs, setSessionLensAvailability, switchTab } from './modules/sessionTabs';
+import {
+  initSessionTabs,
+  setSessionAppServerControlAvailability,
+  switchTab,
+} from './modules/sessionTabs';
 import {
   initAgentView,
-  getLensDebugScenarioNames,
-  showLensDebugScenario,
+  getAppServerControlDebugScenarioNames,
+  showAppServerControlDebugScenario,
 } from './modules/agentView';
 import {
   activateMobileTab,
@@ -148,7 +155,7 @@ import {
   showSharedSessionError,
 } from './modules/share';
 import { initDockState } from './modules/dockState';
-import { initSmartInput, setLensResumeConversationHandler } from './modules/smartInput';
+import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
@@ -258,18 +265,18 @@ window.mmDebug = {
       return !getLayoutRoot()?.classList.contains('hidden');
     },
   },
-  lens: {
+  appServerControl: {
     get scenarios() {
-      return [...getLensDebugScenarioNames()];
+      return [...getAppServerControlDebugScenarioNames()];
     },
     async showScenario(
       sessionId: string,
       scenario: 'mixed' | 'tables' | 'long' | 'workflow' = 'mixed',
     ): Promise<boolean> {
-      setSessionLensAvailability(sessionId, true);
+      setSessionAppServerControlAvailability(sessionId, true);
       switchTab(sessionId, 'agent');
       await Promise.resolve();
-      return showLensDebugScenario(sessionId, scenario);
+      return showAppServerControlDebugScenario(sessionId, scenario);
     },
   },
 };
@@ -337,7 +344,7 @@ async function init(): Promise<void> {
       setSession(session);
       newlyCreatedSessions.add(session.id);
       if (surface !== 'terminal') {
-        setSessionLensAvailability(session.id, true);
+        setSessionAppServerControlAvailability(session.id, true);
       }
 
       selectSession(session.id);
@@ -705,10 +712,10 @@ function createPendingSession(cols: number, rows: number): string {
     surface: null,
     isAdHoc: true,
     agentControlled: false,
-    lensOnly: false,
+    appServerControlOnly: false,
     profileHint: null,
-    lensResumeThreadId: null,
-    hasLensHistory: false,
+    appServerControlResumeThreadId: null,
+    hasAppServerControlHistory: false,
     agentAttachPoint: null,
   };
 
@@ -740,8 +747,18 @@ function resolveLauncherShell(): ShellType | null {
   return 'Bash';
 }
 
-function isLensOnlySession(session: Session | null | undefined): boolean {
-  return session?.lensOnly === true;
+function isAppServerControlOnlySession(session: Session | null | undefined): boolean {
+  return session?.appServerControlOnly === true;
+}
+
+function activateNewAppServerControlSession(session: Session): void {
+  setSession(session);
+  newlyCreatedSessions.add(session.id);
+  setSessionAppServerControlAvailability(session.id, true);
+  selectSession(session.id);
+  requestAnimationFrame(() => {
+    switchTab(session.id, 'agent');
+  });
 }
 
 const {
@@ -755,13 +772,13 @@ const {
   toggleAgentControl,
 } = createSessionActionHandlers({
   animateBookmarkSaveSuccess,
-  buildLensHistoryDedupeKey,
+  buildAppServerControlHistoryDedupeKey,
   closeMobileActionsMenu,
   getBookmarkSurfaceType,
-  isLensOnlySession,
+  isAppServerControlOnlySession,
 });
-setLensResumeConversationHandler((args) => {
-  void resumeLensConversationFromCommandBay(args);
+setAppServerControlResumeConversationHandler((args) => {
+  void resumeAppServerControlConversationFromCommandBay(args);
 });
 
 async function createSession(): Promise<void> {
@@ -775,9 +792,7 @@ async function createSession(): Promise<void> {
     return;
   }
 
-  if (!selection) {
-    return;
-  }
+  if (!selection) return;
 
   const { cols, rows } = await resolveNewSessionDimensions();
   const tempId = createPendingSession(cols, rows);
@@ -823,9 +838,7 @@ async function createSession(): Promise<void> {
     apiCreateSession(createSessionRequest)
       .then(({ data }) => {
         clearPendingSession(tempId);
-        if (!data) {
-          return;
-        }
+        if (!data) return;
 
         setSession(data);
         newlyCreatedSessions.add(data.id);
@@ -845,7 +858,7 @@ async function createSession(): Promise<void> {
     injectGuidance: true,
     profile: selection.provider,
     resumeThreadId: selection.resumeThreadId ?? null,
-    lensOnly: true,
+    appServerControlOnly: true,
     launchDelayMs: 0,
     slashCommands: [],
     slashCommandDelayMs: 350,
@@ -857,13 +870,7 @@ async function createSession(): Promise<void> {
         return;
       }
 
-      setSession(session);
-      newlyCreatedSessions.add(session.id);
-      setSessionLensAvailability(session.id, true);
-      selectSession(session.id);
-      requestAnimationFrame(() => {
-        switchTab(session.id, 'agent');
-      });
+      activateNewAppServerControlSession(session);
     })
     .catch((e: unknown) => {
       clearPendingSession(tempId);
@@ -881,7 +888,7 @@ async function spawnFromHistory(
   closeSidebar();
 
   if (machineId) {
-    if (isLensHistoryEntry(entry)) {
+    if (isAppServerControlHistoryEntry(entry)) {
       void showAlert(t('sessionLauncher.remoteTerminalOnly'), {
         title: t('sessionLauncher.createFailed'),
       });
@@ -909,8 +916,8 @@ async function spawnFromHistory(
     return;
   }
 
-  if (isLensHistoryEntry(entry)) {
-    const profile = normalizeHistoryLensProfile(entry.profile);
+  if (isAppServerControlHistoryEntry(entry)) {
+    const profile = normalizeHistoryAppServerControlProfile(entry.profile);
     if (profile) {
       bootstrapWorker({
         cols,
@@ -920,7 +927,7 @@ async function spawnFromHistory(
         agentControlled: false,
         injectGuidance: true,
         profile,
-        lensOnly: true,
+        appServerControlOnly: true,
         launchDelayMs: 0,
         slashCommands: [],
         slashCommandDelayMs: 350,
@@ -931,17 +938,11 @@ async function spawnFromHistory(
             return;
           }
 
-          setSession(session);
-          newlyCreatedSessions.add(session.id);
-          setSessionLensAvailability(session.id, true);
-          selectSession(session.id);
-          requestAnimationFrame(() => {
-            switchTab(session.id, 'agent');
-          });
+          activateNewAppServerControlSession(session);
           attachBookmarkToSession(session.id, entry.id, entry.label ?? null, entry.notes ?? null);
         })
         .catch((e: unknown) => {
-          log.error(() => `Failed to spawn lens bookmark: ${String(e)}`);
+          log.error(() => `Failed to spawn appServerControl bookmark: ${String(e)}`);
           showSessionLaunchFailure(e);
         });
       return;
@@ -974,24 +975,20 @@ async function spawnFromHistory(
     });
 }
 
-async function resumeLensConversationFromCommandBay(args: {
+async function resumeAppServerControlConversationFromCommandBay(args: {
   sessionId: string;
   provider: ResumeProvider;
   workingDirectory: string;
 }): Promise<void> {
   const sourceSession = getSession(args.sessionId);
-  if (!sourceSession) {
-    return;
-  }
+  if (!sourceSession) return;
 
   const candidate = await openProviderResumePicker({
     provider: args.provider,
     workingDirectory: args.workingDirectory,
     initialScope: 'current',
   });
-  if (!candidate) {
-    return;
-  }
+  if (!candidate) return;
 
   const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
   const tempId = createPendingSession(cols, rows);
@@ -1008,7 +1005,7 @@ async function resumeLensConversationFromCommandBay(args: {
     spaceId: sourceSession.spaceId ?? null,
     workspacePath: sourceSession.workspacePath ?? args.workingDirectory,
     surface: args.provider,
-    lensOnly: true,
+    appServerControlOnly: true,
     launchDelayMs: 0,
     slashCommands: [],
     slashCommandDelayMs: 350,
@@ -1020,13 +1017,7 @@ async function resumeLensConversationFromCommandBay(args: {
         return;
       }
 
-      setSession(session);
-      newlyCreatedSessions.add(session.id);
-      setSessionLensAvailability(session.id, true);
-      selectSession(session.id);
-      requestAnimationFrame(() => {
-        switchTab(session.id, 'agent');
-      });
+      activateNewAppServerControlSession(session);
       attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
     })
     .catch((e: unknown) => {
@@ -1036,13 +1027,16 @@ async function resumeLensConversationFromCommandBay(args: {
     });
 }
 
-function buildLensHistoryDedupeKey(profile: 'codex' | 'claude', workingDirectory: string): string {
+function buildAppServerControlHistoryDedupeKey(
+  profile: 'codex' | 'claude',
+  workingDirectory: string,
+): string {
   const normalizedPath = workingDirectory
     .replace(/\\/g, '/')
     .trim()
     .replace(/\/+$/, '')
     .toLowerCase();
-  return `lens|${profile}|${normalizedPath}`;
+  return `appServerControl|${profile}|${normalizedPath}`;
 }
 
 // =============================================================================

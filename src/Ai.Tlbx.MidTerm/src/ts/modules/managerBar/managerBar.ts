@@ -57,6 +57,13 @@ let openMenuAnchorEl: HTMLButtonElement | null = null;
 let overflowActionIds: string[] = [];
 let overflowProxyAnchorEl: HTMLElement | null = null;
 let activeOverflowAnchorEl: HTMLElement | null = null;
+
+interface ViewportBounds {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
 let managerBarResizeObserver: ResizeObserver | null = null;
 let overflowLayoutFrameId: number | null = null;
 
@@ -559,7 +566,7 @@ function toggleOverflowMenu(anchor: HTMLElement | null = null): void {
   if (!overflowBtn || !overflowPopoverEl) {
     return;
   }
-  if (overflowActionIds.length === 0 && !(barEl && isMobileLensSurface(barEl))) {
+  if (overflowActionIds.length === 0 && !(barEl && isMobileAppServerControlSurface(barEl))) {
     return;
   }
 
@@ -582,23 +589,25 @@ function positionManagerActionMenu(): void {
     return;
   }
 
+  const viewport = getVisualViewportBounds();
   const viewportPadding = 12;
   const gap = 8;
   const triggerRect = openMenuAnchorEl.getBoundingClientRect();
   const popoverRect = menuPopoverEl.getBoundingClientRect();
-  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
-  const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
+  const availableBelow = viewport.bottom - triggerRect.bottom - viewportPadding - gap;
+  const availableAbove = triggerRect.top - viewport.top - viewportPadding - gap;
+  const openUp = availableBelow < popoverRect.height && availableAbove > availableBelow;
 
   let left = triggerRect.right - popoverRect.width;
   left = Math.max(
-    viewportPadding,
-    Math.min(left, window.innerWidth - viewportPadding - popoverRect.width),
+    viewport.left + viewportPadding,
+    Math.min(left, viewport.right - viewportPadding - popoverRect.width),
   );
 
   let top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
   top = Math.max(
-    viewportPadding,
-    Math.min(top, window.innerHeight - viewportPadding - popoverRect.height),
+    viewport.top + viewportPadding,
+    Math.min(top, viewport.bottom - viewportPadding - popoverRect.height),
   );
 
   menuPopoverEl.style.left = `${String(Math.round(left))}px`;
@@ -611,27 +620,43 @@ function positionManagerOverflowMenu(): void {
     return;
   }
 
+  const viewport = getVisualViewportBounds();
   const viewportPadding = 12;
   const gap = 8;
   const triggerRect = anchorEl.getBoundingClientRect();
   const popoverRect = overflowPopoverEl.getBoundingClientRect();
-  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
-  const openUp = availableBelow < popoverRect.height && triggerRect.top > availableBelow;
+  const availableBelow = viewport.bottom - triggerRect.bottom - viewportPadding - gap;
+  const availableAbove = triggerRect.top - viewport.top - viewportPadding - gap;
+  const openUp = availableBelow < popoverRect.height && availableAbove > availableBelow;
 
   let left = triggerRect.right - popoverRect.width;
   left = Math.max(
-    viewportPadding,
-    Math.min(left, window.innerWidth - viewportPadding - popoverRect.width),
+    viewport.left + viewportPadding,
+    Math.min(left, viewport.right - viewportPadding - popoverRect.width),
   );
 
   let top = openUp ? triggerRect.top - popoverRect.height - gap : triggerRect.bottom + gap;
   top = Math.max(
-    viewportPadding,
-    Math.min(top, window.innerHeight - viewportPadding - popoverRect.height),
+    viewport.top + viewportPadding,
+    Math.min(top, viewport.bottom - viewportPadding - popoverRect.height),
   );
 
   overflowPopoverEl.style.left = `${String(Math.round(left))}px`;
   overflowPopoverEl.style.top = `${String(Math.round(top))}px`;
+}
+
+function getVisualViewportBounds(): ViewportBounds {
+  const vv = window.visualViewport;
+  const top = vv?.offsetTop ?? 0;
+  const left = vv?.offsetLeft ?? 0;
+  const width = vv?.width ?? window.innerWidth;
+  const height = vv?.height ?? window.innerHeight;
+  return {
+    top,
+    right: left + width,
+    bottom: top + height,
+    left,
+  };
 }
 
 function resolveCurrentOverflowAnchor(): HTMLElement | null {
@@ -691,7 +716,7 @@ function renderOverflowMenuItems(): void {
     overflowPopoverEl.appendChild(row);
   }
 
-  if (barEl && isMobileLensSurface(barEl)) {
+  if (barEl && isMobileAppServerControlSurface(barEl)) {
     const addItem = document.createElement('button');
     addItem.type = 'button';
     addItem.className = 'manager-bar-action-popover-btn manager-bar-overflow-item';
@@ -731,13 +756,13 @@ function syncOverflowedButtons(): void {
     return;
   }
 
-  const mobileLens = isMobileLensSurface(managerBar);
-  addButton.classList.toggle('hidden', mobileLens);
+  const mobileAppServerControl = isMobileAppServerControlSurface(managerBar);
+  addButton.classList.toggle('hidden', mobileAppServerControl);
 
   const buttonElements = [...buttonStrip.querySelectorAll<HTMLElement>('.manager-btn')];
   if (buttonElements.length === 0) {
     resetOverflowLayoutState(buttonStrip, overflowButton);
-    if (mobileLens) {
+    if (mobileAppServerControl) {
       overflowButton.removeAttribute('hidden');
     }
     return;
@@ -813,9 +838,11 @@ function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolea
   return footerDock?.dataset.device === 'mobile';
 }
 
-function isMobileLensSurface(managerBar: HTMLElement): boolean {
+function isMobileAppServerControlSurface(managerBar: HTMLElement): boolean {
   const footerDock = managerBar.closest<HTMLElement>('.adaptive-footer-dock');
-  return footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'lens';
+  return (
+    footerDock?.dataset.device === 'mobile' && footerDock.dataset.surface === 'appServerControl'
+  );
 }
 
 function collapseManagerButtonsToOverflow(
@@ -1054,7 +1081,7 @@ function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {
 }
 
 function usesTurnQueueForSession(sessionId: string): boolean {
-  return $sessions.get()[sessionId]?.lensOnly === true;
+  return $sessions.get()[sessionId]?.appServerControlOnly === true;
 }
 
 function openActionModal(existing?: NormalizedManagerButton): void {

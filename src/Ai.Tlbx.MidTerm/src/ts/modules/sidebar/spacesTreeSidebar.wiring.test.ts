@@ -94,7 +94,7 @@ describe('spacesTreeSidebar wiring', () => {
 
   it('selects the session when notes are activated', () => {
     expect(source).toContain(
-      "callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });",
+      'callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });',
     );
     expect(source).toContain("textarea.addEventListener('focus'");
     expect(source).toContain('toggleSessionNotes(entry.id)');
@@ -115,5 +115,15 @@ describe('spacesTreeSidebar wiring', () => {
       'function canReorderSidebarSession(entry: SidebarSessionRef, reorderScope: string): boolean',
     );
     expect(source).toContain("reorderScope !== ''");
+  });
+
+  it('keeps the active spaces sidebar wired to layout detach actions', () => {
+    expect(source).toContain(
+      "import { isSessionInLayout, undockSession } from '../layout/layoutStore'",
+    );
+    expect(source).toContain("classNames.push('in-layout')");
+    expect(source).toContain("undockButton.className = 'session-undock'");
+    expect(source).toContain('undockSession(entry.id)');
+    expect(source).toContain("t('session.removeFromLayout')");
   });
 });

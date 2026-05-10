@@ -236,7 +236,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 ### 5. Session Bar, Files, Git, Commands
 
 - `F203` Each session gets its own wrapper and tab bar.
-- `F204` The session bar exposes Terminal and Files tabs, and can surface an experimental Lens tab for supported agent sessions while Lens remains dev-gated.
+- `F204` The session bar exposes Terminal and Files tabs, and can surface an experimental Agent Controller Session tab for supported agent sessions while Agent Controller Session remains dev-gated.
 - `F205` The session bar shows the foreground cwd.
 - `F206` Clicking the cwd copies it to the clipboard.
 - `F207` The session bar includes a web preview action.
@@ -303,9 +303,9 @@ This is the canonical feature sweep for the current codebase. The coverage order
 
 ### 7. Smart Input, Voice, Touch, Mobile
 
-- `F263` Smart Input can fully replace direct terminal keyboard focus, and Lens reuses that same docked infrastructure as its in-conversation composer lane.
-- `F264` Smart Input can coexist with direct terminal keyboard focus in both mode, but Lens keeps a single composer path so conversation turns do not split across two inputs.
-- `F264a` Terminal and Lens now share one adaptive active-session footer dock instead of separate smart-input and manager bars.
+- `F263` Smart Input can fully replace direct terminal keyboard focus, and Agent Controller Session reuses that same docked infrastructure as its in-conversation composer lane.
+- `F264` Smart Input can coexist with direct terminal keyboard focus in both mode, but Agent Controller Session keeps a single composer path so conversation turns do not split across two inputs.
+- `F264a` Terminal and Agent Controller Session now share one adaptive active-session footer dock instead of separate smart-input and manager bars.
 - `F265` Smart Input keeps a per-session draft buffer.
 - `F266` Switching active sessions preserves and restores Smart Input drafts.
 - `F267` Smart Input auto-grows its textarea up to one base line plus seven upward overlay lines, then falls back to internal scrolling.
@@ -324,7 +324,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F279` Smart Input can embed the touch controller as a second row.
 - `F280` The embedded touch-controller row can be expanded or collapsed.
 - `F281` Touch-controller expansion state persists in `localStorage`.
-- `F281a` Mobile Lens surfaces keep media actions explicit in the dock while mobile Terminal keeps terminal control buttons in the dock context row instead of on desktop.
+- `F281a` Mobile Agent Controller Session surfaces keep media actions explicit in the dock while mobile Terminal keeps terminal control buttons in the dock context row instead of on desktop.
 - `F282` Smart Input state is removed when a session closes.
 - `F283` Voice support checks MidTerm.Voice availability before enabling controls.
 - `F284` Voice support can populate provider and voice dropdowns from server health data.

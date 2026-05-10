@@ -7,10 +7,7 @@ function createSettings(
   partial: Partial<
     Pick<
       MidTermSettingsPublic,
-      | 'terminalTransparency'
-      | 'terminalCellBackgroundTransparency'
-      | 'uiTransparency'
-      | 'useWebGL'
+      'terminalTransparency' | 'terminalCellBackgroundTransparency' | 'uiTransparency' | 'useWebGL'
     >
   >,
 ): MidTermSettingsPublic {

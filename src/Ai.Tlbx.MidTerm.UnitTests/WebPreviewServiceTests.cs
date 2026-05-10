@@ -1,5 +1,6 @@
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using System.Net;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -65,6 +66,24 @@ public class WebPreviewServiceTests
         Assert.NotNull(header);
         Assert.Contains("theme=dark", header, StringComparison.Ordinal);
         Assert.Contains("session=abc123", header, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StoreResponseCookies_CapturesSetCookieForForwardedRequests()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", null, "https://example.com/app"));
+        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.TryAddWithoutValidation("Set-Cookie", "session=abc123; Path=/app; HttpOnly");
+
+        service.StoreResponseCookies(routeKey, new Uri("https://example.com/app/login"), response);
+
+        var forwarded = service.GetForwardedCookieHeader(routeKey, new Uri("https://example.com/app/api"));
+        var browserCookies = service.GetBrowserCookies(routeKey, new Uri("https://example.com/app/api"));
+        Assert.NotNull(forwarded);
+        Assert.Contains("session=abc123", forwarded, StringComparison.Ordinal);
+        Assert.DoesNotContain("session=abc123", browserCookies.Header ?? "", StringComparison.Ordinal);
     }
 
     [Fact]

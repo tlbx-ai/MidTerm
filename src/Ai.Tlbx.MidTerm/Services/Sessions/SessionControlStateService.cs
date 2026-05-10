@@ -10,10 +10,10 @@ public sealed class SessionControlStateService
     private readonly string _statePath;
     private readonly Lock _lock = new();
     private HashSet<string> _agentControlledSessionIds = new(StringComparer.Ordinal);
-    private HashSet<string> _lensOnlySessionIds = new(StringComparer.Ordinal);
+    private HashSet<string> _appServerControlOnlySessionIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _launchOrigins = new(StringComparer.Ordinal);
     private Dictionary<string, string> _profileHints = new(StringComparer.Ordinal);
-    private Dictionary<string, string> _lensResumeThreadIds = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _appServerControlResumeThreadIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _spaceIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _workspacePaths = new(StringComparer.Ordinal);
     private Dictionary<string, string> _surfaces = new(StringComparer.Ordinal);
@@ -42,7 +42,7 @@ public sealed class SessionControlStateService
         }
     }
 
-    public bool IsLensOnly(string sessionId)
+    public bool IsAppServerControlOnly(string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -51,7 +51,7 @@ public sealed class SessionControlStateService
 
         lock (_lock)
         {
-            return _lensOnlySessionIds.Contains(sessionId);
+            return _appServerControlOnlySessionIds.Contains(sessionId);
         }
     }
 
@@ -81,7 +81,7 @@ public sealed class SessionControlStateService
         }
     }
 
-    public string? GetLensResumeThreadId(string sessionId)
+    public string? GetAppServerControlResumeThreadId(string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -90,7 +90,7 @@ public sealed class SessionControlStateService
 
         lock (_lock)
         {
-            return _lensResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId) ? resumeThreadId : null;
+            return _appServerControlResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId) ? resumeThreadId : null;
         }
     }
 
@@ -155,7 +155,7 @@ public sealed class SessionControlStateService
         }
     }
 
-    public void SetLensOnly(string sessionId, bool lensOnly)
+    public void SetAppServerControlOnly(string sessionId, bool appServerControlOnly)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -164,9 +164,9 @@ public sealed class SessionControlStateService
 
         lock (_lock)
         {
-            var changed = lensOnly
-                ? _lensOnlySessionIds.Add(sessionId)
-                : _lensOnlySessionIds.Remove(sessionId);
+            var changed = appServerControlOnly
+                ? _appServerControlOnlySessionIds.Add(sessionId)
+                : _appServerControlOnlySessionIds.Remove(sessionId);
 
             if (!changed)
             {
@@ -239,7 +239,7 @@ public sealed class SessionControlStateService
         }
     }
 
-    public void SetLensResumeThreadId(string sessionId, string? resumeThreadId)
+    public void SetAppServerControlResumeThreadId(string sessionId, string? resumeThreadId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -252,12 +252,12 @@ public sealed class SessionControlStateService
             var changed = false;
             if (string.IsNullOrWhiteSpace(normalized))
             {
-                changed = _lensResumeThreadIds.Remove(sessionId);
+                changed = _appServerControlResumeThreadIds.Remove(sessionId);
             }
-            else if (!_lensResumeThreadIds.TryGetValue(sessionId, out var existing) ||
+            else if (!_appServerControlResumeThreadIds.TryGetValue(sessionId, out var existing) ||
                      !string.Equals(existing, normalized, StringComparison.Ordinal))
             {
-                _lensResumeThreadIds[sessionId] = normalized;
+                _appServerControlResumeThreadIds[sessionId] = normalized;
                 changed = true;
             }
 
@@ -367,10 +367,10 @@ public sealed class SessionControlStateService
         lock (_lock)
         {
             var changed = _agentControlledSessionIds.Remove(sessionId);
-            changed |= _lensOnlySessionIds.Remove(sessionId);
+            changed |= _appServerControlOnlySessionIds.Remove(sessionId);
             changed |= _launchOrigins.Remove(sessionId);
             changed |= _profileHints.Remove(sessionId);
-            changed |= _lensResumeThreadIds.Remove(sessionId);
+            changed |= _appServerControlResumeThreadIds.Remove(sessionId);
             changed |= _spaceIds.Remove(sessionId);
             changed |= _workspacePaths.Remove(sessionId);
             changed |= _surfaces.Remove(sessionId);
@@ -401,8 +401,8 @@ public sealed class SessionControlStateService
                 _agentControlledSessionIds = new HashSet<string>(
                     state.AgentControlledSessionIds.Where(id => !string.IsNullOrWhiteSpace(id)),
                     StringComparer.Ordinal);
-                _lensOnlySessionIds = new HashSet<string>(
-                    state.LensOnlySessionIds.Where(id => !string.IsNullOrWhiteSpace(id)),
+                _appServerControlOnlySessionIds = new HashSet<string>(
+                    state.AppServerControlOnlySessionIds.Where(id => !string.IsNullOrWhiteSpace(id)),
                     StringComparer.Ordinal);
                 _launchOrigins = state.LaunchOrigins
                     .Select(kvp => new KeyValuePair<string, string?>(kvp.Key, SessionLaunchOrigins.Normalize(kvp.Value)))
@@ -411,7 +411,7 @@ public sealed class SessionControlStateService
                 _profileHints = state.ProfileHints
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
-                _lensResumeThreadIds = state.LensResumeThreadIds
+                _appServerControlResumeThreadIds = state.AppServerControlResumeThreadIds
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
                 _spaceIds = state.SpaceIds
@@ -428,10 +428,10 @@ public sealed class SessionControlStateService
             {
                 Log.Warn(() => $"Failed to load session control state: {ex.Message}");
                 _agentControlledSessionIds = new HashSet<string>(StringComparer.Ordinal);
-                _lensOnlySessionIds = new HashSet<string>(StringComparer.Ordinal);
+                _appServerControlOnlySessionIds = new HashSet<string>(StringComparer.Ordinal);
                 _launchOrigins = new Dictionary<string, string>(StringComparer.Ordinal);
                 _profileHints = new Dictionary<string, string>(StringComparer.Ordinal);
-                _lensResumeThreadIds = new Dictionary<string, string>(StringComparer.Ordinal);
+                _appServerControlResumeThreadIds = new Dictionary<string, string>(StringComparer.Ordinal);
                 _spaceIds = new Dictionary<string, string>(StringComparer.Ordinal);
                 _workspacePaths = new Dictionary<string, string>(StringComparer.Ordinal);
                 _surfaces = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -454,7 +454,7 @@ public sealed class SessionControlStateService
                 AgentControlledSessionIds = _agentControlledSessionIds
                     .OrderBy(id => id, StringComparer.Ordinal)
                     .ToList(),
-                LensOnlySessionIds = _lensOnlySessionIds
+                AppServerControlOnlySessionIds = _appServerControlOnlySessionIds
                     .OrderBy(id => id, StringComparer.Ordinal)
                     .ToList(),
                 LaunchOrigins = _launchOrigins
@@ -463,7 +463,7 @@ public sealed class SessionControlStateService
                 ProfileHints = _profileHints
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
-                LensResumeThreadIds = _lensResumeThreadIds
+                AppServerControlResumeThreadIds = _appServerControlResumeThreadIds
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
                 SpaceIds = _spaceIds

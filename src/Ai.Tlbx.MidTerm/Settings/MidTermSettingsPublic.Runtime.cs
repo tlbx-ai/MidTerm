@@ -51,10 +51,10 @@ public sealed partial class MidTermSettingsPublic
             DefaultWorkingDirectory = settings.DefaultWorkingDirectory,
             TerminalEnvironmentVariables = settings.TerminalEnvironmentVariables,
             CodexYoloDefault = settings.CodexYoloDefault,
-            CodexDefaultLensModel = settings.CodexDefaultLensModel,
+            CodexDefaultAppServerControlModel = settings.CodexDefaultAppServerControlModel,
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
             ClaudeDangerouslySkipPermissionsDefault = settings.ClaudeDangerouslySkipPermissionsDefault,
-            ClaudeDefaultLensModel = settings.ClaudeDefaultLensModel,
+            ClaudeDefaultAppServerControlModel = settings.ClaudeDefaultAppServerControlModel,
             ClaudeEnvironmentVariables = settings.ClaudeEnvironmentVariables,
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
@@ -146,10 +146,10 @@ public sealed partial class MidTermSettingsPublic
         settings.DefaultWorkingDirectory = DefaultWorkingDirectory;
         settings.TerminalEnvironmentVariables = TerminalEnvironmentVariables ?? string.Empty;
         settings.CodexYoloDefault = CodexYoloDefault;
-        settings.CodexDefaultLensModel = CodexDefaultLensModel?.Trim() ?? string.Empty;
+        settings.CodexDefaultAppServerControlModel = CodexDefaultAppServerControlModel?.Trim() ?? string.Empty;
         settings.CodexEnvironmentVariables = CodexEnvironmentVariables ?? string.Empty;
         settings.ClaudeDangerouslySkipPermissionsDefault = ClaudeDangerouslySkipPermissionsDefault;
-        settings.ClaudeDefaultLensModel = ClaudeDefaultLensModel?.Trim() ?? string.Empty;
+        settings.ClaudeDefaultAppServerControlModel = ClaudeDefaultAppServerControlModel?.Trim() ?? string.Empty;
         settings.ClaudeEnvironmentVariables = ClaudeEnvironmentVariables ?? string.Empty;
         settings.AgentMessageFontFamily = NormalizeAgentMessageFontFamily(
             AgentMessageFontFamily,

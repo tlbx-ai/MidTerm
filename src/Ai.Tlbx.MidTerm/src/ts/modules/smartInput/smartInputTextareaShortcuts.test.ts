@@ -8,10 +8,7 @@ import {
 function key(
   value: string = 'Tab',
   mods: Partial<
-    Pick<
-      SmartInputTextareaShortcutEvent,
-      'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'
-    >
+    Pick<SmartInputTextareaShortcutEvent, 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>
   > = {},
 ): SmartInputTextareaShortcutEvent {
   return {
@@ -24,9 +21,9 @@ function key(
 }
 
 describe('resolveSmartInputShiftTabAction', () => {
-  it('toggles Lens plan mode for bare Shift+Tab in the Lens surface', () => {
+  it('toggles AppServerControl plan mode for bare Shift+Tab in the AppServerControl surface', () => {
     expect(resolveSmartInputShiftTabAction(key('Tab', { shiftKey: true }), 'agent')).toBe(
-      'toggle-lens-plan-mode',
+      'toggle-appServerControl-plan-mode',
     );
   });
 

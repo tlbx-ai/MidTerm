@@ -456,7 +456,7 @@ function inferMarkdownTableCellTone(
   if (
     kind === 'tag' ||
     /^(mode|state|owner|status|provider|kind|profile|model)$/.test(normalizedHeader) ||
-    /(?:lens|codex|claude|gpt|opus|mini|terminal|pwsh|bash)/.test(normalizedValue)
+    /(?:appServerControl|codex|claude|gpt|opus|mini|terminal|pwsh|bash)/.test(normalizedValue)
   ) {
     return 'info';
   }
