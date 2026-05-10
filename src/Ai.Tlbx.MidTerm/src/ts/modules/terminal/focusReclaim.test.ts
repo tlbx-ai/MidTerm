@@ -3,15 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
 
 describe('terminal focus reclaim', () => {
-  it('does not reclaim terminal focus when mouseup happens inside the Lens panel', () => {
-    const lensPanel = { tagName: 'DIV', closest: () => null };
-    const lensBody = {
+  it('does not reclaim terminal focus when mouseup happens inside the AppServerControl panel', () => {
+    const appServerControlPanel = { tagName: 'DIV', closest: () => null };
+    const appServerControlBody = {
       tagName: 'DIV',
-      closest: (selector: string) => (selector === '.agent-view-panel' ? lensPanel : null),
+      closest: (selector: string) =>
+        selector === '.agent-view-panel' ? appServerControlPanel : null,
     };
 
     expect(
-      shouldReclaimTerminalFocusOnMouseUp(lensBody as EventTarget, {
+      shouldReclaimTerminalFocusOnMouseUp(appServerControlBody as EventTarget, {
         rangeCount: 1,
         isCollapsed: false,
       }),

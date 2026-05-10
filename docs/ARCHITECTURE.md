@@ -81,9 +81,9 @@ The browser shell includes:
 - sidebar modules for sessions, history, update notices, network/share, and voice controls
 - terminal modules for creation, sizing, search, paste/drop handling, scaling, and mobile PiP
 - layout modules for split panes and dock overlays
-- session wrappers that add Files tabs plus web, commands, share, git, and experimental Lens surfaces per session
+- session wrappers that add Files tabs plus web, commands, share, git, and experimental Agent Controller Session surfaces per session
 - feature panels for files, git, commands, and web preview
-- Command Bay modules for smart input, the automation bar, touch controller, Lens quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
+- Command Bay modules for smart input, the automation bar, touch controller, Agent Controller Session quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
 
 State is split between:
 
@@ -193,111 +193,111 @@ Each session wrapper adds:
 
 ### Command Bay
 
-The Command Bay is the shared active-session footer system beneath Terminal and Lens.
-It is the superset that now contains the old Smart Input composer, the old automation bar (formerly the middle manager bar), the old Lens quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
+The Command Bay is the shared active-session footer system beneath Terminal and Agent Controller Session.
+It is the superset that now contains the old Smart Input composer, the old automation bar (formerly the middle manager bar), the old Agent Controller Session quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
 It exists because MidTerm no longer treats those pieces as unrelated bars stacked under the pane.
 - the primary rail hosts Smart Input / the composer when input is visible
 - the automation rail hosts the old automation bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands; on cramped mobile Terminal layouts it may collapse visible action chips into overflow-first chrome rather than spending a full inline row on them
 - the Command Bay queue is backend-owned and persists queued work per session so follow-up prompts and Automation Bar items survive browser disconnects or reconnects
 - Terminal queue draining is heat-gated: one queued item may dispatch when heat falls below 25%, then the session must rearm above that threshold before the next queued item can drain
-- explicit Lens queue draining is turn-gated: one queued item may dispatch only after the current provider turn has settled back to the user
-- the context rail hosts attachment/media controls for mobile Lens or terminal special keys from the touch controller for mobile Terminal, including the collapsed special-keys toggle when the full key row is hidden
-- the status rail hosts Lens model / effort / plan / permission awareness or other compact terminal state pills without forcing a dedicated extra row just to reopen special keys
+- explicit Agent Controller Session queue draining is turn-gated: one queued item may dispatch only after the current provider turn has settled back to the user
+- the context rail hosts attachment/media controls for mobile Agent Controller Session or terminal special keys from the touch controller for mobile Terminal, including the collapsed special-keys toggle when the full key row is hidden
+- the status rail hosts Agent Controller Session model / effort / plan / permission awareness or other compact terminal state pills without forcing a dedicated extra row just to reopen special keys
 - mobile Terminal keeps the compact status rail above the expanded special-keys grid so the keys toggle and automation proxies stay on the same header row while the key grid opens beneath them
-- Lens always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode
-- Lens keeps model / effort / plan awareness visible at all times even when the editable controls collapse on mobile
+- Agent Controller Session always uses the Command Bay; Terminal may show the full bay, a reduced bay, or only automation depending on Smart Input mode
+- Agent Controller Session keeps model / effort / plan awareness visible at all times even when the editable controls collapse on mobile
 - desktop Terminal assumes a hardware keyboard and therefore does not surface cursor-key buttons in the Command Bay
 - mobile Terminal may expand or collapse terminal special keys without changing Terminal size ownership rules
 - desktop glass styling follows terminal transparency; mobile Command Bay stays solid for contrast and touch reliability
-- the Command Bay itself must reserve space beneath Terminal or Lens instead of floating over session content
+- the Command Bay itself must reserve space beneath Terminal or Agent Controller Session instead of floating over session content
 - only the prompt textbox's extra multiline growth may overflow upward over the pane; command-bay rails and visible command-bay panels must not hide session content underneath
 - on Android and iOS, the Command Bay must stay attached to the visual viewport above the on-screen keyboard; when space gets tight it should compress and scroll internally instead of slipping under the OSK
 - voice capture still hangs off the Smart Input mic affordance, with the current experimental gating unchanged
 - the mobile action menu still mirrors common quick actions, but the Command Bay is the primary active-session interaction shell
-- mobile Lens uses automation above context controls; other permutations keep the default primary -> context -> automation -> status flow
+- mobile Agent Controller Session uses automation above context controls; other permutations keep the default primary -> context -> automation -> status flow
 - document Picture-in-Picture remains separate from the Command Bay and can still show a miniature live terminal when the app backgrounds on supported mobile browsers
 
 ### Agent Conversation Surface
 
-Lens is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
+Agent Controller Session is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
 
-- the canonical turn, request, and stream state still belongs to the backend Lens runtime
-- the frontend Lens panel renders that state as provider-backed history/timeline UI without taking ownership away from Terminal
-- when live attach is unavailable, Lens can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
-- Lens is currently dev-gated in the session tabs while the UX is still being refined
+- the canonical turn, request, and stream state still belongs to the backend Agent Controller Runtime
+- the frontend Agent Controller Session panel renders that state as provider-backed history/timeline UI without taking ownership away from Terminal
+- when live attach is unavailable, Agent Controller Session can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
+- Agent Controller Session is currently dev-gated in the session tabs while the UX is still being refined
 
-The boundary between Terminal and Lens is a core design rule:
+The boundary between Terminal and Agent Controller Session is a core design rule:
 
 - a plain terminal session remains terminal-owned even if its foreground process is `codex`, `claude`, or another AI CLI
-- foreground process detection may label, summarize, or describe a session, but it must not by itself promote that session into Lens
-- only sessions explicitly created as Lens sessions should expose provider-primary tabs such as `Codex` or `Claude`
-- the IDE bar is exclusive by surface: terminal sessions show `Terminal` plus `Files`, while explicit Lens sessions show the provider tab plus `Files`
+- foreground process detection may label, summarize, or describe a session, but it must not by itself promote that session into Agent Controller Session
+- only sessions explicitly created as Agent Controller Sessions should expose provider-primary tabs such as `Codex` or `Claude`
+- the IDE bar is exclusive by surface: terminal sessions show `Terminal` plus `Files`, while explicit Agent Controller Sessions show the provider tab plus `Files`
 
-### Lens Provider Runtime Decision
+### Agent Controller Session Provider Runtime Decision
 
-For provider-backed Lens sessions, MidTerm should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
+For provider-backed Agent Controller Sessions, MidTerm should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
 
 Terminology matters here:
 
-- `history` means the canonical provider-backed ordered sequence of Lens items
+- `history` means the canonical provider-backed ordered sequence of Agent Controller Session items
 - `timeline` means the rendered web presentation of that history
-- `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names, not Lens semantics
+- `transcript` is reserved for PTY/terminal capture or unavoidable legacy wire/schema names, not Agent Controller Session semantics
 
 That means:
 
-- an explicit Codex or Claude Lens session owns a dedicated Lens runtime for that provider
-- `mtagenthost` is the intended MidTerm host/runtime boundary for those provider-backed Lens sessions
-- explicit Lens sessions do not use `mthost` and do not gain terminal access through the PTY layer
+- an explicit Codex or Claude Agent Controller Session owns a dedicated Agent Controller Runtime for that provider
+- `mtagenthost` is the intended MidTerm host/runtime boundary for those provider-backed Agent Controller Sessions
+- explicit Agent Controller Sessions do not use `mthost` and do not gain terminal access through the PTY layer
 - the runtime launches or attaches using the provider's supported structured protocol
-- MidTerm normalizes that provider traffic into canonical Lens turn, item, request, stream, and diff events
-- the Lens UI renders those canonical events and snapshots as a conversation surface
+- MidTerm normalizes that provider traffic into canonical Agent Controller Session turn, item, request, stream, and diff events
+- the Agent Controller Session UI renders those canonical events and snapshots as a conversation surface
 - the terminal remains a separate surface with separate ownership and behavior
 
 This rule exists to prevent a class of design failures:
 
 - terminal transcripts are not a reliable protocol boundary
 - foreground process detection is not enough to define conversation identity
-- Lens is not a terminal transcript view and must not treat PTY stdout/stderr as its authoritative event stream
+- Agent Controller Session is not a terminal transcript view and must not treat PTY stdout/stderr as its authoritative event stream
 - screen-scraping or buffer-parsing makes streaming, tool lifecycle, approvals, plan-mode questions, and diff state fragile
-- terminal behavior and Lens behavior become entangled unless the runtime boundary is explicit
+- terminal behavior and Agent Controller Session behavior become entangled unless the runtime boundary is explicit
 
 The correct architectural direction is therefore:
 
 - Terminal stays terminal-native
-- Lens stays provider-runtime-native through `mtagenthost` plus provider APIs and structured protocols intended for rich UI clients
-- `mthost` is for real terminals; `mtagenthost` is for explicit provider Lens sessions
-- canonical Lens events bridge the runtime and the web UI
+- Agent Controller Session stays provider-runtime-native through `mtagenthost` plus provider APIs and structured protocols intended for rich UI clients
+- `mthost` is for real terminals; `mtagenthost` is for explicit provider Agent Controller Sessions
+- canonical Agent Controller Session events bridge the runtime and the web UI
 
-### Lens Sync Transport
+### Agent Controller Session Sync Transport
 
-Lens sync is now owned by a dedicated `/ws/lens` channel rather than REST snapshot polling plus SSE.
+Agent Controller Session sync is now owned by a dedicated `/ws/app-server-control` channel rather than REST snapshot polling plus SSE.
 
-- HTTP remains for explicit Lens session creation/bootstrap only
-- after session start, Lens attach, snapshot reads, history window reads, turn submission, interrupts, approvals, and user-input answers all flow through `/ws/lens`
-- `mt` remains the state master and durable owner of canonical Lens history plus the derived live read model
-- the browser keeps one multiplexed Lens socket and can subscribe to many Lens sessions at once
-- Lens history is synchronized as a windowed read model, not as a full-history replay on every reconnect
+- HTTP remains for explicit Agent Controller Session creation/bootstrap only
+- after session start, Agent Controller Session attach, snapshot reads, history window reads, turn submission, interrupts, approvals, and user-input answers all flow through `/ws/app-server-control`
+- `mt` remains the state master and durable owner of canonical Agent Controller Session history plus the derived live read model
+- the browser keeps one multiplexed Agent Controller Session socket and can subscribe to many Agent Controller Sessions at once
+- Agent Controller Session history is synchronized as a windowed read model, not as a full-history replay on every reconnect
 - reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
-- the frontend stays provider-neutral and does not reconstruct Lens state from PTY output or provider-specific raw transports
+- the frontend stays provider-neutral and does not reconstruct Agent Controller Session state from PTY output or provider-specific raw transports
 
-### Lens History Ownership And Byte Budget
+### Agent Controller Session History Ownership And Byte Budget
 
-Provider-backed Lens runtimes can emit huge amounts of low-value transport noise: repetitive progress chatter, superseded intermediate states, raw command stdout, and full file bodies that are far larger than any useful on-screen view.
+Provider-backed Agent Controller Runtimes can emit huge amounts of low-value transport noise: repetitive progress chatter, superseded intermediate states, raw command stdout, and full file bodies that are far larger than any useful on-screen view.
 
-Lens must therefore enforce a strict ownership and byte-budget model:
+Agent Controller Session must therefore enforce a strict ownership and byte-budget model:
 
-- `mtagenthost` and MidTerm own the in-flight provider reduction path plus the canonical derived Lens history
-- the browser does not own full Lens history and must not accumulate the full provider event stream in memory
+- `mtagenthost` and MidTerm own the in-flight provider reduction path plus the canonical derived Agent Controller Session history
+- the browser does not own full Agent Controller Session history and must not accumulate the full provider event stream in memory
 - the browser consumes a bounded view window over canonical history, not an unbounded raw-event feed
-- multiple browsers may view the same Lens session concurrently, but each browser owns only its own local viewport/window state
+- multiple browsers may view the same Agent Controller Session concurrently, but each browser owns only its own local viewport/window state
 - browser scrolling is a read-window operation against MidTerm-owned canonical history, not a request for provider raw-event replay
 
 This leads to the following transport rules:
 
-- raw provider payloads are transient reducer inputs, not retained Lens history
+- raw provider payloads are transient reducer inputs, not retained Agent Controller Session history
 - giant file bodies, giant command stdout blobs, and repetitive transport chatter must be summarized, windowed, or suppressed before they become canonical history rows
-- the canonical Lens history should preserve what a human needs to understand the work, not every raw provider emission
-- `/ws/lens` should transport only:
+- the canonical Agent Controller Session history should preserve what a human needs to understand the work, not every raw provider emission
+- `/ws/app-server-control` should transport only:
   - the currently materialized history slice
   - stable total-count/window metadata
   - live deltas that affect rows already in or near the active slice
@@ -308,14 +308,14 @@ This leads to the following transport rules:
 The architectural target is:
 
 - one canonical history store in MidTerm
-- MidTerm durability uses canonical reduced Lens state, not appended provider-shaped event logs
+- MidTerm durability uses canonical reduced Agent Controller Session state, not appended provider-shaped event logs
 - one bounded visible history window per browser/session view
 - deterministic fetches for arbitrary older/newer portions of that history
 - minimal duplicated byte transfer across reconnects and across multiple browsers
 
-### Lens History Reduction Policy
+### Agent Controller Session History Reduction Policy
 
-MidTerm needs an explicit reduction layer between raw provider events and canonical Lens history.
+MidTerm needs an explicit reduction layer between raw provider events and canonical Agent Controller Session history.
 
 Canonical history should keep:
 
@@ -342,33 +342,33 @@ Where giant payloads exist, MidTerm should prefer:
 - summarized tool output for timeline rendering instead of hidden retained raw payloads
 - canonical identity-preserving row updates instead of spawning many noisy sibling rows
 
-### Lens Screen Logs
+### Agent Controller Session Screen Logs
 
-For UI iteration and bug discussion, Lens also emits a dev-only per-session screen log derived from the same canonical backend history model that drives `/ws/lens`.
+For UI iteration and bug discussion, Agent Controller Session also emits a dev-only per-session screen log derived from the same canonical backend history model that drives `/ws/app-server-control`.
 
 - the screen log is written by MidTerm, not by the browser
-- one GUID-named log file is created per Lens session under the normal MidTerm log root
+- one GUID-named log file is created per Agent Controller Session under the normal MidTerm log root
 - records are screen-oriented and capture rendered-history facts such as kind, label, title, meta, body, render mode, and collapsed-by-default hints
-- raw tool output should be summarized before it reaches both the Lens timeline and the screen log, and duplicate no-op screen states should not be re-logged
+- raw tool output should be summarized before it reaches both the Agent Controller Session timeline and the screen log, and duplicate no-op screen states should not be re-logged
 - raw provider payloads and PTY output are not the screen log contract
 
-### Lens UX Target And DOD
+### Agent Controller Session UX Target And DOD
 
-The intended Definition of Done for provider-backed Lens sessions is:
+The intended Definition of Done for provider-backed Agent Controller Sessions is:
 
 1. A user can create a new session in MidTerm and explicitly choose `Codex` or `Claude`.
-2. The session opens on the provider Lens surface with the Smart Input / composer visible.
+2. The session opens on the provider Agent Controller Session surface with the Smart Input / composer visible.
 3. MidTerm shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
-4. The user can submit a prompt from the Lens composer without switching to Terminal.
-5. Assistant output streams into the Lens history/timeline incrementally as it is generated, rather than appearing only after full completion.
+4. The user can submit a prompt from the Agent Controller Session composer without switching to Terminal.
+5. Assistant output streams into the Agent Controller Session history/timeline incrementally as it is generated, rather than appearing only after full completion.
 6. Tool activity is visible as it happens, including starts, updates, completions, approvals, and user-input questions.
-7. File edits and working diff updates are surfaced live in the Lens UI.
-8. Plan-mode or equivalent provider-driven question flows appear as first-class Lens interactions, not as raw terminal text.
-9. The full Lens experience is implemented without hijacking or reclassifying normal terminal sessions.
+7. File edits and working diff updates are surfaced live in the Agent Controller Session UI.
+8. Plan-mode or equivalent provider-driven question flows appear as first-class Agent Controller Session interactions, not as raw terminal text.
+9. The full Agent Controller Session experience is implemented without hijacking or reclassifying normal terminal sessions.
 
-In practical terms, the user should experience Lens as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
+In practical terms, the user should experience Agent Controller Session as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
 
-The visual and interaction design rules for that Lens surface are maintained separately in [LensDesign.md](LensDesign.md). Architecture decisions belong here; the concrete Lens UX contract, hierarchy, history/timeline behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
+The visual and interaction design rules for that Agent Controller Session surface are maintained separately in [AgentControllerSessionDesign.md](AgentControllerSessionDesign.md). Architecture decisions belong here; the concrete Agent Controller Session UX contract, hierarchy, history/timeline behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
 
 ## 5. Web Preview and Browser Automation
 

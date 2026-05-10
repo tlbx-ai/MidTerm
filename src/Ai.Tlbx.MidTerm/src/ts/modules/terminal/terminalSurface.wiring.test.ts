@@ -21,6 +21,10 @@ const terminalGapFillersSource = readFileSync(
   path.join(__dirname, 'terminalGapFillers.ts'),
   'utf8',
 );
+const mobileVerticalStabilitySource = readFileSync(
+  path.join(__dirname, 'mobileVerticalStability.ts'),
+  'utf8',
+);
 const terminalOptionsSource = readFileSync(path.join(__dirname, 'terminalOptions.ts'), 'utf8');
 
 describe('terminal surface wiring', () => {
@@ -62,6 +66,12 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('height: var(--adaptive-footer-reserved-height);');
     expect(scalingSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
     expect(scalingSource).toContain('scheduleFooterReserveResize();');
+    expect(mobileVerticalStabilitySource).toContain('mobileVerticalStabilityActive');
+    expect(scalingSource).toContain('shouldPreserveMobileTerminalRows');
+    expect(appCss).toContain(
+      'body.mobile-terminal-vertical-stable .terminal-container.mobile-terminal-vertical-stable',
+    );
+    expect(appCss).toContain('overflow: hidden auto;');
   });
 
   it('wires custom box-drawing glyph rendering to persisted terminal settings', () => {
@@ -69,12 +79,12 @@ describe('terminal surface wiring', () => {
     expect(terminalOptionsSource).toContain('customGlyphs: currentSettings?.customGlyphs ?? true,');
   });
 
-  it('does not reclaim terminal focus from Lens, Files, or interactive Command Bay mouseup flows', () => {
+  it('does not reclaim terminal focus from AppServerControl, Files, or interactive Command Bay mouseup flows', () => {
     expect(managerSource).toContain('const FOCUS_RECLAIM_EXEMPT_SELECTOR = [');
     expect(managerSource).toContain("'.adaptive-footer-dock'");
-    expect(managerSource).toContain("'[data-tab-panel=\"agent\"]'");
+    expect(managerSource).toContain('\'[data-tab-panel="agent"]\'');
     expect(managerSource).toContain('function hasActiveDocumentSelection(): boolean {');
-    expect(managerSource).toContain('return getActiveTab(activeSessionId) !== \'terminal\';');
+    expect(managerSource).toContain("return getActiveTab(activeSessionId) !== 'terminal';");
     expect(managerSource).toContain('if (!target || shouldSkipGlobalFocusReclaim(target)) {');
   });
 

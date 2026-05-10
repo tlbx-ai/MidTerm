@@ -8,7 +8,7 @@
     - Keep the installed MidTerm service on https://localhost:2000 alive for JPA and stable supervision
     - Run a separate source instance on another port (default: 2100)
     - Reuse the installed release mthost for PTY sessions
-    - Rebuild and use the local Debug mtagenthost for Lens/runtime work
+    - Rebuild and use the local Debug mtagenthost for AppServerControl/runtime work
     - Restart the local source server when C# changes land without dotnet watch because watch breaks terminal Ctrl+C under heavy output
 
 .EXAMPLE

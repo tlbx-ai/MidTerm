@@ -6,6 +6,7 @@
 
 export * from './manager';
 export * from './scaling';
+export * from './visualViewport';
 export * from './search';
 export * from './fileDrop';
 export * from './fontSize';

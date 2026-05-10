@@ -7,10 +7,10 @@ import {
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
-import type { LensHistoryRequestSummary } from '../../api/client';
-import type { LensAttachmentReference } from '../../api/types';
+import type { AppServerControlHistoryRequestSummary } from '../../api/client';
+import type { AppServerControlAttachmentReference } from '../../api/types';
 import {
-  buildLensAttachmentUrl,
+  buildAppServerControlAttachmentUrl,
   isImageAttachment,
   resolveAttachmentLabel,
   resolveHistoryBadgeLabel,
@@ -26,33 +26,33 @@ import type {
   AssistantMarkdownCacheEntry,
   ArtifactClusterInfo,
   HistoryBodyPresentation,
-  LensHistoryAction,
-  LensHistoryEntry,
-  LensRuntimeStatsSummary,
-  SessionLensViewState,
+  AppServerControlHistoryAction,
+  AppServerControlHistoryEntry,
+  AppServerControlRuntimeStatsSummary,
+  SessionAppServerControlViewState,
 } from './types';
 
 const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 3770;
 const BUSY_SPIN_WALLCLOCK_CYCLE_MS = 1150;
 
-function lensText(key: string, fallback: string): string {
+function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   return !translated || translated === key ? fallback : translated;
 }
 
-function lensFormat(
+function appServerControlFormat(
   key: string,
   fallback: string,
   replacements: Record<string, string | number>,
 ): string {
   return Object.entries(replacements).reduce(
     (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
-    lensText(key, fallback),
+    appServerControlText(key, fallback),
   );
 }
 
 function resolveHistoryBadgeTextForEntry(
-  entry: LensHistoryEntry,
+  entry: AppServerControlHistoryEntry,
   provider: string | null | undefined,
 ): string {
   if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
@@ -62,7 +62,7 @@ function resolveHistoryBadgeTextForEntry(
   return resolveHistoryBadgeLabel(entry.kind, provider);
 }
 
-function normalizeHistoryTitle(entry: LensHistoryEntry): string {
+function normalizeHistoryTitle(entry: AppServerControlHistoryEntry): string {
   const title = entry.title.trim();
   if (!title || entry.commandText) {
     return '';
@@ -76,10 +76,10 @@ function normalizeHistoryTitle(entry: LensHistoryEntry): string {
 }
 
 type AgentHistoryDomDeps = {
-  getState: (sessionId: string) => SessionLensViewState | undefined;
-  refreshLensSnapshot: (sessionId: string) => Promise<void>;
+  getState: (sessionId: string) => SessionAppServerControlViewState | undefined;
+  refreshAppServerControlSnapshot: (sessionId: string) => Promise<void>;
   renderCurrentAgentView: (sessionId: string) => void;
-  retryLensActivation: (sessionId: string) => Promise<void>;
+  retryAppServerControlActivation: (sessionId: string) => Promise<void>;
   logWarn: (message: () => string) => void;
 };
 
@@ -87,13 +87,13 @@ function appendInlineRequestWidgetToArticle(args: {
   article: HTMLElement;
   createRequestActionBlock: (
     sessionId: string,
-    request: LensHistoryRequestSummary,
+    request: AppServerControlHistoryRequestSummary,
     busy: boolean,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     surface: 'composer' | 'history',
   ) => HTMLElement;
   deps: AgentHistoryDomDeps;
-  entry: LensHistoryEntry;
+  entry: AppServerControlHistoryEntry;
   sessionId: string;
 }): boolean {
   const { article, createRequestActionBlock, deps, entry, sessionId } = args;
@@ -122,7 +122,7 @@ function appendInlineRequestWidgetToArticle(args: {
   return true;
 }
 
-function createTurnDurationNoteBody(entry: LensHistoryEntry): HTMLElement {
+function createTurnDurationNoteBody(entry: AppServerControlHistoryEntry): HTMLElement {
   const body = document.createElement('div');
   body.className = 'agent-history-body agent-history-turn-duration-body';
 
@@ -169,13 +169,16 @@ function createDiffLineNumberNode(value: number | undefined, lane: 'old' | 'new'
   return cell;
 }
 
-function getEntryFileMentions(entry: LensHistoryEntry, field: 'title' | 'body' | 'commandText') {
+function getEntryFileMentions(
+  entry: AppServerControlHistoryEntry,
+  field: 'title' | 'body' | 'commandText',
+) {
   return (entry.fileMentions ?? []).filter((mention) => mention.field === field);
 }
 
 function appendEntryImagePreviews(
   body: HTMLElement,
-  entry: LensHistoryEntry,
+  entry: AppServerControlHistoryEntry,
   sessionId: string,
 ): void {
   const previewBlock = createAssistantImagePreviewBlock(
@@ -245,7 +248,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
   }
 
-  function syncBusyIndicatorEntry(article: HTMLElement, entry: LensHistoryEntry): void {
+  function syncBusyIndicatorEntry(article: HTMLElement, entry: AppServerControlHistoryEntry): void {
     if (!entry.busyIndicator) {
       return;
     }
@@ -280,7 +283,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     applyBusyIndicatorPhaseLock(article);
   }
 
-  function renderRuntimeStats(panel: HTMLDivElement, stats: LensRuntimeStatsSummary | null): void {
+  function renderRuntimeStats(
+    panel: HTMLDivElement,
+    stats: AppServerControlRuntimeStatsSummary | null,
+  ): void {
     const host = panel.querySelector<HTMLDivElement>('[data-agent-field="runtime-stats"]');
     if (!host) {
       return;
@@ -339,7 +345,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function createHistoryEntry(
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
     options: {
       artifactCluster?: ArtifactClusterInfo | null;
@@ -376,7 +382,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function applyHistoryEntryChrome(
     article: HTMLElement,
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     artifactCluster: ArtifactClusterInfo | null,
   ): void {
     article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
@@ -409,7 +415,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function createHistoryHeader(
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
     showAssistantBadge: boolean,
   ): HTMLElement {
@@ -439,7 +445,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function appendHistoryTitle(
     article: HTMLElement,
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
   ): void {
     const titleText = normalizeHistoryTitle(entry);
@@ -457,7 +463,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function appendHistoryBody(
     article: HTMLElement,
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
   ): void {
     if (
@@ -485,7 +491,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function createHistoryBodyContent(
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
     presentation: HistoryBodyPresentation,
   ): HTMLElement {
@@ -517,16 +523,35 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         wireAssistantInteractiveContent(content, sessionId);
         wireMarkdownTables(content, {
           clearSort: (column) =>
-            lensFormat('lens.markdownTable.clearSort', 'Clear sorting for {column}', { column }),
+            appServerControlFormat(
+              'appServerControl.markdownTable.clearSort',
+              'Clear sorting for {column}',
+              { column },
+            ),
           filterByColumn: (column) =>
-            lensFormat('lens.markdownTable.filterByColumn', 'Filter {column}', { column }),
-          filterPlaceholder: lensText('lens.markdownTable.filterPlaceholder', 'Filter'),
+            appServerControlFormat(
+              'appServerControl.markdownTable.filterByColumn',
+              'Filter {column}',
+              { column },
+            ),
+          filterPlaceholder: appServerControlText(
+            'appServerControl.markdownTable.filterPlaceholder',
+            'Filter',
+          ),
           sortAscending: (column) =>
-            lensFormat('lens.markdownTable.sortAscending', 'Sort {column} ascending', { column }),
+            appServerControlFormat(
+              'appServerControl.markdownTable.sortAscending',
+              'Sort {column} ascending',
+              { column },
+            ),
           sortDescending: (column) =>
-            lensFormat('lens.markdownTable.sortDescending', 'Sort {column} descending', {
-              column,
-            }),
+            appServerControlFormat(
+              'appServerControl.markdownTable.sortDescending',
+              'Sort {column} descending',
+              {
+                column,
+              },
+            ),
         });
         body.appendChild(content);
         appendEntryImagePreviews(body, entry, sessionId);
@@ -546,7 +571,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
   }
 
-  function createCommandHistoryBody(entry: LensHistoryEntry, sessionId: string): HTMLElement {
+  function createCommandHistoryBody(
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+  ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
     const commandLine = document.createElement('div');
@@ -578,7 +606,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return body;
   }
 
-  function createBusyIndicatorEntry(entry: LensHistoryEntry): HTMLElement {
+  function createBusyIndicatorEntry(entry: AppServerControlHistoryEntry): HTMLElement {
     const article = document.createElement('article');
     article.className = 'agent-history-entry agent-history-assistant agent-history-busy-indicator';
     article.dataset.kind = 'assistant';
@@ -648,7 +676,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function createCollapsedHistoryBody(
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
     presentation: HistoryBodyPresentation,
   ): HTMLElement {
@@ -661,11 +689,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     summary.className = 'agent-history-disclosure-summary';
     const label = document.createElement('span');
     label.className = 'agent-history-disclosure-label';
-    label.textContent = lensText('lens.panel.details', 'Details');
+    label.textContent = appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';
-    meta.textContent = lensFormat('lens.panel.lines', '{count} lines', {
+    meta.textContent = appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
       count: presentation.lineCount,
     });
     summary.appendChild(meta);
@@ -696,7 +724,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     label.className = 'agent-history-artifact-cluster-label';
     label.textContent =
       cluster.count > 1
-        ? lensFormat('lens.cluster.withCount', '{label} ({count})', {
+        ? appServerControlFormat('appServerControl.cluster.withCount', '{label} ({count})', {
             label: cluster.label || '',
             count: cluster.count,
           })
@@ -706,7 +734,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createHistoryActionBlock(
     sessionId: string,
-    actions: readonly LensHistoryAction[],
+    actions: readonly AppServerControlHistoryAction[],
   ): HTMLElement {
     const busy = deps.getState(sessionId)?.activationActionBusy === true;
     const row = document.createElement('div');
@@ -719,7 +747,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       button.disabled = busy;
       button.textContent = busy ? action.busyLabel || action.label : action.label;
       button.addEventListener('click', () => {
-        void deps.retryLensActivation(sessionId);
+        void deps.retryAppServerControlActivation(sessionId);
       });
       row.appendChild(button);
     }
@@ -761,7 +789,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function getCachedAssistantMarkdown(
     sessionId: string,
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
   ): AssistantMarkdownCacheEntry {
     const fileMentions = getEntryFileMentions(entry, 'body');
     const fileMentionToken = fileMentions
@@ -806,8 +834,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function pruneAssistantMarkdownCache(
-    state: SessionLensViewState,
-    entries: readonly LensHistoryEntry[],
+    state: SessionAppServerControlViewState,
+    entries: readonly AppServerControlHistoryEntry[],
   ): void {
     if (state.assistantMarkdownCache.size === 0) {
       return;
@@ -824,7 +852,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     }
   }
 
-  function shouldRenderHistoryBody(entry: LensHistoryEntry): boolean {
+  function shouldRenderHistoryBody(entry: AppServerControlHistoryEntry): boolean {
     if (hasInlineCommandPresentation(entry)) {
       return true;
     }
@@ -840,7 +868,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return true;
   }
 
-  function isAssistantPlaceholderEntry(entry: LensHistoryEntry): boolean {
+  function isAssistantPlaceholderEntry(entry: AppServerControlHistoryEntry): boolean {
     if (entry.kind !== 'assistant') {
       return false;
     }
@@ -856,7 +884,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createHistoryAttachmentBlock(
     sessionId: string,
-    attachments: readonly LensAttachmentReference[] | undefined,
+    attachments: readonly AppServerControlAttachmentReference[] | undefined,
   ): HTMLElement | null {
     if (!attachments?.length) {
       return null;
@@ -867,7 +895,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     for (const attachment of attachments) {
       const link = document.createElement('a');
-      link.href = buildLensAttachmentUrl(sessionId, attachment);
+      link.href = buildAppServerControlAttachmentUrl(sessionId, attachment);
       link.target = '_blank';
       link.rel = 'noreferrer';
 
@@ -899,16 +927,16 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createRequestActionBlock(
     sessionId: string,
-    request: LensHistoryRequestSummary,
+    request: AppServerControlHistoryRequestSummary,
     busy: boolean,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     surface: 'composer' | 'history',
   ): HTMLElement {
     return createRequestActionBlockInternal({
       busy,
       deps,
-      lensFormat,
-      lensText,
+      appServerControlFormat,
+      appServerControlText,
       request,
       sessionId,
       surface,
@@ -925,7 +953,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return String(value);
   }
 
-  function formatTokenWindowCompact(stats: LensRuntimeStatsSummary): string {
+  function formatTokenWindowCompact(stats: AppServerControlRuntimeStatsSummary): string {
     if (stats.windowTokenLimit === null) {
       return '--';
     }
@@ -937,7 +965,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return `${formatTokenWindowPercent(stats.windowUsedTokens, stats.windowTokenLimit)} of ${formatTokenCount(stats.windowTokenLimit)}`;
   }
 
-  function formatTokenWindowDetail(stats: LensRuntimeStatsSummary): string {
+  function formatTokenWindowDetail(stats: AppServerControlRuntimeStatsSummary): string {
     if (stats.windowTokenLimit === null) {
       return 'Window --';
     }

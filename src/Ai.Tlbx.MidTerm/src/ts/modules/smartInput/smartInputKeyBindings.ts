@@ -3,25 +3,25 @@ export interface SmartInputGlobalKeyBindingArgs {
   canUseVoice(): boolean;
   closeFooterTransientUi(): boolean;
   endRecording(): void;
-  getInterruptibleLensSessionId(): string | null;
+  getInterruptibleAppServerControlSessionId(): string | null;
   hasVisibleInput(): boolean;
   isRecording(): boolean;
-  onLensEscape(sessionId: string): void;
+  onAppServerControlEscape(sessionId: string): void;
 }
 
 export function bindSmartInputGlobalKeyBindings(args: SmartInputGlobalKeyBindingArgs): void {
   document.addEventListener(
     'keydown',
     (event) => {
-      const lensSessionId = args.getInterruptibleLensSessionId();
-      if (!lensSessionId) {
+      const appServerControlSessionId = args.getInterruptibleAppServerControlSessionId();
+      if (!appServerControlSessionId) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      args.onLensEscape(lensSessionId);
+      args.onAppServerControlEscape(appServerControlSessionId);
     },
     true,
   );

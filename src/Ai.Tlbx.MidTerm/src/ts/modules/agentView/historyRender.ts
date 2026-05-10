@@ -10,11 +10,17 @@ import {
   computeHistoryVirtualWindow,
   computeHistoryVisibleRange,
   HISTORY_VIRTUALIZE_AFTER,
-  LENS_HISTORY_OVERSCAN_ITEMS,
+  APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
 } from './historyViewport';
-import { traceLensHistoryScroll, traceRenderedLensHistoryWindow } from './historyTrace';
-import type { LensHistoryRequestSummary, LensHistorySnapshot } from '../../api/client';
+import {
+  traceAppServerControlHistoryScroll,
+  traceRenderedAppServerControlHistoryWindow,
+} from './historyTrace';
+import type {
+  AppServerControlHistoryRequestSummary,
+  AppServerControlHistorySnapshot,
+} from '../../api/client';
 import {
   captureViewportAnchor,
   resolveRetainedWindowViewportMetrics,
@@ -35,12 +41,12 @@ import type {
   HistoryVirtualWindow,
   HistoryViewportMetrics,
   HistoryVisibleEntry,
-  LensHistoryEntry,
-  SessionLensViewState,
+  AppServerControlHistoryEntry,
+  SessionAppServerControlViewState,
 } from './types';
-/* eslint-disable max-lines -- Lens history rendering/virtualization remains intentionally consolidated while the browser-side virtualizer is being hardened. */
+/* eslint-disable max-lines -- AppServerControl history rendering/virtualization remains intentionally consolidated while the browser-side virtualizer is being hardened. */
 
-function lensText(key: string, fallback: string): string {
+function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   return !translated || translated === key ? fallback : translated;
 }
@@ -53,29 +59,29 @@ const HISTORY_PROGRESS_THUMB_TOUCH_MAX_PX = 84;
 const HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX = 1;
 
 function resolveHistoryEntryHeight(
-  entry: LensHistoryEntry,
-  state: SessionLensViewState | undefined,
+  entry: AppServerControlHistoryEntry,
+  state: SessionAppServerControlViewState | undefined,
   clientWidth: number,
 ): number {
   return resolveHistoryViewportEntryHeight(entry, state, clientWidth);
 }
 
 type HistoryRenderDeps = {
-  getState: (sessionId: string) => SessionLensViewState | undefined;
+  getState: (sessionId: string) => SessionAppServerControlViewState | undefined;
   scheduleHistoryRender: (sessionId: string) => void;
   syncAgentViewPresentation: (
     panel: HTMLDivElement,
-    provider: LensHistorySnapshot['provider'] | null | undefined,
+    provider: AppServerControlHistorySnapshot['provider'] | null | undefined,
   ) => void;
   createHistoryEntry: (
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     sessionId: string,
     options?: {
       artifactCluster?: ArtifactClusterInfo | null;
       showAssistantBadge?: boolean;
     },
   ) => HTMLElement;
-  syncBusyIndicatorEntry?: (node: HTMLElement, entry: LensHistoryEntry) => void;
+  syncBusyIndicatorEntry?: (node: HTMLElement, entry: AppServerControlHistoryEntry) => void;
   createHistoryPlaceholderBlock?: (args: {
     heightPx: number;
     itemCount: number;
@@ -85,16 +91,19 @@ type HistoryRenderDeps = {
   }) => HTMLElement;
   createRequestActionBlock: (
     sessionId: string,
-    request: LensHistoryRequestSummary,
+    request: AppServerControlHistoryRequestSummary,
     busy: boolean,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     surface: 'composer' | 'history',
   ) => HTMLElement;
   pruneAssistantMarkdownCache: (
-    state: SessionLensViewState,
-    entries: readonly LensHistoryEntry[],
+    state: SessionAppServerControlViewState,
+    entries: readonly AppServerControlHistoryEntry[],
   ) => void;
-  renderRuntimeStats: (panel: HTMLDivElement, stats: SessionLensViewState['runtimeStats']) => void;
+  renderRuntimeStats: (
+    panel: HTMLDivElement,
+    stats: SessionAppServerControlViewState['runtimeStats'],
+  ) => void;
   syncViewportHistoryWindow?: (sessionId: string) => void;
 };
 
@@ -105,7 +114,7 @@ const USER_HISTORY_GAP_RECOVERY_GRACE_MS = 900;
 
 export type HistoryWindowViewportMetrics = VirtualizerWindowViewportMetrics;
 
-function resolveContiguousHistoryEntryWindow(entries: readonly LensHistoryEntry[]): {
+function resolveContiguousHistoryEntryWindow(entries: readonly AppServerControlHistoryEntry[]): {
   windowStart: number;
   windowEnd: number;
 } | null {
@@ -129,8 +138,8 @@ function resolveContiguousHistoryEntryWindow(entries: readonly LensHistoryEntry[
 }
 
 function resolveHistoryRetainedWindowDescriptor(
-  entries: readonly LensHistoryEntry[],
-  state: SessionLensViewState | undefined,
+  entries: readonly AppServerControlHistoryEntry[],
+  state: SessionAppServerControlViewState | undefined,
 ): {
   windowStart: number;
   windowEnd: number;
@@ -159,10 +168,10 @@ function resolveHistoryRetainedWindowDescriptor(
 }
 
 export function resolveHistoryWindowViewportMetrics(
-  entries: readonly LensHistoryEntry[],
-  state: SessionLensViewState | undefined,
+  entries: readonly AppServerControlHistoryEntry[],
+  state: SessionAppServerControlViewState | undefined,
   metrics: HistoryViewportMetrics,
-  resolveEntryHeight: (entry: LensHistoryEntry) => number,
+  resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number,
 ): HistoryWindowViewportMetrics {
   const retainedWindow = resolveHistoryRetainedWindowDescriptor(entries, state);
   return resolveRetainedWindowViewportMetrics({
@@ -178,7 +187,7 @@ export function resolveHistoryWindowViewportMetrics(
 
 function toHistoryViewportAnchor(
   anchor: VirtualizerAnchor | null,
-): SessionLensViewState['pendingHistoryLayoutAnchor'] {
+): SessionAppServerControlViewState['pendingHistoryLayoutAnchor'] {
   if (!anchor) {
     return null;
   }
@@ -191,7 +200,7 @@ function toHistoryViewportAnchor(
 }
 
 function updateBusyIndicatorElapsedInState(
-  state: SessionLensViewState | undefined,
+  state: SessionAppServerControlViewState | undefined,
   elapsedText: string,
 ): boolean {
   if (!state) {
@@ -217,7 +226,7 @@ function updateBusyIndicatorElapsedInState(
 }
 
 function resolveMeasurementBrowseAnchor(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
 ): VirtualizerAnchor | null {
   if (state.historyAutoScrollPinned || state.pendingHistoryPrependAnchor !== null) {
@@ -235,7 +244,7 @@ function resolveMeasurementBrowseAnchor(
 }
 
 function collectHistoryMeasurementChanges(args: {
-  state: SessionLensViewState;
+  state: SessionAppServerControlViewState;
   viewport: HTMLDivElement;
   records: readonly ResizeObserverEntry[];
 }): VirtualizerMeasuredItemChange[] {
@@ -244,7 +253,7 @@ function collectHistoryMeasurementChanges(args: {
 
   for (const record of records) {
     const target = record.target as HTMLElement;
-    const entryId = target.dataset.lensEntryId;
+    const entryId = target.dataset.appServerControlEntryId;
     if (!entryId) {
       continue;
     }
@@ -280,9 +289,9 @@ function collectHistoryMeasurementChanges(args: {
 
 function syncHistoryMeasurementObserver(args: {
   sessionId: string;
-  state: SessionLensViewState;
+  state: SessionAppServerControlViewState;
   visibleEntries: readonly HistoryVisibleEntry[];
-  getState: (sessionId: string) => SessionLensViewState | undefined;
+  getState: (sessionId: string) => SessionAppServerControlViewState | undefined;
   scheduleHistoryRender: (sessionId: string) => void;
 }): void {
   if (typeof ResizeObserver !== 'function') {
@@ -332,18 +341,18 @@ function syncHistoryMeasurementObserver(args: {
 }
 
 function buildVisibleHistoryEntries(args: {
-  entries: readonly LensHistoryEntry[];
+  entries: readonly AppServerControlHistoryEntry[];
   visibleStart: number;
   visibleEnd: number;
-  state: SessionLensViewState | undefined;
+  state: SessionAppServerControlViewState | undefined;
   resolveCluster: (
-    entries: readonly LensHistoryEntry[],
+    entries: readonly AppServerControlHistoryEntry[],
     absoluteIndex: number,
   ) => ArtifactClusterInfo | null;
   buildSignature: (
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     cluster: ArtifactClusterInfo | null,
-    state: SessionLensViewState | undefined,
+    state: SessionAppServerControlViewState | undefined,
     showAssistantBadge: boolean,
   ) => string;
 }): HistoryVisibleEntry[] {
@@ -363,7 +372,7 @@ function buildVisibleHistoryEntries(args: {
 }
 
 function hasEarlierAssistantInTurn(
-  entries: readonly LensHistoryEntry[],
+  entries: readonly AppServerControlHistoryEntry[],
   absoluteIndex: number,
   sourceTurnId: string,
 ): boolean {
@@ -378,7 +387,7 @@ function hasEarlierAssistantInTurn(
 }
 
 function didUserStartMostRecentUntaggedRun(
-  entries: readonly LensHistoryEntry[],
+  entries: readonly AppServerControlHistoryEntry[],
   absoluteIndex: number,
 ): boolean {
   for (let index = absoluteIndex - 1; index >= 0; index -= 1) {
@@ -400,7 +409,7 @@ function didUserStartMostRecentUntaggedRun(
 }
 
 function shouldShowAssistantBadge(
-  entries: readonly LensHistoryEntry[],
+  entries: readonly AppServerControlHistoryEntry[],
   absoluteIndex: number,
 ): boolean {
   const entry = entries[absoluteIndex];
@@ -414,7 +423,10 @@ function shouldShowAssistantBadge(
     : didUserStartMostRecentUntaggedRun(entries, absoluteIndex);
 }
 
-function resolveAnchorAbsoluteIndex(state: SessionLensViewState, entryId: string): number {
+function resolveAnchorAbsoluteIndex(
+  state: SessionAppServerControlViewState,
+  entryId: string,
+): number {
   const relativeIndex = state.historyEntries.findIndex((entry) => entry.id === entryId);
   const historyWindowStart = resolveHistoryRetainedWindowDescriptor(
     state.historyEntries,
@@ -423,7 +435,7 @@ function resolveAnchorAbsoluteIndex(state: SessionLensViewState, entryId: string
   return relativeIndex >= 0 ? historyWindowStart + relativeIndex : historyWindowStart;
 }
 
-function buildHistoryAttachmentToken(entry: LensHistoryEntry): string {
+function buildHistoryAttachmentToken(entry: AppServerControlHistoryEntry): string {
   return (entry.attachments ?? [])
     .map((attachment) =>
       [attachment.kind, attachment.displayName, attachment.path, attachment.mimeType ?? ''].join(
@@ -442,14 +454,14 @@ function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {
 }
 
 function buildAssistantPreviewToken(
-  entry: LensHistoryEntry,
-  state: SessionLensViewState | undefined,
+  entry: AppServerControlHistoryEntry,
+  state: SessionAppServerControlViewState | undefined,
 ): string {
   void state;
   return (entry.imagePreviews ?? []).map((preview) => preview.resolvedPath).join('|');
 }
 
-function buildHistoryActionToken(entry: LensHistoryEntry): string {
+function buildHistoryActionToken(entry: AppServerControlHistoryEntry): string {
   return (entry.actions ?? [])
     .map((action) => [action.id, action.label, action.style, action.busyLabel ?? ''].join(':'))
     .join('|');
@@ -485,7 +497,7 @@ function clampHistoryAbsoluteIndex(index: number, historyCount: number): number 
 
 function readHistoryViewportMetrics(
   container: HTMLDivElement,
-  state?: SessionLensViewState,
+  state?: SessionAppServerControlViewState,
 ): HistoryViewportMetrics {
   void state;
 
@@ -498,7 +510,7 @@ function readHistoryViewportMetrics(
 
 function readHistoryScrollMetrics(
   container: HTMLDivElement,
-  state?: SessionLensViewState,
+  state?: SessionAppServerControlViewState,
 ): HistoryScrollMetrics {
   void state;
 
@@ -510,7 +522,7 @@ function readHistoryScrollMetrics(
 }
 
 function resolveHistoryNavigatorVisibleAnchorIndex(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
   totalCount: number,
 ): number | null {
@@ -554,7 +566,7 @@ function resolveHistoryNavigatorVisibleAnchorIndex(
 }
 
 function resolveHistoryNavigatorAnchorIndex(
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
 ): number | null {
   const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
@@ -615,7 +627,10 @@ function prepareHistoryProgressNavigator(
   host.setAttribute('aria-valuemin', '0');
   host.setAttribute('aria-valuemax', '0');
   host.setAttribute('aria-valuenow', '0');
-  host.setAttribute('aria-valuetext', lensText('lens.history.navigator.empty', 'No history'));
+  host.setAttribute(
+    'aria-valuetext',
+    appServerControlText('appServerControl.history.navigator.empty', 'No history'),
+  );
   return true;
 }
 
@@ -624,7 +639,7 @@ function applyHistoryProgressNavigatorPosition(args: {
   thumb: HTMLDivElement;
   historyCount: number;
   anchorIndex: number | null;
-  mode: SessionLensViewState['historyNavigatorMode'];
+  mode: SessionAppServerControlViewState['historyNavigatorMode'];
 }): void {
   const { host, thumb, historyCount, anchorIndex, mode } = args;
   const thumbHeightPx = resolveHistoryProgressThumbHeightPx(host);
@@ -645,13 +660,13 @@ function applyHistoryProgressNavigatorPosition(args: {
     'aria-valuetext',
     anchorIndex === null
       ? `${historyCount}`
-      : `${anchorIndex + 1} ${lensText('lens.history.navigator.of', 'of')} ${historyCount}`,
+      : `${anchorIndex + 1} ${appServerControlText('appServerControl.history.navigator.of', 'of')} ${historyCount}`,
   );
   thumb.style.height = `${thumbHeightPx}px`;
   thumb.style.top = `${thumbTopPx}px`;
 }
 
-function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined): void {
+function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState | undefined): void {
   const host = state?.historyProgressNav;
   const thumb = state?.historyProgressThumb;
   if (!state || !host || !thumb) {
@@ -678,7 +693,7 @@ function syncHistoryProgressNavigatorUi(state: SessionLensViewState | undefined)
 }
 
 export function resolveHistoryNavigatorTarget(args: {
-  state: SessionLensViewState | undefined;
+  state: SessionAppServerControlViewState | undefined;
   clientY: number;
 }): { targetIndex: number; atLiveEdge: boolean } | null {
   const { state, clientY } = args;
@@ -704,7 +719,7 @@ export function resolveHistoryNavigatorTarget(args: {
 }
 function hasIntersectingRenderedHistoryEntry(
   viewport: HTMLDivElement,
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
 ): boolean {
   if (typeof viewport.getBoundingClientRect !== 'function') {
     return true;
@@ -730,7 +745,7 @@ function hasIntersectingRenderedHistoryEntry(
 function recoverViewportFromRenderedHistoryGap(
   sessionId: string,
   viewport: HTMLDivElement,
-  state: SessionLensViewState,
+  state: SessionAppServerControlViewState,
 ): boolean {
   if (typeof viewport.getBoundingClientRect !== 'function') {
     return false;
@@ -765,7 +780,7 @@ function recoverViewportFromRenderedHistoryGap(
     return false;
   }
 
-  traceLensHistoryScroll({
+  traceAppServerControlHistoryScroll({
     sessionId,
     reason: 'gap-snap',
     scrollTop: viewport.scrollTop,
@@ -779,7 +794,7 @@ function recoverViewportFromRenderedHistoryGap(
   return syncViewportScrollPosition(viewport, viewport.scrollTop + nearestOffsetTopPx - 24);
 }
 
-function suppressViewportWindowSync(state: SessionLensViewState | undefined): void {
+function suppressViewportWindowSync(state: SessionAppServerControlViewState | undefined): void {
   if (!state) {
     return;
   }
@@ -789,10 +804,10 @@ function suppressViewportWindowSync(state: SessionLensViewState | undefined): vo
 }
 
 function sumHistoryEntryHeights(
-  entries: readonly LensHistoryEntry[],
+  entries: readonly AppServerControlHistoryEntry[],
   start: number,
   end: number,
-  resolveEntryHeight: (entry: LensHistoryEntry) => number,
+  resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number,
 ): number {
   let total = 0;
   for (let index = Math.max(0, start); index < Math.min(entries.length, end); index += 1) {
@@ -883,10 +898,10 @@ function buildHistoryPlaceholderBlocks(args: {
 }
 
 function expandHistoryVirtualWindowForPendingAnchor(args: {
-  entries: readonly LensHistoryEntry[];
+  entries: readonly AppServerControlHistoryEntry[];
   virtualWindow: HistoryVirtualWindow;
-  state?: SessionLensViewState | undefined;
-  resolveEntryHeight: (entry: LensHistoryEntry) => number;
+  state?: SessionAppServerControlViewState | undefined;
+  resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number;
 }): HistoryVirtualWindow {
   const { entries, virtualWindow, state, resolveEntryHeight } = args;
   const anchorEntryId =
@@ -900,8 +915,11 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
     return virtualWindow;
   }
 
-  const corridorStart = Math.max(0, anchorIndex - LENS_HISTORY_OVERSCAN_ITEMS);
-  const corridorEnd = Math.min(entries.length, anchorIndex + LENS_HISTORY_OVERSCAN_ITEMS + 1);
+  const corridorStart = Math.max(0, anchorIndex - APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS);
+  const corridorEnd = Math.min(
+    entries.length,
+    anchorIndex + APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS + 1,
+  );
   const start = Math.min(virtualWindow.start, corridorStart);
   const end = Math.max(virtualWindow.end, corridorEnd);
   if (start === virtualWindow.start && end === virtualWindow.end) {
@@ -929,10 +947,10 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
   };
 }
 
-/* eslint-disable max-lines-per-function, complexity -- Lens history render orchestration is intentionally centralized while the virtualizer contract is still moving. */
+/* eslint-disable max-lines-per-function, complexity -- AppServerControl history render orchestration is intentionally centralized while the virtualizer contract is still moving. */
 export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function isVirtualizedHistoryContext(
-    state: SessionLensViewState | undefined,
+    state: SessionAppServerControlViewState | undefined,
     entryCount: number,
   ): boolean {
     if (!state) {
@@ -962,8 +980,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function renderActivationView(
     sessionId: string,
     panel: HTMLDivElement,
-    state: SessionLensViewState,
-    entries: LensHistoryEntry[],
+    state: SessionAppServerControlViewState,
+    entries: AppServerControlHistoryEntry[],
   ): void {
     deps.syncAgentViewPresentation(panel, state.snapshot?.provider ?? null);
     panel.dataset.agentTurnId = '';
@@ -973,7 +991,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
   function renderHistory(
     panel: HTMLDivElement,
-    entries: LensHistoryEntry[],
+    entries: AppServerControlHistoryEntry[],
     sessionId: string,
   ): void {
     const container = panel.querySelector<HTMLElement>('[data-agent-field="history"]');
@@ -1006,7 +1024,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         )
       : false;
     if (state?.snapshot) {
-      traceRenderedLensHistoryWindow({
+      traceRenderedAppServerControlHistoryWindow({
         sessionId,
         entries,
         metrics,
@@ -1019,13 +1037,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function buildHistoryRenderPlan(
-    entries: readonly LensHistoryEntry[],
+    entries: readonly AppServerControlHistoryEntry[],
     metrics: HistoryViewportMetrics,
-    state: SessionLensViewState | undefined,
+    state: SessionAppServerControlViewState | undefined,
   ): HistoryRenderPlan {
     if (entries.length === 0) {
       return {
-        emptyStateText: lensText('lens.emptyHistory', 'No history entries yet.'),
+        emptyStateText: appServerControlText(
+          'appServerControl.emptyHistory',
+          'No history entries yet.',
+        ),
         virtualWindowKey: null,
         leadingPlaceholders: [],
         trailingPlaceholders: [],
@@ -1033,7 +1054,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       };
     }
 
-    const resolveEntryHeight = (entry: LensHistoryEntry) =>
+    const resolveEntryHeight = (entry: AppServerControlHistoryEntry) =>
       resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
     const windowMetrics = resolveHistoryWindowViewportMetrics(
       entries,
@@ -1062,7 +1083,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         heightPx: windowMetrics.effectiveOffWindowTopSpacerPx,
         itemCount: retainedWindowStart,
         direction: 'earlier',
-        label: lensText('lens.history.placeholderEarlier', 'Earlier history'),
+        label: appServerControlText(
+          'appServerControl.history.placeholderEarlier',
+          'Earlier history',
+        ),
         absoluteStart: 0,
       }),
       ...buildHistoryPlaceholderBlocks({
@@ -1070,7 +1094,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         heightPx: renderedWindow.topSpacerPx,
         itemCount: renderedWindow.start,
         direction: 'earlier',
-        label: lensText('lens.history.placeholderNearbyEarlier', 'Buffered earlier rows'),
+        label: appServerControlText(
+          'appServerControl.history.placeholderNearbyEarlier',
+          'Buffered earlier rows',
+        ),
         absoluteStart: retainedWindowStart,
       }),
     ];
@@ -1080,7 +1107,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         heightPx: renderedWindow.bottomSpacerPx,
         itemCount: Math.max(0, entries.length - renderedWindow.end),
         direction: 'later',
-        label: lensText('lens.history.placeholderNearbyLater', 'Buffered later rows'),
+        label: appServerControlText(
+          'appServerControl.history.placeholderNearbyLater',
+          'Buffered later rows',
+        ),
         absoluteStart: retainedWindowStart + renderedWindow.end,
       }),
       ...buildHistoryPlaceholderBlocks({
@@ -1088,7 +1118,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         heightPx: windowMetrics.offWindowBottomSpacerPx,
         itemCount: Math.max(0, windowMetrics.totalCount - retainedWindowEnd),
         direction: 'later',
-        label: lensText('lens.history.placeholderLater', 'Later history'),
+        label: appServerControlText('appServerControl.history.placeholderLater', 'Later history'),
         absoluteStart: retainedWindowEnd,
       }),
     ];
@@ -1112,7 +1142,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function adjustBrowseViewportIfNeeded(
     sessionId: string,
     viewport: HTMLDivElement,
-    state: SessionLensViewState | undefined,
+    state: SessionAppServerControlViewState | undefined,
   ): boolean {
     if (!state || state.historyAutoScrollPinned) {
       return false;
@@ -1134,7 +1164,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const userScrollInProgress =
       Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
     if (userScrollInProgress && !hasIntersectingRenderedHistoryEntry(viewport, state)) {
-      traceLensHistoryScroll({
+      traceAppServerControlHistoryScroll({
         sessionId,
         reason: 'gap-wait',
         scrollTop: viewport.scrollTop,
@@ -1160,7 +1190,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
   function restorePendingHistoryJumpTarget(
     viewport: HTMLDivElement,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
   ): boolean {
     const snapshot = state.snapshot;
     const targetIndex = state.historyPendingJumpTargetIndex;
@@ -1206,8 +1236,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     sessionId: string,
     panel: HTMLDivElement,
     viewport: HTMLDivElement,
-    entries: readonly LensHistoryEntry[],
-    state: SessionLensViewState | undefined,
+    entries: readonly AppServerControlHistoryEntry[],
+    state: SessionAppServerControlViewState | undefined,
     measurementChanged: boolean,
   ): void {
     const jumpViewportAdjusted = state ? restorePendingHistoryJumpTarget(viewport, state) : false;
@@ -1279,9 +1309,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function buildHistoryEntrySignature(
-    entry: LensHistoryEntry,
+    entry: AppServerControlHistoryEntry,
     cluster: ArtifactClusterInfo | null,
-    state: SessionLensViewState | undefined,
+    state: SessionAppServerControlViewState | undefined,
     showAssistantBadge: boolean,
   ): string {
     return [
@@ -1310,8 +1340,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function resolveHistoryEntryBusyToken(
-    entry: LensHistoryEntry,
-    state: SessionLensViewState | undefined,
+    entry: AppServerControlHistoryEntry,
+    state: SessionAppServerControlViewState | undefined,
   ): string {
     return state?.activationActionBusy === true && (entry.actions?.length ?? 0) > 0
       ? 'busy'
@@ -1319,8 +1349,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function buildHistoryRequestToken(
-    entry: LensHistoryEntry,
-    state: SessionLensViewState | undefined,
+    entry: AppServerControlHistoryEntry,
+    state: SessionAppServerControlViewState | undefined,
   ): string {
     if (entry.kind !== 'request' || !entry.requestId) {
       return '';
@@ -1389,7 +1419,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     state.historyLastVirtualWindowKey = plan.virtualWindowKey;
   }
 
-  function ensureEmptyHistoryNode(state: SessionLensViewState, text: string): HTMLDivElement {
+  function ensureEmptyHistoryNode(
+    state: SessionAppServerControlViewState,
+    text: string,
+  ): HTMLDivElement {
     if (!state.historyEmptyState) {
       const empty = document.createElement('div');
       empty.className = 'agent-history-empty';
@@ -1400,7 +1433,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function ensureHistoryPlaceholderNode(
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     position: 'leading' | 'trailing',
     blockIndex: number,
     block: HistoryPlaceholderBlock,
@@ -1448,7 +1481,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function resolveHistoryPlaceholderNodes(
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     position: 'leading' | 'trailing',
     blocks: readonly HistoryPlaceholderBlock[],
   ): HTMLDivElement[] {
@@ -1463,13 +1496,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
   function resolveRenderedHistoryNode(
     sessionId: string,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     visibleEntry: HistoryVisibleEntry,
   ): HTMLElement {
     const existing = state.historyRenderedNodes.get(visibleEntry.key);
     if (existing && existing.entry.busyIndicator && visibleEntry.entry.busyIndicator) {
       deps.syncBusyIndicatorEntry?.(existing.node, visibleEntry.entry);
-      existing.node.dataset.lensEntryId = visibleEntry.key;
+      existing.node.dataset.appServerControlEntryId = visibleEntry.key;
       existing.signature = visibleEntry.signature;
       existing.entry = visibleEntry.entry;
       existing.cluster = visibleEntry.cluster;
@@ -1478,7 +1511,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     if (existing && existing.signature === visibleEntry.signature) {
-      existing.node.dataset.lensEntryId = visibleEntry.key;
+      existing.node.dataset.appServerControlEntryId = visibleEntry.key;
       return existing.node;
     }
 
@@ -1486,7 +1519,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       artifactCluster: visibleEntry.cluster,
       showAssistantBadge: visibleEntry.showAssistantBadge,
     });
-    node.dataset.lensEntryId = visibleEntry.key;
+    node.dataset.appServerControlEntryId = visibleEntry.key;
     state.historyRenderedNodes.set(visibleEntry.key, {
       node,
       signature: visibleEntry.signature,
@@ -1499,7 +1532,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
   function measureRenderedHistoryHeights(
     sessionId: string,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     visibleEntries: readonly HistoryVisibleEntry[],
     clientWidth: number,
   ): boolean {
@@ -1537,7 +1570,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
   function restorePendingHistoryAnchor(
     viewport: HTMLDivElement,
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     key: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor',
   ): boolean {
     const anchor = state[key];
@@ -1560,7 +1593,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function captureHistoryViewportAnchor(
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     key:
       | 'pendingHistoryPrependAnchor'
       | 'pendingHistoryLayoutAnchor' = 'pendingHistoryPrependAnchor',
@@ -1607,13 +1640,16 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
   }
 
-  function renderScrollToBottomControl(panel: HTMLDivElement, state: SessionLensViewState): void {
+  function renderScrollToBottomControl(
+    panel: HTMLDivElement,
+    state: SessionAppServerControlViewState,
+  ): void {
     const button = panel.querySelector<HTMLButtonElement>('[data-agent-field="scroll-to-bottom"]');
     if (!button) {
       return;
     }
 
-    button.textContent = lensText('lens.scrollToBottom', 'Back to bottom');
+    button.textContent = appServerControlText('appServerControl.scrollToBottom', 'Back to bottom');
     button.hidden =
       state.historyAutoScrollPinned ||
       state.historyEntries.length === 0 ||
@@ -1623,8 +1659,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function renderComposerInterruption(
     panel: HTMLDivElement,
     sessionId: string,
-    requests: readonly LensHistoryRequestSummary[],
-    state: SessionLensViewState,
+    requests: readonly AppServerControlHistoryRequestSummary[],
+    state: SessionAppServerControlViewState,
   ): void {
     const shell = panel.querySelector<HTMLElement>('[data-agent-field="composer-shell"]');
     const host = panel.querySelector<HTMLElement>('[data-agent-field="composer-interruption"]');
@@ -1654,8 +1690,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function syncRequestInteractionState(
-    state: SessionLensViewState,
-    requests: readonly LensHistoryRequestSummary[],
+    state: SessionAppServerControlViewState,
+    requests: readonly AppServerControlHistoryRequestSummary[],
   ): void {
     const activeRequestIds = new Set(
       requests.filter((request) => request.state === 'open').map((request) => request.requestId),
@@ -1700,7 +1736,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     renderScrollToBottomControl(state.panel, state);
   }
 
-  function shouldRenderForViewportScroll(state: SessionLensViewState): boolean {
+  function shouldRenderForViewportScroll(state: SessionAppServerControlViewState): boolean {
     const viewport = state.historyViewport;
     if (!viewport || !isVirtualizedHistoryContext(state, state.historyEntries.length)) {
       return false;
@@ -1733,7 +1769,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   }
 
   function getViewportCenteredHistoryWindowRequest(
-    state: SessionLensViewState,
+    state: SessionAppServerControlViewState,
     options: {
       fetchAheadItems: number;
       anchorAbsoluteIndex?: number | null;
@@ -1746,7 +1782,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const metrics = readHistoryViewportMetrics(viewport, state);
-    const resolveEntryHeight = (entry: LensHistoryEntry) =>
+    const resolveEntryHeight = (entry: AppServerControlHistoryEntry) =>
       resolveHistoryEntryHeight(entry, state, metrics.clientWidth);
     const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
     const request = resolveViewportCenteredWindowRequest({
@@ -1779,8 +1815,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     renderComposerInterruption,
     renderHistory,
     renderScrollToBottomControl,
-    readHistoryScrollMetrics: (container: HTMLDivElement, stateArg?: SessionLensViewState) =>
-      readHistoryScrollMetrics(container, stateArg),
+    readHistoryScrollMetrics: (
+      container: HTMLDivElement,
+      stateArg?: SessionAppServerControlViewState,
+    ) => readHistoryScrollMetrics(container, stateArg),
     scrollHistoryToBottom,
     shouldRenderForViewportScroll,
     suppressActiveComposerRequestEntries,
@@ -1792,9 +1830,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 }
 
 export function suppressActiveComposerRequestEntries(
-  entries: readonly LensHistoryEntry[],
-  requests: readonly LensHistoryRequestSummary[],
-): LensHistoryEntry[] {
+  entries: readonly AppServerControlHistoryEntry[],
+  requests: readonly AppServerControlHistoryRequestSummary[],
+): AppServerControlHistoryEntry[] {
   const activeRequest = findActiveComposerRequest(requests);
   if (!activeRequest || activeRequest.state !== 'open') {
     return [...entries];
@@ -1806,8 +1844,8 @@ export function suppressActiveComposerRequestEntries(
 }
 
 function findActiveComposerRequest(
-  requests: readonly LensHistoryRequestSummary[],
-): LensHistoryRequestSummary | null {
+  requests: readonly AppServerControlHistoryRequestSummary[],
+): AppServerControlHistoryRequestSummary | null {
   const openRequests = requests.filter(
     (request) => request.state === 'open' && request.kind !== 'interview',
   );
@@ -1825,7 +1863,7 @@ function findActiveComposerRequest(
 }
 
 function resolveArtifactCluster(
-  entries: readonly LensHistoryEntry[],
+  entries: readonly AppServerControlHistoryEntry[],
   index: number,
 ): ArtifactClusterInfo | null {
   const entry = entries[index];
@@ -1843,18 +1881,21 @@ function resolveArtifactCluster(
   const onlyTools = clusterEntries.every((candidate) => candidate.kind === 'tool');
   return {
     position,
-    label: position === 'start' && !onlyTools ? lensText('lens.cluster.workLog', 'Work log') : null,
+    label:
+      position === 'start' && !onlyTools
+        ? appServerControlText('appServerControl.cluster.workLog', 'Work log')
+        : null,
     count,
     onlyTools,
   };
 }
 
-function isArtifactClusterKind(kind: LensHistoryEntry['kind']): boolean {
+function isArtifactClusterKind(kind: AppServerControlHistoryEntry['kind']): boolean {
   return ['tool', 'reasoning', 'plan', 'diff'].includes(kind);
 }
 
 function findArtifactClusterBoundary(
-  entries: readonly LensHistoryEntry[],
+  entries: readonly AppServerControlHistoryEntry[],
   index: number,
   direction: -1 | 1,
 ): number {

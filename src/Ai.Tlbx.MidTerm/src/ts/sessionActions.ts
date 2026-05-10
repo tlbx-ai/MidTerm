@@ -89,13 +89,16 @@ export interface SessionSelectionOptions {
 
 interface SessionActionsDeps {
   animateBookmarkSaveSuccess: (sessionId: string) => void;
-  buildLensHistoryDedupeKey: (profile: 'codex' | 'claude', workingDirectory: string) => string;
+  buildAppServerControlHistoryDedupeKey: (
+    profile: 'codex' | 'claude',
+    workingDirectory: string,
+  ) => string;
   closeMobileActionsMenu: () => void;
   getBookmarkSurfaceType: (
     session: Session,
     profile: 'codex' | 'claude' | null,
   ) => 'trm' | 'cdx' | 'cld';
-  isLensOnlySession: (session: Session | null | undefined) => boolean;
+  isAppServerControlOnlySession: (session: Session | null | undefined) => boolean;
 }
 
 interface ResolvedPinnedHistoryTarget {
@@ -114,10 +117,10 @@ interface ResolvedPinnedHistoryTarget {
 
 export function createSessionActionHandlers({
   animateBookmarkSaveSuccess,
-  buildLensHistoryDedupeKey,
+  buildAppServerControlHistoryDedupeKey,
   closeMobileActionsMenu,
   getBookmarkSurfaceType,
-  isLensOnlySession,
+  isAppServerControlOnlySession,
 }: SessionActionsDeps) {
   function hideStandaloneTerminalContainers(): void {
     sessionTerminals.forEach((state, id) => {
@@ -188,7 +191,7 @@ export function createSessionActionHandlers({
     }
     sendActiveSessionHint(sessionId);
     const sessionInfo = getSession(sessionId);
-    if (!isLensOnlySession(sessionInfo)) {
+    if (!isAppServerControlOnlySession(sessionInfo)) {
       createTerminalForSession(sessionId, sessionInfo);
     }
     getLayoutRoot()?.classList.remove('hidden');
@@ -203,8 +206,8 @@ export function createSessionActionHandlers({
     sendActiveSessionHint(sessionId);
 
     const sessionInfo = getSession(sessionId);
-    const lensOnly = isLensOnlySession(sessionInfo);
-    const state = lensOnly ? null : createTerminalForSession(sessionId, sessionInfo);
+    const appServerControlOnly = isAppServerControlOnlySession(sessionInfo);
+    const state = appServerControlOnly ? null : createTerminalForSession(sessionId, sessionInfo);
     const isNewlyCreated = newlyCreatedSessions.has(sessionId);
     const activeTab = getActiveTab(sessionId);
 
@@ -224,7 +227,7 @@ export function createSessionActionHandlers({
       getLayoutRoot()?.classList.add('hidden');
     }
 
-    if (lensOnly && activeTab === 'terminal') {
+    if (appServerControlOnly && activeTab === 'terminal') {
       switchTab(sessionId, 'agent');
     }
 
@@ -343,7 +346,7 @@ export function createSessionActionHandlers({
     const bookmarkId = currentSession?.bookmarkId;
     if (!bookmarkId) return;
 
-    if (currentSession.lensOnly) {
+    if (currentSession.appServerControlOnly) {
       patchHistoryEntry(bookmarkId, { label: nameToSend || '' }).catch(() => {});
       return;
     }
@@ -540,18 +543,19 @@ export function createSessionActionHandlers({
     const fgInfo = getForegroundInfo(sessionId);
     const surfaceType = getBookmarkSurfaceType(session, historyMode.profile);
 
-    if (historyMode.launchMode === 'lens' && historyMode.profile) {
+    if (historyMode.launchMode === 'appServerControl' && historyMode.profile) {
       const workingDirectory = fgInfo.cwd ?? session.currentDirectory ?? '';
       if (!workingDirectory) {
         log.info(
-          () => `pinSessionToHistory: missing working directory for lens session ${sessionId}`,
+          () =>
+            `pinSessionToHistory: missing working directory for appServerControl session ${sessionId}`,
         );
         return null;
       }
 
       return {
         commandLine: null,
-        dedupeKey: buildLensHistoryDedupeKey(historyMode.profile, workingDirectory),
+        dedupeKey: buildAppServerControlHistoryDedupeKey(historyMode.profile, workingDirectory),
         executable: historyMode.profile,
         fgInfo,
         foregroundProcessCommandLine: null,

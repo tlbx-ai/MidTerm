@@ -58,8 +58,8 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
         Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
         Assert.Equal(0, settings.TerminalTransparency);
-        Assert.Equal(string.Empty, settings.CodexDefaultLensModel);
-        Assert.Equal(string.Empty, settings.ClaudeDefaultLensModel);
+        Assert.Equal(string.Empty, settings.CodexDefaultAppServerControlModel);
+        Assert.Equal(string.Empty, settings.ClaudeDefaultAppServerControlModel);
     }
 
     [Fact]

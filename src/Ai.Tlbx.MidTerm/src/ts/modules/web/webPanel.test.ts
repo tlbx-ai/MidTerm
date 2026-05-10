@@ -51,7 +51,12 @@ describe('webPanel preview reload decision', () => {
     } as const;
 
     const first = buildProxyUrl('https://example.com/', previewClient, 1, 'https://localhost:2000');
-    const second = buildProxyUrl('https://example.com/', previewClient, 2, 'https://localhost:2000');
+    const second = buildProxyUrl(
+      'https://example.com/',
+      previewClient,
+      2,
+      'https://localhost:2000',
+    );
 
     expect(first).not.toBe(second);
     expect(first).toContain('__mtTargetRevision=1');
@@ -151,18 +156,20 @@ describe('webPanel preview tabs', () => {
   it('asks the embedded bridge to refresh browser state when a frame is shown', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 
-    expect(source).toContain("const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;");
     expect(source).toContain(
-      "{ type: 'mt-refresh-browser-state', force: true, visible }",
+      'const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;',
     );
+    expect(source).toContain("{ type: 'mt-refresh-browser-state', force: true, visible }");
     expect(source).toContain('refreshPreviewBridgeVisibility(frame, isActive);');
   });
 
   it('wires a close button only for non-default preview tabs', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 
-    expect(source).toContain("let previewTabCloseHandler: ((previewName: string) => void) | null = null;");
-    expect(source).toContain("if (preview.previewName !== DEFAULT_PREVIEW_NAME) {");
+    expect(source).toContain(
+      'let previewTabCloseHandler: ((previewName: string) => void) | null = null;',
+    );
+    expect(source).toContain('if (preview.previewName !== DEFAULT_PREVIEW_NAME) {');
     expect(source).toContain("closeButton.className = 'web-preview-tab-close';");
     expect(source).toContain('previewTabCloseHandler?.(preview.previewName);');
   });

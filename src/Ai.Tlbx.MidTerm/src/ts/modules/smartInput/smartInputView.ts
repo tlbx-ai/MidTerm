@@ -4,7 +4,7 @@ export type ToolKind = 'mic' | 'attach' | 'photo';
 
 export const TOOL_ORDER: ToolKind[] = ['mic', 'attach', 'photo'];
 
-export interface LensQuickSettingsOption {
+export interface AppServerControlQuickSettingsOption {
   value: string;
   label: string;
   description?: string | null;
@@ -15,13 +15,13 @@ export interface SmartInputDomRefs {
   composerExpandBtn: HTMLButtonElement;
   inlineToolHost: HTMLDivElement;
   inputRow: HTMLDivElement;
-  lensAttachmentHost: HTMLDivElement;
-  lensQuickSettingsActions: HTMLDivElement;
-  lensEffortSelect: HTMLSelectElement;
-  lensModelSelect: HTMLSelectElement;
-  lensPermissionSelect: HTMLSelectElement;
-  lensPlanSelect: HTMLSelectElement;
-  lensQuickSettingsRow: HTMLDivElement;
+  appServerControlAttachmentHost: HTMLDivElement;
+  appServerControlQuickSettingsActions: HTMLDivElement;
+  appServerControlEffortSelect: HTMLSelectElement;
+  appServerControlModelSelect: HTMLSelectElement;
+  appServerControlPermissionSelect: HTMLSelectElement;
+  appServerControlPlanSelect: HTMLSelectElement;
+  appServerControlQuickSettingsRow: HTMLDivElement;
   photoInput: HTMLInputElement;
   sendBtn: HTMLButtonElement;
   textarea: HTMLTextAreaElement;
@@ -33,10 +33,10 @@ export interface SmartInputDomRefs {
 interface CreateSmartInputDomArgs {
   createToolsStrip: () => HTMLDivElement;
   onAttachInputChange: (files: FileList) => void;
-  onLensEffortChange: () => void;
-  onLensModelChange: () => void;
-  onLensPermissionChange: () => void;
-  onLensPlanChange: () => void;
+  onAppServerControlEffortChange: () => void;
+  onAppServerControlModelChange: () => void;
+  onAppServerControlPermissionChange: () => void;
+  onAppServerControlPlanChange: () => void;
   onPhotoInputChange: (files: FileList) => void;
   onExpandToggleClick: (event: MouseEvent) => void;
   onSendClick: () => void;
@@ -76,17 +76,19 @@ interface CreateTerminalTouchToggleButtonArgs {
 }
 
 export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDomRefs {
-  const lensQuickSettingsRow = document.createElement('div');
-  lensQuickSettingsRow.className = 'smart-input-lens-settings';
-  lensQuickSettingsRow.hidden = true;
+  const appServerControlQuickSettingsRow = document.createElement('div');
+  appServerControlQuickSettingsRow.className = 'smart-input-appServerControl-settings';
+  appServerControlQuickSettingsRow.hidden = true;
 
-  const lensModelSelect = document.createElement('select');
-  lensModelSelect.className = 'smart-input-lens-control';
-  setLensQuickSettingsDropdownOptions(lensModelSelect, [{ value: '', label: 'Default model' }]);
-  lensModelSelect.addEventListener('change', args.onLensModelChange);
+  const appServerControlModelSelect = document.createElement('select');
+  appServerControlModelSelect.className = 'smart-input-appServerControl-control';
+  setAppServerControlQuickSettingsDropdownOptions(appServerControlModelSelect, [
+    { value: '', label: 'Default model' },
+  ]);
+  appServerControlModelSelect.addEventListener('change', args.onAppServerControlModelChange);
 
-  const lensEffortSelect = document.createElement('select');
-  lensEffortSelect.className = 'smart-input-lens-control';
+  const appServerControlEffortSelect = document.createElement('select');
+  appServerControlEffortSelect.className = 'smart-input-appServerControl-control';
   for (const [value, label] of [
     ['', 'Default'],
     ['none', 'None'],
@@ -99,12 +101,12 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
-    lensEffortSelect.appendChild(option);
+    appServerControlEffortSelect.appendChild(option);
   }
-  lensEffortSelect.addEventListener('change', args.onLensEffortChange);
+  appServerControlEffortSelect.addEventListener('change', args.onAppServerControlEffortChange);
 
-  const lensPlanSelect = document.createElement('select');
-  lensPlanSelect.className = 'smart-input-lens-control';
+  const appServerControlPlanSelect = document.createElement('select');
+  appServerControlPlanSelect.className = 'smart-input-appServerControl-control';
   for (const [value, label] of [
     ['off', 'Plan off'],
     ['on', 'Plan on'],
@@ -112,12 +114,12 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
-    lensPlanSelect.appendChild(option);
+    appServerControlPlanSelect.appendChild(option);
   }
-  lensPlanSelect.addEventListener('change', args.onLensPlanChange);
+  appServerControlPlanSelect.addEventListener('change', args.onAppServerControlPlanChange);
 
-  const lensPermissionSelect = document.createElement('select');
-  lensPermissionSelect.className = 'smart-input-lens-control';
+  const appServerControlPermissionSelect = document.createElement('select');
+  appServerControlPermissionSelect.className = 'smart-input-appServerControl-control';
   for (const [value, label] of [
     ['manual', 'Manual'],
     ['auto', 'Auto'],
@@ -125,30 +127,43 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
-    lensPermissionSelect.appendChild(option);
+    appServerControlPermissionSelect.appendChild(option);
   }
-  lensPermissionSelect.addEventListener('change', args.onLensPermissionChange);
+  appServerControlPermissionSelect.addEventListener(
+    'change',
+    args.onAppServerControlPermissionChange,
+  );
 
-  const lensModelDropdown = createLensQuickSettingsDropdown(lensModelSelect);
-  lensModelDropdown.classList.add('smart-input-lens-model');
-  lensQuickSettingsRow.appendChild(createLensQuickSettingsField('Model', lensModelDropdown));
-  lensQuickSettingsRow.appendChild(
-    createLensQuickSettingsField('Effort', createLensQuickSettingsDropdown(lensEffortSelect)),
+  const appServerControlModelDropdown = createAppServerControlQuickSettingsDropdown(
+    appServerControlModelSelect,
   );
-  lensQuickSettingsRow.appendChild(
-    createLensQuickSettingsField('Plan', createLensQuickSettingsDropdown(lensPlanSelect)),
+  appServerControlModelDropdown.classList.add('smart-input-appServerControl-model');
+  appServerControlQuickSettingsRow.appendChild(
+    createAppServerControlQuickSettingsField('Model', appServerControlModelDropdown),
   );
-  lensQuickSettingsRow.appendChild(
-    createLensQuickSettingsField(
+  appServerControlQuickSettingsRow.appendChild(
+    createAppServerControlQuickSettingsField(
+      'Effort',
+      createAppServerControlQuickSettingsDropdown(appServerControlEffortSelect),
+    ),
+  );
+  appServerControlQuickSettingsRow.appendChild(
+    createAppServerControlQuickSettingsField(
+      'Plan',
+      createAppServerControlQuickSettingsDropdown(appServerControlPlanSelect),
+    ),
+  );
+  appServerControlQuickSettingsRow.appendChild(
+    createAppServerControlQuickSettingsField(
       'Permissions',
-      createLensQuickSettingsDropdown(lensPermissionSelect),
+      createAppServerControlQuickSettingsDropdown(appServerControlPermissionSelect),
     ),
   );
 
-  const lensQuickSettingsActions = document.createElement('div');
-  lensQuickSettingsActions.className = 'smart-input-lens-actions';
-  lensQuickSettingsActions.hidden = true;
-  lensQuickSettingsRow.appendChild(lensQuickSettingsActions);
+  const appServerControlQuickSettingsActions = document.createElement('div');
+  appServerControlQuickSettingsActions.className = 'smart-input-appServerControl-actions';
+  appServerControlQuickSettingsActions.hidden = true;
+  appServerControlQuickSettingsRow.appendChild(appServerControlQuickSettingsActions);
 
   const inputRow = document.createElement('div');
   inputRow.className = 'smart-input-row';
@@ -156,9 +171,9 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   const editorHost = document.createElement('div');
   editorHost.className = 'smart-input-editor';
 
-  const lensAttachmentHost = document.createElement('div');
-  lensAttachmentHost.className = 'smart-input-attachments';
-  lensAttachmentHost.hidden = true;
+  const appServerControlAttachmentHost = document.createElement('div');
+  appServerControlAttachmentHost.className = 'smart-input-attachments';
+  appServerControlAttachmentHost.hidden = true;
 
   const textareaShell = document.createElement('div');
   textareaShell.className = 'smart-input-textarea-shell';
@@ -257,7 +272,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   toolsPanel.className = 'manager-bar-action-popover smart-input-tools-surface';
   toolsPanel.hidden = true;
 
-  editorHost.appendChild(lensAttachmentHost);
+  editorHost.appendChild(appServerControlAttachmentHost);
   textareaShell.appendChild(textarea);
   textareaShell.appendChild(composerExpandBtn);
   editorHost.appendChild(textareaShell);
@@ -274,13 +289,13 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
     composerExpandBtn,
     inlineToolHost,
     inputRow,
-    lensAttachmentHost,
-    lensQuickSettingsActions,
-    lensEffortSelect,
-    lensModelSelect,
-    lensPermissionSelect,
-    lensPlanSelect,
-    lensQuickSettingsRow,
+    appServerControlAttachmentHost,
+    appServerControlQuickSettingsActions,
+    appServerControlEffortSelect,
+    appServerControlModelSelect,
+    appServerControlPermissionSelect,
+    appServerControlPlanSelect,
+    appServerControlQuickSettingsRow,
     photoInput,
     sendBtn,
     textarea,
@@ -393,14 +408,18 @@ export function createTerminalTouchToggleButton(
   const keysToggle = document.createElement('button');
   keysToggle.type = 'button';
   keysToggle.className = 'adaptive-footer-context-toggle adaptive-footer-status-toggle';
-  keysToggle.textContent = args.expanded ? t('smartInput.keysHide') : t('smartInput.keysShow');
+  keysToggle.innerHTML = `<span class="adaptive-footer-status-toggle-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h.01M11 9h.01M15 9h.01M17 13H7"/></svg></span><span class="adaptive-footer-status-toggle-label">${args.expanded ? t('smartInput.keysHide') : t('smartInput.keysShow')}</span>`;
   keysToggle.setAttribute('aria-pressed', args.expanded ? 'true' : 'false');
+  keysToggle.setAttribute(
+    'aria-label',
+    args.expanded ? t('smartInput.keysHide') : t('smartInput.keysShow'),
+  );
   keysToggle.dataset.expanded = args.expanded ? 'true' : 'false';
   keysToggle.addEventListener('click', args.onToggle);
   return keysToggle;
 }
 
-export function formatLensQuickSettingsSummary(draft: {
+export function formatAppServerControlQuickSettingsSummary(draft: {
   effort?: string | null;
   model?: string | null;
   planMode: string;
@@ -413,9 +432,9 @@ export function formatLensQuickSettingsSummary(draft: {
   return parts.join(' · ');
 }
 
-export function setLensQuickSettingsDropdownOptions(
+export function setAppServerControlQuickSettingsDropdownOptions(
   select: HTMLSelectElement,
-  options: readonly LensQuickSettingsOption[],
+  options: readonly AppServerControlQuickSettingsOption[],
 ): void {
   const nextSignature = options
     .map((option) => `${option.value}\u0000${option.label}\u0000${option.description ?? ''}`)
@@ -445,7 +464,7 @@ export function setLensQuickSettingsDropdownOptions(
   select.dispatchEvent(new Event('midterm:options'));
 }
 
-export function setLensQuickSettingsDropdownDisabled(
+export function setAppServerControlQuickSettingsDropdownDisabled(
   select: HTMLSelectElement,
   disabled: boolean,
 ): void {
@@ -457,12 +476,15 @@ export function setLensQuickSettingsDropdownDisabled(
   select.dispatchEvent(new Event('midterm:disabled'));
 }
 
-function createLensQuickSettingsField(labelText: string, control: HTMLElement): HTMLDivElement {
+function createAppServerControlQuickSettingsField(
+  labelText: string,
+  control: HTMLElement,
+): HTMLDivElement {
   const field = document.createElement('div');
-  field.className = 'smart-input-lens-field';
+  field.className = 'smart-input-appServerControl-field';
 
   const label = document.createElement('span');
-  label.className = 'smart-input-lens-label';
+  label.className = 'smart-input-appServerControl-label';
   label.textContent = labelText;
 
   field.appendChild(label);
@@ -470,36 +492,37 @@ function createLensQuickSettingsField(labelText: string, control: HTMLElement): 
   return field;
 }
 
-function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElement {
+function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElement {
   const wrapper = document.createElement('div');
-  wrapper.className = 'smart-input-lens-dropdown';
+  wrapper.className = 'smart-input-appServerControl-dropdown';
 
-  select.classList.add('smart-input-lens-control-native');
+  select.classList.add('smart-input-appServerControl-control-native');
   select.tabIndex = -1;
   select.setAttribute('aria-hidden', 'true');
 
   const trigger = document.createElement('button');
   trigger.type = 'button';
-  trigger.className = 'smart-input-lens-control smart-input-lens-dropdown-trigger';
+  trigger.className =
+    'smart-input-appServerControl-control smart-input-appServerControl-dropdown-trigger';
   trigger.setAttribute('aria-haspopup', 'menu');
   trigger.setAttribute('aria-expanded', 'false');
 
   const triggerLabel = document.createElement('span');
-  triggerLabel.className = 'smart-input-lens-dropdown-trigger-label';
+  triggerLabel.className = 'smart-input-appServerControl-dropdown-trigger-label';
 
   const triggerChevron = document.createElement('span');
-  triggerChevron.className = 'smart-input-lens-dropdown-trigger-chevron';
+  triggerChevron.className = 'smart-input-appServerControl-dropdown-trigger-chevron';
   triggerChevron.textContent = '▾';
 
   trigger.appendChild(triggerLabel);
   trigger.appendChild(triggerChevron);
 
   const menu = document.createElement('div');
-  menu.className = 'manager-bar-action-popover smart-input-lens-dropdown-menu hidden';
+  menu.className = 'manager-bar-action-popover smart-input-appServerControl-dropdown-menu hidden';
 
   const closeMenu = (): void => {
     menu.classList.add('hidden');
-    wrapper.classList.remove('smart-input-lens-dropdown-open-up');
+    wrapper.classList.remove('smart-input-appServerControl-dropdown-open-up');
     trigger.setAttribute('aria-expanded', 'false');
   };
 
@@ -507,7 +530,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     const disabled = select.disabled;
     trigger.disabled = disabled;
     trigger.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-    wrapper.classList.toggle('smart-input-lens-dropdown-disabled', disabled);
+    wrapper.classList.toggle('smart-input-appServerControl-dropdown-disabled', disabled);
     if (disabled) {
       closeMenu();
     }
@@ -515,7 +538,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
 
   const updateMenuPlacement = (): void => {
     if (menu.classList.contains('hidden')) {
-      wrapper.classList.remove('smart-input-lens-dropdown-open-up');
+      wrapper.classList.remove('smart-input-appServerControl-dropdown-open-up');
       return;
     }
 
@@ -528,7 +551,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     const openUp =
       availableBelow < Math.min(menuRect.height, 220) && availableAbove > availableBelow;
 
-    wrapper.classList.toggle('smart-input-lens-dropdown-open-up', openUp);
+    wrapper.classList.toggle('smart-input-appServerControl-dropdown-open-up', openUp);
   };
 
   const rebuildMenu = (): void => {
@@ -536,7 +559,8 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     for (const option of [...select.options]) {
       const optionButton = document.createElement('button');
       optionButton.type = 'button';
-      optionButton.className = 'manager-bar-action-popover-btn smart-input-lens-dropdown-option';
+      optionButton.className =
+        'manager-bar-action-popover-btn smart-input-appServerControl-dropdown-option';
       optionButton.dataset.value = option.value;
       optionButton.textContent = option.textContent || option.value;
       optionButton.title = option.title || option.textContent || option.value;
@@ -559,7 +583,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     const selectedOption = [...select.options].find((option) => option.value === select.value);
     triggerLabel.textContent = selectedOption ? selectedOption.textContent.trim() : '';
     menu
-      .querySelectorAll<HTMLButtonElement>('.smart-input-lens-dropdown-option')
+      .querySelectorAll<HTMLButtonElement>('.smart-input-appServerControl-dropdown-option')
       .forEach((button) => {
         button.classList.toggle('is-selected', button.dataset.value === select.value);
       });
@@ -577,7 +601,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
     event.stopPropagation();
     const nextOpen = menu.classList.contains('hidden');
     document
-      .querySelectorAll<HTMLElement>('.smart-input-lens-dropdown-menu:not(.hidden)')
+      .querySelectorAll<HTMLElement>('.smart-input-appServerControl-dropdown-menu:not(.hidden)')
       .forEach((openMenu) => {
         if (openMenu !== menu) {
           openMenu.classList.add('hidden');
@@ -585,7 +609,7 @@ function createLensQuickSettingsDropdown(select: HTMLSelectElement): HTMLDivElem
       });
     document
       .querySelectorAll<HTMLButtonElement>(
-        '.smart-input-lens-dropdown-trigger[aria-expanded="true"]',
+        '.smart-input-appServerControl-dropdown-trigger[aria-expanded="true"]',
       )
       .forEach((openTrigger) => {
         if (openTrigger !== trigger) {

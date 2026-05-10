@@ -1,24 +1,33 @@
 import { $voiceServerPassword } from '../../stores';
-import type { LensQuickSettingsOption, LensQuickSettingsSummary } from '../../api/types';
+import type {
+  AppServerControlQuickSettingsOption,
+  AppServerControlQuickSettingsSummary,
+} from '../../api/types';
 import { t } from '../i18n';
 import {
-  getLensQuickSettingsDraft,
-  getLensQuickSettingsEffective,
-  getLensQuickSettingsProvider,
-  getLensResolvedProviderModel,
-} from '../lens/quickSettings';
-import { hasInterruptibleLensTurnWork } from '../lens/input';
-import { getLensEffortOptions, getLensModelOptions } from '../lens/modelOptions';
+  getAppServerControlQuickSettingsDraft,
+  getAppServerControlQuickSettingsEffective,
+  getAppServerControlQuickSettingsProvider,
+  getAppServerControlResolvedProviderModel,
+} from '../appServerControl/quickSettings';
+import { hasInterruptibleAppServerControlTurnWork } from '../appServerControl/input';
+import {
+  getAppServerControlEffortOptions,
+  getAppServerControlModelOptions,
+} from '../appServerControl/modelOptions';
 import { isDevMode } from '../sidebar/voiceSection';
 import {
   ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
   calculateAdaptiveFooterReservedHeight,
 } from './layout';
-import { shouldShowLensQuickSettings, type SmartInputVisibilityState } from './visibility';
 import {
-  formatLensQuickSettingsSummary,
-  setLensQuickSettingsDropdownDisabled,
-  setLensQuickSettingsDropdownOptions,
+  shouldShowAppServerControlQuickSettings,
+  type SmartInputVisibilityState,
+} from './visibility';
+import {
+  formatAppServerControlQuickSettingsSummary,
+  setAppServerControlQuickSettingsDropdownDisabled,
+  setAppServerControlQuickSettingsDropdownOptions,
 } from './smartInputView';
 import { getCollapsedSmartInputTextareaHeight } from './smartInputMetrics';
 
@@ -76,66 +85,66 @@ export function shouldIgnoreFooterTransientUiDocumentClick(target: Node): boolea
   );
 }
 
-export function syncLensQuickSettingsControls(args: {
-  lensQuickSettingsRow: HTMLDivElement | null;
-  lensQuickSettingsActions: HTMLDivElement | null;
-  lensModelSelect: HTMLSelectElement | null;
-  lensEffortSelect: HTMLSelectElement | null;
-  lensPlanSelect: HTMLSelectElement | null;
-  lensPermissionSelect: HTMLSelectElement | null;
-  lensSettingsSummaryBtn: HTMLButtonElement | null;
+export function syncAppServerControlQuickSettingsControls(args: {
+  appServerControlQuickSettingsRow: HTMLDivElement | null;
+  appServerControlQuickSettingsActions: HTMLDivElement | null;
+  appServerControlModelSelect: HTMLSelectElement | null;
+  appServerControlEffortSelect: HTMLSelectElement | null;
+  appServerControlPlanSelect: HTMLSelectElement | null;
+  appServerControlPermissionSelect: HTMLSelectElement | null;
+  appServerControlSettingsSummaryBtn: HTMLButtonElement | null;
   dockedBar: HTMLDivElement | null;
   getVisibilityState: () => SmartInputVisibilityState;
-  setLensQuickSettingsSheetOpen: (open: boolean) => void;
+  setAppServerControlQuickSettingsSheetOpen: (open: boolean) => void;
 }): void {
   const {
-    lensQuickSettingsRow,
-    lensQuickSettingsActions,
-    lensModelSelect,
-    lensEffortSelect,
-    lensPlanSelect,
-    lensPermissionSelect,
-    lensSettingsSummaryBtn,
+    appServerControlQuickSettingsRow,
+    appServerControlQuickSettingsActions,
+    appServerControlModelSelect,
+    appServerControlEffortSelect,
+    appServerControlPlanSelect,
+    appServerControlPermissionSelect,
+    appServerControlSettingsSummaryBtn,
     dockedBar,
   } = args;
   if (
-    !lensQuickSettingsRow ||
-    !lensQuickSettingsActions ||
-    !lensModelSelect ||
-    !lensEffortSelect ||
-    !lensPlanSelect ||
-    !lensPermissionSelect
+    !appServerControlQuickSettingsRow ||
+    !appServerControlQuickSettingsActions ||
+    !appServerControlModelSelect ||
+    !appServerControlEffortSelect ||
+    !appServerControlPlanSelect ||
+    !appServerControlPermissionSelect
   ) {
     return;
   }
 
   const visibilityState = args.getVisibilityState();
-  if (!shouldShowLensQuickSettings(visibilityState)) {
+  if (!shouldShowAppServerControlQuickSettings(visibilityState)) {
     if (dockedBar) {
-      dockedBar.dataset.lensSession = 'false';
+      dockedBar.dataset.appServerControlSession = 'false';
     }
-    lensQuickSettingsRow.hidden = true;
-    lensQuickSettingsActions.replaceChildren();
-    lensQuickSettingsActions.hidden = true;
-    delete lensQuickSettingsRow.dataset.provider;
-    args.setLensQuickSettingsSheetOpen(false);
+    appServerControlQuickSettingsRow.hidden = true;
+    appServerControlQuickSettingsActions.replaceChildren();
+    appServerControlQuickSettingsActions.hidden = true;
+    delete appServerControlQuickSettingsRow.dataset.provider;
+    args.setAppServerControlQuickSettingsSheetOpen(false);
     return;
   }
 
   const sessionId = visibilityState.activeSessionId as string;
-  const provider = getLensQuickSettingsProvider(sessionId);
-  const draft = getLensQuickSettingsDraft(sessionId);
-  const effective = getLensQuickSettingsEffective(sessionId);
-  const resolvedProviderModel = getLensResolvedProviderModel(provider);
-  const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);
+  const provider = getAppServerControlQuickSettingsProvider(sessionId);
+  const draft = getAppServerControlQuickSettingsDraft(sessionId);
+  const effective = getAppServerControlQuickSettingsEffective(sessionId);
+  const resolvedProviderModel = getAppServerControlResolvedProviderModel(provider);
+  const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
   if (dockedBar) {
-    dockedBar.dataset.lensSession = 'true';
+    dockedBar.dataset.appServerControlSession = 'true';
   }
-  lensQuickSettingsRow.dataset.provider = provider ?? '';
+  appServerControlQuickSettingsRow.dataset.provider = provider ?? '';
 
-  setLensQuickSettingsDropdownOptions(
-    lensModelSelect,
-    getLensModelOptions({
+  setAppServerControlQuickSettingsDropdownOptions(
+    appServerControlModelSelect,
+    getAppServerControlModelOptions({
       provider,
       currentValues: [draft.model, effective.model],
       defaultLabel: resolvedProviderModel,
@@ -143,42 +152,54 @@ export function syncLensQuickSettingsControls(args: {
     }),
   );
 
-  setLensQuickSettingsDropdownOptions(
-    lensEffortSelect,
-    getLensEffortOptions({
+  setAppServerControlQuickSettingsDropdownOptions(
+    appServerControlEffortSelect,
+    getAppServerControlEffortOptions({
       currentValues: [draft.effort, effective.effort],
       catalogOptions: preferQuickSettingsOptions(draft, effective, 'effortOptions'),
     }),
   );
 
-  syncLensQuickSettingSelect(lensModelSelect, draft.model ?? '');
-  syncLensQuickSettingSelect(lensEffortSelect, draft.effort ?? '');
-  syncLensQuickSettingSelect(lensPlanSelect, draft.planMode);
-  syncLensQuickSettingSelect(lensPermissionSelect, draft.permissionMode);
-  setLensQuickSettingsDropdownDisabled(lensModelSelect, quickSettingsLocked);
-  setLensQuickSettingsDropdownDisabled(lensEffortSelect, quickSettingsLocked);
-  setLensQuickSettingsDropdownDisabled(lensPlanSelect, quickSettingsLocked);
-  setLensQuickSettingsDropdownDisabled(lensPermissionSelect, quickSettingsLocked);
+  syncAppServerControlQuickSettingSelect(appServerControlModelSelect, draft.model ?? '');
+  syncAppServerControlQuickSettingSelect(appServerControlEffortSelect, draft.effort ?? '');
+  syncAppServerControlQuickSettingSelect(appServerControlPlanSelect, draft.planMode);
+  syncAppServerControlQuickSettingSelect(appServerControlPermissionSelect, draft.permissionMode);
+  setAppServerControlQuickSettingsDropdownDisabled(
+    appServerControlModelSelect,
+    quickSettingsLocked,
+  );
+  setAppServerControlQuickSettingsDropdownDisabled(
+    appServerControlEffortSelect,
+    quickSettingsLocked,
+  );
+  setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, quickSettingsLocked);
+  setAppServerControlQuickSettingsDropdownDisabled(
+    appServerControlPermissionSelect,
+    quickSettingsLocked,
+  );
 
-  if (lensSettingsSummaryBtn) {
-    lensSettingsSummaryBtn.textContent = formatLensQuickSettingsSummary({
+  if (appServerControlSettingsSummaryBtn) {
+    appServerControlSettingsSummaryBtn.textContent = formatAppServerControlQuickSettingsSummary({
       ...draft,
       model: draft.model ?? resolvedProviderModel,
     });
-    lensSettingsSummaryBtn.dataset.planMode = draft.planMode;
+    appServerControlSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
 }
 
 function preferQuickSettingsOptions(
-  draft: LensQuickSettingsSummary,
-  effective: LensQuickSettingsSummary,
+  draft: AppServerControlQuickSettingsSummary,
+  effective: AppServerControlQuickSettingsSummary,
   key: 'modelOptions' | 'effortOptions',
-): readonly LensQuickSettingsOption[] | undefined {
+): readonly AppServerControlQuickSettingsOption[] | undefined {
   const draftOptions = draft[key];
   return draftOptions && draftOptions.length > 0 ? draftOptions : effective[key];
 }
 
-function syncLensQuickSettingSelect(select: HTMLSelectElement, nextValue: string): void {
+function syncAppServerControlQuickSettingSelect(
+  select: HTMLSelectElement,
+  nextValue: string,
+): void {
   if (select.value === nextValue) {
     return;
   }

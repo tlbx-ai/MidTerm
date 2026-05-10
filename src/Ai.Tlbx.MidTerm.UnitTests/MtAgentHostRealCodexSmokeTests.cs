@@ -26,21 +26,21 @@ public sealed class MtAgentHostRealCodexSmokeTests
         Directory.CreateDirectory(workdir);
 
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
         var marker = "MIDTERM_REAL_CODEX_SMOKE_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Equal(LensHostProtocol.CurrentVersion, hello.ProtocolVersion);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
             Assert.Contains("codex", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-real",
                 SessionId = "session-real-codex",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-real-codex",
                     Provider = "codex",
@@ -48,7 +48,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real");
             Assert.Equal("accepted", attachResult.Status);
 
             _ = await WaitForReadyWindowAsync(
@@ -57,19 +57,19 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 pendingPatches,
                 "session-real-codex");
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real",
                 SessionId = "session-real-codex",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = $"Reply with exactly {marker} and nothing else.",
                     Attachments = []
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real");
             Assert.Equal("accepted", turnResult.Status);
             Assert.NotNull(turnResult.TurnStarted);
 
@@ -79,7 +79,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 pendingPatches,
                 "session-real-codex",
                 "completed");
-            Assert.Contains(marker, LensHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
+            Assert.Contains(marker, AppServerControlHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
             Assert.True(
                 turnWindow.History.Any(item => item.Streaming || item.ItemType is not null),
                 "Expected canonical history items in the completed real Codex turn.");
@@ -121,23 +121,23 @@ public sealed class MtAgentHostRealCodexSmokeTests
         var appServerEndpoint = string.Create(CultureInfo.InvariantCulture, $"ws://127.0.0.1:{port}");
         using var appServer = StartCodexAppServer(appServerEndpoint);
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
         var marker = "MIDTERM_REAL_CODEX_REMOTE_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
         try
         {
             await WaitForCodexAppServerReadyAsync(port);
 
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Equal(LensHostProtocol.CurrentVersion, hello.ProtocolVersion);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
             Assert.Contains("codex", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-real-remote",
                 SessionId = "session-real-codex-remote",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-real-codex-remote",
                     Provider = "codex",
@@ -153,7 +153,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-remote");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-remote");
             Assert.Equal("accepted", attachResult.Status);
 
             _ = await WaitForReadyWindowAsync(
@@ -162,19 +162,19 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 pendingPatches,
                 "session-real-codex-remote");
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real-remote",
                 SessionId = "session-real-codex-remote",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = $"Reply with exactly {marker} and nothing else.",
                     Attachments = []
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-remote");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-remote");
             Assert.Equal("accepted", turnResult.Status);
 
             var turnWindow = await WaitForTurnStateWindowAsync(
@@ -183,7 +183,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 pendingPatches,
                 "session-real-codex-remote",
                 "completed");
-            Assert.Contains(marker, LensHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
+            Assert.Contains(marker, AppServerControlHostTestClient.CollectAssistantText(turnWindow), StringComparison.Ordinal);
         }
         finally
         {
@@ -246,20 +246,20 @@ public sealed class MtAgentHostRealCodexSmokeTests
         await InitializeGitWorkspaceAsync(workdir);
 
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Equal(LensHostProtocol.CurrentVersion, hello.ProtocolVersion);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
             Assert.Contains("codex", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-real-rich",
                 SessionId = "session-real-codex-rich",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-real-codex-rich",
                     Provider = "codex",
@@ -267,7 +267,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-rich");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-rich");
             Assert.Equal("accepted", attachResult.Status);
 
             _ = await WaitForReadyWindowAsync(
@@ -291,19 +291,19 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Do not ask follow-up questions.
             """;
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real-rich",
                 SessionId = "session-real-codex-rich",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = richPrompt,
                     Attachments = []
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-rich");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-rich");
             Assert.Equal("accepted", turnResult.Status);
             Assert.NotNull(turnResult.TurnStarted);
 
@@ -322,7 +322,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Assert.Contains("DONE", reportText, StringComparison.Ordinal);
             Assert.Contains(marker, reportText, StringComparison.Ordinal);
 
-            var assistantText = LensHostTestClient.CollectAssistantText(turnWindow);
+            var assistantText = AppServerControlHostTestClient.CollectAssistantText(turnWindow);
             Assert.Contains(marker, assistantText, StringComparison.Ordinal);
             Assert.Contains("alpha", assistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("|", assistantText, StringComparison.Ordinal);
@@ -379,20 +379,20 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Encoding.UTF8);
 
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Equal(LensHostProtocol.CurrentVersion, hello.ProtocolVersion);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
             Assert.Contains("codex", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-real-question",
                 SessionId = "session-real-codex-question",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-real-codex-question",
                     Provider = "codex",
@@ -400,7 +400,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-question");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-real-question");
             Assert.Equal("accepted", attachResult.Status);
 
             _ = await WaitForReadyWindowAsync(
@@ -416,19 +416,19 @@ public sealed class MtAgentHostRealCodexSmokeTests
             Do not infer the answer and do not continue without asking first.
             """;
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real-question",
                 SessionId = "session-real-codex-question",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = questionPrompt,
                     Attachments = []
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-question");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-question");
             Assert.Equal("accepted", turnResult.Status);
             Assert.NotNull(turnResult.TurnStarted);
 
@@ -439,7 +439,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 "session-real-codex-question",
                 "completed");
 
-            var questionAssistantText = LensHostTestClient.CollectAssistantText(questionWindow);
+            var questionAssistantText = AppServerControlHostTestClient.CollectAssistantText(questionWindow);
             Assert.Contains("SAFE", questionAssistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("FAST", questionAssistantText, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("?", questionAssistantText, StringComparison.Ordinal);
@@ -447,12 +447,12 @@ public sealed class MtAgentHostRealCodexSmokeTests
             var unchangedModeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8);
             Assert.Contains("selected-mode=pending", unchangedModeText, StringComparison.OrdinalIgnoreCase);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real-follow-up",
                 SessionId = "session-real-codex-question",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = $$"""
                     SAFE. Continue the task now.
@@ -464,7 +464,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
                 }
             });
 
-            var followUpResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-follow-up");
+            var followUpResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-real-follow-up");
             Assert.Equal("accepted", followUpResult.Status);
             Assert.NotNull(followUpResult.TurnStarted);
 
@@ -479,7 +479,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
             var modeText = await File.ReadAllTextAsync(Path.Combine(workdir, "mode.txt"), Encoding.UTF8);
             Assert.Contains($"selected-mode=safe {marker}", modeText, StringComparison.OrdinalIgnoreCase);
 
-            var assistantText = LensHostTestClient.CollectAssistantText(completionWindow);
+            var assistantText = AppServerControlHostTestClient.CollectAssistantText(completionWindow);
             Assert.Contains(marker, assistantText, StringComparison.Ordinal);
             Assert.Contains("safe", assistantText, StringComparison.OrdinalIgnoreCase);
             Assert.True(
@@ -595,13 +595,13 @@ public sealed class MtAgentHostRealCodexSmokeTests
         return process;
     }
 
-    private static async Task<LensHistoryWindowResponse> WaitForReadyWindowAsync(
+    private static async Task<AppServerControlHistoryWindowResponse> WaitForReadyWindowAsync(
         StreamReader reader,
         StreamWriter writer,
-        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        Queue<AppServerControlHostHistoryPatchEnvelope> pendingPatches,
         string sessionId)
     {
-        return await LensHostTestClient.WaitForHistoryWindowAsync(
+        return await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
             reader,
             writer,
             pendingPatches,
@@ -611,14 +611,14 @@ public sealed class MtAgentHostRealCodexSmokeTests
             count: 160);
     }
 
-    private static async Task<LensHistoryWindowResponse> WaitForTurnStateWindowAsync(
+    private static async Task<AppServerControlHistoryWindowResponse> WaitForTurnStateWindowAsync(
         StreamReader reader,
         StreamWriter writer,
-        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        Queue<AppServerControlHostHistoryPatchEnvelope> pendingPatches,
         string sessionId,
         string state)
     {
-        return await LensHostTestClient.WaitForHistoryWindowAsync(
+        return await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
             reader,
             writer,
             pendingPatches,

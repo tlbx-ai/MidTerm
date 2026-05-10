@@ -8,7 +8,10 @@ export interface SmartInputTextareaShortcutEvent {
   shiftKey: boolean;
 }
 
-export type SmartInputShiftTabAction = 'toggle-lens-plan-mode' | 'forward-to-terminal' | null;
+export type SmartInputShiftTabAction =
+  | 'toggle-appServerControl-plan-mode'
+  | 'forward-to-terminal'
+  | null;
 
 export function resolveSmartInputShiftTabAction(
   event: SmartInputTextareaShortcutEvent,
@@ -19,7 +22,7 @@ export function resolveSmartInputShiftTabAction(
   }
 
   if (activeTab === 'agent') {
-    return 'toggle-lens-plan-mode';
+    return 'toggle-appServerControl-plan-mode';
   }
 
   if (activeTab === 'terminal') {

@@ -45,7 +45,7 @@ describe('session launcher target selection', () => {
     ]);
   });
 
-  it('allows Lens providers locally but only Terminal remotely', async () => {
+  it('allows AppServerControl providers locally but only Terminal remotely', async () => {
     const { isProviderSupportedOnTarget } = await import('./index');
 
     const remoteTarget: HubSessionLauncherTarget = {

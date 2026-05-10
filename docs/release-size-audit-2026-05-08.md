@@ -59,7 +59,7 @@ entfernt werden.
 |---|---:|---:|---:|---|
 | `v7.0.0-dev` -> `v9.8.28-dev` | 10.40 MiB | 19.19 MiB | +8.79 MiB | `mt.exe` +4.83 MiB, neuer `mtagenthost.exe` +3.64 MiB, `mthost.exe` +0.31 MiB |
 | `v8.6.23-dev` -> `v8.6.24-dev` | 10.96 MiB | 12.46 MiB | +1.50 MiB | `mthost.exe` kam wieder ins Windows-Zip |
-| `v8.7.28-dev` -> `v8.7.29-dev` | 12.89 MiB | 15.04 MiB | +2.15 MiB | AgentHost/Lens-Runtime wurde eingefuehrt |
+| `v8.7.28-dev` -> `v8.7.29-dev` | 12.89 MiB | 15.04 MiB | +2.15 MiB | AgentHost/App Server Controller-Runtime wurde eingefuehrt |
 | `v8.9.88-dev` -> `v8.9.89-dev` | 15.63 MiB | 17.25 MiB | +1.61 MiB | Code-Diff klein; Groesse kommt durch wieder enthaltenes `mthost.exe` |
 | `v9.8.27-dev` -> `v9.8.28-dev` | 19.19 MiB | 19.19 MiB | ca. 0 MiB | Kein neuer Groessenregressionssprung in 9.8.28 |
 
@@ -93,11 +93,11 @@ esbuild-Metafile fuer den aktuellen `src/ts/main.ts`-Bundle:
 | `@xterm/addon-webgl/lib/addon-webgl.mjs` | 126.5 KiB | Performance/Rendering, Prune nur nach Benchmark |
 | `@xterm/addon-search/lib/addon-search.mjs` | 37.6 KiB | Feature-Kern |
 | `@xterm/addon-unicode11/lib/addon-unicode11.mjs` | 29.9 KiB | Terminal-Korrektheit |
-| `modules/agentView/index.ts` | 28.5 KiB | Lens/Agent UI, weiter auditieren |
+| `modules/agentView/index.ts` | 28.5 KiB | App Server Controller/Agent UI, weiter auditieren |
 | `modules/sidebar/spacesTreeSidebar.ts` | 25.4 KiB | Aktive UI |
 | `modules/managerBar/managerBar.ts` | 21.4 KiB | Aktive UI |
 | `modules/smartInput/smartInput.ts` | 21.2 KiB | Aktive UI |
-| `modules/agentView/historyRender.ts` | 20.8 KiB | Lens/History UI, weiter auditieren |
+| `modules/agentView/historyRender.ts` | 20.8 KiB | App Server Controller/History UI, weiter auditieren |
 
 ## Keep / Prune / Delete Tabelle
 

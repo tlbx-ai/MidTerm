@@ -32,9 +32,9 @@ export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 
 // Sessions
 export type SessionInfoDto = Omit<Schemas['SessionInfoDto'], 'notes'> & {
-  lensOnly?: boolean;
+  appServerControlOnly?: boolean;
   profileHint?: string | null;
-  lensResumeThreadId?: string | null;
+  appServerControlResumeThreadId?: string | null;
   notes?: string | null;
   spaceId?: string | null;
   workspacePath?: string | null;
@@ -44,7 +44,7 @@ export type SessionInfoDto = Omit<Schemas['SessionInfoDto'], 'notes'> & {
 export type SessionListDto = Schemas['SessionListDto'];
 export type CreateSessionRequest = Schemas['CreateSessionRequest'];
 export type WorkerBootstrapRequest = Schemas['WorkerBootstrapRequest'] & {
-  lensOnly?: boolean;
+  appServerControlOnly?: boolean;
   resumeThreadId?: string | null;
 };
 export type WorkerBootstrapResponse = Schemas['WorkerBootstrapResponse'];
@@ -72,14 +72,14 @@ export type AgentSessionVibeActivity = Schemas['AgentSessionVibeActivity'];
 export type AgentSessionVibeHeatSample = Schemas['SessionActivityHeatSample'];
 export type AgentSessionVibeTerminal = Schemas['AgentSessionVibeTerminal'];
 export type AgentSessionVibeResponse = Schemas['AgentSessionVibeResponse'];
-export interface LensAttachmentReference {
+export interface AppServerControlAttachmentReference {
   kind: string;
   path: string;
   mimeType?: string | null;
   displayName?: string | null;
 }
 
-export interface LensInlineFileReference {
+export interface AppServerControlInlineFileReference {
   field: 'title' | 'body' | 'commandText';
   displayText: string;
   path: string;
@@ -92,33 +92,33 @@ export interface LensInlineFileReference {
   column?: number | null;
 }
 
-export interface LensInlineImagePreview {
+export interface AppServerControlInlineImagePreview {
   displayPath: string;
   resolvedPath: string;
   mimeType?: string | null;
 }
 
-export interface LensCommandAcceptedResponse {
+export interface AppServerControlCommandAcceptedResponse {
   sessionId: string;
   status: string;
   requestId?: string | null;
   turnId?: string | null;
 }
 
-export interface LensInterruptRequest {
+export interface AppServerControlInterruptRequest {
   turnId?: string | null;
 }
 
-export interface LensGoalSetRequest {
+export interface AppServerControlGoalSetRequest {
   objective: string;
 }
 
-export interface LensAnsweredQuestion {
+export interface AppServerControlAnsweredQuestion {
   questionId: string;
   answers: string[];
 }
 
-export interface LensQuickSettingsOption {
+export interface AppServerControlQuickSettingsOption {
   value: string;
   label: string;
   description?: string | null;
@@ -126,60 +126,60 @@ export interface LensQuickSettingsOption {
   isDefault?: boolean;
 }
 
-export interface LensQuickSettingsPayload {
+export interface AppServerControlQuickSettingsPayload {
   model?: string | null;
   effort?: string | null;
   planMode: string;
   permissionMode: string;
-  modelOptions?: LensQuickSettingsOption[];
-  effortOptions?: LensQuickSettingsOption[];
+  modelOptions?: AppServerControlQuickSettingsOption[];
+  effortOptions?: AppServerControlQuickSettingsOption[];
 }
 
-export interface LensQuickSettingsSummary {
+export interface AppServerControlQuickSettingsSummary {
   model?: string | null;
   effort?: string | null;
   planMode: string;
   permissionMode: string;
-  modelOptions?: LensQuickSettingsOption[];
-  effortOptions?: LensQuickSettingsOption[];
+  modelOptions?: AppServerControlQuickSettingsOption[];
+  effortOptions?: AppServerControlQuickSettingsOption[];
 }
 
-export interface LensQuestionOption {
+export interface AppServerControlQuestionOption {
   label: string;
   description: string;
 }
 
-export interface LensQuestion {
+export interface AppServerControlQuestion {
   id: string;
   header: string;
   question: string;
   multiSelect: boolean;
-  options: LensQuestionOption[];
+  options: AppServerControlQuestionOption[];
 }
 
-export interface LensHistoryPatch {
+export interface AppServerControlHistoryPatch {
   sessionId: string;
   provider: string;
   generatedAt: string;
   latestSequence: number;
   historyCount: number;
-  session: LensSessionSummary;
-  thread: LensThreadSummary;
-  currentTurn: LensTurnSummary;
-  quickSettings: LensQuickSettingsSummary;
-  streams: LensStreamsSummary;
-  historyUpserts: LensHistoryItem[];
+  session: AppServerControlSessionSummary;
+  thread: AppServerControlThreadSummary;
+  currentTurn: AppServerControlTurnSummary;
+  quickSettings: AppServerControlQuickSettingsSummary;
+  streams: AppServerControlStreamsSummary;
+  historyUpserts: AppServerControlHistoryItem[];
   historyRemovals: string[];
-  itemUpserts: LensItemSummary[];
+  itemUpserts: AppServerControlItemSummary[];
   itemRemovals: string[];
-  requestUpserts: LensRequestSummary[];
+  requestUpserts: AppServerControlRequestSummary[];
   requestRemovals: string[];
-  noticeUpserts: LensRuntimeNotice[];
+  noticeUpserts: AppServerControlRuntimeNotice[];
 }
 
-export type LensHistoryDelta = LensHistoryPatch;
+export type AppServerControlHistoryDelta = AppServerControlHistoryPatch;
 
-export interface LensSessionSummary {
+export interface AppServerControlSessionSummary {
   state: string;
   stateLabel: string;
   reason?: string | null;
@@ -187,13 +187,13 @@ export interface LensSessionSummary {
   lastEventAt?: string | null;
 }
 
-export interface LensThreadSummary {
+export interface AppServerControlThreadSummary {
   threadId: string;
   state: string;
   stateLabel: string;
 }
 
-export interface LensTurnSummary {
+export interface AppServerControlTurnSummary {
   turnId?: string | null;
   state: string;
   stateLabel: string;
@@ -203,7 +203,7 @@ export interface LensTurnSummary {
   completedAt?: string | null;
 }
 
-export interface LensStreamsSummary {
+export interface AppServerControlStreamsSummary {
   assistantText: string;
   reasoningText: string;
   reasoningSummaryText: string;
@@ -213,7 +213,7 @@ export interface LensStreamsSummary {
   unifiedDiff: string;
 }
 
-export interface LensHistoryItem {
+export interface AppServerControlHistoryItem {
   entryId: string;
   order: number;
   estimatedHeightPx?: number;
@@ -226,26 +226,26 @@ export interface LensHistoryItem {
   title?: string | null;
   commandText?: string | null;
   body: string;
-  attachments: LensAttachmentReference[];
-  fileMentions?: LensInlineFileReference[];
-  imagePreviews?: LensInlineImagePreview[];
+  attachments: AppServerControlAttachmentReference[];
+  fileMentions?: AppServerControlInlineFileReference[];
+  imagePreviews?: AppServerControlInlineImagePreview[];
   streaming: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface LensItemSummary {
+export interface AppServerControlItemSummary {
   itemId: string;
   turnId?: string | null;
   itemType: string;
   status: string;
   title?: string | null;
   detail?: string | null;
-  attachments: LensAttachmentReference[];
+  attachments: AppServerControlAttachmentReference[];
   updatedAt: string;
 }
 
-export interface LensRequestSummary {
+export interface AppServerControlRequestSummary {
   requestId: string;
   turnId?: string | null;
   kind: string;
@@ -253,12 +253,12 @@ export interface LensRequestSummary {
   state: string;
   detail?: string | null;
   decision?: string | null;
-  questions: LensQuestion[];
-  answers: LensAnsweredQuestion[];
+  questions: AppServerControlQuestion[];
+  answers: AppServerControlAnsweredQuestion[];
   updatedAt: string;
 }
 
-export interface LensRuntimeNotice {
+export interface AppServerControlRuntimeNotice {
   eventId: string;
   type: string;
   message: string;
@@ -266,7 +266,7 @@ export interface LensRuntimeNotice {
   createdAt: string;
 }
 
-export interface LensHistoryWindowResponse {
+export interface AppServerControlHistoryWindowResponse {
   sessionId: string;
   provider: string;
   generatedAt: string;
@@ -277,31 +277,31 @@ export interface LensHistoryWindowResponse {
   historyWindowEnd: number;
   hasOlderHistory: boolean;
   hasNewerHistory: boolean;
-  session: LensSessionSummary;
-  thread: LensThreadSummary;
-  currentTurn: LensTurnSummary;
-  quickSettings: LensQuickSettingsSummary;
-  streams: LensStreamsSummary;
-  history: LensHistoryItem[];
-  items: LensItemSummary[];
-  requests: LensRequestSummary[];
-  notices: LensRuntimeNotice[];
+  session: AppServerControlSessionSummary;
+  thread: AppServerControlThreadSummary;
+  currentTurn: AppServerControlTurnSummary;
+  quickSettings: AppServerControlQuickSettingsSummary;
+  streams: AppServerControlStreamsSummary;
+  history: AppServerControlHistoryItem[];
+  items: AppServerControlItemSummary[];
+  requests: AppServerControlRequestSummary[];
+  notices: AppServerControlRuntimeNotice[];
 }
 
-export type LensHistoryWindow = LensHistoryWindowResponse;
-export type LensHistorySnapshot = LensHistoryWindowResponse;
-export type LensHistoryRequestSummary = LensRequestSummary;
-export type LensHistorySessionSummary = LensSessionSummary;
-export type LensHistoryThreadSummary = LensThreadSummary;
-export type LensHistoryTurnSummary = LensTurnSummary;
-export type LensHistoryStreamsSummary = LensStreamsSummary;
-export type LensHistoryRuntimeNotice = LensRuntimeNotice;
+export type AppServerControlHistoryWindow = AppServerControlHistoryWindowResponse;
+export type AppServerControlHistorySnapshot = AppServerControlHistoryWindowResponse;
+export type AppServerControlHistoryRequestSummary = AppServerControlRequestSummary;
+export type AppServerControlHistorySessionSummary = AppServerControlSessionSummary;
+export type AppServerControlHistoryThreadSummary = AppServerControlThreadSummary;
+export type AppServerControlHistoryTurnSummary = AppServerControlTurnSummary;
+export type AppServerControlHistoryStreamsSummary = AppServerControlStreamsSummary;
+export type AppServerControlHistoryRuntimeNotice = AppServerControlRuntimeNotice;
 
-export interface LensRequestDecisionRequest {
+export interface AppServerControlRequestDecisionRequest {
   decision: string;
 }
 
-export interface LensTerminalReplayStep {
+export interface AppServerControlTerminalReplayStep {
   kind: 'text' | 'image' | 'filePath' | 'textFile';
   text?: string | null;
   path?: string | null;
@@ -309,27 +309,27 @@ export interface LensTerminalReplayStep {
   useBracketedPaste?: boolean;
 }
 
-export interface LensTurnRequest {
+export interface AppServerControlTurnRequest {
   text?: string | null;
   model?: string | null;
   effort?: string | null;
   planMode?: string | null;
   permissionMode?: string | null;
-  attachments: LensAttachmentReference[];
-  terminalReplay?: LensTerminalReplayStep[];
+  attachments: AppServerControlAttachmentReference[];
+  terminalReplay?: AppServerControlTerminalReplayStep[];
 }
 
-export interface LensTurnStartResponse {
+export interface AppServerControlTurnStartResponse {
   sessionId: string;
   provider: string;
   threadId: string;
   turnId?: string | null;
   status: string;
-  quickSettings: LensQuickSettingsSummary;
+  quickSettings: AppServerControlQuickSettingsSummary;
 }
 
-export interface LensUserInputAnswerRequest {
-  answers: LensAnsweredQuestion[];
+export interface AppServerControlUserInputAnswerRequest {
+  answers: AppServerControlAnsweredQuestion[];
 }
 
 // Settings
@@ -418,7 +418,7 @@ export interface SpaceWorkspaceSessionDto {
   sessionId: string;
   title: string;
   surface: 'terminal' | 'codex' | 'claude';
-  lensOnly: boolean;
+  appServerControlOnly: boolean;
   profileHint?: string | null;
 }
 

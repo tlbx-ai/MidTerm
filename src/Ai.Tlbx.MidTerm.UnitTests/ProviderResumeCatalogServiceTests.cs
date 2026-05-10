@@ -58,7 +58,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
                 Environment.NewLine,
                 """
                 {"sessionId":"session-claude-1","cwd":"__CWD__","type":"meta"}
-                {"sessionId":"session-claude-1","cwd":"__CWD__","type":"user","message":{"role":"user","content":[{"type":"text","text":"Pick up the MidTerm Lens resume session"}]}}
+                {"sessionId":"session-claude-1","cwd":"__CWD__","type":"user","message":{"role":"user","content":[{"type":"text","text":"Pick up the MidTerm App Server Controller resume session"}]}}
                 """.Replace("__CWD__", EscapeJson(workingDirectory), StringComparison.Ordinal)),
             Encoding.UTF8);
         File.SetLastWriteTimeUtc(projectPath, new DateTime(2026, 4, 6, 13, 15, 0, DateTimeKind.Utc));
@@ -71,7 +71,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         Assert.Equal("claude", candidate.Provider);
         Assert.Equal("session-claude-1", candidate.SessionId);
         Assert.Equal(workingDirectory, candidate.WorkingDirectory);
-        Assert.True(candidate.Title.Contains("Pick up the MidTerm Lens resume session", StringComparison.Ordinal));
+        Assert.True(candidate.Title.Contains("Pick up the MidTerm App Server Controller resume session", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -19,59 +19,14 @@ describe('smartInputDraftStore', () => {
     });
   });
 
-  it('persists uploaded Lens draft attachments per session and restores them after reload', async () => {
-    const { loadLensDraftAttachmentsForSession, setLensDraftAttachmentsForSession } =
-      await import('./smartInputDraftStore');
-
-    const drafts = new Map();
-    setLensDraftAttachmentsForSession(drafts, 's1', [
-      {
-        id: 'a1',
-        kind: 'image',
-        file: null,
-        uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
-        displayName: 'screen.png',
-        mimeType: 'image/png',
-        referenceCharCount: null,
-        referenceKind: 'image',
-        referenceLabel: 'Image 1',
-        referenceLineCount: null,
-        referenceOrdinal: 1,
-        sizeBytes: 3,
-        previewUrl:
-          '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
-      },
-    ]);
-
-    expect(loadLensDraftAttachmentsForSession('s1')).toEqual([
-      {
-        id: 'a1',
-        kind: 'image',
-        file: null,
-        uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
-        displayName: 'screen.png',
-        mimeType: 'image/png',
-        referenceCharCount: null,
-        referenceKind: 'image',
-        referenceLabel: 'Image 1',
-        referenceLineCount: null,
-        referenceOrdinal: 1,
-        sizeBytes: 3,
-        previewUrl:
-          '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
-      },
-    ]);
-  });
-
-  it('clears persisted Lens draft attachments when the session draft is removed', async () => {
+  it('persists uploaded AppServerControl draft attachments per session and restores them after reload', async () => {
     const {
-      clearLensDraftAttachmentsForSession,
-      loadLensDraftAttachmentsForSession,
-      setLensDraftAttachmentsForSession,
+      loadAppServerControlDraftAttachmentsForSession,
+      setAppServerControlDraftAttachmentsForSession,
     } = await import('./smartInputDraftStore');
 
     const drafts = new Map();
-    setLensDraftAttachmentsForSession(drafts, 's1', [
+    setAppServerControlDraftAttachmentsForSession(drafts, 's1', [
       {
         id: 'a1',
         kind: 'image',
@@ -90,17 +45,66 @@ describe('smartInputDraftStore', () => {
       },
     ]);
 
-    clearLensDraftAttachmentsForSession(drafts, 's1', false);
+    expect(loadAppServerControlDraftAttachmentsForSession('s1')).toEqual([
+      {
+        id: 'a1',
+        kind: 'image',
+        file: null,
+        uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
+        displayName: 'screen.png',
+        mimeType: 'image/png',
+        referenceCharCount: null,
+        referenceKind: 'image',
+        referenceLabel: 'Image 1',
+        referenceLineCount: null,
+        referenceOrdinal: 1,
+        sizeBytes: 3,
+        previewUrl:
+          '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
+      },
+    ]);
+  });
 
-    expect(loadLensDraftAttachmentsForSession('s1')).toEqual([]);
+  it('clears persisted AppServerControl draft attachments when the session draft is removed', async () => {
+    const {
+      clearAppServerControlDraftAttachmentsForSession,
+      loadAppServerControlDraftAttachmentsForSession,
+      setAppServerControlDraftAttachmentsForSession,
+    } = await import('./smartInputDraftStore');
+
+    const drafts = new Map();
+    setAppServerControlDraftAttachmentsForSession(drafts, 's1', [
+      {
+        id: 'a1',
+        kind: 'image',
+        file: null,
+        uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
+        displayName: 'screen.png',
+        mimeType: 'image/png',
+        referenceCharCount: null,
+        referenceKind: 'image',
+        referenceLabel: 'Image 1',
+        referenceLineCount: null,
+        referenceOrdinal: 1,
+        sizeBytes: 3,
+        previewUrl:
+          '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
+      },
+    ]);
+
+    clearAppServerControlDraftAttachmentsForSession(drafts, 's1', false);
+
+    expect(loadAppServerControlDraftAttachmentsForSession('s1')).toEqual([]);
   });
 
   it('restores staged text-reference metadata for file-viewer chips after reload', async () => {
-    const { loadLensDraftAttachmentsForSession, setLensDraftAttachmentsForSession } =
-      await import('./smartInputDraftStore');
+    const {
+      loadAppServerControlDraftAttachmentsForSession,
+      setAppServerControlDraftAttachmentsForSession,
+    } = await import('./smartInputDraftStore');
 
     const drafts = new Map();
-    setLensDraftAttachmentsForSession(drafts, 's1', [
+    setAppServerControlDraftAttachmentsForSession(drafts, 's1', [
       {
         id: 't1',
         kind: 'file',
@@ -118,7 +122,7 @@ describe('smartInputDraftStore', () => {
       },
     ]);
 
-    expect(loadLensDraftAttachmentsForSession('s1')).toEqual([
+    expect(loadAppServerControlDraftAttachmentsForSession('s1')).toEqual([
       {
         id: 't1',
         kind: 'file',
@@ -138,10 +142,8 @@ describe('smartInputDraftStore', () => {
   });
 
   it('persists submitted prompt history snapshots with attachments and quick settings', async () => {
-    const {
-      loadSmartInputPromptHistoryForSession,
-      pushSmartInputPromptHistoryEntryForSession,
-    } = await import('./smartInputDraftStore');
+    const { loadSmartInputPromptHistoryForSession, pushSmartInputPromptHistoryEntryForSession } =
+      await import('./smartInputDraftStore');
 
     const histories = new Map();
     pushSmartInputPromptHistoryEntryForSession(histories, 's1', {

@@ -453,8 +453,8 @@
       return 'Terminal';
     }
 
-    if (session.lensOnly) {
-      return 'Lens';
+    if (session.appServerControlOnly) {
+      return 'AppServerControl';
     }
 
     if (typeof session.terminalTitle === 'string' && session.terminalTitle.trim()) {

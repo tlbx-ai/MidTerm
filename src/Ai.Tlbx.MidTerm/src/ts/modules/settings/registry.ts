@@ -123,7 +123,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'new-session',
   }),
-  preserveEntry('codexDefaultLensModel', '', {
+  preserveEntry('codexDefaultAppServerControlModel', '', {
     editable: true,
     storage: 'settings.json',
     validation: 'string model id, empty allowed',
@@ -147,7 +147,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'new-session',
     },
   ),
-  preserveEntry('claudeDefaultLensModel', '', {
+  preserveEntry('claudeDefaultAppServerControlModel', '', {
     editable: true,
     storage: 'settings.json',
     validation: 'string model id, empty allowed',

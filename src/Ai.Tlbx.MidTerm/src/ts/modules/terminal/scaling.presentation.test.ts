@@ -39,9 +39,9 @@ describe('presentationRefresh', () => {
       },
     };
 
-    expect(isTerminalVisible({ container: hiddenContainer } as Pick<TerminalState, 'container'>)).toBe(
-      false,
-    );
+    expect(
+      isTerminalVisible({ container: hiddenContainer } as Pick<TerminalState, 'container'>),
+    ).toBe(false);
   });
 
   it('forces a renderer remeasure and redraw for visible terminals', () => {

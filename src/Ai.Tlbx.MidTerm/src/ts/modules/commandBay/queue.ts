@@ -1,4 +1,4 @@
-import type { LensTurnRequest } from '../../api/types';
+import type { AppServerControlTurnRequest } from '../../api/types';
 import type { NormalizedManagerButton } from '../managerBar/workflow';
 
 async function readQueueError(response: Response, fallback: string): Promise<Error> {
@@ -27,7 +27,7 @@ export async function enqueueCommandBayAction(
 
 export async function enqueueCommandBayTurn(
   sessionId: string,
-  turn: LensTurnRequest,
+  turn: AppServerControlTurnRequest,
 ): Promise<void> {
   const response = await fetch('/api/command-bay/queue', {
     method: 'POST',

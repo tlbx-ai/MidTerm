@@ -11,7 +11,7 @@ public sealed class WorkerBootstrapRequest
     public bool AgentControlled { get; set; } = true;
     public bool InjectGuidance { get; set; } = true;
     public string? Profile { get; set; }
-    public bool LensOnly { get; set; }
+    public bool AppServerControlOnly { get; set; }
     public string? LaunchCommand { get; set; }
     public string? SpaceId { get; set; }
     public string? WorkspacePath { get; set; }

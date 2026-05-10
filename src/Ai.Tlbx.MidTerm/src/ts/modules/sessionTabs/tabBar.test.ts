@@ -115,7 +115,7 @@ function matchesSelector(element: FakeElement, selector: string): boolean {
 const translations: Record<string, string> = {
   'common.beta': 'Beta',
   'session.terminal': 'Terminal',
-  'sessionTabs.agent': 'Lens',
+  'sessionTabs.agent': 'Agent',
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
   'sessionTabs.share': 'Share',
@@ -196,21 +196,24 @@ describe('tabBar', () => {
     shareButton.click();
     expect(shareClick).toHaveBeenCalledTimes(1);
 
-    updateGitIndicator(bar as unknown as HTMLDivElement, {
-      branch: 'feature/git-chip',
-      ahead: 0,
-      behind: 0,
-      staged: [],
-      modified: [{ path: 'a.ts', status: 'modified', additions: 7, deletions: 3 }],
-      untracked: [],
-      conflicted: [],
-      recentCommits: [],
-      stashCount: 0,
-      repoRoot: '/repo',
-      label: 'repo',
-      totalAdditions: 7,
-      totalDeletions: 3,
-    } as any);
+    updateGitIndicator(
+      bar as unknown as HTMLDivElement,
+      {
+        branch: 'feature/git-chip',
+        ahead: 0,
+        behind: 0,
+        staged: [],
+        modified: [{ path: 'a.ts', status: 'modified', additions: 7, deletions: 3 }],
+        untracked: [],
+        conflicted: [],
+        recentCommits: [],
+        stashCount: 0,
+        repoRoot: '/repo',
+        label: 'repo',
+        totalAdditions: 7,
+        totalDeletions: 3,
+      } as any,
+    );
 
     expect(gitButton.querySelector('.git-indicator-stats')?.innerHTML).toContain('+7');
     expect(gitButton.querySelector('.git-indicator-stats')?.innerHTML).toContain('-3');
@@ -224,58 +227,61 @@ describe('tabBar', () => {
 
     const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
 
-    updateGitIndicator(bar as unknown as HTMLDivElement, [
-      {
-        repoRoot: '/repo/jpa',
-        label: 'Jpa',
-        role: 'cwd',
-        source: 'auto',
-        isPrimary: true,
-        status: {
-          branch: 'main',
-          ahead: 0,
-          behind: 0,
-          staged: [],
-          modified: [],
-          untracked: [],
-          conflicted: [],
-          recentCommits: [],
-          stashCount: 0,
+    updateGitIndicator(
+      bar as unknown as HTMLDivElement,
+      [
+        {
           repoRoot: '/repo/jpa',
           label: 'Jpa',
           role: 'cwd',
           source: 'auto',
           isPrimary: true,
-          totalAdditions: 0,
-          totalDeletions: 0,
+          status: {
+            branch: 'main',
+            ahead: 0,
+            behind: 0,
+            staged: [],
+            modified: [],
+            untracked: [],
+            conflicted: [],
+            recentCommits: [],
+            stashCount: 0,
+            repoRoot: '/repo/jpa',
+            label: 'Jpa',
+            role: 'cwd',
+            source: 'auto',
+            isPrimary: true,
+            totalAdditions: 0,
+            totalDeletions: 0,
+          },
         },
-      },
-      {
-        repoRoot: '/repo/midterm',
-        label: 'MidTerm',
-        role: 'target',
-        source: 'manual',
-        isPrimary: false,
-        status: {
-          branch: 'dev',
-          ahead: 0,
-          behind: 0,
-          staged: [],
-          modified: [],
-          untracked: [],
-          conflicted: [],
-          recentCommits: [],
-          stashCount: 0,
+        {
           repoRoot: '/repo/midterm',
-          label: '',
-          role: '',
-          source: '',
+          label: 'MidTerm',
+          role: 'target',
+          source: 'manual',
           isPrimary: false,
-          totalAdditions: 0,
-          totalDeletions: 0,
+          status: {
+            branch: 'dev',
+            ahead: 0,
+            behind: 0,
+            staged: [],
+            modified: [],
+            untracked: [],
+            conflicted: [],
+            recentCommits: [],
+            stashCount: 0,
+            repoRoot: '/repo/midterm',
+            label: '',
+            role: '',
+            source: '',
+            isPrimary: false,
+            totalAdditions: 0,
+            totalDeletions: 0,
+          },
         },
-      },
-    ] as any);
+      ] as any,
+    );
 
     const actions = bar.querySelector('.ide-bar-actions');
     expect(actions).not.toBeNull();

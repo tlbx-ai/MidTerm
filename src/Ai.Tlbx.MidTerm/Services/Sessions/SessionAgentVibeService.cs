@@ -11,7 +11,7 @@ public sealed class SessionAgentVibeService
     private readonly AiCliProfileService _profileService;
     private readonly AiCliCapabilityService _capabilityService;
     private readonly SessionAgentFeedService _feedService;
-    private readonly SessionLensRuntimeService _lensRuntime;
+    private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
 
     public SessionAgentVibeService(
         TtyHostSessionManager sessionManager,
@@ -20,7 +20,7 @@ public sealed class SessionAgentVibeService
         AiCliProfileService profileService,
         AiCliCapabilityService capabilityService,
         SessionAgentFeedService feedService,
-        SessionLensRuntimeService lensRuntime)
+        SessionAppServerControlRuntimeService appServerControlRuntime)
     {
         _sessionManager = sessionManager;
         _sessionTelemetry = sessionTelemetry;
@@ -28,7 +28,7 @@ public sealed class SessionAgentVibeService
         _profileService = profileService;
         _capabilityService = capabilityService;
         _feedService = feedService;
-        _lensRuntime = lensRuntime;
+        _appServerControlRuntime = appServerControlRuntime;
     }
 
     public async Task<AgentSessionVibeResponse?> BuildVibeAsync(
@@ -48,20 +48,20 @@ public sealed class SessionAgentVibeService
         session.Supervisor = _sessionSupervisor.Describe(session);
         var supervisor = session.Supervisor ?? new SessionSupervisorInfoDto();
         var profile = _profileService.NormalizeProfile(supervisor.Profile, session);
-        var capability = await _capabilityService.DescribeAsync(profile, session.LensOnly, ct).ConfigureAwait(false);
+        var capability = await _capabilityService.DescribeAsync(profile, session.AppServerControlOnly, ct).ConfigureAwait(false);
         var providerLabel = PrettifyProfile(profile);
         var stateLabel = PrettifySupervisorState(supervisor.State);
         var now = DateTimeOffset.UtcNow;
 
         var activity = _sessionTelemetry.GetActivity(sessionId, activitySeconds, bellLimit);
         var tailText = string.Empty;
-        if (!session.LensOnly)
+        if (!session.AppServerControlOnly)
         {
             var snapshot = await _sessionManager.GetBufferAsync(sessionId, ct: ct).ConfigureAwait(false);
             tailText = BuildTailText(snapshot?.Data, tailLines);
         }
 
-        if (_lensRuntime.TryGetRuntimeSummary(sessionId, out var runtimeSummary))
+        if (_appServerControlRuntime.TryGetRuntimeSummary(sessionId, out var runtimeSummary))
         {
             return BuildNativeVibe(
                 sessionId,
@@ -79,7 +79,7 @@ public sealed class SessionAgentVibeService
         return new AgentSessionVibeResponse
         {
             SessionId = sessionId,
-            Source = session.LensOnly ? "lens-pending" : "fallback",
+            Source = session.AppServerControlOnly ? "appServerControl-pending" : "fallback",
             GeneratedAt = now,
             Header = new AgentSessionVibeHeader
             {
@@ -99,7 +99,7 @@ public sealed class SessionAgentVibeService
                 Overview = new AgentSessionVibeOverview
             {
                 StateValue = stateLabel,
-                StateMeta = session.LensOnly
+                StateMeta = session.AppServerControlOnly
                     ? capability.Lane.Label
                     : supervisor.NeedsAttention ? "Needs attention" : "Stable",
                 ActivityValue = $"{FormatBytes(activity.CurrentBytesPerSecond)}/s",
@@ -123,8 +123,8 @@ public sealed class SessionAgentVibeService
             {
                 TailLineCount = Math.Max(1, tailLines),
                 TailText = tailText,
-                EmptyMessage = session.LensOnly
-                    ? "Explicit Lens sessions do not include a terminal surface."
+                EmptyMessage = session.AppServerControlOnly
+                    ? "Explicit App Server Controller sessions do not include a terminal surface."
                     : "No recent output in the terminal buffer."
             }
         };
@@ -139,10 +139,10 @@ public sealed class SessionAgentVibeService
         SessionActivityResponse activity,
         int tailLines,
         string terminalTailText,
-        LensRuntimeSummary runtimeSummary,
+        AppServerControlRuntimeSummary runtimeSummary,
         DateTimeOffset now)
     {
-        var transportSummary = $"{runtimeSummary.TransportLabel} is attached as the native Lens runtime. Lens remains provider-owned and separate from any terminal surface.";
+        var transportSummary = $"{runtimeSummary.TransportLabel} is attached as the native App Server Controller runtime. App Server Controller remains provider-owned and separate from any terminal surface.";
         var chips = new List<AgentSessionVibeChip>
         {
             new()
@@ -179,7 +179,7 @@ public sealed class SessionAgentVibeService
                     Label = capabilityItem.Label,
                     Status = "live",
                     StatusLabel = "Live",
-                    Detail = runtimeSummary.TransportLabel + " is actively feeding Lens for this session."
+                    Detail = runtimeSummary.TransportLabel + " is actively feeding App Server Controller for this session."
                 }
                 : capabilityItem.Key == "terminal"
                     ? new AgentSessionVibeCapability
@@ -188,7 +188,7 @@ public sealed class SessionAgentVibeService
                         Label = capabilityItem.Label,
                         Status = capabilityItem.Status,
                         StatusLabel = capabilityItem.StatusLabel,
-                        Detail = "xterm still owns the visible terminal surface and remains available beside Lens."
+                        Detail = "xterm still owns the visible terminal surface and remains available beside App Server Controller."
                     }
                     : capabilityItem)
             .ToList();
@@ -221,7 +221,7 @@ public sealed class SessionAgentVibeService
             {
                 Mode = "native-live",
                 Tone = runtimeSummary.Status == "error" ? "attention" : runtimeSummary.Status == "running" ? "positive" : "info",
-                Label = "Native Lens",
+                Label = "Native App Server Controller",
                 Detail = transportSummary
             },
             Capabilities = capabilities,
@@ -244,7 +244,7 @@ public sealed class SessionAgentVibeService
             {
                 TailLineCount = Math.Max(1, tailLines),
                 TailText = nativeTail?.TrimEnd() ?? string.Empty,
-                EmptyMessage = "No native Lens output has arrived yet."
+                EmptyMessage = "No native App Server Controller output has arrived yet."
             }
         };
     }

@@ -142,7 +142,7 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveResumeThreadIdAsync_UsesCanonicalLensSnapshotThreadId()
+    public async Task ResolveResumeThreadIdAsync_UsesCanonicalAppServerControlSnapshotThreadId()
     {
         var cwd = Path.Combine(_tempRoot, "repo-snapshot");
         Directory.CreateDirectory(cwd);
@@ -155,8 +155,8 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
             ForegroundName = "codex"
         };
 
-        Assert.True(await context.LensRuntime.EnsureAttachedAsync(session.Id, session, ct: CancellationToken.None));
-        Assert.True(context.LensRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow));
+        Assert.True(await context.AppServerControlRuntime.EnsureAttachedAsync(session.Id, session, ct: CancellationToken.None));
+        Assert.True(context.AppServerControlRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow));
 
         var resumeThreadId = await context.Service.ResolveResumeThreadIdAsync(session, CancellationToken.None);
 
@@ -283,31 +283,31 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
 
     private sealed class HandoffServiceContext : IAsyncDisposable
     {
-        private readonly SessionLensRuntimeService _lensRuntime;
+        private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
         private readonly TtyHostSessionManager _sessionManager;
-        private readonly SessionLensHostRuntimeService _hostRuntime;
+        private readonly SessionAppServerControlHostRuntimeService _hostRuntime;
         private bool _disposed;
 
         public HandoffServiceContext(
             string tempRoot,
             string mode)
         {
-            _hostRuntime = new SessionLensHostRuntimeService(new SettingsService(), mode: mode);
+            _hostRuntime = new SessionAppServerControlHostRuntimeService(new SettingsService(), mode: mode);
             _sessionManager = new TtyHostSessionManager();
-            _lensRuntime = new SessionLensRuntimeService(_sessionManager, new AiCliProfileService(), _hostRuntime);
+            _appServerControlRuntime = new SessionAppServerControlRuntimeService(_sessionManager, new AiCliProfileService(), _hostRuntime);
             Service = new SessionCodexHandoffService(
                 _sessionManager,
                 new WorkerSessionRegistryService(),
                 new AiCliProfileService(),
                 new SessionForegroundProcessService(),
-                _lensRuntime,
+                _appServerControlRuntime,
                 tempRoot);
-            LensRuntime = _lensRuntime;
+            AppServerControlRuntime = _appServerControlRuntime;
         }
 
         public SessionCodexHandoffService Service { get; }
 
-        public SessionLensRuntimeService LensRuntime { get; }
+        public SessionAppServerControlRuntimeService AppServerControlRuntime { get; }
 
         public async ValueTask DisposeAsync()
         {
@@ -317,7 +317,7 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
             }
 
             _disposed = true;
-            await _lensRuntime.DisposeAsync();
+            await _appServerControlRuntime.DisposeAsync();
             await _sessionManager.DisposeAsync();
             await _hostRuntime.DisposeAsync();
         }

@@ -1,12 +1,12 @@
-import type { LensQuickSettingsSummary } from '../../api/types';
-import type { LensComposerDraftAttachment } from './lensAttachments';
+import type { AppServerControlQuickSettingsSummary } from '../../api/types';
+import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
 import {
-  cloneLensComposerDraftAttachments,
-  hydrateLensComposerDraftAttachment,
-  releaseLensComposerDraftAttachmentPreviews,
-  toPersistedLensComposerDraftAttachment,
-  type PersistedLensComposerDraftAttachment,
-} from './lensAttachments';
+  cloneAppServerControlComposerDraftAttachments,
+  hydrateAppServerControlComposerDraftAttachment,
+  releaseAppServerControlComposerDraftAttachmentPreviews,
+  toPersistedAppServerControlComposerDraftAttachment,
+  type PersistedAppServerControlComposerDraftAttachment,
+} from './appServerControlAttachments';
 import {
   cloneSmartInputComposerDraft,
   type SmartInputComposerDraft,
@@ -14,7 +14,7 @@ import {
   type SmartInputComposerReferenceKind,
 } from './smartInputComposerDraft';
 
-const LENS_ATTACHMENT_STORAGE_KEY_PREFIX = 'smartinput-lens-attachments:';
+const APP_SERVER_CONTROL_ATTACHMENT_STORAGE_KEY_PREFIX = 'smartinput-appServerControl-attachments:';
 const PROMPT_HISTORY_STORAGE_KEY_PREFIX = 'smartinput-prompt-history:';
 export const MAX_SMART_INPUT_PROMPT_HISTORY_ENTRIES = 5;
 
@@ -26,19 +26,19 @@ interface PersistedPromptHistoryQuickSettings {
 }
 
 interface PersistedSmartInputPromptHistoryEntry {
-  attachments: PersistedLensComposerDraftAttachment[];
+  attachments: PersistedAppServerControlComposerDraftAttachment[];
   composerDraft: SmartInputComposerDraft;
   quickSettings: PersistedPromptHistoryQuickSettings | null;
 }
 
 export interface SmartInputPromptHistoryEntry {
-  attachments: LensComposerDraftAttachment[];
+  attachments: AppServerControlComposerDraftAttachment[];
   composerDraft: SmartInputComposerDraft;
-  quickSettings: LensQuickSettingsSummary | null;
+  quickSettings: AppServerControlQuickSettingsSummary | null;
 }
 
-function getLensAttachmentStorageKey(sessionId: string): string {
-  return `${LENS_ATTACHMENT_STORAGE_KEY_PREFIX}${sessionId}`;
+function getAppServerControlAttachmentStorageKey(sessionId: string): string {
+  return `${APP_SERVER_CONTROL_ATTACHMENT_STORAGE_KEY_PREFIX}${sessionId}`;
 }
 
 function getPromptHistoryStorageKey(sessionId: string): string {
@@ -46,8 +46,8 @@ function getPromptHistoryStorageKey(sessionId: string): string {
 }
 
 function clonePromptHistoryQuickSettings(
-  quickSettings: LensQuickSettingsSummary | null,
-): LensQuickSettingsSummary | null {
+  quickSettings: AppServerControlQuickSettingsSummary | null,
+): AppServerControlQuickSettingsSummary | null {
   if (!quickSettings) {
     return null;
   }
@@ -66,7 +66,7 @@ export function cloneSmartInputPromptHistoryEntry(
 ): SmartInputPromptHistoryEntry {
   return {
     composerDraft: cloneSmartInputComposerDraft(entry.composerDraft),
-    attachments: cloneLensComposerDraftAttachments(entry.attachments),
+    attachments: cloneAppServerControlComposerDraftAttachments(entry.attachments),
     quickSettings: clonePromptHistoryQuickSettings(entry.quickSettings),
   };
 }
@@ -78,7 +78,7 @@ function cloneSmartInputPromptHistoryEntries(
 }
 
 function toPersistedPromptHistoryQuickSettings(
-  quickSettings: LensQuickSettingsSummary | null,
+  quickSettings: AppServerControlQuickSettingsSummary | null,
 ): PersistedPromptHistoryQuickSettings | null {
   if (!quickSettings) {
     return null;
@@ -93,34 +93,38 @@ function toPersistedPromptHistoryQuickSettings(
   };
 }
 
-function persistLensDraftAttachmentsForSession(
+function persistAppServerControlDraftAttachmentsForSession(
   sessionId: string,
-  attachments: readonly LensComposerDraftAttachment[],
+  attachments: readonly AppServerControlComposerDraftAttachment[],
 ): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
 
   const persisted = attachments
-    .map((attachment) => toPersistedLensComposerDraftAttachment(attachment))
+    .map((attachment) => toPersistedAppServerControlComposerDraftAttachment(attachment))
     .filter(
-      (attachment): attachment is PersistedLensComposerDraftAttachment => attachment !== null,
+      (attachment): attachment is PersistedAppServerControlComposerDraftAttachment =>
+        attachment !== null,
     );
 
   if (persisted.length === 0) {
-    localStorage.removeItem(getLensAttachmentStorageKey(sessionId));
+    localStorage.removeItem(getAppServerControlAttachmentStorageKey(sessionId));
     return;
   }
 
-  localStorage.setItem(getLensAttachmentStorageKey(sessionId), JSON.stringify(persisted));
+  localStorage.setItem(
+    getAppServerControlAttachmentStorageKey(sessionId),
+    JSON.stringify(persisted),
+  );
 }
 
-function clearPersistedLensDraftAttachmentsForSession(sessionId: string): void {
+function clearPersistedAppServerControlDraftAttachmentsForSession(sessionId: string): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
 
-  localStorage.removeItem(getLensAttachmentStorageKey(sessionId));
+  localStorage.removeItem(getAppServerControlAttachmentStorageKey(sessionId));
 }
 
 function persistPromptHistoryForSession(
@@ -139,9 +143,10 @@ function persistPromptHistoryForSession(
   const persisted: PersistedSmartInputPromptHistoryEntry[] = entries.map((entry) => ({
     composerDraft: cloneSmartInputComposerDraft(entry.composerDraft),
     attachments: entry.attachments
-      .map((attachment) => toPersistedLensComposerDraftAttachment(attachment))
+      .map((attachment) => toPersistedAppServerControlComposerDraftAttachment(attachment))
       .filter(
-        (attachment): attachment is PersistedLensComposerDraftAttachment => attachment !== null,
+        (attachment): attachment is PersistedAppServerControlComposerDraftAttachment =>
+          attachment !== null,
       ),
     quickSettings: toPersistedPromptHistoryQuickSettings(entry.quickSettings),
   }));
@@ -158,9 +163,9 @@ function clearPersistedPromptHistoryForSession(sessionId: string): void {
 }
 
 // eslint-disable-next-line complexity -- persisted attachment hydration validates several optional reference metadata fields while keeping the storage schema explicit.
-function tryParsePersistedLensDraftAttachment(
+function tryParsePersistedAppServerControlDraftAttachment(
   value: unknown,
-): PersistedLensComposerDraftAttachment | null {
+): PersistedAppServerControlComposerDraftAttachment | null {
   if (!value || typeof value !== 'object') {
     return null;
   }
@@ -273,7 +278,9 @@ function tryParseComposerDraft(value: unknown): SmartInputComposerDraft | null {
   };
 }
 
-function tryParsePromptHistoryQuickSettings(value: unknown): LensQuickSettingsSummary | null {
+function tryParsePromptHistoryQuickSettings(
+  value: unknown,
+): AppServerControlQuickSettingsSummary | null {
   if (value === null) {
     return null;
   }
@@ -311,9 +318,12 @@ function tryParsePromptHistoryEntry(
   }
 
   const attachments = entry.attachments
-    .map((attachment) => tryParsePersistedLensDraftAttachment(attachment))
-    .filter((attachment): attachment is PersistedLensComposerDraftAttachment => attachment !== null)
-    .map((attachment) => hydrateLensComposerDraftAttachment(sessionId, attachment));
+    .map((attachment) => tryParsePersistedAppServerControlDraftAttachment(attachment))
+    .filter(
+      (attachment): attachment is PersistedAppServerControlComposerDraftAttachment =>
+        attachment !== null,
+    )
+    .map((attachment) => hydrateAppServerControlComposerDraftAttachment(sessionId, attachment));
   const quickSettings = tryParsePromptHistoryQuickSettings(entry.quickSettings ?? null);
   if (entry.quickSettings !== null && entry.quickSettings !== undefined && !quickSettings) {
     return null;
@@ -326,14 +336,14 @@ function tryParsePromptHistoryEntry(
   };
 }
 
-export function loadLensDraftAttachmentsForSession(
+export function loadAppServerControlDraftAttachmentsForSession(
   sessionId: string,
-): LensComposerDraftAttachment[] {
+): AppServerControlComposerDraftAttachment[] {
   if (typeof localStorage === 'undefined') {
     return [];
   }
 
-  const raw = localStorage.getItem(getLensAttachmentStorageKey(sessionId));
+  const raw = localStorage.getItem(getAppServerControlAttachmentStorageKey(sessionId));
   if (!raw) {
     return [];
   }
@@ -345,11 +355,12 @@ export function loadLensDraftAttachmentsForSession(
     }
 
     return parsed
-      .map((value) => tryParsePersistedLensDraftAttachment(value))
+      .map((value) => tryParsePersistedAppServerControlDraftAttachment(value))
       .filter(
-        (attachment): attachment is PersistedLensComposerDraftAttachment => attachment !== null,
+        (attachment): attachment is PersistedAppServerControlComposerDraftAttachment =>
+          attachment !== null,
       )
-      .map((attachment) => hydrateLensComposerDraftAttachment(sessionId, attachment));
+      .map((attachment) => hydrateAppServerControlComposerDraftAttachment(sessionId, attachment));
   } catch {
     return [];
   }
@@ -381,52 +392,52 @@ export function loadSmartInputPromptHistoryForSession(
   }
 }
 
-export function getLensDraftAttachmentsForSession(
-  drafts: ReadonlyMap<string, LensComposerDraftAttachment[]>,
+export function getAppServerControlDraftAttachmentsForSession(
+  drafts: ReadonlyMap<string, AppServerControlComposerDraftAttachment[]>,
   sessionId: string | null,
-): LensComposerDraftAttachment[] {
+): AppServerControlComposerDraftAttachment[] {
   return sessionId ? (drafts.get(sessionId) ?? []) : [];
 }
 
-export function setLensDraftAttachmentsForSession(
-  drafts: Map<string, LensComposerDraftAttachment[]>,
+export function setAppServerControlDraftAttachmentsForSession(
+  drafts: Map<string, AppServerControlComposerDraftAttachment[]>,
   sessionId: string,
-  attachments: readonly LensComposerDraftAttachment[],
+  attachments: readonly AppServerControlComposerDraftAttachment[],
 ): void {
   if (attachments.length === 0) {
     drafts.delete(sessionId);
-    clearPersistedLensDraftAttachmentsForSession(sessionId);
+    clearPersistedAppServerControlDraftAttachmentsForSession(sessionId);
     return;
   }
 
   drafts.set(sessionId, [...attachments]);
-  persistLensDraftAttachmentsForSession(sessionId, attachments);
+  persistAppServerControlDraftAttachmentsForSession(sessionId, attachments);
 }
 
-export function clearLensDraftAttachmentsForSession(
-  drafts: Map<string, LensComposerDraftAttachment[]>,
+export function clearAppServerControlDraftAttachmentsForSession(
+  drafts: Map<string, AppServerControlComposerDraftAttachment[]>,
   sessionId: string,
   revokePreviews: boolean = true,
 ): void {
   const attachments = drafts.get(sessionId);
   drafts.delete(sessionId);
-  clearPersistedLensDraftAttachmentsForSession(sessionId);
+  clearPersistedAppServerControlDraftAttachmentsForSession(sessionId);
   if (!attachments) {
     return;
   }
   if (revokePreviews) {
-    releaseLensComposerDraftAttachmentPreviews(attachments);
+    releaseAppServerControlComposerDraftAttachmentPreviews(attachments);
   }
 }
 
-export function detachLensDraftAttachmentsForSession(
-  drafts: Map<string, LensComposerDraftAttachment[]>,
+export function detachAppServerControlDraftAttachmentsForSession(
+  drafts: Map<string, AppServerControlComposerDraftAttachment[]>,
   sessionId: string,
-): LensComposerDraftAttachment[] {
-  const attachments = getLensDraftAttachmentsForSession(drafts, sessionId);
+): AppServerControlComposerDraftAttachment[] {
+  const attachments = getAppServerControlDraftAttachmentsForSession(drafts, sessionId);
   drafts.delete(sessionId);
-  clearPersistedLensDraftAttachmentsForSession(sessionId);
-  return cloneLensComposerDraftAttachments(attachments);
+  clearPersistedAppServerControlDraftAttachmentsForSession(sessionId);
+  return cloneAppServerControlComposerDraftAttachments(attachments);
 }
 
 export function getSmartInputPromptHistoryForSession(
@@ -483,7 +494,7 @@ export function clearSmartInputPromptHistoryForSession(
   }
 
   for (const entry of entries) {
-    releaseLensComposerDraftAttachmentPreviews(entry.attachments);
+    releaseAppServerControlComposerDraftAttachmentPreviews(entry.attachments);
   }
 }
 

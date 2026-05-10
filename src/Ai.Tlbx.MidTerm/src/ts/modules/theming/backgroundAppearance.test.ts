@@ -164,7 +164,9 @@ describe('backgroundAppearance', () => {
     const terminalUiAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-ui-background'));
     const appChromeAlpha = alphaOf(rootStyle.getPropertyValue('--app-chrome-background'));
     const textInputAlpha = alphaOf(rootStyle.getPropertyValue('--text-input-background'));
-    const sidebarHoverAlpha = alphaOf(rootStyle.getPropertyValue('--sidebar-item-hover-background'));
+    const sidebarHoverAlpha = alphaOf(
+      rootStyle.getPropertyValue('--sidebar-item-hover-background'),
+    );
 
     expect(rootStyle.getPropertyValue('--bg-terminal')).toBe('');
     expect(rootStyle.getPropertyValue('--terminal-bg')).toBe('');
@@ -211,9 +213,7 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
-      'rgba(0, 0, 0, 1.000)',
-    );
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe('rgba(0, 0, 0, 1.000)');
     expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
   });
 

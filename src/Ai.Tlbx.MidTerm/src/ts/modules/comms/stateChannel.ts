@@ -361,7 +361,7 @@ function syncSessionTerminalState(session: Session & { id: string }): void {
     return;
   }
 
-  if (!session.lensOnly) {
+  if (!session.appServerControlOnly) {
     createTerminalForSession(session.id, session);
   }
 }

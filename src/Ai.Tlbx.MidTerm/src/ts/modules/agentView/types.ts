@@ -1,20 +1,20 @@
 import type {
-  LensAttachmentReference,
-  LensHistorySnapshot,
-  LensInlineFileReference,
-  LensInlineImagePreview,
-  LensHistoryRuntimeNotice,
+  AppServerControlAttachmentReference,
+  AppServerControlHistorySnapshot,
+  AppServerControlInlineFileReference,
+  AppServerControlInlineImagePreview,
+  AppServerControlHistoryRuntimeNotice,
 } from '../../api/types';
 
-export interface SessionLensViewState {
+export interface SessionAppServerControlViewState {
   panel: HTMLDivElement;
-  snapshot: LensHistorySnapshot | null;
+  snapshot: AppServerControlHistorySnapshot | null;
   debugScenarioActive: boolean;
   activationRunId: number;
   historyViewport: HTMLDivElement | null;
   historyProgressNav: HTMLDivElement | null;
   historyProgressThumb: HTMLDivElement | null;
-  historyEntries: LensHistoryEntry[];
+  historyEntries: AppServerControlHistoryEntry[];
   historyWindowStart: number;
   historyWindowCount: number;
   historyWindowTargetCount: number;
@@ -56,11 +56,11 @@ export interface SessionLensViewState {
     | 'ready'
     | 'failed';
   activationDetail: string;
-  activationTrace: LensActivationTraceEntry[];
+  activationTrace: AppServerControlActivationTraceEntry[];
   activationError: string | null;
-  activationIssue: LensActivationIssue | null;
+  activationIssue: AppServerControlActivationIssue | null;
   activationActionBusy: boolean;
-  optimisticTurns: PendingLensTurn[];
+  optimisticTurns: PendingAppServerControlTurn[];
   renderDirty: boolean;
   assistantMarkdownCache: Map<string, AssistantMarkdownCacheEntry>;
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
@@ -80,12 +80,12 @@ export interface SessionLensViewState {
   pendingHistoryLayoutAnchor: HistoryViewportAnchor | null;
   historyLastVirtualWindowKey: string | null;
   historyExpandedEntries: Set<string>;
-  runtimeStats: LensRuntimeStatsSummary | null;
+  runtimeStats: AppServerControlRuntimeStatsSummary | null;
   busyIndicatorTickHandle: number | null;
-  completedTurnDurationEntries: Map<string, LensHistoryEntry>;
+  completedTurnDurationEntries: Map<string, AppServerControlHistoryEntry>;
 }
 
-export interface LensRuntimeStatsSummary {
+export interface AppServerControlRuntimeStatsSummary {
   windowUsedTokens: number | null;
   windowTokenLimit: number | null;
   accumulatedInputTokens: number;
@@ -99,16 +99,16 @@ export type HistoryNavigatorMode = 'follow-live' | 'browse' | 'drag-preview';
 export type HistoryNavigatorRequestKind = 'preview' | 'hydrate';
 export type HistoryJumpAlign = 'top' | 'center' | 'bottom';
 
-export interface PendingLensTurn {
+export interface PendingAppServerControlTurn {
   optimisticId: string;
   turnId: string | null;
   text: string;
-  attachments: LensAttachmentReference[];
+  attachments: AppServerControlAttachmentReference[];
   submittedAt: string;
   status: 'submitted' | 'accepted';
 }
 
-export interface LensActivationTraceEntry {
+export interface AppServerControlActivationTraceEntry {
   tone: HistoryTone;
   meta: string;
   summary: string;
@@ -133,17 +133,17 @@ export type HistoryKind =
   | 'notice';
 
 export type HistoryTone = 'info' | 'positive' | 'warning' | 'attention';
-export type LensHistoryActionId = 'retry-lens';
-export type LensLayoutMode = 'default' | 'full-width-left';
+export type AppServerControlHistoryActionId = 'retry-appServerControl';
+export type AppServerControlLayoutMode = 'default' | 'full-width-left';
 
-export interface LensHistoryAction {
-  id: LensHistoryActionId;
+export interface AppServerControlHistoryAction {
+  id: AppServerControlHistoryActionId;
   label: string;
   style: 'primary' | 'secondary';
   busyLabel?: string;
 }
 
-export interface LensActivationIssue {
+export interface AppServerControlActivationIssue {
   kind:
     | 'busy-terminal-turn'
     | 'missing-resume-id'
@@ -155,10 +155,10 @@ export interface LensActivationIssue {
   meta: string;
   title: string;
   body: string;
-  actions: LensHistoryAction[];
+  actions: AppServerControlHistoryAction[];
 }
 
-export interface LensHistoryEntry {
+export interface AppServerControlHistoryEntry {
   id: string;
   order: number;
   estimatedHeightPx?: number;
@@ -169,8 +169,8 @@ export interface LensHistoryEntry {
   body: string;
   meta: string;
   requestId?: string;
-  attachments?: LensAttachmentReference[];
-  actions?: LensHistoryAction[];
+  attachments?: AppServerControlAttachmentReference[];
+  actions?: AppServerControlHistoryAction[];
   live?: boolean;
   pending?: boolean;
   sourceItemId?: string | null;
@@ -181,8 +181,8 @@ export interface LensHistoryEntry {
   turnDurationNote?: boolean;
   commandText?: string | null;
   commandOutputTail?: string[];
-  fileMentions?: LensInlineFileReference[];
-  imagePreviews?: LensInlineImagePreview[];
+  fileMentions?: AppServerControlInlineFileReference[];
+  imagePreviews?: AppServerControlInlineImagePreview[];
 }
 
 export interface HistoryVirtualWindow {
@@ -216,7 +216,7 @@ export interface HistoryScrollMetrics {
 
 export interface HistoryVisibleEntry {
   key: string;
-  entry: LensHistoryEntry;
+  entry: AppServerControlHistoryEntry;
   cluster: ArtifactClusterInfo | null;
   showAssistantBadge: boolean;
   signature: string;
@@ -242,7 +242,7 @@ export interface HistoryRenderPlan {
 export interface HistoryRenderedNode {
   node: HTMLElement;
   signature: string;
-  entry: LensHistoryEntry;
+  entry: AppServerControlHistoryEntry;
   cluster: ArtifactClusterInfo | null;
   lastMeasuredWidthBucket: number | null;
 }
@@ -279,10 +279,10 @@ export interface DiffRenderLine {
   newLineNumber?: number;
 }
 
-export interface LensNoticeEntry {
+export interface AppServerControlNoticeEntry {
   id: string;
   order: number;
   title: string;
   meta: string;
-  notice: LensHistoryRuntimeNotice;
+  notice: AppServerControlHistoryRuntimeNotice;
 }

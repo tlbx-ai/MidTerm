@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 describe('smartInputOutboundReferences', () => {
-  it('keeps reference markers in the prompt while appending full text-reference content for Lens', async () => {
+  it('keeps reference markers in the prompt while appending full text-reference content for AppServerControl', async () => {
     const { prepareSmartInputOutboundPrompt } = await import('./smartInputOutboundReferences');
 
     const result = await prepareSmartInputOutboundPrompt({

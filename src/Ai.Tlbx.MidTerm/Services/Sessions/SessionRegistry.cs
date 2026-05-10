@@ -43,13 +43,13 @@ internal sealed class SessionRegistry
 
     public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, byte> LensOnlySessions { get; } = new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, byte> AppServerControlOnlySessions { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, string> LaunchOrigins { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, string> ProfileHints { get; } = new(StringComparer.Ordinal);
 
-    public ConcurrentDictionary<string, string> LensResumeThreadIds { get; } = new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, string> AppServerControlResumeThreadIds { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, string> SpaceIds { get; } = new(StringComparer.Ordinal);
 
@@ -178,9 +178,9 @@ internal sealed class SessionRegistry
                         Surface = GetSurface(s.Id),
                         IsAdHoc = IsAdHoc(launchOrigin),
                         AgentControlled = IsAgentControlled(s.Id),
-                        LensOnly = IsLensOnly(s.Id),
+                        AppServerControlOnly = IsAppServerControlOnly(s.Id),
                         ProfileHint = GetProfileHint(s.Id),
-                        LensResumeThreadId = GetLensResumeThreadId(s.Id),
+                        AppServerControlResumeThreadId = GetAppServerControlResumeThreadId(s.Id),
                         ForegroundDisplayName = s.ForegroundDisplayName,
                         ForegroundProcessIdentity = s.ForegroundProcessIdentity
                     };
@@ -201,10 +201,10 @@ internal sealed class SessionRegistry
         BookmarkLinks.TryRemove(sessionId, out _);
         SessionNotes.TryRemove(sessionId, out _);
         AgentControlledSessions.TryRemove(sessionId, out _);
-        LensOnlySessions.TryRemove(sessionId, out _);
+        AppServerControlOnlySessions.TryRemove(sessionId, out _);
         LaunchOrigins.TryRemove(sessionId, out _);
         ProfileHints.TryRemove(sessionId, out _);
-        LensResumeThreadIds.TryRemove(sessionId, out _);
+        AppServerControlResumeThreadIds.TryRemove(sessionId, out _);
         SpaceIds.TryRemove(sessionId, out _);
         WorkspacePaths.TryRemove(sessionId, out _);
         Surfaces.TryRemove(sessionId, out _);
@@ -302,31 +302,31 @@ internal sealed class SessionRegistry
         return true;
     }
 
-    public bool SetLensOnly(string sessionId, bool lensOnly)
+    public bool SetAppServerControlOnly(string sessionId, bool appServerControlOnly)
     {
         if (!SessionCache.ContainsKey(sessionId))
         {
             return false;
         }
 
-        if (lensOnly)
+        if (appServerControlOnly)
         {
-            LensOnlySessions[sessionId] = 0;
+            AppServerControlOnlySessions[sessionId] = 0;
         }
         else
         {
-            LensOnlySessions.TryRemove(sessionId, out _);
+            AppServerControlOnlySessions.TryRemove(sessionId, out _);
         }
 
-        _sessionControlStateService?.SetLensOnly(sessionId, lensOnly);
+        _sessionControlStateService?.SetAppServerControlOnly(sessionId, appServerControlOnly);
         NotifyStateChange();
         return true;
     }
 
-    public bool IsLensOnly(string sessionId)
+    public bool IsAppServerControlOnly(string sessionId)
     {
-        return LensOnlySessions.ContainsKey(sessionId)
-            || _sessionControlStateService?.IsLensOnly(sessionId) == true;
+        return AppServerControlOnlySessions.ContainsKey(sessionId)
+            || _sessionControlStateService?.IsAppServerControlOnly(sessionId) == true;
     }
 
     public bool SetProfileHint(string sessionId, string? profile)
@@ -378,7 +378,7 @@ internal sealed class SessionRegistry
         return ResolveLaunchOrigin(sessionId, spaceId);
     }
 
-    public bool SetLensResumeThreadId(string sessionId, string? resumeThreadId)
+    public bool SetAppServerControlResumeThreadId(string sessionId, string? resumeThreadId)
     {
         if (!SessionCache.ContainsKey(sessionId))
         {
@@ -387,14 +387,14 @@ internal sealed class SessionRegistry
 
         if (string.IsNullOrWhiteSpace(resumeThreadId))
         {
-            LensResumeThreadIds.TryRemove(sessionId, out _);
+            AppServerControlResumeThreadIds.TryRemove(sessionId, out _);
         }
         else
         {
-            LensResumeThreadIds[sessionId] = resumeThreadId.Trim();
+            AppServerControlResumeThreadIds[sessionId] = resumeThreadId.Trim();
         }
 
-        _sessionControlStateService?.SetLensResumeThreadId(sessionId, resumeThreadId);
+        _sessionControlStateService?.SetAppServerControlResumeThreadId(sessionId, resumeThreadId);
         NotifyStateChange();
         return true;
     }
@@ -551,7 +551,7 @@ internal sealed class SessionRegistry
         BookmarkLinks.Clear();
         AgentControlledSessions.Clear();
         LaunchOrigins.Clear();
-        LensResumeThreadIds.Clear();
+        AppServerControlResumeThreadIds.Clear();
         SpaceIds.Clear();
         WorkspacePaths.Clear();
         Surfaces.Clear();
@@ -572,11 +572,11 @@ internal sealed class SessionRegistry
             : _sessionControlStateService?.GetProfileHint(sessionId);
     }
 
-    private string? GetLensResumeThreadId(string sessionId)
+    private string? GetAppServerControlResumeThreadId(string sessionId)
     {
-        return LensResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId)
+        return AppServerControlResumeThreadIds.TryGetValue(sessionId, out var resumeThreadId)
             ? resumeThreadId
-            : _sessionControlStateService?.GetLensResumeThreadId(sessionId);
+            : _sessionControlStateService?.GetAppServerControlResumeThreadId(sessionId);
     }
 
     private string? GetStoredLaunchOrigin(string sessionId)

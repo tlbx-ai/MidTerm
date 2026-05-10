@@ -587,7 +587,7 @@ public sealed class SpaceService
                     Surface = string.IsNullOrWhiteSpace(session.Surface)
                         ? SpaceSurfaceKinds.Terminal
                         : session.Surface!,
-                    LensOnly = session.LensOnly,
+                    AppServerControlOnly = session.AppServerControlOnly,
                     ProfileHint = session.ProfileHint
                 })
                 .OrderBy(session => session.Title, StringComparer.OrdinalIgnoreCase)
@@ -675,7 +675,7 @@ public sealed class SpaceService
 
     private static bool IsAgentSession(SpaceWorkspaceSessionDto session)
     {
-        return session.LensOnly ||
+        return session.AppServerControlOnly ||
                string.Equals(session.Surface, SpaceSurfaceKinds.Codex, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(session.Surface, SpaceSurfaceKinds.Claude, StringComparison.OrdinalIgnoreCase);
     }
@@ -693,7 +693,7 @@ public sealed class SpaceService
                 SessionId = session.Id,
                 Title = string.IsNullOrWhiteSpace(session.Name) ? session.ShellType : session.Name!,
                 Surface = string.IsNullOrWhiteSpace(session.Surface) ? SpaceSurfaceKinds.Terminal : session.Surface!,
-                LensOnly = session.LensOnly,
+                AppServerControlOnly = session.AppServerControlOnly,
                 ProfileHint = session.ProfileHint
             })
             .OrderBy(session => session.Title, StringComparer.OrdinalIgnoreCase)

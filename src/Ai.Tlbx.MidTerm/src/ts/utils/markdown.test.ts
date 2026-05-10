@@ -62,7 +62,7 @@ describe('renderMarkdown', () => {
 
   it('marks dense operator tables with semantic column kinds', () => {
     const html = renderMarkdown(
-      '| Lane | Mode | Queue | Scrollback | CPU peak | Model | Notes |\n| :--- | :--- | ---: | ---: | ---: | :--- | :--- |\n| Alpha | Lens | 3 | 4112 | 31% | gpt-5.4-mini | Approval request open and still visible |\n| Beta | Terminal | 0 | 932 | 12% | none | Waiting for input |',
+      '| Lane | Mode | Queue | Scrollback | CPU peak | Model | Notes |\n| :--- | :--- | ---: | ---: | ---: | :--- | :--- |\n| Alpha | AppServerControl | 3 | 4112 | 31% | gpt-5.4-mini | Approval request open and still visible |\n| Beta | Terminal | 0 | 932 | 12% | none | Waiting for input |',
     );
 
     expect(html).toContain('<table class="agent-markdown-table" data-table-density="dense">');
@@ -82,7 +82,7 @@ describe('renderMarkdown', () => {
       '<th data-align="left" data-col-kind="notes" title="Notes" aria-label="Notes"><span class="agent-markdown-th-short">Notes</span></th>',
     );
     expect(html).toContain(
-      '<td data-align="left" data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="info" data-cell-kind="tag">Lens</span></td>',
+      '<td data-align="left" data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="info" data-cell-kind="tag">AppServerControl</span></td>',
     );
     expect(html).toContain(
       '<td data-align="left" data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="info" data-cell-kind="tag">gpt-5.4-mini</span></td>',
@@ -95,21 +95,25 @@ describe('renderMarkdown', () => {
   it('keeps markdown tables ready for interactive header wiring', () => {
     const html = renderMarkdown('| Name | Score |\n| :--- | ---: |\n| Alpha | 42 |');
 
-    expect(html).toContain('<div class="agent-markdown-table-wrap"><table class="agent-markdown-table">');
+    expect(html).toContain(
+      '<div class="agent-markdown-table-wrap"><table class="agent-markdown-table">',
+    );
     expect(html).toContain('<thead><tr>');
-    expect(html).toContain('<th data-align="left" data-col-kind="text" title="Name" aria-label="Name">Name</th>');
+    expect(html).toContain(
+      '<th data-align="left" data-col-kind="text" title="Name" aria-label="Name">Name</th>',
+    );
   });
 
   it('renders fenced csv blocks as interactive tables instead of code blocks', () => {
     const html = renderMarkdown(
-      '```csv\nName,Score,Mode\nAlpha,42,Lens\nBeta,7,Terminal\n```',
+      '```csv\nName,Score,Mode\nAlpha,42,AppServerControl\nBeta,7,Terminal\n```',
     );
 
     expect(html).toContain('<table class="agent-markdown-table" data-table-source="csv">');
     expect(html).toContain('<th data-col-kind="text" title="Name" aria-label="Name">Name</th>');
     expect(html).toContain('<td data-col-kind="numeric">42</td>');
     expect(html).toContain(
-      '<td data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="info" data-cell-kind="tag">Lens</span></td>',
+      '<td data-col-kind="tag"><span class="agent-markdown-cell-pill" data-cell-tone="info" data-cell-kind="tag">AppServerControl</span></td>',
     );
     expect(html).not.toContain('<pre class="agent-markdown-pre"><code data-language="csv">');
   });

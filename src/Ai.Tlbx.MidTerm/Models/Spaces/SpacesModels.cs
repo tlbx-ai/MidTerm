@@ -89,7 +89,7 @@ public sealed class SpaceWorkspaceSessionDto
     public string SessionId { get; set; } = "";
     public string Title { get; set; } = "";
     public string Surface { get; set; } = SpaceSurfaceKinds.Terminal;
-    public bool LensOnly { get; set; }
+    public bool AppServerControlOnly { get; set; }
     public string? ProfileHint { get; set; }
 }
 

@@ -13,7 +13,7 @@ public interface IManagerBarQueueRuntime
     bool UsesTurnQueue(string sessionId);
     bool IsTurnQueueReady(string sessionId);
     Task SendPromptAsync(string sessionId, string prompt, CancellationToken cancellationToken);
-    Task SendTurnAsync(string sessionId, LensTurnRequest request, CancellationToken cancellationToken);
+    Task SendTurnAsync(string sessionId, AppServerControlTurnRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
@@ -23,20 +23,20 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionHeatService _sessionHeat;
     private readonly SessionTelemetryService _sessionTelemetry;
-    private readonly SessionLensRuntimeService _lensRuntime;
+    private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
     private readonly ClipboardService _clipboardService;
 
     public ManagerBarQueueRuntime(
         TtyHostSessionManager sessionManager,
         SessionHeatService sessionHeat,
         SessionTelemetryService sessionTelemetry,
-        SessionLensRuntimeService lensRuntime,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
         ClipboardService clipboardService)
     {
         _sessionManager = sessionManager;
         _sessionHeat = sessionHeat;
         _sessionTelemetry = sessionTelemetry;
-        _lensRuntime = lensRuntime;
+        _appServerControlRuntime = appServerControlRuntime;
         _clipboardService = clipboardService;
     }
 
@@ -61,7 +61,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
     {
         return _sessionManager.GetSessionList().Sessions
             .FirstOrDefault(candidate => string.Equals(candidate.Id, sessionId, StringComparison.Ordinal))
-            ?.LensOnly == true;
+            ?.AppServerControlOnly == true;
     }
 
     public bool IsTurnQueueReady(string sessionId)
@@ -71,7 +71,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             return false;
         }
 
-        if (!_lensRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
+        if (!_appServerControlRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
         {
             return true;
         }
@@ -105,13 +105,13 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             return;
         }
 
-        var lensOnly = _sessionManager.GetSessionList().Sessions
+        var appServerControlOnly = _sessionManager.GetSessionList().Sessions
             .FirstOrDefault(candidate => string.Equals(candidate.Id, sessionId, StringComparison.Ordinal))
-            ?.LensOnly == true;
+            ?.AppServerControlOnly == true;
 
-        if (lensOnly)
+        if (appServerControlOnly)
         {
-            var sent = await _lensRuntime.TrySendPromptAsync(
+            var sent = await _appServerControlRuntime.TrySendPromptAsync(
                 sessionId,
                 new SessionPromptRequest { Text = prompt },
                 cancellationToken).ConfigureAwait(false);
@@ -132,7 +132,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
         await _sessionManager.SendInputAsync(sessionId, submitBytes, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task SendTurnAsync(string sessionId, LensTurnRequest request, CancellationToken cancellationToken)
+    public async Task SendTurnAsync(string sessionId, AppServerControlTurnRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -163,7 +163,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             return;
         }
 
-        await _lensRuntime.StartTurnAsync(sessionId, request, cancellationToken).ConfigureAwait(false);
+        await _appServerControlRuntime.StartTurnAsync(sessionId, request, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task SendInputAndRecordAsync(

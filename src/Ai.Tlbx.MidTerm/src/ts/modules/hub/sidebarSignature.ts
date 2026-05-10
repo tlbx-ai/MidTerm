@@ -33,7 +33,7 @@ export function getHubSidebarRenderSignature(): string {
           session.order,
           session._order,
           session.agentControlled,
-          session.lensOnly,
+          session.appServerControlOnly,
           session.surface,
           session.foregroundName,
           session.foregroundDisplayName,

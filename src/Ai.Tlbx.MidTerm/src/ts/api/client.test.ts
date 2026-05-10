@@ -1,50 +1,50 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-describe('api client lens helpers', () => {
+describe('api client appServerControl helpers', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
   });
 
-  it('surfaces Lens attach transport failures as LensHttpError instances', async () => {
-    vi.doMock('./lensWebSocket', async () => {
-      const { LensHttpError } = await import('./errors');
+  it('surfaces AppServerControl attach transport failures as AppServerControlHttpError instances', async () => {
+    vi.doMock('./appServerControlWebSocket', async () => {
+      const { AppServerControlHttpError } = await import('./errors');
       return {
-        attachLensSession: vi.fn(async () => {
-          throw new LensHttpError(
+        attachAppServerControlSession: vi.fn(async () => {
+          throw new AppServerControlHttpError(
             400,
             'MidTerm could not determine the Codex resume id for this session.',
           );
         }),
-        detachLensSession: vi.fn(),
-        getLensHistoryWindowWs: vi.fn(),
-        interruptLensTurnWs: vi.fn(),
-        openLensHistorySocket: vi.fn(),
-        updateLensHistorySocketWindow: vi.fn(),
-        approveLensRequestWs: vi.fn(),
-        declineLensRequestWs: vi.fn(),
-        resolveLensUserInputWs: vi.fn(),
-        submitLensTurnWs: vi.fn(),
+        detachAppServerControlSession: vi.fn(),
+        getAppServerControlHistoryWindowWs: vi.fn(),
+        interruptAppServerControlTurnWs: vi.fn(),
+        openAppServerControlHistorySocket: vi.fn(),
+        updateAppServerControlHistorySocketWindow: vi.fn(),
+        approveAppServerControlRequestWs: vi.fn(),
+        declineAppServerControlRequestWs: vi.fn(),
+        resolveAppServerControlUserInputWs: vi.fn(),
+        submitAppServerControlTurnWs: vi.fn(),
       };
     });
 
-    const { attachSessionLens, LensHttpError } = await import('./client');
+    const { attachSessionAppServerControl, AppServerControlHttpError } = await import('./client');
 
     let thrown: unknown;
     try {
-      await attachSessionLens('session-1');
+      await attachSessionAppServerControl('session-1');
     } catch (error) {
       thrown = error;
     }
 
-    expect(thrown).toBeInstanceOf(LensHttpError);
+    expect(thrown).toBeInstanceOf(AppServerControlHttpError);
     expect((thrown as Error).message).toBe(
       'HTTP 400: MidTerm could not determine the Codex resume id for this session.',
     );
   });
 
-  it('passes index-window arguments through to the Lens history transport and returns the payload', async () => {
-    const getLensHistoryWindowWs = vi.fn(
+  it('passes index-window arguments through to the AppServerControl history transport and returns the payload', async () => {
+    const getAppServerControlHistoryWindowWs = vi.fn(
       async (_sessionId: string, _start?: number, _count?: number, _windowRevision?: string) => ({
         sessionId: 'session-1',
         latestSequence: 7,
@@ -74,23 +74,23 @@ describe('api client lens helpers', () => {
         notices: [],
       }),
     );
-    vi.doMock('./lensWebSocket', () => ({
-      attachLensSession: vi.fn(),
-      detachLensSession: vi.fn(),
-      getLensHistoryWindowWs,
-      interruptLensTurnWs: vi.fn(),
-      openLensHistorySocket: vi.fn(),
-      updateLensHistorySocketWindow: vi.fn(),
-      approveLensRequestWs: vi.fn(),
-      declineLensRequestWs: vi.fn(),
-      resolveLensUserInputWs: vi.fn(),
-      submitLensTurnWs: vi.fn(),
+    vi.doMock('./appServerControlWebSocket', () => ({
+      attachAppServerControlSession: vi.fn(),
+      detachAppServerControlSession: vi.fn(),
+      getAppServerControlHistoryWindowWs,
+      interruptAppServerControlTurnWs: vi.fn(),
+      openAppServerControlHistorySocket: vi.fn(),
+      updateAppServerControlHistorySocketWindow: vi.fn(),
+      approveAppServerControlRequestWs: vi.fn(),
+      declineAppServerControlRequestWs: vi.fn(),
+      resolveAppServerControlUserInputWs: vi.fn(),
+      submitAppServerControlTurnWs: vi.fn(),
     }));
 
-    const { getLensHistoryWindow } = await import('./client');
-    const result = await getLensHistoryWindow('session-1', 7, 2);
+    const { getAppServerControlHistoryWindow } = await import('./client');
+    const result = await getAppServerControlHistoryWindow('session-1', 7, 2);
 
-    expect(getLensHistoryWindowWs).toHaveBeenCalledWith(
+    expect(getAppServerControlHistoryWindowWs).toHaveBeenCalledWith(
       'session-1',
       7,
       2,
@@ -131,7 +131,7 @@ describe('api client lens helpers', () => {
     expect(result.bufferText).toBe('hello world');
   });
 
-  it('fetches a stripped terminal tail for read-only Lens fallback', async () => {
+  it('fetches a stripped terminal tail for read-only AppServerControl fallback', async () => {
     vi.stubGlobal('window', {
       location: { origin: 'https://127.0.0.1:2100' },
     });

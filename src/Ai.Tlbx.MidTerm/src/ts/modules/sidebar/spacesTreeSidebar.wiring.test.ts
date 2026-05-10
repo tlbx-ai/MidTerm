@@ -94,7 +94,7 @@ describe('spacesTreeSidebar wiring', () => {
 
   it('selects the session when notes are activated', () => {
     expect(source).toContain(
-      "callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });",
+      'callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });',
     );
     expect(source).toContain("textarea.addEventListener('focus'");
     expect(source).toContain('toggleSessionNotes(entry.id)');

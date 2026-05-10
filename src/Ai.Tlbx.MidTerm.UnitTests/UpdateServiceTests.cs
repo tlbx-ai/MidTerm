@@ -408,7 +408,7 @@ public sealed class UpdateServiceTests : IDisposable
         var fallbackPath = UpdateService.GetAgentHostFallbackPath(settingsDir);
         File.WriteAllText(fallbackPath, "fake-agenthost");
 
-        var resolved = SessionLensHostRuntimeService.ResolveInstalledHostExecutablePath(settingsDir, baseDir);
+        var resolved = SessionAppServerControlHostRuntimeService.ResolveInstalledHostExecutablePath(settingsDir, baseDir);
 
         Assert.Equal(fallbackPath, resolved);
     }

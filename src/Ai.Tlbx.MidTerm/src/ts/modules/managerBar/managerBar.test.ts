@@ -62,7 +62,7 @@ describe('manager bar visibility', () => {
       'function shouldCollapseManagerButtonsToOverflow(managerBar: HTMLElement): boolean {',
     );
     expect(managerBarSource).toContain("footerDock?.dataset.device === 'mobile'");
-    expect(managerBarSource).toContain("footerDock.dataset.surface === 'lens'");
+    expect(managerBarSource).toContain("footerDock.dataset.surface === 'appServerControl'");
     expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '';");
     expect(managerBarSource).toContain("buttonStrip.style.maxWidth = '0px';");
     expect(managerBarSource).toContain("overflowButton.setAttribute('hidden', '');");
@@ -117,13 +117,15 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain('removeCommandBayQueueEntry(queueId);');
   });
 
-  it('collapses the automation bar to overflow and hides add button on mobile Lens', () => {
+  it('collapses the automation bar to overflow and hides add button on mobile AppServerControl', () => {
     expect(managerBarSource).toContain(
-      'function isMobileLensSurface(managerBar: HTMLElement): boolean {',
+      'function isMobileAppServerControlSurface(managerBar: HTMLElement): boolean {',
     );
-    expect(managerBarSource).toContain("addButton.classList.toggle('hidden', mobileLens);");
+    expect(managerBarSource).toContain(
+      "addButton.classList.toggle('hidden', mobileAppServerControl);",
+    );
     expect(managerBarSource).toContain("t('managerBar.addButton')");
-    expect(managerBarSource).toContain('isMobileLensSurface(barEl)');
+    expect(managerBarSource).toContain('isMobileAppServerControlSurface(barEl)');
   });
 
   it('exports trigger hooks and proxy anchor for mobile status row proxy buttons', () => {
@@ -136,6 +138,15 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain('let activeOverflowAnchorEl:');
     expect(managerBarSource).toContain('resolveUsableOverflowAnchor(overflowProxyAnchorEl)');
     expect(managerBarSource).toContain('resolveUsableOverflowAnchor(overflowBtn)');
+  });
+
+  it('positions action popovers inside the visual viewport for mobile keyboard overlap', () => {
+    expect(managerBarSource).toContain('function getVisualViewportBounds(): ViewportBounds {');
+    expect(managerBarSource).toContain('const vv = window.visualViewport;');
+    expect(managerBarSource).toContain('const viewport = getVisualViewportBounds();');
+    expect(managerBarSource).toContain('viewport.bottom - triggerRect.bottom');
+    expect(managerBarSource).toContain('triggerRect.top - viewport.top');
+    expect(managerBarSource).toContain('viewport.right - viewportPadding - popoverRect.width');
   });
 
   it('renders prompt queue items beside automation items in the same queue surface', () => {

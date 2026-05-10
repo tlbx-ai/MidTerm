@@ -9,7 +9,7 @@ public sealed class ManagerBarQueueEntryDto
     public string SessionId { get; set; } = string.Empty;
     public string Kind { get; set; } = "automation";
     public ManagerBarButton? Action { get; set; }
-    public LensTurnRequest? Turn { get; set; }
+    public AppServerControlTurnRequest? Turn { get; set; }
     public string Phase { get; set; } = "pendingImmediate";
     public int NextPromptIndex { get; set; }
     public int CompletedCycles { get; set; }

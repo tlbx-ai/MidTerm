@@ -17,7 +17,7 @@ export {
   getTabBarHeight,
   setActionButtonActive,
   updateGitIndicatorForSession,
-  setSessionLensAvailability,
+  setSessionAppServerControlAvailability,
   switchTab,
   reparentTerminalContainer,
   updateSessionCwd,

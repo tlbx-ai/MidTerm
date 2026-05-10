@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LensHistoryDelta, LensHistorySnapshot } from '../../api/client';
+import type {
+  AppServerControlHistoryDelta,
+  AppServerControlHistorySnapshot,
+} from '../../api/client';
 import {
-  resetLensHistoryTrace,
-  traceLensHistoryFetch,
-  traceLensHistoryPush,
-  traceLensHistoryScroll,
-  traceLensHistoryShow,
+  resetAppServerControlHistoryTrace,
+  traceAppServerControlHistoryFetch,
+  traceAppServerControlHistoryPush,
+  traceAppServerControlHistoryScroll,
+  traceAppServerControlHistoryShow,
 } from './historyTrace';
 
-function buildSnapshot(overrides: Partial<LensHistorySnapshot> = {}): LensHistorySnapshot {
+function buildSnapshot(
+  overrides: Partial<AppServerControlHistorySnapshot> = {},
+): AppServerControlHistorySnapshot {
   return {
     sessionId: 'session-1',
     provider: 'codex',
@@ -63,7 +68,9 @@ function buildSnapshot(overrides: Partial<LensHistorySnapshot> = {}): LensHistor
   };
 }
 
-function buildDelta(overrides: Partial<LensHistoryDelta> = {}): LensHistoryDelta {
+function buildDelta(
+  overrides: Partial<AppServerControlHistoryDelta> = {},
+): AppServerControlHistoryDelta {
   return {
     sessionId: 'session-1',
     provider: 'codex',
@@ -136,19 +143,19 @@ describe('historyTrace', () => {
         hostname: 'example.test',
       },
     });
-    window.localStorage.setItem('midterm.lensTrace', '1');
-    resetLensHistoryTrace();
+    window.localStorage.setItem('midterm.appServerControlTrace', '1');
+    resetAppServerControlHistoryTrace();
     consoleDebug.mockClear();
   });
 
   afterEach(() => {
-    window.localStorage.removeItem('midterm.lensTrace');
-    resetLensHistoryTrace();
+    window.localStorage.removeItem('midterm.appServerControlTrace');
+    resetAppServerControlHistoryTrace();
     vi.unstubAllGlobals();
   });
 
   it('logs compact fetch and push summaries', () => {
-    traceLensHistoryFetch(
+    traceAppServerControlHistoryFetch(
       'session-1',
       buildSnapshot({
         historyWindowStart: 0,
@@ -157,7 +164,7 @@ describe('historyTrace', () => {
       }),
       'scroll',
     );
-    traceLensHistoryPush(
+    traceAppServerControlHistoryPush(
       'session-1',
       buildDelta({
         historyUpserts: [
@@ -179,16 +186,16 @@ describe('historyTrace', () => {
 
     expect(consoleDebug).toHaveBeenNthCalledWith(
       1,
-      '[LensHistory session-] fetch #1-#20 scroll total 23',
+      '[AppServerControlHistory session-] fetch #1-#20 scroll total 23',
     );
     expect(consoleDebug).toHaveBeenNthCalledWith(
       2,
-      '[LensHistory session-] push +#21 seq 2 total 21',
+      '[AppServerControlHistory session-] push +#21 seq 2 total 21',
     );
   });
 
   it('logs in-place history upserts as updates instead of fresh appends', () => {
-    traceLensHistoryPush(
+    traceAppServerControlHistoryPush(
       'session-1',
       buildDelta({
         historyCount: 20,
@@ -224,12 +231,12 @@ describe('historyTrace', () => {
     );
 
     expect(consoleDebug).toHaveBeenCalledWith(
-      '[LensHistory session-] push ~#20 seq 2 total 20',
+      '[AppServerControlHistory session-] push ~#20 seq 2 total 20',
     );
   });
 
   it('dedupes unchanged show logs and reports discards when the retained window shifts', () => {
-    traceLensHistoryShow({
+    traceAppServerControlHistoryShow({
       sessionId: 'session-1',
       historyWindowStart: 0,
       historyWindowEnd: 20,
@@ -238,7 +245,7 @@ describe('historyTrace', () => {
       visibleEnd: 20,
       pinnedToBottom: true,
     });
-    traceLensHistoryShow({
+    traceAppServerControlHistoryShow({
       sessionId: 'session-1',
       historyWindowStart: 0,
       historyWindowEnd: 20,
@@ -247,7 +254,7 @@ describe('historyTrace', () => {
       visibleEnd: 20,
       pinnedToBottom: true,
     });
-    traceLensHistoryShow({
+    traceAppServerControlHistoryShow({
       sessionId: 'session-1',
       historyWindowStart: 2,
       historyWindowEnd: 23,
@@ -259,17 +266,17 @@ describe('historyTrace', () => {
 
     expect(consoleDebug).toHaveBeenNthCalledWith(
       1,
-      '[LensHistory session-] show #1-#20 view #15-#20 bottom total 23',
+      '[AppServerControlHistory session-] show #1-#20 view #15-#20 bottom total 23',
     );
     expect(consoleDebug).toHaveBeenNthCalledWith(
       2,
-      '[LensHistory session-] show #3-#23 view #3-#10 custom discard #1-#2',
+      '[AppServerControlHistory session-] show #3-#23 view #3-#10 custom discard #1-#2',
     );
     expect(consoleDebug).toHaveBeenCalledTimes(2);
   });
 
   it('logs fast scroll diagnostics with viewport and retained window context', () => {
-    traceLensHistoryScroll({
+    traceAppServerControlHistoryScroll({
       sessionId: 'session-1',
       reason: 'fast-wheel',
       scrollTop: 4242.4,
@@ -282,7 +289,7 @@ describe('historyTrace', () => {
     });
 
     expect(consoleDebug).toHaveBeenCalledWith(
-      '[LensHistory session-] scroll fast-wheel top 4242 height 640/18000 dy -1281 #121-#180 total 360',
+      '[AppServerControlHistory session-] scroll fast-wheel top 4242 height 640/18000 dy -1281 #121-#180 total 360',
     );
   });
 });

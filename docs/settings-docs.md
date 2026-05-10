@@ -7,7 +7,7 @@ Current sources used for this pass:
 - `src/Ai.Tlbx.MidTerm/src/static/index.html`
 - `src/Ai.Tlbx.MidTerm/src/ts/modules/settings/registry.ts`
 - `src/Ai.Tlbx.MidTerm/src/ts/modules/settings/persistence.ts`
-- `src/Ai.Tlbx.MidTerm/src/ts/modules/lens/quickSettings.ts`
+- `src/Ai.Tlbx.MidTerm/src/ts/modules/appServerControl/quickSettings.ts`
 - `src/Ai.Tlbx.MidTerm/src/ts/modules/hub/settings.ts`
 - `src/Ai.Tlbx.MidTerm/src/ts/modules/diagnostics/panel.ts`
 - `src/Ai.Tlbx.MidTerm/src/ts/modules/managerBar/managerBar.ts`
@@ -29,7 +29,7 @@ Current sources used for this pass:
 MidTerm currently has four separate settings-like surfaces:
 
 1. The main tabbed Settings panel.
-2. Lens quick settings in the session footer rail/sheet.
+2. Agent Controller Session quick settings in the session footer rail/sheet.
 3. The Automation Bar button editor modal.
 4. A handful of hidden or indirect settings that exist in the settings model but are not exposed as normal settings rows.
 
@@ -236,22 +236,22 @@ This remains a mixed surface. It combines browser-local toggles, read-only trans
 - `Server`
   `Restart Server` — restart API, action, Immediate.
 
-## Lens Quick Settings
+## Agent Controller Session Quick Settings
 
-Lens quick settings are a separate settings surface shown only for explicit Lens sessions. They are not part of the main tabbed Settings page.
+Agent Controller Session quick settings are a separate settings surface shown only for explicit Agent Controller Sessions. They are not part of the main tabbed Settings page.
 
 | Control | Backing key / source | Persistence | Applies | What it does |
 | --- | --- | --- | --- | --- |
-| Model | session draft plus `codexDefaultLensModel` / `claudeDefaultLensModel` | provider-sticky plus `settings.json` for remembered default model | Next turn | Chooses the model sent with the next Lens turn. The dropdown is provider-specific and includes presets plus current custom values. Changing it also updates the stored default model for that provider. |
+| Model | session draft plus `codexDefaultAppServerControlModel` / `claudeDefaultAppServerControlModel` | provider-sticky plus `settings.json` for remembered default model | Next turn | Chooses the model sent with the next Agent Controller Session turn. The dropdown is provider-specific and includes presets plus current custom values. Changing it also updates the stored default model for that provider. |
 | Effort | session draft | provider-sticky in `localStorage` | Next turn | Chooses the next-turn reasoning effort (`Default`, `Low`, `Medium`, `High`). |
-| Plan | session draft | provider-sticky in `localStorage` | Next turn | Chooses whether the next Lens turn starts with plan mode off or on. |
-| Permissions | session draft | provider-sticky in `localStorage` | Next turn | Chooses `Manual` vs `Auto` approval mode for the next Lens turn. Defaults are seeded from `codexYoloDefault` or `claudeDangerouslySkipPermissionsDefault`. |
-| Resume | provider resume picker | action | Immediate | Opens the provider-backed "Resume Conversation" picker for eligible Lens sessions tied to a space and working directory. |
+| Plan | session draft | provider-sticky in `localStorage` | Next turn | Chooses whether the next Agent Controller Session turn starts with plan mode off or on. |
+| Permissions | session draft | provider-sticky in `localStorage` | Next turn | Chooses `Manual` vs `Auto` approval mode for the next Agent Controller Session turn. Defaults are seeded from `codexYoloDefault` or `claudeDangerouslySkipPermissionsDefault`. |
+| Resume | provider resume picker | action | Immediate | Opens the provider-backed "Resume Conversation" picker for eligible Agent Controller Sessions tied to a space and working directory. |
 
 Notes:
 
 - These controls are hidden for ordinary terminal sessions.
-- The quick settings controls lock while a Lens turn is running, submitting, or queued.
+- The quick settings controls lock while an Agent Controller Session turn is running, submitting, or queued.
 - Effort/Plan/Permissions are not ordinary global settings rows in the main settings panel.
 
 ## Automation Bar Button Editor
@@ -278,8 +278,8 @@ These fields exist in the settings model but are not currently first-class rows 
 | `defaultCols` | hidden model-only field | New sessions | Fallback default terminal width used when sizing a new session. No current UI row. |
 | `defaultRows` | hidden model-only field | New sessions | Fallback default terminal height used when sizing a new session. No current UI row. |
 | `minimumContrastRatio` | hidden model-only field | Immediate | Passed through to xterm's `minimumContrastRatio` option for terminal text contrast. No current UI row. |
-| `codexDefaultLensModel` | Lens quick settings `Model` | New Lens turns / sessions | Remembers the preferred default Codex model used to seed future Lens sessions. |
-| `claudeDefaultLensModel` | Lens quick settings `Model` | New Lens turns / sessions | Remembers the preferred default Claude model used to seed future Lens sessions. |
+| `codexDefaultAppServerControlModel` | Agent Controller Session quick settings `Model` | New Agent Controller Session turns / sessions | Remembers the preferred default Codex model used to seed future Agent Controller Sessions. |
+| `claudeDefaultAppServerControlModel` | Agent Controller Session quick settings `Model` | New Agent Controller Session turns / sessions | Remembers the preferred default Claude model used to seed future Agent Controller Sessions. |
 | `terminalColorSchemes` | Terminal custom scheme editor | Immediate | Stores the saved custom terminal palette definitions. |
 | `managerBarButtons` | Automation Bar button editor | Immediate | Stores the full Automation Bar button definitions and triggers. |
 | `devMode` | hidden 7-click toggle on Server version | Immediate / server features | Enables developer-only UI and behaviors. It is not a normal settings row. |
@@ -294,7 +294,7 @@ These fields exist in the settings model but are not currently first-class rows 
 
 - The main Settings panel is cleaner than before, but it still mixes plain preferences with admin actions, status dashboards, and destructive workflows.
 - `Advanced & Diagnostics` is still only partly a settings surface; several entries are read-only or action-only.
-- Lens quick settings and Automation Bar configuration are still real settings surfaces outside the main Settings panel.
+- Agent Controller Session quick settings and Automation Bar configuration are still real settings surfaces outside the main Settings panel.
 - A few real model fields still have no first-class UI row: `defaultCols`, `defaultRows`, and `minimumContrastRatio`.
 - Hidden `devMode` still lives behind a version-click easter egg rather than a normal advanced-settings path.
 - Several settings-model fields are really endpoint-managed metadata: background image fields, `hubMachines`, `runAsUserSid`, `authenticationEnabled`, and `certificatePath`.

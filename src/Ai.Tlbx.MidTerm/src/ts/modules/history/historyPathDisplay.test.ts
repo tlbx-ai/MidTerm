@@ -16,9 +16,9 @@ describe('history path display', () => {
   });
 
   it('keeps the last two segments when they still fit', () => {
-    expect(
-      formatHistoryDirectoryDisplay('C:\\Users\\johan\\My Drive\\Predigten', 32),
-    ).toBe('C:\\Users\\…\\My Drive\\Predigten');
+    expect(formatHistoryDirectoryDisplay('C:\\Users\\johan\\My Drive\\Predigten', 32)).toBe(
+      'C:\\Users\\…\\My Drive\\Predigten',
+    );
   });
 
   it('handles posix-style paths', () => {

@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 
-export type HistoryLaunchMode = 'terminal' | 'lens';
-export type HistoryLensProfile = 'codex' | 'claude';
+export type HistoryLaunchMode = 'terminal' | 'appServerControl';
+export type HistoryAppServerControlProfile = 'codex' | 'claude';
 
 export interface HistoryModeEntry {
   launchMode?: string | null;
@@ -10,7 +10,7 @@ export interface HistoryModeEntry {
 }
 
 export interface HistoryModeSessionLike {
-  lensOnly?: boolean | null;
+  appServerControlOnly?: boolean | null;
   profileHint?: string | null;
   supervisor?: {
     profile?: string | null;
@@ -18,31 +18,33 @@ export interface HistoryModeSessionLike {
 }
 
 export function normalizeHistoryLaunchMode(mode: string | null | undefined): HistoryLaunchMode {
-  return mode === 'lens' ? 'lens' : 'terminal';
+  return mode === 'appServerControl' ? 'appServerControl' : 'terminal';
 }
 
-export function normalizeHistoryLensProfile(
+export function normalizeHistoryAppServerControlProfile(
   profile: string | null | undefined,
-): HistoryLensProfile | null {
+): HistoryAppServerControlProfile | null {
   return profile === 'codex' || profile === 'claude' ? profile : null;
 }
 
-export function isLensHistoryEntry(entry: HistoryModeEntry): boolean {
+export function isAppServerControlHistoryEntry(entry: HistoryModeEntry): boolean {
   return (
-    normalizeHistoryLaunchMode(entry.launchMode) === 'lens' &&
-    normalizeHistoryLensProfile(entry.profile) !== null
+    normalizeHistoryLaunchMode(entry.launchMode) === 'appServerControl' &&
+    normalizeHistoryAppServerControlProfile(entry.profile) !== null
   );
 }
 
 export function resolveSessionHistoryMode(session: HistoryModeSessionLike): {
   launchMode: HistoryLaunchMode;
-  profile: HistoryLensProfile | null;
+  profile: HistoryAppServerControlProfile | null;
 } {
-  if (session.lensOnly === true) {
-    const profile = normalizeHistoryLensProfile(session.profileHint ?? session.supervisor?.profile);
+  if (session.appServerControlOnly === true) {
+    const profile = normalizeHistoryAppServerControlProfile(
+      session.profileHint ?? session.supervisor?.profile,
+    );
     if (profile) {
       return {
-        launchMode: 'lens',
+        launchMode: 'appServerControl',
         profile,
       };
     }
@@ -63,11 +65,11 @@ export function getHistoryModeDisplayText(entry: HistoryModeEntry): string {
     return `${t('sessionTabs.agent')} · ${t('sessionLauncher.codexTitle')}`;
   }
 
-  if (!isLensHistoryEntry(entry)) {
+  if (!isAppServerControlHistoryEntry(entry)) {
     return t('session.terminal');
   }
 
-  const profile = normalizeHistoryLensProfile(entry.profile);
+  const profile = normalizeHistoryAppServerControlProfile(entry.profile);
   const providerText =
     profile === 'claude' ? t('sessionLauncher.claudeTitle') : t('sessionLauncher.codexTitle');
   return `${t('sessionTabs.agent')} · ${providerText}`;
@@ -83,10 +85,10 @@ export function getHistoryModeBadgeText(entry: HistoryModeEntry): string {
     return 'CDX';
   }
 
-  if (!isLensHistoryEntry(entry)) {
+  if (!isAppServerControlHistoryEntry(entry)) {
     return 'TRM';
   }
 
-  const profile = normalizeHistoryLensProfile(entry.profile);
+  const profile = normalizeHistoryAppServerControlProfile(entry.profile);
   return profile === 'claude' ? 'CLD' : 'CDX';
 }

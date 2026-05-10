@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
-import { applyTerminalScaling, fitSessionToScreen, scheduleForegroundResizeRecovery } from './scaling';
+import {
+  applyTerminalScaling,
+  fitSessionToScreen,
+  scheduleForegroundResizeRecovery,
+} from './scaling';
 import { sendResize } from '../comms';
 import { focusActiveTerminal } from './manager';
 

@@ -27,15 +27,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="LensHostProtocolTests.cs" />
-    <Compile Remove="LensHostTestClient.cs" />
+    <Compile Remove="AppServerControlHostProtocolTests.cs" />
+    <Compile Remove="AppServerControlHostTestClient.cs" />
     <Compile Remove="MtAgentHostClaudeIntegrationTests.cs" />
     <Compile Remove="MtAgentHostCodexIntegrationTests.cs" />
     <Compile Remove="MtAgentHostIntegrationTests.cs" />
     <Compile Remove="MtAgentHostRealClaudeSmokeTests.cs" />
     <Compile Remove="MtAgentHostRealCodexSmokeTests.cs" />
     <Compile Remove="MtAgentHostRealResumeCatalogSmokeTests.cs" />
-    <Compile Remove="SessionLensHistoryServiceTests.cs" />
+    <Compile Remove="SessionAppServerControlHistoryServiceTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

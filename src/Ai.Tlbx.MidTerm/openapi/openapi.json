@@ -3256,6 +3256,122 @@
           }
         }
       },
+      "AppServerControlAttachmentReference": {
+        "required": [
+          "kind",
+          "path",
+          "mimeType",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "AppServerControlTerminalReplayStep": {
+        "required": [
+          "kind",
+          "text",
+          "path",
+          "mimeType",
+          "useBracketedPaste"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mimeType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "useBracketedPaste": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AppServerControlTurnRequest": {
+        "required": [
+          "attachments",
+          "terminalReplay"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effort": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "planMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "permissionMode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppServerControlAttachmentReference"
+            }
+          },
+          "terminalReplay": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppServerControlTerminalReplayStep"
+            }
+          }
+        }
+      },
       "AuthResponse": {
         "required": [
           "success",
@@ -4686,122 +4802,6 @@
           }
         }
       },
-      "LensAttachmentReference": {
-        "required": [
-          "kind",
-          "path",
-          "mimeType",
-          "displayName"
-        ],
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "mimeType": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "displayName": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
-      "LensTerminalReplayStep": {
-        "required": [
-          "kind",
-          "text",
-          "path",
-          "mimeType",
-          "useBracketedPaste"
-        ],
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "text": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "path": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "mimeType": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "useBracketedPaste": {
-            "type": "boolean"
-          }
-        }
-      },
-      "LensTurnRequest": {
-        "required": [
-          "attachments",
-          "terminalReplay"
-        ],
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "model": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "effort": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "planMode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "permissionMode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "attachments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LensAttachmentReference"
-            }
-          },
-          "terminalReplay": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LensTerminalReplayStep"
-            }
-          }
-        }
-      },
       "LocalUpdateInfo": {
         "required": [
           "available",
@@ -5021,7 +5021,7 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/LensTurnRequest"
+                "$ref": "#/components/schemas/AppServerControlTurnRequest"
               }
             ]
           },
@@ -5110,10 +5110,10 @@
           "defaultWorkingDirectory",
           "terminalEnvironmentVariables",
           "codexYoloDefault",
-          "codexDefaultLensModel",
+          "codexDefaultAppServerControlModel",
           "codexEnvironmentVariables",
           "claudeDangerouslySkipPermissionsDefault",
-          "claudeDefaultLensModel",
+          "claudeDefaultAppServerControlModel",
           "claudeEnvironmentVariables",
           "agentMessageFontFamily",
           "showAgentMessageTimestamps",
@@ -5210,7 +5210,7 @@
           "codexYoloDefault": {
             "type": "boolean"
           },
-          "codexDefaultLensModel": {
+          "codexDefaultAppServerControlModel": {
             "type": "string"
           },
           "codexEnvironmentVariables": {
@@ -5219,7 +5219,7 @@
           "claudeDangerouslySkipPermissionsDefault": {
             "type": "boolean"
           },
-          "claudeDefaultLensModel": {
+          "claudeDefaultAppServerControlModel": {
             "type": "string"
           },
           "claudeEnvironmentVariables": {
@@ -5847,10 +5847,10 @@
           "surface",
           "isAdHoc",
           "agentControlled",
-          "lensOnly",
+          "appServerControlOnly",
           "profileHint",
-          "lensResumeThreadId",
-          "hasLensHistory",
+          "appServerControlResumeThreadId",
+          "hasAppServerControlHistory",
           "supervisor"
         ],
         "type": "object",
@@ -5995,7 +5995,7 @@
           "agentControlled": {
             "type": "boolean"
           },
-          "lensOnly": {
+          "appServerControlOnly": {
             "type": "boolean"
           },
           "profileHint": {
@@ -6004,13 +6004,13 @@
               "string"
             ]
           },
-          "lensResumeThreadId": {
+          "appServerControlResumeThreadId": {
             "type": [
               "null",
               "string"
             ]
           },
-          "hasLensHistory": {
+          "hasAppServerControlHistory": {
             "type": "boolean"
           },
           "supervisor": {
@@ -7449,7 +7449,7 @@
           "rows",
           "agentControlled",
           "injectGuidance",
-          "lensOnly",
+          "appServerControlOnly",
           "launchDelayMs",
           "slashCommands",
           "slashCommandDelayMs"
@@ -7500,7 +7500,7 @@
               "string"
             ]
           },
-          "lensOnly": {
+          "appServerControlOnly": {
             "type": "boolean"
           },
           "launchCommand": {

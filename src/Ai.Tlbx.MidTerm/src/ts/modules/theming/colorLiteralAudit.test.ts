@@ -37,10 +37,7 @@ describe('runtime theme color audit', () => {
 });
 
 function collectViolations(): string[] {
-  const roots = [
-    path.join(projectRoot, 'src', 'static'),
-    path.join(projectRoot, 'src', 'ts'),
-  ];
+  const roots = [path.join(projectRoot, 'src', 'static'), path.join(projectRoot, 'src', 'ts')];
 
   const violations: string[] = [];
 
@@ -74,7 +71,9 @@ function shouldAuditFile(relativePath: string): boolean {
   }
 
   const extension = path.extname(relativePath);
-  return extension === '.css' || extension === '.html' || extension === '.js' || extension === '.ts';
+  return (
+    extension === '.css' || extension === '.html' || extension === '.js' || extension === '.ts'
+  );
 }
 
 function readContentForAudit(filePath: string, relativePath: string): string {

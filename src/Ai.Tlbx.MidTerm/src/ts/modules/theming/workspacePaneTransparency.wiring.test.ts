@@ -30,7 +30,7 @@ describe('workspace pane transparency wiring', () => {
     expect(css).toContain('background: var(--workspace-pane-chrome-background);');
   });
 
-  it('keeps terminal and Lens panes as the only workspace surface over wallpaper', () => {
+  it('keeps terminal and AppServerControl panes as the only workspace surface over wallpaper', () => {
     expect(css).toContain('.main-content {');
     expect(css).toContain('.terminals-area {');
     expect(css).toContain('.layout-leaf {');
@@ -55,15 +55,9 @@ describe('workspace pane transparency wiring', () => {
     expect(css).toContain('--app-chrome-background: var(--bg-terminal);');
     expect(css).toContain('--app-header-background:');
     expect(css).toContain('var(--bg-sidebar-opaque, var(--bg-sidebar));');
-    expect(sidebarHeaderRule).toContain(
-      'background: var(--app-header-background);',
-    );
-    expect(sessionTabBarRule).toContain(
-      'background: var(--app-header-background);',
-    );
-    expect(layoutLeafSessionTabBarRule).toContain(
-      'background: var(--app-header-background);',
-    );
+    expect(sidebarHeaderRule).toContain('background: var(--app-header-background);');
+    expect(sessionTabBarRule).toContain('background: var(--app-header-background);');
+    expect(layoutLeafSessionTabBarRule).toContain('background: var(--app-header-background);');
     expect(focusedLayoutLeafSessionTabBarRule).toContain(
       'background: var(--app-header-background);',
     );

@@ -1,7 +1,9 @@
 import { t } from '../i18n';
-import type { LensComposerDraftAttachment } from './lensAttachments';
+import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
 
-function formatAttachmentReferenceSummary(attachment: LensComposerDraftAttachment): string | null {
+function formatAttachmentReferenceSummary(
+  attachment: AppServerControlComposerDraftAttachment,
+): string | null {
   if (
     attachment.referenceKind !== 'text' ||
     attachment.referenceLineCount === null ||
@@ -13,11 +15,14 @@ function formatAttachmentReferenceSummary(attachment: LensComposerDraftAttachmen
   return `${attachment.referenceLineCount.toString()} ${t('smartInput.referenceLinesLabel')} · ${attachment.referenceCharCount.toString()} ${t('smartInput.referenceCharsLabel')}`;
 }
 
-export function renderLensAttachmentDraftView(args: {
+export function renderAppServerControlAttachmentDraftView(args: {
   host: HTMLDivElement | null;
   sessionId: string | null;
-  attachments: readonly LensComposerDraftAttachment[];
-  onOpenAttachment: (sessionId: string, attachment: LensComposerDraftAttachment) => void;
+  attachments: readonly AppServerControlComposerDraftAttachment[];
+  onOpenAttachment: (
+    sessionId: string,
+    attachment: AppServerControlComposerDraftAttachment,
+  ) => void;
   onRemoveAttachment: (sessionId: string, attachmentId: string) => void;
   onFocusTextarea: () => void;
 }): void {

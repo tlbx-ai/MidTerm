@@ -1,18 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const updateLensHistoryStreamWindow = vi.fn();
+const updateAppServerControlHistoryStreamWindow = vi.fn();
 
 vi.mock('../../api/client', () => ({
-  updateLensHistoryStreamWindow,
+  updateAppServerControlHistoryStreamWindow,
 }));
 
 describe('historyWindowState', () => {
   afterEach(() => {
-    updateLensHistoryStreamWindow.mockReset();
+    updateAppServerControlHistoryStreamWindow.mockReset();
   });
 
   it('ignores fetched history windows older than the current live sequence', async () => {
-    const { applyFetchedLensHistoryWindow } = await import('./historyWindowState');
+    const { applyFetchedAppServerControlHistoryWindow } = await import('./historyWindowState');
 
     const state = {
       snapshot: {
@@ -26,7 +26,7 @@ describe('historyWindowState', () => {
       disconnectStream: vi.fn(),
     } as any;
 
-    const applied = applyFetchedLensHistoryWindow('session-1', state, {
+    const applied = applyFetchedAppServerControlHistoryWindow('session-1', state, {
       latestSequence: 11,
       historyWindowStart: 0,
       historyWindowEnd: 1,
@@ -36,11 +36,11 @@ describe('historyWindowState', () => {
     expect(applied).toBe(false);
     expect(state.snapshot.latestSequence).toBe(12);
     expect(state.snapshot.history[0]?.entryId).toBe('assistant:newer');
-    expect(updateLensHistoryStreamWindow).not.toHaveBeenCalled();
+    expect(updateAppServerControlHistoryStreamWindow).not.toHaveBeenCalled();
   });
 
   it('ignores fetched history windows that do not match the current browser revision', async () => {
-    const { applyFetchedLensHistoryWindow } = await import('./historyWindowState');
+    const { applyFetchedAppServerControlHistoryWindow } = await import('./historyWindowState');
 
     const state = {
       snapshot: {
@@ -55,7 +55,7 @@ describe('historyWindowState', () => {
       disconnectStream: vi.fn(),
     } as any;
 
-    const applied = applyFetchedLensHistoryWindow('session-1', state, {
+    const applied = applyFetchedAppServerControlHistoryWindow('session-1', state, {
       latestSequence: 12,
       windowRevision: 'rev-stale',
       historyWindowStart: 0,
@@ -66,6 +66,6 @@ describe('historyWindowState', () => {
     expect(applied).toBe(false);
     expect(state.snapshot.historyWindowStart).toBe(5);
     expect(state.snapshot.history[0]?.entryId).toBe('assistant:kept');
-    expect(updateLensHistoryStreamWindow).not.toHaveBeenCalled();
+    expect(updateAppServerControlHistoryStreamWindow).not.toHaveBeenCalled();
   });
 });

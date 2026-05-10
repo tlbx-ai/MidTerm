@@ -3702,6 +3702,28 @@ export interface components {
     ApiKeyListResponse: {
       apiKeys: components['schemas']['ApiKeyInfoResponse'][];
     };
+    AppServerControlAttachmentReference: {
+      kind: string;
+      path: string;
+      mimeType: null | string;
+      displayName: null | string;
+    };
+    AppServerControlTerminalReplayStep: {
+      kind: string;
+      text: null | string;
+      path: null | string;
+      mimeType: null | string;
+      useBracketedPaste: boolean;
+    };
+    AppServerControlTurnRequest: {
+      text?: null | string;
+      model?: null | string;
+      effort?: null | string;
+      planMode?: null | string;
+      permissionMode?: null | string;
+      attachments: components['schemas']['AppServerControlAttachmentReference'][];
+      terminalReplay: components['schemas']['AppServerControlTerminalReplayStep'][];
+    };
     AuthResponse: {
       success: boolean;
       error: null | string;
@@ -4025,28 +4047,6 @@ export interface components {
       direction: null | string;
       children: null | components['schemas']['LayoutNode'][];
     };
-    LensAttachmentReference: {
-      kind: string;
-      path: string;
-      mimeType: null | string;
-      displayName: null | string;
-    };
-    LensTerminalReplayStep: {
-      kind: string;
-      text: null | string;
-      path: null | string;
-      mimeType: null | string;
-      useBracketedPaste: boolean;
-    };
-    LensTurnRequest: {
-      text?: null | string;
-      model?: null | string;
-      effort?: null | string;
-      planMode?: null | string;
-      permissionMode?: null | string;
-      attachments: components['schemas']['LensAttachmentReference'][];
-      terminalReplay: components['schemas']['LensTerminalReplayStep'][];
-    };
     LocalUpdateInfo: {
       available: boolean;
       version: string;
@@ -4096,7 +4096,7 @@ export interface components {
       sessionId: string;
       kind: string;
       action: null | components['schemas']['ManagerBarButton'];
-      turn: null | components['schemas']['LensTurnRequest'];
+      turn: null | components['schemas']['AppServerControlTurnRequest'];
       phase: string;
       /** Format: int32 */
       nextPromptIndex: number;
@@ -4130,10 +4130,10 @@ export interface components {
       defaultWorkingDirectory: string;
       terminalEnvironmentVariables: string;
       codexYoloDefault: boolean;
-      codexDefaultLensModel: string;
+      codexDefaultAppServerControlModel: string;
       codexEnvironmentVariables: string;
       claudeDangerouslySkipPermissionsDefault: boolean;
-      claudeDefaultLensModel: string;
+      claudeDefaultAppServerControlModel: string;
       claudeEnvironmentVariables: string;
       agentMessageFontFamily: string;
       showAgentMessageTimestamps: boolean;
@@ -4351,10 +4351,10 @@ export interface components {
       surface: null | string;
       isAdHoc: boolean;
       agentControlled: boolean;
-      lensOnly: boolean;
+      appServerControlOnly: boolean;
       profileHint: null | string;
-      lensResumeThreadId: null | string;
-      hasLensHistory: boolean;
+      appServerControlResumeThreadId: null | string;
+      hasAppServerControlHistory: boolean;
       supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
     SessionInputRequest: {
@@ -4717,7 +4717,7 @@ export interface components {
       agentControlled: boolean;
       injectGuidance: boolean;
       profile?: null | string;
-      lensOnly: boolean;
+      appServerControlOnly: boolean;
       launchCommand?: null | string;
       spaceId?: null | string;
       workspacePath?: null | string;

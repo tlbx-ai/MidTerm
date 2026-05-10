@@ -41,7 +41,9 @@ describe('versionCheck', () => {
         }
 
         return {
-          getAttribute: vi.fn((name: string) => (name === 'src' ? `/js/terminal.min.js?v=${version}` : null)),
+          getAttribute: vi.fn((name: string) =>
+            name === 'src' ? `/js/terminal.min.js?v=${version}` : null,
+          ),
         };
       }),
     });
@@ -151,9 +153,9 @@ describe('versionCheck', () => {
     setCurrentAssetVersion('dev-123');
     mocks.fetch.mockResolvedValue({
       ok: true,
-      text: vi.fn().mockResolvedValue(
-        '<!doctype html><script src="/js/terminal.min.js?v=dev-123"></script>',
-      ),
+      text: vi
+        .fn()
+        .mockResolvedValue('<!doctype html><script src="/js/terminal.min.js?v=dev-123"></script>'),
     });
 
     const { checkVersionAndReload } = await import('./versionCheck');
@@ -170,9 +172,9 @@ describe('versionCheck', () => {
     setCurrentAssetVersion('dev-123');
     mocks.fetch.mockResolvedValue({
       ok: true,
-      text: vi.fn().mockResolvedValue(
-        '<!doctype html><script src="/js/terminal.min.js?v=dev-456"></script>',
-      ),
+      text: vi
+        .fn()
+        .mockResolvedValue('<!doctype html><script src="/js/terminal.min.js?v=dev-456"></script>'),
     });
 
     const { checkVersionAndReload } = await import('./versionCheck');

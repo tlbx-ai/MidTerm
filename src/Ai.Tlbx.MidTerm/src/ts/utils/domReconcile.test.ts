@@ -158,4 +158,3 @@ describe('reconcileKeyedChildren', () => {
     ).toThrow('Duplicate keyed DOM child: a');
   });
 });
-

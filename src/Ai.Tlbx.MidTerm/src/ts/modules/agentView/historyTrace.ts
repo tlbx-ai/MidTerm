@@ -1,8 +1,15 @@
-import type { LensHistoryDelta, LensHistorySnapshot } from '../../api/client';
+import type {
+  AppServerControlHistoryDelta,
+  AppServerControlHistorySnapshot,
+} from '../../api/client';
 import { computeHistoryVisibleRange } from './historyViewport';
-import type { HistoryViewportMetrics, LensHistoryEntry, SessionLensViewState } from './types';
+import type {
+  HistoryViewportMetrics,
+  AppServerControlHistoryEntry,
+  SessionAppServerControlViewState,
+} from './types';
 
-type LensHistoryFetchReason =
+type AppServerControlHistoryFetchReason =
   | 'initial'
   | 'refresh'
   | 'latest'
@@ -12,7 +19,7 @@ type LensHistoryFetchReason =
   | 'stream-window'
   | 'hidden-compact';
 
-type LensHistoryScrollReason = 'fast-wheel' | 'gap-wait' | 'gap-snap';
+type AppServerControlHistoryScrollReason = 'fast-wheel' | 'gap-wait' | 'gap-snap';
 
 type TraceSessionState = {
   lastShowKey: string | null;
@@ -32,7 +39,7 @@ type TraceShowArgs = {
 
 type TraceScrollArgs = {
   sessionId: string;
-  reason: LensHistoryScrollReason;
+  reason: AppServerControlHistoryScrollReason;
   scrollTop: number;
   clientHeight: number;
   scrollHeight: number;
@@ -58,31 +65,31 @@ function getTraceSessionState(sessionId: string): TraceSessionState {
   return state;
 }
 
-function readLensTraceFlag(): string | null {
+function readAppServerControlTraceFlag(): string | null {
   if (typeof window === 'undefined' || !('localStorage' in window)) {
     return null;
   }
 
   try {
-    return window.localStorage.getItem('midterm.lensTrace');
+    return window.localStorage.getItem('midterm.appServerControlTrace');
   } catch {
     return null;
   }
 }
 
-export function shouldTraceLensHistory(): boolean {
+export function shouldTraceAppServerControlHistory(): boolean {
   if (typeof window === 'undefined') {
     return false;
   }
 
   const explicitFlag =
-    (window as typeof window & { __MIDTERM_LENS_TRACE__?: boolean }).__MIDTERM_LENS_TRACE__ ===
-    true;
+    (window as typeof window & { __MIDTERM_APP_SERVER_CONTROL_TRACE__?: boolean })
+      .__MIDTERM_APP_SERVER_CONTROL_TRACE__ === true;
   if (explicitFlag) {
     return true;
   }
 
-  const storedFlag = readLensTraceFlag();
+  const storedFlag = readAppServerControlTraceFlag();
   if (storedFlag === '1' || storedFlag === 'true') {
     return true;
   }
@@ -92,12 +99,12 @@ export function shouldTraceLensHistory(): boolean {
 }
 
 function trace(sessionId: string, message: string): void {
-  if (!shouldTraceLensHistory()) {
+  if (!shouldTraceAppServerControlHistory()) {
     return;
   }
 
   // eslint-disable-next-line no-console
-  console.debug(`[LensHistory ${sessionId.slice(0, 8)}] ${message}`);
+  console.debug(`[AppServerControlHistory ${sessionId.slice(0, 8)}] ${message}`);
 }
 
 function formatRange(startIndex: number, endIndexExclusive: number): string {
@@ -150,7 +157,7 @@ function formatDiscreteRangeNumbers(values: readonly number[]): string {
   return ranges.join(', ');
 }
 
-function formatFetchReason(reason: LensHistoryFetchReason): string {
+function formatFetchReason(reason: AppServerControlHistoryFetchReason): string {
   switch (reason) {
     case 'initial':
       return 'initial';
@@ -188,7 +195,7 @@ function formatDiscardRanges(
   return ranges.length > 0 ? ranges.join(', ') : null;
 }
 
-function shouldTracePush(delta: LensHistoryDelta): boolean {
+function shouldTracePush(delta: AppServerControlHistoryDelta): boolean {
   return (
     delta.historyUpserts.length > 0 ||
     delta.historyRemovals.length > 0 ||
@@ -199,8 +206,8 @@ function shouldTracePush(delta: LensHistoryDelta): boolean {
 }
 
 function resolveHistoryPushRanges(
-  delta: LensHistoryDelta,
-  currentSnapshot: LensHistorySnapshot | null | undefined,
+  delta: AppServerControlHistoryDelta,
+  currentSnapshot: AppServerControlHistorySnapshot | null | undefined,
 ): {
   insertedOrders: number[];
   updatedOrders: number[];
@@ -229,7 +236,7 @@ function resolveHistoryPushRanges(
 
 function appendHistoryPushRanges(
   parts: string[],
-  delta: LensHistoryDelta,
+  delta: AppServerControlHistoryDelta,
   ranges: {
     insertedOrders: readonly number[];
     updatedOrders: readonly number[];
@@ -249,7 +256,7 @@ function appendHistoryPushRanges(
   }
 }
 
-function appendAncillaryPushChanges(parts: string[], delta: LensHistoryDelta): void {
+function appendAncillaryPushChanges(parts: string[], delta: AppServerControlHistoryDelta): void {
   if (delta.requestUpserts.length > 0 || delta.requestRemovals.length > 0) {
     const requestDelta = delta.requestUpserts.length - delta.requestRemovals.length;
     parts.push(`req ${requestDelta >= 0 ? '+' : ''}${requestDelta}`);
@@ -259,10 +266,10 @@ function appendAncillaryPushChanges(parts: string[], delta: LensHistoryDelta): v
   }
 }
 
-export function traceLensHistoryFetch(
+export function traceAppServerControlHistoryFetch(
   sessionId: string,
-  snapshot: LensHistorySnapshot,
-  reason: LensHistoryFetchReason,
+  snapshot: AppServerControlHistorySnapshot,
+  reason: AppServerControlHistoryFetchReason,
 ): void {
   trace(
     sessionId,
@@ -270,12 +277,12 @@ export function traceLensHistoryFetch(
   );
 }
 
-export function traceLensHistoryPush(
+export function traceAppServerControlHistoryPush(
   sessionId: string,
-  delta: LensHistoryDelta,
-  currentSnapshot: LensHistorySnapshot | null | undefined,
+  delta: AppServerControlHistoryDelta,
+  currentSnapshot: AppServerControlHistorySnapshot | null | undefined,
 ): void {
-  if (!shouldTracePush(delta) || !shouldTraceLensHistory()) {
+  if (!shouldTracePush(delta) || !shouldTraceAppServerControlHistory()) {
     return;
   }
 
@@ -288,8 +295,8 @@ export function traceLensHistoryPush(
   trace(sessionId, parts.join(' '));
 }
 
-export function traceLensHistoryScroll(args: TraceScrollArgs): void {
-  if (!shouldTraceLensHistory()) {
+export function traceAppServerControlHistoryScroll(args: TraceScrollArgs): void {
+  if (!shouldTraceAppServerControlHistory()) {
     return;
   }
 
@@ -312,8 +319,8 @@ export function traceLensHistoryScroll(args: TraceScrollArgs): void {
   trace(args.sessionId, parts.join(' '));
 }
 
-export function traceLensHistoryShow(args: TraceShowArgs): void {
-  if (!shouldTraceLensHistory()) {
+export function traceAppServerControlHistoryShow(args: TraceShowArgs): void {
+  if (!shouldTraceAppServerControlHistory()) {
     return;
   }
 
@@ -359,14 +366,14 @@ export function traceLensHistoryShow(args: TraceShowArgs): void {
   state.lastWindowEnd = args.historyWindowEnd;
 }
 
-export function traceRenderedLensHistoryWindow(args: {
+export function traceRenderedAppServerControlHistoryWindow(args: {
   sessionId: string;
-  entries: readonly LensHistoryEntry[];
+  entries: readonly AppServerControlHistoryEntry[];
   metrics: HistoryViewportMetrics;
-  state: SessionLensViewState;
-  resolveEntryHeight: (entry: LensHistoryEntry) => number;
+  state: SessionAppServerControlViewState;
+  resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number;
 }): void {
-  if (!shouldTraceLensHistory() || !args.state.snapshot) {
+  if (!shouldTraceAppServerControlHistory() || !args.state.snapshot) {
     return;
   }
 
@@ -377,7 +384,7 @@ export function traceRenderedLensHistoryWindow(args: {
     args.metrics.clientWidth,
     (entry) => args.resolveEntryHeight(entry),
   );
-  traceLensHistoryShow({
+  traceAppServerControlHistoryShow({
     sessionId: args.sessionId,
     historyWindowStart: args.state.snapshot.historyWindowStart,
     historyWindowEnd: args.state.snapshot.historyWindowEnd,
@@ -388,7 +395,7 @@ export function traceRenderedLensHistoryWindow(args: {
   });
 }
 
-export function traceLensHistoryCompact(
+export function traceAppServerControlHistoryCompact(
   sessionId: string,
   previousStart: number,
   previousEnd: number,
@@ -396,7 +403,7 @@ export function traceLensHistoryCompact(
   nextEnd: number,
   historyCount: number,
 ): void {
-  if (!shouldTraceLensHistory()) {
+  if (!shouldTraceAppServerControlHistory()) {
     return;
   }
 
@@ -423,7 +430,7 @@ export function traceLensHistoryCompact(
   state.lastWindowEnd = nextEnd;
 }
 
-export function resetLensHistoryTrace(sessionId?: string): void {
+export function resetAppServerControlHistoryTrace(sessionId?: string): void {
   if (sessionId) {
     traceSessionState.delete(sessionId);
     return;

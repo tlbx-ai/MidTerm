@@ -2,13 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendInput = vi.fn();
 const pasteToTerminal = vi.fn();
-const isLensActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
-const createLensTurnRequest = vi.fn((text: string, attachments: unknown[] = [], sessionId?: string) => ({
-  text,
-  attachments,
-  sessionId,
-}));
-const submitQueuedLensTurn = vi.fn();
+const isAppServerControlActiveSession = vi.fn<(sessionId: string | null | undefined) => boolean>();
+const createAppServerControlTurnRequest = vi.fn(
+  (text: string, attachments: unknown[] = [], sessionId?: string) => ({
+    text,
+    attachments,
+    sessionId,
+  }),
+);
+const submitQueuedAppServerControlTurn = vi.fn();
 
 vi.mock('../comms', () => ({
   sendInput,
@@ -18,10 +20,10 @@ vi.mock('../terminal', () => ({
   pasteToTerminal,
 }));
 
-vi.mock('../lens/input', () => ({
-  isLensActiveSession,
-  createLensTurnRequest,
-  submitQueuedLensTurn,
+vi.mock('../appServerControl/input', () => ({
+  isAppServerControlActiveSession,
+  createAppServerControlTurnRequest,
+  submitQueuedAppServerControlTurn,
 }));
 
 describe('submitSessionText', () => {
@@ -29,20 +31,20 @@ describe('submitSessionText', () => {
     vi.useRealTimers();
     sendInput.mockReset();
     pasteToTerminal.mockReset();
-    isLensActiveSession.mockReset();
-    createLensTurnRequest.mockClear();
-    submitQueuedLensTurn.mockReset();
+    isAppServerControlActiveSession.mockReset();
+    createAppServerControlTurnRequest.mockClear();
+    submitQueuedAppServerControlTurn.mockReset();
   });
 
-  it('submits Lens sessions as a new user turn', async () => {
-    isLensActiveSession.mockReturnValue(true);
-    submitQueuedLensTurn.mockResolvedValue(undefined);
+  it('submits AppServerControl sessions as a new user turn', async () => {
+    isAppServerControlActiveSession.mockReturnValue(true);
+    submitQueuedAppServerControlTurn.mockResolvedValue(undefined);
 
     const { submitSessionText } = await import('./submit');
     await submitSessionText('s1', 'Summarize the diff.');
 
-    expect(createLensTurnRequest).toHaveBeenCalledWith('Summarize the diff.', [], 's1');
-    expect(submitQueuedLensTurn).toHaveBeenCalledWith('s1', {
+    expect(createAppServerControlTurnRequest).toHaveBeenCalledWith('Summarize the diff.', [], 's1');
+    expect(submitQueuedAppServerControlTurn).toHaveBeenCalledWith('s1', {
       text: 'Summarize the diff.',
       attachments: [],
       sessionId: 's1',
@@ -53,7 +55,7 @@ describe('submitSessionText', () => {
 
   it('preserves paste-and-enter behavior for terminal sessions', async () => {
     vi.useFakeTimers();
-    isLensActiveSession.mockReturnValue(false);
+    isAppServerControlActiveSession.mockReturnValue(false);
     pasteToTerminal.mockResolvedValue(undefined);
 
     const { submitSessionText } = await import('./submit');
@@ -67,6 +69,6 @@ describe('submitSessionText', () => {
     await result;
 
     expect(sendInput).toHaveBeenCalledWith('s2', '\r');
-    expect(submitQueuedLensTurn).not.toHaveBeenCalled();
+    expect(submitQueuedAppServerControlTurn).not.toHaveBeenCalled();
   });
 });

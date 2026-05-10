@@ -255,14 +255,14 @@ public sealed class SessionApiEndpointsTests
     }
 
     [Fact]
-    public void TryBuildWorkerAutoResumePlan_DoesNothingWhenSessionIsLensOnly()
+    public void TryBuildWorkerAutoResumePlan_DoesNothingWhenSessionIsAppServerControlOnly()
     {
         var session = new SessionInfoDto
         {
             Id = "s4",
             ShellType = "Pwsh",
             ForegroundName = "pwsh",
-            LensOnly = true,
+            AppServerControlOnly = true,
             ProfileHint = AiCliProfileService.CodexProfile,
             Supervisor = new SessionSupervisorInfoDto
             {

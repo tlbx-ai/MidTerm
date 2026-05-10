@@ -43,7 +43,7 @@
       - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol code)
       - Changed mux WebSocket binary protocol format
       - Changed named pipe protocol between mt and mthost
-      - Changed Lens runtime IPC/attach contracts
+      - Changed AppServerControl runtime IPC/attach contracts
       - Changed session ID encoding/format
       - Changed any IPC mechanism
 
@@ -52,7 +52,7 @@
       - CSS/HTML
       - REST API endpoints (not used by mthost)
       - Web-only C# code (endpoints, auth, settings)
-      - Lens/UI changes that do not require refreshing installed host binaries
+      - AppServerControl/UI changes that do not require refreshing installed host binaries
 
     When 'yes': Full update. Running installs refresh both mthost and mtagenthost.
     When 'no':  Web-only update. Running installs preserve their current mthost and mtagenthost.
@@ -78,7 +78,7 @@
     .\release.ps1 -Bump patch -ReleaseTitle "Fix PTY handle leak on session close" -ReleaseNotes @(
         "Fixed memory leak where PTY handles were not released when closing sessions",
         "Improved cleanup sequence ensures all resources are freed",
-        "Affects the low-level host runtimes - terminals and Lens runtimes restart during update"
+        "Affects the low-level host runtimes - terminals and AppServerControl runtimes restart during update"
     ) -mthostUpdate yes
 #>
 

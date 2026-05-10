@@ -10,10 +10,10 @@ import type {
   DiffRenderLine,
   HistoryBodyPresentation,
   HistoryKind,
-  LensHistoryEntry,
+  AppServerControlHistoryEntry,
 } from './types';
 
-function lensText(key: string, fallback: string): string {
+function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
   if (!translated || translated === key) {
     return fallback;
@@ -22,14 +22,14 @@ function lensText(key: string, fallback: string): string {
   return translated;
 }
 
-function lensFormat(
+function appServerControlFormat(
   key: string,
   fallback: string,
   replacements: Record<string, string | number>,
 ): string {
   return Object.entries(replacements).reduce(
     (text, [name, value]) => text.split(`{${name}}`).join(String(value)),
-    lensText(key, fallback),
+    appServerControlText(key, fallback),
   );
 }
 
@@ -57,12 +57,12 @@ function isMachineHistoryKind(kind: HistoryKind): boolean {
 }
 
 export function hasInlineCommandPresentation(
-  entry: Pick<LensHistoryEntry, 'commandOutputTail' | 'commandText'>,
+  entry: Pick<AppServerControlHistoryEntry, 'commandOutputTail' | 'commandText'>,
 ): boolean {
   return (entry.commandText?.trim() ?? '').length > 0 || (entry.commandOutputTail?.length ?? 0) > 0;
 }
 
-export function isCommandExecutionHistoryEntry(entry: LensHistoryEntry): boolean {
+export function isCommandExecutionHistoryEntry(entry: AppServerControlHistoryEntry): boolean {
   const normalized = normalizeHistoryItemType(entry.sourceItemType);
   return (
     entry.kind === 'tool' &&
@@ -73,14 +73,14 @@ export function isCommandExecutionHistoryEntry(entry: LensHistoryEntry): boolean
   );
 }
 
-export function isCommandOutputHistoryEntry(entry: LensHistoryEntry): boolean {
+export function isCommandOutputHistoryEntry(entry: AppServerControlHistoryEntry): boolean {
   return (
     entry.kind === 'tool' &&
     normalizeComparableHistoryText(entry.title) === normalizeComparableHistoryText('Command output')
   );
 }
 
-function isToolCommandPresentationEntry(entry: LensHistoryEntry): boolean {
+function isToolCommandPresentationEntry(entry: AppServerControlHistoryEntry): boolean {
   return (
     entry.kind === 'tool' &&
     (hasInlineCommandPresentation(entry) ||
@@ -246,7 +246,9 @@ export function tokenizeCommandText(commandText: string): CommandToken[] {
   return tokens;
 }
 
-export function resolveHistoryBodyPresentation(entry: LensHistoryEntry): HistoryBodyPresentation {
+export function resolveHistoryBodyPresentation(
+  entry: AppServerControlHistoryEntry,
+): HistoryBodyPresentation {
   if (entry.kind === 'assistant') {
     return {
       mode: 'markdown',
@@ -598,7 +600,7 @@ function formatDiffSectionHeader(
   }
 
   if (normalizedNew === '/dev/null') {
-    return lensFormat('lens.diff.deletedFile', 'Edited {path} (deleted)', {
+    return appServerControlFormat('appServerControl.diff.deletedFile', 'Edited {path} (deleted)', {
       path: resolveDisplayDiffPath(normalizedOld, sessionCwd),
     });
   }
@@ -607,7 +609,7 @@ function formatDiffSectionHeader(
     return displayPath ? `Edited ${displayPath}` : '';
   }
 
-  return lensFormat('lens.diff.renamedFile', 'Edited {to} (from {from})', {
+  return appServerControlFormat('appServerControl.diff.renamedFile', 'Edited {to} (from {from})', {
     from: resolveDisplayDiffPath(normalizedOld, sessionCwd),
     to: resolveDisplayDiffPath(normalizedNew, sessionCwd),
   });
@@ -653,9 +655,13 @@ export function buildRenderedDiffLines(
   return [
     ...lines.slice(0, MAX_VISIBLE_DIFF_LINES),
     {
-      text: lensFormat('lens.diff.omittedLines', '... {count} more diff lines omitted ...', {
-        count: lines.length - MAX_VISIBLE_DIFF_LINES,
-      }),
+      text: appServerControlFormat(
+        'appServerControl.diff.omittedLines',
+        '... {count} more diff lines omitted ...',
+        {
+          count: lines.length - MAX_VISIBLE_DIFF_LINES,
+        },
+      ),
       className: 'agent-history-diff-line-ellipsis',
     },
   ];
@@ -716,7 +722,10 @@ function resolveHistoryEntryBaseHeight(kind: HistoryKind): number {
   }
 }
 
-export function estimateHistoryEntryHeight(entry: LensHistoryEntry, viewportWidth = 960): number {
+export function estimateHistoryEntryHeight(
+  entry: AppServerControlHistoryEntry,
+  viewportWidth = 960,
+): number {
   if (entry.busyIndicator) {
     return 52;
   }

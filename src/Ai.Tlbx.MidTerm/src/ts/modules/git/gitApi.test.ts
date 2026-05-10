@@ -13,7 +13,12 @@ describe('gitApi', () => {
   it('requests structured diff views with scope and path', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
-      json: async () => ({ scope: 'worktree', title: 'Working tree diff', isTruncated: false, files: [] }),
+      json: async () => ({
+        scope: 'worktree',
+        title: 'Working tree diff',
+        isTruncated: false,
+        files: [],
+      }),
     } as Response);
     globalThis.fetch = fetchMock;
 

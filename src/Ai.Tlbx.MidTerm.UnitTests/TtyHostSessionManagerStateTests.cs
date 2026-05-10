@@ -227,7 +227,7 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
-    public async Task SetLensOnly_PersistsAcrossManagerRestart()
+    public async Task SetAppServerControlOnly_PersistsAcrossManagerRestart()
     {
         var stateDir = CreateTempDirectory();
         try
@@ -235,14 +235,14 @@ public sealed class TtyHostSessionManagerStateTests
             await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
             {
                 AddCachedSession(manager, "s1");
-                Assert.True(manager.SetLensOnly("s1", true));
+                Assert.True(manager.SetAppServerControlOnly("s1", true));
             }
 
             await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
             AddCachedSession(restartedManager, "s1");
 
             var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-            Assert.True(dto.LensOnly);
+            Assert.True(dto.AppServerControlOnly);
         }
         finally
         {
@@ -275,7 +275,7 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
-    public async Task SetLensResumeThreadId_PersistsAcrossManagerRestart()
+    public async Task SetAppServerControlResumeThreadId_PersistsAcrossManagerRestart()
     {
         var stateDir = CreateTempDirectory();
         try
@@ -283,14 +283,14 @@ public sealed class TtyHostSessionManagerStateTests
             await using (var manager = CreateManager(new SessionControlStateService(stateDir)))
             {
                 AddCachedSession(manager, "s1");
-                Assert.True(manager.SetLensResumeThreadId("s1", "thread-resume-123"));
+                Assert.True(manager.SetAppServerControlResumeThreadId("s1", "thread-resume-123"));
             }
 
             await using var restartedManager = CreateManager(new SessionControlStateService(stateDir));
             AddCachedSession(restartedManager, "s1");
 
             var dto = restartedManager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-            Assert.Equal("thread-resume-123", dto.LensResumeThreadId);
+            Assert.Equal("thread-resume-123", dto.AppServerControlResumeThreadId);
         }
         finally
         {

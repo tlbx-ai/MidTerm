@@ -4,7 +4,10 @@ import {
   resolveFilePath,
   type FilePathInfo,
 } from '../../api/client';
-import type { LensInlineFileReference, LensInlineImagePreview } from '../../api/types';
+import type {
+  AppServerControlInlineFileReference,
+  AppServerControlInlineImagePreview,
+} from '../../api/types';
 import {
   QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL,
   RELATIVE_PATH_PATTERN,
@@ -320,7 +323,7 @@ function collectRelativePathMatches(
 function collectProvidedFileMatches(
   text: string,
   matches: AssistantInlineToken[],
-  fileMentions: readonly LensInlineFileReference[],
+  fileMentions: readonly AppServerControlInlineFileReference[],
   imageCandidates: Map<string, AssistantImageCandidate>,
 ): void {
   const sortedMentions = [...fileMentions].sort(
@@ -353,7 +356,7 @@ function collectProvidedFileMatches(
 }
 
 function createProvidedFileToken(
-  mention: LensInlineFileReference,
+  mention: AppServerControlInlineFileReference,
   displayText: string,
   filePath: string,
   start: number,
@@ -382,7 +385,7 @@ function createProvidedFileToken(
 
 function addProvidedImageCandidate(
   imageCandidates: Map<string, AssistantImageCandidate>,
-  mention: LensInlineFileReference,
+  mention: AppServerControlInlineFileReference,
   displayText: string,
 ): void {
   if (!mention.resolvedPath || mention.isDirectory || !isImagePath(mention.resolvedPath)) {
@@ -475,7 +478,7 @@ function collectTableRuleMatches(text: string, matches: AssistantInlineToken[]):
 function buildInlineMatches(
   text: string,
   imageCandidates: Map<string, AssistantImageCandidate>,
-  fileMentions?: readonly LensInlineFileReference[],
+  fileMentions?: readonly AppServerControlInlineFileReference[],
 ): AssistantInlineToken[] {
   const matches: AssistantInlineToken[] = [];
   collectBareUrlMatches(text, matches);
@@ -508,7 +511,7 @@ function buildInlineMatches(
 
 export function scanAssistantTextEnrichment(
   text: string,
-  fileMentions?: readonly LensInlineFileReference[],
+  fileMentions?: readonly AppServerControlInlineFileReference[],
 ): {
   tokens: AssistantInlineToken[];
   imageCandidates: AssistantImageCandidate[];
@@ -635,7 +638,7 @@ function buildReplacementFragment(
   documentRef: Document,
   text: string,
   imageCandidates: Map<string, AssistantImageCandidate>,
-  fileMentions?: readonly LensInlineFileReference[],
+  fileMentions?: readonly AppServerControlInlineFileReference[],
 ): DocumentFragment | null {
   const htmlFactory = createHtmlElementFactory(documentRef);
   const matches = buildInlineMatches(text, imageCandidates, fileMentions);
@@ -662,7 +665,7 @@ function buildReplacementFragment(
 
 export function buildAssistantEnrichedHtml(
   markdownHtml: string,
-  fileMentions?: readonly LensInlineFileReference[],
+  fileMentions?: readonly AppServerControlInlineFileReference[],
 ): HtmlBuildResult {
   const documentRef = document;
   const htmlFactory = createHtmlElementFactory(documentRef);
@@ -690,7 +693,7 @@ export function buildAssistantEnrichedHtml(
 
 export function enrichInteractiveTextContent(
   container: HTMLElement,
-  fileMentions?: readonly LensInlineFileReference[],
+  fileMentions?: readonly AppServerControlInlineFileReference[],
 ): void {
   if (!fileMentions || fileMentions.length === 0) {
     return;
@@ -836,7 +839,7 @@ export function wireAssistantInteractiveContent(container: HTMLElement, sessionI
 export function createAssistantImagePreviewBlock(
   documentRef: Document,
   sessionId: string,
-  previews: readonly LensInlineImagePreview[],
+  previews: readonly AppServerControlInlineImagePreview[],
 ): HTMLElement | null {
   if (previews.length === 0) {
     return null;

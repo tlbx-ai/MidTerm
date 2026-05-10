@@ -4,9 +4,7 @@ import { resolveImagePasteMode } from './imagePasteMode';
 describe('resolveImagePasteMode', () => {
   it('uses native mode for known clipboard-native agents', () => {
     expect(resolveImagePasteMode({ name: 'codex', commandLine: null })).toBe('native');
-    expect(resolveImagePasteMode({ name: 'node', commandLine: 'npx gemini-cli' })).toBe(
-      'native',
-    );
+    expect(resolveImagePasteMode({ name: 'node', commandLine: 'npx gemini-cli' })).toBe('native');
     expect(resolveImagePasteMode({ name: 'python', commandLine: 'aider --model sonnet' })).toBe(
       'native',
     );
@@ -24,4 +22,3 @@ describe('resolveImagePasteMode', () => {
     expect(resolveImagePasteMode({ name: null, commandLine: 'NPX GEMINI' })).toBe('native');
   });
 });
-

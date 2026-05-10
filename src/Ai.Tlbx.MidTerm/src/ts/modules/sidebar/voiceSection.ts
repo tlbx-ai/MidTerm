@@ -43,7 +43,7 @@ export function setVoiceSectionVisible(visible: boolean): void {
 }
 
 /**
- * Propagates dev mode immediately because several Lens and voice affordances
+ * Propagates dev mode immediately because several AppServerControl and voice affordances
  * are intentionally hidden from normal users until the UX settles.
  */
 export function setDevMode(enabled: boolean): void {

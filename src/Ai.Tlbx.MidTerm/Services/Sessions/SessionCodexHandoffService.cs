@@ -17,7 +17,7 @@ public sealed class SessionCodexHandoffService
     private readonly WorkerSessionRegistryService _workerRegistry;
     private readonly AiCliProfileService _profileService;
     private readonly SessionForegroundProcessService _foregroundProcessService;
-    private readonly SessionLensRuntimeService _lensRuntime;
+    private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
     private readonly string _codexHome;
 
     public SessionCodexHandoffService(
@@ -25,21 +25,21 @@ public sealed class SessionCodexHandoffService
         WorkerSessionRegistryService workerRegistry,
         AiCliProfileService profileService,
         SessionForegroundProcessService foregroundProcessService,
-        SessionLensRuntimeService lensRuntime,
+        SessionAppServerControlRuntimeService appServerControlRuntime,
         string? codexHome = null)
     {
         _sessionManager = sessionManager;
         _workerRegistry = workerRegistry;
         _profileService = profileService;
         _foregroundProcessService = foregroundProcessService;
-        _lensRuntime = lensRuntime;
+        _appServerControlRuntime = appServerControlRuntime;
         _codexHome = string.IsNullOrWhiteSpace(codexHome)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
             : codexHome;
         _sessionManager.OnSessionClosed += Forget;
     }
 
-    public async Task<string?> PrepareForLensAsync(SessionInfoDto session, CancellationToken ct = default)
+    public async Task<string?> PrepareForAppServerControlAsync(SessionInfoDto session, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(session);
 
@@ -52,7 +52,7 @@ public sealed class SessionCodexHandoffService
 
         if (session.Supervisor?.State is SessionSupervisorService.BusyTurnState or SessionSupervisorService.BlockedState)
         {
-            throw new InvalidOperationException("Finish or interrupt the terminal Codex turn before opening Lens.");
+            throw new InvalidOperationException("Finish or interrupt the terminal Codex turn before opening App Server Controller.");
         }
 
         var resumeThreadId = await ResolveResumeThreadIdAsync(session, ct).ConfigureAwait(false);
@@ -80,19 +80,19 @@ public sealed class SessionCodexHandoffService
                 RememberResumeThreadId(session.Id, commandLineResumeThreadId);
             }
 
-            await _lensRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
+            await _appServerControlRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
             return;
         }
 
-        _lensRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow);
+        _appServerControlRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow);
         if (historyWindow?.CurrentTurn?.State is "running")
         {
-            throw new InvalidOperationException("Finish the Lens turn before returning control to the terminal.");
+            throw new InvalidOperationException("Finish the App Server Controller turn before returning control to the terminal.");
         }
 
         if (historyWindow?.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)) == true)
         {
-            throw new InvalidOperationException("Resolve the open Lens request before returning control to the terminal.");
+            throw new InvalidOperationException("Resolve the open App Server Controller request before returning control to the terminal.");
         }
 
         var resumeThreadId = historyWindow?.Thread.ThreadId;
@@ -107,7 +107,7 @@ public sealed class SessionCodexHandoffService
         }
 
         RememberResumeThreadId(session.Id, resumeThreadId);
-        await _lensRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
+        await _appServerControlRuntime.DetachAsync(session.Id, ct).ConfigureAwait(false);
         await WaitForShellAsync(session.Id, session.ShellType, ct).ConfigureAwait(false);
 
         var launchCommand = BuildResumeLaunchCommand(
@@ -194,12 +194,12 @@ public sealed class SessionCodexHandoffService
             return session.AgentAttachPoint.PreferredThreadId!;
         }
 
-        _lensRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow);
-        var lensSnapshotThreadId = historyWindow?.Thread.ThreadId;
-        if (!string.IsNullOrWhiteSpace(lensSnapshotThreadId))
+        _appServerControlRuntime.TryGetCachedHistoryWindow(session.Id, out var historyWindow);
+        var appServerControlSnapshotThreadId = historyWindow?.Thread.ThreadId;
+        if (!string.IsNullOrWhiteSpace(appServerControlSnapshotThreadId))
         {
-            RememberResumeThreadId(session.Id, lensSnapshotThreadId);
-            return lensSnapshotThreadId;
+            RememberResumeThreadId(session.Id, appServerControlSnapshotThreadId);
+            return appServerControlSnapshotThreadId;
         }
 
         var commandLineResumeThreadId = TryExtractResumeThreadId(session.ForegroundCommandLine);
@@ -357,7 +357,7 @@ public sealed class SessionCodexHandoffService
             await Task.Delay(ForegroundPollInterval, ct).ConfigureAwait(false);
         }
 
-        throw new InvalidOperationException("Codex did not return to the terminal after leaving Lens.");
+        throw new InvalidOperationException("Codex did not return to the terminal after leaving App Server Controller.");
     }
 
     internal static bool LooksLikeCodexForeground(SessionInfoDto session)

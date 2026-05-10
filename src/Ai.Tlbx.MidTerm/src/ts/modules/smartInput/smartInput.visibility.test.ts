@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldShowDockedSmartInput, shouldShowLensQuickSettings } from './visibility';
+import { shouldShowDockedSmartInput, shouldShowAppServerControlQuickSettings } from './visibility';
 
 describe('smart input visibility', () => {
   it('hides all docked smart input chrome when no session is active', () => {
@@ -8,31 +8,31 @@ describe('smart input visibility', () => {
       shouldShowDockedSmartInput({
         activeSessionId: null,
         inputMode: 'both',
-        lensActive: false,
+        appServerControlActive: false,
       }),
     ).toBe(false);
     expect(
-      shouldShowLensQuickSettings({
+      shouldShowAppServerControlQuickSettings({
         activeSessionId: null,
         inputMode: 'both',
-        lensActive: true,
+        appServerControlActive: true,
       }),
     ).toBe(false);
   });
 
-  it('keeps Lens quick settings scoped to explicit Lens sessions only', () => {
+  it('keeps AppServerControl quick settings scoped to explicit AppServerControl sessions only', () => {
     expect(
-      shouldShowLensQuickSettings({
+      shouldShowAppServerControlQuickSettings({
         activeSessionId: 'terminal-1',
         inputMode: 'both',
-        lensActive: false,
+        appServerControlActive: false,
       }),
     ).toBe(false);
     expect(
-      shouldShowLensQuickSettings({
-        activeSessionId: 'lens-1',
+      shouldShowAppServerControlQuickSettings({
+        activeSessionId: 'appServerControl-1',
         inputMode: 'both',
-        lensActive: true,
+        appServerControlActive: true,
       }),
     ).toBe(true);
   });
@@ -42,14 +42,14 @@ describe('smart input visibility', () => {
       shouldShowDockedSmartInput({
         activeSessionId: 'terminal-1',
         inputMode: 'smartinput',
-        lensActive: false,
+        appServerControlActive: false,
       }),
     ).toBe(true);
     expect(
       shouldShowDockedSmartInput({
         activeSessionId: 'terminal-1',
         inputMode: 'keyboard',
-        lensActive: false,
+        appServerControlActive: false,
       }),
     ).toBe(false);
   });

@@ -13,23 +13,23 @@ import {
   $settingsOpen,
   $voiceServerPassword,
 } from '../../stores';
-import { setLensGoal } from '../../api/client';
+import { setAppServerControlGoal } from '../../api/client';
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { isBracketedPasteEnabled, sendInput } from '../comms';
 import {
-  createLensTurnRequest,
-  handleLensEscape,
-  hasInterruptibleLensTurnWork,
-  isLensActiveSession,
-} from '../lens/input';
+  createAppServerControlTurnRequest,
+  handleAppServerControlEscape,
+  hasInterruptibleAppServerControlTurnWork,
+  isAppServerControlActiveSession,
+} from '../appServerControl/input';
 import {
-  LENS_QUICK_SETTINGS_CHANGED_EVENT,
-  getLensQuickSettingsDraft,
-  getLensQuickSettingsProvider,
-  setLensQuickSettingsDraft,
-} from '../lens/quickSettings';
+  APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
+  getAppServerControlQuickSettingsDraft,
+  getAppServerControlQuickSettingsProvider,
+  setAppServerControlQuickSettingsDraft,
+} from '../appServerControl/quickSettings';
 import {
   setAutomationOverflowProxyAnchor,
   triggerAddAutomation,
@@ -45,43 +45,43 @@ import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
-  clipboardDataMayContainLensComposerImage,
-  extractLensComposerPasteImageFiles,
-  type LensComposerDraftAttachment,
-  MAX_LENS_IMAGE_BYTES,
-  cloneLensComposerDraftAttachments,
-  createLensComposerDraftAttachment,
-  isLensComposerImageFile,
-  releaseLensComposerDraftAttachmentPreviews,
-} from './lensAttachments';
-import { submitLensComposerDraft } from './lensAttachmentSubmission';
+  clipboardDataMayContainAppServerControlComposerImage,
+  extractAppServerControlComposerPasteImageFiles,
+  type AppServerControlComposerDraftAttachment,
+  MAX_APP_SERVER_CONTROL_IMAGE_BYTES,
+  cloneAppServerControlComposerDraftAttachments,
+  createAppServerControlComposerDraftAttachment,
+  isAppServerControlComposerImageFile,
+  releaseAppServerControlComposerDraftAttachmentPreviews,
+} from './appServerControlAttachments';
+import { submitAppServerControlComposerDraft } from './appServerControlAttachmentSubmission';
 import { prepareSmartInputTerminalTurn } from './smartInputOutboundReferences';
 import { startHistoryion, stopHistoryion } from './transcription';
 import { shouldShowDockedSmartInput, type SmartInputVisibilityState } from './visibility';
 import { captureImageFromWebcam } from './cameraCapture';
-import { openLensDraftAttachment } from './attachmentDraftOpen';
-import { renderLensAttachmentDraftView } from './attachmentDraftView';
+import { openAppServerControlDraftAttachment } from './attachmentDraftOpen';
+import { renderAppServerControlAttachmentDraftView } from './attachmentDraftView';
 import {
   createTerminalTouchToggleButton,
   createSmartInputDom,
   createToolButton,
   createToolButtonsStrip,
-  formatLensQuickSettingsSummary,
+  formatAppServerControlQuickSettingsSummary,
   openFileInputPicker as showSmartInputFilePicker,
   renderTerminalStatusRow,
   syncSmartInputComposerExpandToggleState,
   type ToolKind,
 } from './smartInputView';
 import {
-  clearLensDraftAttachmentsForSession,
+  clearAppServerControlDraftAttachmentsForSession,
   cloneSmartInputPromptHistoryEntry,
-  detachLensDraftAttachmentsForSession,
-  getLensDraftAttachmentsForSession,
+  detachAppServerControlDraftAttachmentsForSession,
+  getAppServerControlDraftAttachmentsForSession,
   getSmartInputPromptHistoryForSession,
-  loadLensDraftAttachmentsForSession,
+  loadAppServerControlDraftAttachmentsForSession,
   loadSmartInputPromptHistoryForSession,
   pushSmartInputPromptHistoryEntryForSession,
-  setLensDraftAttachmentsForSession,
+  setAppServerControlDraftAttachmentsForSession,
   type SmartInputPromptHistoryEntry,
 } from './smartInputDraftStore';
 import {
@@ -96,12 +96,12 @@ import {
   getMicButtons as getMicButtonsSupport,
   queueFooterReserveSync as queueFooterReserveSyncSupport,
   shouldIgnoreFooterTransientUiDocumentClick as shouldIgnoreFooterTransientUiDocumentClickSupport,
-  syncLensQuickSettingsControls as syncLensQuickSettingsControlsSupport,
+  syncAppServerControlQuickSettingsControls as syncAppServerControlQuickSettingsControlsSupport,
   syncVoiceInputAvailability as syncVoiceInputAvailabilitySupport,
   updateAutoSendVisibility as updateAutoSendVisibilitySupport,
   updateFooterReservedHeight as updateFooterReservedHeightSupport,
 } from './footerSupport';
-import { createLensResumeButton } from './lensResumeButton';
+import { createAppServerControlResumeButton } from './appServerControlResumeButton';
 import {
   insertSmartInputLineBreak,
   shouldInsertLineBreakOnEnter,
@@ -146,24 +146,24 @@ let toolsToggleBtn: HTMLButtonElement | null = null;
 let toolsPanel: HTMLDivElement | null = null;
 let toolButtonsStrip: HTMLDivElement | null = null;
 let inlineToolHost: HTMLDivElement | null = null;
-let lensAttachmentHost: HTMLDivElement | null = null;
+let appServerControlAttachmentHost: HTMLDivElement | null = null;
 let sharedPhotoInput: HTMLInputElement | null = null;
 let sharedAttachInput: HTMLInputElement | null = null;
 let toolsPanelOpen = false;
-let lensQuickSettingsRow: HTMLDivElement | null = null;
-let lensQuickSettingsActions: HTMLDivElement | null = null;
-let lensModelSelect: HTMLSelectElement | null = null;
-let lensEffortSelect: HTMLSelectElement | null = null;
-let lensPlanSelect: HTMLSelectElement | null = null;
-let lensPermissionSelect: HTMLSelectElement | null = null;
-let lensSettingsSummaryBtn: HTMLButtonElement | null = null;
+let appServerControlQuickSettingsRow: HTMLDivElement | null = null;
+let appServerControlQuickSettingsActions: HTMLDivElement | null = null;
+let appServerControlModelSelect: HTMLSelectElement | null = null;
+let appServerControlEffortSelect: HTMLSelectElement | null = null;
+let appServerControlPlanSelect: HTMLSelectElement | null = null;
+let appServerControlPermissionSelect: HTMLSelectElement | null = null;
+let appServerControlSettingsSummaryBtn: HTMLButtonElement | null = null;
 let autoSendEnabled = localStorage.getItem('smartinput-autosend') === 'true';
 let keysExpanded = localStorage.getItem('smartinput-keys-expanded') === 'true';
 let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
-let lensQuickSettingsSheetOpen = false;
-let lensGoalComposeSessionId: string | null = null;
+let appServerControlQuickSettingsSheetOpen = false;
+let appServerControlGoalComposeSessionId: string | null = null;
 let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
 let suppressNextToolsToggleClick = false;
@@ -175,12 +175,15 @@ let lastAppliedComposerExpanded = false;
 
 const AUTO_SEND_LONG_PRESS_MS = 520;
 const sessionDrafts = new Map<string, SmartInputComposerDraft>();
-const lensAttachmentDrafts = new Map<string, LensComposerDraftAttachment[]>();
+const appServerControlAttachmentDrafts = new Map<
+  string,
+  AppServerControlComposerDraftAttachment[]
+>();
 const sessionPromptHistories = new Map<string, SmartInputPromptHistoryEntry[]>();
 const sessionPromptHistoryNavigation = new Map<string, SmartInputPromptHistoryNavigationState>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 const sessionComposerExpanded = new Map<string, boolean>();
-let lensResumeConversationHandler:
+let appServerControlResumeConversationHandler:
   | ((args: {
       sessionId: string;
       provider: ResumeProvider;
@@ -259,7 +262,7 @@ interface SmartInputPromptHistoryNavigationState {
 
 interface AdaptiveFooterLayoutState {
   activeSessionId: string | null | undefined;
-  lensActive: boolean;
+  appServerControlActive: boolean;
   showInput: boolean;
   showAutomation: boolean;
   showContext: boolean;
@@ -272,7 +275,7 @@ interface AdaptiveFooterLayoutState {
   touchControlsExpanded: boolean;
 }
 
-export function setLensResumeConversationHandler(
+export function setAppServerControlResumeConversationHandler(
   handler:
     | ((args: {
         sessionId: string;
@@ -281,7 +284,7 @@ export function setLensResumeConversationHandler(
       }) => void | Promise<void>)
     | null,
 ): void {
-  lensResumeConversationHandler = handler;
+  appServerControlResumeConversationHandler = handler;
   syncSmartInputVisibility();
 }
 
@@ -290,7 +293,7 @@ function getSmartInputVisibilityState(): SmartInputVisibilityState {
   return {
     activeSessionId,
     inputMode: $currentSettings.get()?.inputMode,
-    lensActive: isLensActiveSession(activeSessionId),
+    appServerControlActive: isAppServerControlActiveSession(activeSessionId),
   };
 }
 
@@ -300,20 +303,20 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
   const settingsOpen = $settingsOpen.get();
   const activeSessionId = visibilityState.activeSessionId ?? null;
   const isMobile = isMobileViewport();
-  const lensActive = visibilityState.lensActive;
+  const appServerControlActive = visibilityState.appServerControlActive;
   const showInput = !settingsOpen && shouldShowDockedSmartInput(visibilityState);
   const showAutomation =
     !settingsOpen && shouldShowManagerBar(settings?.managerBarEnabled, activeSessionId);
   const touchControlsAvailable = resolveTouchControlsAvailable({
     activeSessionId,
     isMobile,
-    lensActive,
+    appServerControlActive,
   });
   const showContext = settingsOpen
     ? false
     : resolveShowContext({
         isMobile,
-        lensActive,
+        appServerControlActive,
         touchControlsAvailable,
       });
   const showStatus = settingsOpen
@@ -321,7 +324,7 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
     : resolveShowStatus({
         activeSessionId,
         isMobile,
-        lensActive,
+        appServerControlActive,
         showInput,
       });
   const showFooter = settingsOpen
@@ -337,7 +340,7 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
 
   return {
     activeSessionId,
-    lensActive,
+    appServerControlActive,
     showInput,
     showAutomation,
     showContext,
@@ -362,11 +365,11 @@ function setLastReservedFooterHeightPx(value: number): void {
 function resolveTouchControlsAvailable(args: {
   activeSessionId: string | null;
   isMobile: boolean;
-  lensActive: boolean;
+  appServerControlActive: boolean;
 }): boolean {
   return (
     Boolean(args.activeSessionId) &&
-    !args.lensActive &&
+    !args.appServerControlActive &&
     args.isMobile &&
     shouldShowTouchController()
   );
@@ -374,7 +377,7 @@ function resolveTouchControlsAvailable(args: {
 
 function resolveShowContext(args: {
   isMobile: boolean;
-  lensActive: boolean;
+  appServerControlActive: boolean;
   touchControlsAvailable: boolean;
 }): boolean {
   return args.touchControlsAvailable;
@@ -383,10 +386,13 @@ function resolveShowContext(args: {
 function resolveShowStatus(args: {
   activeSessionId: string | null;
   isMobile: boolean;
-  lensActive: boolean;
+  appServerControlActive: boolean;
   showInput: boolean;
 }): boolean {
-  return args.lensActive || (Boolean(args.activeSessionId) && (args.isMobile || args.showInput));
+  return (
+    args.appServerControlActive ||
+    (Boolean(args.activeSessionId) && (args.isMobile || args.showInput))
+  );
 }
 
 function resolveShowFooter(args: {
@@ -402,30 +408,45 @@ function resolveShowFooter(args: {
   );
 }
 
-function getLensDraftAttachments(sessionId: string | null): LensComposerDraftAttachment[] {
-  if (sessionId && !lensAttachmentDrafts.has(sessionId)) {
-    const persistedAttachments = loadLensDraftAttachmentsForSession(sessionId);
+function getAppServerControlDraftAttachments(
+  sessionId: string | null,
+): AppServerControlComposerDraftAttachment[] {
+  if (sessionId && !appServerControlAttachmentDrafts.has(sessionId)) {
+    const persistedAttachments = loadAppServerControlDraftAttachmentsForSession(sessionId);
     if (persistedAttachments.length > 0) {
-      lensAttachmentDrafts.set(sessionId, persistedAttachments);
+      appServerControlAttachmentDrafts.set(sessionId, persistedAttachments);
     }
   }
 
-  return getLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
+  return getAppServerControlDraftAttachmentsForSession(appServerControlAttachmentDrafts, sessionId);
 }
 
-function setLensDraftAttachments(
+function setAppServerControlDraftAttachments(
   sessionId: string,
-  attachments: readonly LensComposerDraftAttachment[],
+  attachments: readonly AppServerControlComposerDraftAttachment[],
 ): void {
-  setLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId, attachments);
+  setAppServerControlDraftAttachmentsForSession(
+    appServerControlAttachmentDrafts,
+    sessionId,
+    attachments,
+  );
 }
 
-function clearLensDraftAttachments(sessionId: string, revokePreviews = true): void {
-  clearLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId, revokePreviews);
+function clearAppServerControlDraftAttachments(sessionId: string, revokePreviews = true): void {
+  clearAppServerControlDraftAttachmentsForSession(
+    appServerControlAttachmentDrafts,
+    sessionId,
+    revokePreviews,
+  );
 }
 
-function detachLensDraftAttachments(sessionId: string): LensComposerDraftAttachment[] {
-  return detachLensDraftAttachmentsForSession(lensAttachmentDrafts, sessionId);
+function detachAppServerControlDraftAttachments(
+  sessionId: string,
+): AppServerControlComposerDraftAttachment[] {
+  return detachAppServerControlDraftAttachmentsForSession(
+    appServerControlAttachmentDrafts,
+    sessionId,
+  );
 }
 
 function getSessionPromptHistory(sessionId: string | null): SmartInputPromptHistoryEntry[] {
@@ -450,17 +471,19 @@ function resetPromptHistoryNavigation(sessionId: string | null): void {
 function getPromptHistoryQuickSettingsSnapshot(
   sessionId: string,
 ): SmartInputPromptHistoryEntry['quickSettings'] {
-  if (!isLensActiveSession(sessionId)) {
+  if (!isAppServerControlActiveSession(sessionId)) {
     return null;
   }
 
-  return getLensQuickSettingsDraft(sessionId);
+  return getAppServerControlQuickSettingsDraft(sessionId);
 }
 
 function createCurrentPromptHistoryEntry(sessionId: string): SmartInputPromptHistoryEntry {
   return {
     composerDraft: cloneSmartInputComposerDraft(getSessionDraft(sessionId)),
-    attachments: cloneLensComposerDraftAttachments(getLensDraftAttachments(sessionId)),
+    attachments: cloneAppServerControlComposerDraftAttachments(
+      getAppServerControlDraftAttachments(sessionId),
+    ),
     quickSettings: getPromptHistoryQuickSettingsSnapshot(sessionId),
   };
 }
@@ -517,7 +540,7 @@ function resolveComposerReference(
   sessionId: string,
   referenceId: string,
 ): SmartInputComposerResolvedReference | null {
-  const attachment = getLensDraftAttachments(sessionId).find(
+  const attachment = getAppServerControlDraftAttachments(sessionId).find(
     (candidate) => candidate.id === referenceId,
   );
   if (!attachment?.referenceLabel || !attachment.referenceKind) {
@@ -562,7 +585,7 @@ function getSessionDraftText(sessionId: string | null): string {
 
 function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): void {
   const validReferenceIds = new Set(
-    getLensDraftAttachments(sessionId).map((attachment) => attachment.id),
+    getAppServerControlDraftAttachments(sessionId).map((attachment) => attachment.id),
   );
   const normalizedDraft = pruneSmartInputComposerReferences(draft, validReferenceIds);
   if (normalizedDraft.parts.length === 0) {
@@ -579,7 +602,8 @@ function setSessionDraftText(sessionId: string, text: string): void {
 
 function isPromptHistoryNavigationStartable(sessionId: string): boolean {
   return (
-    getSessionDraftText(sessionId).length === 0 && getLensDraftAttachments(sessionId).length === 0
+    getSessionDraftText(sessionId).length === 0 &&
+    getAppServerControlDraftAttachments(sessionId).length === 0
   );
 }
 
@@ -588,10 +612,10 @@ function applyPromptHistoryEntry(
   entry: SmartInputPromptHistoryEntry,
   textarea: HTMLTextAreaElement | null = activeTextarea,
 ): void {
-  setLensDraftAttachments(sessionId, entry.attachments);
+  setAppServerControlDraftAttachments(sessionId, entry.attachments);
   setSessionDraft(sessionId, entry.composerDraft);
-  if (isLensActiveSession(sessionId) && entry.quickSettings) {
-    setLensQuickSettingsDraft(sessionId, entry.quickSettings);
+  if (isAppServerControlActiveSession(sessionId) && entry.quickSettings) {
+    setAppServerControlQuickSettingsDraft(sessionId, entry.quickSettings);
   }
 
   if ($activeSessionId.get() !== sessionId) {
@@ -603,8 +627,8 @@ function applyPromptHistoryEntry(
     end: getSessionDraftText(sessionId).length,
   };
   renderSessionDraftIntoTextarea(sessionId, textarea, nextSelection);
-  renderLensAttachmentDrafts(sessionId);
-  syncLensQuickSettingsControls();
+  renderAppServerControlAttachmentDrafts(sessionId);
+  syncAppServerControlQuickSettingsControls();
 }
 
 function navigatePromptHistory(
@@ -754,9 +778,9 @@ function createImageDraftAttachmentWithReference(
   sessionId: string,
   file: File,
   uploadedPath: string,
-): LensComposerDraftAttachment {
+): AppServerControlComposerDraftAttachment {
   const draft = getSessionDraft(sessionId);
-  const attachment = createLensComposerDraftAttachment(sessionId, file, uploadedPath);
+  const attachment = createAppServerControlComposerDraftAttachment(sessionId, file, uploadedPath);
   const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'image');
   attachment.referenceKind = 'image';
   attachment.referenceOrdinal = referenceOrdinal;
@@ -770,9 +794,14 @@ function createTextDraftAttachmentWithReference(
   file: File,
   uploadedPath: string,
   text: string,
-): LensComposerDraftAttachment {
+): AppServerControlComposerDraftAttachment {
   const draft = getSessionDraft(sessionId);
-  const attachment = createLensComposerDraftAttachment(sessionId, file, uploadedPath, file);
+  const attachment = createAppServerControlComposerDraftAttachment(
+    sessionId,
+    file,
+    uploadedPath,
+    file,
+  );
   const stats = getSmartInputTextReferenceStats(text);
   const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'text');
   attachment.referenceKind = 'text';
@@ -791,18 +820,18 @@ function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly strin
 
   resetPromptHistoryNavigation(sessionId);
   const toRemove = new Set(attachmentIds);
-  const attachments = getLensDraftAttachments(sessionId);
-  const nextAttachments: LensComposerDraftAttachment[] = [];
+  const attachments = getAppServerControlDraftAttachments(sessionId);
+  const nextAttachments: AppServerControlComposerDraftAttachment[] = [];
   for (const attachment of attachments) {
     if (toRemove.has(attachment.id)) {
-      releaseLensComposerDraftAttachmentPreviews([attachment]);
+      releaseAppServerControlComposerDraftAttachmentPreviews([attachment]);
       continue;
     }
 
     nextAttachments.push(attachment);
   }
 
-  setLensDraftAttachments(sessionId, nextAttachments);
+  setAppServerControlDraftAttachments(sessionId, nextAttachments);
   setSessionDraft(
     sessionId,
     pruneSmartInputComposerReferences(
@@ -812,25 +841,28 @@ function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly strin
   );
   if ($activeSessionId.get() === sessionId) {
     renderSessionDraftIntoTextarea(sessionId, activeTextarea);
-    renderLensAttachmentDrafts(sessionId);
+    renderAppServerControlAttachmentDrafts(sessionId);
   }
 }
 
 /**
- * Treats Lens as a conversation-first composer surface even when the global
+ * Treats AppServerControl as a conversation-first composer surface even when the global
  * input mode is not Smart Input, so agent turns always use the docked composer.
  */
 export function isSmartInputMode(): boolean {
   const state = getSmartInputVisibilityState();
-  return state.lensActive || (Boolean(state.activeSessionId) && state.inputMode === 'smartinput');
+  return (
+    state.appServerControlActive ||
+    (Boolean(state.activeSessionId) && state.inputMode === 'smartinput')
+  );
 }
 
 /**
- * Prevents Lens sessions from falling into dual-focus input semantics because
+ * Prevents AppServerControl sessions from falling into dual-focus input semantics because
  * the conversation lane needs one clear place to type and submit.
  */
 export function isBothMode(): boolean {
-  if (isLensActiveSession($activeSessionId.get())) {
+  if (isAppServerControlActiveSession($activeSessionId.get())) {
     return false;
   }
 
@@ -838,7 +870,7 @@ export function isBothMode(): boolean {
 }
 
 /**
- * Keeps the footer dock aligned with session changes, Lens activation, mobile
+ * Keeps the footer dock aligned with session changes, AppServerControl activation, mobile
  * touch controls, and dev-only voice affordances.
  */
 export function initSmartInput(): void {
@@ -849,7 +881,7 @@ export function initSmartInput(): void {
     lastSessionId = sessionId;
     syncDraftForActiveSession();
     syncSmartInputVisibility(
-      isLensActiveSession(sessionId) && shouldAllowProgrammaticSmartInputFocus(),
+      isAppServerControlActiveSession(sessionId) && shouldAllowProgrammaticSmartInputFocus(),
     );
   });
 
@@ -872,8 +904,8 @@ export function initSmartInput(): void {
   });
 
   if (typeof window !== 'undefined') {
-    window.addEventListener(LENS_QUICK_SETTINGS_CHANGED_EVENT, () => {
-      syncLensQuickSettingsControls();
+    window.addEventListener(APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT, () => {
+      syncAppServerControlQuickSettingsControls();
       syncSmartInputVisibility();
     });
     window.addEventListener('resize', () => {
@@ -907,12 +939,12 @@ export function initSmartInput(): void {
     canUseVoice: canUseSmartInputVoiceSupport,
     closeFooterTransientUi,
     endRecording,
-    getInterruptibleLensSessionId: () => {
+    getInterruptibleAppServerControlSessionId: () => {
       const sessionId = $activeSessionId.get();
       if (
         !sessionId ||
-        !isLensActiveSession(sessionId) ||
-        !hasInterruptibleLensTurnWork(sessionId)
+        !isAppServerControlActiveSession(sessionId) ||
+        !hasInterruptibleAppServerControlTurnWork(sessionId)
       ) {
         return null;
       }
@@ -921,8 +953,8 @@ export function initSmartInput(): void {
     },
     hasVisibleInput: () => getAdaptiveFooterLayoutState().showInput,
     isRecording: () => isRecording,
-    onLensEscape: (sessionId) => {
-      void handleLensEscape(sessionId);
+    onAppServerControlEscape: (sessionId) => {
+      void handleAppServerControlEscape(sessionId);
     },
   });
 
@@ -944,11 +976,12 @@ export function initSmartInput(): void {
       setToolsPanelOpen(false);
     }
 
-    if (lensQuickSettingsRow && lensSettingsSummaryBtn) {
-      const clickedInsideLensSettings =
-        lensQuickSettingsRow.contains(target) || lensSettingsSummaryBtn.contains(target);
-      if (!clickedInsideLensSettings) {
-        setLensQuickSettingsSheetOpen(false);
+    if (appServerControlQuickSettingsRow && appServerControlSettingsSummaryBtn) {
+      const clickedInsideAppServerControlSettings =
+        appServerControlQuickSettingsRow.contains(target) ||
+        appServerControlSettingsSummaryBtn.contains(target);
+      if (!clickedInsideAppServerControlSettings) {
+        setAppServerControlQuickSettingsSheetOpen(false);
       }
     }
   });
@@ -1006,7 +1039,7 @@ function hideAdaptiveFooter(): void {
     return;
   }
   setToolsPanelOpen(false);
-  setLensQuickSettingsSheetOpen(false);
+  setAppServerControlQuickSettingsSheetOpen(false);
   footerDock.dataset.composerExpanded = 'false';
   if (dockedBar) {
     dockedBar.dataset.composerExpanded = 'false';
@@ -1049,7 +1082,7 @@ function applyFooterPresentation(layoutState: AdaptiveFooterLayoutState): void {
   if (!footerDock) {
     return;
   }
-  footerDock.dataset.surface = layoutState.lensActive ? 'lens' : 'terminal';
+  footerDock.dataset.surface = layoutState.appServerControlActive ? 'appServerControl' : 'terminal';
   footerDock.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
   footerDock.dataset.material = layoutState.glassEnabled ? 'glass' : 'solid';
   footerDock.dataset.inputMode = layoutState.inputMode ?? 'keyboard';
@@ -1089,11 +1122,11 @@ function shouldAllowProgrammaticSmartInputFocus(): boolean {
   return !isEmbeddedWebPreviewContext();
 }
 
-function shouldKeepFocusedComposerVisibleOnMobileLens(): boolean {
+function shouldKeepFocusedComposerVisibleOnMobileAppServerControl(): boolean {
   const sessionId = $activeSessionId.get();
   return (
     Boolean(sessionId) &&
-    isLensActiveSession(sessionId) &&
+    isAppServerControlActiveSession(sessionId) &&
     isMobileViewport() &&
     document.body.classList.contains('keyboard-visible')
   );
@@ -1105,7 +1138,7 @@ function scrollFooterDockForTextareaFocus(): void {
   }
 
   footerDock.scrollTo({
-    top: shouldKeepFocusedComposerVisibleOnMobileLens() ? footerDock.scrollHeight : 0,
+    top: shouldKeepFocusedComposerVisibleOnMobileAppServerControl() ? footerDock.scrollHeight : 0,
     behavior: 'auto',
   });
 }
@@ -1129,44 +1162,44 @@ function createDockedDOM(): void {
       event.stopPropagation();
       setActiveSessionComposerExpanded(!isComposerExpanded($activeSessionId.get()));
     },
-    onLensEffortChange: () => {
+    onAppServerControlEffortChange: () => {
       const sessionId = $activeSessionId.get();
-      if (!sessionId || !isLensActiveSession(sessionId)) {
+      if (!sessionId || !isAppServerControlActiveSession(sessionId)) {
         return;
       }
 
-      setLensQuickSettingsDraft(sessionId, {
-        effort: lensEffortSelect?.value ?? null,
+      setAppServerControlQuickSettingsDraft(sessionId, {
+        effort: appServerControlEffortSelect?.value ?? null,
       });
     },
-    onLensModelChange: () => {
+    onAppServerControlModelChange: () => {
       const sessionId = $activeSessionId.get();
-      if (!sessionId || !isLensActiveSession(sessionId)) {
+      if (!sessionId || !isAppServerControlActiveSession(sessionId)) {
         return;
       }
 
-      setLensQuickSettingsDraft(sessionId, {
-        model: lensModelSelect?.value ?? null,
+      setAppServerControlQuickSettingsDraft(sessionId, {
+        model: appServerControlModelSelect?.value ?? null,
       });
     },
-    onLensPermissionChange: () => {
+    onAppServerControlPermissionChange: () => {
       const sessionId = $activeSessionId.get();
-      if (!sessionId || !isLensActiveSession(sessionId)) {
+      if (!sessionId || !isAppServerControlActiveSession(sessionId)) {
         return;
       }
 
-      setLensQuickSettingsDraft(sessionId, {
-        permissionMode: lensPermissionSelect?.value ?? 'manual',
+      setAppServerControlQuickSettingsDraft(sessionId, {
+        permissionMode: appServerControlPermissionSelect?.value ?? 'manual',
       });
     },
-    onLensPlanChange: () => {
+    onAppServerControlPlanChange: () => {
       const sessionId = $activeSessionId.get();
-      if (!sessionId || !isLensActiveSession(sessionId)) {
+      if (!sessionId || !isAppServerControlActiveSession(sessionId)) {
         return;
       }
 
-      setLensQuickSettingsDraft(sessionId, {
-        planMode: lensPlanSelect?.value ?? 'off',
+      setAppServerControlQuickSettingsDraft(sessionId, {
+        planMode: appServerControlPlanSelect?.value ?? 'off',
       });
       syncSmartInputVisibility();
     },
@@ -1268,9 +1301,9 @@ function createDockedDOM(): void {
           return;
         }
 
-        if (sessionId && isLensActiveSession(sessionId)) {
+        if (sessionId && isAppServerControlActiveSession(sessionId)) {
           event.preventDefault();
-          void handleLensEscape(sessionId);
+          void handleAppServerControlEscape(sessionId);
           return;
         }
       }
@@ -1297,16 +1330,16 @@ function createDockedDOM(): void {
         return;
       }
 
-      if (clipboardDataMayContainLensComposerImage(event.clipboardData)) {
+      if (clipboardDataMayContainAppServerControlComposerImage(event.clipboardData)) {
         event.preventDefault();
         const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
         void (async () => {
-          const files = await extractLensComposerPasteImageFiles(event.clipboardData);
+          const files = await extractAppServerControlComposerPasteImageFiles(event.clipboardData);
           if (files.length === 0) {
             return;
           }
 
-          await addLensComposerFiles(sessionId, files, selection);
+          await addAppServerControlComposerFiles(sessionId, files, selection);
         })();
         return;
       }
@@ -1315,7 +1348,7 @@ function createDockedDOM(): void {
       if (text && shouldConvertPastedTextToSmartInputReference(text)) {
         event.preventDefault();
         const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-        void addLensComposerTextReference(sessionId, text, selection);
+        void addAppServerControlComposerTextReference(sessionId, text, selection);
         return;
       }
 
@@ -1364,13 +1397,13 @@ function createDockedDOM(): void {
   dockedBar.appendChild(dom.inputRow);
   footerPrimaryHost.appendChild(dockedBar);
 
-  lensQuickSettingsRow = dom.lensQuickSettingsRow;
-  lensQuickSettingsActions = dom.lensQuickSettingsActions;
-  lensModelSelect = dom.lensModelSelect;
-  lensEffortSelect = dom.lensEffortSelect;
-  lensPlanSelect = dom.lensPlanSelect;
-  lensPermissionSelect = dom.lensPermissionSelect;
-  lensAttachmentHost = dom.lensAttachmentHost;
+  appServerControlQuickSettingsRow = dom.appServerControlQuickSettingsRow;
+  appServerControlQuickSettingsActions = dom.appServerControlQuickSettingsActions;
+  appServerControlModelSelect = dom.appServerControlModelSelect;
+  appServerControlEffortSelect = dom.appServerControlEffortSelect;
+  appServerControlPlanSelect = dom.appServerControlPlanSelect;
+  appServerControlPermissionSelect = dom.appServerControlPermissionSelect;
+  appServerControlAttachmentHost = dom.appServerControlAttachmentHost;
   composerExpandBtn = dom.composerExpandBtn;
   activeTextarea = dom.textarea;
   sendBtn = dom.sendBtn;
@@ -1477,7 +1510,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
     return;
   }
 
-  dockedBar.dataset.surface = layoutState.lensActive ? 'lens' : 'terminal';
+  dockedBar.dataset.surface = layoutState.appServerControlActive ? 'appServerControl' : 'terminal';
   dockedBar.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
 
   activeTextarea = dockedBar.querySelector('.smart-input-textarea');
@@ -1489,7 +1522,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   renderPinnedToolsForSession(layoutState.activeSessionId ?? null);
-  if (layoutState.lensActive && layoutState.isMobile && inlineToolHost) {
+  if (layoutState.appServerControlActive && layoutState.isMobile && inlineToolHost) {
     inlineToolHost.hidden = true;
   }
   toolsToggleBtn?.removeAttribute('hidden');
@@ -1564,18 +1597,18 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
 
   footerStatusHost.replaceChildren();
   footerStatusHost.classList.remove('adaptive-footer-status-sheet-open');
-  footerStatusHost.dataset.lensCompact = 'false';
+  footerStatusHost.dataset.appServerControlCompact = 'false';
   footerStatusHost.toggleAttribute('hidden', !layoutState.showStatus);
-  syncLensQuickSettingsControls();
+  syncAppServerControlQuickSettingsControls();
 
   if (!layoutState.showStatus || !layoutState.activeSessionId) {
     setAutomationOverflowProxyAnchor(null);
-    setLensQuickSettingsSheetOpen(false);
+    setAppServerControlQuickSettingsSheetOpen(false);
     return;
   }
 
-  if (layoutState.lensActive) {
-    renderLensStatusRow(layoutState);
+  if (layoutState.appServerControlActive) {
+    renderAppServerControlStatusRow(layoutState);
     return;
   }
 
@@ -1640,44 +1673,50 @@ function renderMobileTerminalStatusRow(layoutState: AdaptiveFooterLayoutState): 
   footerStatusHost.toggleAttribute('hidden', false);
 }
 
-function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
+function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   if (
     !footerStatusHost ||
-    !lensQuickSettingsRow ||
-    !lensQuickSettingsActions ||
-    !lensModelSelect ||
-    !lensEffortSelect ||
-    !lensPlanSelect ||
-    !lensPermissionSelect
+    !appServerControlQuickSettingsRow ||
+    !appServerControlQuickSettingsActions ||
+    !appServerControlModelSelect ||
+    !appServerControlEffortSelect ||
+    !appServerControlPlanSelect ||
+    !appServerControlPermissionSelect
   ) {
     return;
   }
 
   const sessionId = layoutState.activeSessionId as string;
-  const draft = getLensQuickSettingsDraft(sessionId);
-  syncLensQuickSettingsActions(sessionId);
-  const useCompactRail = shouldUseCompactLensStatusRail(layoutState);
-  footerStatusHost.dataset.lensCompact = useCompactRail ? 'true' : 'false';
+  const draft = getAppServerControlQuickSettingsDraft(sessionId);
+  syncAppServerControlQuickSettingsActions(sessionId);
+  const useCompactRail = shouldUseCompactAppServerControlStatusRail(layoutState);
+  footerStatusHost.dataset.appServerControlCompact = useCompactRail ? 'true' : 'false';
 
   if (!useCompactRail) {
-    lensQuickSettingsRow.classList.remove('smart-input-lens-settings-sheet');
-    lensQuickSettingsRow.hidden = false;
-    footerStatusHost.appendChild(lensQuickSettingsRow);
+    appServerControlQuickSettingsRow.classList.remove(
+      'smart-input-appServerControl-settings-sheet',
+    );
+    appServerControlQuickSettingsRow.hidden = false;
+    footerStatusHost.appendChild(appServerControlQuickSettingsRow);
     return;
   }
 
   const summaryBtn = document.createElement('button');
   summaryBtn.type = 'button';
-  summaryBtn.className = 'adaptive-footer-status-summary adaptive-footer-status-summary-lens';
-  summaryBtn.textContent = formatLensQuickSettingsSummary(draft);
+  summaryBtn.className =
+    'adaptive-footer-status-summary adaptive-footer-status-summary-appServerControl';
+  summaryBtn.textContent = formatAppServerControlQuickSettingsSummary(draft);
   summaryBtn.dataset.planMode = draft.planMode;
-  summaryBtn.setAttribute('aria-expanded', lensQuickSettingsSheetOpen ? 'true' : 'false');
+  summaryBtn.setAttribute(
+    'aria-expanded',
+    appServerControlQuickSettingsSheetOpen ? 'true' : 'false',
+  );
   summaryBtn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setLensQuickSettingsSheetOpen(!lensQuickSettingsSheetOpen);
+    setAppServerControlQuickSettingsSheetOpen(!appServerControlQuickSettingsSheetOpen);
   });
-  lensSettingsSummaryBtn = summaryBtn;
+  appServerControlSettingsSummaryBtn = summaryBtn;
   footerStatusHost.appendChild(summaryBtn);
 
   setAutomationOverflowProxyAnchor(null);
@@ -1687,15 +1726,17 @@ function renderLensStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     setAutomationOverflowProxyAnchor(overflowProxy);
   }
 
-  lensQuickSettingsRow.classList.add('smart-input-lens-settings-sheet');
-  lensQuickSettingsRow.hidden = !lensQuickSettingsSheetOpen;
-  if (lensQuickSettingsSheetOpen) {
+  appServerControlQuickSettingsRow.classList.add('smart-input-appServerControl-settings-sheet');
+  appServerControlQuickSettingsRow.hidden = !appServerControlQuickSettingsSheetOpen;
+  if (appServerControlQuickSettingsSheetOpen) {
     footerStatusHost.classList.add('adaptive-footer-status-sheet-open');
-    footerStatusHost.appendChild(lensQuickSettingsRow);
+    footerStatusHost.appendChild(appServerControlQuickSettingsRow);
   }
 }
 
-function shouldUseCompactLensStatusRail(layoutState: AdaptiveFooterLayoutState): boolean {
+function shouldUseCompactAppServerControlStatusRail(
+  layoutState: AdaptiveFooterLayoutState,
+): boolean {
   if (layoutState.isMobile) {
     return true;
   }
@@ -1704,47 +1745,51 @@ function shouldUseCompactLensStatusRail(layoutState: AdaptiveFooterLayoutState):
   return availableWidth <= 720;
 }
 
-function syncLensQuickSettingsActions(sessionId: string): void {
-  if (!lensQuickSettingsActions) {
+function syncAppServerControlQuickSettingsActions(sessionId: string): void {
+  if (!appServerControlQuickSettingsActions) {
     return;
   }
 
-  lensQuickSettingsActions.replaceChildren();
-  const quickSettingsLocked = hasInterruptibleLensTurnWork(sessionId);
-  const draft = getLensQuickSettingsDraft(sessionId);
-  const provider = getLensQuickSettingsProvider(sessionId);
-  lensQuickSettingsActions.appendChild(
-    createLensActionButton(
+  appServerControlQuickSettingsActions.replaceChildren();
+  const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
+  const draft = getAppServerControlQuickSettingsDraft(sessionId);
+  const provider = getAppServerControlQuickSettingsProvider(sessionId);
+  appServerControlQuickSettingsActions.appendChild(
+    createAppServerControlActionButton(
       'Plan',
-      t('smartInput.lensPlanCommand'),
+      t('smartInput.appServerControlPlanCommand'),
       () => {
-        toggleLensPlanMode(sessionId);
+        toggleAppServerControlPlanMode(sessionId);
       },
       quickSettingsLocked,
       { pressed: draft.planMode === 'on' },
     ),
   );
   if (provider === 'codex') {
-    lensQuickSettingsActions.appendChild(
-      createLensActionButton(
+    appServerControlQuickSettingsActions.appendChild(
+      createAppServerControlActionButton(
         'Goal',
-        t('smartInput.lensGoalCommand'),
+        t('smartInput.appServerControlGoalCommand'),
         () => {
-          void prepareLensGoal(sessionId);
+          void prepareAppServerControlGoal(sessionId);
         },
         false,
-        { pressed: lensGoalComposeSessionId === sessionId },
+        { pressed: appServerControlGoalComposeSessionId === sessionId },
       ),
     );
   }
-  const resumeButton = createLensResumeButton(sessionId, lensResumeConversationHandler);
+  const resumeButton = createAppServerControlResumeButton(
+    sessionId,
+    appServerControlResumeConversationHandler,
+  );
   if (resumeButton) {
-    lensQuickSettingsActions.appendChild(resumeButton);
+    appServerControlQuickSettingsActions.appendChild(resumeButton);
   }
-  lensQuickSettingsActions.hidden = lensQuickSettingsActions.childElementCount === 0;
+  appServerControlQuickSettingsActions.hidden =
+    appServerControlQuickSettingsActions.childElementCount === 0;
 }
 
-function createLensActionButton(
+function createAppServerControlActionButton(
   label: string,
   title: string,
   onClick: () => void,
@@ -1753,7 +1798,7 @@ function createLensActionButton(
 ): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'smart-input-lens-action';
+  button.className = 'smart-input-appServerControl-action';
   button.textContent = label;
   button.title = title;
   button.setAttribute('aria-label', title);
@@ -1769,35 +1814,35 @@ function createLensActionButton(
   return button;
 }
 
-async function prepareLensGoal(sessionId: string): Promise<void> {
+async function prepareAppServerControlGoal(sessionId: string): Promise<void> {
   if (!activeTextarea) {
     return;
   }
 
   const currentText = activeTextarea.value.trim();
   if (currentText.length === 0) {
-    lensGoalComposeSessionId = sessionId;
-    activeTextarea.placeholder = 'Set Lens goal...';
+    appServerControlGoalComposeSessionId = sessionId;
+    activeTextarea.placeholder = 'Set AppServerControl goal...';
     activeTextarea.focus({ preventScroll: true });
-    syncLensQuickSettingsActions(sessionId);
+    syncAppServerControlQuickSettingsActions(sessionId);
     return;
   }
 
-  await submitLensGoal(sessionId, currentText, activeTextarea);
+  await submitAppServerControlGoal(sessionId, currentText, activeTextarea);
 }
 
-async function submitLensGoal(
+async function submitAppServerControlGoal(
   sessionId: string,
   objective: string,
   textarea: HTMLTextAreaElement,
 ): Promise<void> {
   try {
-    await setLensGoal(sessionId, { objective });
-    lensGoalComposeSessionId = null;
+    await setAppServerControlGoal(sessionId, { objective });
+    appServerControlGoalComposeSessionId = null;
     pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, textarea);
     showDropToast('Goal set.');
-    syncLensQuickSettingsActions(sessionId);
+    syncAppServerControlQuickSettingsActions(sessionId);
   } catch (error) {
     showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
   }
@@ -1815,6 +1860,7 @@ function setToolsPanelOpen(open: boolean): void {
     toolsPanel.appendChild(toolButtonsStrip);
   }
   toolsPanel.hidden = !shouldOpen;
+  toolsPanel.parentElement?.classList.toggle('smart-input-row-tools-open', shouldOpen);
   toolsToggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   toolsToggleBtn.classList.toggle('open', shouldOpen);
   if (!footerResizeObserver) {
@@ -1863,17 +1909,25 @@ function renderPinnedToolsForSession(sessionId: string | null): void {
   syncVoiceInputAvailability();
 }
 
-function setLensQuickSettingsSheetOpen(open: boolean): void {
-  lensQuickSettingsSheetOpen = open;
-  if (lensSettingsSummaryBtn) {
-    lensSettingsSummaryBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+function setAppServerControlQuickSettingsSheetOpen(open: boolean): void {
+  appServerControlQuickSettingsSheetOpen = open;
+  if (appServerControlSettingsSummaryBtn) {
+    appServerControlSettingsSummaryBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-  if (lensQuickSettingsRow) {
-    lensQuickSettingsRow.hidden = !open;
-    if (lensQuickSettingsRow.classList.contains('smart-input-lens-settings-sheet')) {
+  if (appServerControlQuickSettingsRow) {
+    appServerControlQuickSettingsRow.hidden = !open;
+    if (
+      appServerControlQuickSettingsRow.classList.contains(
+        'smart-input-appServerControl-settings-sheet',
+      )
+    ) {
       footerStatusHost?.classList.toggle('adaptive-footer-status-sheet-open', open);
-      if (open && footerStatusHost && !footerStatusHost.contains(lensQuickSettingsRow)) {
-        footerStatusHost.appendChild(lensQuickSettingsRow);
+      if (
+        open &&
+        footerStatusHost &&
+        !footerStatusHost.contains(appServerControlQuickSettingsRow)
+      ) {
+        footerStatusHost.appendChild(appServerControlQuickSettingsRow);
       }
     }
   }
@@ -1888,8 +1942,8 @@ function closeFooterTransientUi(): boolean {
     setToolsPanelOpen(false);
     closedAny = true;
   }
-  if (lensQuickSettingsSheetOpen) {
-    setLensQuickSettingsSheetOpen(false);
+  if (appServerControlQuickSettingsSheetOpen) {
+    setAppServerControlQuickSettingsSheetOpen(false);
     closedAny = true;
   }
   return closedAny;
@@ -1913,9 +1967,9 @@ function toggleAutoSendEnabled(): void {
   syncSmartInputVisibility();
 }
 
-function toggleLensPlanMode(sessionId: string): void {
-  const draft = getLensQuickSettingsDraft(sessionId);
-  setLensQuickSettingsDraft(sessionId, {
+function toggleAppServerControlPlanMode(sessionId: string): void {
+  const draft = getAppServerControlQuickSettingsDraft(sessionId);
+  setAppServerControlQuickSettingsDraft(sessionId, {
     planMode: draft.planMode === 'on' ? 'off' : 'on',
   });
   syncSmartInputVisibility();
@@ -1927,9 +1981,9 @@ function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {
     event,
     sessionId ? getActiveTab(sessionId) : null,
   );
-  if (shiftTabAction === 'toggle-lens-plan-mode' && sessionId) {
+  if (shiftTabAction === 'toggle-appServerControl-plan-mode' && sessionId) {
     event.preventDefault();
-    toggleLensPlanMode(sessionId);
+    toggleAppServerControlPlanMode(sessionId);
     return true;
   }
   if (shiftTabAction === 'forward-to-terminal' && sessionId) {
@@ -1941,22 +1995,22 @@ function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {
   return false;
 }
 
-function renderLensAttachmentDrafts(sessionId: string | null): void {
-  renderLensAttachmentDraftView({
-    attachments: sessionId ? getLensDraftAttachments(sessionId) : [],
-    host: lensAttachmentHost,
+function renderAppServerControlAttachmentDrafts(sessionId: string | null): void {
+  renderAppServerControlAttachmentDraftView({
+    attachments: sessionId ? getAppServerControlDraftAttachments(sessionId) : [],
+    host: appServerControlAttachmentHost,
     onOpenAttachment: (currentSessionId, attachment) => {
-      void openLensDraftAttachment(currentSessionId, attachment);
+      void openAppServerControlDraftAttachment(currentSessionId, attachment);
     },
     onFocusTextarea: () => {
       activeTextarea?.focus({ preventScroll: true });
     },
-    onRemoveAttachment: removeLensComposerFile,
+    onRemoveAttachment: removeAppServerControlComposerFile,
     sessionId,
   });
 }
 
-function removeLensComposerFile(sessionId: string, attachmentId: string): void {
+function removeAppServerControlComposerFile(sessionId: string, attachmentId: string): void {
   removeAttachmentsByIds(sessionId, [attachmentId]);
 }
 
@@ -1993,13 +2047,13 @@ function finalizeInsertedComposerReferences(
   removeAttachmentsByIds(sessionId, removedReferenceIds);
 }
 
-async function addLensComposerFiles(
+async function addAppServerControlComposerFiles(
   sessionId: string,
   files: readonly File[],
   selection: SmartInputComposerSelection | null = null,
 ): Promise<void> {
   resetPromptHistoryNavigation(sessionId);
-  const nextAttachments = [...getLensDraftAttachments(sessionId)];
+  const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
   const nextSelection =
     selection ??
     (() => {
@@ -2010,7 +2064,10 @@ async function addLensComposerFiles(
   let errorMessage: string | null = null;
 
   for (const file of files) {
-    if (isLensComposerImageFile(file) && file.size > MAX_LENS_IMAGE_BYTES) {
+    if (
+      isAppServerControlComposerImageFile(file) &&
+      file.size > MAX_APP_SERVER_CONTROL_IMAGE_BYTES
+    ) {
       errorMessage = `${t('smartInput.imageTooLarge')}: ${file.name}`;
       continue;
     }
@@ -2021,18 +2078,18 @@ async function addLensComposerFiles(
       continue;
     }
 
-    const attachment = isLensComposerImageFile(file)
+    const attachment = isAppServerControlComposerImageFile(file)
       ? createImageDraftAttachmentWithReference(sessionId, file, uploadedPath)
-      : createLensComposerDraftAttachment(sessionId, file, uploadedPath);
+      : createAppServerControlComposerDraftAttachment(sessionId, file, uploadedPath);
     nextAttachments.push(attachment);
     if (attachment.referenceLabel) {
       insertedReferenceIds.push(attachment.id);
     }
   }
 
-  setLensDraftAttachments(sessionId, nextAttachments);
+  setAppServerControlDraftAttachments(sessionId, nextAttachments);
   finalizeInsertedComposerReferences(sessionId, nextSelection, insertedReferenceIds);
-  renderLensAttachmentDrafts($activeSessionId.get());
+  renderAppServerControlAttachmentDrafts($activeSessionId.get());
 
   if (errorMessage) {
     showDropToast(errorMessage);
@@ -2043,7 +2100,7 @@ async function addLensComposerFiles(
   }
 }
 
-async function addLensComposerTextReference(
+async function addAppServerControlComposerTextReference(
   sessionId: string,
   text: string,
   selection: SmartInputComposerSelection | null = null,
@@ -2061,7 +2118,7 @@ async function addLensComposerTextReference(
     return;
   }
 
-  const nextAttachments = [...getLensDraftAttachments(sessionId)];
+  const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
   const attachment = createTextDraftAttachmentWithReference(
     sessionId,
     textFile,
@@ -2070,9 +2127,9 @@ async function addLensComposerTextReference(
   );
   nextAttachments.push(attachment);
 
-  setLensDraftAttachments(sessionId, nextAttachments);
+  setAppServerControlDraftAttachments(sessionId, nextAttachments);
   finalizeInsertedComposerReferences(sessionId, nextSelection, [attachment.id]);
-  renderLensAttachmentDrafts($activeSessionId.get());
+  renderAppServerControlAttachmentDrafts($activeSessionId.get());
 
   if ($activeSessionId.get() === sessionId) {
     activeTextarea?.focus({ preventScroll: true });
@@ -2205,7 +2262,7 @@ async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
     return;
   }
 
-  await addLensComposerFiles(
+  await addAppServerControlComposerFiles(
     sessionId,
     Array.from(files),
     activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null,
@@ -2216,9 +2273,9 @@ function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElemen
   resetPromptHistoryNavigation(sessionId);
   sessionDrafts.delete(sessionId);
   ta.value = '';
-  clearLensDraftAttachments(sessionId);
+  clearAppServerControlDraftAttachments(sessionId);
   syncDraftForActiveSession();
-  renderLensAttachmentDrafts($activeSessionId.get());
+  renderAppServerControlAttachmentDrafts($activeSessionId.get());
   ta.scrollTop = 0;
   resizeSmartInputTextarea(ta);
   if (!footerResizeObserver) {
@@ -2231,7 +2288,7 @@ async function sendTerminalComposerTurn(
   sessionId: string,
   ta: HTMLTextAreaElement,
   draft: SmartInputComposerDraft,
-  attachments: readonly LensComposerDraftAttachment[],
+  attachments: readonly AppServerControlComposerDraftAttachment[],
 ): Promise<boolean> {
   const request = await prepareSmartInputTerminalTurn({
     sessionId,
@@ -2260,43 +2317,43 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     resolveComposerReference(sessionId, referenceId),
   );
 
-  const lensAttachments = getLensDraftAttachments(sessionId);
-  if (!renderedText && lensAttachments.length === 0) {
+  const appServerControlAttachments = getAppServerControlDraftAttachments(sessionId);
+  if (!renderedText && appServerControlAttachments.length === 0) {
     return;
   }
 
-  if (!isLensActiveSession(sessionId)) {
+  if (!isAppServerControlActiveSession(sessionId)) {
     try {
-      await sendTerminalComposerTurn(sessionId, ta, draft, lensAttachments);
+      await sendTerminalComposerTurn(sessionId, ta, draft, appServerControlAttachments);
     } catch (error) {
       showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
     }
     return;
   }
 
-  if (lensGoalComposeSessionId === sessionId) {
-    if (lensAttachments.length > 0) {
+  if (appServerControlGoalComposeSessionId === sessionId) {
+    if (appServerControlAttachments.length > 0) {
       showDropToast('Goals use text only.');
       return;
     }
 
-    await submitLensGoal(sessionId, renderedText, ta);
+    await submitAppServerControlGoal(sessionId, renderedText, ta);
     return;
   }
 
-  const attachmentDrafts = detachLensDraftAttachments(sessionId);
+  const attachmentDrafts = detachAppServerControlDraftAttachments(sessionId);
   const draftSnapshot = cloneSmartInputComposerDraft(draft);
-  renderLensAttachmentDrafts($activeSessionId.get());
+  renderAppServerControlAttachmentDrafts($activeSessionId.get());
 
   try {
-    const { queuedTurn } = await submitLensComposerDraft({
+    const { queuedTurn } = await submitAppServerControlComposerDraft({
       sessionId,
       draft: draftSnapshot,
       attachments: attachmentDrafts,
       uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
       attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
       uploadFile,
-      createTurnRequest: createLensTurnRequest,
+      createTurnRequest: createAppServerControlTurnRequest,
       submitQueuedTurn: enqueueCommandBayTurn,
     });
 
@@ -2304,18 +2361,19 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, ta);
     collapseComposerAfterSuccessfulSend(sessionId);
-    releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
+    releaseAppServerControlComposerDraftAttachmentPreviews(attachmentDrafts);
   } catch (error) {
     const shouldRestore =
-      !getSessionDraftText(sessionId) && getLensDraftAttachments(sessionId).length === 0;
+      !getSessionDraftText(sessionId) &&
+      getAppServerControlDraftAttachments(sessionId).length === 0;
     if (shouldRestore) {
-      setLensDraftAttachments(sessionId, attachmentDrafts);
+      setAppServerControlDraftAttachments(sessionId, attachmentDrafts);
       setSessionDraft(sessionId, draftSnapshot);
     } else {
-      releaseLensComposerDraftAttachmentPreviews(attachmentDrafts);
+      releaseAppServerControlComposerDraftAttachmentPreviews(attachmentDrafts);
     }
     syncDraftForActiveSession();
-    renderLensAttachmentDrafts($activeSessionId.get());
+    renderAppServerControlAttachmentDrafts($activeSessionId.get());
     showDropToast(
       error instanceof Error && error.message.trim()
         ? error.message
@@ -2354,13 +2412,13 @@ function applyDraftToTextarea(
 function syncDraftForActiveSession(): void {
   const sessionId = $activeSessionId.get();
   applyDraftToTextarea(activeTextarea, sessionId);
-  renderLensAttachmentDrafts(sessionId);
-  syncLensQuickSettingsControls();
+  renderAppServerControlAttachmentDrafts(sessionId);
+  syncAppServerControlQuickSettingsControls();
 }
 
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
-  clearLensDraftAttachments(sessionId);
+  clearAppServerControlDraftAttachments(sessionId);
   sessionPromptHistories.delete(sessionId);
   resetPromptHistoryNavigation(sessionId);
   sessionPinnedTools.delete(sessionId);
@@ -2446,18 +2504,18 @@ function pinToolForSession(sessionId: string, tool: ToolKind): void {
   }
 }
 
-function syncLensQuickSettingsControls(): void {
-  syncLensQuickSettingsControlsSupport({
-    lensQuickSettingsRow,
-    lensQuickSettingsActions,
-    lensModelSelect,
-    lensEffortSelect,
-    lensPlanSelect,
-    lensPermissionSelect,
-    lensSettingsSummaryBtn,
+function syncAppServerControlQuickSettingsControls(): void {
+  syncAppServerControlQuickSettingsControlsSupport({
+    appServerControlQuickSettingsRow,
+    appServerControlQuickSettingsActions,
+    appServerControlModelSelect,
+    appServerControlEffortSelect,
+    appServerControlPlanSelect,
+    appServerControlPermissionSelect,
+    appServerControlSettingsSummaryBtn,
     dockedBar,
     getVisibilityState: getSmartInputVisibilityState,
-    setLensQuickSettingsSheetOpen,
+    setAppServerControlQuickSettingsSheetOpen,
   });
 }
 

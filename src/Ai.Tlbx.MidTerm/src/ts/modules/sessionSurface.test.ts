@@ -5,7 +5,7 @@ vi.mock('./i18n', () => ({
     (
       ({
         'session.terminal': 'Terminal',
-        'sessionTabs.agent': 'Lens',
+        'sessionTabs.agent': 'Agent',
         'sessionLauncher.codexTitle': 'Codex',
         'sessionLauncher.claudeTitle': 'Claude',
       }) as Record<string, string>
@@ -18,7 +18,7 @@ describe('sessionSurface', () => {
 
     expect(
       resolveSessionSurfaceMode({
-        lensOnly: false,
+        appServerControlOnly: false,
         supervisor: { profile: 'shell' },
       }),
     ).toBe('terminal');
@@ -30,19 +30,19 @@ describe('sessionSurface', () => {
 
     expect(
       resolveSessionSurfaceMode({
-        lensOnly: true,
+        appServerControlOnly: true,
         supervisor: { profile: 'codex' },
       }),
     ).toBe('agent');
     expect(
       getPrimarySurfaceLabel({
-        lensOnly: true,
+        appServerControlOnly: true,
         supervisor: { profile: 'codex' },
       }),
     ).toBe('Codex');
     expect(
       getPrimarySurfaceLabel({
-        lensOnly: true,
+        appServerControlOnly: true,
         supervisor: { profile: 'claude' },
       }),
     ).toBe('Claude');
@@ -53,7 +53,7 @@ describe('sessionSurface', () => {
 
     expect(
       resolveSessionSurfaceMode({
-        lensOnly: false,
+        appServerControlOnly: false,
         supervisor: { profile: 'codex' },
       }),
     ).toBe('terminal');

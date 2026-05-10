@@ -5,20 +5,20 @@ const onTabDeactivated = vi.fn();
 const switchTab = vi.fn();
 const ensureSessionWrapper = vi.fn();
 const getTabPanel = vi.fn();
-const setSessionLensAvailability = vi.fn();
+const setSessionAppServerControlAvailability = vi.fn();
 const getActiveTab = vi.fn(() => 'agent');
 const getSessionState = vi.fn();
 const getSessionBufferTail = vi.fn();
-const attachSessionLens = vi.fn();
-const detachSessionLens = vi.fn(() => Promise.resolve());
-const getLensHistoryWindow = vi.fn();
-const getLensEvents = vi.fn();
-const openLensHistoryStream = vi.fn(() => vi.fn());
-const updateLensHistoryStreamWindow = vi.fn();
-const interruptLensTurn = vi.fn();
-const approveLensRequest = vi.fn();
-const declineLensRequest = vi.fn();
-const resolveLensUserInput = vi.fn();
+const attachSessionAppServerControl = vi.fn();
+const detachSessionAppServerControl = vi.fn(() => Promise.resolve());
+const getAppServerControlHistoryWindow = vi.fn();
+const getAppServerControlEvents = vi.fn();
+const openAppServerControlHistoryStream = vi.fn(() => vi.fn());
+const updateAppServerControlHistoryStreamWindow = vi.fn();
+const interruptAppServerControlTurn = vi.fn();
+const approveAppServerControlRequest = vi.fn();
+const declineAppServerControlRequest = vi.fn();
+const resolveAppServerControlUserInput = vi.fn();
 const showDevErrorDialog = vi.fn();
 let activeSessionId: string | null = null;
 let currentSettings: any = { showUnknownAgentMessages: true };
@@ -127,7 +127,7 @@ vi.mock('../sessionTabs', () => ({
   getTabPanel,
   onTabActivated,
   onTabDeactivated,
-  setSessionLensAvailability,
+  setSessionAppServerControlAvailability,
   switchTab,
 }));
 
@@ -150,31 +150,31 @@ vi.mock('../../stores', () => ({
 }));
 
 vi.mock('../../api/client', () => ({
-  LensHttpError: class LensHttpError extends Error {
+  AppServerControlHttpError: class AppServerControlHttpError extends Error {
     detail: string;
     status: number;
 
     constructor(status: number, detail: string) {
       super(`HTTP ${status}: ${detail}`);
-      this.name = 'LensHttpError';
+      this.name = 'AppServerControlHttpError';
       this.status = status;
       this.detail = detail;
     }
   },
   getSessionState,
   getSessionBufferTail,
-  attachSessionLens,
-  detachSessionLens,
-  getLensHistoryWindow,
-  getLensHistoryWindow,
-  getLensEvents,
-  openLensHistoryStream,
-  openLensHistoryStream,
-  updateLensHistoryStreamWindow,
-  interruptLensTurn,
-  approveLensRequest,
-  declineLensRequest,
-  resolveLensUserInput,
+  attachSessionAppServerControl,
+  detachSessionAppServerControl,
+  getAppServerControlHistoryWindow,
+  getAppServerControlHistoryWindow,
+  getAppServerControlEvents,
+  openAppServerControlHistoryStream,
+  openAppServerControlHistoryStream,
+  updateAppServerControlHistoryStreamWindow,
+  interruptAppServerControlTurn,
+  approveAppServerControlRequest,
+  declineAppServerControlRequest,
+  resolveAppServerControlUserInput,
 }));
 
 vi.mock('../../utils/devErrorDialog', () => ({
@@ -233,25 +233,25 @@ describe('agentView dev errors', () => {
     switchTab.mockReset();
     ensureSessionWrapper.mockReset();
     getTabPanel.mockReset();
-    setSessionLensAvailability.mockReset();
+    setSessionAppServerControlAvailability.mockReset();
     getActiveTab.mockReset();
     getActiveTab.mockReturnValue('agent');
     getSessionState.mockReset();
     getSessionState.mockResolvedValue(null);
     getSessionBufferTail.mockReset();
     getSessionBufferTail.mockResolvedValue('');
-    attachSessionLens.mockReset();
-    detachSessionLens.mockReset();
-    detachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow.mockReset();
-    getLensEvents.mockReset();
-    openLensHistoryStream.mockReset();
-    openLensHistoryStream.mockReturnValue(vi.fn());
-    updateLensHistoryStreamWindow.mockReset();
-    interruptLensTurn.mockReset();
-    approveLensRequest.mockReset();
-    declineLensRequest.mockReset();
-    resolveLensUserInput.mockReset();
+    attachSessionAppServerControl.mockReset();
+    detachSessionAppServerControl.mockReset();
+    detachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockReset();
+    getAppServerControlEvents.mockReset();
+    openAppServerControlHistoryStream.mockReset();
+    openAppServerControlHistoryStream.mockReturnValue(vi.fn());
+    updateAppServerControlHistoryStreamWindow.mockReset();
+    interruptAppServerControlTurn.mockReset();
+    approveAppServerControlRequest.mockReset();
+    declineAppServerControlRequest.mockReset();
+    resolveAppServerControlUserInput.mockReset();
     showDevErrorDialog.mockReset();
     activeSessionId = null;
     currentSettings = { showUnknownAgentMessages: true };
@@ -282,7 +282,7 @@ describe('agentView dev errors', () => {
     } as unknown as HTMLDivElement;
   }
 
-  function setActiveLensSession(sessionId: string | null): void {
+  function setActiveAppServerControlSession(sessionId: string | null): void {
     activeSessionId = sessionId;
     activeSessionSubscribers.forEach((callback) => callback(sessionId));
   }
@@ -336,10 +336,12 @@ describe('agentView dev errors', () => {
     };
   }
 
-  it('shows a dev error modal when Lens activation fails', async () => {
-    attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
-    getLensHistoryWindow.mockRejectedValue(new Error('Lens snapshot unavailable'));
-    getLensEvents.mockRejectedValue(new Error('Lens events unavailable'));
+  it('shows a dev error modal when AppServerControl activation fails', async () => {
+    attachSessionAppServerControl.mockRejectedValue(new Error('AppServerControl attach failed'));
+    getAppServerControlHistoryWindow.mockRejectedValue(
+      new Error('AppServerControl snapshot unavailable'),
+    );
+    getAppServerControlEvents.mockRejectedValue(new Error('AppServerControl events unavailable'));
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -360,28 +362,28 @@ describe('agentView dev errors', () => {
     });
     expect(showDevErrorDialog).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Lens failed to open',
-        context: 'Lens activation failed for session s1',
+        title: 'AppServerControl failed to open',
+        context: 'AppServerControl activation failed for session s1',
         error: expect.any(Error),
       }),
     );
   });
 
-  it('can mount and render a debug scenario without requiring a pre-activated Lens tab', async () => {
+  it('can mount and render a debug scenario without requiring a pre-activated AppServerControl tab', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);
 
-    const { showLensDebugScenario } = await import('./index');
+    const { showAppServerControlDebugScenario } = await import('./index');
 
-    expect(showLensDebugScenario('s1', 'workflow')).toBe(true);
+    expect(showAppServerControlDebugScenario('s1', 'workflow')).toBe(true);
     expect(ensureSessionWrapper).toHaveBeenCalledWith('s1');
-    expect(setSessionLensAvailability).toHaveBeenCalledWith('s1', true);
+    expect(setSessionAppServerControlAvailability).toHaveBeenCalledWith('s1', true);
     expect(switchTab).toHaveBeenCalledWith('s1', 'agent');
     expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
   });
 
-  it('renders Codex Lens as a full-width left layout', async () => {
-    getLensHistoryWindow.mockResolvedValue(
+  it('renders Codex AppServerControl as a full-width left layout', async () => {
+    getAppServerControlHistoryWindow.mockResolvedValue(
       createSnapshot({
         historyCount: 2,
         historyWindowEnd: 2,
@@ -396,7 +398,7 @@ describe('agentView dev errors', () => {
             status: 'completed',
             itemType: 'user_message',
             title: null,
-            body: 'Make Lens use the full width.',
+            body: 'Make AppServerControl use the full width.',
             attachments: [],
             streaming: false,
             createdAt: '2026-03-29T09:59:56Z',
@@ -412,7 +414,7 @@ describe('agentView dev errors', () => {
             status: 'completed',
             itemType: 'assistant_message',
             title: null,
-            body: 'Lens now starts every row from the left.',
+            body: 'AppServerControl now starts every row from the left.',
             attachments: [],
             streaming: false,
             createdAt: '2026-03-29T10:00:00Z',
@@ -421,7 +423,7 @@ describe('agentView dev errors', () => {
         ],
       }),
     );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
@@ -439,12 +441,12 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(panel.dataset.lensProvider).toBe('codex');
-      expect(panel.dataset.lensLayout).toBe('full-width-left');
+      expect(panel.dataset.appServerControlProvider).toBe('codex');
+      expect(panel.dataset.appServerControlLayout).toBe('full-width-left');
     });
   });
 
-  it('uses User and Agent badge labels for Codex Lens history rows', async () => {
+  it('uses User and Agent badge labels for Codex AppServerControl history rows', async () => {
     const { resolveHistoryBadgeLabel } = await import('./index');
 
     expect(resolveHistoryBadgeLabel('user', 'codex')).toBe('User');
@@ -903,7 +905,7 @@ describe('agentView dev errors', () => {
     expect(state.historyViewportSyncSuppressUntil).toBeGreaterThan(Date.now() - 1);
   });
 
-  it('clears stale browse sync state when returning Lens history to the live edge', async () => {
+  it('clears stale browse sync state when returning AppServerControl history to the live edge', async () => {
     const { createAgentHistoryRender } = await import('./historyRender');
 
     const panel = createPanel();
@@ -1053,13 +1055,13 @@ describe('agentView dev errors', () => {
     expect(formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z')).toMatch(
       /\d{2}:\d{2}:\d{2}/,
     );
-    expect(
-      formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z'),
-    ).not.toContain('In Progress');
+    expect(formatHistoryMeta('assistant', 'In Progress', '2026-03-31T02:28:58Z')).not.toContain(
+      'In Progress',
+    );
   });
 
   it('suppresses timestamp meta for command-execution and diff history rows', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       history: [
@@ -1092,7 +1094,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
     expect(history[0]?.meta).toBe('');
     expect(history[1]?.meta).toBe('');
   });
@@ -1207,8 +1209,8 @@ describe('agentView dev errors', () => {
     ).toBe('browse');
   });
 
-  it('preserves browse mode and scroll position when Lens returns to the foreground', async () => {
-    const { prepareLensForForeground } = await import('./viewPresentation');
+  it('preserves browse mode and scroll position when AppServerControl returns to the foreground', async () => {
+    const { prepareAppServerControlForForeground } = await import('./viewPresentation');
 
     const historyViewport = createMockDomNode({
       scrollTop: 987,
@@ -1221,7 +1223,7 @@ describe('agentView dev errors', () => {
       historyViewport,
     } as any;
 
-    prepareLensForForeground(state);
+    prepareAppServerControlForForeground(state);
 
     expect(state.historyScrollMode).toBe('browse');
     expect(state.historyAutoScrollPinned).toBe(false);
@@ -1294,14 +1296,14 @@ describe('agentView dev errors', () => {
     ).toBe('restore-anchor');
   });
 
-  it('keeps debug scenarios isolated from the live Lens attach path', async () => {
+  it('keeps debug scenarios isolated from the live AppServerControl attach path', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);
 
-    const { initAgentView, showLensDebugScenario } = await import('./index');
+    const { initAgentView, showAppServerControlDebugScenario } = await import('./index');
     initAgentView();
 
-    expect(showLensDebugScenario('s1', 'workflow')).toBe(true);
+    expect(showAppServerControlDebugScenario('s1', 'workflow')).toBe(true);
 
     const activate = onTabActivated.mock.calls[0]?.[1] as
       | ((sessionId: string, panel: HTMLDivElement) => void)
@@ -1309,14 +1311,14 @@ describe('agentView dev errors', () => {
 
     await activate?.('s1', panel);
 
-    expect(attachSessionLens).not.toHaveBeenCalled();
-    expect(getLensEvents).not.toHaveBeenCalled();
-    expect(getLensHistoryWindow).not.toHaveBeenCalled();
+    expect(attachSessionAppServerControl).not.toHaveBeenCalled();
+    expect(getAppServerControlEvents).not.toHaveBeenCalled();
+    expect(getAppServerControlHistoryWindow).not.toHaveBeenCalled();
   });
 
-  it('restores canonical Lens history when attach fails but a snapshot already exists', async () => {
-    attachSessionLens.mockRejectedValue(new Error('Lens attach failed'));
-    getLensHistoryWindow.mockResolvedValue({
+  it('restores canonical AppServerControl history when attach fails but a snapshot already exists', async () => {
+    attachSessionAppServerControl.mockRejectedValue(new Error('AppServerControl attach failed'));
+    getAppServerControlHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-22T01:45:00Z',
@@ -1343,7 +1345,7 @@ describe('agentView dev errors', () => {
         completedAt: '2026-03-22T01:45:00Z',
       },
       streams: {
-        assistantText: 'Lens snapshot still exists.',
+        assistantText: 'AppServerControl snapshot still exists.',
         reasoningText: '',
         reasoningSummaryText: '',
         planText: '',
@@ -1358,7 +1360,7 @@ describe('agentView dev errors', () => {
           itemType: 'assistant_message',
           status: 'completed',
           title: 'Assistant message',
-          detail: 'Lens snapshot still exists.',
+          detail: 'AppServerControl snapshot still exists.',
           attachments: [],
           updatedAt: '2026-03-22T01:45:00Z',
         },
@@ -1366,13 +1368,13 @@ describe('agentView dev errors', () => {
       requests: [],
       notices: [],
     });
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -1388,21 +1390,23 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(getLensHistoryWindow).toHaveBeenCalledWith(
+    expect(getAppServerControlHistoryWindow).toHaveBeenCalledWith(
       's1',
       undefined,
       expect.any(Number),
       expect.any(String),
     );
-    expect(getLensEvents.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(getAppServerControlEvents.mock.calls.length).toBeLessThanOrEqual(1);
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
-  it('retries live Lens resume automatically after restoring canonical history', async () => {
-    attachSessionLens.mockRejectedValueOnce(new Error('Lens attach failed'));
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow
-      .mockRejectedValueOnce(new Error('Lens snapshot unavailable'))
+  it('retries live AppServerControl resume automatically after restoring canonical history', async () => {
+    attachSessionAppServerControl.mockRejectedValueOnce(
+      new Error('AppServerControl attach failed'),
+    );
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow
+      .mockRejectedValueOnce(new Error('AppServerControl snapshot unavailable'))
       .mockResolvedValue({
         sessionId: 's1',
         provider: 'codex',
@@ -1430,7 +1434,7 @@ describe('agentView dev errors', () => {
           completedAt: '2026-03-22T01:45:00Z',
         },
         streams: {
-          assistantText: 'Lens snapshot still exists.',
+          assistantText: 'AppServerControl snapshot still exists.',
           reasoningText: '',
           reasoningSummaryText: '',
           planText: '',
@@ -1445,7 +1449,7 @@ describe('agentView dev errors', () => {
             itemType: 'assistant_message',
             status: 'completed',
             title: 'Assistant message',
-            detail: 'Lens snapshot still exists.',
+            detail: 'AppServerControl snapshot still exists.',
             attachments: [],
             updatedAt: '2026-03-22T01:45:00Z',
           },
@@ -1453,7 +1457,7 @@ describe('agentView dev errors', () => {
         requests: [],
         notices: [],
       });
-    getLensEvents
+    getAppServerControlEvents
       .mockResolvedValueOnce({
         sessionId: 's1',
         latestSequence: 1,
@@ -1477,16 +1481,16 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(attachSessionLens).toHaveBeenCalled();
+      expect(attachSessionAppServerControl).toHaveBeenCalled();
     });
     expect(showDevErrorDialog.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
-  it('refreshes Lens history and reconnects the stream after an accepted turn from read-only history', async () => {
-    attachSessionLens.mockRejectedValue(
+  it('refreshes AppServerControl history and reconnects the stream after an accepted turn from read-only history', async () => {
+    attachSessionAppServerControl.mockRejectedValue(
       new Error('HTTP 400: MidTerm could not determine the Codex resume id for this session.'),
     );
-    getLensHistoryWindow
+    getAppServerControlHistoryWindow
       .mockResolvedValueOnce({
         sessionId: 's1',
         provider: 'codex',
@@ -1565,14 +1569,14 @@ describe('agentView dev errors', () => {
         requests: [],
         notices: [],
       });
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 36,
       events: [],
     });
 
     const { initAgentView } = await import('./index');
-    const { LENS_TURN_ACCEPTED_EVENT } = await import('../lens/input');
+    const { APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT } = await import('../appServerControl/input');
     initAgentView();
 
     const activate = onTabActivated.mock.calls[0]?.[1] as
@@ -1587,7 +1591,7 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
 
     const acceptedListener = (window.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([name]) => name === LENS_TURN_ACCEPTED_EVENT,
+      ([name]) => name === APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT,
     )?.[1] as ((event: Event) => void) | undefined;
     expect(acceptedListener).toBeTypeOf('function');
 
@@ -1613,7 +1617,7 @@ describe('agentView dev errors', () => {
     } as Event);
 
     await vi.waitFor(() => {
-      expect(openLensHistoryStream).toHaveBeenCalledWith(
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledWith(
         's1',
         expect.any(Number),
         expect.any(Number),
@@ -1624,12 +1628,16 @@ describe('agentView dev errors', () => {
     });
   });
 
-  it('does not show a dev error modal for expected Lens handoff blocks', async () => {
-    attachSessionLens.mockRejectedValue(
-      new Error('HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.'),
+  it('does not show a dev error modal for expected AppServerControl handoff blocks', async () => {
+    attachSessionAppServerControl.mockRejectedValue(
+      new Error(
+        'HTTP 400: Finish or interrupt the terminal Codex turn before opening AppServerControl.',
+      ),
     );
-    getLensHistoryWindow.mockRejectedValue(new Error('Lens snapshot unavailable'));
-    getLensEvents.mockRejectedValue(new Error('Lens events unavailable'));
+    getAppServerControlHistoryWindow.mockRejectedValue(
+      new Error('AppServerControl snapshot unavailable'),
+    );
+    getAppServerControlEvents.mockRejectedValue(new Error('AppServerControl events unavailable'));
     getSessionState.mockResolvedValue({
       session: {
         id: 's1',
@@ -1664,8 +1672,8 @@ describe('agentView dev errors', () => {
   });
 
   it('renders interview requests inline in history instead of the composer interruption UI', async () => {
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow.mockResolvedValue({
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-23T11:00:00Z',
@@ -1727,7 +1735,7 @@ describe('agentView dev errors', () => {
       ],
       notices: [],
     });
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
@@ -1745,13 +1753,13 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalledWith(
         's1',
         undefined,
         expect.any(Number),
         expect.any(String),
       );
-      expect(getLensEvents.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(getAppServerControlEvents.mock.calls.length).toBeLessThanOrEqual(1);
     });
 
     const interruptionHost = panel.querySelector(
@@ -1762,7 +1770,7 @@ describe('agentView dev errors', () => {
     expect(showDevErrorDialog).not.toHaveBeenCalled();
   });
 
-  it('keeps Lens attached when the agent tab is deactivated', async () => {
+  it('keeps AppServerControl attached when the agent tab is deactivated', async () => {
     const { initAgentView } = await import('./index');
     initAgentView();
 
@@ -1774,14 +1782,14 @@ describe('agentView dev errors', () => {
     deactivate?.('s1');
     await Promise.resolve();
 
-    expect(detachSessionLens).not.toHaveBeenCalled();
+    expect(detachSessionAppServerControl).not.toHaveBeenCalled();
   });
 
-  it('does not close the live Lens stream when the agent tab is deactivated', async () => {
+  it('does not close the live AppServerControl stream when the agent tab is deactivated', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow.mockResolvedValue({
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:00Z',
@@ -1821,13 +1829,13 @@ describe('agentView dev errors', () => {
       notices: [],
       history: [],
     });
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -1844,7 +1852,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', createPanel());
 
     await vi.waitFor(() => {
-      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     deactivate?.('s1');
@@ -1855,9 +1863,9 @@ describe('agentView dev errors', () => {
 
   it('releases hidden history DOM and collapses background history back to a latest window', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow
       .mockResolvedValueOnce({
         sessionId: 's1',
         provider: 'codex',
@@ -1976,13 +1984,13 @@ describe('agentView dev errors', () => {
           createdAt: '2026-03-28T11:00:05Z',
         })),
       });
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 45,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2000,7 +2008,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
@@ -2009,7 +2017,7 @@ describe('agentView dev errors', () => {
     deactivate?.('s1');
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow.mock.calls).toContainEqual([
+      expect(getAppServerControlHistoryWindow.mock.calls).toContainEqual([
         's1',
         undefined,
         80,
@@ -2021,11 +2029,11 @@ describe('agentView dev errors', () => {
     expect(historyHost.replaceChildren).toHaveBeenCalled();
   });
 
-  it('re-entering a Lens tab resets follow mode and refreshes the latest history window', async () => {
+  it('re-entering a AppServerControl tab resets follow mode and refreshes the latest history window', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 40,
@@ -2076,13 +2084,13 @@ describe('agentView dev errors', () => {
           })),
         }),
       );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 45,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2099,14 +2107,14 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenNthCalledWith(
         1,
         's1',
         undefined,
         expect.any(Number),
         expect.any(String),
       );
-      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenNthCalledWith(
         2,
         's1',
         undefined,
@@ -2118,15 +2126,15 @@ describe('agentView dev errors', () => {
     expect(historyHost.scrollTop).toBe(0);
   });
 
-  it('re-entering a still-connected Lens tab refreshes the latest history window when the cached window is stale', async () => {
+  it('re-entering a still-connected AppServerControl tab refreshes the latest history window when the cached window is stale', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockImplementation((...args: any[]) => {
+    openAppServerControlHistoryStream.mockImplementation((...args: any[]) => {
       const handlers = args[5];
       handlers?.onOpen?.();
       return disconnectStream;
     });
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow.mockResolvedValue(
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue(
       createSnapshot({
         latestSequence: 40,
         historyCount: 400,
@@ -2152,7 +2160,7 @@ describe('agentView dev errors', () => {
       }),
     );
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2166,15 +2174,15 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
     });
 
-    getLensHistoryWindow.mockClear();
+    getAppServerControlHistoryWindow.mockClear();
 
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalledWith(
         's1',
         undefined,
         expect.any(Number),
@@ -2183,11 +2191,11 @@ describe('agentView dev errors', () => {
     });
   });
 
-  it('returning from browser background snaps the active Lens session back to the live edge', async () => {
+  it('returning from browser background snaps the active AppServerControl session back to the live edge', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 40,
@@ -2208,13 +2216,13 @@ describe('agentView dev errors', () => {
           hasNewerHistory: false,
         }),
       );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 45,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2231,7 +2239,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenNthCalledWith(
         1,
         's1',
         undefined,
@@ -2250,7 +2258,7 @@ describe('agentView dev errors', () => {
     triggerDocumentEvent('visibilitychange');
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenNthCalledWith(
         2,
         's1',
         undefined,
@@ -2264,9 +2272,9 @@ describe('agentView dev errors', () => {
 
   it('treats explicit upward wheel intent as a browse detach before foreground recovery reloads history', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow
       .mockResolvedValueOnce(
         createSnapshot({
           latestSequence: 40,
@@ -2287,13 +2295,13 @@ describe('agentView dev errors', () => {
           hasNewerHistory: true,
         }),
       );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 45,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2309,7 +2317,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenNthCalledWith(
         1,
         's1',
         undefined,
@@ -2334,7 +2342,7 @@ describe('agentView dev errors', () => {
     triggerDocumentEvent('visibilitychange');
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenNthCalledWith(
+      expect(getAppServerControlHistoryWindow).toHaveBeenNthCalledWith(
         2,
         's1',
         160,
@@ -2346,8 +2354,8 @@ describe('agentView dev errors', () => {
 
   it('queues a follow-up viewport history sync when scroll continues during an in-flight browse fetch', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
 
     const buildWindowSnapshot = (startIndex: number, count: number, latestSequence: number) =>
       createSnapshot({
@@ -2381,12 +2389,8 @@ describe('agentView dev errors', () => {
     let resolveSecondWindow: (() => void) | null = null;
     const requestedWindows: Array<{ startIndex: number | undefined; count: number | undefined }> =
       [];
-    getLensHistoryWindow.mockImplementation(
-      async (
-        _sessionId: string,
-        startIndex?: number,
-        count?: number,
-      ): Promise<any> => {
+    getAppServerControlHistoryWindow.mockImplementation(
+      async (_sessionId: string, startIndex?: number, count?: number): Promise<any> => {
         requestedWindows.push({ startIndex, count });
 
         if (requestedWindows.length === 1) {
@@ -2404,7 +2408,7 @@ describe('agentView dev errors', () => {
       },
     );
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2426,7 +2430,7 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenCalledTimes(1);
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalledTimes(1);
     });
     const wheelHandler = historyHost.addEventListener.mock.calls.find(
       ([eventName]: [string]) => eventName === 'wheel',
@@ -2443,19 +2447,19 @@ describe('agentView dev errors', () => {
     scrollHandler?.();
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow).toHaveBeenCalledTimes(2);
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalledTimes(2);
     });
 
     historyHost.scrollTop = 140;
     scrollHandler?.();
     await Promise.resolve();
-    expect(getLensHistoryWindow).toHaveBeenCalledTimes(2);
+    expect(getAppServerControlHistoryWindow).toHaveBeenCalledTimes(2);
 
     expect(resolveSecondWindow).toBeTypeOf('function');
     resolveSecondWindow?.();
 
     await vi.waitFor(() => {
-      expect(getLensHistoryWindow.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(getAppServerControlHistoryWindow.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
     if (requestedWindows[2]) {
       expect(requestedWindows[2].startIndex).toBeTypeOf('number');
@@ -2489,11 +2493,11 @@ describe('agentView dev errors', () => {
     expect(request).toBeNull();
   });
 
-  it('keeps background Lens streams alive but skips history rerenders while hidden', async () => {
+  it('keeps background AppServerControl streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
-    openLensHistoryStream.mockReturnValue(disconnectStream);
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow.mockResolvedValue({
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue({
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T11:00:00Z',
@@ -2548,13 +2552,13 @@ describe('agentView dev errors', () => {
         },
       ],
     });
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2568,15 +2572,15 @@ describe('agentView dev errors', () => {
     activate?.('s1', panel);
 
     await vi.waitFor(() => {
-      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
     });
 
     const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
     historyHost.replaceChildren.mockClear();
 
-    setActiveLensSession('s2');
+    setActiveAppServerControlSession('s2');
 
-    const streamCallbacks = openLensHistoryStream.mock.calls[0]?.[5] as
+    const streamCallbacks = openAppServerControlHistoryStream.mock.calls[0]?.[5] as
       | { onPatch(delta: unknown): void }
       | undefined;
     expect(streamCallbacks).toBeTruthy();
@@ -2648,18 +2652,18 @@ describe('agentView dev errors', () => {
     expect(historyHost.replaceChildren).not.toHaveBeenCalled();
   });
 
-  it('detaches Lens when the agent view is destroyed', async () => {
+  it('detaches AppServerControl when the agent view is destroyed', async () => {
     const { destroyAgentView } = await import('./index');
 
     destroyAgentView('s1');
     await Promise.resolve();
 
-    expect(detachSessionLens).toHaveBeenCalledWith('s1');
+    expect(detachSessionAppServerControl).toHaveBeenCalledWith('s1');
   });
 
   it('batches live history patch renders to one paint every 250ms', async () => {
-    attachSessionLens.mockResolvedValue(undefined);
-    getLensHistoryWindow.mockResolvedValue(
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+    getAppServerControlHistoryWindow.mockResolvedValue(
       createSnapshot({
         currentTurn: {
           turnId: 'turn-1',
@@ -2679,13 +2683,13 @@ describe('agentView dev errors', () => {
         },
       }),
     );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
     });
 
-    setActiveLensSession('s1');
+    setActiveAppServerControlSession('s1');
 
     const { initAgentView } = await import('./index');
     initAgentView();
@@ -2698,10 +2702,10 @@ describe('agentView dev errors', () => {
     activate?.('s1', createPanel());
 
     await vi.waitFor(() => {
-      expect(openLensHistoryStream).toHaveBeenCalledTimes(1);
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
     });
 
-    const streamCallbacks = openLensHistoryStream.mock.calls[0]?.[5] as
+    const streamCallbacks = openAppServerControlHistoryStream.mock.calls[0]?.[5] as
       | { onPatch(delta: unknown): void }
       | undefined;
     expect(streamCallbacks).toBeTruthy();
@@ -2811,46 +2815,48 @@ describe('agentView dev errors', () => {
   });
 
   it('classifies a busy terminal attach failure into a readonly handoff issue', async () => {
-    const { classifyLensActivationIssue } = await import('./index');
+    const { classifyAppServerControlActivationIssue } = await import('./index');
 
-    const issue = classifyLensActivationIssue(
-      new Error('HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.'),
+    const issue = classifyAppServerControlActivationIssue(
+      new Error(
+        'HTTP 400: Finish or interrupt the terminal Codex turn before opening AppServerControl.',
+      ),
       true,
     );
 
     expect(issue.kind).toBe('busy-terminal-turn');
     expect(issue.meta).toBe('Read-only history');
     expect(issue.title).toContain('Terminal owns');
-    expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
+    expect(issue.actions.map((action) => action.id)).toEqual(['retry-appServerControl']);
   });
 
   it('classifies shell recovery failure as an expected handoff issue', async () => {
-    const { classifyLensActivationIssue } = await import('./index');
+    const { classifyAppServerControlActivationIssue } = await import('./index');
 
-    const issue = classifyLensActivationIssue(
+    const issue = classifyAppServerControlActivationIssue(
       new Error('HTTP 400: Terminal shell did not recover after stopping Codex.'),
       false,
     );
 
     expect(issue.kind).toBe('shell-recovery-failed');
     expect(issue.meta).toBe('Terminal recovery failed');
-    expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
+    expect(issue.actions.map((action) => action.id)).toEqual(['retry-appServerControl']);
   });
 
-  it('classifies native runtime unavailability as an expected Lens issue', async () => {
-    const { classifyLensActivationIssue } = await import('./index');
+  it('classifies native runtime unavailability as an expected AppServerControl issue', async () => {
+    const { classifyAppServerControlActivationIssue } = await import('./index');
 
-    const issue = classifyLensActivationIssue(
-      new Error('HTTP 400: Lens native runtime is not available for this session.'),
+    const issue = classifyAppServerControlActivationIssue(
+      new Error('HTTP 400: AppServerControl native runtime is not available for this session.'),
       false,
     );
 
     expect(issue.kind).toBe('native-runtime-unavailable');
     expect(issue.meta).toBe('Native runtime unavailable');
-    expect(issue.actions.map((action) => action.id)).toEqual(['retry-lens']);
+    expect(issue.actions.map((action) => action.id)).toEqual(['retry-appServerControl']);
   });
 
-  it('prepends a readable Lens issue row ahead of the history', async () => {
+  it('prepends a readable AppServerControl issue row ahead of the history', async () => {
     const { withActivationIssueNotice } = await import('./index');
 
     const entries = withActivationIssueNotice(
@@ -2871,9 +2877,14 @@ describe('agentView dev errors', () => {
         tone: 'warning',
         meta: 'Read-only history',
         title: 'No resumable Codex thread is known yet',
-        body: 'Lens can still show canonical history.',
+        body: 'AppServerControl can still show canonical history.',
         actions: [
-          { id: 'retry-lens', label: 'Retry Lens', style: 'primary', busyLabel: 'Retrying...' },
+          {
+            id: 'retry-appServerControl',
+            label: 'Retry AppServerControl',
+            style: 'primary',
+            busyLabel: 'Retrying...',
+          },
         ],
       },
     );
@@ -2881,7 +2892,7 @@ describe('agentView dev errors', () => {
     expect(entries).toHaveLength(2);
     expect(entries[0]?.kind).toBe('system');
     expect(entries[0]?.title).toBe('No resumable Codex thread is known yet');
-    expect(entries[0]?.actions?.map((action) => action.id)).toEqual(['retry-lens']);
+    expect(entries[0]?.actions?.map((action) => action.id)).toEqual(['retry-appServerControl']);
     expect(entries[1]?.body).toBe('History still visible.');
   });
 
@@ -2902,8 +2913,9 @@ describe('agentView dev errors', () => {
       historyAutoScrollPinned: true,
       historyRenderScheduled: null,
       activationState: 'failed',
-      activationDetail: 'Lens startup failed.',
-      activationError: 'HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.',
+      activationDetail: 'AppServerControl startup failed.',
+      activationError:
+        'HTTP 400: Finish or interrupt the terminal Codex turn before opening AppServerControl.',
       activationActionBusy: false,
       activationIssue: {
         kind: 'busy-terminal-turn',
@@ -2917,20 +2929,22 @@ describe('agentView dev errors', () => {
         {
           tone: 'info',
           meta: 'Opening • 03:16',
-          summary: 'Lens pane opened.',
-          detail: 'MidTerm is opening the Lens conversation surface for this session.',
+          summary: 'AppServerControl pane opened.',
+          detail: 'MidTerm is opening the AppServerControl conversation surface for this session.',
         },
         {
           tone: 'info',
           meta: 'Attaching • 03:16',
-          summary: 'Attaching Lens runtime.',
-          detail: 'Starting or reconnecting the backend-owned Lens runtime for this session.',
+          summary: 'Attaching AppServerControl runtime.',
+          detail:
+            'Starting or reconnecting the backend-owned AppServerControl runtime for this session.',
         },
         {
           tone: 'attention',
           meta: 'Failed • 03:16',
-          summary: 'Lens startup failed.',
-          detail: 'HTTP 400: Finish or interrupt the terminal Codex turn before opening Lens.',
+          summary: 'AppServerControl startup failed.',
+          detail:
+            'HTTP 400: Finish or interrupt the terminal Codex turn before opening AppServerControl.',
         },
       ],
     });
@@ -2939,7 +2953,7 @@ describe('agentView dev errors', () => {
     expect(entries.map((entry) => entry.meta)).toEqual(['Opening • 03:16', 'Attaching • 03:16']);
   });
 
-  it('prepends a read-only terminal snapshot when Lens has no canonical history yet', async () => {
+  it('prepends a read-only terminal snapshot when AppServerControl has no canonical history yet', async () => {
     const { buildActivationHistoryEntries } = await import('./index');
 
     const entries = buildActivationHistoryEntries({
@@ -2956,7 +2970,7 @@ describe('agentView dev errors', () => {
       historyAutoScrollPinned: true,
       historyRenderScheduled: null,
       activationState: 'failed',
-      activationDetail: 'Lens startup failed.',
+      activationDetail: 'AppServerControl startup failed.',
       activationError:
         'HTTP 400: MidTerm could not determine the Codex resume id for this session.',
       activationActionBusy: false,
@@ -2972,8 +2986,8 @@ describe('agentView dev errors', () => {
         {
           tone: 'info',
           meta: 'Opening • 03:16',
-          summary: 'Lens pane opened.',
-          detail: 'MidTerm is opening the Lens conversation surface for this session.',
+          summary: 'AppServerControl pane opened.',
+          detail: 'MidTerm is opening the AppServerControl conversation surface for this session.',
         },
       ],
     });
@@ -2983,10 +2997,10 @@ describe('agentView dev errors', () => {
     expect(entries[0]?.meta).toBe('Opening • 03:16');
   });
 
-  it('adds optimistic user and assistant rows until canonical Lens entries arrive', async () => {
-    const { applyOptimisticLensTurns } = await import('./index');
+  it('adds optimistic user and assistant rows until canonical AppServerControl entries arrive', async () => {
+    const { applyOptimisticAppServerControlTurns } = await import('./index');
 
-    const result = applyOptimisticLensTurns(
+    const result = applyOptimisticAppServerControlTurns(
       {
         sessionId: 's1',
         provider: 'codex',
@@ -3049,9 +3063,9 @@ describe('agentView dev errors', () => {
   });
 
   it('drops optimistic placeholders once canonical history entries exist for the turn', async () => {
-    const { applyOptimisticLensTurns } = await import('./index');
+    const { applyOptimisticAppServerControlTurns } = await import('./index');
 
-    const result = applyOptimisticLensTurns(
+    const result = applyOptimisticAppServerControlTurns(
       {
         sessionId: 's1',
         provider: 'codex',
@@ -3129,8 +3143,8 @@ describe('agentView dev errors', () => {
     expect(result.optimisticTurns).toHaveLength(0);
   });
 
-  it.skip('builds history-first rows from canonical Lens events', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+  it.skip('builds history-first rows from canonical AppServerControl events', async () => {
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3313,7 +3327,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history.map((entry) => entry.kind)).toContain('user');
     expect(history.map((entry) => entry.kind)).toContain('assistant');
@@ -3324,7 +3338,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('backs current-turn history rows from snapshot items when event history is incomplete', async () => {
-    const { buildLensHistoryEntries, withLiveAssistantState } = await import('./index');
+    const { buildAppServerControlHistoryEntries, withLiveAssistantState } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3387,7 +3401,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
     const marked = withLiveAssistantState(snapshot, history);
 
     expect(
@@ -3403,7 +3417,7 @@ describe('agentView dev errors', () => {
   });
 
   it('prefers canonical backend history rows over rebuilding from raw events', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3514,7 +3528,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history.map((entry) => entry.id)).toEqual([
       'user:turn-1',
@@ -3526,7 +3540,7 @@ describe('agentView dev errors', () => {
   });
 
   it('maps canonical history metadata, requests, and attachments into render rows', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3609,7 +3623,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -3624,7 +3638,7 @@ describe('agentView dev errors', () => {
   });
 
   it('shows one settled assistant row when the final assistant item lands after streaming', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3716,7 +3730,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history.map((entry) => entry.id)).toEqual([
       'user:turn-2',
@@ -3728,7 +3742,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('hides normal state-management events and merges tool updates', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3896,7 +3910,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history).toHaveLength(3);
     expect(history[0]).toMatchObject({
@@ -3917,7 +3931,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('surfaces generic tool result streams instead of dropping them', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -3979,7 +3993,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({
@@ -3990,7 +4004,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps distinct tool and reasoning stream kinds in separate history rows', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4103,7 +4117,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history).toHaveLength(4);
     expect(history[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
@@ -4117,7 +4131,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('renders plan delta and plan completed events as a visible plan row', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4194,7 +4208,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({
@@ -4205,7 +4219,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('uses snapshot reasoning streams when event history is incomplete', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4247,7 +4261,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -4263,7 +4277,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps snapshot command output and file change output as separate tool rows', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4305,7 +4319,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ kind: 'tool', title: 'Command output' });
@@ -4315,7 +4329,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('places fallback request rows after existing snapshot conversation content', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4391,7 +4405,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ kind: 'user' });
@@ -4453,7 +4467,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('renders question requests from user-input events into history rows', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4524,7 +4538,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({
@@ -4536,14 +4550,14 @@ describe('agentView dev errors', () => {
     expect(history[0]?.body).toContain('[2] FAST');
   });
 
-  it('exposes the workflow Lens debug scenario for browser-side UX validation', async () => {
-    const { getLensDebugScenarioNames } = await import('./index');
+  it('exposes the workflow AppServerControl debug scenario for browser-side UX validation', async () => {
+    const { getAppServerControlDebugScenarioNames } = await import('./index');
 
-    expect(getLensDebugScenarioNames()).toContain('workflow');
+    expect(getAppServerControlDebugScenarioNames()).toContain('workflow');
   });
 
   it.skip('renders a rich real-Codex event mix into visible history rows', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -4771,7 +4785,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const userEntry = history.find((entry) => entry.kind === 'user');
     const commandCallEntry = history.find(
       (entry) =>
@@ -4787,7 +4801,9 @@ describe('agentView dev errors', () => {
     const assistantEntry = history.find((entry) => entry.kind === 'assistant');
 
     expect(userEntry?.body).toContain('update report.md');
-    expect(commandCallEntry?.commandText ?? commandCallEntry?.body).toContain('Get-Content report.md');
+    expect(commandCallEntry?.commandText ?? commandCallEntry?.body).toContain(
+      'Get-Content report.md',
+    );
     expect(commandCallEntry?.commandOutputTail).toEqual(['status: TODO']);
     expect(commandCallEntry?.body).toBe('');
     expect(history.some((entry) => entry.kind === 'tool' && entry.title === 'Command output')).toBe(
@@ -4799,7 +4815,7 @@ describe('agentView dev errors', () => {
   });
 
   it('keeps up to 12 tail lines when folding command output into a command row', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       history: [
@@ -4832,7 +4848,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
     expect(history).toHaveLength(1);
     expect(history[0]?.commandOutputTail).toEqual(
       Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
@@ -4840,7 +4856,7 @@ describe('agentView dev errors', () => {
   });
 
   it('renders direct command-output history rows as persistent Ran rows with folded tail output', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       history: [
@@ -4861,7 +4877,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.body).toBe('');
@@ -4870,7 +4886,7 @@ describe('agentView dev errors', () => {
   });
 
   it('uses canonical commandText for truncated command-output rows instead of treating omission markers as commands', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       history: [
@@ -4892,7 +4908,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.commandText).toBe('codex -m gpt-5.4');
@@ -4904,7 +4920,7 @@ describe('agentView dev errors', () => {
   });
 
   it('does not synthesize a Ran row from omission markers when command text is unavailable', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       history: [
@@ -4925,7 +4941,7 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.commandText ?? '').toBe('');
@@ -5040,7 +5056,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps Codex user rows visible and avoids duplicate assistant rows for camelCase item types', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5178,7 +5194,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const userEntries = history.filter((entry) => entry.kind === 'user');
     const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
     const toolEntries = history.filter((entry) => entry.kind === 'tool');
@@ -5196,7 +5212,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('concatenates assistant stream chunks without paragraph separators or duplicate final text', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5364,7 +5380,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
 
     expect(assistantEntries).toHaveLength(1);
@@ -5372,7 +5388,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps separate assistant updates from the same turn in distinct rows when item ids differ', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5455,7 +5471,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
 
     expect(assistantEntries).toHaveLength(2);
@@ -5466,7 +5482,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps the first-seen order for a live assistant row instead of moving it on completion', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5566,7 +5582,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history[0]).toMatchObject({
       kind: 'assistant',
@@ -5579,7 +5595,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('prefers the final Codex assistant message when it supersedes streamed chunks', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5694,7 +5710,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const assistantEntries = history.filter((entry) => entry.kind === 'assistant');
 
     expect(assistantEntries).toHaveLength(1);
@@ -5702,7 +5718,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps one user row when Codex emits repeated started/completed message payloads', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5761,7 +5777,7 @@ describe('agentView dev errors', () => {
           itemType: 'user_message',
           status: 'in_progress',
           title: 'Tool started',
-          detail: 'Explain the recent Lens history bug.',
+          detail: 'Explain the recent AppServerControl history bug.',
         },
       },
       {
@@ -5780,20 +5796,20 @@ describe('agentView dev errors', () => {
           itemType: 'user_message',
           status: 'completed',
           title: 'Tool completed',
-          detail: 'Explain the recent Lens history bug.',
+          detail: 'Explain the recent AppServerControl history bug.',
         },
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
-    expect(userEntries[0]?.body).toBe('Explain the recent Lens history bug.');
+    expect(userEntries[0]?.body).toBe('Explain the recent AppServerControl history bug.');
   });
 
   it.skip('merges a local submitted user row with the later provider user item for the same turn', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5883,7 +5899,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
@@ -5893,7 +5909,7 @@ describe('agentView dev errors', () => {
   });
 
   it('keeps attachment-only user rows visible in the history', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -5958,7 +5974,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
     const userEntries = history.filter((entry) => entry.kind === 'user');
 
     expect(userEntries).toHaveLength(1);
@@ -5967,7 +5983,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('keeps user text from item title and still falls back to snapshot assistant text', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -6076,7 +6092,7 @@ describe('agentView dev errors', () => {
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
 
     expect(history.find((entry) => entry.kind === 'user')?.body).toContain(
       'Please summarize the failing test run.',
@@ -6089,7 +6105,7 @@ describe('agentView dev errors', () => {
   });
 
   it.skip('hides completed-status noise in normal chat row metadata', async () => {
-    const { buildLensHistoryEntries, formatHistoryMeta, shouldHideStatusInMeta } =
+    const { buildAppServerControlHistoryEntries, formatHistoryMeta, shouldHideStatusInMeta } =
       await import('./index');
 
     expect(shouldHideStatusInMeta('user', 'Completed')).toBe(true);
@@ -6156,7 +6172,7 @@ describe('agentView dev errors', () => {
           itemType: 'user_message',
           status: 'completed',
           title: 'Tool completed',
-          detail: 'Reply with exactly HELLO_FROM_SOURCE_LENS.',
+          detail: 'Reply with exactly HELLO_FROM_SOURCE_APP_SERVER_CONTROL.',
         },
       },
       {
@@ -6175,12 +6191,12 @@ describe('agentView dev errors', () => {
           itemType: 'assistant_message',
           status: 'completed',
           title: 'Assistant message',
-          detail: 'HELLO_FROM_SOURCE_LENS',
+          detail: 'HELLO_FROM_SOURCE_APP_SERVER_CONTROL',
         },
       },
     ] as any;
 
-    const history = buildLensHistoryEntries(snapshot, events);
+    const history = buildAppServerControlHistoryEntries(snapshot, events);
     const userEntry = history.find((entry) => entry.kind === 'user');
     const assistantEntry = history.find((entry) => entry.kind === 'assistant');
 
@@ -7163,9 +7179,7 @@ describe('agentView dev errors', () => {
 
     expect(requestedWindow).not.toBeNull();
     expect(requestedWindow?.startIndex).toBeLessThanOrEqual(496);
-    expect((requestedWindow?.startIndex ?? 0) + (requestedWindow?.count ?? 0)).toBeGreaterThan(
-      496,
-    );
+    expect((requestedWindow?.startIndex ?? 0) + (requestedWindow?.count ?? 0)).toBeGreaterThan(496);
   });
 
   it('estimates taller history rows for narrow viewports', async () => {
@@ -7335,7 +7349,7 @@ describe('agentView dev errors', () => {
     expect(settled.some((entry: any) => entry.busyIndicator)).toBe(false);
   });
 
-  it('updates the busy elapsed label in place instead of forcing a full Lens render on each timer tick', async () => {
+  it('updates the busy elapsed label in place instead of forcing a full AppServerControl render on each timer tick', async () => {
     const { syncBusyIndicatorTicker } = await import('./historyProcessing');
 
     let timerCallback: (() => void) | null = null;
@@ -7371,11 +7385,11 @@ describe('agentView dev errors', () => {
   });
 
   it('formats turn durations using compact wall-clock units', async () => {
-    const { formatLensTurnDuration } = await import('./index');
+    const { formatAppServerControlTurnDuration } = await import('./index');
 
-    expect(formatLensTurnDuration(42_000)).toBe('42s');
-    expect(formatLensTurnDuration(65_000)).toBe('1m 5s');
-    expect(formatLensTurnDuration(3_661_000)).toBe('1h 1m 1s');
+    expect(formatAppServerControlTurnDuration(42_000)).toBe('42s');
+    expect(formatAppServerControlTurnDuration(65_000)).toBe('1m 5s');
+    expect(formatAppServerControlTurnDuration(3_661_000)).toBe('1h 1m 1s');
   });
 
   it('uses the latest provider in-progress item detail as the busy bubble label before falling back to Working', async () => {
@@ -7529,9 +7543,9 @@ describe('agentView dev errors', () => {
 
   it('does not persist a phase-offset field on the busy entry so the DOM can phase-lock to wallclock at render time', async () => {
     const { withTrailingBusyIndicator } = await import('./index');
-    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(
-      Date.parse('2026-04-04T20:00:13.700Z'),
-    );
+    const dateNowSpy = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-04-04T20:00:13.700Z'));
 
     try {
       const running = withTrailingBusyIndicator(
@@ -7622,9 +7636,7 @@ describe('agentView dev errors', () => {
   it('tokenizes command text into command, parameter, string, operator, and text parts', async () => {
     const { tokenizeCommandText } = await import('./index');
 
-    expect(
-      tokenizeCommandText('pwsh -Command "git status" > out.txt'),
-    ).toEqual([
+    expect(tokenizeCommandText('pwsh -Command "git status" > out.txt')).toEqual([
       { text: 'pwsh', kind: 'command' },
       { text: ' ', kind: 'whitespace' },
       { text: '-Command', kind: 'parameter' },
@@ -7638,7 +7650,8 @@ describe('agentView dev errors', () => {
   });
 
   it('suppresses Codex context and rate-limit notices from history and derives compact runtime stats', async () => {
-    const { buildLensHistoryEntries, buildLensRuntimeStats } = await import('./index');
+    const { buildAppServerControlHistoryEntries, buildAppServerControlRuntimeStats } =
+      await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -7767,8 +7780,8 @@ describe('agentView dev errors', () => {
       ],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
-    const stats = buildLensRuntimeStats(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
+    const stats = buildAppServerControlRuntimeStats(snapshot);
 
     expect(history).toHaveLength(1);
     expect(history[0]?.kind).toBe('assistant');
@@ -7783,7 +7796,7 @@ describe('agentView dev errors', () => {
   });
 
   it('renders runtime stats as percent of context limit plus session in/out totals', async () => {
-    getLensHistoryWindow.mockResolvedValue(
+    getAppServerControlHistoryWindow.mockResolvedValue(
       createSnapshot({
         notices: [
           {
@@ -7796,7 +7809,7 @@ describe('agentView dev errors', () => {
         ],
       }),
     );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
@@ -7828,7 +7841,7 @@ describe('agentView dev errors', () => {
   });
 
   it('falls back to a plain window-limit summary when the provider notice reports cumulative totals instead of current context occupancy', async () => {
-    getLensHistoryWindow.mockResolvedValue(
+    getAppServerControlHistoryWindow.mockResolvedValue(
       createSnapshot({
         notices: [
           {
@@ -7841,7 +7854,7 @@ describe('agentView dev errors', () => {
         ],
       }),
     );
-    getLensEvents.mockResolvedValue({
+    getAppServerControlEvents.mockResolvedValue({
       sessionId: 's1',
       latestSequence: 1,
       events: [],
@@ -7872,8 +7885,8 @@ describe('agentView dev errors', () => {
     );
   });
 
-  it('detects active non-collapsed Lens selections inside the panel', async () => {
-    const { hasActiveLensSelectionInPanel } = await import('./index');
+  it('detects active non-collapsed AppServerControl selections inside the panel', async () => {
+    const { hasActiveAppServerControlSelectionInPanel } = await import('./index');
 
     const selectedTextNode = {} as Node;
     const outsideTextNode = {} as Node;
@@ -7882,7 +7895,7 @@ describe('agentView dev errors', () => {
     } as ParentNode;
 
     expect(
-      hasActiveLensSelectionInPanel(panel, {
+      hasActiveAppServerControlSelectionInPanel(panel, {
         rangeCount: 1,
         isCollapsed: false,
         getRangeAt: () =>
@@ -7894,7 +7907,7 @@ describe('agentView dev errors', () => {
     ).toBe(true);
 
     expect(
-      hasActiveLensSelectionInPanel(panel, {
+      hasActiveAppServerControlSelectionInPanel(panel, {
         rangeCount: 1,
         isCollapsed: false,
         getRangeAt: () =>
@@ -7906,7 +7919,7 @@ describe('agentView dev errors', () => {
     ).toBe(false);
   });
 
-  it('uses dedicated diff presentation for Lens diff rows', async () => {
+  it('uses dedicated diff presentation for AppServerControl diff rows', async () => {
     const { resolveHistoryBodyPresentation } = await import('./index');
 
     const presentation = resolveHistoryBodyPresentation({
@@ -7926,7 +7939,7 @@ describe('agentView dev errors', () => {
     expect(presentation.preview).toBe('');
   });
 
-  it('keeps long Lens diff rows expanded instead of collapsing them', async () => {
+  it('keeps long AppServerControl diff rows expanded instead of collapsing them', async () => {
     const { resolveHistoryBodyPresentation } = await import('./index');
 
     const presentation = resolveHistoryBodyPresentation({
@@ -7946,7 +7959,7 @@ describe('agentView dev errors', () => {
     expect(presentation.preview).toBe('');
   });
 
-  it('trims diff preamble noise and caps rendered Lens diffs with an ellipsis row', async () => {
+  it('trims diff preamble noise and caps rendered AppServerControl diffs with an ellipsis row', async () => {
     const { buildRenderedDiffLines } = await import('./index');
 
     const body =
@@ -8024,9 +8037,9 @@ describe('agentView dev errors', () => {
 
     const historyDom = createAgentHistoryDom({
       getState: () => undefined,
-      refreshLensSnapshot: async () => {},
+      refreshAppServerControlSnapshot: async () => {},
       renderCurrentAgentView: () => {},
-      retryLensActivation: async () => {},
+      retryAppServerControlActivation: async () => {},
       logWarn: () => {},
     });
 
@@ -8075,9 +8088,9 @@ describe('agentView dev errors', () => {
 
     const historyDom = createAgentHistoryDom({
       getState: () => undefined,
-      refreshLensSnapshot: async () => {},
+      refreshAppServerControlSnapshot: async () => {},
       renderCurrentAgentView: () => {},
-      retryLensActivation: async () => {},
+      retryAppServerControlActivation: async () => {},
       logWarn: () => {},
     });
 
@@ -8134,7 +8147,7 @@ describe('agentView dev errors', () => {
   });
 
   it('applies canonical live deltas directly into the materialized history window', async () => {
-    const { applyCanonicalLensDelta } = await import('./index');
+    const { applyCanonicalAppServerControlDelta } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -8209,7 +8222,7 @@ describe('agentView dev errors', () => {
       historyWindowCount: 80,
     } as any;
 
-    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+    const requiresWindowRefresh = applyCanonicalAppServerControlDelta(state, {
       sessionId: 's1',
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:01Z',
@@ -8287,7 +8300,7 @@ describe('agentView dev errors', () => {
   });
 
   it('keeps the live-edge retention target when a short initial history window receives more rows', async () => {
-    const { applyCanonicalLensDelta } = await import('./index');
+    const { applyCanonicalAppServerControlDelta } = await import('./index');
 
     const snapshot = {
       sessionId: 's-live-retain',
@@ -8366,7 +8379,7 @@ describe('agentView dev errors', () => {
       historyAutoScrollPinned: true,
     } as any;
 
-    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+    const requiresWindowRefresh = applyCanonicalAppServerControlDelta(state, {
       sessionId: 's-live-retain',
       provider: 'codex',
       generatedAt: '2026-04-13T10:00:01Z',
@@ -8419,7 +8432,7 @@ describe('agentView dev errors', () => {
   });
 
   it('requests a snapshot refresh when off-window history changes arrive while browsing older history', async () => {
-    const { applyCanonicalLensDelta } = await import('./index');
+    const { applyCanonicalAppServerControlDelta } = await import('./index');
 
     const snapshot = {
       sessionId: 's-scroll',
@@ -8500,7 +8513,7 @@ describe('agentView dev errors', () => {
       historyWindowCount: 40,
     } as any;
 
-    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+    const requiresWindowRefresh = applyCanonicalAppServerControlDelta(state, {
       sessionId: 's-scroll',
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:02Z',
@@ -8545,7 +8558,7 @@ describe('agentView dev errors', () => {
   });
 
   it('does not trim the front of a fully loaded history window while custom scrolling away from the live edge', async () => {
-    const { applyCanonicalLensDelta } = await import('./index');
+    const { applyCanonicalAppServerControlDelta } = await import('./index');
 
     const snapshot = {
       sessionId: 's-custom',
@@ -8622,7 +8635,7 @@ describe('agentView dev errors', () => {
       historyAutoScrollPinned: false,
     } as any;
 
-    const requiresWindowRefresh = applyCanonicalLensDelta(state, {
+    const requiresWindowRefresh = applyCanonicalAppServerControlDelta(state, {
       sessionId: 's-custom',
       provider: 'codex',
       generatedAt: '2026-03-28T10:00:01Z',
@@ -8668,7 +8681,7 @@ describe('agentView dev errors', () => {
     expect(snapshot.hasNewerHistory).toBe(true);
   });
   it('shows unknown agent fallback entries by default and hides them when disabled', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's1',
@@ -8742,17 +8755,17 @@ describe('agentView dev errors', () => {
     } as any;
 
     currentSettings = { showUnknownAgentMessages: true };
-    const visibleHistory = buildLensHistoryEntries(snapshot);
+    const visibleHistory = buildAppServerControlHistoryEntries(snapshot);
     expect(visibleHistory).toHaveLength(1);
     expect(visibleHistory[0]?.sourceItemType).toBe('unknown_agent_message');
 
     currentSettings = { showUnknownAgentMessages: false };
-    const hiddenHistory = buildLensHistoryEntries(snapshot);
+    const hiddenHistory = buildAppServerControlHistoryEntries(snapshot);
     expect(hiddenHistory).toHaveLength(0);
   });
 
-  it('labels canonical agent state and agent error runtime rows distinctly', async () => {
-    const { buildLensHistoryEntries } = await import('./index');
+  it('labels meaningful agent state and agent error runtime rows distinctly', async () => {
+    const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
       sessionId: 's-agent-runtime',
@@ -8813,7 +8826,7 @@ describe('agentView dev errors', () => {
           status: 'info',
           itemType: 'agent_state',
           title: 'Agent state',
-          body: 'codex_apps starting.',
+          body: 'Agent entered planning mode.',
           attachments: [],
           streaming: false,
           createdAt: '2026-04-09T08:00:00Z',
@@ -8842,7 +8855,7 @@ describe('agentView dev errors', () => {
       notices: [],
     } as any;
 
-    const history = buildLensHistoryEntries(snapshot);
+    const history = buildAppServerControlHistoryEntries(snapshot);
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
@@ -8856,6 +8869,157 @@ describe('agentView dev errors', () => {
       label: 'Agent Error',
       sourceItemType: 'agent_error',
       tone: 'attention',
+    });
+  });
+
+  it('suppresses chatty Codex lifecycle agent state rows from canonical history', async () => {
+    const { buildAppServerControlHistoryEntries } = await import('./index');
+
+    const snapshot = {
+      sessionId: 's-agent-runtime-noise',
+      provider: 'codex',
+      generatedAt: '2026-04-09T08:00:00Z',
+      latestSequence: 5,
+      historyCount: 5,
+      estimatedTotalHistoryHeightPx: 260,
+      historyWindowStart: 0,
+      historyWindowEnd: 5,
+      estimatedHistoryBeforeWindowPx: 0,
+      estimatedHistoryAfterWindowPx: 0,
+      session: {
+        state: 'ready',
+        stateLabel: 'Ready',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-04-09T08:00:01Z',
+      },
+      thread: {
+        threadId: 'thread-1',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: null,
+        state: 'idle',
+        stateLabel: 'Idle',
+        model: null,
+        effort: null,
+        startedAt: null,
+        completedAt: null,
+      },
+      quickSettings: {
+        model: null,
+        effort: null,
+        planMode: 'off',
+        permissionMode: 'manual',
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      history: [
+        {
+          entryId: 'remote-control',
+          order: 1,
+          estimatedHeightPx: 52,
+          kind: 'system',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'info',
+          itemType: null,
+          title: 'System',
+          body: 'Codex remote-control status: disabled.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:00Z',
+          updatedAt: '2026-04-09T08:00:00Z',
+        },
+        {
+          entryId: 'mcp-starting',
+          order: 2,
+          estimatedHeightPx: 52,
+          kind: 'system',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'info',
+          itemType: 'agent_state',
+          title: 'Agent state',
+          body: 'openaiDeveloperDocs starting.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:00Z',
+          updatedAt: '2026-04-09T08:00:00Z',
+        },
+        {
+          entryId: 'mcp-ready',
+          order: 3,
+          estimatedHeightPx: 52,
+          kind: 'system',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'info',
+          itemType: 'agent_state',
+          title: 'Agent state',
+          body: 'codex_apps ready.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:00Z',
+          updatedAt: '2026-04-09T08:00:00Z',
+        },
+        {
+          entryId: 'skills',
+          order: 4,
+          estimatedHeightPx: 52,
+          kind: 'system',
+          turnId: null,
+          itemId: null,
+          requestId: null,
+          status: 'info',
+          itemType: null,
+          title: 'System',
+          body: 'Codex skills changed.\n\n{}',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:00Z',
+          updatedAt: '2026-04-09T08:00:00Z',
+        },
+        {
+          entryId: 'assistant',
+          order: 5,
+          estimatedHeightPx: 52,
+          kind: 'assistant',
+          turnId: 'turn-1',
+          itemId: null,
+          requestId: null,
+          status: 'completed',
+          itemType: null,
+          title: '',
+          body: 'Ja, ich bin da.',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-04-09T08:00:01Z',
+          updatedAt: '2026-04-09T08:00:01Z',
+        },
+      ],
+      items: [],
+      requests: [],
+      notices: [],
+    } as any;
+
+    const history = buildAppServerControlHistoryEntries(snapshot);
+
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      kind: 'assistant',
+      body: 'Ja, ich bin da.',
     });
   });
 });

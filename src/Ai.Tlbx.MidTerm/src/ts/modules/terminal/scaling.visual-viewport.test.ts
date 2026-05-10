@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { $currentSettings, $isMainBrowser } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
-import { setupVisualViewport } from './scaling';
+import { setupVisualViewport } from './visualViewport';
 import { sendResize } from '../comms';
 
 const mocks = vi.hoisted(() => ({
@@ -84,14 +84,32 @@ function createHarness() {
     },
   });
 
+  const containerClasses = new Set<string>();
   const container = {
     style: {},
     clientWidth: 818,
     clientHeight: 488,
+    scrollTop: 0,
+    get scrollHeight() {
+      return terminal.rows * 20;
+    },
     classList: {
-      contains: () => false,
-      add: vi.fn(),
-      remove: vi.fn(),
+      contains: (name: string) => containerClasses.has(name),
+      add: vi.fn((name: string) => {
+        containerClasses.add(name);
+      }),
+      remove: vi.fn((name: string) => {
+        containerClasses.delete(name);
+      }),
+      toggle: vi.fn((name: string, force?: boolean) => {
+        const next = force ?? !containerClasses.has(name);
+        if (next) {
+          containerClasses.add(name);
+        } else {
+          containerClasses.delete(name);
+        }
+        return next;
+      }),
     },
     closest: () => null,
     querySelector<T>(selector: string): T | null {
@@ -131,6 +149,7 @@ describe('setupVisualViewport', () => {
     window?: typeof globalThis;
     visualViewport?: unknown;
     innerHeight: number;
+    innerWidth: number;
     scrollTo: typeof globalThis.scrollTo;
   };
   const originalDocument = globalThis.document;
@@ -139,6 +158,7 @@ describe('setupVisualViewport', () => {
   const originalWindow = host.window;
   const originalVisualViewport = host.visualViewport;
   const originalInnerHeight = host.innerHeight;
+  const originalInnerWidth = host.innerWidth;
   const originalScrollTo = host.scrollTo;
 
   beforeEach(() => {
@@ -207,9 +227,14 @@ describe('setupVisualViewport', () => {
       configurable: true,
       value: 700,
     });
+    Object.defineProperty(host, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    });
     Object.defineProperty(host, 'visualViewport', {
       configurable: true,
       value: {
+        width: 390,
         height: 600,
         offsetTop: 0,
         addEventListener: vi.fn(),
@@ -236,6 +261,10 @@ describe('setupVisualViewport', () => {
       configurable: true,
       value: originalInnerHeight,
     });
+    Object.defineProperty(host, 'innerWidth', {
+      configurable: true,
+      value: originalInnerWidth,
+    });
     host.scrollTo = originalScrollTo;
     vi.clearAllMocks();
   });
@@ -245,6 +274,61 @@ describe('setupVisualViewport', () => {
 
     expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+  });
+
+  it('keeps terminal rows stable and pans the terminal on mobile height-only viewport changes', () => {
+    const bodyClasses = new Set<string>();
+    const resizeCallbacks: Array<() => void> = [];
+    const visualViewport = {
+      width: 390,
+      height: 600,
+      offsetTop: 0,
+      addEventListener: vi.fn((type: string, callback: () => void) => {
+        if (type === 'resize') {
+          resizeCallbacks.push(callback);
+        }
+      }),
+    };
+
+    globalThis.document = {
+      querySelector: () => null,
+      documentElement: { style: createStyleObject() } as unknown as Document['documentElement'],
+      body: {
+        style: createStyleObject(),
+        classList: {
+          contains: (name: string) => bodyClasses.has(name),
+          toggle: vi.fn((name: string, force?: boolean) => {
+            const next = force ?? !bodyClasses.has(name);
+            if (next) {
+              bodyClasses.add(name);
+            } else {
+              bodyClasses.delete(name);
+            }
+            return next;
+          }),
+        },
+      } as unknown as Document['body'],
+      getElementById: () => null,
+    } as unknown as Document;
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    });
+
+    setupVisualViewport();
+    vi.mocked(sendResize).mockClear();
+    const state = sessionTerminals.get('s1') as ReturnType<typeof createHarness>['state'];
+    state.terminal.resize.mockClear();
+
+    visualViewport.height = 430;
+    resizeCallbacks.forEach((callback) => callback());
+
+    expect(state.terminal.resize).not.toHaveBeenCalled();
+    expect(sendResize).not.toHaveBeenCalled();
+    expect(bodyClasses.has('keyboard-visible')).toBe(true);
+    expect(bodyClasses.has('mobile-terminal-vertical-stable')).toBe(true);
+    expect(state.container.classList.contains('mobile-terminal-vertical-stable')).toBe(true);
+    expect(state.container.scrollTop).toBe(state.container.scrollHeight);
   });
 
   it('pins the app shell to the visual viewport and marks the keyboard-visible state', () => {

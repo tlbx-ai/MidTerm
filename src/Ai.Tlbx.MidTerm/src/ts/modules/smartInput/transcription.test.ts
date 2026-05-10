@@ -42,7 +42,10 @@ describe('transcription push-to-talk lifecycle', () => {
 
     const { startHistoryion, stopHistoryion } = await import('./transcription');
 
-    startHistoryion(() => {}, () => {});
+    startHistoryion(
+      () => {},
+      () => {},
+    );
     await stopHistoryion();
 
     resolveInit?.(true);
@@ -66,7 +69,10 @@ describe('transcription push-to-talk lifecycle', () => {
 
     const { startHistoryion, stopHistoryion } = await import('./transcription');
 
-    startHistoryion(() => {}, () => {});
+    startHistoryion(
+      () => {},
+      () => {},
+    );
     await flushMicrotasks();
     await stopHistoryion();
 
@@ -78,4 +84,3 @@ describe('transcription push-to-talk lifecycle', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
-

@@ -12,7 +12,7 @@ import createClient from 'openapi-fetch';
 import type { FetchResponse, MaybeOptionalInit } from 'openapi-fetch';
 import type { MediaType, PathsWithMethod } from 'openapi-typescript-helpers';
 import type { paths } from '../api.generated';
-import { LensHttpError } from './errors';
+import { AppServerControlHttpError } from './errors';
 import type {
   MidTermSettingsPublic,
   MidTermSettingsUpdate,
@@ -24,15 +24,15 @@ import type {
   SessionPromptRequest,
   SessionBufferTextResponse,
   SessionStateResponse,
-  LensTurnRequest,
-  LensTurnStartResponse,
-  LensInterruptRequest,
-  LensGoalSetRequest,
-  LensCommandAcceptedResponse,
-  LensHistoryDelta,
-  LensRequestDecisionRequest,
-  LensUserInputAnswerRequest,
-  LensHistorySnapshot,
+  AppServerControlTurnRequest,
+  AppServerControlTurnStartResponse,
+  AppServerControlInterruptRequest,
+  AppServerControlGoalSetRequest,
+  AppServerControlCommandAcceptedResponse,
+  AppServerControlHistoryDelta,
+  AppServerControlRequestDecisionRequest,
+  AppServerControlUserInputAnswerRequest,
+  AppServerControlHistorySnapshot,
   CreateHistoryRequest,
   HistoryPatchRequest,
   CreateShareLinkRequest,
@@ -45,18 +45,18 @@ import type {
   AgentSessionVibeResponse,
 } from './types';
 import {
-  approveLensRequestWs,
-  attachLensSession,
-  declineLensRequestWs,
-  detachLensSession,
-  getLensHistoryWindowWs,
-  interruptLensTurnWs,
-  openLensHistorySocket,
-  setLensGoalWs,
-  updateLensHistorySocketWindow,
-  resolveLensUserInputWs,
-  submitLensTurnWs,
-} from './lensWebSocket';
+  approveAppServerControlRequestWs,
+  attachAppServerControlSession,
+  declineAppServerControlRequestWs,
+  detachAppServerControlSession,
+  getAppServerControlHistoryWindowWs,
+  interruptAppServerControlTurnWs,
+  openAppServerControlHistorySocket,
+  setAppServerControlGoalWs,
+  updateAppServerControlHistorySocketWindow,
+  resolveAppServerControlUserInputWs,
+  submitAppServerControlTurnWs,
+} from './appServerControlWebSocket';
 
 const client = createClient<paths>({ baseUrl: '' });
 
@@ -93,7 +93,7 @@ type ClientPatchResult<
 
 // Re-export all types from api/types.ts for backward compatibility
 export * from './types';
-export { LensHttpError } from './errors';
+export { AppServerControlHttpError } from './errors';
 
 export class ApiProblemError extends Error {
   readonly status: number;
@@ -135,10 +135,10 @@ async function throwHttpError(response: Response, fallback: string): Promise<nev
     .catch(() => '');
 
   if (detail) {
-    throw new LensHttpError(response.status, detail);
+    throw new AppServerControlHttpError(response.status, detail);
   }
 
-  throw new LensHttpError(response.status, response.statusText || fallback);
+  throw new AppServerControlHttpError(response.status, response.statusText || fallback);
 }
 
 async function readResponseBody(response: Response): Promise<string> {
@@ -234,7 +234,11 @@ async function postJsonWithProblem<TResponse>(
   };
 }
 
-async function fetchLensJson<T>(path: string, fallback: string, init?: RequestInit): Promise<T> {
+async function fetchAppServerControlJson<T>(
+  path: string,
+  fallback: string,
+  init?: RequestInit,
+): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
     await throwHttpError(response, fallback);
@@ -493,7 +497,10 @@ export async function getSessionState(
   const url = new URL(`/api/sessions/${encodeURIComponent(id)}/state`, window.location.origin);
   url.searchParams.set('includeBuffer', includeBuffer ? 'true' : 'false');
 
-  return fetchLensJson<SessionStateResponse>(url.toString(), 'Session state fetch failed.');
+  return fetchAppServerControlJson<SessionStateResponse>(
+    url.toString(),
+    'Session state fetch failed.',
+  );
 }
 
 export async function getSessionBufferText(
@@ -534,85 +541,85 @@ export async function getSessionBufferTail(
   return response.text();
 }
 
-export async function attachSessionLens(id: string): Promise<void> {
-  await attachLensSession(id);
+export async function attachSessionAppServerControl(id: string): Promise<void> {
+  await attachAppServerControlSession(id);
 }
 
-export async function detachSessionLens(id: string): Promise<void> {
-  await detachLensSession(id);
+export async function detachSessionAppServerControl(id: string): Promise<void> {
+  await detachAppServerControlSession(id);
 }
 
-export async function sendLensTurn(
+export async function sendAppServerControlTurn(
   id: string,
-  request: LensTurnRequest,
-): Promise<LensTurnStartResponse> {
-  return submitLensTurnWs(id, request);
+  request: AppServerControlTurnRequest,
+): Promise<AppServerControlTurnStartResponse> {
+  return submitAppServerControlTurnWs(id, request);
 }
 
-export async function getLensHistoryWindow(
+export async function getAppServerControlHistoryWindow(
   id: string,
   startIndex?: number,
   count?: number,
   windowRevision?: string,
   viewportWidth?: number,
-): Promise<LensHistorySnapshot> {
-  return getLensHistoryWindowWs(id, startIndex, count, windowRevision, viewportWidth);
+): Promise<AppServerControlHistorySnapshot> {
+  return getAppServerControlHistoryWindowWs(id, startIndex, count, windowRevision, viewportWidth);
 }
 
-export async function interruptLensTurn(
+export async function interruptAppServerControlTurn(
   id: string,
-  request: LensInterruptRequest,
-): Promise<LensCommandAcceptedResponse> {
-  return interruptLensTurnWs(id, request);
+  request: AppServerControlInterruptRequest,
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return interruptAppServerControlTurnWs(id, request);
 }
 
-export async function setLensGoal(
+export async function setAppServerControlGoal(
   id: string,
-  request: LensGoalSetRequest,
-): Promise<LensCommandAcceptedResponse> {
-  return setLensGoalWs(id, request);
+  request: AppServerControlGoalSetRequest,
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return setAppServerControlGoalWs(id, request);
 }
 
-export async function approveLensRequest(
-  id: string,
-  requestId: string,
-): Promise<LensCommandAcceptedResponse> {
-  return approveLensRequestWs(id, requestId);
-}
-
-export async function declineLensRequest(
+export async function approveAppServerControlRequest(
   id: string,
   requestId: string,
-  request: LensRequestDecisionRequest = { decision: 'decline' },
-): Promise<LensCommandAcceptedResponse> {
-  return declineLensRequestWs(id, requestId, request);
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return approveAppServerControlRequestWs(id, requestId);
 }
 
-export async function resolveLensUserInput(
+export async function declineAppServerControlRequest(
   id: string,
   requestId: string,
-  request: LensUserInputAnswerRequest,
-): Promise<LensCommandAcceptedResponse> {
-  return resolveLensUserInputWs(id, requestId, request);
+  request: AppServerControlRequestDecisionRequest = { decision: 'decline' },
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return declineAppServerControlRequestWs(id, requestId, request);
 }
 
-export interface LensHistoryStreamCallbacks {
-  onPatch(patch: LensHistoryDelta): void;
-  onHistoryWindow?(historyWindow: LensHistorySnapshot): void;
+export async function resolveAppServerControlUserInput(
+  id: string,
+  requestId: string,
+  request: AppServerControlUserInputAnswerRequest,
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return resolveAppServerControlUserInputWs(id, requestId, request);
+}
+
+export interface AppServerControlHistoryStreamCallbacks {
+  onPatch(patch: AppServerControlHistoryDelta): void;
+  onHistoryWindow?(historyWindow: AppServerControlHistorySnapshot): void;
   onOpen?(): void;
   onError?(error: Event): void;
 }
 
-export function openLensHistoryStream(
+export function openAppServerControlHistoryStream(
   id: string,
   afterSequence: number,
   startIndex: number | undefined,
   count: number | undefined,
   windowRevision: string | undefined,
-  callbacks: LensHistoryStreamCallbacks,
+  callbacks: AppServerControlHistoryStreamCallbacks,
   viewportWidth?: number,
 ): () => void {
-  return openLensHistorySocket(
+  return openAppServerControlHistorySocket(
     id,
     afterSequence,
     startIndex,
@@ -623,14 +630,14 @@ export function openLensHistoryStream(
   );
 }
 
-export function updateLensHistoryStreamWindow(
+export function updateAppServerControlHistoryStreamWindow(
   id: string,
   startIndex: number | undefined,
   count: number | undefined,
   windowRevision: string | undefined,
   viewportWidth?: number,
 ): void {
-  updateLensHistorySocketWindow(id, startIndex, count, windowRevision, viewportWidth);
+  updateAppServerControlHistorySocketWindow(id, startIndex, count, windowRevision, viewportWidth);
 }
 
 // --- Settings ---

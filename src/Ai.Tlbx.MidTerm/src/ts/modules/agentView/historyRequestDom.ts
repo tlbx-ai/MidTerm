@@ -1,21 +1,21 @@
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
-  approveLensRequest,
-  declineLensRequest,
-  resolveLensUserInput,
-  type LensHistoryRequestSummary,
+  approveAppServerControlRequest,
+  declineAppServerControlRequest,
+  resolveAppServerControlUserInput,
+  type AppServerControlHistoryRequestSummary,
 } from '../../api/client';
-import type { SessionLensViewState } from './types';
+import type { SessionAppServerControlViewState } from './types';
 
 export type AgentHistoryRequestDomDeps = {
-  getState: (sessionId: string) => SessionLensViewState | undefined;
-  refreshLensSnapshot: (sessionId: string) => Promise<void>;
+  getState: (sessionId: string) => SessionAppServerControlViewState | undefined;
+  refreshAppServerControlSnapshot: (sessionId: string) => Promise<void>;
   renderCurrentAgentView: (sessionId: string) => void;
   logWarn: (message: () => string) => void;
 };
 
-type LensText = (key: string, fallback: string) => string;
-type LensFormat = (
+type AppServerControlText = (key: string, fallback: string) => string;
+type AppServerControlFormat = (
   key: string,
   fallback: string,
   replacements: Record<string, string | number>,
@@ -24,23 +24,34 @@ type LensFormat = (
 export function createRequestActionBlock(args: {
   busy: boolean;
   deps: AgentHistoryRequestDomDeps;
-  lensFormat: LensFormat;
-  lensText: LensText;
-  request: LensHistoryRequestSummary;
+  appServerControlFormat: AppServerControlFormat;
+  appServerControlText: AppServerControlText;
+  request: AppServerControlHistoryRequestSummary;
   sessionId: string;
   surface: 'composer' | 'history';
-  state: SessionLensViewState;
+  state: SessionAppServerControlViewState;
 }): HTMLElement {
-  const { busy, deps, lensFormat, lensText, request, sessionId, state, surface } = args;
+  const {
+    busy,
+    deps,
+    appServerControlFormat,
+    appServerControlText,
+    request,
+    sessionId,
+    state,
+    surface,
+  } = args;
   const actions = document.createElement('div');
   const isInterviewRequest = request.kind === 'interview' && request.questions.length > 0;
   actions.className = `agent-request-actions agent-request-actions-${surface} ${isInterviewRequest ? 'agent-request-actions-user-input' : 'agent-request-actions-approval'}`;
   const panel = document.createElement('section');
   panel.className = `agent-request-panel agent-request-panel-${surface} ${isInterviewRequest ? 'agent-request-panel-user-input' : 'agent-request-panel-approval'} ${request.state === 'open' ? 'agent-request-panel-open' : 'agent-request-panel-resolved'}`;
-  panel.appendChild(createRequestPanelHeader(request, lensText, lensFormat, surface));
+  panel.appendChild(
+    createRequestPanelHeader(request, appServerControlText, appServerControlFormat, surface),
+  );
 
   if (request.state !== 'open') {
-    panel.appendChild(createResolvedRequestSummary(request, lensText));
+    panel.appendChild(createResolvedRequestSummary(request, appServerControlText));
     actions.appendChild(panel);
     return actions;
   }
@@ -50,7 +61,7 @@ export function createRequestActionBlock(args: {
       createUserInputRequestForm({
         busy,
         deps,
-        lensText,
+        appServerControlText,
         request,
         sessionId,
         state,
@@ -60,7 +71,7 @@ export function createRequestActionBlock(args: {
     return actions;
   }
 
-  panel.appendChild(createApprovalButtonRow(busy, deps, lensText, request, sessionId));
+  panel.appendChild(createApprovalButtonRow(busy, deps, appServerControlText, request, sessionId));
   actions.appendChild(panel);
   return actions;
 }
@@ -68,12 +79,12 @@ export function createRequestActionBlock(args: {
 function createUserInputRequestForm(args: {
   busy: boolean;
   deps: AgentHistoryRequestDomDeps;
-  lensText: LensText;
-  request: LensHistoryRequestSummary;
+  appServerControlText: AppServerControlText;
+  request: AppServerControlHistoryRequestSummary;
   sessionId: string;
-  state: SessionLensViewState;
+  state: SessionAppServerControlViewState;
 }): HTMLElement {
-  const { busy, deps, lensText, request, sessionId, state } = args;
+  const { busy, deps, appServerControlText, request, sessionId, state } = args;
   const draftAnswers = ensureRequestDraftAnswers(state, request);
   const activeQuestionIndex = resolveActiveRequestQuestionIndex(state, request);
   const activeQuestion = request.questions[activeQuestionIndex];
@@ -88,7 +99,7 @@ function createUserInputRequestForm(args: {
       deps,
       draftAnswers,
       index: activeQuestionIndex,
-      lensText,
+      appServerControlText,
       question: activeQuestion,
       request,
       sessionId,
@@ -99,7 +110,7 @@ function createUserInputRequestForm(args: {
     createUserInputControls(
       busy,
       deps,
-      lensText,
+      appServerControlText,
       request,
       sessionId,
       activeQuestion,
@@ -116,7 +127,7 @@ function createUserInputRequestForm(args: {
 
     void handleResolveUserInput(
       deps,
-      lensText,
+      appServerControlText,
       sessionId,
       request.requestId,
       collectQuestionAnswers(state, request),
@@ -128,10 +139,10 @@ function createUserInputRequestForm(args: {
 function createUserInputControls(
   busy: boolean,
   deps: AgentHistoryRequestDomDeps,
-  lensText: LensText,
-  request: LensHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
+  request: AppServerControlHistoryRequestSummary,
   sessionId: string,
-  activeQuestion: LensHistoryRequestSummary['questions'][number],
+  activeQuestion: AppServerControlHistoryRequestSummary['questions'][number],
   activeQuestionIndex: number,
   draftAnswers: Record<string, string[]>,
 ): HTMLElement {
@@ -143,7 +154,7 @@ function createUserInputControls(
     back.type = 'button';
     back.className = 'agent-view-btn';
     back.disabled = busy;
-    back.textContent = lensText('lens.request.back', 'Back');
+    back.textContent = appServerControlText('appServerControl.request.back', 'Back');
     back.addEventListener('click', () => {
       setActiveRequestQuestionIndex(deps, sessionId, request.requestId, activeQuestionIndex - 1);
     });
@@ -156,10 +167,10 @@ function createUserInputControls(
   submit.disabled = busy || !hasDraftAnswerForQuestion(draftAnswers, activeQuestion);
   submit.textContent =
     activeQuestionIndex < request.questions.length - 1
-      ? lensText('lens.request.continue', 'Continue')
+      ? appServerControlText('appServerControl.request.continue', 'Continue')
       : busy
-        ? lensText('lens.request.sending', 'Sending…')
-        : lensText('lens.request.sendAnswer', 'Send answer');
+        ? appServerControlText('appServerControl.request.sending', 'Sending…')
+        : appServerControlText('appServerControl.request.sendAnswer', 'Send answer');
   formControls.appendChild(submit);
 
   return formControls;
@@ -168,8 +179,8 @@ function createUserInputControls(
 function createApprovalButtonRow(
   busy: boolean,
   deps: AgentHistoryRequestDomDeps,
-  lensText: LensText,
-  request: LensHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
+  request: AppServerControlHistoryRequestSummary,
   sessionId: string,
 ): HTMLElement {
   const buttonRow = document.createElement('div');
@@ -180,11 +191,11 @@ function createApprovalButtonRow(
   approve.className = 'agent-view-btn agent-view-btn-primary';
   approve.disabled = busy;
   approve.textContent = busy
-    ? lensText('lens.request.working', 'Working…')
-    : lensText('lens.request.approveOnce', 'Approve once');
+    ? appServerControlText('appServerControl.request.working', 'Working…')
+    : appServerControlText('appServerControl.request.approveOnce', 'Approve once');
   approve.addEventListener('click', () => {
-    void runRequestAction(deps, lensText, sessionId, request.requestId, () =>
-      approveLensRequest(sessionId, request.requestId),
+    void runRequestAction(deps, appServerControlText, sessionId, request.requestId, () =>
+      approveAppServerControlRequest(sessionId, request.requestId),
     );
   });
 
@@ -192,10 +203,10 @@ function createApprovalButtonRow(
   decline.type = 'button';
   decline.className = 'agent-view-btn';
   decline.disabled = busy;
-  decline.textContent = lensText('lens.request.decline', 'Decline');
+  decline.textContent = appServerControlText('appServerControl.request.decline', 'Decline');
   decline.addEventListener('click', () => {
-    void runRequestAction(deps, lensText, sessionId, request.requestId, () =>
-      declineLensRequest(sessionId, request.requestId),
+    void runRequestAction(deps, appServerControlText, sessionId, request.requestId, () =>
+      declineAppServerControlRequest(sessionId, request.requestId),
     );
   });
 
@@ -204,9 +215,9 @@ function createApprovalButtonRow(
 }
 
 function createRequestPanelHeader(
-  request: LensHistoryRequestSummary,
-  lensText: LensText,
-  lensFormat: LensFormat,
+  request: AppServerControlHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
+  appServerControlFormat: AppServerControlFormat,
   surface: 'composer' | 'history',
 ): HTMLElement {
   const header = document.createElement('div');
@@ -216,12 +227,16 @@ function createRequestPanelHeader(
 
   const eyebrow = document.createElement('span');
   eyebrow.className = 'agent-request-eyebrow';
-  eyebrow.textContent = summarizeRequestEyebrow(request, lensText, surface);
+  eyebrow.textContent = summarizeRequestEyebrow(request, appServerControlText, surface);
   topRow.appendChild(eyebrow);
 
   const summary = document.createElement('span');
   summary.className = 'agent-request-summary';
-  summary.textContent = summarizeRequestInterruption(request, lensText, lensFormat);
+  summary.textContent = summarizeRequestInterruption(
+    request,
+    appServerControlText,
+    appServerControlFormat,
+  );
   topRow.appendChild(summary);
   header.appendChild(topRow);
 
@@ -236,86 +251,99 @@ function createRequestPanelHeader(
 }
 
 function summarizeRequestEyebrow(
-  request: LensHistoryRequestSummary,
-  lensText: LensText,
+  request: AppServerControlHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
   surface: 'composer' | 'history',
 ): string {
   const prefix =
     surface === 'history'
-      ? lensText('lens.request.historyPrefix', 'History item')
-      : lensText('lens.request.interruptionPrefix', 'Needs action');
+      ? appServerControlText('appServerControl.request.historyPrefix', 'History item')
+      : appServerControlText('appServerControl.request.interruptionPrefix', 'Needs action');
 
   if (request.kind === 'interview') {
     return request.state === 'open'
-      ? `${prefix} · ${lensText('lens.request.pendingInterview', 'Pending interview')}`
-      : `${prefix} · ${lensText('lens.request.completedInterview', 'Interview answered')}`;
+      ? `${prefix} · ${appServerControlText('appServerControl.request.pendingInterview', 'Pending interview')}`
+      : `${prefix} · ${appServerControlText('appServerControl.request.completedInterview', 'Interview answered')}`;
   }
 
   return request.state === 'open'
-    ? `${prefix} · ${lensText('lens.request.pendingApproval', 'Pending approval')}`
-    : `${prefix} · ${lensText('lens.request.completedApproval', 'Approval resolved')}`;
+    ? `${prefix} · ${appServerControlText('appServerControl.request.pendingApproval', 'Pending approval')}`
+    : `${prefix} · ${appServerControlText('appServerControl.request.completedApproval', 'Approval resolved')}`;
 }
 
 function summarizeRequestInterruption(
-  request: LensHistoryRequestSummary,
-  lensText: LensText,
-  lensFormat: LensFormat,
+  request: AppServerControlHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
+  appServerControlFormat: AppServerControlFormat,
 ): string {
   if (request.state !== 'open') {
     const resolvedDecision =
-      request.decision?.trim() || lensText('lens.request.resolved', 'resolved');
+      request.decision?.trim() ||
+      appServerControlText('appServerControl.request.resolved', 'resolved');
     return request.kind === 'interview'
-      ? lensText('lens.request.interviewResolved', 'The requested answers were submitted.')
-      : lensFormat('lens.request.approvalResolved', 'Request resolved as {decision}.', {
-          decision: resolvedDecision,
-        });
+      ? appServerControlText(
+          'appServerControl.request.interviewResolved',
+          'The requested answers were submitted.',
+        )
+      : appServerControlFormat(
+          'appServerControl.request.approvalResolved',
+          'Request resolved as {decision}.',
+          {
+            decision: resolvedDecision,
+          },
+        );
   }
 
   if (request.kind === 'interview') {
     const activeQuestion = request.questions[0];
     if (request.questions.length === 1 && activeQuestion?.options.length) {
       return activeQuestion.multiSelect
-        ? lensFormat(
-            'lens.request.selectManyToContinue',
+        ? appServerControlFormat(
+            'appServerControl.request.selectManyToContinue',
             'Select one or more of {count} options to continue.',
             { count: activeQuestion.options.length },
           )
-        : lensFormat(
-            'lens.request.selectOneToContinue',
+        : appServerControlFormat(
+            'appServerControl.request.selectOneToContinue',
             'Select 1 of {count} options to continue.',
             { count: activeQuestion.options.length },
           );
     }
 
     return request.questions.length === 1
-      ? lensText('lens.request.needsOneAnswer', 'The agent needs one answer to continue.')
-      : lensFormat(
-          'lens.request.needsManyAnswers',
+      ? appServerControlText(
+          'appServerControl.request.needsOneAnswer',
+          'The agent needs one answer to continue.',
+        )
+      : appServerControlFormat(
+          'appServerControl.request.needsManyAnswers',
           'The agent needs {count} answers to continue.',
           { count: request.questions.length },
         );
   }
 
-  const label = request.kindLabel.trim() || lensText('lens.request.approvalLabel', 'Approval');
-  return lensFormat(
-    'lens.request.requiredBeforeContinue',
+  const label =
+    request.kindLabel.trim() ||
+    appServerControlText('appServerControl.request.approvalLabel', 'Approval');
+  return appServerControlFormat(
+    'appServerControl.request.requiredBeforeContinue',
     '{label} required before the turn can continue.',
     { label },
   );
 }
 
 function createResolvedRequestSummary(
-  request: LensHistoryRequestSummary,
-  lensText: LensText,
+  request: AppServerControlHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
 ): HTMLElement {
   return request.kind === 'interview'
-    ? createResolvedInterviewSummary(request, lensText)
-    : createResolvedApprovalSummary(request, lensText);
+    ? createResolvedInterviewSummary(request, appServerControlText)
+    : createResolvedApprovalSummary(request, appServerControlText);
 }
 
 function createResolvedInterviewSummary(
-  request: LensHistoryRequestSummary,
-  lensText: LensText,
+  request: AppServerControlHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
 ): HTMLElement {
   const wrapper = document.createElement('div');
   wrapper.className = 'agent-request-answer-list';
@@ -323,7 +351,10 @@ function createResolvedInterviewSummary(
   if (request.answers.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'agent-request-answer-empty';
-    empty.textContent = lensText('lens.request.noAnswersRecorded', 'No answers were recorded.');
+    empty.textContent = appServerControlText(
+      'appServerControl.request.noAnswersRecorded',
+      'No answers were recorded.',
+    );
     wrapper.appendChild(empty);
     return wrapper;
   }
@@ -344,7 +375,7 @@ function createResolvedInterviewSummary(
     value.textContent =
       answers.length > 0
         ? answers.join(', ')
-        : lensText('lens.request.answerSkipped', 'No answer submitted');
+        : appServerControlText('appServerControl.request.answerSkipped', 'No answer submitted');
     item.appendChild(value);
 
     wrapper.appendChild(item);
@@ -354,8 +385,8 @@ function createResolvedInterviewSummary(
 }
 
 function createResolvedApprovalSummary(
-  request: LensHistoryRequestSummary,
-  lensText: LensText,
+  request: AppServerControlHistoryRequestSummary,
+  appServerControlText: AppServerControlText,
 ): HTMLElement {
   const wrapper = document.createElement('div');
   wrapper.className = 'agent-request-answer-list';
@@ -365,12 +396,14 @@ function createResolvedApprovalSummary(
 
   const label = document.createElement('div');
   label.className = 'agent-request-answer-label';
-  label.textContent = lensText('lens.request.decisionLabel', 'Decision');
+  label.textContent = appServerControlText('appServerControl.request.decisionLabel', 'Decision');
   item.appendChild(label);
 
   const value = document.createElement('div');
   value.className = 'agent-request-answer-value';
-  value.textContent = request.decision?.trim() || lensText('lens.request.resolved', 'Resolved');
+  value.textContent =
+    request.decision?.trim() ||
+    appServerControlText('appServerControl.request.resolved', 'Resolved');
   item.appendChild(value);
 
   wrapper.appendChild(item);
@@ -381,14 +414,22 @@ function createQuestionField(args: {
   deps: AgentHistoryRequestDomDeps;
   draftAnswers: Record<string, string[]>;
   index: number;
-  lensText: LensText;
-  question: LensHistoryRequestSummary['questions'][number];
-  request: LensHistoryRequestSummary;
+  appServerControlText: AppServerControlText;
+  question: AppServerControlHistoryRequestSummary['questions'][number];
+  request: AppServerControlHistoryRequestSummary;
   sessionId: string;
   totalQuestions: number;
 }): HTMLElement {
-  const { deps, draftAnswers, index, lensText, question, request, sessionId, totalQuestions } =
-    args;
+  const {
+    deps,
+    draftAnswers,
+    index,
+    appServerControlText,
+    question,
+    request,
+    sessionId,
+    totalQuestions,
+  } = args;
   const wrapper = document.createElement('section');
   wrapper.className = 'agent-request-field';
 
@@ -442,7 +483,7 @@ function createQuestionField(args: {
   input.type = 'text';
   input.name = question.id;
   input.className = 'agent-request-input';
-  input.placeholder = lensText('lens.request.typeAnswer', 'Type answer');
+  input.placeholder = appServerControlText('appServerControl.request.typeAnswer', 'Type answer');
   input.value = draftValue[0] || '';
   input.addEventListener('input', () => {
     updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, [
@@ -457,8 +498,8 @@ function createQuestionChoiceList(args: {
   autoAdvance: boolean;
   deps: AgentHistoryRequestDomDeps;
   inputType: 'checkbox' | 'radio';
-  question: LensHistoryRequestSummary['questions'][number];
-  request: LensHistoryRequestSummary;
+  question: AppServerControlHistoryRequestSummary['questions'][number];
+  request: AppServerControlHistoryRequestSummary;
   selectedAnswers: readonly string[];
   sessionId: string;
 }): HTMLElement {
@@ -533,8 +574,8 @@ function createQuestionChoiceList(args: {
 }
 
 function collectQuestionAnswers(
-  state: SessionLensViewState,
-  request: LensHistoryRequestSummary,
+  state: SessionAppServerControlViewState,
+  request: AppServerControlHistoryRequestSummary,
 ): Array<{ questionId: string; answers: string[] }> {
   const draftAnswers = ensureRequestDraftAnswers(state, request);
   return request.questions.map((question) => ({
@@ -544,8 +585,8 @@ function collectQuestionAnswers(
 }
 
 function resolveActiveRequestQuestionIndex(
-  state: SessionLensViewState,
-  request: LensHistoryRequestSummary,
+  state: SessionAppServerControlViewState,
+  request: AppServerControlHistoryRequestSummary,
 ): number {
   const maxIndex = Math.max(0, request.questions.length - 1);
   const currentIndex = state.requestQuestionIndexById[request.requestId] ?? 0;
@@ -568,8 +609,8 @@ function setActiveRequestQuestionIndex(
 }
 
 function ensureRequestDraftAnswers(
-  state: SessionLensViewState,
-  request: LensHistoryRequestSummary,
+  state: SessionAppServerControlViewState,
+  request: AppServerControlHistoryRequestSummary,
 ): Record<string, string[]> {
   const existing = state.requestDraftAnswersById[request.requestId];
   if (existing) {
@@ -611,20 +652,20 @@ function updateRequestDraftAnswers(
 
 function hasDraftAnswerForQuestion(
   draftAnswers: Record<string, string[]>,
-  question: LensHistoryRequestSummary['questions'][number],
+  question: AppServerControlHistoryRequestSummary['questions'][number],
 ): boolean {
   return (draftAnswers[question.id] ?? []).some((answer) => answer.trim().length > 0);
 }
 
 async function handleResolveUserInput(
   deps: AgentHistoryRequestDomDeps,
-  lensText: LensText,
+  appServerControlText: AppServerControlText,
   sessionId: string,
   requestId: string,
   answers: Array<{ questionId: string; answers: string[] }>,
 ): Promise<void> {
-  await runRequestAction(deps, lensText, sessionId, requestId, () =>
-    resolveLensUserInput(sessionId, requestId, {
+  await runRequestAction(deps, appServerControlText, sessionId, requestId, () =>
+    resolveAppServerControlUserInput(sessionId, requestId, {
       answers: answers.filter((answer) => answer.answers.length > 0),
     }),
   );
@@ -632,7 +673,7 @@ async function handleResolveUserInput(
 
 async function runRequestAction(
   deps: AgentHistoryRequestDomDeps,
-  lensText: LensText,
+  appServerControlText: AppServerControlText,
   sessionId: string,
   requestId: string,
   action: () => Promise<unknown>,
@@ -646,14 +687,18 @@ async function runRequestAction(
   deps.renderCurrentAgentView(sessionId);
   try {
     await action();
-    await deps.refreshLensSnapshot(sessionId);
+    await deps.refreshAppServerControlSnapshot(sessionId);
   } catch (error) {
     deps.logWarn(
-      () => `Failed to resolve Lens request ${requestId} for ${sessionId}: ${String(error)}`,
+      () =>
+        `Failed to resolve AppServerControl request ${requestId} for ${sessionId}: ${String(error)}`,
     );
     showDevErrorDialog({
-      title: lensText('lens.error.requestTitle', 'Lens request failed'),
-      context: `Lens request action failed for session ${sessionId}, request ${requestId}`,
+      title: appServerControlText(
+        'appServerControl.error.requestTitle',
+        'AppServerControl request failed',
+      ),
+      context: `AppServerControl request action failed for session ${sessionId}, request ${requestId}`,
       error,
     });
   } finally {

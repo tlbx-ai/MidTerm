@@ -41,19 +41,19 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
         var hostDll = ResolveAgentHostDll();
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Contains("codex", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-real-codex-live-resume",
                 SessionId = "session-real-codex-live-resume",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-real-codex-live-resume",
                     Provider = "codex",
@@ -62,7 +62,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(
                 process.StandardOutput,
                 pendingPatches,
                 "cmd-attach-real-codex-live-resume");
@@ -76,12 +76,12 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
             LogWindow("codex attach", attachWindow);
             Assert.Equal(candidate.SessionId, attachWindow.Thread.ThreadId);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real-codex-live-resume",
                 SessionId = "session-real-codex-live-resume",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text =
                         """
@@ -93,7 +93,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(
                 process.StandardOutput,
                 pendingPatches,
                 "cmd-turn-real-codex-live-resume");
@@ -107,7 +107,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 "completed");
             LogWindow("codex turn", turnWindow);
 
-            var assistantText = LensHostTestClient.CollectAssistantText(turnWindow);
+            var assistantText = AppServerControlHostTestClient.CollectAssistantText(turnWindow);
             _output.WriteLine($"Codex resumed assistant text: {NormalizeMessage(assistantText)}");
             AssertNormalizedMessageMatch(candidate.RecentUserMessage, assistantText);
         }
@@ -145,19 +145,19 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
         var hostDll = ResolveAgentHostDll();
         using var process = StartAgentHost(hostDll, configureClaudePermissions: true);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Contains("claude", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-real-claude-live-resume",
                 SessionId = "session-real-claude-live-resume",
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = "session-real-claude-live-resume",
                     Provider = "claude",
@@ -166,7 +166,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(
                 process.StandardOutput,
                 pendingPatches,
                 "cmd-attach-real-claude-live-resume");
@@ -180,12 +180,12 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
             LogWindow("claude attach", attachWindow);
             Assert.Equal(candidate.SessionId, attachWindow.Thread.ThreadId);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-real-claude-live-resume",
                 SessionId = "session-real-claude-live-resume",
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text =
                         """
@@ -197,7 +197,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(
                 process.StandardOutput,
                 pendingPatches,
                 "cmd-turn-real-claude-live-resume");
@@ -211,7 +211,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
                 "completed");
             LogWindow("claude turn", turnWindow);
 
-            var assistantText = LensHostTestClient.CollectAssistantText(turnWindow);
+            var assistantText = AppServerControlHostTestClient.CollectAssistantText(turnWindow);
             _output.WriteLine($"Claude resumed assistant text: {NormalizeMessage(assistantText)}");
             AssertNormalizedMessageMatch(candidate.RecentUserMessage, assistantText);
         }
@@ -582,13 +582,13 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         }
     }
 
-    private async Task<LensHistoryWindowResponse> WaitForReadyWindowAsync(
+    private async Task<AppServerControlHistoryWindowResponse> WaitForReadyWindowAsync(
         StreamReader reader,
         StreamWriter writer,
-        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        Queue<AppServerControlHostHistoryPatchEnvelope> pendingPatches,
         string sessionId)
     {
-        return await LensHostTestClient.WaitForHistoryWindowAsync(
+        return await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
             reader,
             writer,
             pendingPatches,
@@ -599,14 +599,14 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
             count: 240);
     }
 
-    private async Task<LensHistoryWindowResponse> WaitForTurnStateWindowAsync(
+    private async Task<AppServerControlHistoryWindowResponse> WaitForTurnStateWindowAsync(
         StreamReader reader,
         StreamWriter writer,
-        Queue<LensHostHistoryPatchEnvelope> pendingPatches,
+        Queue<AppServerControlHostHistoryPatchEnvelope> pendingPatches,
         string sessionId,
         string state)
     {
-        return await LensHostTestClient.WaitForHistoryWindowAsync(
+        return await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
             reader,
             writer,
             pendingPatches,
@@ -616,7 +616,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
             count: 320);
     }
 
-    private void LogWindow(string label, LensHistoryWindowResponse window)
+    private void LogWindow(string label, AppServerControlHistoryWindowResponse window)
     {
         _output.WriteLine(string.Format(
             CultureInfo.InvariantCulture,
@@ -728,7 +728,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
 
         if (configureClaudePermissions)
         {
-            process.StartInfo.Environment["MIDTERM_LENS_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] = "true";
+            process.StartInfo.Environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] = "true";
         }
 
         process.Start();

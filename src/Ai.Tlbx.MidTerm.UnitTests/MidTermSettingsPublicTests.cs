@@ -180,25 +180,25 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
-    public void FromSettings_AndApplyTo_RoundTripLensDefaultModels()
+    public void FromSettings_AndApplyTo_RoundTripAppServerControlDefaultModels()
     {
         var settings = new MidTermSettings
         {
-            CodexDefaultLensModel = "gpt-5.4-codex",
-            ClaudeDefaultLensModel = "claude-sonnet-4-6"
+            CodexDefaultAppServerControlModel = "gpt-5.4-codex",
+            ClaudeDefaultAppServerControlModel = "claude-sonnet-4-6"
         };
 
         var publicSettings = MidTermSettingsPublic.FromSettings(settings);
 
-        Assert.Equal("gpt-5.4-codex", publicSettings.CodexDefaultLensModel);
-        Assert.Equal("claude-sonnet-4-6", publicSettings.ClaudeDefaultLensModel);
+        Assert.Equal("gpt-5.4-codex", publicSettings.CodexDefaultAppServerControlModel);
+        Assert.Equal("claude-sonnet-4-6", publicSettings.ClaudeDefaultAppServerControlModel);
 
-        settings.CodexDefaultLensModel = string.Empty;
-        settings.ClaudeDefaultLensModel = string.Empty;
+        settings.CodexDefaultAppServerControlModel = string.Empty;
+        settings.ClaudeDefaultAppServerControlModel = string.Empty;
         publicSettings.ApplyTo(settings);
 
-        Assert.Equal("gpt-5.4-codex", settings.CodexDefaultLensModel);
-        Assert.Equal("claude-sonnet-4-6", settings.ClaudeDefaultLensModel);
+        Assert.Equal("gpt-5.4-codex", settings.CodexDefaultAppServerControlModel);
+        Assert.Equal("claude-sonnet-4-6", settings.ClaudeDefaultAppServerControlModel);
     }
 
     [Fact]

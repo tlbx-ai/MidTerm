@@ -68,7 +68,10 @@ describe('sidebar section default collapse', () => {
   });
 
   it('collapses the voice section by default for first-time users', async () => {
-    vi.stubGlobal('localStorage', createLocalStorage(() => null));
+    vi.stubGlobal(
+      'localStorage',
+      createLocalStorage(() => null),
+    );
     const section = { classList: createClassList() };
     const toggleBtn = createButton();
     vi.stubGlobal(
@@ -87,7 +90,10 @@ describe('sidebar section default collapse', () => {
   });
 
   it('keeps the voice section expanded when the saved preference is expanded', async () => {
-    vi.stubGlobal('localStorage', createLocalStorage(() => 'false'));
+    vi.stubGlobal(
+      'localStorage',
+      createLocalStorage(() => 'false'),
+    );
     const section = { classList: createClassList() };
     const toggleBtn = createButton();
     vi.stubGlobal(
@@ -106,7 +112,10 @@ describe('sidebar section default collapse', () => {
   });
 
   it('collapses the network section by default for first-time users', async () => {
-    vi.stubGlobal('localStorage', createLocalStorage(() => null));
+    vi.stubGlobal(
+      'localStorage',
+      createLocalStorage(() => null),
+    );
     vi.stubGlobal('window', { isSecureContext: true });
     const section = { classList: createClassList() };
     const toggleBtn = createButton();
@@ -126,7 +135,10 @@ describe('sidebar section default collapse', () => {
   });
 
   it('keeps the network section expanded when the saved preference is expanded', async () => {
-    vi.stubGlobal('localStorage', createLocalStorage(() => 'false'));
+    vi.stubGlobal(
+      'localStorage',
+      createLocalStorage(() => 'false'),
+    );
     vi.stubGlobal('window', { isSecureContext: true });
     const section = { classList: createClassList() };
     const toggleBtn = createButton();

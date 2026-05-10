@@ -4,7 +4,7 @@
  * Provides a mobile-first miniature terminal preview using Document PiP.
  * When the PWA is backgrounded, we attempt to open a floating mini window
  * showing the active terminal and flash it when server-backed output heat
- * cools down. This intentionally follows the same PTY/Lens signal used by the
+ * cools down. This intentionally follows the same PTY/AppServerControl signal used by the
  * sidebar heat strip so replayed browser bytes cannot re-arm PiP heat.
  */
 

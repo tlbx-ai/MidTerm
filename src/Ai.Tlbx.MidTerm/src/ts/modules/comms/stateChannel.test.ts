@@ -406,15 +406,15 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.syncActiveWebPreview).toHaveBeenCalledTimes(1);
   });
 
-  it('skips proactive terminal creation for lens-only sessions', async () => {
+  it('skips proactive terminal creation for appServerControl-only sessions', async () => {
     await loadHarness();
 
     handleStateUpdate([
       {
-        id: 'lens-1',
+        id: 'appServerControl-1',
         cols: 120,
         rows: 30,
-        lensOnly: true,
+        appServerControlOnly: true,
         foregroundPid: null,
         foregroundName: null,
         foregroundCommandLine: null,
@@ -435,7 +435,7 @@ describe('stateChannel browser-ui handling', () => {
         id: 'session-a',
         cols: 120,
         rows: 30,
-        lensOnly: false,
+        appServerControlOnly: false,
         foregroundPid: null,
         foregroundName: null,
         foregroundCommandLine: null,
@@ -445,7 +445,7 @@ describe('stateChannel browser-ui handling', () => {
         id: 'session-b',
         cols: 120,
         rows: 30,
-        lensOnly: false,
+        appServerControlOnly: false,
         foregroundPid: null,
         foregroundName: null,
         foregroundCommandLine: null,
@@ -467,7 +467,7 @@ describe('stateChannel browser-ui handling', () => {
           id: 'session-a',
           cols: 120,
           rows: 30,
-          lensOnly: false,
+          appServerControlOnly: false,
           foregroundPid: null,
           foregroundName: null,
           foregroundCommandLine: null,
@@ -477,7 +477,7 @@ describe('stateChannel browser-ui handling', () => {
           id: 'session-b',
           cols: 120,
           rows: 30,
-          lensOnly: false,
+          appServerControlOnly: false,
           foregroundPid: null,
           foregroundName: null,
           foregroundCommandLine: null,

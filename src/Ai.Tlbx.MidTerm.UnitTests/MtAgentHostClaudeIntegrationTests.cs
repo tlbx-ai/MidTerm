@@ -19,19 +19,19 @@ public sealed class MtAgentHostClaudeIntegrationTests
         await File.WriteAllTextAsync(attachmentPath, "attached text file");
 
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            var hello = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Contains("claude", hello.Providers);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach",
                 SessionId = sessionId,
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = sessionId,
                     Provider = "claude",
@@ -39,16 +39,16 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
             });
 
-            var attachResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
             Assert.Equal("accepted", attachResult.Status);
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.Session.State, "ready", StringComparison.Ordinal),
                 maxPatches: 4,
                 timeout: TimeSpan.FromSeconds(10));
 
-            var attachWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var attachWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -56,33 +56,33 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 count: 16);
             Assert.Equal("ready", attachWindow.Session.State);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-1",
                 SessionId = sessionId,
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = "Inspect the attached file.",
                     Attachments =
                     [
-                        new LensAttachmentReference { Kind = "file", Path = attachmentPath }
+                        new AppServerControlAttachmentReference { Kind = "file", Path = attachmentPath }
                     ]
                 }
             });
 
-            var firstTurnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-1");
+            var firstTurnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-1");
             Assert.Equal("accepted", firstTurnResult.Status);
             Assert.Equal("claude", firstTurnResult.TurnStarted!.Provider);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.CurrentTurn.State, "completed", StringComparison.Ordinal),
                 maxPatches: 40,
                 timeout: ClaudeTurnCompletionTimeout);
 
-            var firstTurnWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var firstTurnWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -97,36 +97,36 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 item => string.IsNullOrWhiteSpace(item.CommandText) &&
                         item.Body.Contains("attachments=1", StringComparison.Ordinal));
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-2",
                 SessionId = sessionId,
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = "Continue in the same conversation.",
                     Attachments = []
                 }
             });
 
-            var secondTurnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-2");
+            var secondTurnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-2");
             Assert.Equal("accepted", secondTurnResult.Status);
             Assert.Equal(providerThreadId, secondTurnResult.TurnStarted!.ThreadId);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.CurrentTurn.State, "completed", StringComparison.Ordinal),
                 maxPatches: 40,
                 timeout: ClaudeTurnCompletionTimeout);
 
-            var secondTurnWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var secondTurnWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
                 sessionId,
                 count: 128);
-            Assert.Contains("Fake Claude reply.", LensHostTestClient.CollectAssistantText(secondTurnWindow), StringComparison.Ordinal);
+            Assert.Contains("Fake Claude reply.", AppServerControlHostTestClient.CollectAssistantText(secondTurnWindow), StringComparison.Ordinal);
         }
         finally
         {
@@ -147,18 +147,18 @@ public sealed class MtAgentHostClaudeIntegrationTests
         var hostDll = ResolveAgentHostDll();
         var sessionId = "session-claude-interrupt-" + Guid.NewGuid().ToString("N");
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
 
         try
         {
-            _ = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach",
                 SessionId = sessionId,
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = sessionId,
                     Provider = "claude",
@@ -166,30 +166,30 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
             });
 
-            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach");
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.Session.State, "ready", StringComparison.Ordinal),
                 maxPatches: 4,
                 timeout: TimeSpan.FromSeconds(10));
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn",
                 SessionId = sessionId,
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = "Please interrupt this Claude turn.",
                     Attachments = []
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn");
             Assert.Equal("accepted", turnResult.Status);
 
-            var startedWindow = await LensHostTestClient.WaitForHistoryWindowAsync(
+            var startedWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -199,21 +199,21 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 TimeSpan.FromSeconds(10),
                 count: 32);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-interrupt",
                 SessionId = sessionId,
                 Type = "turn.interrupt",
-                InterruptTurn = new LensInterruptRequest
+                InterruptTurn = new AppServerControlInterruptRequest
                 {
                     TurnId = startedWindow.CurrentTurn.TurnId
                 }
             });
 
-            var interruptResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-interrupt");
+            var interruptResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-interrupt");
             Assert.Equal("accepted", interruptResult.Status);
 
-            var interruptedWindow = await LensHostTestClient.WaitForHistoryWindowAsync(
+            var interruptedWindow = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -235,26 +235,26 @@ public sealed class MtAgentHostClaudeIntegrationTests
         }
     }
 
-    [Fact(Skip = "Claude Lens interview/user-input is intentionally unsupported until MidTerm integrates a verified structured Claude contract.")]
+    [Fact(Skip = "Claude AppServerControl interview/user-input is intentionally unsupported until MidTerm integrates a verified structured Claude contract.")]
     public async Task MtAgentHost_CanDriveFakeClaudeThroughTwoUserInputRounds()
     {
         using var fakeClaude = FakeClaudePathScope.Create();
         var hostDll = ResolveAgentHostDll();
         var sessionId = "session-claude-qa-" + Guid.NewGuid().ToString("N");
         using var process = StartAgentHost(hostDll);
-        var pendingPatches = new Queue<LensHostHistoryPatchEnvelope>();
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
         var marker = "MIDTERM_FAKE_CLAUDE_QA_" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
         try
         {
-            _ = await LensHostTestClient.ReadHelloAsync(process.StandardOutput);
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-attach-qa",
                 SessionId = sessionId,
                 Type = "runtime.attach",
-                AttachRuntime = new LensAttachRuntimeRequest
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
                     SessionId = sessionId,
                     Provider = "claude",
@@ -262,20 +262,20 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
             });
 
-            _ = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-qa");
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-qa");
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.Session.State, "ready", StringComparison.Ordinal),
                 maxPatches: 4,
                 timeout: TimeSpan.FromSeconds(10));
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-turn-qa",
                 SessionId = sessionId,
                 Type = "turn.start",
-                StartTurn = new LensTurnRequest
+                StartTurn = new AppServerControlTurnRequest
                 {
                     Text = $$"""
                     MIDTERM_CLAUDE_QA_TWO_PHASES
@@ -287,17 +287,17 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
             });
 
-            var turnResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-qa");
+            var turnResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-turn-qa");
             Assert.Equal("accepted", turnResult.Status);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => patch.Patch.RequestUpserts.Any(static request => request.Kind == "interview" && request.State == "open"),
                 maxPatches: 20,
                 timeout: TimeSpan.FromSeconds(10));
 
-            var firstQuestionWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var firstQuestionWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -307,26 +307,26 @@ public sealed class MtAgentHostClaudeIntegrationTests
             Assert.Equal(2, firstQuestionRequest.Questions.Count);
             Assert.Equal("waiting_for_input", firstQuestionWindow.Session.State);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-answer-qa-1",
                 SessionId = sessionId,
                 Type = "user-input.resolve",
-                ResolveUserInput = new LensUserInputResolutionCommand
+                ResolveUserInput = new AppServerControlUserInputResolutionCommand
                 {
                     RequestId = firstQuestionRequest.RequestId,
                     Answers =
                     [
-                        new LensAnsweredQuestion { QuestionId = "language", Answers = ["C#"] },
-                        new LensAnsweredQuestion { QuestionId = "strictness", Answers = ["Strict"] }
+                        new AppServerControlAnsweredQuestion { QuestionId = "language", Answers = ["C#"] },
+                        new AppServerControlAnsweredQuestion { QuestionId = "strictness", Answers = ["Strict"] }
                     ]
                 }
             });
 
-            var firstAnswerResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-answer-qa-1");
+            var firstAnswerResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-answer-qa-1");
             Assert.Equal("accepted", firstAnswerResult.Status);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => patch.Patch.RequestUpserts.Any(request =>
@@ -336,7 +336,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 maxPatches: 24,
                 timeout: TimeSpan.FromSeconds(10));
 
-            var secondQuestionWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var secondQuestionWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
@@ -351,33 +351,33 @@ public sealed class MtAgentHostClaudeIntegrationTests
             Assert.Equal(2, secondQuestionRequest.Questions.Count);
             Assert.Equal("waiting_for_input", secondQuestionWindow.Session.State);
 
-            await LensHostTestClient.WriteCommandAsync(process.StandardInput, new LensHostCommandEnvelope
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "cmd-answer-qa-2",
                 SessionId = sessionId,
                 Type = "user-input.resolve",
-                ResolveUserInput = new LensUserInputResolutionCommand
+                ResolveUserInput = new AppServerControlUserInputResolutionCommand
                 {
                     RequestId = secondQuestionRequest.RequestId,
                     Answers =
                     [
-                        new LensAnsweredQuestion { QuestionId = "output-style", Answers = ["Detailed"] },
-                        new LensAnsweredQuestion { QuestionId = "workspace-scan", Answers = ["Yes"] }
+                        new AppServerControlAnsweredQuestion { QuestionId = "output-style", Answers = ["Detailed"] },
+                        new AppServerControlAnsweredQuestion { QuestionId = "workspace-scan", Answers = ["Yes"] }
                     ]
                 }
             });
 
-            var secondAnswerResult = await LensHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-answer-qa-2");
+            var secondAnswerResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-answer-qa-2");
             Assert.Equal("accepted", secondAnswerResult.Status);
 
-            _ = await LensHostTestClient.ReadUntilMatchAsync(
+            _ = await AppServerControlHostTestClient.ReadUntilMatchAsync(
                 process.StandardOutput,
                 pendingPatches,
                 patch => string.Equals(patch.Patch.CurrentTurn.State, "completed", StringComparison.Ordinal),
                 maxPatches: 12,
                 timeout: TimeSpan.FromSeconds(10));
 
-            var resolvedWindow = await LensHostTestClient.GetHistoryWindowAsync(
+            var resolvedWindow = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,

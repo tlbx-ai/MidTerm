@@ -99,7 +99,7 @@ vi.mock('../i18n', () => ({
     (
       ({
         'session.terminal': 'Terminal',
-        'sessionTabs.agent': 'Lens',
+        'sessionTabs.agent': 'Agent',
         'sessionTabs.files': 'Files',
         'sessionLauncher.codexTitle': 'Codex',
         'sessionLauncher.claudeTitle': 'Claude',
@@ -126,7 +126,7 @@ let getTabPanel: typeof import('./tabManager').getTabPanel;
 let isTabAvailable: typeof import('./tabManager').isTabAvailable;
 let onTabActivated: typeof import('./tabManager').onTabActivated;
 let onTabDeactivated: typeof import('./tabManager').onTabDeactivated;
-let setSessionLensAvailability: typeof import('./tabManager').setSessionLensAvailability;
+let setSessionAppServerControlAvailability: typeof import('./tabManager').setSessionAppServerControlAvailability;
 let switchTab: typeof import('./tabManager').switchTab;
 
 describe('tabManager', () => {
@@ -140,7 +140,7 @@ describe('tabManager', () => {
       isTabAvailable,
       onTabActivated,
       onTabDeactivated,
-      setSessionLensAvailability,
+      setSessionAppServerControlAvailability,
       switchTab,
     } = await import('./tabManager'));
   });
@@ -155,8 +155,8 @@ describe('tabManager', () => {
       {
         id: 's1',
         agentControlled: false,
-        hasLensHistory: false,
-        lensOnly: false,
+        hasAppServerControlHistory: false,
+        appServerControlOnly: false,
         supervisor: { profile: 'shell' },
       },
     ];
@@ -231,13 +231,13 @@ describe('tabManager', () => {
     expect(focusSpy).not.toHaveBeenCalled();
   });
 
-  it('makes lens-backed sessions agent-only and uses provider-specific labels', async () => {
+  it('makes appServerControl-backed sessions agent-only and uses provider-specific labels', async () => {
     sessionListMock = [
       {
         id: 's1',
         agentControlled: true,
-        hasLensHistory: true,
-        lensOnly: true,
+        hasAppServerControlHistory: true,
+        appServerControlOnly: true,
         supervisor: { profile: 'codex' },
       },
     ];
@@ -249,13 +249,13 @@ describe('tabManager', () => {
     expect(getTabLabelForSession('s1', 'agent')).toBe('Codex');
   });
 
-  it('activates the initial agent tab for lens-only sessions immediately', async () => {
+  it('activates the initial agent tab for appServerControl-only sessions immediately', async () => {
     sessionListMock = [
       {
         id: 's1',
         agentControlled: true,
-        hasLensHistory: true,
-        lensOnly: true,
+        hasAppServerControlHistory: true,
+        appServerControlOnly: true,
         supervisor: { profile: 'codex' },
       },
     ];
@@ -268,10 +268,10 @@ describe('tabManager', () => {
     expect(activated).toHaveBeenCalledWith('s1', expect.anything());
   });
 
-  it('does not expose Lens for ordinary terminal sessions even if Lens availability is forced', async () => {
+  it('does not expose AppServerControl for ordinary terminal sessions even if AppServerControl availability is forced', async () => {
     ensureSessionWrapper('s1');
 
-    setSessionLensAvailability('s1', true);
+    setSessionAppServerControlAvailability('s1', true);
 
     expect(isTabAvailable('s1', 'terminal')).toBe(true);
     expect(getActiveTab('s1')).toBe('terminal');
@@ -300,8 +300,8 @@ describe('tabManager', () => {
       {
         id: 's1',
         agentControlled: true,
-        hasLensHistory: true,
-        lensOnly: true,
+        hasAppServerControlHistory: true,
+        appServerControlOnly: true,
         supervisor: { profile: 'claude' },
       },
     ];
@@ -320,8 +320,8 @@ describe('tabManager', () => {
       {
         id: 's1',
         agentControlled: true,
-        hasLensHistory: true,
-        lensOnly: false,
+        hasAppServerControlHistory: true,
+        appServerControlOnly: false,
         supervisor: { profile: 'claude' },
       },
     ];

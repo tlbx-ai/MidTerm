@@ -426,7 +426,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                         itemId = "item-mcp-1",
                                         toolUseId = "item-mcp-1",
                                         toolName = "grep",
-                                        summary = "Searching src for Lens runtime events"
+                                        summary = "Searching src for AppServerControl runtime events"
                                     }
                                 }, _shutdown.Token).ConfigureAwait(false);
                                 await SendJsonAsync(socket, new
@@ -440,7 +440,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                             id = "item-mcp-1",
                                             type = "mcpToolCall",
                                             title = "grep",
-                                            summary = "Found Lens runtime handlers"
+                                            summary = "Found AppServerControl runtime handlers"
                                         }
                                     }
                                 }, _shutdown.Token).ConfigureAwait(false);

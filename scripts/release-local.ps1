@@ -21,14 +21,14 @@
       - Changed Ai.Tlbx.MidTerm.AgentHost/ in a way that must ship to running installs
       - Changed Ai.Tlbx.MidTerm.Common/ (shared protocol code)
       - Changed IPC/protocol between mt and mthost
-      - Changed Lens runtime IPC/attach contracts
+      - Changed AppServerControl runtime IPC/attach contracts
 
     Answer 'no' if ONLY these changed:
       - TypeScript/frontend code
       - CSS/HTML
       - REST API endpoints
       - Web-only C# code
-      - Lens/UI changes that do not require refreshing installed host binaries
+      - AppServerControl/UI changes that do not require refreshing installed host binaries
 
 .EXAMPLE
     .\release-local.ps1 -ReleaseNotes @(

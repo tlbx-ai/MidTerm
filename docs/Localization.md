@@ -7,7 +7,7 @@
 - Keep all shipped locales structurally aligned with English.
 - Prefer native product tone over literal translation.
 - Preserve product names and common technical loanwords when they sound natural in the target language.
-- Avoid mixed-language UI in high-visibility surfaces such as sidebar, settings, share flows, update flows, and Lens.
+- Avoid mixed-language UI in high-visibility surfaces such as sidebar, settings, share flows, update flows, and Agent Controller Session.
 
 ## Tone Rules
 

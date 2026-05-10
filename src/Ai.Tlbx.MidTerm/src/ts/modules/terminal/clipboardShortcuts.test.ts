@@ -61,9 +61,9 @@ describe('isCopyShortcut', () => {
 describe('resolveCopyShortcutAction', () => {
   it('copies locally only when there is a selection', () => {
     expect(resolveCopyShortcutAction(key('c', { ctrlKey: true }), 'windows', true)).toBe('copy');
-    expect(resolveCopyShortcutAction(key('c', { ctrlKey: true, shiftKey: true }), 'unix', true)).toBe(
-      'copy',
-    );
+    expect(
+      resolveCopyShortcutAction(key('c', { ctrlKey: true, shiftKey: true }), 'unix', true),
+    ).toBe('copy');
   });
 
   it('passes copy shortcuts through to terminal input when nothing is selected', () => {
@@ -76,8 +76,6 @@ describe('resolveCopyShortcutAction', () => {
   });
 
   it('ignores unrelated shortcuts', () => {
-    expect(resolveCopyShortcutAction(key('x', { ctrlKey: true }), 'windows', false)).toBe(
-      'ignore',
-    );
+    expect(resolveCopyShortcutAction(key('x', { ctrlKey: true }), 'windows', false)).toBe('ignore');
   });
 });

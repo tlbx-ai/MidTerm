@@ -43,7 +43,7 @@ interface SessionTabState {
   tabBar: HTMLDivElement;
   panels: Record<SessionTabId, HTMLDivElement>;
   activeTab: SessionTabId;
-  lensAvailable: boolean;
+  appServerControlAvailable: boolean;
 }
 
 const sessionTabStates = new Map<string, SessionTabState>();
@@ -118,7 +118,7 @@ export function onTabActivated(
 
 /**
  * Lets modules release tab-scoped resources as soon as a surface loses focus,
- * which matters for streams like Lens that should not keep running invisibly.
+ * which matters for streams like AppServerControl that should not keep running invisibly.
  */
 export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string) => void): void {
   (tabDeactivationCallbacks[tab] ??= []).push(callback);
@@ -180,7 +180,7 @@ export function ensureSessionWrapper(sessionId: string): SessionTabState {
     tabBar,
     panels,
     activeTab: defaultTab,
-    lensAvailable: false,
+    appServerControlAvailable: false,
   };
 
   sessionTabStates.set(sessionId, state);
@@ -260,14 +260,14 @@ export function isTabAvailable(sessionId: string, tab: SessionTabId): boolean {
   }
 
   if (tab === 'agent') {
-    return state.lensAvailable;
+    return state.appServerControlAvailable;
   }
 
   return isTabVisible(state.tabBar, tab);
 }
 
 /**
- * Reconciles live session capabilities with visible tab chrome so Lens-backed
+ * Reconciles live session capabilities with visible tab chrome so AppServerControl-backed
  * sessions stay accessible as soon as the backend says they are eligible.
  */
 export function syncSessionTabCapabilities(
@@ -281,7 +281,7 @@ export function syncSessionTabCapabilities(
 
   const primaryTab = resolvePrimaryTab(session);
 
-  state.lensAvailable = primaryTab === 'agent';
+  state.appServerControlAvailable = primaryTab === 'agent';
   setTabLabel(state.tabBar, 'agent', getAgentSurfaceLabel(session));
   setTabVisible(state.tabBar, 'terminal', primaryTab === 'terminal');
   setTabVisible(state.tabBar, 'agent', primaryTab === 'agent');
@@ -293,19 +293,22 @@ export function syncSessionTabCapabilities(
 }
 
 /**
- * Lets Lens-driven flows expose the tab as soon as real conversation content
+ * Lets AppServerControl-driven flows expose the tab as soon as real conversation content
  * exists, even before session-list metadata has caught up.
  */
-export function setSessionLensAvailability(sessionId: string, _available: boolean): void {
+export function setSessionAppServerControlAvailability(
+  sessionId: string,
+  _available: boolean,
+): void {
   const state = sessionTabStates.get(sessionId);
   if (!state) {
     return;
   }
 
   const session = getSessionById(sessionId);
-  state.lensAvailable = session?.lensOnly === true;
-  setTabVisible(state.tabBar, 'agent', state.lensAvailable);
-  setTabVisible(state.tabBar, 'terminal', session?.lensOnly !== true);
+  state.appServerControlAvailable = session?.appServerControlOnly === true;
+  setTabVisible(state.tabBar, 'agent', state.appServerControlAvailable);
+  setTabVisible(state.tabBar, 'terminal', session?.appServerControlOnly !== true);
 }
 
 export function getTabLabelForSession(sessionId: string, tab: SessionTabId): string {
@@ -324,7 +327,7 @@ export function switchTab(
   const state = sessionTabStates.get(sessionId);
   if (!state) return;
   if (tab === 'agent') {
-    if (!state.lensAvailable && !isTabVisible(state.tabBar, tab)) return;
+    if (!state.appServerControlAvailable && !isTabVisible(state.tabBar, tab)) return;
   } else if (!options?.forceHidden && !isTabVisible(state.tabBar, tab)) {
     return;
   }
