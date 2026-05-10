@@ -372,6 +372,8 @@ describe('setupVisualViewport', () => {
 
     setupVisualViewport();
 
+    expect(appEl.style.top).toBe('12px');
+    expect(appEl.style.bottom).toBe('auto');
     expect(appEl.style.height).toBe('500px');
     expect(appEl.style.maxHeight).toBe('500px');
     expect(documentElement.style.height).toBe('500px');

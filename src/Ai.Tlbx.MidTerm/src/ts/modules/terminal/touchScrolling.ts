@@ -291,13 +291,35 @@ function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: numbe
 }
 
 function scrollViewport(s: TouchScrollState, deltaY: number): void {
+  const remainingDeltaY = consumeMobileStableTerminalShellScroll(s, deltaY);
+  if (Math.abs(remainingDeltaY) < 0.5) return;
   if (s.cellHeight <= 0) return;
-  s.scrollAccumulator += deltaY / s.cellHeight;
+  s.scrollAccumulator += remainingDeltaY / s.cellHeight;
   const lines = Math.trunc(s.scrollAccumulator);
   if (lines !== 0) {
     s.terminal.scrollLines(lines);
     s.scrollAccumulator -= lines;
   }
+}
+
+export function consumeMobileStableTerminalShellScroll(
+  s: Pick<TouchScrollState, 'overlay'>,
+  deltaY: number,
+): number {
+  const container = s.overlay.parentElement;
+  if (!container?.classList.contains('mobile-terminal-vertical-stable')) {
+    return deltaY;
+  }
+
+  const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+  if (maxScrollTop <= 0) {
+    return deltaY;
+  }
+
+  const previousScrollTop = container.scrollTop;
+  const nextScrollTop = Math.max(0, Math.min(maxScrollTop, previousScrollTop + deltaY));
+  container.scrollTop = nextScrollTop;
+  return deltaY - (container.scrollTop - previousScrollTop);
 }
 
 function cancelLongPress(s: TouchScrollState): void {
