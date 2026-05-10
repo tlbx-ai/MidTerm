@@ -106,6 +106,7 @@ let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;
+const PREVIEW_TAB_CHANGED_EVENT = 'midterm:web-preview-active-tab-changed';
 let statusRefreshTimer: number | null = null;
 let screenshotInFlight = false;
 type PreviewReloadMode = 'soft' | 'force' | 'hard';
@@ -625,6 +626,7 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.tabIndex = isActive ? 0 : -1;
     refreshPreviewBridgeVisibility(frame, isActive);
   }
+  window.dispatchEvent(new CustomEvent(PREVIEW_TAB_CHANGED_EVENT, { detail: { frameKey } }));
 }
 
 function postCookieBridgeResponse(

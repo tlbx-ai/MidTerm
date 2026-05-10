@@ -5,9 +5,11 @@ import { setMobileVerticalStability } from './mobileVerticalStability';
 const DEFAULT_KEYBOARD_RATIO = 0.42;
 const MIN_KEYBOARD_HEIGHT_PX = 220;
 const MAX_KEYBOARD_HEIGHT_PX = 360;
+const PREVIEW_TAB_CHANGED_EVENT = 'midterm:web-preview-active-tab-changed';
 
 let active = false;
 let keyboardHeight = 0;
+const fallbackPreviewState = new Map<string, { active: boolean; height: number }>();
 
 declare global {
   interface Window {
@@ -26,22 +28,42 @@ export function initDevSoftKeyboardSimulator(): void {
   if (!button || !keyboard) return;
 
   button.addEventListener('click', () => {
-    const previewKeyboard = getActivePreviewKeyboard();
+    const activePreview = getActivePreview();
+    const previewKeyboard = activePreview?.keyboard ?? null;
     if (previewKeyboard) {
       previewKeyboard.toggle();
       button.setAttribute('aria-pressed', String(previewKeyboard.isActive()));
       return;
     }
 
-    if (active) {
+    const frameKey = activePreview?.frameKey;
+    if (frameKey) {
+      const state = fallbackPreviewState.get(frameKey);
+      if (state?.active) {
+        hideContainedPreviewKeyboard(frameKey);
+      } else {
+        showContainedPreviewKeyboard(frameKey);
+      }
+      return;
+    }
+
+    if (active && document.body.classList.contains('dev-soft-keyboard-active')) {
       hideDevSoftKeyboard();
     } else {
-      showContainedPreviewKeyboard();
+      showDevSoftKeyboard();
     }
   });
 
+  window.addEventListener(PREVIEW_TAB_CHANGED_EVENT, syncToolbarButtonToActivePreview);
+
   window.addEventListener('resize', () => {
-    if (active) {
+    const activeFallbackFrameKey = getActiveFallbackFrameKey();
+    if (activeFallbackFrameKey) {
+      showContainedPreviewKeyboard(activeFallbackFrameKey, keyboardHeight || undefined);
+      return;
+    }
+
+    if (active && document.body.classList.contains('dev-soft-keyboard-active')) {
       showDevSoftKeyboard(keyboardHeight);
     }
   });
@@ -60,20 +82,28 @@ export function initDevSoftKeyboardSimulator(): void {
   };
 }
 
-function getActivePreviewKeyboard(): Window['mtDevSoftKeyboard'] | null {
+function getActivePreview(): {
+  frameKey: string | null;
+  keyboard: Window['mtDevSoftKeyboard'] | null;
+} | null {
   const iframe = document.querySelector<HTMLIFrameElement>('.web-preview-iframe:not(.hidden)');
-  if (!iframe?.contentWindow) {
+  if (!iframe) {
     return null;
+  }
+
+  const frameKey = iframe.dataset.previewFrameKey || null;
+  if (!iframe.contentWindow) {
+    return { frameKey, keyboard: null };
   }
 
   try {
-    return iframe.contentWindow.mtDevSoftKeyboard ?? null;
+    return { frameKey, keyboard: iframe.contentWindow.mtDevSoftKeyboard ?? null };
   } catch {
-    return null;
+    return { frameKey, keyboard: null };
   }
 }
 
-function showContainedPreviewKeyboard(height = calculateKeyboardHeight()): void {
+function showContainedPreviewKeyboard(frameKey: string, height = calculateKeyboardHeight()): void {
   const keyboard = document.getElementById('dev-soft-keyboard');
   const button = document.getElementById('dev-soft-keyboard-toggle') as HTMLButtonElement | null;
   const previewBody = document.querySelector<HTMLElement>('.web-preview-dock-body');
@@ -85,6 +115,7 @@ function showContainedPreviewKeyboard(height = calculateKeyboardHeight()): void 
 
   active = true;
   keyboardHeight = height;
+  fallbackPreviewState.set(frameKey, { active: true, height });
   document.documentElement.style.setProperty('--midterm-dev-soft-keyboard-height', `${height}px`);
   document.body.classList.add('dev-soft-keyboard-preview-fallback');
   previewBody.appendChild(keyboard);
@@ -93,6 +124,84 @@ function showContainedPreviewKeyboard(height = calculateKeyboardHeight()): void 
   if (button) {
     button.setAttribute('aria-pressed', 'true');
   }
+}
+
+function hideContainedPreviewKeyboard(frameKey: string): void {
+  const button = document.getElementById('dev-soft-keyboard-toggle') as HTMLButtonElement | null;
+  const keyboard = document.getElementById('dev-soft-keyboard');
+
+  fallbackPreviewState.set(frameKey, { active: false, height: 0 });
+  active = hasActiveFallbackPreview();
+  keyboardHeight = 0;
+  document.documentElement.style.removeProperty('--midterm-dev-soft-keyboard-height');
+  document.body.classList.remove('dev-soft-keyboard-preview-fallback');
+  if (keyboard) {
+    keyboard.hidden = true;
+    keyboard.setAttribute('aria-hidden', 'true');
+  }
+  if (button) {
+    button.setAttribute('aria-pressed', 'false');
+  }
+}
+
+function syncToolbarButtonToActivePreview(): void {
+  const button = document.getElementById('dev-soft-keyboard-toggle') as HTMLButtonElement | null;
+  const activePreview = getActivePreview();
+  const previewKeyboardActive = activePreview?.keyboard?.isActive() ?? false;
+  const fallbackActive = syncContainedKeyboardToActivePreview(activePreview, previewKeyboardActive);
+
+  if (button) {
+    button.setAttribute('aria-pressed', String(previewKeyboardActive || fallbackActive));
+  }
+}
+
+function syncContainedKeyboardToActivePreview(
+  activePreview: ReturnType<typeof getActivePreview>,
+  previewKeyboardActive: boolean,
+): boolean {
+  const fallbackState = activePreview?.frameKey
+    ? fallbackPreviewState.get(activePreview.frameKey)
+    : null;
+  const fallbackActive = fallbackState?.active ?? false;
+
+  if (fallbackActive && activePreview?.frameKey) {
+    showContainedPreviewKeyboard(activePreview.frameKey, fallbackState?.height || undefined);
+    return true;
+  }
+
+  if (!previewKeyboardActive) {
+    hideInactiveContainedKeyboard();
+  }
+
+  return false;
+}
+
+function hideInactiveContainedKeyboard(): void {
+  const keyboard = document.getElementById('dev-soft-keyboard');
+  document.body.classList.remove('dev-soft-keyboard-preview-fallback');
+  document.documentElement.style.removeProperty('--midterm-dev-soft-keyboard-height');
+  if (keyboard?.parentElement?.classList.contains('web-preview-dock-body')) {
+    keyboard.hidden = true;
+    keyboard.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function getActiveFallbackFrameKey(): string | null {
+  const activePreview = getActivePreview();
+  if (!activePreview?.frameKey) {
+    return null;
+  }
+
+  return fallbackPreviewState.get(activePreview.frameKey)?.active ? activePreview.frameKey : null;
+}
+
+function hasActiveFallbackPreview(): boolean {
+  for (const state of fallbackPreviewState.values()) {
+    if (state.active) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function showDevSoftKeyboard(height = calculateKeyboardHeight()): void {
@@ -145,6 +254,11 @@ export function hideDevSoftKeyboard(): void {
 
   active = false;
   keyboardHeight = 0;
+  for (const [frameKey, state] of fallbackPreviewState) {
+    if (state.active) {
+      fallbackPreviewState.set(frameKey, { active: false, height: 0 });
+    }
+  }
   document.documentElement.style.removeProperty('--midterm-dev-soft-keyboard-height');
   document.documentElement.style.removeProperty('--midterm-visual-viewport-height');
   document.documentElement.style.removeProperty('--midterm-visual-viewport-offset-top');
