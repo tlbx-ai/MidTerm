@@ -205,6 +205,25 @@ describe('backgroundAppearance', () => {
     expect(alphaOf(rootStyle.getPropertyValue('--app-chrome-background'))).toBeCloseTo(0.75, 5);
   });
 
+  it('keeps Dev Browser panes 85 percent opaque at full UI transparency', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        uiTransparency: 100,
+      }),
+    );
+
+    expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-background'))).toBeCloseTo(0.85, 5);
+    expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-chrome-background'))).toBeCloseTo(
+      0.85,
+      5,
+    );
+    expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-surface-background'))).toBeCloseTo(
+      0.85,
+      5,
+    );
+  });
+
   it('uses the selected terminal color scheme for the terminal canvas background', () => {
     applyBackgroundAppearance(
       createSettings({

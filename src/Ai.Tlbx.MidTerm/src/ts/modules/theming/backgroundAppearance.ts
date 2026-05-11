@@ -49,6 +49,19 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
   { name: '--terminal-canvas-background', source: '--bg-terminal', mode: 'terminal' },
   { name: '--terminal-ui-background', source: '--bg-terminal', mode: 'ui' },
   { name: '--app-chrome-background', source: '--bg-terminal', mode: 'ui', response: 0.25 },
+  { name: '--web-preview-pane-background', source: '--bg-primary', mode: 'ui', response: 0.15 },
+  {
+    name: '--web-preview-pane-chrome-background',
+    source: '--bg-elevated',
+    mode: 'ui',
+    response: 0.15,
+  },
+  {
+    name: '--web-preview-pane-surface-background',
+    source: '--bg-surface',
+    mode: 'ui',
+    response: 0.15,
+  },
   { name: '--text-input-background', source: '--bg-input', mode: 'ui', response: 0.2 },
   {
     name: '--sidebar-item-hover-background',
