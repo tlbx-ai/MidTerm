@@ -10433,7 +10433,7 @@ body.shared-session-mode .session-tab-bar {
   bottom: 0;
   width: 400px;
   max-width: 80%;
-  background: var(--workspace-pane-background);
+  background: var(--web-preview-pane-background, var(--workspace-pane-background));
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -10466,7 +10466,7 @@ body.shared-session-mode .session-tab-bar {
   height: var(--bar-height);
   box-sizing: border-box;
   border-bottom: 1px solid var(--border-color);
-  background: var(--workspace-pane-chrome-background);
+  background: var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background));
   gap: 8px;
 }
 
@@ -10505,8 +10505,8 @@ body.shared-session-mode .session-tab-bar {
   border-bottom: 1px solid var(--border-color);
   background: linear-gradient(
     180deg,
-    var(--workspace-pane-chrome-background),
-    var(--workspace-pane-background)
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)),
+    var(--web-preview-pane-background, var(--workspace-pane-background))
   );
   overflow-x: auto;
   scrollbar-width: none;
@@ -10519,7 +10519,11 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-tab-shell {
   border: 1px solid var(--border-color);
   border-bottom-color: transparent;
-  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--web-preview-pane-surface-background, var(--bg-surface)) 86%,
+    transparent
+  );
   color: var(--text-secondary);
   border-radius: 8px 8px 0 0;
   display: inline-flex;
@@ -10542,11 +10546,15 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-tab-shell.active {
   border-color: var(--accent-gold);
-  border-bottom-color: var(--workspace-pane-background);
+  border-bottom-color: var(--web-preview-pane-background, var(--workspace-pane-background));
   background: linear-gradient(
     180deg,
-    var(--workspace-pane-chrome-background),
-    color-mix(in srgb, var(--accent-gold-10) 55%, var(--workspace-pane-background))
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)),
+    color-mix(
+      in srgb,
+      var(--accent-gold-10) 55%,
+      var(--web-preview-pane-background, var(--workspace-pane-background))
+    )
   );
   color: var(--text-primary);
   box-shadow: inset 0 0 0 1px var(--accent-gold-25);
@@ -10605,7 +10613,7 @@ body.shared-session-mode .session-tab-bar {
   padding: 6px 8px;
   gap: 4px;
   border-bottom: 1px solid var(--border-color);
-  background: var(--workspace-pane-chrome-background);
+  background: var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background));
 }
 
 .web-preview-dock-url-bar input {
@@ -10645,7 +10653,11 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-action-message {
   padding: 7px 10px;
   border-bottom: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 92%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 92%,
+    transparent
+  );
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   line-height: 1.35;
@@ -10659,7 +10671,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(
     in srgb,
     var(--accent-red) 12%,
-    var(--workspace-pane-chrome-background) 88%
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 88%
   );
   color: color-mix(in srgb, var(--accent-red) 68%, var(--text-primary) 32%);
   border-bottom-color: color-mix(in srgb, var(--accent-red) 28%, var(--border-color) 72%);
@@ -10669,7 +10681,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(
     in srgb,
     var(--accent-blue-10) 55%,
-    var(--workspace-pane-chrome-background) 45%
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 45%
   );
   color: var(--text-primary);
   border-bottom-color: color-mix(in srgb, var(--accent-blue-25) 55%, var(--border-color) 45%);
@@ -10708,7 +10720,11 @@ body.shared-session-mode .session-tab-bar {
   height: 28px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--workspace-pane-chrome-background) 90%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 90%,
+    transparent
+  );
   color: var(--text-secondary);
   font-size: 15px;
   font-weight: 700;
@@ -10731,7 +10747,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(
     in srgb,
     var(--accent-blue-10) 62%,
-    var(--workspace-pane-chrome-background) 38%
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 38%
   );
   color: var(--accent-blue-hover);
 }
@@ -10741,7 +10757,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(
     in srgb,
     var(--accent-gold-10) 62%,
-    var(--workspace-pane-chrome-background) 38%
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 38%
   );
   color: var(--accent-gold);
 }
@@ -10751,7 +10767,7 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(
     in srgb,
     var(--accent-red) 14%,
-    var(--workspace-pane-chrome-background) 86%
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 86%
   );
   color: color-mix(in srgb, var(--accent-red) 58%, var(--text-primary) 42%);
 }
@@ -10760,14 +10776,14 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: var(--workspace-pane-background);
+  background: var(--web-preview-pane-background, var(--workspace-pane-background));
 }
 
 .web-preview-dock-body.viewport-constrained {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--workspace-pane-background);
+  background: var(--web-preview-pane-background, var(--workspace-pane-background));
 }
 
 #web-preview-iframe-host {
