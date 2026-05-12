@@ -291,16 +291,6 @@ export function initAgentView(): void {
   bindAppServerControlVisualViewportRecovery();
 
   const activateAgentPanel = (sessionId: string, panel: HTMLDivElement): void => {
-    const existing = viewStates.get(sessionId);
-    if (
-      existing?.panel === panel &&
-      existing.snapshot === null &&
-      existing.activationState !== 'idle' &&
-      existing.activationState !== 'failed'
-    ) {
-      return;
-    }
-
     ensureAgentViewSkeleton(sessionId, panel, (targetSessionId) => {
       void handleAppServerControlEscape(targetSessionId);
     });
@@ -308,7 +298,11 @@ export function initAgentView(): void {
     state.panel = panel;
     bindHistoryViewport(sessionId, state);
     prepareAppServerControlForForeground(state);
-    void activateAgentView(sessionId);
+    void activateAgentView(sessionId).catch((error: unknown) => {
+      if (!isStaleAppServerControlActivationError(error)) {
+        throw error;
+      }
+    });
   };
 
   onTabActivated('agent', activateAgentPanel);
