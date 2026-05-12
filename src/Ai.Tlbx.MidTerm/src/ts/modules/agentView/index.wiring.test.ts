@@ -171,6 +171,18 @@ describe('agent view AppServerControl wiring', () => {
       ".agent-history-progress-nav[data-ready='false'] .agent-history-progress-thumb {",
     );
     expect(css).toContain('opacity: 0;');
+    expect(viewShellSource.indexOf('data-agent-field="scroll-to-bottom"')).toBeGreaterThan(
+      viewShellSource.indexOf('class="agent-history-shell"'),
+    );
+    expect(viewShellSource.indexOf('data-agent-field="scroll-to-bottom"')).toBeLessThan(
+      viewShellSource.indexOf('class="agent-composer-shell"'),
+    );
+    expect(css).toMatch(/\.agent-history-shell\s*\{[\s\S]*?position:\s*relative;/);
+    expect(css).toMatch(
+      /\.agent-scroll-to-bottom\s*\{[\s\S]*?min-height:\s*var\(--command-bay-automation-chip-height,\s*30\.6px\);[\s\S]*?border-radius:\s*var\(--command-bay-pill-radius,\s*8px\);[\s\S]*?background:\s*var\(--command-bay-ui-reactive-surface,/s,
+    );
+    expect(css).toMatch(/\.agent-scroll-to-bottom\s*\{[\s\S]*?bottom:\s*12px;/);
+    expect(css).not.toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
     expect(css).toMatch(
       /@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?flex: 0 0 44px;/s,
     );
@@ -197,6 +209,20 @@ describe('agent view AppServerControl wiring', () => {
     );
     expect(appServerControlDesign).toContain(
       'the progress navigator now stays in layout as a stateful Agent Controller Session rail instead of relying on `hidden` attribute toggles for visibility',
+    );
+    expect(historyRenderSource).toContain(
+      'if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX)',
+    );
+  });
+
+  it('lets normal history scrolling retake the progress thumb after a completed navigator drag', () => {
+    expect(indexSource).toContain('let activeHistoryNavigatorPointerId: number | null = null;');
+    expect(indexSource).toContain('activeHistoryNavigatorPointerId === null');
+    expect(indexSource).toMatch(
+      /current\.historyNavigatorMode !== 'drag-preview' \|\|[\s\S]*?activeHistoryNavigatorPointerId === null[\s\S]*?\{[\s\S]*?current\.historyNavigatorMode = 'browse';[\s\S]*?current\.historyNavigatorDragTargetIndex = null;/,
+    );
+    expect(indexSource).toMatch(
+      /updateNavigatorTarget\(event\.clientY, true\);[\s\S]*?activeHistoryNavigatorPointerId = null;[\s\S]*?activeHistoryNavigatorThumbOffsetPx = null;/,
     );
   });
 

@@ -548,8 +548,10 @@ describe('smart input tab wiring', () => {
     expect(css).toMatch(
       /body\.keyboard-visible\s+\.adaptive-footer-dock\[data-device='mobile'\]\[data-surface='appServerControl'\]\s+\.adaptive-footer-primary\s*\{/,
     );
-    expect(css).toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
-    expect(css).toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(css).toContain('bottom: 12px;');
+    expect(css).toContain('bottom: 10px;');
+    expect(css).not.toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(css).not.toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');
     expect(source).toContain(
       'function shouldKeepFocusedComposerVisibleOnMobileAppServerControl(): boolean {',
     );

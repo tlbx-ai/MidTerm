@@ -1310,6 +1310,8 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   });
   /* eslint-enable complexity */
   /* eslint-disable complexity -- scroll/fetch coordination stays consolidated here while the progress navigator replaces the older host-scroller path. */
+  let activeHistoryNavigatorPointerId: number | null = null;
+  let activeHistoryNavigatorThumbOffsetPx: number | null = null;
   const handleViewportScroll = () => {
     const current = viewStates.get(sessionId);
     const currentViewport = current?.historyViewport;
@@ -1336,7 +1338,10 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     if (current.historyAutoScrollPinned) {
       current.historyNavigatorMode = 'follow-live';
       current.historyNavigatorDragTargetIndex = null;
-    } else if (current.historyNavigatorMode !== 'drag-preview') {
+    } else if (
+      current.historyNavigatorMode !== 'drag-preview' ||
+      activeHistoryNavigatorPointerId === null
+    ) {
       current.historyNavigatorMode = 'browse';
       current.historyNavigatorDragTargetIndex = null;
     }
@@ -1384,8 +1389,6 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   const progressNav = state.historyProgressNav;
   if (progressNav && progressNav.dataset.appServerControlProgressBound !== 'true') {
     progressNav.dataset.appServerControlProgressBound = 'true';
-    let activePointerId: number | null = null;
-    let activePointerThumbOffsetPx: number | null = null;
     const updateNavigatorTarget = (clientY: number, finalize = false) => {
       const current = viewStates.get(sessionId);
       if (!current) {
@@ -1396,7 +1399,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       const target = resolveHistoryNavigatorTarget({
         state: current,
         clientY,
-        thumbDragOffsetPx: activePointerThumbOffsetPx,
+        thumbDragOffsetPx: activeHistoryNavigatorThumbOffsetPx,
       });
       if (!target) {
         return;
@@ -1418,10 +1421,10 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     };
 
     progressNav.addEventListener('pointerdown', (event) => {
-      activePointerId = event.pointerId;
+      activeHistoryNavigatorPointerId = event.pointerId;
       const current = viewStates.get(sessionId);
       const thumbRect = current?.historyProgressThumb?.getBoundingClientRect();
-      activePointerThumbOffsetPx =
+      activeHistoryNavigatorThumbOffsetPx =
         thumbRect && event.clientY >= thumbRect.top && event.clientY <= thumbRect.bottom
           ? event.clientY - thumbRect.top
           : null;
@@ -1432,7 +1435,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     });
 
     progressNav.addEventListener('pointermove', (event) => {
-      if (activePointerId !== event.pointerId) {
+      if (activeHistoryNavigatorPointerId !== event.pointerId) {
         return;
       }
 
@@ -1441,15 +1444,15 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     });
 
     const finishNavigatorDrag = (event: PointerEvent) => {
-      if (activePointerId !== event.pointerId) {
+      if (activeHistoryNavigatorPointerId !== event.pointerId) {
         return;
       }
 
-      activePointerId = null;
       Reflect.deleteProperty(progressNav.dataset, 'dragging');
       progressNav.releasePointerCapture(event.pointerId);
       updateNavigatorTarget(event.clientY, true);
-      activePointerThumbOffsetPx = null;
+      activeHistoryNavigatorPointerId = null;
+      activeHistoryNavigatorThumbOffsetPx = null;
     };
 
     progressNav.addEventListener('pointerup', finishNavigatorDrag);

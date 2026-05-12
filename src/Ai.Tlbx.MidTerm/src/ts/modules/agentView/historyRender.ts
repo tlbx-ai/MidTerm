@@ -560,7 +560,7 @@ function resolveHistoryNavigatorVisibleAnchorIndex(
   const visibleStart = Math.max(0, firstVisibleEntry.order - 1);
   const visibleEnd = Math.max(visibleStart, lastVisibleEntry.order - 1);
 
-  if (visibleStart <= 0 && metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+  if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
     return 0;
   }
 

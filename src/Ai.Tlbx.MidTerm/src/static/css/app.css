@@ -12004,6 +12004,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex: 1;
   min-height: 0;
   gap: 8px;
+  position: relative;
 }
 
 .agent-history {
@@ -12014,8 +12015,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   position: relative;
   overflow: hidden auto;
-  padding: 18px 18px 32px;
-  scroll-padding-bottom: 28px;
+  padding: 18px 18px 64px;
+  scroll-padding-bottom: 60px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -12193,26 +12194,39 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-scroll-to-bottom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   position: absolute;
-  right: 20px;
-  bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));
+  right: 18px;
+  bottom: 12px;
   z-index: 2;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--agent-appServerControl-live) 26%, transparent);
-  border-radius: 0;
-  background: var(--terminal-ui-background, var(--terminal-bg));
-  color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  min-height: var(--command-bay-automation-chip-height, 30.6px);
+  padding: 0 11px;
+  border: 1px solid var(--command-bay-ui-reactive-border, color-mix(in srgb, var(--bg-surface) 84%, transparent));
+  border-radius: var(--command-bay-pill-radius, 8px);
+  background: var(--command-bay-ui-reactive-surface, color-mix(in srgb, var(--bg-elevated) 94%, transparent));
+  color: var(--command-bay-action-ink, color-mix(in srgb, var(--text-secondary) 93%, transparent));
+  box-shadow: var(--command-bay-shadow, none);
+  font-family: var(--font-ui);
+  font-size: var(--command-bay-automation-chip-font-size, 0.729rem);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
 }
 
 .agent-scroll-to-bottom:hover {
-  border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
-  color: var(--text-primary);
+  border-color: var(--command-bay-border-strong, color-mix(in srgb, var(--border-color) 72%, var(--accent-blue)));
+  background: var(--command-bay-surface-hover, color-mix(in srgb, var(--bg-surface) 94%, transparent));
+  color: var(--command-bay-text, var(--text-primary));
 }
 
 .agent-scroll-to-bottom[hidden] {
@@ -14327,10 +14341,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
   .agent-scroll-to-bottom {
     right: 12px;
-    bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));
-    min-height: 28px;
-    padding: 0 12px;
-    font-size: 0.72rem;
+    bottom: 10px;
   }
 
   .agent-request-panel {
