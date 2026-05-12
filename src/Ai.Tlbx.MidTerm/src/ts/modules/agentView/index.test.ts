@@ -2493,6 +2493,38 @@ describe('agentView dev errors', () => {
     expect(request).toBeNull();
   });
 
+  it('preserves the snapshot retained window when runtime history entries are filtered from rendering', async () => {
+    const { resolveHistoryRetainedWindowDescriptor } = await import('./historyRender');
+
+    const descriptor = resolveHistoryRetainedWindowDescriptor(
+      [
+        {
+          id: 'system:runtime-ready',
+          order: 1,
+          kind: 'system',
+          tone: 'info',
+          label: 'MidTerm',
+          title: '',
+          body: 'Codex App Server Controller runtime ready.',
+          meta: 'Connecting',
+        },
+      ],
+      {
+        snapshot: {
+          historyWindowStart: 0,
+          historyWindowEnd: 5,
+          historyCount: 5,
+        },
+      } as any,
+    );
+
+    expect(descriptor).toEqual({
+      windowStart: 0,
+      windowEnd: 5,
+      totalCount: 5,
+    });
+  });
+
   it('keeps background AppServerControl streams alive but skips history rerenders while hidden', async () => {
     const disconnectStream = vi.fn();
     openAppServerControlHistoryStream.mockReturnValue(disconnectStream);

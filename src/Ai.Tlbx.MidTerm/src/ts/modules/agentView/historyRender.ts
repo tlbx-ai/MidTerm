@@ -137,7 +137,7 @@ function resolveContiguousHistoryEntryWindow(entries: readonly AppServerControlH
   };
 }
 
-function resolveHistoryRetainedWindowDescriptor(
+export function resolveHistoryRetainedWindowDescriptor(
   entries: readonly AppServerControlHistoryEntry[],
   state: SessionAppServerControlViewState | undefined,
 ): {
@@ -153,6 +153,15 @@ function resolveHistoryRetainedWindowDescriptor(
   const snapshotTotalCount = Math.max(snapshotWindowEnd, state?.snapshot?.historyCount ?? 0);
   const contiguousWindow = resolveContiguousHistoryEntryWindow(entries);
   if (!contiguousWindow) {
+    return {
+      windowStart: snapshotWindowStart,
+      windowEnd: snapshotWindowEnd,
+      totalCount: snapshotTotalCount,
+    };
+  }
+
+  const snapshotWindowSize = Math.max(0, snapshotWindowEnd - snapshotWindowStart);
+  if (snapshotWindowSize > entries.length) {
     return {
       windowStart: snapshotWindowStart,
       windowEnd: snapshotWindowEnd,
