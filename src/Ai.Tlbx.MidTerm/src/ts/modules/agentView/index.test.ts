@@ -369,6 +369,46 @@ describe('agentView dev errors', () => {
     );
   });
 
+  it('activates an already-selected Agent tab after init registers callbacks', async () => {
+    const panel = createPanel();
+    activeSessionId = 's1';
+    getActiveTab.mockReturnValue('agent');
+    getTabPanel.mockReturnValue(panel);
+    getAppServerControlHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        historyCount: 1,
+        historyWindowEnd: 1,
+        history: [
+          {
+            entryId: 'system:1',
+            order: 1,
+            kind: 'system',
+            turnId: null,
+            itemId: null,
+            requestId: null,
+            status: 'completed',
+            itemType: 'system',
+            title: 'System',
+            body: 'Recovered from selected Agent tab.',
+            attachments: [],
+            streaming: false,
+            createdAt: '2026-05-12T22:00:00Z',
+            updatedAt: '2026-05-12T22:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    await vi.waitFor(() => {
+      expect(getTabPanel).toHaveBeenCalledWith('s1', 'agent');
+      expect(attachSessionAppServerControl).toHaveBeenCalledWith('s1');
+    });
+    expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
+  });
+
   it('can mount and render a debug scenario without requiring a pre-activated AppServerControl tab', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);
