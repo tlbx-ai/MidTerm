@@ -296,8 +296,13 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);',
     );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        '--smart-input-textarea-collapsed-height: var( --command-bay-control-height, var(--smart-input-control-height) );',
+      ),
+    );
     expect(css).toContain(
-      '--smart-input-textarea-collapsed-height: var(--smart-input-control-height);',
+      '--smart-input-textarea-collapsed-height: var(--command-bay-control-height);',
     );
     expect(css).toContain(
       '--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);',
@@ -337,6 +342,24 @@ describe('smart input tab wiring', () => {
     expect(metricsSource).toContain('const SINGLE_LINE_VERTICAL_OPTICAL_OFFSET_PX = 3;');
     expect(metricsSource).toContain('--smart-input-textarea-padding-top');
     expect(metricsSource).toContain('--smart-input-textarea-padding-bottom');
+  });
+
+  it('matches the Command Bay dock background to the sidebar background', () => {
+    const solidRule = getCssRule(".adaptive-footer-dock[data-material='solid']");
+    const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
+
+    expect(solidRule).toContain('background: var(--bg-sidebar);');
+    expect(glassRule).toContain('background: var(--bg-sidebar);');
+    expect(solidRule).not.toContain('linear-gradient');
+    expect(glassRule).not.toContain('linear-gradient');
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace('background: var(--bg-sidebar); -webkit-backdrop-filter: none;'),
+    );
   });
 
   it('keeps attachment and token rerenders from snapping the composer viewport back to the top', () => {

@@ -16119,21 +16119,11 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock[data-material='solid'] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 0%, transparent),
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, transparent) 22%,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 100%, transparent)
-  );
+  background: var(--bg-sidebar);
 }
 
 .adaptive-footer-dock[data-material='glass'] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 12%, transparent),
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 74%, transparent) 28%,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent)
-  );
+  background: var(--bg-sidebar);
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {
@@ -16402,7 +16392,10 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-textarea {
-  --smart-input-textarea-collapsed-height: var(--smart-input-control-height);
+  --smart-input-textarea-collapsed-height: var(
+    --command-bay-control-height,
+    var(--smart-input-control-height)
+  );
   --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
   --smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);
   --smart-input-textarea-max-visible-lines: 8;
@@ -17607,11 +17600,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     padding-left: calc(4px + env(safe-area-inset-left, 0px));
     padding-right: calc(4px + env(safe-area-inset-right, 0px));
     padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 0%, transparent),
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 100%, transparent) 18%
-    );
+    background: var(--bg-sidebar);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -17650,7 +17639,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
   .smart-input-textarea {
     --smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));
-    --smart-input-textarea-collapsed-height: 46px;
+    --smart-input-textarea-collapsed-height: var(--command-bay-control-height);
     --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
     --smart-input-textarea-line-height: calc(var(--smart-input-mobile-text-size) * 1.2);
     --smart-input-textarea-padding-y: 4px;
