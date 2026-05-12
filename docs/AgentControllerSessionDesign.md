@@ -618,7 +618,7 @@ Status in this branch/work item:
 - implemented: Codex Agent Controller Session distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Agent Controller Session row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
 - implemented: Agent Controller Session history headers no longer right-bind labels or timestamps; row badges and any meta text stay left-anchored across user, assistant, tool, diff, request, system, and notice rows
-- implemented: the only animated history activity element is the trailing global busy bubble, now rendered as a rotating SVG triangle with a blue center dot instead of pulsing ellipsis dots
+- implemented: the only animated history activity element is the trailing global busy bubble, now rendered as text-only Working status with a slower mirrored sweep highlight and no spinning glyph
 - implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
 - implemented: Codex Agent Controller Session now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
 - implemented: Codex Agent Controller Session now keeps the quiet role label on user rows while omitting the redundant repeated `Agent` badge on assistant message rows

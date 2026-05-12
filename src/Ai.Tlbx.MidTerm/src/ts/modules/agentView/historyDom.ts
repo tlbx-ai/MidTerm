@@ -32,8 +32,7 @@ import type {
   SessionAppServerControlViewState,
 } from './types';
 
-const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 3770;
-const BUSY_SPIN_WALLCLOCK_CYCLE_MS = 1150;
+const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;
 
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
@@ -236,14 +235,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       label.style.setProperty(
         '--agent-busy-animation-delay-ms',
         resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS),
-      );
-    }
-
-    const spinner = (root as Element).querySelector<HTMLElement>('.agent-history-busy-spinner');
-    if (spinner) {
-      spinner.style.setProperty(
-        '--agent-busy-spin-delay-ms',
-        resolveWallclockAnimationDelayMs(BUSY_SPIN_WALLCLOCK_CYCLE_MS),
       );
     }
   }
@@ -613,11 +604,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.dataset.busyIndicator = 'true';
     const bubble = document.createElement('div');
     bubble.className = 'agent-history-busy-bubble';
-    const glyph = document.createElement('span');
-    glyph.className = 'agent-history-busy-glyph';
-    glyph.innerHTML =
-      '<svg class="agent-history-busy-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g class="agent-history-busy-spinner"><path class="agent-history-busy-triangle" d="M12 3.75 20 18.25H4L12 3.75Z" /><circle class="agent-history-busy-center" cx="12" cy="13" r="2.3" /></g></svg>';
-    bubble.appendChild(glyph);
 
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';

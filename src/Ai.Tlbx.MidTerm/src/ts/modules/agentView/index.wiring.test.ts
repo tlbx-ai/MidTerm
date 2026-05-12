@@ -388,7 +388,7 @@ describe('agent view AppServerControl wiring', () => {
     );
   });
 
-  it('renders the busy indicator as Working with a KITT mask sweep animation', () => {
+  it('renders the busy indicator as Working with a slower KITT mask sweep animation', () => {
     expect(historyProcessingSource).toContain(
       "appServerControlText('appServerControl.status.working', 'Working')",
     );
@@ -399,15 +399,13 @@ describe('agent view AppServerControl wiring', () => {
     expect(historyDomSource).toContain("labelBase.className = 'agent-history-busy-label-base'");
     expect(historyDomSource).toContain("labelGlow.className = 'agent-history-busy-label-glow'");
     expect(historyDomSource).toContain('BUSY_SWEEP_WALLCLOCK_CYCLE_MS');
-    expect(historyDomSource).toContain('BUSY_SPIN_WALLCLOCK_CYCLE_MS');
     expect(historyDomSource).toContain('--agent-busy-animation-delay-ms');
-    expect(historyDomSource).toContain('--agent-busy-spin-delay-ms');
     expect(historyDomSource).toContain(
       'resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS)',
     );
-    expect(historyDomSource).toContain(
-      'resolveWallclockAnimationDelayMs(BUSY_SPIN_WALLCLOCK_CYCLE_MS)',
-    );
+    expect(historyDomSource).toContain('const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;');
+    expect(historyDomSource).not.toContain('agent-history-busy-triangle');
+    expect(historyDomSource).not.toContain('agent-history-busy-spinner');
     expect(historyDomSource).toContain('performance.timeOrigin + performance.now()');
     expect(historyDomSource).toContain('agent-history-busy-elapsed');
     expect(historyDomSource).toContain('(Press Esc to cancel)');
@@ -421,10 +419,10 @@ describe('agent view AppServerControl wiring', () => {
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('mask-size: 300% 100%;');
     expect(css).toContain('-webkit-mask-size: 300% 100%;');
-    expect(css).toContain('animation: agent-history-busy-spin 1.15s linear infinite;');
-    expect(css).toContain('animation-delay: var(--agent-busy-spin-delay-ms, 0ms);');
+    expect(css).not.toContain('agent-history-busy-spin');
+    expect(css).not.toContain('.agent-history-busy-triangle');
     expect(css).toContain(
-      'animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;',
+      'animation: agent-history-busy-sweep 2.451s ease-in-out infinite alternate;',
     );
     expect(css).toContain('animation-delay: var(--agent-busy-animation-delay-ms, 0ms);');
     expect(css).toMatch(/mask-position:\s*66%\s*0;/);

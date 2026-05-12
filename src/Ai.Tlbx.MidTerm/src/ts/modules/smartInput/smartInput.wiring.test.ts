@@ -208,7 +208,7 @@ describe('smart input tab wiring', () => {
     );
     expect(css).toContain('font-size: var(--smart-input-mobile-text-size);');
     expect(css).toContain(
-      'padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;',
+      'padding: var(--smart-input-textarea-padding-y) 33px var(--smart-input-textarea-padding-y) 7px;',
     );
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
@@ -302,7 +302,7 @@ describe('smart input tab wiring', () => {
     );
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
-        'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+        'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 8px',
       ),
     );
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
@@ -495,6 +495,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('toggleAppServerControlPlanMode(sessionId);');
     expect(source).toContain("createAppServerControlActionButton(\n        'Goal'");
     expect(source).toContain('void prepareAppServerControlGoal(sessionId);');
+    expect(source).toContain('if (appServerControlGoalComposeSessionId === sessionId) {');
+    expect(source).toContain("appServerControlGoalComposeSessionId = null;");
     expect(source).toContain('await setAppServerControlGoal(sessionId, { objective });');
     expect(viewSource).toContain("['xhigh', 'XHigh']");
   });

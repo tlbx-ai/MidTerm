@@ -9005,7 +9005,7 @@ body.shared-session-mode .session-tab-bar {
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   min-height: var(--smart-input-textarea-min-height);
-  padding: var(--smart-input-textarea-padding-y) 12px;
+  padding: var(--smart-input-textarea-padding-y) 9px;
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
@@ -12655,43 +12655,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: color-mix(in srgb, var(--agent-appServerControl-live) 82%, var(--text-primary));
 }
 
-.agent-history-busy-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
-}
-
-.agent-history-busy-svg {
-  display: block;
-  width: 15px;
-  height: 15px;
-}
-
-.agent-history-busy-spinner {
-  transform-origin: 12px 12px;
-  animation: agent-history-busy-spin 1.15s linear infinite;
-  animation-delay: var(--agent-busy-spin-delay-ms, 0ms);
-}
-
-.agent-history-busy-triangle {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.75;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: 0.92;
-}
-
-.agent-history-busy-center {
-  fill: var(--agent-appServerControl-live);
-  filter: drop-shadow(
-    0 0 3px color-mix(in srgb, var(--agent-appServerControl-live) 72%, transparent)
-  );
-}
-
 .agent-history-busy-label {
   position: relative;
   display: inline-flex;
@@ -12729,7 +12692,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   mask-repeat: no-repeat;
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;
+  animation: agent-history-busy-sweep 2.451s ease-in-out infinite alternate;
   animation-delay: var(--agent-busy-animation-delay-ms, 0ms);
   will-change: mask-position;
 }
@@ -12752,16 +12715,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-busy-cancel {
   color: color-mix(in srgb, var(--text-muted) 78%, transparent);
-}
-
-@keyframes agent-history-busy-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @keyframes agent-history-busy-sweep {
@@ -16460,7 +16413,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     calc(
       (
           var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) -
-            2px
+            8px
         ) /
         2
     )
@@ -16469,8 +16422,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   width: 100%;
   min-height: var(--smart-input-textarea-min-height);
   padding: var(--smart-input-textarea-padding-y)
-    calc(12px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-y)
-    12px;
+    calc(9px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-y)
+    9px;
   border-radius: 10px;
   border: 1px solid var(--command-bay-border-strong);
   background: var(--command-bay-ui-reactive-surface);
@@ -17697,8 +17650,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     --smart-input-textarea-collapsed-height: 46px;
     --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
     --smart-input-textarea-line-height: calc(var(--smart-input-mobile-text-size) * 1.2);
-    --smart-input-textarea-padding-y: 7px;
-    padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;
+    --smart-input-textarea-padding-y: 4px;
+    padding: var(--smart-input-textarea-padding-y) 33px var(--smart-input-textarea-padding-y) 7px;
     border-radius: 8px;
     font-size: var(--smart-input-mobile-text-size);
     line-height: 1.2;
