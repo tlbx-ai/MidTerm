@@ -409,6 +409,23 @@ describe('agentView dev errors', () => {
     expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
   });
 
+  it('activates Agent-primary sessions when they become the active session', async () => {
+    const panel = createPanel();
+    getActiveTab.mockReturnValue('agent');
+    getTabPanel.mockReturnValue(panel);
+    getAppServerControlHistoryWindow.mockResolvedValue(createSnapshot());
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+    setActiveAppServerControlSession('s1');
+
+    await vi.waitFor(() => {
+      expect(getTabPanel).toHaveBeenCalledWith('s1', 'agent');
+      expect(attachSessionAppServerControl).toHaveBeenCalledWith('s1');
+    });
+    expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
+  });
+
   it('can mount and render a debug scenario without requiring a pre-activated AppServerControl tab', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);
