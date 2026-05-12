@@ -18,6 +18,8 @@ export function resizeSmartInputTextarea(
   const preserveScrollTop = Number.isFinite(options.preserveScrollTop ?? Number.NaN)
     ? Math.max(0, options.preserveScrollTop ?? 0)
     : Math.max(0, textarea.scrollTop);
+  textarea.style.removeProperty('--smart-input-textarea-padding-top');
+  textarea.style.removeProperty('--smart-input-textarea-padding-bottom');
   textarea.style.minHeight = '';
   textarea.style.height = 'auto';
 
