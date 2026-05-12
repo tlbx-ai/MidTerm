@@ -1385,6 +1385,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   if (progressNav && progressNav.dataset.appServerControlProgressBound !== 'true') {
     progressNav.dataset.appServerControlProgressBound = 'true';
     let activePointerId: number | null = null;
+    let activePointerThumbOffsetPx: number | null = null;
     const updateNavigatorTarget = (clientY: number, finalize = false) => {
       const current = viewStates.get(sessionId);
       if (!current) {
@@ -1395,6 +1396,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       const target = resolveHistoryNavigatorTarget({
         state: current,
         clientY,
+        thumbDragOffsetPx: activePointerThumbOffsetPx,
       });
       if (!target) {
         return;
@@ -1417,6 +1419,12 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
 
     progressNav.addEventListener('pointerdown', (event) => {
       activePointerId = event.pointerId;
+      const current = viewStates.get(sessionId);
+      const thumbRect = current?.historyProgressThumb?.getBoundingClientRect();
+      activePointerThumbOffsetPx =
+        thumbRect && event.clientY >= thumbRect.top && event.clientY <= thumbRect.bottom
+          ? event.clientY - thumbRect.top
+          : null;
       progressNav.dataset.dragging = 'true';
       progressNav.setPointerCapture(event.pointerId);
       event.preventDefault();
@@ -1441,6 +1449,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       Reflect.deleteProperty(progressNav.dataset, 'dragging');
       progressNav.releasePointerCapture(event.pointerId);
       updateNavigatorTarget(event.clientY, true);
+      activePointerThumbOffsetPx = null;
     };
 
     progressNav.addEventListener('pointerup', finishNavigatorDrag);

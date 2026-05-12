@@ -704,8 +704,9 @@ function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState 
 export function resolveHistoryNavigatorTarget(args: {
   state: SessionAppServerControlViewState | undefined;
   clientY: number;
+  thumbDragOffsetPx?: number | null;
 }): { targetIndex: number; atLiveEdge: boolean } | null {
-  const { state, clientY } = args;
+  const { state, clientY, thumbDragOffsetPx } = args;
   const host = state?.historyProgressNav;
   const snapshot = state?.snapshot;
   const historyCount = Math.max(snapshot?.historyCount ?? 0, state?.historyEntries.length ?? 0);
@@ -716,7 +717,12 @@ export function resolveHistoryNavigatorTarget(args: {
   const rect = host.getBoundingClientRect();
   const trackTopPx = rect.top + HISTORY_PROGRESS_THUMB_INSET_PX;
   const trackHeightPx = Math.max(1, rect.height - HISTORY_PROGRESS_THUMB_INSET_PX * 2);
-  const normalizedProgress = Math.max(0, Math.min(1, (clientY - trackTopPx) / trackHeightPx));
+  const thumbHeightPx = resolveHistoryProgressThumbHeightPx(host);
+  const trackTravelPx = Math.max(0, trackHeightPx - thumbHeightPx);
+  const normalizedProgress =
+    typeof thumbDragOffsetPx === 'number' && Number.isFinite(thumbDragOffsetPx) && trackTravelPx > 0
+      ? Math.max(0, Math.min(1, (clientY - thumbDragOffsetPx - trackTopPx) / trackTravelPx))
+      : Math.max(0, Math.min(1, (clientY - trackTopPx) / trackHeightPx));
   const targetIndex = clampHistoryAbsoluteIndex(
     normalizedProgress * (historyCount - 1),
     historyCount,
