@@ -5118,6 +5118,7 @@
           "agentMessageFontFamily",
           "showAgentMessageTimestamps",
           "showUnknownAgentMessages",
+          "toolCallOutputLines",
           "fontSize",
           "fontFamily",
           "terminalLigaturesEnabled",
@@ -5233,6 +5234,10 @@
           },
           "showUnknownAgentMessages": {
             "type": "boolean"
+          },
+          "toolCallOutputLines": {
+            "type": "integer",
+            "format": "int32"
           },
           "fontSize": {
             "type": "integer",

@@ -13,6 +13,7 @@ import {
   APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
 } from './historyViewport';
+import { resolveToolCallOutputLineLimit } from './historyDom';
 import {
   traceAppServerControlHistoryScroll,
   traceRenderedAppServerControlHistoryWindow,
@@ -1345,6 +1346,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       entry.sourceItemType ?? '',
       entry.commandText ?? '',
       (entry.commandOutputTail ?? []).join('\n'),
+      entry.kind === 'tool' ? String(resolveToolCallOutputLineLimit()) : '',
       buildHistoryAttachmentToken(entry),
       buildAssistantPreviewToken(entry, state),
       buildHistoryActionToken(entry),

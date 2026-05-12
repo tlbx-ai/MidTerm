@@ -332,6 +332,27 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_ClampsToolCallOutputLines()
+    {
+        var settings = new MidTermSettings
+        {
+            ToolCallOutputLines = 12
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal(12, publicSettings.ToolCallOutputLines);
+
+        publicSettings.ToolCallOutputLines = 42;
+        publicSettings.ApplyTo(settings);
+        Assert.Equal(20, settings.ToolCallOutputLines);
+
+        publicSettings.ToolCallOutputLines = -3;
+        publicSettings.ApplyTo(settings);
+        Assert.Equal(0, settings.ToolCallOutputLines);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripCustomTerminalColorSchemes()
     {
         var settings = new MidTermSettings

@@ -2020,7 +2020,7 @@ describe('agentView dev errors', () => {
       expect(getAppServerControlHistoryWindow.mock.calls).toContainEqual([
         's1',
         undefined,
-        80,
+        240,
         expect.any(String),
       ]);
     });
@@ -2262,7 +2262,7 @@ describe('agentView dev errors', () => {
         2,
         's1',
         undefined,
-        80,
+        240,
         expect.any(String),
       );
     });
@@ -4847,7 +4847,7 @@ describe('agentView dev errors', () => {
     expect(assistantEntry?.body).toContain('| alpha | 3 | Ada |');
   });
 
-  it('keeps up to 12 tail lines when folding command output into a command row', async () => {
+  it('keeps enough tail lines to honor the configurable tool output cap', async () => {
     const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
@@ -4884,7 +4884,7 @@ describe('agentView dev errors', () => {
     const history = buildAppServerControlHistoryEntries(snapshot);
     expect(history).toHaveLength(1);
     expect(history[0]?.commandOutputTail).toEqual(
-      Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
+      Array.from({ length: 14 }, (_, index) => `line ${index + 2}`),
     );
   });
 
@@ -7714,6 +7714,84 @@ describe('agentView dev errors', () => {
     expect(presentation.mode).toBe('command');
     expect(presentation.collapsedByDefault).toBe(false);
     expect(presentation.lineCount).toBe(2);
+  });
+
+  it('caps visible command output tails from the AI Agents setting', async () => {
+    const { createAgentHistoryDom, resolveToolCallOutputLineLimit } = await import('./index');
+    currentSettings = { showUnknownAgentMessages: true, toolCallOutputLines: 5 };
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'tool-command-cap',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: 'Tool completed',
+        body: 'pwsh -Command Get-Content out.log',
+        meta: '20:00:00',
+        sourceItemType: 'command_execution',
+        commandText: 'pwsh -Command Get-Content out.log',
+        commandOutputTail: Array.from({ length: 12 }, (_, index) => `line ${index + 1}`),
+      },
+      's1',
+    ) as any;
+
+    const commandBody = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-body'),
+    );
+    const output = commandBody.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-output-tail'),
+    );
+
+    expect(resolveToolCallOutputLineLimit()).toBe(5);
+    expect(output.textContent).toBe('line 1\nline 2\nline 3\nline 4\nline 5');
+  });
+
+  it('allows hiding command output tails with a zero line limit', async () => {
+    const { createAgentHistoryDom, resolveToolCallOutputLineLimit } = await import('./index');
+    currentSettings = { showUnknownAgentMessages: true, toolCallOutputLines: 0 };
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'tool-command-hidden',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: 'Tool completed',
+        body: 'pwsh -Command Get-Content out.log',
+        meta: '20:00:00',
+        sourceItemType: 'command_execution',
+        commandText: 'pwsh -Command Get-Content out.log',
+        commandOutputTail: ['line 1', 'line 2'],
+      },
+      's1',
+    ) as any;
+
+    const commandBody = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-body'),
+    );
+    const output = commandBody.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-output-tail'),
+    );
+
+    expect(resolveToolCallOutputLineLimit()).toBe(0);
+    expect(output).toBeUndefined();
   });
 
   it('tokenizes command text into command, parameter, string, operator, and text parts', async () => {

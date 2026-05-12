@@ -4139,6 +4139,8 @@ export interface components {
       showAgentMessageTimestamps: boolean;
       showUnknownAgentMessages: boolean;
       /** Format: int32 */
+      toolCallOutputLines: number;
+      /** Format: int32 */
       fontSize: number;
       fontFamily: string;
       terminalLigaturesEnabled: boolean;

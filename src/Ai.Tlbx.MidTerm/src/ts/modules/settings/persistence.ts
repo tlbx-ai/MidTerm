@@ -387,6 +387,11 @@ function buildSettingsUpdateFromRegistry(
     result.fontWeightBold,
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
   );
+  const toolCallOutputLines = result.toolCallOutputLines;
+  result.toolCallOutputLines = Math.max(
+    0,
+    Math.min(20, Number.isFinite(toolCallOutputLines) ? (toolCallOutputLines as number) : 5),
+  );
   result.boxDrawingStyle = normalizeBoxDrawingStyle(result.boxDrawingStyle);
   result.boxDrawingScale = normalizeBoxDrawingScale(result.boxDrawingScale);
 
@@ -655,6 +660,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
   document.documentElement.dataset.agentShowMessageTimestamps = settings.showAgentMessageTimestamps
     ? 'true'
     : 'false';
+  window.dispatchEvent(new CustomEvent('midterm:agent-view-settings-changed'));
   let hasFontChanges = false;
   syncBoxDrawingStyle(boxDrawingStyle);
   syncBoxDrawingScale(boxDrawingScale);

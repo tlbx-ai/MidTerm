@@ -115,7 +115,7 @@ import { $activeSessionId } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
-const APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE = 80;
+const APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE = 240;
 const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 const HISTORY_FAST_WHEEL_DELTA_MIN_PX = 480;
@@ -128,6 +128,7 @@ let appServerControlActiveSessionBound = false;
 let appServerControlSelectionGuardBound = false;
 let appServerControlForegroundRecoveryBound = false;
 let appServerControlVisualViewportRecoveryBound = false;
+let appServerControlSettingsRenderBound = false;
 let appServerControlForegroundRecoveryPending = false;
 
 function createHistoryWindowRevision(sessionId: string): string {
@@ -284,6 +285,7 @@ export function initAgentView(): void {
   bindAppServerControlTurnLifecycle();
   bindActiveAppServerControlSessionRendering();
   bindAppServerControlSelectionGuard();
+  bindAppServerControlSettingsRendering();
   bindAppServerControlForegroundRecovery();
   bindAppServerControlVisualViewportRecovery();
   onTabActivated('agent', (sessionId, panel) => {
@@ -382,6 +384,7 @@ export function resetAgentViewRuntimeForTests(): void {
   appServerControlSelectionGuardBound = false;
   appServerControlForegroundRecoveryBound = false;
   appServerControlVisualViewportRecoveryBound = false;
+  appServerControlSettingsRenderBound = false;
   appServerControlForegroundRecoveryPending = false;
 }
 
@@ -2216,6 +2219,26 @@ function bindAppServerControlSelectionGuard(): void {
   appServerControlSelectionGuardBound = true;
 }
 
+function bindAppServerControlSettingsRendering(): void {
+  if (
+    appServerControlSettingsRenderBound ||
+    typeof window === 'undefined' ||
+    typeof window.addEventListener !== 'function'
+  ) {
+    return;
+  }
+
+  window.addEventListener('midterm:agent-view-settings-changed', () => {
+    for (const [sessionId, state] of viewStates) {
+      state.renderDirty = true;
+      if (isAppServerControlViewVisible(sessionId, state)) {
+        renderCurrentAgentView(sessionId, { immediate: true });
+      }
+    }
+  });
+  appServerControlSettingsRenderBound = true;
+}
+
 function isAppServerControlViewVisible(
   sessionId: string,
   state: SessionAppServerControlViewState,
@@ -2402,6 +2425,7 @@ export {
   isScrollContainerNearBottom,
   resolveHistoryScrollMode,
 } from './historyViewport';
+export { createAgentHistoryDom, resolveToolCallOutputLineLimit } from './historyDom';
 export { suppressActiveComposerRequestEntries } from './historyRender';
 export { applyCanonicalAppServerControlDelta } from './snapshotState';
 
