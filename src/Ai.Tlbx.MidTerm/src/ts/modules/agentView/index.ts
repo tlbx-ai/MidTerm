@@ -314,24 +314,23 @@ export function initAgentView(): void {
   onTabActivated('agent', activateAgentPanel);
 
   const activateExistingAgentPanels = (): void => {
-    if (
-      typeof document === 'undefined' ||
-      typeof document.querySelectorAll !== 'function'
-    ) {
+    if (typeof document === 'undefined' || typeof document.getElementsByClassName !== 'function') {
       return;
     }
 
-    document
-      .querySelectorAll<HTMLElement>('.session-wrapper[data-active-tab="agent"]')
-      .forEach((wrapper) => {
-        const sessionId = wrapper.dataset.sessionId;
-        const panel = wrapper.querySelector<HTMLDivElement>(
-          '.agent-tab-panel.active, [data-panel="agent"].active',
-        );
-        if (sessionId && panel) {
-          activateAgentPanel(sessionId, panel);
-        }
-      });
+    Array.from(document.getElementsByClassName('session-wrapper')).forEach((candidate) => {
+      if (!(candidate instanceof HTMLElement) || candidate.dataset.activeTab !== 'agent') {
+        return;
+      }
+
+      const sessionId = candidate.dataset.sessionId;
+      const panel = candidate.querySelector<HTMLDivElement>(
+        '.agent-tab-panel.active, [data-panel="agent"].active',
+      );
+      if (sessionId && panel) {
+        activateAgentPanel(sessionId, panel);
+      }
+    });
   };
 
   $activeSessionId.subscribe((sessionId) => {
