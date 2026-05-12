@@ -129,6 +129,7 @@ let appServerControlSelectionGuardBound = false;
 let appServerControlForegroundRecoveryBound = false;
 let appServerControlVisualViewportRecoveryBound = false;
 let appServerControlSettingsRenderBound = false;
+let appServerControlExistingPanelRecoveryBound = false;
 let appServerControlForegroundRecoveryPending = false;
 
 function createHistoryWindowRevision(sessionId: string): string {
@@ -312,6 +313,27 @@ export function initAgentView(): void {
 
   onTabActivated('agent', activateAgentPanel);
 
+  const activateExistingAgentPanels = (): void => {
+    if (
+      typeof document === 'undefined' ||
+      typeof document.querySelectorAll !== 'function'
+    ) {
+      return;
+    }
+
+    document
+      .querySelectorAll<HTMLElement>('.session-wrapper[data-active-tab="agent"]')
+      .forEach((wrapper) => {
+        const sessionId = wrapper.dataset.sessionId;
+        const panel = wrapper.querySelector<HTMLDivElement>(
+          '.agent-tab-panel.active, [data-panel="agent"].active',
+        );
+        if (sessionId && panel) {
+          activateAgentPanel(sessionId, panel);
+        }
+      });
+  };
+
   $activeSessionId.subscribe((sessionId) => {
     if (!sessionId || getActiveTab(sessionId) !== 'agent') {
       return;
@@ -323,9 +345,21 @@ export function initAgentView(): void {
     }
   });
 
+  if (
+    !appServerControlExistingPanelRecoveryBound &&
+    typeof document !== 'undefined' &&
+    typeof document.addEventListener === 'function'
+  ) {
+    document.addEventListener('click', () => {
+      window.requestAnimationFrame(activateExistingAgentPanels);
+    });
+    appServerControlExistingPanelRecoveryBound = true;
+  }
+
   window.requestAnimationFrame(() => {
     const sessionId = $activeSessionId.get();
     if (!sessionId || getActiveTab(sessionId) !== 'agent') {
+      activateExistingAgentPanels();
       return;
     }
 
@@ -333,6 +367,7 @@ export function initAgentView(): void {
     if (panel) {
       activateAgentPanel(sessionId, panel);
     }
+    activateExistingAgentPanels();
   });
 
   onTabDeactivated('agent', (sessionId) => {
@@ -421,6 +456,7 @@ export function resetAgentViewRuntimeForTests(): void {
   appServerControlForegroundRecoveryBound = false;
   appServerControlVisualViewportRecoveryBound = false;
   appServerControlSettingsRenderBound = false;
+  appServerControlExistingPanelRecoveryBound = false;
   appServerControlForegroundRecoveryPending = false;
 }
 
