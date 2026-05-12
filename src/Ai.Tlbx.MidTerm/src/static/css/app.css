@@ -9005,7 +9005,8 @@ body.shared-session-mode .session-tab-bar {
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   min-height: var(--smart-input-textarea-min-height);
-  padding: var(--smart-input-textarea-padding-y) 9px;
+  padding: var(--smart-input-textarea-padding-top) 9px
+    var(--smart-input-textarea-padding-bottom) 9px;
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
@@ -16419,11 +16420,13 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     )
   );
   --smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);
+  --smart-input-textarea-padding-top: var(--smart-input-textarea-padding-y);
+  --smart-input-textarea-padding-bottom: var(--smart-input-textarea-padding-y);
   width: 100%;
   min-height: var(--smart-input-textarea-min-height);
-  padding: var(--smart-input-textarea-padding-y)
-    calc(9px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-y)
-    9px;
+  padding: var(--smart-input-textarea-padding-top)
+    calc(9px + var(--smart-input-expand-hit-size) - 10px)
+    var(--smart-input-textarea-padding-bottom) 9px;
   border-radius: 10px;
   border: 1px solid var(--command-bay-border-strong);
   background: var(--command-bay-ui-reactive-surface);
@@ -17651,7 +17654,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
     --smart-input-textarea-line-height: calc(var(--smart-input-mobile-text-size) * 1.2);
     --smart-input-textarea-padding-y: 4px;
-    padding: var(--smart-input-textarea-padding-y) 33px var(--smart-input-textarea-padding-y) 7px;
+    padding: var(--smart-input-textarea-padding-top) 33px
+      var(--smart-input-textarea-padding-bottom) 7px;
     border-radius: 8px;
     font-size: var(--smart-input-mobile-text-size);
     line-height: 1.2;

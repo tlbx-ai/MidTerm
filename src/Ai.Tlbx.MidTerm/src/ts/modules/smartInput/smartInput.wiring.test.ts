@@ -207,8 +207,10 @@ describe('smart input tab wiring', () => {
       '--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));',
     );
     expect(css).toContain('font-size: var(--smart-input-mobile-text-size);');
-    expect(css).toContain(
-      'padding: var(--smart-input-textarea-padding-y) 33px var(--smart-input-textarea-padding-y) 7px;',
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'padding: var(--smart-input-textarea-padding-top) 33px var(--smart-input-textarea-padding-bottom) 7px;',
+      ),
     );
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
@@ -300,6 +302,27 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);',
     );
+    expect(css).toContain(
+      '--smart-input-textarea-padding-top: var(--smart-input-textarea-padding-y);',
+    );
+    expect(css).toContain(
+      '--smart-input-textarea-padding-bottom: var(--smart-input-textarea-padding-y);',
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        '.adaptive-footer-dock .smart-input-textarea { flex: 1; resize: none; box-sizing: border-box;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'padding: var(--smart-input-textarea-padding-top) 9px var(--smart-input-textarea-padding-bottom) 9px;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'padding: var(--smart-input-textarea-padding-top) calc(9px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-bottom) 9px;',
+      ),
+    );
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
         'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 8px',
@@ -311,7 +334,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('@supports (leading-trim: both) and (text-edge: cap alphabetic) {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.manager-btn-overflow-hidden {');
-    expect(metricsSource).not.toContain("const SINGLE_LINE_DATASET_KEY = 'midtermSingleLine';");
+    expect(metricsSource).toContain('const SINGLE_LINE_VERTICAL_OPTICAL_OFFSET_PX = 3;');
+    expect(metricsSource).toContain('--smart-input-textarea-padding-top');
+    expect(metricsSource).toContain('--smart-input-textarea-padding-bottom');
   });
 
   it('keeps attachment and token rerenders from snapping the composer viewport back to the top', () => {
