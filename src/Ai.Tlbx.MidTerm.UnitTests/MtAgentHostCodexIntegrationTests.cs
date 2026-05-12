@@ -271,7 +271,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["app-server"], capture.Arguments);
+            Assert.Equal(["-c", "fast_default_opt_out=false", "app-server"], capture.Arguments);
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods);
             Assert.Contains("initialized", capture.Methods);
