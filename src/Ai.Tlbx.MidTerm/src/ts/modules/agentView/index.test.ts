@@ -406,6 +406,10 @@ describe('agentView dev errors', () => {
       expect(getTabPanel).toHaveBeenCalledWith('s1', 'agent');
       expect(attachSessionAppServerControl).toHaveBeenCalledWith('s1');
     });
+    await vi.waitFor(() => {
+      const history = panel.querySelector('[data-agent-field="history"]') as any;
+      expect(history.childNodes.length).toBeGreaterThan(0);
+    });
     expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
   });
 

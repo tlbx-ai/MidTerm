@@ -607,6 +607,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
     renderCurrentAgentView(sessionId);
     state.snapshot = snapshot;
     state.streamConnected = false;
+    renderCurrentAgentView(sessionId, { immediate: true });
     openLiveAppServerControlStream(sessionId, snapshot.latestSequence);
   } catch (error) {
     if (isStaleAppServerControlActivationError(error)) {
