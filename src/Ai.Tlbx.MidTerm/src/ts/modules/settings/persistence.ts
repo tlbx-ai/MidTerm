@@ -357,7 +357,11 @@ function readRegistryControlValue(
   }
 
   if (!entry.controlId || !entry.controlType) {
-    return entry.fallbackValue;
+    return prevSettings?.[entry.key] ?? entry.fallbackValue;
+  }
+
+  if (!document.getElementById(entry.controlId)) {
+    return prevSettings?.[entry.key] ?? entry.fallbackValue;
   }
 
   if (entry.controlType === 'checkbox') {

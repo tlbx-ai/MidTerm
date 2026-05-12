@@ -46,6 +46,24 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void ApplyTo_MissingUpdateChannel_PreservesExistingChannel()
+    {
+        var settings = new MidTermSettings
+        {
+            UpdateChannel = "dev"
+        };
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            UpdateChannel = null
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("dev", settings.UpdateChannel);
+    }
+
+    [Fact]
     public void ApplyTo_AllowsTransparencySettingsUpToOneHundredPercent()
     {
         var settings = new MidTermSettings();

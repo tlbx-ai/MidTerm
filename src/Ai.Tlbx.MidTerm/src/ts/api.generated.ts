@@ -4205,7 +4205,7 @@ export interface components {
       devMode: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
-      updateChannel: string;
+      updateChannel: null | string;
       language: components['schemas']['LanguageSetting'];
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;

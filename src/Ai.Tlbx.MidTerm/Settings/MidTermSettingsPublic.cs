@@ -83,7 +83,7 @@ public sealed partial class MidTermSettingsPublic
     public bool DevMode { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
     public bool ShowUpdateNotification { get; set; } = true;
-    public string UpdateChannel { get; set; } = "stable";
+    public string? UpdateChannel { get; set; }
     public LanguageSetting Language { get; set; } = LanguageSetting.Auto;
     public List<ManagerBarButton> ManagerBarButtons { get; set; } =
     [

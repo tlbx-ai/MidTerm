@@ -5422,7 +5422,10 @@
             "type": "boolean"
           },
           "updateChannel": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "language": {
             "$ref": "#/components/schemas/LanguageSetting"
