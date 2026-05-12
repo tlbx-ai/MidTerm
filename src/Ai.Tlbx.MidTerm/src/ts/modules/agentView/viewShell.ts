@@ -6,7 +6,7 @@ import {
 import type { AppServerControlDebugScenarioName } from './debugScenario';
 
 export const APP_SERVER_CONTROL_DEBUG_SCENARIO_NAMES: readonly AppServerControlDebugScenarioName[] =
-  ['mixed', 'tables', 'long', 'workflow'];
+  ['mixed', 'tables', 'long', 'massive', 'workflow'];
 
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);

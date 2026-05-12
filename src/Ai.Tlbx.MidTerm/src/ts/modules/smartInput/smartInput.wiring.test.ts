@@ -81,8 +81,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-appServerControl-actions[hidden] {');
     expect(css).toContain('display: none !important;');
     expect(css).toContain('.adaptive-footer-dock .smart-input-appServerControl-dropdown-menu {');
-    expect(css).toContain(
-      '.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up .smart-input-appServerControl-dropdown-menu {',
+    expect(css).toMatch(
+      /\.smart-input-appServerControl-dropdown\.smart-input-appServerControl-dropdown-open-up\s+\.smart-input-appServerControl-dropdown-menu\s*\{/,
     );
     expect(css).toContain('position: absolute;');
     expect(css).toContain('z-index: 5;');
@@ -123,7 +123,9 @@ describe('smart input tab wiring', () => {
       'const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);',
     );
     expect(footerSupportSource).toContain('appServerControlModelSelect,\n    quickSettingsLocked,');
-    expect(footerSupportSource).toContain('appServerControlEffortSelect,\n    quickSettingsLocked,');
+    expect(footerSupportSource).toContain(
+      'appServerControlEffortSelect,\n    quickSettingsLocked,',
+    );
     expect(footerSupportSource).toContain(
       'setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, quickSettingsLocked);',
     );
@@ -201,9 +203,13 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--smart-input-control-height: 42px;');
     expect(css).toContain('--command-bay-control-height: 36px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
-    expect(css).toContain('--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));');
+    expect(css).toContain(
+      '--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));',
+    );
     expect(css).toContain('font-size: var(--smart-input-mobile-text-size);');
-    expect(css).toContain('padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;');
+    expect(css).toContain(
+      'padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;',
+    );
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
     expect(viewSource).toContain(
@@ -536,11 +542,11 @@ describe('smart input tab wiring', () => {
   });
 
   it('keeps mobile AppServerControl status awareness and bottom-jump chrome out of the keyboard overlap zone', () => {
-    expect(css).toContain(
-      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl'] .adaptive-footer-status {",
+    expect(css).toMatch(
+      /body\.keyboard-visible\s+\.adaptive-footer-dock\[data-device='mobile'\]\[data-surface='appServerControl'\]\s+\.adaptive-footer-status\s*\{/,
     );
-    expect(css).toContain(
-      "body.keyboard-visible\n  .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl']\n  .adaptive-footer-primary {",
+    expect(css).toMatch(
+      /body\.keyboard-visible\s+\.adaptive-footer-dock\[data-device='mobile'\]\[data-surface='appServerControl'\]\s+\.adaptive-footer-primary\s*\{/,
     );
     expect(css).toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
     expect(css).toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');

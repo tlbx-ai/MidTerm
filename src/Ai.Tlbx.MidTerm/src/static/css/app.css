@@ -9157,7 +9157,9 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
-.adaptive-footer-dock .smart-input-appServerControl-field + .smart-input-appServerControl-field::before {
+.adaptive-footer-dock
+  .smart-input-appServerControl-field
+  + .smart-input-appServerControl-field::before {
   content: '';
   position: absolute;
   left: 0;
@@ -9244,7 +9246,8 @@ body.shared-session-mode .session-tab-bar {
   z-index: 1;
 }
 
-.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up .smart-input-appServerControl-dropdown-menu {
+.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up
+  .smart-input-appServerControl-dropdown-menu {
   top: auto;
   bottom: calc(100% + 8px);
 }
@@ -11887,15 +11890,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-appServerControl-content-width: 100%;
   --agent-appServerControl-user-width: 100%;
   --agent-appServerControl-rail: color-mix(in srgb, var(--border-color) 82%, transparent);
-  --agent-appServerControl-rail-strong: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
+  --agent-appServerControl-rail-strong: color-mix(
+    in srgb,
+    var(--accent-blue) 46%,
+    var(--border-color)
+  );
   --agent-appServerControl-surface: transparent;
   --agent-appServerControl-surface-strong: transparent;
   --agent-appServerControl-user-surface: transparent;
   --agent-appServerControl-machine-surface: transparent;
   --agent-appServerControl-machine-surface-strong: transparent;
   --agent-appServerControl-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
-  --agent-appServerControl-user-text: color-mix(in srgb, var(--accent-blue) 20%, var(--text-primary) 80%);
-  --agent-appServerControl-user-label: color-mix(in srgb, var(--accent-blue) 54%, var(--text-muted) 46%);
+  --agent-appServerControl-user-text: color-mix(
+    in srgb,
+    var(--accent-blue) 20%,
+    var(--text-primary) 80%
+  );
+  --agent-appServerControl-user-label: color-mix(
+    in srgb,
+    var(--accent-blue) 54%,
+    var(--text-muted) 46%
+  );
   --agent-appServerControl-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
   --agent-history-message-font-family: var(
     --terminal-font-family,
@@ -12206,6 +12221,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-entry {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 4px;
   position: relative;
@@ -12475,7 +12491,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--agent-appServerControl-assistant-label);
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-header,
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-user
+  .agent-history-header,
 .agent-view-panel[data-appServerControl-layout='full-width-left']
   .agent-history-assistant
   .agent-history-header {
@@ -12483,8 +12501,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   gap: 10px;
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-meta,
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-assistant .agent-history-meta {
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-user
+  .agent-history-meta,
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-assistant
+  .agent-history-meta {
   margin-left: 0;
   font-size: 9px;
 }
@@ -12581,7 +12603,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   line-height: var(--terminal-line-height, 1);
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-body {
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-user
+  .agent-history-body {
   color: color-mix(in srgb, var(--agent-appServerControl-user-text) 92%, var(--text-secondary) 8%);
   font-size: var(--terminal-font-size, 16px);
   line-height: var(--terminal-line-height, 1);
@@ -12649,7 +12673,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-busy-center {
   fill: var(--agent-appServerControl-live);
-  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--agent-appServerControl-live) 72%, transparent));
+  filter: drop-shadow(
+    0 0 3px color-mix(in srgb, var(--agent-appServerControl-live) 72%, transparent)
+  );
 }
 
 .agent-history-busy-label {
@@ -13825,6 +13851,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   box-sizing: border-box;
   position: relative;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   min-height: 0;
@@ -14003,7 +14030,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-direction: column;
   gap: 3px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--agent-appServerControl-machine-border) 82%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--agent-appServerControl-machine-border) 82%, transparent);
   background: color-mix(in srgb, var(--agent-appServerControl-machine-surface) 78%, transparent);
 }
 
@@ -14094,7 +14122,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 12px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--agent-appServerControl-machine-surface) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--agent-appServerControl-machine-border) 92%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--agent-appServerControl-machine-border) 92%, transparent);
 }
 
 .agent-request-field-header {
@@ -17107,15 +17136,18 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-control,
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-dropdown,
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-dropdown-trigger,
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-dropdown,
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-dropdown-trigger,
 .adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-model {
   width: 100%;
   min-width: 0;
   max-width: none;
 }
 
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-control {
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-control {
   min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
   background: color-mix(in srgb, var(--text-input-background, var(--bg-input)) 76%, transparent);
@@ -17124,7 +17156,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   font-weight: 400;
 }
 
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-actions {
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-actions {
   width: 100%;
   justify-content: stretch;
   padding: 0;
@@ -17136,7 +17169,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   min-height: 34px;
 }
 
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-actions::before {
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-actions::before {
   display: none;
 }
 
@@ -17541,7 +17575,9 @@ body.keyboard-visible
   white-space: nowrap;
 }
 
-body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl'] .adaptive-footer-status {
+body.keyboard-visible
+  .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl']
+  .adaptive-footer-status {
   top: 0;
   bottom: auto;
   order: -1;
@@ -17557,7 +17593,9 @@ body.keyboard-visible
   background: none;
 }
 
-body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-appServerControl-settings-sheet {
+body.keyboard-visible
+  .adaptive-footer-dock[data-device='mobile']
+  .smart-input-appServerControl-settings-sheet {
   max-height: min(28vh, 196px);
   overflow-y: auto;
   overscroll-behavior: contain;

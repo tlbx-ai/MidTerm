@@ -4554,6 +4554,7 @@ describe('agentView dev errors', () => {
     const { getAppServerControlDebugScenarioNames } = await import('./index');
 
     expect(getAppServerControlDebugScenarioNames()).toContain('workflow');
+    expect(getAppServerControlDebugScenarioNames()).toContain('massive');
   });
 
   it.skip('renders a rich real-Codex event mix into visible history rows', async () => {
@@ -6248,6 +6249,56 @@ describe('agentView dev errors', () => {
     expect(windowed.end).toBeLessThan(entries.length);
     expect(windowed.topSpacerPx).toBeGreaterThan(0);
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
+  });
+
+  it('keeps Agent Controller Session DOM work bounded for 10k item histories', async () => {
+    const { computeHistoryVirtualWindow } = await import('./index');
+
+    const entries = Array.from({ length: 10000 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: index % 4 === 0 ? 'user' : 'assistant',
+      tone: 'info',
+      label: index % 4 === 0 ? 'User' : 'Assistant',
+      title: '',
+      body:
+        index % 29 === 0
+          ? `Row ${index}\n\n| Metric | Value |\n| :--- | ---: |\n| retained | ${index % 100} |`
+          : `Row ${index} `.repeat(18),
+      meta: 'now',
+    })) as any;
+
+    const desktopWindow = computeHistoryVirtualWindow(entries, 480000, 900, 1200);
+    const mobileWindow = computeHistoryVirtualWindow(entries, 620000, 640, 390);
+
+    expect(desktopWindow.start).toBeGreaterThan(0);
+    expect(desktopWindow.end).toBeLessThan(entries.length);
+    expect(desktopWindow.end - desktopWindow.start).toBeLessThanOrEqual(40);
+    expect(desktopWindow.topSpacerPx).toBeGreaterThan(0);
+    expect(desktopWindow.bottomSpacerPx).toBeGreaterThan(0);
+
+    expect(mobileWindow.start).toBeGreaterThan(0);
+    expect(mobileWindow.end).toBeLessThan(entries.length);
+    expect(mobileWindow.end - mobileWindow.start).toBeLessThanOrEqual(32);
+    expect(mobileWindow.topSpacerPx).toBeGreaterThan(0);
+    expect(mobileWindow.bottomSpacerPx).toBeGreaterThan(0);
+  });
+
+  it('keeps the 10k AppServerControl debug history keyed per retained item', async () => {
+    const { buildAppServerControlDebugScenario } = await import('./debugScenario');
+
+    const { snapshot } = buildAppServerControlDebugScenario(
+      's1',
+      'massive',
+      'https://example.test',
+    );
+    const entryIds = snapshot.history.map((entry) => entry.entryId);
+
+    expect(snapshot.history).toHaveLength(10000);
+    expect(new Set(entryIds).size).toBe(entryIds.length);
+    expect(entryIds[0]).toBe('user:user-massive-1');
+    expect(entryIds[1]).toBe('assistant:assistant-massive-2');
+    expect(entryIds.at(-1)).toBe('assistant:assistant-massive-10000');
   });
 
   it('subtracts older-history top spacer height before resolving the visible window', async () => {

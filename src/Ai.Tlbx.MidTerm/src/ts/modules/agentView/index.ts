@@ -432,11 +432,11 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
   state.activationActionBusy = false;
   state.requestBusyIds.clear();
   state.historyWindowRevision = null;
-  setHistoryScrollMode(state, 'follow');
-  state.historyNavigatorMode = 'follow-live';
+  setHistoryScrollMode(state, 'browse');
+  state.historyNavigatorMode = 'browse';
   state.historyNavigatorDragTargetIndex = null;
-  renderCurrentAgentView(sessionId);
   switchTab(sessionId, 'agent');
+  renderCurrentAgentView(sessionId, { immediate: true, force: true });
   return true;
 }
 
@@ -1370,7 +1370,11 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       queueHistoryWindowViewportSync(sessionId, current);
     }
 
-    if (historyRender.shouldRenderForViewportScroll(current)) {
+    if (
+      current.historyLeadingPlaceholders.length > 0 ||
+      current.historyTrailingPlaceholders.length > 0 ||
+      historyRender.shouldRenderForViewportScroll(current)
+    ) {
       scheduleHistoryRender(sessionId);
     }
   };
@@ -1549,7 +1553,8 @@ function bindAppServerControlVisualViewportRecovery(): void {
 }
 
 function scheduleHistoryRender(sessionId: string): void {
-  renderCurrentAgentView(sessionId);
+  const state = viewStates.get(sessionId);
+  renderCurrentAgentView(sessionId, { immediate: state?.debugScenarioActive === true });
 }
 
 function clearPendingHistoryRenderBatch(state: SessionAppServerControlViewState | undefined): void {

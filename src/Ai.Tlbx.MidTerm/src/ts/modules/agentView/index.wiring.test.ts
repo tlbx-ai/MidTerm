@@ -23,9 +23,6 @@ const viewShellSource = readFileSync(path.join(__dirname, 'viewShell.ts'), 'utf8
 
 describe('agent view AppServerControl wiring', () => {
   it('keeps Codex AppServerControl user and assistant metadata above the message body', () => {
-    expect(css).toContain(
-      ".agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-header,",
-    );
     expect(css).toMatch(
       /\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-user\s+\.agent-history-header,\s*\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-assistant\s+\.agent-history-header\s*\{[^}]*justify-content:\s*flex-start;[^}]*\}/s,
     );
@@ -45,11 +42,11 @@ describe('agent view AppServerControl wiring', () => {
   });
 
   it('keeps full-width AppServerControl metadata compact while allowing the first assistant row in a turn to show Agent', () => {
-    expect(css).toContain(
-      ".agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-badge-user,",
+    expect(css).toMatch(
+      /\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-badge-user,\s*\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-badge-assistant\s*\{/s,
     );
-    expect(css).toContain(
-      ".agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-meta,",
+    expect(css).toMatch(
+      /\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-user\s+\.agent-history-meta,\s*\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-assistant\s+\.agent-history-meta\s*\{/s,
     );
     expect(css).toContain('font-size: 9px;');
     expect(css).toContain(
@@ -161,6 +158,8 @@ describe('agent view AppServerControl wiring', () => {
     expect(historyRenderSource).not.toContain('host.hidden = historyCount <= 0;');
     expect(viewShellSource).not.toContain('repairAgentViewSkeleton(');
     expect(viewShellSource).not.toContain('history-index-scroll');
+    expect(css).toMatch(/\.agent-history-entry\s*\{[\s\S]*?flex:\s*0 0 auto;/);
+    expect(css).toMatch(/\.agent-history-placeholder\s*\{[\s\S]*?flex:\s*0 0 auto;/);
     expect(css).toContain('flex: 0 0 12px;');
     expect(css).toContain('width: 2px;');
     expect(css).toContain(
