@@ -13,7 +13,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private const int CodexStderrBlockFlushDelayMs = 175;
-    private const string CodexAppServerArguments = "-c fast_default_opt_out=false app-server";
+    private const string CodexAppServerArguments = "-c fast_default_opt_out=false --enable remote_compaction_v2 app-server";
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {

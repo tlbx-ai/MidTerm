@@ -119,14 +119,15 @@ describe('agent view AppServerControl wiring', () => {
   });
 
   it('binds the AppServerControl pane background to terminal transparency tokens', () => {
-    expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
-    expect(css).toContain('.agent-chat-shell {\n  display: flex;');
-    expect(css).toContain('background: transparent;');
+    expect(css).toMatch(/\.agent-view-panel\s*\{[\s\S]*?background:\s*transparent;/);
+    expect(css).toMatch(
+      /\.agent-chat-shell\s*\{[\s\S]*?background:\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\);/,
+    );
     expect(appServerControlDesign).toContain(
       'Agent Controller Session pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.',
     );
     expect(appServerControlDesign).toContain(
-      'Terminal transparency should be applied once at the outer Agent Controller Session pane surface.',
+      'Terminal transparency should be applied once at the Agent Controller Session content shell that corresponds to the terminal viewport.',
     );
   });
 
