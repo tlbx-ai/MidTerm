@@ -110,7 +110,8 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
 
   const repoName = document.createElement('span');
   repoName.className = 'session-extra-git-repo';
-  repoName.textContent = repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+  repoName.textContent =
+    repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
 
   const branch = document.createElement('span');
   branch.className = 'session-extra-git-branch';
@@ -125,7 +126,8 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
 }
 
 function buildExtraGitRepoTitle(repo: GitRepoBinding, status: GitStatusResponse | null): string {
-  const repoName = repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+  const repoName =
+    repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
   const branch = status?.branch || 'HEAD';
   const sync =
     status && (status.ahead > 0 || status.behind > 0)
