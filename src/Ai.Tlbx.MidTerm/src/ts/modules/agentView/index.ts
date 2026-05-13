@@ -1743,13 +1743,17 @@ function openLiveAppServerControlStream(sessionId: string, afterSequence: number
 
       traceAppServerControlHistoryPush(sessionId, delta, current.snapshot);
       const requiresWindowRefresh = applyCanonicalAppServerControlDelta(current, delta);
+      if (requiresWindowRefresh) {
+        if (!current.historyAutoScrollPinned && current.historyNavigatorMode !== 'drag-preview') {
+          queueUrgentHistoryWindowViewportSync(sessionId, current);
+        } else {
+          void refreshAppServerControlSnapshot(sessionId);
+        }
+      }
       if (shouldBatchLiveHistoryRender(delta)) {
         scheduleLiveHistoryRender(sessionId);
       } else {
         renderCurrentAgentView(sessionId);
-      }
-      if (requiresWindowRefresh) {
-        void refreshAppServerControlSnapshot(sessionId);
       }
     },
     onError: () => {
