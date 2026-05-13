@@ -326,6 +326,7 @@
   --bg-settings: #161821; /* Same as bg-elevated */
   --bg-tertiary: #05050a; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
+  --terminal-content-background: var(--terminal-canvas-background, var(--bg-terminal));
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
   --app-header-background:
@@ -11948,7 +11949,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-content-background, var(--terminal-canvas-background, var(--terminal-bg)));
 }
 
 .agent-runtime-stats {

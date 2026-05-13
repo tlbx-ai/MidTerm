@@ -43,10 +43,11 @@ const OPAQUE_SURFACE_VARIABLES: Array<{ name: string; source: string }> = [
 const DERIVED_BACKGROUND_VARIABLES: Array<{
   name: string;
   source: string;
-  mode: 'ui' | 'terminal';
+  mode: 'ui' | 'terminal' | 'terminal-cell';
   response?: number;
 }> = [
   { name: '--terminal-canvas-background', source: '--bg-terminal', mode: 'terminal' },
+  { name: '--terminal-content-background', source: '--bg-terminal', mode: 'terminal-cell' },
   { name: '--terminal-ui-background', source: '--bg-terminal', mode: 'ui' },
   { name: '--app-chrome-background', source: '--bg-terminal', mode: 'ui', response: 0.25 },
   { name: '--web-preview-pane-background', source: '--bg-primary', mode: 'ui', response: 0.15 },
@@ -103,6 +104,10 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
   const terminalTransparency = mobilePresentation
     ? 0
     : clamp(settings.terminalTransparency ?? settings.uiTransparency, 0, 100);
+  const terminalCellBackgroundTransparency = getTerminalCellBackgroundTransparency(
+    settings,
+    mobilePresentation,
+  );
   const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
 
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
@@ -127,7 +132,8 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
 
   for (const variable of DERIVED_BACKGROUND_VARIABLES) {
     const value =
-      variable.name === '--terminal-canvas-background'
+      variable.name === '--terminal-canvas-background' ||
+      variable.name === '--terminal-content-background'
         ? terminalBackgroundColor
         : palette[variable.source];
     const rgb = parseColor(value);
@@ -135,7 +141,11 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
       continue;
     }
 
-    const transparency = variable.mode === 'terminal' ? terminalTransparency : uiTransparency;
+    const transparency = getDerivedBackgroundTransparency(variable.mode, {
+      uiTransparency,
+      terminalTransparency,
+      terminalCellBackgroundTransparency,
+    });
     root.style.setProperty(
       variable.name,
       toRgba(rgb, transparencyToAlpha(transparency, variable.response ?? 1)),
@@ -158,6 +168,42 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     isMobileBackgroundSuppressed(settings),
   );
   document.body.classList.toggle('opaque-terminal-surfaces', terminalTransparency === 0);
+}
+
+function getTerminalCellBackgroundTransparency(
+  settings: MidTermSettingsPublic,
+  mobilePresentation: boolean,
+): number {
+  if (mobilePresentation) {
+    return 0;
+  }
+
+  return clamp(
+    settings.terminalCellBackgroundTransparency ??
+      settings.terminalTransparency ??
+      settings.uiTransparency,
+    0,
+    100,
+  );
+}
+
+function getDerivedBackgroundTransparency(
+  mode: 'ui' | 'terminal' | 'terminal-cell',
+  values: {
+    uiTransparency: number;
+    terminalTransparency: number;
+    terminalCellBackgroundTransparency: number;
+  },
+): number {
+  if (mode === 'terminal') {
+    return values.terminalTransparency;
+  }
+
+  if (mode === 'terminal-cell') {
+    return values.terminalCellBackgroundTransparency;
+  }
+
+  return values.uiTransparency;
 }
 
 function getTerminalBackgroundColor(

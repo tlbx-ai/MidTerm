@@ -263,7 +263,7 @@ The canonical history contract must satisfy the following:
 - Agent Controller Session must own the visible backdrop of its active surface. When terminal transparency is configured as fully opaque, Agent Controller Session should sit on an opaque terminal-toned underlay so wallpaper or hidden sibling panels cannot bleed through the active Agent Controller Session surface.
 - Agent Controller Session pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.
 - Agent Controller Session and Terminal panes should be the only workspace backdrop layer between their content and the app wallpaper. Parent workspace shells must stay transparent so stacked translucent backgrounds do not change the intended terminal-transparency opacity.
-- Terminal transparency should be applied once at the Agent Controller Session content shell that corresponds to the terminal viewport. The generic tab panel stays transparent; history and composer content sit on the same terminal-canvas background layer so the effective color/opacity matches the terminal.
+- Agent Controller Session must match the terminal surface that users actually read, not only the viewport underlay. The generic tab panel stays transparent; the content shell uses the terminal content/cell background token so `Terminal Cell Background Transparency = 0%` remains dark even when the terminal viewport itself is translucent over a wallpaper.
 
 ### Color and emphasis
 
