@@ -972,6 +972,45 @@
         }
       }
     },
+    "/api/sessions/{id}/topic": {
+      "put": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSessionTopicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfoDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/control": {
       "put": {
         "tags": [
@@ -5838,6 +5877,7 @@
           "shellType",
           "name",
           "terminalTitle",
+          "topic",
           "notes",
           "manuallyNamed",
           "currentDirectory",
@@ -5902,6 +5942,12 @@
             ]
           },
           "terminalTitle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "topic": {
             "type": [
               "null",
               "string"
@@ -6349,6 +6395,17 @@
         "type": "object",
         "properties": {
           "notes": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SetSessionTopicRequest": {
+        "type": "object",
+        "properties": {
+          "topic": {
             "type": [
               "null",
               "string"

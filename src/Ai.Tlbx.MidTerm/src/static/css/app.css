@@ -1542,6 +1542,17 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
     calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
 }
 
+.session-topic {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  padding: var(--sidebar-readable-ellipsis-pad-y, 4px) var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin: 0 calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
+}
+
 .session-details {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
@@ -1609,6 +1620,42 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   padding: var(--sidebar-readable-ellipsis-pad-y, 4px) var(--sidebar-readable-ellipsis-pad-x, 3px);
   margin: calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
     calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
+}
+
+.session-extra-git {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  padding: var(--sidebar-readable-ellipsis-pad-y, 4px) var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin: calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
+}
+
+.session-extra-git-repo,
+.session-extra-git-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-extra-git-repo {
+  flex: 0 1 auto;
+  max-width: 45%;
+  color: var(--text-secondary);
+}
+
+.session-extra-git-branch {
+  flex: 1 1 auto;
+}
+
+.session-extra-git-stats {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Unnamed sessions: process indicator promoted to title row */

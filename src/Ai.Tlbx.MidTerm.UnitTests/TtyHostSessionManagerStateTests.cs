@@ -79,6 +79,47 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetSessionTopic_ExistingSession_PopulatesSessionListTopic()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetSessionTopic("s1", "DAI test worker");
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("DAI test worker", dto.Topic);
+    }
+
+    [Fact]
+    public async Task SetSessionTopic_NormalizesWhitespaceAndLength()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        manager.SetSessionTopic("s1", string.Concat("one", Environment.NewLine, new string('x', 140)));
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.NotNull(dto.Topic);
+        Assert.Equal(120, dto.Topic.Length);
+        Assert.StartsWith("one x", dto.Topic, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SetSessionTopic_BlankClearsTopic()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+        manager.SetSessionTopic("s1", "keep this");
+
+        var ok = manager.SetSessionTopic("s1", " ");
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Null(dto.Topic);
+    }
+
+    [Fact]
     public async Task SetSessionNotes_NormalizesToFiveLines()
     {
         await using var manager = CreateManager();

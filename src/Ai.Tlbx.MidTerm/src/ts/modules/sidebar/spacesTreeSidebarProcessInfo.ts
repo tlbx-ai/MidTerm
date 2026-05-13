@@ -1,4 +1,6 @@
 import { t } from '../i18n';
+import { getCachedGitReposForSession } from '../git';
+import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import { getForegroundInfo } from '../process';
 import { createForegroundIndicator } from './sessionList';
 
@@ -33,7 +35,44 @@ function getForegroundSignature(entry: SpacesTreeSidebarSessionProcessEntry): st
     display.commandLine ?? '',
     display.processName,
     display.displayName ?? '',
+    getExtraGitRepoSignature(entry.id),
   ].join('\u001f');
+}
+
+function getExtraGitRepoSignature(sessionId: string): string {
+  return getCachedGitReposForSession(sessionId)
+    .filter(isExtraRepo)
+    .map(getExtraGitRepoSignaturePart)
+    .join('\u001e');
+}
+
+function isExtraRepo(repo: GitRepoBinding): boolean {
+  return !repo.isPrimary;
+}
+
+function getExtraGitRepoSignaturePart(repo: GitRepoBinding): string {
+  const statusParts = getExtraGitRepoStatusSignatureParts(repo.status ?? null);
+  return [repo.repoRoot, repo.label, repo.role, ...statusParts].join(':');
+}
+
+function getExtraGitRepoStatusSignatureParts(
+  status: GitStatusResponse | null,
+): Array<string | number> {
+  if (!status) {
+    return ['', 0, 0, 0, 0, 0, 0, 0, 0];
+  }
+
+  return [
+    status.branch,
+    status.totalAdditions,
+    status.totalDeletions,
+    status.ahead,
+    status.behind,
+    status.staged.length,
+    status.modified.length,
+    status.untracked.length,
+    status.conflicted.length,
+  ];
 }
 
 export function syncSpacesTreeSidebarSessionProcessInfoElement(
@@ -46,15 +85,58 @@ export function syncSpacesTreeSidebarSessionProcessInfoElement(
   }
 
   const display = getForegroundDisplay(entry);
-  processInfo.dataset.foregroundSignature = signature;
-  processInfo.replaceChildren(
+  const children: HTMLElement[] = [
     createForegroundIndicator(
       display.cwd,
       display.commandLine,
       display.processName,
       display.displayName,
     ),
-  );
+  ];
+  children.push(...createExtraGitRepoLines(entry.id));
+  processInfo.dataset.foregroundSignature = signature;
+  processInfo.replaceChildren(...children);
+}
+
+function createExtraGitRepoLines(sessionId: string): HTMLElement[] {
+  return getCachedGitReposForSession(sessionId).filter(isExtraRepo).map(createExtraGitRepoLine);
+}
+
+function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
+  const status = repo.status ?? null;
+  const line = document.createElement('div');
+  line.className = 'session-extra-git';
+  line.title = buildExtraGitRepoTitle(repo, status);
+
+  const repoName = document.createElement('span');
+  repoName.className = 'session-extra-git-repo';
+  repoName.textContent = repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+
+  const branch = document.createElement('span');
+  branch.className = 'session-extra-git-branch';
+  branch.textContent = status?.branch || 'HEAD';
+
+  const stats = document.createElement('span');
+  stats.className = 'session-extra-git-stats';
+  stats.textContent = `+${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}`;
+
+  line.append(repoName, branch, stats);
+  return line;
+}
+
+function buildExtraGitRepoTitle(repo: GitRepoBinding, status: GitStatusResponse | null): string {
+  const repoName = repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+  const branch = status?.branch || 'HEAD';
+  const sync =
+    status && (status.ahead > 0 || status.behind > 0)
+      ? `, ahead ${status.ahead}, behind ${status.behind}`
+      : '';
+  return `${repoName} / ${branch}, +${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}${sync}\n${repo.repoRoot}`;
+}
+
+function getRepoNameFromRoot(repoRoot: string): string {
+  const trimmed = repoRoot.replace(/[\\/]+$/, '');
+  return trimmed.split(/[\\/]/).pop() ?? trimmed;
 }
 
 export function syncSpacesTreeSidebarSessionProcessInfo(

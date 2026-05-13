@@ -685,6 +685,7 @@ function createPendingSession(cols: number, rows: number): string {
     exitCode: null,
     name: '',
     terminalTitle: '',
+    topic: null,
     currentDirectory: '',
     foregroundPid: null,
     foregroundName: null,
