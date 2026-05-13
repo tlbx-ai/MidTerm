@@ -34,6 +34,7 @@ import type {
 } from './types';
 
 const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;
+const BUSY_SWEEP_WALLCLOCK_LEG_MS = BUSY_SWEEP_WALLCLOCK_CYCLE_MS / 2;
 
 export function resolveToolCallOutputLineLimit(): number {
   const configured = $currentSettings.get()?.toolCallOutputLines;
@@ -245,13 +246,22 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    const label = (root as Element).querySelector<HTMLElement>('.agent-history-busy-label');
-    if (label) {
-      label.style.setProperty(
+    const glows = (root as Element).querySelectorAll<HTMLElement>('.agent-history-busy-label-glow');
+    glows.forEach((glow) => {
+      if (glow.dataset.busyPhaseLocked === String(BUSY_SWEEP_WALLCLOCK_CYCLE_MS)) {
+        return;
+      }
+
+      glow.style.setProperty(
+        '--agent-busy-animation-duration-ms',
+        `${BUSY_SWEEP_WALLCLOCK_LEG_MS}ms`,
+      );
+      glow.style.setProperty(
         '--agent-busy-animation-delay-ms',
         resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS),
       );
-    }
+      glow.dataset.busyPhaseLocked = String(BUSY_SWEEP_WALLCLOCK_CYCLE_MS);
+    });
   }
 
   function syncBusyIndicatorEntry(article: HTMLElement, entry: AppServerControlHistoryEntry): void {

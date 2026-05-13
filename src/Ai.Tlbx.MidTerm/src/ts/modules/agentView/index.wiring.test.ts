@@ -400,11 +400,16 @@ describe('agent view AppServerControl wiring', () => {
     expect(historyDomSource).toContain("labelBase.className = 'agent-history-busy-label-base'");
     expect(historyDomSource).toContain("labelGlow.className = 'agent-history-busy-label-glow'");
     expect(historyDomSource).toContain('BUSY_SWEEP_WALLCLOCK_CYCLE_MS');
+    expect(historyDomSource).toContain(
+      'const BUSY_SWEEP_WALLCLOCK_LEG_MS = BUSY_SWEEP_WALLCLOCK_CYCLE_MS / 2;',
+    );
     expect(historyDomSource).toContain('--agent-busy-animation-delay-ms');
+    expect(historyDomSource).toContain('--agent-busy-animation-duration-ms');
     expect(historyDomSource).toContain(
       'resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS)',
     );
     expect(historyDomSource).toContain('const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;');
+    expect(historyDomSource).toContain('glow.dataset.busyPhaseLocked');
     expect(historyDomSource).not.toContain('agent-history-busy-triangle');
     expect(historyDomSource).not.toContain('agent-history-busy-spinner');
     expect(historyDomSource).toContain('performance.timeOrigin + performance.now()');
@@ -423,7 +428,7 @@ describe('agent view AppServerControl wiring', () => {
     expect(css).not.toContain('agent-history-busy-spin');
     expect(css).not.toContain('.agent-history-busy-triangle');
     expect(css).toContain(
-      'animation: agent-history-busy-sweep 2.451s ease-in-out infinite alternate;',
+      'animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out infinite alternate;',
     );
     expect(css).toContain('animation-delay: var(--agent-busy-animation-delay-ms, 0ms);');
     expect(css).toMatch(/mask-position:\s*66%\s*0;/);

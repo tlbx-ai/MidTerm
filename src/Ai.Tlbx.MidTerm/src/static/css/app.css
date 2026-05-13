@@ -12702,7 +12702,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   mask-repeat: no-repeat;
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: agent-history-busy-sweep 2.451s ease-in-out infinite alternate;
+  animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out infinite alternate;
   animation-delay: var(--agent-busy-animation-delay-ms, 0ms);
   will-change: mask-position;
 }
