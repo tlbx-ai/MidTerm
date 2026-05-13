@@ -13,7 +13,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private const int CodexStderrBlockFlushDelayMs = 175;
-    private const string CodexRemoteCompactionEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2";
+    private const string CodexRemoteCompactionDisabledEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED";
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {
@@ -2913,7 +2913,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     private static string BuildCodexAppServerArguments()
     {
         var arguments = "-c fast_default_opt_out=false";
-        if (IsEnvironmentFlagEnabled(CodexRemoteCompactionEnvironmentVariable))
+        if (!IsEnvironmentFlagEnabled(CodexRemoteCompactionDisabledEnvironmentVariable))
         {
             arguments += " --enable remote_compaction_v2";
         }

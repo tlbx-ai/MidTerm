@@ -232,9 +232,9 @@ public sealed class MtAgentHostCodexIntegrationTests
     public async Task MtAgentHost_SpawnsFakeCodexAppServerWithExpectedColdAttachParameters()
     {
         var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
-        var originalRemoteCompaction = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2");
+        var originalRemoteCompactionDisabled = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED");
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", "false");
-        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", null);
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", null);
 
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
@@ -273,7 +273,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["-c", "fast_default_opt_out=false", "app-server"], capture.Arguments);
+            Assert.Equal(["-c", "fast_default_opt_out=false", "--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods);
             Assert.Contains("initialized", capture.Methods);
@@ -299,17 +299,17 @@ public sealed class MtAgentHostCodexIntegrationTests
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
-            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", originalRemoteCompaction);
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", originalRemoteCompactionDisabled);
         }
     }
 
     [Fact]
-    public async Task MtAgentHost_AllowsExplicitRemoteCompactionFeatureOptIn()
+    public async Task MtAgentHost_AllowsExplicitRemoteCompactionFeatureDisable()
     {
         var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
-        var originalRemoteCompaction = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2");
+        var originalRemoteCompactionDisabled = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED");
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", "false");
-        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", "true");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", "true");
 
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
@@ -322,32 +322,32 @@ public sealed class MtAgentHostCodexIntegrationTests
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
-                CommandId = "cmd-attach-remote-compaction",
-                SessionId = "session-remote-compaction",
+                CommandId = "cmd-attach-remote-compaction-disabled",
+                SessionId = "session-remote-compaction-disabled",
                 Type = "runtime.attach",
                 AttachRuntime = new AppServerControlAttachRuntimeRequest
                 {
-                    SessionId = "session-remote-compaction",
+                    SessionId = "session-remote-compaction-disabled",
                     Provider = "codex",
                     WorkingDirectory = fakeCodex.Root
                 }
             });
 
-            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-remote-compaction");
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-remote-compaction-disabled");
             Assert.Equal("accepted", attachResult.Status);
 
             _ = await WaitForReadyWindowAsync(
                 process.StandardOutput,
                 process.StandardInput,
                 pendingPatches,
-                "session-remote-compaction");
+                "session-remote-compaction-disabled");
 
             var capture = await WaitForFakeCodexLaunchCaptureAsync(
                 fakeCodex.CapturePath,
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["-c", "fast_default_opt_out=false", "--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
+            Assert.Equal(["-c", "fast_default_opt_out=false", "app-server"], capture.Arguments);
         }
         finally
         {
@@ -359,7 +359,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
-            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", originalRemoteCompaction);
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED", originalRemoteCompactionDisabled);
         }
     }
 
