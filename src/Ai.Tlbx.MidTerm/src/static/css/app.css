@@ -1544,13 +1544,14 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 .session-topic {
   font-size: var(--fs-sm);
-  color: var(--text-primary);
+  color: var(--text-on-accent);
+  line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  padding: var(--sidebar-readable-ellipsis-pad-y, 4px) var(--sidebar-readable-ellipsis-pad-x, 3px);
-  margin: 0 calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
+  padding: 0 var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin: 1px calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1) 0;
 }
 
 .session-details {
