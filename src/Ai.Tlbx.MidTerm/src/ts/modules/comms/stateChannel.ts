@@ -575,8 +575,8 @@ export async function sendCommand<T = unknown>(
  * Handle browser UI commands from the server (detach, dock, viewport).
  */
 async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
-  if (isEmbeddedWebPreviewContext()) {
-    log.verbose(() => `Ignoring browser-ui command inside embedded preview: ${msg.command}`);
+  if (isEmbeddedWebPreviewContext() && msg.command === 'detach') {
+    log.verbose(() => `Ignoring browser detach command inside embedded preview`);
     return;
   }
 
