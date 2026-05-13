@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -117,6 +118,40 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.True(ok);
         var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
         Assert.Null(dto.Topic);
+    }
+
+    [Fact]
+    public async Task ApplyDiscoveredHostMetadata_PopulatesSessionListTopic()
+    {
+        await using var manager = CreateManager();
+        var info = AddCachedSession(manager, "s1");
+        info.Topic = "MidTerm metadata persistence";
+
+        InvokeApplyDiscoveredHostMetadata(manager, info);
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("MidTerm metadata persistence", dto.Topic);
+    }
+
+    [Fact]
+    public async Task SetSessionExtraGitReposMetadata_StoresOnlyExtraRepos()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetSessionExtraGitReposMetadata("s1",
+        [
+            new GitRepoBinding { RepoRoot = @"Q:\repos\Jpa", Label = "Jpa", Role = "cwd", Source = "auto", IsPrimary = true },
+            new GitRepoBinding { RepoRoot = @"Q:\repos\MidTerm", Label = "MidTerm", Role = "target", Source = "manual", IsPrimary = false }
+        ]);
+
+        Assert.True(ok);
+        var repos = manager.GetPersistedSessionExtraGitRepos("s1");
+        var repo = Assert.Single(repos);
+        Assert.Equal(@"Q:\repos\MidTerm", repo.RepoRoot);
+        Assert.Equal("MidTerm", repo.Label);
+        Assert.Equal("target", repo.Role);
+        Assert.Equal("manual", repo.Source);
     }
 
     [Fact]
@@ -659,6 +694,15 @@ public sealed class TtyHostSessionManagerStateTests
             BindingFlags.Static | BindingFlags.NonPublic)!;
 
         method.Invoke(null, [info, workingDirectory]);
+    }
+
+    private static void InvokeApplyDiscoveredHostMetadata(TtyHostSessionManager manager, SessionInfo info)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "ApplyDiscoveredHostMetadata",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        method.Invoke(manager, [info]);
     }
 
     private static T GetField<T>(TtyHostSessionManager manager, string name)
