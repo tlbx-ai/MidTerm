@@ -56,7 +56,6 @@ function createSettings(
       | 'terminalColorSchemes'
       | 'uiTransparency'
       | 'terminalTransparency'
-      | 'terminalCellBackgroundTransparency'
       | 'backgroundImageEnabled'
       | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
@@ -73,7 +72,6 @@ function createSettings(
     terminalColorSchemes: [],
     uiTransparency: 0,
     terminalTransparency: 0,
-    terminalCellBackgroundTransparency: null,
     backgroundImageEnabled: false,
     hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
@@ -162,9 +160,6 @@ describe('backgroundAppearance', () => {
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
     const terminalCanvasAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-canvas-background'));
-    const terminalContentAlpha = alphaOf(
-      rootStyle.getPropertyValue('--terminal-content-background'),
-    );
     const sidebarAlpha = alphaOf(rootStyle.getPropertyValue('--bg-sidebar'));
     const terminalUiAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-ui-background'));
     const appChromeAlpha = alphaOf(rootStyle.getPropertyValue('--app-chrome-background'));
@@ -179,7 +174,6 @@ describe('backgroundAppearance', () => {
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(terminalCanvasAlpha).toBeCloseTo(0.4, 5);
-    expect(terminalContentAlpha).toBeCloseTo(0.4, 5);
     expect(sidebarAlpha).toBeCloseTo(0.854, 5);
     expect(sidebarAlpha).not.toBeCloseTo(terminalCanvasAlpha, 5);
     expect(terminalUiAlpha).toBeCloseTo(0.7, 5);
@@ -187,9 +181,6 @@ describe('backgroundAppearance', () => {
     expect(textInputAlpha).toBeCloseTo(0.94, 5);
     expect(sidebarHoverAlpha).toBeCloseTo(0.82, 5);
     expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
-      'rgba(12, 12, 12, 0.400)',
-    );
-    expect(rootStyle.getPropertyValue('--terminal-content-background')).toBe(
       'rgba(12, 12, 12, 0.400)',
     );
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
@@ -242,28 +233,7 @@ describe('backgroundAppearance', () => {
     );
 
     expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe('rgba(0, 0, 0, 1.000)');
-    expect(rootStyle.getPropertyValue('--terminal-content-background')).toBe('rgba(0, 0, 0, 1.000)');
     expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
-  });
-
-  it('uses terminal cell opacity for the Agent Controller terminal content surface', () => {
-    applyBackgroundAppearance(
-      createSettings({
-        theme: 'dark',
-        uiTransparency: 50,
-        terminalTransparency: 50,
-        terminalCellBackgroundTransparency: 0,
-        backgroundImageEnabled: true,
-        backgroundImageFileName: 'white.png',
-      }),
-    );
-
-    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
-      'rgba(12, 12, 12, 0.500)',
-    );
-    expect(rootStyle.getPropertyValue('--terminal-content-background')).toBe(
-      'rgba(12, 12, 12, 1.000)',
-    );
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
