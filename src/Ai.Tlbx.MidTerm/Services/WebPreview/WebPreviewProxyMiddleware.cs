@@ -1584,7 +1584,6 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return html.Contains("<!--Blazor:", StringComparison.Ordinal)
-            || html.Contains("_framework/blazor.", StringComparison.OrdinalIgnoreCase)
             || html.Contains("/_blazor/", StringComparison.OrdinalIgnoreCase);
     }
 

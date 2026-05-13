@@ -4,7 +4,6 @@
  * REST wrappers for session-scoped, named web preview contexts.
  */
 
-import { isEmbeddedWebPreviewContext } from './webContext';
 import { getOrCreateTabId } from '../../utils/cookies';
 
 export interface WebPreviewSessionInfo {
@@ -110,7 +109,7 @@ export async function ensureWebPreviewSession(
   sessionId: string,
   previewName: string,
 ): Promise<WebPreviewSessionInfo | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
@@ -134,7 +133,7 @@ export async function deleteWebPreviewSession(
   sessionId: string,
   previewName: string,
 ): Promise<boolean> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return false;
   }
 
@@ -157,10 +156,6 @@ export async function setWebPreviewTarget(
   previewName: string,
   url: string,
 ): Promise<WebPreviewTargetResponse | null> {
-  if (isEmbeddedWebPreviewContext()) {
-    return null;
-  }
-
   try {
     const res = await fetch('/api/webpreview/target', {
       method: 'PUT',
@@ -198,7 +193,7 @@ export async function getWebPreviewTarget(
 
 /** Clear the reverse proxy target for a named web preview. */
 export async function clearWebPreviewTarget(sessionId: string, previewName: string): Promise<void> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return;
   }
 
@@ -216,7 +211,7 @@ export async function clearWebPreviewCookies(
   sessionId: string,
   previewName: string,
 ): Promise<boolean> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return false;
   }
 
@@ -238,7 +233,7 @@ export async function clearWebPreviewState(
   sessionId: string,
   previewName: string,
 ): Promise<WebPreviewTargetResponse | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
@@ -264,7 +259,7 @@ export async function reloadWebPreview(
   previewName: string,
   mode: 'soft' | 'force' | 'hard',
 ): Promise<boolean> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return false;
   }
 
@@ -285,7 +280,7 @@ export async function createBrowserPreviewClient(
   sessionId: string,
   previewName: string,
 ): Promise<BrowserPreviewClientResponse | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
@@ -341,7 +336,7 @@ export async function runBrowserCommand(
   previewName: string,
   previewId?: string,
 ): Promise<BrowserCommandResponse | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
