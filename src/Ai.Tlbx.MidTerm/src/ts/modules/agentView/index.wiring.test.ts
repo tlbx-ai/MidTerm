@@ -214,6 +214,15 @@ describe('agent view AppServerControl wiring', () => {
     expect(historyRenderSource).toContain(
       'if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX)',
     );
+    expect(historyRenderSource).toContain('resolveHistoryNavigatorConcreteAnchorIndex');
+    expect(historyRenderSource).toContain('refreshAnchorFromViewport');
+    expect(historyRenderSource).toContain('state.historyNavigatorAnchorIndex');
+    expect(appServerControlDesign).toContain(
+      'Passive row-height measurement, image/content reflow, window hydration, and virtualization rerenders must not recompute the dedicated history scrollbar thumb',
+    );
+    expect(appServerControlDesign).toContain(
+      'passive Agent Controller Session row-height remeasurement no longer backpressures the dedicated progress navigator',
+    );
   });
 
   it('lets normal history scrolling retake the progress thumb after a completed navigator drag', () => {

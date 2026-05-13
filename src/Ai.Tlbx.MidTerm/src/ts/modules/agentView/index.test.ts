@@ -6754,6 +6754,157 @@ describe('agentView dev errors', () => {
     expect(String(progressThumb.style.top)).not.toBe('6px');
   });
 
+  it('does not backpressure the progress navigator from passive row-height remeasurement', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2800,
+      scrollHeight: 12000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606, height: 606 })),
+    });
+    const progressNav = createMockDomNode({
+      clientHeight: 606,
+      clientWidth: 14,
+      hidden: false,
+      dataset: {},
+      setAttribute: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, height: 606 })),
+    });
+    const progressThumb = createMockDomNode({
+      style: {} as CSSStyleDeclaration,
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="history-progress-nav"]':
+            return progressNav;
+          case '[data-agent-field="history-progress-thumb"]':
+            return progressThumb;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 120,
+        historyCount: 120,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyProgressNav: progressNav,
+      historyProgressThumb: progressThumb,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyPendingJumpTargetIndex: null,
+      historyPendingJumpAlign: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: 47,
+      historyNavigatorDragTargetIndex: null,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({
+            top: 0,
+            bottom: entry.estimatedHeightPx,
+            height: entry.estimatedHeightPx,
+          })),
+        }),
+      ),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = Array.from({ length: 120 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+      estimatedHeightPx: index % 6 === 0 ? 420 : 64,
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+    const initialThumbTop = String(progressThumb.style.top);
+    const initialValueNowCalls = progressNav.setAttribute.mock.calls.filter(
+      ([name]: [string]) => name === 'aria-valuenow',
+    );
+    const initialValueNow = initialValueNowCalls[initialValueNowCalls.length - 1]?.[1];
+
+    for (const entry of entries) {
+      state.historyMeasuredHeights.set(entry.id, entry.estimatedHeightPx > 100 ? 72 : 520);
+    }
+
+    render.renderActivationView('s1', panel, state, entries);
+    const afterRemeasureValueNowCalls = progressNav.setAttribute.mock.calls.filter(
+      ([name]: [string]) => name === 'aria-valuenow',
+    );
+    const afterRemeasureValueNow =
+      afterRemeasureValueNowCalls[afterRemeasureValueNowCalls.length - 1]?.[1];
+
+    expect(state.historyNavigatorAnchorIndex).toBe(47);
+    expect(initialValueNow).toBe('48');
+    expect(afterRemeasureValueNow).toBe('48');
+    expect(String(progressThumb.style.top)).toBe(initialThumbTop);
+  });
+
   it('realigns browse-mode history when every rendered row drifts outside the viewport', async () => {
     const { createAgentHistoryRender } = await import('./historyRender');
 

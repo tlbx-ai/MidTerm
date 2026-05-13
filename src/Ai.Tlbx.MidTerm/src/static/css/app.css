@@ -9012,7 +9012,7 @@ body.shared-session-mode .session-tab-bar {
   font-weight: var(--terminal-font-weight, normal);
   letter-spacing: var(--terminal-letter-spacing, 0px);
   font-kerning: none;
-  line-height: var(--terminal-line-height, 1);
+  line-height: var(--smart-input-textarea-line-height);
   max-height: calc(
     var(--smart-input-textarea-line-height) * var(--smart-input-textarea-max-visible-lines) +
       var(--smart-input-textarea-multiline-padding-y) * 2 + 2px
@@ -16408,8 +16408,10 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
   --smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);
   --smart-input-textarea-max-visible-lines: 8;
+  --smart-input-textarea-line-gap-extra: 2px;
   --smart-input-textarea-line-height: calc(
-    var(--terminal-font-size, 16px) * var(--terminal-line-height, 1)
+    var(--terminal-font-size, 16px) * var(--terminal-line-height, 1) +
+      var(--smart-input-textarea-line-gap-extra)
   );
   --smart-input-textarea-multiline-padding-y: max(
     0px,
@@ -16438,7 +16440,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   font-weight: var(--terminal-font-weight, normal);
   letter-spacing: var(--terminal-letter-spacing, 0px);
   font-kerning: none;
-  line-height: var(--terminal-line-height, 1);
+  line-height: var(--smart-input-textarea-line-height);
   position: relative;
   z-index: 2;
 }
@@ -17650,13 +17652,15 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     --smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));
     --smart-input-textarea-collapsed-height: var(--command-bay-control-height);
     --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
-    --smart-input-textarea-line-height: calc(var(--smart-input-mobile-text-size) * 1.2);
+    --smart-input-textarea-line-height: calc(
+      var(--smart-input-mobile-text-size) * 1.2 + var(--smart-input-textarea-line-gap-extra)
+    );
     --smart-input-textarea-padding-y: 4px;
     padding: var(--smart-input-textarea-padding-top) 33px
       var(--smart-input-textarea-padding-bottom) 7px;
     border-radius: 8px;
     font-size: var(--smart-input-mobile-text-size);
-    line-height: 1.2;
+    line-height: var(--smart-input-textarea-line-height);
   }
 
   .smart-input-textarea-shell {

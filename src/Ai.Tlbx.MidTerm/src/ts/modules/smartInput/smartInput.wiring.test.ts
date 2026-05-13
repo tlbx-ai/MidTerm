@@ -246,7 +246,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-attachments {');
     expect(css).toContain('.smart-input-attachment-chip {');
     expect(css).toContain('.smart-input-attachment-open {');
-    expect(viewSource).toContain("textarea.addEventListener('pointerdown', () => {");
+    expect(viewSource).not.toContain("textarea.addEventListener('pointerdown', () => {");
+    expect(viewSource).not.toContain('document.activeElement !== textarea');
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
@@ -335,6 +336,9 @@ describe('smart input tab wiring', () => {
     );
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
     expect(css).toContain('var(--terminal-line-height, 1)');
+    expect(css).toContain('--smart-input-textarea-line-gap-extra: 2px;');
+    expect(css).toContain('var(--smart-input-textarea-line-gap-extra)');
+    expect(css).toContain('line-height: var(--smart-input-textarea-line-height);');
     expect(css).toContain('font-kerning: none;');
     expect(css).toContain('@supports (leading-trim: both) and (text-edge: cap alphabetic) {');
     expect(css).toContain('overflow: visible;');

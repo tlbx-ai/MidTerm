@@ -531,7 +531,7 @@ function readHistoryScrollMetrics(
   };
 }
 
-function resolveHistoryNavigatorVisibleAnchorIndex(
+function resolveHistoryNavigatorEstimatedAnchorIndex(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
   totalCount: number,
@@ -575,9 +575,47 @@ function resolveHistoryNavigatorVisibleAnchorIndex(
   return (visibleStart + visibleEnd) / 2;
 }
 
+function resolveHistoryNavigatorConcreteAnchorIndex(
+  state: SessionAppServerControlViewState,
+  viewport: HTMLDivElement,
+  totalCount: number,
+): number | null {
+  if (state.historyEntries.length === 0 || typeof viewport.getBoundingClientRect !== 'function') {
+    return null;
+  }
+
+  const metrics = readHistoryScrollMetrics(viewport, state);
+  if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+    return 0;
+  }
+
+  const distanceFromBottom = metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop;
+  const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
+  if (
+    distanceFromBottom <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+    retainedWindow.windowEnd >= totalCount
+  ) {
+    return Math.max(0, totalCount - 1);
+  }
+
+  const anchor = captureViewportAnchor({
+    viewport,
+    renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+      key: entryId,
+      node: rendered.node,
+      absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+    })),
+  });
+
+  return typeof anchor?.absoluteIndex === 'number' && Number.isFinite(anchor.absoluteIndex)
+    ? anchor.absoluteIndex
+    : null;
+}
+
 function resolveHistoryNavigatorAnchorIndex(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
+  options: { refreshFromViewport?: boolean } = {},
 ): number | null {
   const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
   if (retainedWindow.totalCount <= 0) {
@@ -598,13 +636,27 @@ function resolveHistoryNavigatorAnchorIndex(
     return retainedWindow.totalCount - 1;
   }
 
-  const visibleAnchorIndex = resolveHistoryNavigatorVisibleAnchorIndex(
+  const concreteAnchorIndex = options.refreshFromViewport
+    ? resolveHistoryNavigatorConcreteAnchorIndex(state, viewport, retainedWindow.totalCount)
+    : null;
+  if (concreteAnchorIndex !== null && Number.isFinite(concreteAnchorIndex)) {
+    return clampHistoryAbsoluteIndex(concreteAnchorIndex, retainedWindow.totalCount);
+  }
+
+  if (
+    state.historyNavigatorAnchorIndex !== null &&
+    Number.isFinite(state.historyNavigatorAnchorIndex)
+  ) {
+    return clampHistoryAbsoluteIndex(state.historyNavigatorAnchorIndex, retainedWindow.totalCount);
+  }
+
+  const estimatedAnchorIndex = resolveHistoryNavigatorEstimatedAnchorIndex(
     state,
     viewport,
     retainedWindow.totalCount,
   );
-  if (visibleAnchorIndex !== null && Number.isFinite(visibleAnchorIndex)) {
-    return clampHistoryAbsoluteIndex(visibleAnchorIndex, retainedWindow.totalCount);
+  if (estimatedAnchorIndex !== null && Number.isFinite(estimatedAnchorIndex)) {
+    return clampHistoryAbsoluteIndex(estimatedAnchorIndex, retainedWindow.totalCount);
   }
 
   return clampHistoryAbsoluteIndex(
@@ -676,7 +728,10 @@ function applyHistoryProgressNavigatorPosition(args: {
   thumb.style.top = `${thumbTopPx}px`;
 }
 
-function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState | undefined): void {
+function syncHistoryProgressNavigatorUi(
+  state: SessionAppServerControlViewState | undefined,
+  options: { refreshAnchorFromViewport?: boolean } = {},
+): void {
   const host = state?.historyProgressNav;
   const thumb = state?.historyProgressThumb;
   if (!state || !host || !thumb) {
@@ -691,7 +746,11 @@ function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState 
 
   const viewport = state.historyViewport;
   const anchorIndex =
-    viewport === null ? historyCount - 1 : resolveHistoryNavigatorAnchorIndex(state, viewport);
+    viewport === null
+      ? historyCount - 1
+      : resolveHistoryNavigatorAnchorIndex(state, viewport, {
+          refreshFromViewport: options.refreshAnchorFromViewport === true,
+        });
   state.historyNavigatorAnchorIndex = anchorIndex;
   applyHistoryProgressNavigatorPosition({
     host,
@@ -1822,7 +1881,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    syncHistoryProgressNavigatorUi(state);
+    syncHistoryProgressNavigatorUi(state, { refreshAnchorFromViewport: true });
   }
 
   return {
