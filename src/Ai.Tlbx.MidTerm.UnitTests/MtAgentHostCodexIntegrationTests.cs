@@ -232,7 +232,9 @@ public sealed class MtAgentHostCodexIntegrationTests
     public async Task MtAgentHost_SpawnsFakeCodexAppServerWithExpectedColdAttachParameters()
     {
         var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
+        var originalRemoteCompaction = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2");
         Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", "false");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", null);
 
         using var fakeCodex = FakeCodexPathScope.Create();
         var hostDll = ResolveAgentHostDll();
@@ -271,7 +273,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["-c", "fast_default_opt_out=false", "--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
+            Assert.Equal(["-c", "fast_default_opt_out=false", "app-server"], capture.Arguments);
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods);
             Assert.Contains("initialized", capture.Methods);
@@ -297,6 +299,67 @@ public sealed class MtAgentHostCodexIntegrationTests
             _ = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
             Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", originalRemoteCompaction);
+        }
+    }
+
+    [Fact]
+    public async Task MtAgentHost_AllowsExplicitRemoteCompactionFeatureOptIn()
+    {
+        var originalYoloDefault = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT");
+        var originalRemoteCompaction = Environment.GetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", "false");
+        Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", "true");
+
+        using var fakeCodex = FakeCodexPathScope.Create();
+        var hostDll = ResolveAgentHostDll();
+        using var process = StartAgentHost(hostDll);
+        var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "cmd-attach-remote-compaction",
+                SessionId = "session-remote-compaction",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-remote-compaction",
+                    Provider = "codex",
+                    WorkingDirectory = fakeCodex.Root
+                }
+            });
+
+            var attachResult = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "cmd-attach-remote-compaction");
+            Assert.Equal("accepted", attachResult.Status);
+
+            _ = await WaitForReadyWindowAsync(
+                process.StandardOutput,
+                process.StandardInput,
+                pendingPatches,
+                "session-remote-compaction");
+
+            var capture = await WaitForFakeCodexLaunchCaptureAsync(
+                fakeCodex.CapturePath,
+                static launch => launch.Arguments.Length > 0 &&
+                                 !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
+
+            Assert.Equal(["-c", "fast_default_opt_out=false", "--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            _ = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT", originalYoloDefault);
+            Environment.SetEnvironmentVariable("MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2", originalRemoteCompaction);
         }
     }
 
