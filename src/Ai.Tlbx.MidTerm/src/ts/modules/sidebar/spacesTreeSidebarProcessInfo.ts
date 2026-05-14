@@ -113,15 +113,23 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   repoName.textContent =
     repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
 
+  const branchSeparator = document.createElement('span');
+  branchSeparator.className = 'session-extra-git-separator';
+  branchSeparator.textContent = '-';
+
   const branch = document.createElement('span');
   branch.className = 'session-extra-git-branch';
   branch.textContent = status?.branch || 'HEAD';
+
+  const statsSeparator = document.createElement('span');
+  statsSeparator.className = 'session-extra-git-separator';
+  statsSeparator.textContent = '-';
 
   const stats = document.createElement('span');
   stats.className = 'session-extra-git-stats';
   stats.textContent = `+${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}`;
 
-  line.append(repoName, branch, stats);
+  line.append(repoName, branchSeparator, branch, statsSeparator, stats);
   return line;
 }
 
@@ -133,7 +141,7 @@ function buildExtraGitRepoTitle(repo: GitRepoBinding, status: GitStatusResponse 
     status && (status.ahead > 0 || status.behind > 0)
       ? `, ahead ${status.ahead}, behind ${status.behind}`
       : '';
-  return `${repoName} / ${branch}, +${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}${sync}\n${repo.repoRoot}`;
+  return `${repoName} - ${branch} - +${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}${sync}\n${repo.repoRoot}`;
 }
 
 function getRepoNameFromRoot(repoRoot: string): string {

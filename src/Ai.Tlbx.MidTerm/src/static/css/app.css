@@ -1626,8 +1626,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 .session-extra-git {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
+  flex-wrap: nowrap;
+  gap: 4px;
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--fs-xs);
@@ -1642,16 +1642,24 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 }
 
 .session-extra-git-repo {
-  flex: 1 1 100%;
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-}
-
-.session-extra-git-branch {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.session-extra-git-branch {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-extra-git-separator {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .session-extra-git-stats {

@@ -27,6 +27,13 @@ class TestElement {
     return this.findByClass(className);
   }
 
+  querySelectorAll(selector: string): TestElement[] {
+    const className = selector.startsWith('.') ? selector.slice(1) : selector;
+    const matches: TestElement[] = [];
+    this.collectByClass(className, matches);
+    return matches;
+  }
+
   private findByClass(className: string): TestElement | null {
     if (this.className.split(/\s+/).includes(className)) {
       return this;
@@ -40,6 +47,16 @@ class TestElement {
     }
 
     return null;
+  }
+
+  private collectByClass(className: string, matches: TestElement[]): void {
+    if (this.className.split(/\s+/).includes(className)) {
+      matches.push(this);
+    }
+
+    for (const child of this.children) {
+      child.collectByClass(className, matches);
+    }
   }
 }
 
@@ -113,5 +130,45 @@ describe('spaces tree sidebar process info', () => {
 
     const repo = processInfo.querySelector<HTMLElement>('.session-extra-git-repo');
     expect(repo?.textContent).toBe('Q:\\repos\\MidTermWorkspace4');
+  });
+
+  it('renders each extra monitored repository as workdir branch and changes on one row', () => {
+    mocks.repos.push({
+      repoRoot: 'C:\\repos\\messengerSpecific',
+      label: 'messengerSpecific',
+      role: 'target',
+      source: 'manual',
+      isPrimary: false,
+      status: makeStatus({
+        repoRoot: 'C:\\repos\\messengerSpecific',
+        branch: 'main',
+        totalAdditions: 214,
+        totalDeletions: 24,
+      }),
+    });
+
+    const processInfo = document.createElement('div') as unknown as HTMLElement;
+    syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, {
+      id: 's1',
+      session: {
+        currentDirectory: 'Q:/repos/Jpa',
+        workspacePath: 'Q:/repos/Jpa',
+        shellType: 'pwsh',
+      },
+    });
+
+    const line = processInfo.querySelector<HTMLElement>('.session-extra-git');
+    const separators = Array.from(
+      line?.querySelectorAll<HTMLElement>('.session-extra-git-separator') ?? [],
+    );
+
+    expect(line?.querySelector<HTMLElement>('.session-extra-git-repo')?.textContent).toBe(
+      'C:\\repos\\messengerSpecific',
+    );
+    expect(line?.querySelector<HTMLElement>('.session-extra-git-branch')?.textContent).toBe('main');
+    expect(line?.querySelector<HTMLElement>('.session-extra-git-stats')?.textContent).toBe(
+      '+214 -24',
+    );
+    expect(separators.map((separator) => separator.textContent)).toEqual(['-', '-']);
   });
 });
