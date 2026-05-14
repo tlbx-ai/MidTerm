@@ -1685,10 +1685,20 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 }
 
 .session-extra-git-stats {
+  display: inline-flex;
+  gap: 5px;
   margin-left: auto;
   flex: 0 0 auto;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+.session-extra-git-stat-additions {
+  color: var(--accent-green);
+}
+
+.session-extra-git-stat-deletions {
+  color: var(--accent-red);
 }
 
 /* Unnamed sessions: process indicator promoted to title row */

@@ -186,8 +186,14 @@ describe('spaces tree sidebar process info', () => {
       'main',
     );
     expect(line?.querySelector<HTMLElement>('.session-extra-git-stats')?.textContent).toBe(
-      '+214 -24',
+      '+214-24',
     );
+    expect(
+      line?.querySelector<HTMLElement>('.session-extra-git-stat-additions')?.textContent,
+    ).toBe('+214');
+    expect(
+      line?.querySelector<HTMLElement>('.session-extra-git-stat-deletions')?.textContent,
+    ).toBe('-24');
     expect(details?.textContent).toBe('C:\\repos\\messengerSpecific-main');
     expect(separators.map((separator) => separator.textContent)).toEqual(['-']);
   });

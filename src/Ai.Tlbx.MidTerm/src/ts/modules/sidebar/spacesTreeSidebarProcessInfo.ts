@@ -126,9 +126,17 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   branch.className = 'session-extra-git-branch';
   branch.textContent = status?.branch || 'HEAD';
 
+  const additions = document.createElement('span');
+  additions.className = 'session-extra-git-stat-additions';
+  additions.textContent = `+${status?.totalAdditions ?? 0}`;
+
+  const deletions = document.createElement('span');
+  deletions.className = 'session-extra-git-stat-deletions';
+  deletions.textContent = `-${status?.totalDeletions ?? 0}`;
+
   const stats = document.createElement('span');
   stats.className = 'session-extra-git-stats';
-  stats.textContent = `+${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}`;
+  stats.append(additions, deletions);
 
   details.append(repoName, branchSeparator, branch);
   line.append(details, stats);
