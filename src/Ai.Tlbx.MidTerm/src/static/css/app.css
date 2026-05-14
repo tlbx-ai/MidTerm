@@ -1642,11 +1642,25 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 }
 
 .session-extra-git-repo {
+  display: inline-flex;
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.session-extra-git-path-root,
+.session-extra-git-path-tail {
+  flex: 0 0 auto;
+}
+
+.session-extra-git-path-middle {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-secondary);
 }
 
 .session-extra-git-branch {

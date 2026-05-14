@@ -9,9 +9,17 @@ const mocks = vi.hoisted(() => ({
 class TestElement {
   className = '';
   dataset: Record<string, string> = {};
-  textContent = '';
   title = '';
+  private ownTextContent = '';
   private readonly children: TestElement[] = [];
+
+  get textContent(): string {
+    return this.ownTextContent + this.children.map((child) => child.textContent).join('');
+  }
+
+  set textContent(value: string) {
+    this.ownTextContent = value;
+  }
 
   append(...children: TestElement[]): void {
     this.children.push(...children);
@@ -162,8 +170,16 @@ describe('spaces tree sidebar process info', () => {
       line?.querySelectorAll<HTMLElement>('.session-extra-git-separator') ?? [],
     );
 
-    expect(line?.querySelector<HTMLElement>('.session-extra-git-repo')?.textContent).toBe(
-      'C:\\repos\\messengerSpecific',
+    const repo = line?.querySelector<HTMLElement>('.session-extra-git-repo');
+    expect(repo?.textContent).toBe('C:\\repos\\messengerSpecific');
+    expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-root')?.textContent).toBe(
+      'C:\\',
+    );
+    expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-middle')?.textContent).toBe(
+      'repos\\',
+    );
+    expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-tail')?.textContent).toBe(
+      'messengerSpecific',
     );
     expect(line?.querySelector<HTMLElement>('.session-extra-git-branch')?.textContent).toBe('main');
     expect(line?.querySelector<HTMLElement>('.session-extra-git-stats')?.textContent).toBe(

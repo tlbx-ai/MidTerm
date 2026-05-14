@@ -110,8 +110,10 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
 
   const repoName = document.createElement('span');
   repoName.className = 'session-extra-git-repo';
-  repoName.textContent =
-    repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+  appendMiddleEllipsizedPath(
+    repoName,
+    repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo',
+  );
 
   const branchSeparator = document.createElement('span');
   branchSeparator.className = 'session-extra-git-separator';
@@ -147,6 +149,51 @@ function buildExtraGitRepoTitle(repo: GitRepoBinding, status: GitStatusResponse 
 function getRepoNameFromRoot(repoRoot: string): string {
   const trimmed = repoRoot.replace(/[\\/]+$/, '');
   return trimmed.split(/[\\/]/).pop() ?? trimmed;
+}
+
+function appendMiddleEllipsizedPath(host: HTMLElement, path: string): void {
+  const parts = splitPathForMiddleEllipsis(path);
+  const root = document.createElement('span');
+  root.className = 'session-extra-git-path-root';
+  root.textContent = parts.root;
+
+  const middle = document.createElement('span');
+  middle.className = 'session-extra-git-path-middle';
+  middle.textContent = parts.middle;
+
+  const tail = document.createElement('span');
+  tail.className = 'session-extra-git-path-tail';
+  tail.textContent = parts.tail;
+
+  host.append(root, middle, tail);
+}
+
+function splitPathForMiddleEllipsis(path: string): { root: string; middle: string; tail: string } {
+  const trimmed = path.replace(/[\\/]+$/, '');
+  const separator = trimmed.includes('\\') ? '\\' : '/';
+  const rootMatch = /^[A-Za-z]:[\\/]/.exec(trimmed);
+  let root = rootMatch ? trimmed.slice(0, rootMatch[0].length) : '';
+  let rest = root ? trimmed.slice(root.length) : trimmed;
+
+  if (!root && trimmed.startsWith('\\\\')) {
+    const parts = trimmed.slice(2).split(/[\\/]/);
+    if (parts.length >= 2) {
+      root = `\\\\${parts[0]}\\${parts[1]}\\`;
+      rest = parts.slice(2).join('\\');
+    }
+  } else if (!root && trimmed.startsWith('/')) {
+    root = '/';
+    rest = trimmed.slice(1);
+  }
+
+  const segments = rest.split(/[\\/]/).filter(Boolean);
+  if (segments.length === 0) {
+    return { root: '', middle: '', tail: trimmed };
+  }
+
+  const tail = segments[segments.length - 1] ?? trimmed;
+  const middle = segments.length > 1 ? `${segments.slice(0, -1).join(separator)}${separator}` : '';
+  return { root, middle, tail };
 }
 
 export function syncSpacesTreeSidebarSessionProcessInfo(
