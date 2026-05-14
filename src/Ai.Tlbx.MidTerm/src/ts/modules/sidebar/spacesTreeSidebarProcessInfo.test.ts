@@ -166,11 +166,12 @@ describe('spaces tree sidebar process info', () => {
     });
 
     const line = processInfo.querySelector<HTMLElement>('.session-extra-git');
+    const details = line?.querySelector<HTMLElement>('.session-extra-git-details');
     const separators = Array.from(
       line?.querySelectorAll<HTMLElement>('.session-extra-git-separator') ?? [],
     );
 
-    const repo = line?.querySelector<HTMLElement>('.session-extra-git-repo');
+    const repo = details?.querySelector<HTMLElement>('.session-extra-git-repo');
     expect(repo?.textContent).toBe('C:\\repos\\messengerSpecific');
     expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-root')?.textContent).toBe(
       'C:\\',
@@ -181,10 +182,13 @@ describe('spaces tree sidebar process info', () => {
     expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-tail')?.textContent).toBe(
       'messengerSpecific',
     );
-    expect(line?.querySelector<HTMLElement>('.session-extra-git-branch')?.textContent).toBe('main');
+    expect(details?.querySelector<HTMLElement>('.session-extra-git-branch')?.textContent).toBe(
+      'main',
+    );
     expect(line?.querySelector<HTMLElement>('.session-extra-git-stats')?.textContent).toBe(
       '+214 -24',
     );
-    expect(separators.map((separator) => separator.textContent)).toEqual(['-', '-']);
+    expect(details?.textContent).toBe('C:\\repos\\messengerSpecific-main');
+    expect(separators.map((separator) => separator.textContent)).toEqual(['-']);
   });
 });

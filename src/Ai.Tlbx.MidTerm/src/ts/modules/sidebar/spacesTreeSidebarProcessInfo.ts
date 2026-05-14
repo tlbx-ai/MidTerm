@@ -108,6 +108,9 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   line.className = 'session-extra-git';
   line.title = buildExtraGitRepoTitle(repo, status);
 
+  const details = document.createElement('span');
+  details.className = 'session-extra-git-details';
+
   const repoName = document.createElement('span');
   repoName.className = 'session-extra-git-repo';
   appendMiddleEllipsizedPath(
@@ -123,15 +126,12 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   branch.className = 'session-extra-git-branch';
   branch.textContent = status?.branch || 'HEAD';
 
-  const statsSeparator = document.createElement('span');
-  statsSeparator.className = 'session-extra-git-separator';
-  statsSeparator.textContent = '-';
-
   const stats = document.createElement('span');
   stats.className = 'session-extra-git-stats';
   stats.textContent = `+${status?.totalAdditions ?? 0} -${status?.totalDeletions ?? 0}`;
 
-  line.append(repoName, branchSeparator, branch, statsSeparator, stats);
+  details.append(repoName, branchSeparator, branch);
+  line.append(details, stats);
   return line;
 }
 

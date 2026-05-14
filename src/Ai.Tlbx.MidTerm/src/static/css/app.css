@@ -1636,6 +1636,14 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
     calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
 }
 
+.session-extra-git-details {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+}
+
 .session-extra-git-repo,
 .session-extra-git-branch {
   min-width: 0;
@@ -1643,7 +1651,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 .session-extra-git-repo {
   display: inline-flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -1664,7 +1672,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 }
 
 .session-extra-git-branch {
-  flex: 0 1 auto;
+  flex: 0 2 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1677,6 +1685,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 }
 
 .session-extra-git-stats {
+  margin-left: auto;
   flex: 0 0 auto;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
