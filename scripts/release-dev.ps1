@@ -383,6 +383,13 @@ try {
     Write-Host "Running runtime build verification..." -ForegroundColor Cyan
     & $runtimeBuildVerificationScript -Configuration Release -WarnAsError
     Write-Host "Runtime build verification succeeded." -ForegroundColor Green
+
+    if ($IsWindows) {
+        Write-Host ""
+        Write-Host "Running Native AOT smoke probe..." -ForegroundColor Cyan
+        & (Join-Path $PSScriptRoot "run-aot-smoke-probe.ps1") -Configuration Release -Rid win-x64
+        Write-Host "Native AOT smoke probe succeeded." -ForegroundColor Green
+    }
 }
 catch {
     Write-Host ""

@@ -32,6 +32,7 @@ public sealed class ActionGraphService : IDisposable
 
     public ActionGraphService(SettingsService settingsService)
     {
+        SqliteNativeLoader.EnsureProvider(settingsService.SettingsDirectory);
         var databasePath = Path.Combine(settingsService.SettingsDirectory, "action-graphs.db");
         _connection = new SqliteConnection($"Data Source={databasePath}");
         _connection.Open();
