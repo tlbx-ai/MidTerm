@@ -25,3 +25,17 @@ export function shouldReloadPreviewFrame(
     buildPreviewLoadToken(targetUrl, targetRevision)
   );
 }
+
+export function shouldRemountPreviewFrame(
+  frame: HTMLIFrameElement,
+  previewClientIdentity: string,
+  targetUrl: string,
+  targetRevision: number,
+): boolean {
+  const nextLoadToken = buildPreviewLoadToken(targetUrl, targetRevision);
+  if (frame.dataset[PREVIEW_LOAD_TOKEN_DATASET_KEY] !== nextLoadToken) {
+    return true;
+  }
+
+  return (frame.name || '') !== previewClientIdentity;
+}

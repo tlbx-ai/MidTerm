@@ -4,7 +4,8 @@
  * Manages the URL bar, named preview tabs, and iframe content in the dock panel.
  */
 
-import { $webPreviewUrl, $activeSessionId, $webPreviewViewport } from '../../stores';
+import { $webPreviewUrl, $activeSessionId } from '../../stores';
+import { applyStoredViewportToFrame } from './webViewport';
 import {
   clearWebPreviewState,
   getBrowserPreviewStatus,
@@ -27,6 +28,7 @@ import {
   PREVIEW_LOAD_TOKEN_ATTRIBUTE,
   PREVIEW_LOAD_TOKEN_DATASET_KEY,
   shouldReloadPreviewFrame,
+  shouldRemountPreviewFrame,
 } from './previewLoadToken';
 import {
   buildProxyUrl,
@@ -616,33 +618,6 @@ function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
   return frame;
 }
 
-/**
- * Apply the stored responsive viewport to a preview frame.
- * Navigation and target changes recreate frames, so the fixed-size styling
- * must be derived from the store instead of living only on the old element.
- */
-export function applyStoredViewportToFrame(frame: HTMLIFrameElement): void {
-  const viewport = $webPreviewViewport.get();
-  if (!viewport) {
-    frame.style.width = '';
-    frame.style.height = '';
-    frame.style.maxWidth = '';
-    frame.style.maxHeight = '';
-    frame.style.left = '';
-    frame.style.top = '';
-    frame.style.transform = '';
-    return;
-  }
-
-  frame.style.width = `${viewport.width}px`;
-  frame.style.height = `${viewport.height}px`;
-  frame.style.maxWidth = `${viewport.width}px`;
-  frame.style.maxHeight = `${viewport.height}px`;
-  frame.style.left = '50%';
-  frame.style.top = '50%';
-  frame.style.transform = 'translate(-50%, -50%)';
-}
-
 function replacePreviewIframe(frameKey: string): HTMLIFrameElement | null {
   const existing = previewFrames.get(frameKey);
   if (existing) {
@@ -684,22 +659,6 @@ function destroyPreviewFrameByKey(
 
 export function destroyPreviewFrame(sessionId: string, previewName: string): void {
   destroyPreviewFrameByKey(getPreviewFrameKey(sessionId, previewName));
-}
-
-function shouldRemountPreviewFrame(
-  frame: HTMLIFrameElement,
-  previewClient: BrowserPreviewClientResponse,
-  targetUrl: string,
-  targetRevision: number,
-): boolean {
-  const nextLoadToken = buildPreviewLoadToken(targetUrl, targetRevision);
-  if (frame.dataset[PREVIEW_LOAD_TOKEN_DATASET_KEY] !== nextLoadToken) {
-    return true;
-  }
-
-  const currentFrameIdentity = frame.name || '';
-  const nextFrameIdentity = JSON.stringify(previewClient);
-  return currentFrameIdentity !== nextFrameIdentity;
 }
 
 function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFrameElement | null {
@@ -978,7 +937,14 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
   let frame: HTMLIFrameElement = initialFrame;
 
   try {
-    if (shouldRemountPreviewFrame(frame, previewClient, currentUrl, currentTargetRevision)) {
+    if (
+      shouldRemountPreviewFrame(
+        frame,
+        JSON.stringify(previewClient),
+        currentUrl,
+        currentTargetRevision,
+      )
+    ) {
       const replacementFrame = replacePreviewIframe(frameKey);
       if (!replacementFrame) {
         log.warn(() => `Failed to recreate dock iframe for ${sessionId}/${previewName}`);

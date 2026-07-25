@@ -10,13 +10,13 @@ import { $activeSessionId, $webPreviewDocked, $webPreviewViewport } from '../../
 import { autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import {
-  applyStoredViewportToFrame,
   hideIframe,
   renderPreviewTabs,
   restoreLastUrl,
   showIframe,
   unloadIframe,
 } from './webPanel';
+import { applyStoredViewportToFrame } from './webViewport';
 import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
