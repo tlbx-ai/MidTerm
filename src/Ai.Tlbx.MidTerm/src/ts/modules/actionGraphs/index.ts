@@ -300,6 +300,7 @@ function wireCanvasInteractions(): void {
   let dragNodeId: string | null = null;
   let dragNodeEl: HTMLElement | null = null;
   let moved = false;
+  let suppressNextClick = false;
   let startClientX = 0;
   let startClientY = 0;
   let startPanX = 0;
@@ -348,6 +349,9 @@ function wireCanvasInteractions(): void {
   });
 
   const finish = (): void => {
+    if (moved) {
+      suppressNextClick = true;
+    }
     if (mode === 'node' && dragNodeId) {
       if (moved && dragNodeEl && currentGraphId) {
         const x = dragNodeEl.offsetLeft;
@@ -369,6 +373,19 @@ function wireCanvasInteractions(): void {
 
   canvas.addEventListener('pointerup', finish);
   canvas.addEventListener('pointercancel', finish);
+
+  // Selection also works from plain click events (keyboard activation and
+  // browser automation dispatch click without a pointer sequence).
+  canvas.addEventListener('click', (event) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+    const nodeEl = (event.target as HTMLElement).closest<HTMLElement>('.ag-node');
+    if (nodeEl?.dataset.nodeId) {
+      selectNode(nodeEl.dataset.nodeId);
+    }
+  });
 
   const wheelHost = canvas;
   wheelHost.addEventListener(
