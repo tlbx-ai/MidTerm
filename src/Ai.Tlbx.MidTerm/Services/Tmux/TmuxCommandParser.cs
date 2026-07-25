@@ -53,6 +53,7 @@ public static class TmuxCommandParser
     /// </summary>
     public static List<ParsedCommand> Parse(List<string> args)
     {
+        args = StripGlobalOptions(args);
         var commands = new List<ParsedCommand>();
         var current = new List<string>();
 
@@ -78,6 +79,38 @@ public static class TmuxCommandParser
         }
 
         return commands;
+    }
+
+    /// <summary>
+    /// Consume tmux global options that precede the first command verb:
+    /// tmux [-2CDlNuVv] [-c shell-command] [-f file] [-L socket-name] [-S socket-path] [-T features] [command ...].
+    /// Real tmux clients (e.g. AI agent harnesses) pass the socket from $TMUX as "-S path" before the command;
+    /// the emulation has exactly one server per session scope, so selectors are accepted and ignored.
+    /// -V and -C/-CC are kept as the command so the dispatcher can answer them explicitly.
+    /// </summary>
+    private static List<string> StripGlobalOptions(List<string> args)
+    {
+        var i = 0;
+        while (i < args.Count)
+        {
+            var arg = args[i];
+            if (arg is "-V" or "-C" or "-CC")
+            {
+                break;
+            }
+            if (arg is "-S" or "-L" or "-f" or "-T" or "-c")
+            {
+                i += 2;
+                continue;
+            }
+            if (arg.Length >= 2 && arg[0] == '-' && arg[1..].All(static c => c is '2' or 'D' or 'l' or 'N' or 'u' or 'v'))
+            {
+                i++;
+                continue;
+            }
+            break;
+        }
+        return i == 0 ? args : args[Math.Min(i, args.Count)..];
     }
 
     private static ParsedCommand ParseSingle(List<string> args)

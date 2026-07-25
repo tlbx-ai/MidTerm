@@ -131,6 +131,7 @@ public sealed class TmuxCommandDispatcher
                 "rename-window" or "renamew" => TmuxResult.Ok(),
 
                 // Informational
+                "-V" => TmuxResult.Ok("tmux 3.5a-tlbx\n"),
                 "server-info" or "info" => TmuxResult.Ok("tlbx tmux compatibility layer\n"),
                 "start-server" or "start" => TmuxResult.Ok(),
                 "kill-server" => TmuxResult.Fail("kill-server is not supported in tlbx\n"),

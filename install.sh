@@ -4,7 +4,7 @@
 # Dev:   curl -fsSL https://get.tlbx.ai/install.sh | bash -s -- --dev
 #
 # Design goals:
-# - fetch and validate an official MidTerm release before touching system paths
+# - fetch and validate an official tlbx release before touching system paths
 # - collect choices before sudo so the elevated leg can stay non-interactive
 # - preserve existing auth/settings unless the user explicitly replaces them
 # - keep the touched paths narrow and auditable for users who inspect the script
@@ -32,7 +32,7 @@ bootstrap_download() {
         return
     fi
 
-    echo "Error: MidTerm installer requires 'curl' or 'wget' to download files." >&2
+    echo "Error: tlbx installer requires 'curl' or 'wget' to download files." >&2
     echo "Install one of them and run the installer again." >&2
     exit 1
 }
@@ -307,7 +307,7 @@ init_log() {
     LOG_INITIALIZED=true
 
     log "=========================================="
-    log "MidTerm Install Script Starting"
+    log "tlbx Install Script Starting"
     log "Mode: $mode"
     log "Channel: $(if [ "$DEV_CHANNEL" = true ]; then echo 'dev'; else echo 'stable'; fi)"
     log "Date: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -433,7 +433,7 @@ setup_logging() {
 
     echo "" >> "$log_file"
     echo "========================================" >> "$log_file"
-    echo "MidTerm Installer - $(date '+%Y-%m-%d %H:%M:%S')" >> "$log_file"
+    echo "tlbx Installer - $(date '+%Y-%m-%d %H:%M:%S')" >> "$log_file"
     echo "Mode: $mode" >> "$log_file"
     echo "========================================" >> "$log_file"
 
@@ -631,7 +631,7 @@ require_extracted_binaries() {
 }
 
 prompt_service_mode() {
-    echo -e "  ${CYAN}How would you like to install MidTerm?${NC}"
+    echo -e "  ${CYAN}How would you like to install tlbx?${NC}"
     echo ""
     echo -e "  ${CYAN}[1] System service${NC} (recommended for always-on access)"
     echo -e "      ${GRAY}- Runs in background, starts on boot${NC}"
@@ -784,7 +784,7 @@ read_password_masked() {
 prompt_password() {
     echo ""
     echo -e "  ${YELLOW}Security Notice:${NC}"
-    echo -e "  ${GRAY}MidTerm exposes terminal access over the network.${NC}"
+    echo -e "  ${GRAY}tlbx exposes terminal access over the network.${NC}"
     echo -e "  ${GRAY}A password is required to prevent unauthorized access.${NC}"
     echo ""
 
@@ -925,7 +925,7 @@ prompt_network_config() {
                 BIND_ADDRESS="0.0.0.0"
                 echo ""
                 echo -e "  ${YELLOW}Security Warning:${NC}"
-                echo -e "  ${YELLOW}MidTerm will accept connections from any device on your network.${NC}"
+                echo -e "  ${YELLOW}tlbx will accept connections from any device on your network.${NC}"
                 echo -e "  ${YELLOW}Ensure your password is strong and consider firewall rules.${NC}"
                 break
                 ;;
@@ -995,7 +995,7 @@ prompt_path_modification() {
             echo -e "  ${GREEN}PATH entry already exists in $profile_file${NC}"
         else
             echo "" >> "$profile_file"
-            echo "# Added by MidTerm installer" >> "$profile_file"
+            echo "# Added by tlbx installer" >> "$profile_file"
             echo "$export_line" >> "$profile_file"
             echo -e "  ${GREEN}Added to $profile_file${NC}"
             echo -e "  ${YELLOW}Run 'source $profile_file' or start a new terminal${NC}"

@@ -92,7 +92,8 @@ public sealed class BrowserCommandService
 
     public async Task<BrowserWsResult> ExecuteCommandAsync(BrowserCommandRequest request, CancellationToken ct)
     {
-        if (!TryResolveClient(request, out var client, out var error))
+        var (client, error) = await ResolveClientWithAttachGraceAsync(request, ct).ConfigureAwait(false);
+        if (client is null)
         {
             return new BrowserWsResult
             {
@@ -892,6 +893,40 @@ public sealed class BrowserCommandService
                     Success = false,
                     Error = "Browser disconnected."
                 });
+            }
+        }
+    }
+
+    // Reload, navigation, and viewport changes tear the preview bridge down for a moment while the
+    // iframe reattaches to /ws/browser. Commands issued in that window should wait for the bridge
+    // instead of failing hard; only the no-client-yet errors are transient, ambiguity is not.
+    private static readonly TimeSpan BridgeAttachGrace = TimeSpan.FromSeconds(8);
+
+    private async Task<(BrowserClient? Client, string Error)> ResolveClientWithAttachGraceAsync(
+        BrowserCommandRequest request,
+        CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + BridgeAttachGrace;
+        while (true)
+        {
+            if (TryResolveClient(request, out var client, out var error))
+            {
+                return (client, "");
+            }
+
+            var transient = error.StartsWith("No browser", StringComparison.Ordinal);
+            if (!transient || DateTime.UtcNow >= deadline || ct.IsCancellationRequested)
+            {
+                return (null, error);
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return (null, error);
             }
         }
     }

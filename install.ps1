@@ -3,7 +3,7 @@
 # Dev:   & ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1))) -Dev
 #
 # Design goals:
-# - install only official MidTerm release artifacts into known locations
+# - install only official tlbx release artifacts into known locations
 # - collect interactive choices before elevation so the elevated leg can be replayed
 # - preserve existing auth/settings unless the user explicitly replaces them
 # - keep service-mode and user-mode installs mutually exclusive for predictable repair
@@ -156,7 +156,7 @@ function Initialize-Log
 
     $channelLabel = if ($Dev) { "dev" } else { "stable" }
     Write-Log "=========================================="
-    Write-Log "MidTerm Install Script Starting"
+    Write-Log "tlbx Install Script Starting"
     Write-Log "Mode: $Mode"
     Write-Log "Channel: $channelLabel"
     Write-Log "Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
@@ -324,12 +324,11 @@ function Get-CurrentInstallerScriptContent
     }
 
     if (-not [string]::IsNullOrWhiteSpace($script:InstallerScriptDefinition) -and
-        $script:InstallerScriptDefinition.Contains("# MidTerm Windows Installer"))
+        $script:InstallerScriptDefinition.Contains("# tlbx Windows Installer"))
     {
         return $script:InstallerScriptDefinition
     }
 
-    $branch = if ($Dev) { "dev" } else { "main" }
     $scriptUrl = "https://get.tlbx.ai/install.ps1"
     return Invoke-CompatibleRestMethod -Uri $scriptUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
 }
@@ -504,7 +503,7 @@ function Prompt-Password
 
     Write-Host ""
     Write-Host "  Security Notice:" -ForegroundColor Yellow
-    Write-Host "  MidTerm exposes terminal access over the network." -ForegroundColor Gray
+    Write-Host "  tlbx exposes terminal access over the network." -ForegroundColor Gray
     Write-Host "  A password is required to prevent unauthorized access." -ForegroundColor Gray
     Write-Host ""
 
@@ -924,7 +923,7 @@ function Prompt-NetworkConfig
             $bindAddress = "*"
             Write-Host ""
             Write-Host "  Security Warning:" -ForegroundColor Yellow
-            Write-Host "  MidTerm will accept connections from any device on your network." -ForegroundColor Yellow
+            Write-Host "  tlbx will accept connections from any device on your network." -ForegroundColor Yellow
             Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
             break
         }
@@ -1015,7 +1014,7 @@ function Prompt-FirewallConfig
 
     Write-Host ""
     Write-Host "  Windows Firewall:" -ForegroundColor Cyan
-    Write-Host "  Allow other PCs to reach MidTerm on TCP port $Port?" -ForegroundColor Yellow
+    Write-Host "  Allow other PCs to reach tlbx on TCP port $Port?" -ForegroundColor Yellow
     Write-Host "  (Creates or updates the inbound rule named 'MidTerm HTTPS')" -ForegroundColor Gray
     $choice = Read-Host "  Add firewall rule? [Y/n]"
     return ($choice -ne "n" -and $choice -ne "N")
@@ -1764,7 +1763,7 @@ function Install-AsUserApp
     Create-UninstallScript -InstallDir $InstallDir -IsService $false
 
     Write-Host ""
-    Write-Host "Run 'mt' to start MidTerm" -ForegroundColor Yellow
+    Write-Host "Run 'mt' to start tlbx" -ForegroundColor Yellow
 }
 
 function Register-Uninstall
