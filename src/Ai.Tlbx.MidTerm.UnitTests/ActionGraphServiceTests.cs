@@ -29,6 +29,8 @@ public sealed class ActionGraphServiceTests : IDisposable
             Html = "<p>Rich <b>HTML</b> body</p>",
             X = 120,
             Y = 80,
+            Width = 260,
+            Height = 140,
             Url = "https://dai.tlbx.ai",
             Path = @"Q:\repos\DAI",
             Project = "DAI",
@@ -56,6 +58,8 @@ public sealed class ActionGraphServiceTests : IDisposable
         Assert.Equal("<p>Rich <b>HTML</b> body</p>", loaded.Html);
         Assert.Equal(120, loaded.X);
         Assert.Equal(80, loaded.Y);
+        Assert.Equal(260, loaded.Width);
+        Assert.Equal(140, loaded.Height);
         var action = Assert.Single(loaded.Actions);
         Assert.Equal("Continue", action.Label);
         Assert.False(string.IsNullOrEmpty(action.Id));

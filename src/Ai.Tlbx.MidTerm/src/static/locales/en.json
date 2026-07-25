@@ -1162,5 +1162,7 @@
   "actionGraphs.formatBold": "Bold",
   "actionGraphs.formatItalic": "Italic",
   "actionGraphs.formatList": "Bullet list",
-  "actionGraphs.formatLink": "Insert link"
+  "actionGraphs.formatLink": "Insert link",
+  "actionGraphs.fieldWidth": "Width (px)",
+  "actionGraphs.fieldHeight": "Height (px)"
 }

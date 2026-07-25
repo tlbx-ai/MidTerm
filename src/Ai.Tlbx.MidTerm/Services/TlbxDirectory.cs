@@ -472,7 +472,9 @@ public static class TlbxDirectory
         | `mtg_edge_add <graph> <from> <to> [label] [kind]` | Connect two nodes |
         | `mtg_edge_rm <graph> <edge>` | Delete an edge |
 
-        Node JSON fields: `id?`, `kind`, `title` (required), `state`, `html` (rich HTML body, rendered sandboxed), `x`, `y`, `width`, `color`, `url`, `path`, `host`, `project`, `sessionId`, `externalRef`, `date`, `actions`. Known kinds get default styling: `email`, `appointment`, `todo`, `project`, `task`, `asset`, `plan`, `note`, `repo`, `place`, `server`, `application`, `service`, `secret`, `identity` — unknown kinds are accepted and rendered like `identity`. For `secret` nodes, store only names and locations, never secret values.
+        Node JSON fields: `id?`, `kind`, `title` (required), `state`, `html` (rich HTML body, rendered sandboxed), `x`, `y`, `width`, `height`, `color`, `url`, `path`, `host`, `project`, `sessionId`, `externalRef`, `date`, `actions`. Known kinds get default styling: `email`, `appointment`, `todo`, `project`, `task`, `asset`, `plan`, `note`, `repo`, `place`, `server`, `application`, `service`, `secret`, `identity`, `frame` — unknown kinds are accepted and rendered like `identity`. For `secret` nodes, store only names and locations, never secret values.
+
+        Group related nodes with `frame` nodes: a frame renders as a calm background region (`x`, `y`, `width`, `height`) with its title as a small chip; place member nodes on top of it. Frames are visual only — tlbx attaches no containment semantics.
 
         Actions are stored launch specs the user executes from the canvas: `{"label": "...", "cwd": "...", "profile": "claude|codex|terminal", "prompt": "...", "sessionName": "..."}`. tlbx runs them verbatim as a new agent session plus prompt; it never interprets them.
 

@@ -236,6 +236,7 @@ public sealed class ActionGraphService : IDisposable
                 X = request.X ?? 0,
                 Y = request.Y ?? 0,
                 Width = request.Width,
+                Height = request.Height,
                 Color = Optional(request.Color, 32),
                 Url = Optional(request.Url, MaxReferenceLength),
                 Path = Optional(request.Path, MaxReferenceLength),
@@ -281,6 +282,7 @@ public sealed class ActionGraphService : IDisposable
             if (request.X is not null) node.X = request.X.Value;
             if (request.Y is not null) node.Y = request.Y.Value;
             if (request.Width is not null) node.Width = request.Width;
+            if (request.Height is not null) node.Height = request.Height;
             if (request.Color is not null) node.Color = Optional(request.Color, 32);
             if (request.Url is not null) node.Url = Optional(request.Url, MaxReferenceLength);
             if (request.Path is not null) node.Path = Optional(request.Path, MaxReferenceLength);
@@ -457,7 +459,7 @@ public sealed class ActionGraphService : IDisposable
         {
             command.CommandText = """
                 SELECT id, kind, title, state, html, x, y, width, color, url, path, host, project,
-                       session_id, external_ref, date, source, created_at, updated_at, revision
+                       session_id, external_ref, date, source, created_at, updated_at, revision, height
                 FROM nodes WHERE graph_id = $g ORDER BY created_at
                 """;
             command.Parameters.AddWithValue("$g", id);
@@ -485,7 +487,8 @@ public sealed class ActionGraphService : IDisposable
                     Source = reader.GetString(16),
                     CreatedAt = ReadTimestamp(reader.GetString(17)),
                     UpdatedAt = ReadTimestamp(reader.GetString(18)),
-                    Revision = reader.GetInt32(19)
+                    Revision = reader.GetInt32(19),
+                    Height = reader.IsDBNull(20) ? null : reader.GetDouble(20)
                 });
             }
         }
@@ -605,14 +608,15 @@ public sealed class ActionGraphService : IDisposable
     {
         Execute(
             """
-            INSERT INTO nodes(graph_id, id, kind, title, state, html, x, y, width, color, url, path, host,
+            INSERT INTO nodes(graph_id, id, kind, title, state, html, x, y, width, height, color, url, path, host,
                               project, session_id, external_ref, date, source, created_at, updated_at, revision)
-            VALUES($g, $id, $kind, $title, $state, $html, $x, $y, $width, $color, $url, $path, $host,
+            VALUES($g, $id, $kind, $title, $state, $html, $x, $y, $width, $height, $color, $url, $path, $host,
                    $project, $sessionId, $externalRef, $date, $source, $createdAt, $updatedAt, $revision)
             """,
             ("$g", graphId), ("$id", node.Id), ("$kind", node.Kind), ("$title", node.Title),
             ("$state", (object?)node.State ?? DBNull.Value), ("$html", (object?)node.Html ?? DBNull.Value),
             ("$x", node.X), ("$y", node.Y), ("$width", (object?)node.Width ?? DBNull.Value),
+            ("$height", (object?)node.Height ?? DBNull.Value),
             ("$color", (object?)node.Color ?? DBNull.Value), ("$url", (object?)node.Url ?? DBNull.Value),
             ("$path", (object?)node.Path ?? DBNull.Value), ("$host", (object?)node.Host ?? DBNull.Value),
             ("$project", (object?)node.Project ?? DBNull.Value),
@@ -664,6 +668,7 @@ public sealed class ActionGraphService : IDisposable
             CREATE TABLE IF NOT EXISTS nodes(
                 graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
                 state TEXT NULL, html TEXT NULL, x REAL NOT NULL, y REAL NOT NULL, width REAL NULL,
+                height REAL NULL,
                 color TEXT NULL, url TEXT NULL, path TEXT NULL, host TEXT NULL, project TEXT NULL,
                 session_id TEXT NULL, external_ref TEXT NULL, date TEXT NULL, source TEXT NOT NULL,
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL, revision INTEGER NOT NULL,
@@ -681,6 +686,23 @@ public sealed class ActionGraphService : IDisposable
         Execute(
             "INSERT OR IGNORE INTO scopes(id, name, created_at) VALUES('default', 'Default', $now)",
             ("$now", Now()));
+        EnsureColumnLocked("nodes", "height", "REAL NULL");
+    }
+
+    private void EnsureColumnLocked(string table, string column, string definition)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+        reader.Close();
+        Execute($"ALTER TABLE {table} ADD COLUMN {column} {definition}");
     }
 
     /// <summary>One-time import of the pre-SQLite JSON document into the default scope.</summary>

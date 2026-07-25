@@ -22,6 +22,7 @@ export interface ActionGraphNode {
   x: number;
   y: number;
   width?: number | null;
+  height?: number | null;
   color?: string | null;
   url?: string | null;
   path?: string | null;
@@ -74,6 +75,8 @@ export interface UpsertNodePayload {
   html?: string;
   x?: number;
   y?: number;
+  width?: number;
+  height?: number;
   color?: string;
   url?: string;
   path?: string;

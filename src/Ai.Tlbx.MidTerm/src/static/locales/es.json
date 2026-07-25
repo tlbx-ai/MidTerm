@@ -1028,5 +1028,7 @@
   "actionGraphs.formatBold": "Negrita",
   "actionGraphs.formatItalic": "Cursiva",
   "actionGraphs.formatList": "Lista",
-  "actionGraphs.formatLink": "Insertar enlace"
+  "actionGraphs.formatLink": "Insertar enlace",
+  "actionGraphs.fieldWidth": "Ancho (px)",
+  "actionGraphs.fieldHeight": "Alto (px)"
 }

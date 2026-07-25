@@ -1028,5 +1028,7 @@
   "actionGraphs.formatBold": "Gras",
   "actionGraphs.formatItalic": "Italique",
   "actionGraphs.formatList": "Liste à puces",
-  "actionGraphs.formatLink": "Insérer un lien"
+  "actionGraphs.formatLink": "Insérer un lien",
+  "actionGraphs.fieldWidth": "Largeur (px)",
+  "actionGraphs.fieldHeight": "Hauteur (px)"
 }

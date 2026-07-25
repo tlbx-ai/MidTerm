@@ -1028,5 +1028,7 @@
   "actionGraphs.formatBold": "加粗",
   "actionGraphs.formatItalic": "斜体",
   "actionGraphs.formatList": "项目符号",
-  "actionGraphs.formatLink": "插入链接"
+  "actionGraphs.formatLink": "插入链接",
+  "actionGraphs.fieldWidth": "宽度 (px)",
+  "actionGraphs.fieldHeight": "高度 (px)"
 }

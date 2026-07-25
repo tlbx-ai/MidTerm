@@ -345,7 +345,11 @@ function renderGraph(): void {
       .map((session) => session.id),
   );
 
-  for (const node of graph.nodes) {
+  // Frames paint first so they sit behind the cards they group.
+  const ordered = [...graph.nodes].sort(
+    (a, b) => Number(b.kind === 'frame') - Number(a.kind === 'frame'),
+  );
+  for (const node of ordered) {
     nodesHost.appendChild(buildNodeCard(node, runningSessions));
   }
   renderEdges(graph);
@@ -353,6 +357,9 @@ function renderGraph(): void {
 }
 
 function buildNodeCard(node: ActionGraphNode, runningSessions: Set<string>): HTMLElement {
+  if (node.kind === 'frame') {
+    return buildFrameCard(node);
+  }
   const card = document.createElement('div');
   card.className = 'ag-node';
   card.dataset.nodeId = node.id;
@@ -360,6 +367,7 @@ function buildNodeCard(node: ActionGraphNode, runningSessions: Set<string>): HTM
   card.style.left = `${node.x}px`;
   card.style.top = `${node.y}px`;
   if (node.width) card.style.width = `${node.width}px`;
+  if (node.height) card.style.height = `${node.height}px`;
   if (node.color) card.style.setProperty('--ag-node-accent', node.color);
   if (node.id === selectedNodeId) card.classList.add('selected');
 
@@ -401,6 +409,30 @@ function buildNodeCard(node: ActionGraphNode, runningSessions: Set<string>): HTM
     card.appendChild(date);
   }
   return card;
+}
+
+/**
+ * Frames are calm background regions used to group cards. The region itself is
+ * click-through (panning and card drag keep working inside it); only the title
+ * chip is interactive for selecting and moving the frame.
+ */
+function buildFrameCard(node: ActionGraphNode): HTMLElement {
+  const frame = document.createElement('div');
+  frame.className = 'ag-node ag-frame';
+  frame.dataset.nodeId = node.id;
+  frame.dataset.kind = node.kind;
+  frame.style.left = `${node.x}px`;
+  frame.style.top = `${node.y}px`;
+  frame.style.width = `${node.width ?? 360}px`;
+  frame.style.height = `${node.height ?? 240}px`;
+  if (node.color) frame.style.setProperty('--ag-node-accent', node.color);
+  if (node.id === selectedNodeId) frame.classList.add('selected');
+
+  const chip = document.createElement('div');
+  chip.className = 'ag-frame-title';
+  chip.textContent = node.title;
+  frame.appendChild(chip);
+  return frame;
 }
 
 interface EdgeRect {
@@ -459,6 +491,8 @@ function buildArrowMarker(): SVGElement {
 
 function renderEdges(graph: ActionGraph): void {
   if (!edgesSvg || !nodesHost) return;
+  // Also called per pointermove while dragging — must always start from an empty layer.
+  edgesSvg.replaceChildren();
   const rects = new Map<string, EdgeRect>();
   for (const element of nodesHost.querySelectorAll<HTMLElement>('.ag-node')) {
     const nodeId = element.dataset.nodeId;

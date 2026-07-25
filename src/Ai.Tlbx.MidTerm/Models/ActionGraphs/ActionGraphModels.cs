@@ -24,11 +24,12 @@ public static class ActionGraphNodeKinds
     public const string Service = "service";
     public const string Secret = "secret";
     public const string Identity = "identity";
+    public const string Frame = "frame";
 
     public static readonly HashSet<string> Known = new(StringComparer.Ordinal)
     {
         Email, Appointment, Todo, Project, Task, Asset, Plan, Note,
-        Repo, Place, Server, Application, Service, Secret, Identity
+        Repo, Place, Server, Application, Service, Secret, Identity, Frame
     };
 }
 
@@ -60,6 +61,7 @@ public sealed class ActionGraphNode
     public double X { get; set; }
     public double Y { get; set; }
     public double? Width { get; set; }
+    public double? Height { get; set; }
     public string? Color { get; set; }
 
     public string? Url { get; set; }
@@ -165,6 +167,7 @@ public sealed class UpsertActionGraphNodeRequest
     public double? X { get; set; }
     public double? Y { get; set; }
     public double? Width { get; set; }
+    public double? Height { get; set; }
     public string? Color { get; set; }
     public string? Url { get; set; }
     public string? Path { get; set; }

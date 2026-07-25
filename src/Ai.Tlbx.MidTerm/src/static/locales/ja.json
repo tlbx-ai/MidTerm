@@ -1028,5 +1028,7 @@
   "actionGraphs.formatBold": "太字",
   "actionGraphs.formatItalic": "斜体",
   "actionGraphs.formatList": "箇条書き",
-  "actionGraphs.formatLink": "リンクを挿入"
+  "actionGraphs.formatLink": "リンクを挿入",
+  "actionGraphs.fieldWidth": "幅 (px)",
+  "actionGraphs.fieldHeight": "高さ (px)"
 }

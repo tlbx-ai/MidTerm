@@ -19154,14 +19154,57 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 }
 
 .ag-node:hover {
-  border-color: var(--ag-node-accent);
   box-shadow: 0 6px 20px var(--shadow-color-md);
   transform: translateY(-1px);
 }
 
+/* Selection stays quiet: the kind accent takes over the hairline, no extra ring. */
 .ag-node.selected {
-  border-color: var(--accent-blue);
-  outline: 1px solid var(--accent-blue);
+  border-color: var(--ag-node-accent);
+  box-shadow: 0 6px 22px var(--shadow-color-md);
+}
+
+.ag-frame {
+  z-index: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-left-width: 1px;
+  border-radius: 14px;
+  background: var(--shadow-color-md);
+  box-shadow: none;
+  pointer-events: none;
+  cursor: default;
+  transition: border-color 0.12s ease;
+}
+
+.ag-frame:hover {
+  box-shadow: none;
+  transform: none;
+}
+
+.ag-frame.selected {
+  border-color: var(--ag-node-accent);
+  box-shadow: none;
+}
+
+.ag-frame-title {
+  display: inline-block;
+  margin: 10px 0 0 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg-settings-opaque, var(--bg-settings));
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ag-node:not(.ag-frame) {
+  z-index: 1;
 }
 
 .ag-node[data-kind='project'],

@@ -1058,5 +1058,7 @@
   "actionGraphs.formatBold": "Fett",
   "actionGraphs.formatItalic": "Kursiv",
   "actionGraphs.formatList": "Aufzählung",
-  "actionGraphs.formatLink": "Link einfügen"
+  "actionGraphs.formatLink": "Link einfügen",
+  "actionGraphs.fieldWidth": "Breite (px)",
+  "actionGraphs.fieldHeight": "Höhe (px)"
 }

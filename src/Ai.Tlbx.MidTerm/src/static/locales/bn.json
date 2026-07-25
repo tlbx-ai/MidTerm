@@ -1028,5 +1028,7 @@
   "actionGraphs.formatBold": "বোল্ড",
   "actionGraphs.formatItalic": "ইটালিক",
   "actionGraphs.formatList": "তালিকা",
-  "actionGraphs.formatLink": "লিংক যোগ করুন"
+  "actionGraphs.formatLink": "লিংক যোগ করুন",
+  "actionGraphs.fieldWidth": "প্রস্থ (px)",
+  "actionGraphs.fieldHeight": "উচ্চতা (px)"
 }

@@ -29,6 +29,7 @@ const KNOWN_KINDS = [
   'application',
   'service',
   'secret',
+  'frame',
 ];
 
 const PROFILES = ['terminal', 'claude', 'codex', 'grok'];
@@ -49,6 +50,8 @@ interface EditorFields {
   url: HTMLInputElement;
   path: HTMLInputElement;
   project: HTMLInputElement;
+  width: HTMLInputElement;
+  height: HTMLInputElement;
   body: HTMLElement;
   actionsHost: HTMLElement;
 }
@@ -114,11 +117,23 @@ interface EditorSeed {
   url: string;
   path: string;
   project: string;
+  width: string;
+  height: string;
 }
 
 function seedValues(node: ActionGraphNode | null): EditorSeed {
   if (!node) {
-    return { title: '', kind: 'identity', state: '', date: '', url: '', path: '', project: '' };
+    return {
+      title: '',
+      kind: 'identity',
+      state: '',
+      date: '',
+      url: '',
+      path: '',
+      project: '',
+      width: '',
+      height: '',
+    };
   }
   return {
     title: node.title,
@@ -128,6 +143,8 @@ function seedValues(node: ActionGraphNode | null): EditorSeed {
     url: node.url ?? '',
     path: node.path ?? node.host ?? '',
     project: node.project ?? '',
+    width: node.width ? String(node.width) : '',
+    height: node.height ? String(node.height) : '',
   };
 }
 
@@ -148,11 +165,13 @@ function buildFields(form: HTMLFormElement, node: ActionGraphNode | null): Edito
   const url = fieldInput(form, 'URL', seed.url, 'text');
   const path = fieldInput(form, t('actionGraphs.path'), seed.path, 'text');
   const project = fieldInput(form, t('actionGraphs.project'), seed.project, 'text');
+  const width = fieldInput(form, t('actionGraphs.fieldWidth'), seed.width, 'number');
+  const height = fieldInput(form, t('actionGraphs.fieldHeight'), seed.height, 'number');
 
   const body = buildBodyField(form, node);
   const actionsHost = buildActionsField(form, node);
 
-  return { title, kind, state, date, url, path, project, body, actionsHost };
+  return { title, kind, state, date, url, path, project, width, height, body, actionsHost };
 }
 
 function buildBodyField(form: HTMLFormElement, node: ActionGraphNode | null): HTMLElement {
@@ -212,6 +231,14 @@ function buildPayload(
   const isoDate = fromLocalDateTime(fields.date.value);
   if (isoDate) {
     payload.date = isoDate;
+  }
+  const width = Number(fields.width.value);
+  if (fields.width.value.trim() && Number.isFinite(width) && width > 0) {
+    payload.width = width;
+  }
+  const height = Number(fields.height.value);
+  if (fields.height.value.trim() && Number.isFinite(height) && height > 0) {
+    payload.height = height;
   }
   if (!node && position) {
     payload.x = position.x;
