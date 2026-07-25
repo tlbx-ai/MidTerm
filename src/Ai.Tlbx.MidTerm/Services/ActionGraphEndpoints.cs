@@ -6,9 +6,24 @@ public static class ActionGraphEndpoints
 {
     public static void MapActionGraphEndpoints(WebApplication app, ActionGraphService graphs)
     {
-        app.MapGet("/api/graphs", () => Results.Json(
-            graphs.ListGraphs(),
-            AppJsonContext.Default.ActionGraphListResponse));
+        app.MapGet("/api/graphs", (string? scope) => Try(() => Results.Json(
+            graphs.ListGraphs(scope),
+            AppJsonContext.Default.ActionGraphListResponse)));
+
+        app.MapGet("/api/graph-scopes", () => Results.Json(
+            graphs.ListScopes(),
+            AppJsonContext.Default.ActionGraphScopeListResponse));
+
+        app.MapPost("/api/graph-scopes", (CreateActionGraphScopeRequest request) =>
+            Try(() => Results.Json(
+                graphs.CreateScope(request),
+                AppJsonContext.Default.ActionGraphScope)));
+
+        app.MapPatch("/api/graph-scopes/{scopeId}", (string scopeId, RenameActionGraphScopeRequest request) =>
+            Try(() => graphs.RenameScope(scopeId, request) ? Results.Ok() : Results.NotFound()));
+
+        app.MapDelete("/api/graph-scopes/{scopeId}", (string scopeId) =>
+            Try(() => graphs.DeleteScope(scopeId) ? Results.Ok() : Results.NotFound()));
 
         app.MapPost("/api/graphs", (CreateActionGraphRequest request) =>
             Try(() => Results.Json(

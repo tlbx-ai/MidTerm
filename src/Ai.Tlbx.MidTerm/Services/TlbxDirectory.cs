@@ -457,7 +457,11 @@ public static class TlbxDirectory
 
         | Command | What it does |
         |---------|-------------|
-        | `mtg_graphs` | List graphs with node/edge counts |
+        | `mtg_scopes` | List scopes (graph partitions such as work/leisure) with graph counts |
+        | `mtg_scope_new <id> [name]` | Create a scope; most users only ever use the built-in `default` scope |
+        | `mtg_scope_rm <scope>` | Delete an empty scope (`default` is protected) |
+        | `mtg_graphs [scope]` | List graphs with node/edge counts, optionally filtered by scope |
+        | `mtg_graph_scope <graph> <scope>` | Move a graph into a scope |
         | `mtg_graph <graph>` | Dump one graph (nodes + edges) as JSON |
         | `mtg_graph_new <id> [name]` | Create or rename a graph |
         | `mtg_graph_rm <graph>` | Delete a graph |

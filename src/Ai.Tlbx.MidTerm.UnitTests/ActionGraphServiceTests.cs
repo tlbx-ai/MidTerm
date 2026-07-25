@@ -161,6 +161,71 @@ public sealed class ActionGraphServiceTests : IDisposable
         Assert.Single(service.ListGraphs().Graphs);
     }
 
+    [Fact]
+    public void ScopesPartitionGraphsAndProtectTheDefaultScope()
+    {
+        using var service = CreateService();
+        var work = service.CreateScope(new CreateActionGraphScopeRequest { Id = "work", Name = "Work" });
+        service.CreateGraph(new CreateActionGraphRequest { Id = "office", ScopeId = "work" });
+        service.CreateNode("private", new UpsertActionGraphNodeRequest { Id = "n", Title = "Default scope node" });
+
+        var scopes = service.ListScopes().Scopes;
+        var workGraphs = service.ListGraphs("work").Graphs;
+        var allGraphs = service.ListGraphs().Graphs;
+
+        Assert.Equal("work", work.Id);
+        Assert.Equal(2, scopes.Count);
+        Assert.Equal(ActionGraphScope.DefaultId, scopes[0].Id);
+        var officeGraph = Assert.Single(workGraphs);
+        Assert.Equal("office", officeGraph.Id);
+        Assert.Equal(2, allGraphs.Count);
+        Assert.Equal(ActionGraphScope.DefaultId, allGraphs.Single(g => g.Id == "private").ScopeId);
+
+        Assert.Throws<ArgumentException>(() => service.DeleteScope(ActionGraphScope.DefaultId));
+        Assert.Throws<ArgumentException>(() =>
+            service.RenameScope(ActionGraphScope.DefaultId, new RenameActionGraphScopeRequest { Name = "X" }));
+        Assert.Throws<ArgumentException>(() => service.DeleteScope("work"));
+        Assert.True(service.DeleteGraph("office"));
+        Assert.True(service.DeleteScope("work"));
+    }
+
+    [Fact]
+    public void MigratesLegacyJsonDocumentIntoSqliteOnce()
+    {
+        var jsonPath = Path.Combine(_tempDir, "action-graphs.json");
+        File.WriteAllText(jsonPath, """
+            {
+              "graphs": [
+                {
+                  "id": "legacy",
+                  "name": "Legacy board",
+                  "nodes": [
+                    { "id": "a", "kind": "project", "title": "A", "x": 10, "y": 20,
+                      "actions": [{ "id": "act1", "label": "Go", "cwd": "C:/work", "slashCommands": ["status"] }],
+                      "source": "agent", "createdAt": "2026-07-20T10:00:00+00:00", "updatedAt": "2026-07-20T10:00:00+00:00", "revision": 3 }
+                  ],
+                  "edges": [],
+                  "createdAt": "2026-07-20T10:00:00+00:00",
+                  "updatedAt": "2026-07-20T10:00:00+00:00"
+                }
+              ]
+            }
+            """);
+
+        using var service = CreateService();
+        var graph = service.GetGraph("legacy");
+
+        Assert.NotNull(graph);
+        Assert.Equal(ActionGraphScope.DefaultId, graph!.ScopeId);
+        var node = Assert.Single(graph.Nodes);
+        Assert.Equal(3, node.Revision);
+        var action = Assert.Single(node.Actions);
+        Assert.Equal("Go", action.Label);
+        Assert.Equal(["status"], action.SlashCommands);
+        Assert.False(File.Exists(jsonPath));
+        Assert.True(File.Exists(jsonPath + ".migrated"));
+    }
+
     public void Dispose()
     {
         try

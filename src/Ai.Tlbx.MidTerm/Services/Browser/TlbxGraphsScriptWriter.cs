@@ -51,8 +51,27 @@ public static class TlbxGraphsScriptWriter
         }
         _MTGESC() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
 
-        # mtg_graphs  — list graphs
-        mtg_graphs() { _MTGC "$_MTG/api/graphs"; echo; }
+        # mtg_scopes  — list scopes with graph counts
+        mtg_scopes() { _MTGC "$_MTG/api/graph-scopes"; echo; }
+        # mtg_scope_new ID [NAME...]  — create a scope
+        mtg_scope_new() {
+          local id="$1"; shift || true
+          local name="$*"
+          if [ -n "$name" ]; then
+            _MTGJ POST "{\"id\":\"$(_MTGESC "$id")\",\"name\":\"$(_MTGESC "$name")\"}" "/api/graph-scopes"
+          else
+            _MTGJ POST "{\"id\":\"$(_MTGESC "$id")\"}" "/api/graph-scopes"
+          fi
+        }
+        # mtg_scope_rm SCOPE  — delete an empty scope (default scope is protected)
+        mtg_scope_rm() { _MTGC -X DELETE "$_MTG/api/graph-scopes/$1"; echo; }
+        # mtg_graphs [SCOPE]  — list graphs, optionally filtered by scope
+        mtg_graphs() {
+          if [ -n "${1:-}" ]; then _MTGC "$_MTG/api/graphs?scope=$1"; else _MTGC "$_MTG/api/graphs"; fi
+          echo
+        }
+        # mtg_graph_scope GRAPH SCOPE  — move a graph into a scope
+        mtg_graph_scope() { _MTGJ POST "{\"id\":\"$(_MTGESC "$1")\",\"scopeId\":\"$(_MTGESC "$2")\"}" "/api/graphs"; }
         # mtg_graph GRAPH  — dump one graph (nodes + edges) as JSON
         mtg_graph() { _MTGC "$_MTG/api/graphs/$1"; echo; }
         # mtg_graph_new ID [NAME...]  — create or rename a graph
@@ -139,8 +158,28 @@ public static class TlbxGraphsScriptWriter
             return $Json
         }
 
-        # Mtg-Graphs  — list graphs
-        function Mtg-Graphs { _MtgCurl "$script:_MTG/api/graphs" }
+        # Mtg-Scopes  — list scopes with graph counts
+        function Mtg-Scopes { _MtgCurl "$script:_MTG/api/graph-scopes" }
+        # Mtg-ScopeNew ID [NAME]  — create a scope
+        function Mtg-ScopeNew {
+            param([string]$ScopeId, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Name)
+            $payload = @{ id = $ScopeId }
+            if ($Name) { $payload.name = ($Name -join ' ') }
+            _MtgJson POST ($payload | ConvertTo-Json -Compress) "/api/graph-scopes"
+        }
+        # Mtg-ScopeRm SCOPE  — delete an empty scope (default scope is protected)
+        function Mtg-ScopeRm { param([string]$ScopeId) _MtgCurl -X DELETE "$script:_MTG/api/graph-scopes/$ScopeId" }
+        # Mtg-Graphs [SCOPE]  — list graphs, optionally filtered by scope
+        function Mtg-Graphs {
+            param([string]$ScopeId)
+            if ($ScopeId) { _MtgCurl "$script:_MTG/api/graphs?scope=$ScopeId" }
+            else { _MtgCurl "$script:_MTG/api/graphs" }
+        }
+        # Mtg-GraphScope GRAPH SCOPE  — move a graph into a scope
+        function Mtg-GraphScope {
+            param([string]$GraphId, [string]$ScopeId)
+            _MtgJson POST (@{ id = $GraphId; scopeId = $ScopeId } | ConvertTo-Json -Compress) "/api/graphs"
+        }
         # Mtg-Graph GRAPH  — dump one graph (nodes + edges) as JSON
         function Mtg-Graph { param([string]$GraphId) _MtgCurl "$script:_MTG/api/graphs/$GraphId" }
         # Mtg-GraphNew ID [NAME]  — create or rename a graph
@@ -180,6 +219,10 @@ public static class TlbxGraphsScriptWriter
         # Mtg-EdgeRm GRAPH EDGE  — delete an edge
         function Mtg-EdgeRm { param([string]$GraphId, [string]$EdgeId) _MtgCurl -X DELETE "$script:_MTG/api/graphs/$GraphId/edges/$EdgeId" }
 
+        Set-Alias -Name mtg_scopes -Value Mtg-Scopes
+        Set-Alias -Name mtg_scope_new -Value Mtg-ScopeNew
+        Set-Alias -Name mtg_scope_rm -Value Mtg-ScopeRm
+        Set-Alias -Name mtg_graph_scope -Value Mtg-GraphScope
         Set-Alias -Name mtg_graphs -Value Mtg-Graphs
         Set-Alias -Name mtg_graph -Value Mtg-Graph
         Set-Alias -Name mtg_graph_new -Value Mtg-GraphNew

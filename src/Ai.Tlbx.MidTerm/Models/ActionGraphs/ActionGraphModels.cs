@@ -87,9 +87,40 @@ public sealed class ActionGraphEdge
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>
+/// Scopes partition graphs (work, leisure, ...). Most users stay in the built-in
+/// default scope; the UI keeps scope controls quiet until more than one exists.
+/// </summary>
+public sealed class ActionGraphScope
+{
+    public const string DefaultId = "default";
+
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public int GraphCount { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class ActionGraphScopeListResponse
+{
+    public List<ActionGraphScope> Scopes { get; set; } = [];
+}
+
+public sealed class CreateActionGraphScopeRequest
+{
+    public string? Id { get; set; }
+    public string? Name { get; set; }
+}
+
+public sealed class RenameActionGraphScopeRequest
+{
+    public string? Name { get; set; }
+}
+
 public sealed class ActionGraph
 {
     public string Id { get; set; } = string.Empty;
+    public string ScopeId { get; set; } = ActionGraphScope.DefaultId;
     public string Name { get; set; } = string.Empty;
     public List<ActionGraphNode> Nodes { get; set; } = [];
     public List<ActionGraphEdge> Edges { get; set; } = [];
@@ -105,6 +136,7 @@ public sealed class ActionGraphsDocument
 public sealed class ActionGraphSummary
 {
     public string Id { get; set; } = string.Empty;
+    public string ScopeId { get; set; } = ActionGraphScope.DefaultId;
     public string Name { get; set; } = string.Empty;
     public int NodeCount { get; set; }
     public int EdgeCount { get; set; }
@@ -120,6 +152,7 @@ public sealed class CreateActionGraphRequest
 {
     public string? Id { get; set; }
     public string? Name { get; set; }
+    public string? ScopeId { get; set; }
 }
 
 public sealed class UpsertActionGraphNodeRequest
@@ -163,6 +196,7 @@ public sealed class CreateActionGraphEdgeRequest
 [JsonSerializable(typeof(ActionGraph))]
 [JsonSerializable(typeof(ActionGraphNode))]
 [JsonSerializable(typeof(ActionGraphEdge))]
+[JsonSerializable(typeof(List<string>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 public partial class ActionGraphsJsonContext : JsonSerializerContext
 {

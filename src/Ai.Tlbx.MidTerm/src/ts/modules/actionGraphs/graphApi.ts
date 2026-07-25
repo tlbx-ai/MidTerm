@@ -53,10 +53,35 @@ export interface ActionGraph {
 
 export interface ActionGraphSummary {
   id: string;
+  scopeId: string;
   name: string;
   nodeCount: number;
   edgeCount: number;
   updatedAt: string;
+}
+
+export interface ActionGraphScope {
+  id: string;
+  name: string;
+  graphCount: number;
+}
+
+export interface UpsertNodePayload {
+  id?: string;
+  kind?: string;
+  title?: string;
+  state?: string;
+  html?: string;
+  x?: number;
+  y?: number;
+  color?: string;
+  url?: string;
+  path?: string;
+  host?: string;
+  project?: string;
+  date?: string;
+  actions?: Omit<ActionGraphNodeAction, 'id'>[];
+  source?: string;
 }
 
 export async function fetchGraphList(signal?: AbortSignal): Promise<ActionGraphSummary[]> {
@@ -92,6 +117,83 @@ export async function persistNodePosition(
       body: JSON.stringify({ x, y }),
     },
   );
+}
+
+export async function fetchScopes(signal?: AbortSignal): Promise<ActionGraphScope[]> {
+  const response = await fetch('/api/graph-scopes', { signal: signal ?? null });
+  if (!response.ok) {
+    throw new Error(`Scope list failed: ${response.status}`);
+  }
+  const payload = (await response.json()) as { scopes?: ActionGraphScope[] };
+  return payload.scopes ?? [];
+}
+
+export async function createScope(id: string, name: string): Promise<void> {
+  await throwingFetch('/api/graph-scopes', 'POST', { id, name });
+}
+
+export async function createGraph(id: string, name: string, scopeId: string): Promise<void> {
+  await throwingFetch('/api/graphs', 'POST', { id, name, scopeId });
+}
+
+export async function deleteGraph(graphId: string): Promise<void> {
+  await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}`, 'DELETE');
+}
+
+export async function createNode(
+  graphId: string,
+  payload: UpsertNodePayload,
+): Promise<ActionGraphNode> {
+  return (await throwingFetch(
+    `/api/graphs/${encodeURIComponent(graphId)}/nodes`,
+    'POST',
+    payload,
+  )) as ActionGraphNode;
+}
+
+export async function updateNode(
+  graphId: string,
+  nodeId: string,
+  payload: UpsertNodePayload,
+): Promise<ActionGraphNode> {
+  return (await throwingFetch(
+    `/api/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}`,
+    'PATCH',
+    payload,
+  )) as ActionGraphNode;
+}
+
+export async function deleteNode(graphId: string, nodeId: string): Promise<void> {
+  await throwingFetch(
+    `/api/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}`,
+    'DELETE',
+  );
+}
+
+export async function createEdge(graphId: string, fromId: string, toId: string): Promise<void> {
+  await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}/edges`, 'POST', { fromId, toId });
+}
+
+export async function deleteEdge(graphId: string, edgeId: string): Promise<void> {
+  await throwingFetch(
+    `/api/graphs/${encodeURIComponent(graphId)}/edges/${encodeURIComponent(edgeId)}`,
+    'DELETE',
+  );
+}
+
+async function throwingFetch(url: string, method: string, body?: unknown): Promise<unknown> {
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `${method} ${url} failed: ${response.status}`);
+  }
+  const text = await response.text();
+  return text ? (JSON.parse(text) as unknown) : undefined;
 }
 
 interface WorkerBootstrapResponsePayload {

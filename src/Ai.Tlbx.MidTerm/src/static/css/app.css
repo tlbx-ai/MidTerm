@@ -19339,3 +19339,251 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
+
+/* Action Graphs management strip and editor */
+.ag-manage-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px clamp(20px, 4vw, 52px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ag-manage-panel.hidden {
+  display: none;
+}
+
+.ag-manage-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ag-manage-row input {
+  min-width: 160px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.ag-manage-row button {
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ag-manage-row button:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+#ag-delete-graph[data-confirm='armed'] {
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+.action-graphs-canvas.ag-connecting {
+  cursor: crosshair;
+}
+
+.ag-detail-edit-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ag-detail-edit-row button {
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ag-detail-edit-row button:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.ag-detail-delete[data-confirm='armed'] {
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+.ag-detail-edges {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.ag-detail-edges li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ag-detail-edges button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ag-detail-edges button:hover {
+  color: var(--accent-red);
+}
+
+.ag-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ag-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ag-editor-field input,
+.ag-editor-link-input {
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.ag-editor-label {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ag-editor-toolbar {
+  display: flex;
+  gap: 4px;
+}
+
+.ag-editor-toolbar button {
+  min-width: 28px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ag-editor-toolbar button:hover {
+  color: var(--text-primary);
+}
+
+.ag-editor-link-input {
+  flex: 1;
+  min-width: 80px;
+}
+
+.ag-editor-body {
+  min-height: 110px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+.ag-editor-body:focus {
+  outline: 1px solid var(--accent-blue);
+}
+
+.ag-editor-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ag-editor-action {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.ag-editor-action input,
+.ag-editor-action select,
+.ag-editor-action textarea {
+  padding: 4px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.ag-editor-action textarea {
+  grid-column: 1 / -1;
+  resize: vertical;
+}
+
+.ag-editor-action input[data-field='cwd'] {
+  grid-column: 1 / -1;
+}
+
+.ag-editor-action button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ag-editor-add-action,
+.ag-editor-save,
+.ag-editor-cancel {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ag-editor-save {
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+.ag-editor-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.ag-editor-error {
+  margin: 0;
+  color: var(--accent-red);
+  font-size: var(--fs-sm);
+}
+
+.ag-editor-error.hidden {
+  display: none;
+}

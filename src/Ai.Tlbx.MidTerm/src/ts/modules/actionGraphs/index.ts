@@ -11,13 +11,22 @@ import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { closeSettings } from '../settings';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import {
+  createEdge,
+  createGraph,
+  createScope,
+  deleteEdge,
+  deleteGraph,
+  deleteNode,
   fetchGraph,
   fetchGraphList,
+  fetchScopes,
   persistNodePosition,
   runNodeAction,
   type ActionGraph,
   type ActionGraphNode,
+  type ActionGraphScope,
 } from './graphApi';
+import { renderNodeEditor } from './nodeEditor';
 
 interface ActionGraphsViewOptions {
   onSelectSession: (sessionId: string) => void;
@@ -41,6 +50,10 @@ let graphSelect: HTMLSelectElement | null = null;
 let currentGraphId: string | null = null;
 let currentGraph: ActionGraph | null = null;
 let selectedNodeId: string | null = null;
+let scopes: ActionGraphScope[] = [];
+let activeScopeId = 'default';
+let editorOpen = false;
+let connectFromId: string | null = null;
 let panX = 40;
 let panY = 40;
 let zoom = 1;
@@ -69,6 +82,7 @@ export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void
     selectNode(null);
     void refreshGraphs();
   });
+  wireHeaderControls();
   wireCanvasInteractions();
 
   $currentSettings.subscribe(syncButtonVisibility);
@@ -127,12 +141,20 @@ function stopRefreshTimer(): void {
 
 async function refreshGraphs(): Promise<void> {
   if (!$actionGraphsOpen.get()) return;
+  if (editorOpen) return;
   refreshAbort?.abort();
   const abort = new AbortController();
   refreshAbort = abort;
 
   try {
-    const graphList = await fetchGraphList(abort.signal);
+    scopes = await fetchScopes(abort.signal);
+    if (!scopes.some((scope) => scope.id === activeScopeId)) {
+      activeScopeId = 'default';
+    }
+    renderScopeSelect();
+
+    const allGraphs = await fetchGraphList(abort.signal);
+    const graphList = allGraphs.filter((graph) => graph.scopeId === activeScopeId);
     renderGraphSelect(graphList.map((graph) => ({ id: graph.id, name: graph.name })));
     if (graphList.length === 0) {
       currentGraphId = null;
@@ -155,6 +177,135 @@ async function refreshGraphs(): Promise<void> {
       log.warn(() => `Graph refresh failed: ${String(error)}`);
     }
   }
+}
+
+function renderScopeSelect(): void {
+  const scopeSelect = document.getElementById('action-graphs-scope') as HTMLSelectElement | null;
+  if (!scopeSelect) return;
+  scopeSelect.replaceChildren();
+  for (const scope of scopes) {
+    const option = document.createElement('option');
+    option.value = scope.id;
+    option.textContent = scope.name;
+    scopeSelect.appendChild(option);
+  }
+  scopeSelect.value = activeScopeId;
+  // Most users never leave the default scope; keep the selector quiet until a second scope exists.
+  scopeSelect.classList.toggle('hidden', scopes.length <= 1);
+}
+
+function wireHeaderControls(): void {
+  const scopeSelect = document.getElementById('action-graphs-scope') as HTMLSelectElement | null;
+  scopeSelect?.addEventListener('change', () => {
+    activeScopeId = scopeSelect.value;
+    currentGraphId = null;
+    selectNode(null);
+    void refreshGraphs();
+  });
+
+  document.getElementById('ag-new-node')?.addEventListener('click', () => {
+    if (!currentGraphId || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    openEditor(null, {
+      x: Math.round((rect.width / 2 - panX) / zoom - 100),
+      y: Math.round((rect.height / 2 - panY) / zoom - 40),
+    });
+  });
+
+  const managePanel = document.getElementById('ag-manage-panel');
+  document.getElementById('ag-manage')?.addEventListener('click', () => {
+    managePanel?.classList.toggle('hidden');
+  });
+
+  document.getElementById('ag-create-graph')?.addEventListener('click', () => {
+    const input = document.getElementById('ag-new-graph-name') as HTMLInputElement | null;
+    const name = input?.value.trim();
+    if (!name) return;
+    const id = slugify(name);
+    void createGraph(id, name, activeScopeId)
+      .then(() => {
+        if (input) input.value = '';
+        currentGraphId = id;
+        managePanel?.classList.add('hidden');
+        void refreshGraphs();
+      })
+      .catch((error: unknown) => {
+        log.warn(() => `Graph create failed: ${String(error)}`);
+      });
+  });
+
+  document.getElementById('ag-create-scope')?.addEventListener('click', () => {
+    const input = document.getElementById('ag-new-scope-name') as HTMLInputElement | null;
+    const name = input?.value.trim();
+    if (!name) return;
+    const id = slugify(name);
+    void createScope(id, name)
+      .then(() => {
+        if (input) input.value = '';
+        activeScopeId = id;
+        currentGraphId = null;
+        managePanel?.classList.add('hidden');
+        void refreshGraphs();
+      })
+      .catch((error: unknown) => {
+        log.warn(() => `Scope create failed: ${String(error)}`);
+      });
+  });
+
+  const deleteButton = document.getElementById('ag-delete-graph');
+  deleteButton?.addEventListener('click', () => {
+    if (!currentGraphId) return;
+    if (deleteButton.dataset.confirm !== 'armed') {
+      deleteButton.dataset.confirm = 'armed';
+      deleteButton.textContent = t('actionGraphs.deleteGraphConfirm');
+      window.setTimeout(() => {
+        deleteButton.dataset.confirm = '';
+        deleteButton.textContent = t('actionGraphs.deleteGraph');
+      }, 3000);
+      return;
+    }
+    deleteButton.dataset.confirm = '';
+    deleteButton.textContent = t('actionGraphs.deleteGraph');
+    void deleteGraph(currentGraphId)
+      .then(() => {
+        currentGraphId = null;
+        selectNode(null);
+        managePanel?.classList.add('hidden');
+        void refreshGraphs();
+      })
+      .catch((error: unknown) => {
+        log.warn(() => `Graph delete failed: ${String(error)}`);
+      });
+  });
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug || `g${Date.now().toString(36)}`;
+}
+
+function openEditor(node: ActionGraphNode | null, position: { x: number; y: number } | null): void {
+  if (!detailPanel || !currentGraphId) return;
+  editorOpen = true;
+  connectFromId = null;
+  detailPanel.classList.remove('hidden');
+  renderNodeEditor(detailPanel, {
+    graphId: currentGraphId,
+    node,
+    position,
+    onSaved: () => {
+      editorOpen = false;
+      void refreshGraphs();
+    },
+    onCancel: () => {
+      editorOpen = false;
+      renderDetail();
+    },
+  });
 }
 
 function renderGraphSelect(graphs: Array<{ id: string; name: string }>): void {
@@ -382,8 +533,22 @@ function wireCanvasInteractions(): void {
       return;
     }
     const nodeEl = (event.target as HTMLElement).closest<HTMLElement>('.ag-node');
-    if (nodeEl?.dataset.nodeId) {
-      selectNode(nodeEl.dataset.nodeId);
+    const nodeId = nodeEl?.dataset.nodeId;
+    if (connectFromId) {
+      const fromId = connectFromId;
+      connectFromId = null;
+      canvas?.classList.remove('ag-connecting');
+      if (nodeId && nodeId !== fromId && currentGraphId) {
+        void createEdge(currentGraphId, fromId, nodeId)
+          .then(() => refreshGraphs())
+          .catch((error: unknown) => {
+            log.warn(() => `Edge create failed: ${String(error)}`);
+          });
+      }
+      return;
+    }
+    if (nodeId) {
+      selectNode(nodeId);
     }
   });
 
@@ -417,7 +582,7 @@ function selectNode(nodeId: string | null): void {
 }
 
 function renderDetail(): void {
-  if (!detailPanel) return;
+  if (!detailPanel || editorOpen) return;
   const node = currentGraph?.nodes.find((candidate) => candidate.id === selectedNodeId) ?? null;
   detailPanel.classList.toggle('hidden', node === null);
   detailPanel.replaceChildren();
@@ -468,6 +633,12 @@ function renderDetail(): void {
     detailPanel.appendChild(frame);
   }
 
+  detailPanel.appendChild(buildDetailEditRow(node));
+  const edgeList = buildDetailEdgeList(node);
+  if (edgeList) {
+    detailPanel.appendChild(edgeList);
+  }
+
   const actions = document.createElement('div');
   actions.className = 'ag-detail-actions';
   if (node.actions.length === 0) {
@@ -497,6 +668,86 @@ function renderDetail(): void {
     actions.appendChild(button);
   }
   detailPanel.appendChild(actions);
+}
+
+function buildDetailEditRow(node: ActionGraphNode): HTMLElement {
+  const editRow = document.createElement('div');
+  editRow.className = 'ag-detail-edit-row';
+  const editButton = document.createElement('button');
+  editButton.type = 'button';
+  editButton.textContent = t('actionGraphs.edit');
+  editButton.addEventListener('click', () => {
+    openEditor(node, null);
+  });
+  const connectButton = document.createElement('button');
+  connectButton.type = 'button';
+  connectButton.textContent = t('actionGraphs.connect');
+  connectButton.title = t('actionGraphs.connectHint');
+  connectButton.addEventListener('click', () => {
+    connectFromId = node.id;
+    canvas?.classList.add('ag-connecting');
+  });
+  const deleteNodeButton = document.createElement('button');
+  deleteNodeButton.type = 'button';
+  deleteNodeButton.className = 'ag-detail-delete';
+  deleteNodeButton.textContent = t('actionGraphs.deleteNode');
+  deleteNodeButton.addEventListener('click', () => {
+    if (deleteNodeButton.dataset.confirm !== 'armed') {
+      deleteNodeButton.dataset.confirm = 'armed';
+      deleteNodeButton.textContent = t('actionGraphs.deleteNodeConfirm');
+      window.setTimeout(() => {
+        deleteNodeButton.dataset.confirm = '';
+        deleteNodeButton.textContent = t('actionGraphs.deleteNode');
+      }, 3000);
+      return;
+    }
+    if (!currentGraphId) return;
+    void deleteNode(currentGraphId, node.id)
+      .then(() => {
+        selectNode(null);
+        void refreshGraphs();
+      })
+      .catch((error: unknown) => {
+        log.warn(() => `Node delete failed: ${String(error)}`);
+      });
+  });
+  editRow.append(editButton, connectButton, deleteNodeButton);
+  return editRow;
+}
+
+function buildDetailEdgeList(node: ActionGraphNode): HTMLElement | null {
+  const connectedEdges = (currentGraph?.edges ?? []).filter(
+    (edge) => edge.fromId === node.id || edge.toId === node.id,
+  );
+  if (connectedEdges.length === 0) {
+    return null;
+  }
+
+  const edgeList = document.createElement('ul');
+  edgeList.className = 'ag-detail-edges';
+  for (const edge of connectedEdges) {
+    const item = document.createElement('li');
+    const otherId = edge.fromId === node.id ? edge.toId : edge.fromId;
+    const other = currentGraph?.nodes.find((candidate) => candidate.id === otherId);
+    const direction = edge.fromId === node.id ? '→' : '←';
+    const text = document.createElement('span');
+    text.textContent = `${direction} ${other?.title ?? otherId}${edge.label ? ` (${edge.label})` : ''}`;
+    const removeEdge = document.createElement('button');
+    removeEdge.type = 'button';
+    removeEdge.textContent = '×';
+    removeEdge.title = t('actionGraphs.removeEdge');
+    removeEdge.addEventListener('click', () => {
+      if (!currentGraphId) return;
+      void deleteEdge(currentGraphId, edge.id)
+        .then(() => refreshGraphs())
+        .catch((error: unknown) => {
+          log.warn(() => `Edge delete failed: ${String(error)}`);
+        });
+    });
+    item.append(text, removeEdge);
+    edgeList.appendChild(item);
+  }
+  return edgeList;
 }
 
 function appendMeta(

@@ -786,12 +786,21 @@
               <div class="action-graphs-header-info">
                 <h1 id="action-graphs-title" data-i18n="actionGraphs.title">Action Graphs</h1>
                 <select
+                  id="action-graphs-scope"
+                  class="action-graphs-select hidden"
+                  aria-label="Scope"
+                ></select>
+                <select
                   id="action-graphs-select"
                   class="action-graphs-select hidden"
                   aria-label="Action Graphs"
                 ></select>
               </div>
               <div class="action-graphs-header-actions">
+                <button id="ag-new-node" type="button" data-i18n="actionGraphs.newNode">
+                  New node
+                </button>
+                <button id="ag-manage" type="button" aria-label="Manage graphs">⋯</button>
                 <button id="action-graphs-refresh" type="button" data-i18n="actionGraphs.refresh">
                   Refresh
                 </button>
@@ -800,6 +809,35 @@
                 </button>
               </div>
             </header>
+            <div id="ag-manage-panel" class="ag-manage-panel hidden">
+              <div class="ag-manage-row">
+                <input
+                  id="ag-new-graph-name"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.graphName"
+                  placeholder="Graph name"
+                />
+                <button id="ag-create-graph" type="button" data-i18n="actionGraphs.newGraph">
+                  New graph
+                </button>
+              </div>
+              <div class="ag-manage-row">
+                <input
+                  id="ag-new-scope-name"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.scopeName"
+                  placeholder="Scope name"
+                />
+                <button id="ag-create-scope" type="button" data-i18n="actionGraphs.newScope">
+                  New scope
+                </button>
+              </div>
+              <div class="ag-manage-row">
+                <button id="ag-delete-graph" type="button" data-i18n="actionGraphs.deleteGraph">
+                  Delete current graph
+                </button>
+              </div>
+            </div>
             <div class="action-graphs-body">
               <div id="action-graphs-canvas" class="action-graphs-canvas">
                 <div id="action-graphs-stage" class="action-graphs-stage">
