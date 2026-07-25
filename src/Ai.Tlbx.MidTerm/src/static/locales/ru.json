@@ -1030,5 +1030,7 @@
   "actionGraphs.formatList": "Список",
   "actionGraphs.formatLink": "Вставить ссылку",
   "actionGraphs.fieldWidth": "Ширина (px)",
-  "actionGraphs.fieldHeight": "Высота (px)"
+  "actionGraphs.fieldHeight": "Высота (px)",
+  "settings.behavior.actionGraphsCwd": "Каталог действий по умолчанию",
+  "settings.behavior.actionGraphsCwdHint": "Действия узлов без собственного рабочего каталога запускаются здесь. Оставьте пустым, чтобы использовать общий рабочий каталог по умолчанию."
 }

@@ -1030,5 +1030,7 @@
   "actionGraphs.formatList": "सूची",
   "actionGraphs.formatLink": "लिंक जोड़ें",
   "actionGraphs.fieldWidth": "चौड़ाई (px)",
-  "actionGraphs.fieldHeight": "ऊंचाई (px)"
+  "actionGraphs.fieldHeight": "ऊंचाई (px)",
+  "settings.behavior.actionGraphsCwd": "क्रियाओं की डिफ़ॉल्ट डायरेक्टरी",
+  "settings.behavior.actionGraphsCwdHint": "अपनी कार्य डायरेक्टरी के बिना नोड क्रियाएँ यहाँ शुरू होती हैं। सामान्य डिफ़ॉल्ट कार्य डायरेक्टरी उपयोग करने के लिए खाली छोड़ें।"
 }

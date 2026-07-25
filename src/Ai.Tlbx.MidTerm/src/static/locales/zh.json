@@ -1030,5 +1030,7 @@
   "actionGraphs.formatList": "项目符号",
   "actionGraphs.formatLink": "插入链接",
   "actionGraphs.fieldWidth": "宽度 (px)",
-  "actionGraphs.fieldHeight": "高度 (px)"
+  "actionGraphs.fieldHeight": "高度 (px)",
+  "settings.behavior.actionGraphsCwd": "操作默认目录",
+  "settings.behavior.actionGraphsCwdHint": "没有自身工作目录的节点操作将在此启动。留空则使用通用默认工作目录。"
 }

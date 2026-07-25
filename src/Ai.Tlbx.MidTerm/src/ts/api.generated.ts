@@ -4371,6 +4371,7 @@ export interface components {
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
       actionGraphsEnabled: boolean;
+      actionGraphsDefaultCwd: string;
       commandBayLigaturesEnabled: boolean;
       devMode: boolean;
       terminalLatencyDiagnosticsEnabled: boolean;

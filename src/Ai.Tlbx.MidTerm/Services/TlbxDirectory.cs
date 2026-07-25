@@ -476,7 +476,7 @@ public static class TlbxDirectory
 
         Group related nodes with `frame` nodes: a frame renders as a calm background region (`x`, `y`, `width`, `height`) with its title as a small chip; place member nodes on top of it. Frames are visual only — tlbx attaches no containment semantics.
 
-        Actions are stored launch specs the user executes from the canvas: `{"label": "...", "cwd": "...", "profile": "claude|codex|terminal", "prompt": "...", "sessionName": "..."}`. tlbx runs them verbatim as a new agent session plus prompt; it never interprets them.
+        Actions are stored launch specs the user executes from the canvas: `{"label": "...", "cwd": "...", "profile": "claude|codex|terminal", "prompt": "...", "sessionName": "..."}`. tlbx runs them verbatim as a new agent session plus prompt; it never interprets them. Set `sessionName` so the launched sidebar session is attributable to its item, and write prompts self-contained (item kind, identifying metadata, task). Actions without a `cwd` launch in the user's configured action default directory (settings), so omit `cwd` unless the item belongs to a specific repo.
 
         Example (a service map — the ontology is yours):
 

@@ -1030,5 +1030,7 @@
   "actionGraphs.formatList": "Liste à puces",
   "actionGraphs.formatLink": "Insérer un lien",
   "actionGraphs.fieldWidth": "Largeur (px)",
-  "actionGraphs.fieldHeight": "Hauteur (px)"
+  "actionGraphs.fieldHeight": "Hauteur (px)",
+  "settings.behavior.actionGraphsCwd": "Répertoire par défaut des actions",
+  "settings.behavior.actionGraphsCwdHint": "Les actions de nœud sans répertoire de travail propre démarrent ici. Laissez vide pour utiliser le répertoire de travail par défaut général."
 }

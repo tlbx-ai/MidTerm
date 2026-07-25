@@ -205,18 +205,20 @@ interface WorkerBootstrapResponsePayload {
 
 /**
  * Execute a stored launch spec verbatim: bootstrap an agent-controlled session,
- * then deliver the prompt through the state-aware prompt API.
+ * then deliver the prompt through the state-aware prompt API. Actions without a
+ * cwd of their own fall back to the configured default working directory.
  */
 export async function runNodeAction(
   nodeTitle: string,
   action: ActionGraphNodeAction,
+  defaultCwd?: string,
 ): Promise<string> {
   const bootstrapResponse = await fetch('/api/workers/bootstrap', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: action.sessionName?.trim() || nodeTitle,
-      workingDirectory: action.cwd ?? undefined,
+      workingDirectory: action.cwd?.trim() || defaultCwd || undefined,
       profile: action.profile ?? 'terminal',
       agentControlled: true,
       injectGuidance: true,

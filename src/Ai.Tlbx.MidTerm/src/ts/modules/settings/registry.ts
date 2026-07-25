@@ -574,6 +574,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'server-only',
   }),
+  controlEntry('actionGraphsDefaultCwd', 'setting-action-graphs-cwd', 'text', '', {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'string path, empty allowed',
+    applyMode: 'immediate',
+  }),
   controlEntry('actionGraphsEnabled', 'setting-action-graphs', 'checkbox', false, {
     editable: true,
     storage: 'settings.json',

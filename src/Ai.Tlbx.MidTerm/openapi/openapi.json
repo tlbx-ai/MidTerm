@@ -5282,6 +5282,7 @@
           "tmuxCompatibility",
           "managerBarEnabled",
           "actionGraphsEnabled",
+          "actionGraphsDefaultCwd",
           "commandBayLigaturesEnabled",
           "devMode",
           "terminalLatencyDiagnosticsEnabled",
@@ -5544,6 +5545,9 @@
           },
           "actionGraphsEnabled": {
             "type": "boolean"
+          },
+          "actionGraphsDefaultCwd": {
+            "type": "string"
           },
           "commandBayLigaturesEnabled": {
             "type": "boolean"

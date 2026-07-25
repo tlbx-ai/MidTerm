@@ -85,6 +85,7 @@ public sealed partial class MidTermSettingsPublic
     public bool TmuxCompatibility { get; set; } = true;
     public bool ManagerBarEnabled { get; set; } = true;
     public bool ActionGraphsEnabled { get; set; } = false;
+    public string ActionGraphsDefaultCwd { get; set; } = "";
     public bool CommandBayLigaturesEnabled { get; set; } = true;
     public bool DevMode { get; set; } = false;
     public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;

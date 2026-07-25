@@ -755,7 +755,7 @@ function renderDetail(): void {
     if (action.prompt) button.title = action.prompt;
     button.addEventListener('click', () => {
       button.disabled = true;
-      void runNodeAction(node.title, action)
+      void runNodeAction(node.title, action, $currentSettings.get()?.actionGraphsDefaultCwd)
         .then((sessionId) => {
           closeActionGraphsView();
           options?.onSelectSession(sessionId);

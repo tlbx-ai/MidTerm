@@ -1164,5 +1164,7 @@
   "actionGraphs.formatList": "Bullet list",
   "actionGraphs.formatLink": "Insert link",
   "actionGraphs.fieldWidth": "Width (px)",
-  "actionGraphs.fieldHeight": "Height (px)"
+  "actionGraphs.fieldHeight": "Height (px)",
+  "settings.behavior.actionGraphsCwd": "Action default directory",
+  "settings.behavior.actionGraphsCwdHint": "Node actions without their own working directory launch here. Leave empty to use the general default working directory."
 }

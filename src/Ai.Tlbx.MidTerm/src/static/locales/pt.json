@@ -1030,5 +1030,7 @@
   "actionGraphs.formatList": "Lista",
   "actionGraphs.formatLink": "Inserir link",
   "actionGraphs.fieldWidth": "Largura (px)",
-  "actionGraphs.fieldHeight": "Altura (px)"
+  "actionGraphs.fieldHeight": "Altura (px)",
+  "settings.behavior.actionGraphsCwd": "Diretório padrão das ações",
+  "settings.behavior.actionGraphsCwdHint": "Ações de nó sem diretório de trabalho próprio iniciam aqui. Deixe vazio para usar o diretório de trabalho padrão geral."
 }
