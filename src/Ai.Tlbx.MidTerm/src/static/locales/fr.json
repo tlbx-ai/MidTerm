@@ -1032,5 +1032,7 @@
   "actionGraphs.fieldWidth": "Largeur (px)",
   "actionGraphs.fieldHeight": "Hauteur (px)",
   "settings.behavior.actionGraphsCwd": "Répertoire par défaut des actions",
-  "settings.behavior.actionGraphsCwdHint": "Les actions de nœud sans répertoire de travail propre démarrent ici. Laissez vide pour utiliser le répertoire de travail par défaut général."
+  "settings.behavior.actionGraphsCwdHint": "Les actions de nœud sans répertoire de travail propre démarrent ici. Laissez vide pour utiliser le répertoire de travail par défaut général.",
+  "actionGraphs.fit": "Ajuster",
+  "actionGraphs.actionSessionName": "Nom de session"
 }

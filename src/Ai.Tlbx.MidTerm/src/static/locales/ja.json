@@ -1032,5 +1032,7 @@
   "actionGraphs.fieldWidth": "幅 (px)",
   "actionGraphs.fieldHeight": "高さ (px)",
   "settings.behavior.actionGraphsCwd": "アクションの既定ディレクトリ",
-  "settings.behavior.actionGraphsCwdHint": "作業ディレクトリを持たないノードアクションはここで起動します。空のままにすると一般の既定作業ディレクトリを使用します。"
+  "settings.behavior.actionGraphsCwdHint": "作業ディレクトリを持たないノードアクションはここで起動します。空のままにすると一般の既定作業ディレクトリを使用します。",
+  "actionGraphs.fit": "全体表示",
+  "actionGraphs.actionSessionName": "セッション名"
 }

@@ -22,6 +22,7 @@ import {
   fetchScopes,
   persistNodePosition,
   runNodeAction,
+  updateNode,
   type ActionGraph,
   type ActionGraphNode,
   type ActionGraphScope,
@@ -60,6 +61,7 @@ let zoom = 1;
 let refreshTimer: number | null = null;
 let refreshAbort: AbortController | null = null;
 let releaseBackButtonLayer: (() => void) | null = null;
+let lastFitGraphId: string | null = null;
 
 export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void {
   options = nextOptions;
@@ -74,9 +76,7 @@ export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void
 
   document.getElementById('btn-action-graphs')?.addEventListener('click', toggleActionGraphsView);
   document.getElementById('action-graphs-close')?.addEventListener('click', closeActionGraphsView);
-  document.getElementById('action-graphs-refresh')?.addEventListener('click', () => {
-    void refreshGraphs();
-  });
+  document.getElementById('ag-fit')?.addEventListener('click', fitView);
   graphSelect?.addEventListener('change', () => {
     currentGraphId = graphSelect?.value || null;
     selectNode(null);
@@ -354,6 +354,31 @@ function renderGraph(): void {
   }
   renderEdges(graph);
   renderDetail();
+
+  if (graph.nodes.length > 0 && currentGraphId !== lastFitGraphId) {
+    lastFitGraphId = currentGraphId;
+    fitView();
+  }
+}
+
+/** Fit the whole board into the visible canvas (never zooms beyond 1:1). */
+function fitView(): void {
+  if (!canvas || !nodesHost) return;
+  let maxX = 0;
+  let maxY = 0;
+  for (const element of nodesHost.querySelectorAll<HTMLElement>('.ag-node')) {
+    maxX = Math.max(maxX, element.offsetLeft + element.offsetWidth);
+    maxY = Math.max(maxY, element.offsetTop + element.offsetHeight);
+  }
+  if (maxX === 0 || maxY === 0) return;
+  const pad = 32;
+  zoom = Math.max(
+    MIN_ZOOM,
+    Math.min((canvas.clientWidth - pad * 2) / maxX, (canvas.clientHeight - pad * 2) / maxY, 1),
+  );
+  panX = pad;
+  panY = pad;
+  applyStageTransform();
 }
 
 function buildNodeCard(node: ActionGraphNode, runningSessions: Set<string>): HTMLElement {
@@ -757,6 +782,10 @@ function renderDetail(): void {
       button.disabled = true;
       void runNodeAction(node.title, action, $currentSettings.get()?.actionGraphsDefaultCwd)
         .then((sessionId) => {
+          // Link the launched session to its node so the live dot tracks it.
+          if (currentGraphId) {
+            void updateNode(currentGraphId, node.id, { sessionId });
+          }
           closeActionGraphsView();
           options?.onSelectSession(sessionId);
         })

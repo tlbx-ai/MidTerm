@@ -78,6 +78,7 @@ export interface UpsertNodePayload {
   width?: number;
   height?: number;
   color?: string;
+  sessionId?: string;
   url?: string;
   path?: string;
   host?: string;

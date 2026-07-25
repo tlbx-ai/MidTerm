@@ -1166,5 +1166,7 @@
   "actionGraphs.fieldWidth": "Width (px)",
   "actionGraphs.fieldHeight": "Height (px)",
   "settings.behavior.actionGraphsCwd": "Action default directory",
-  "settings.behavior.actionGraphsCwdHint": "Node actions without their own working directory launch here. Leave empty to use the general default working directory."
+  "settings.behavior.actionGraphsCwdHint": "Node actions without their own working directory launch here. Leave empty to use the general default working directory.",
+  "actionGraphs.fit": "Fit",
+  "actionGraphs.actionSessionName": "Session name"
 }

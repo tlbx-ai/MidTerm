@@ -359,6 +359,12 @@ function buildActionRow(action: ActionGraphNodeAction | null): HTMLElement {
   label.value = action?.label ?? '';
   label.dataset.field = 'label';
 
+  const sessionName = document.createElement('input');
+  sessionName.type = 'text';
+  sessionName.placeholder = t('actionGraphs.actionSessionName');
+  sessionName.value = action?.sessionName ?? '';
+  sessionName.dataset.field = 'sessionName';
+
   const profile = document.createElement('select');
   profile.dataset.field = 'profile';
   for (const candidate of PROFILES) {
@@ -390,7 +396,7 @@ function buildActionRow(action: ActionGraphNodeAction | null): HTMLElement {
     row.remove();
   });
 
-  row.append(label, profile, cwd, prompt, remove);
+  row.append(label, sessionName, profile, cwd, prompt, remove);
   return row;
 }
 
@@ -403,6 +409,8 @@ function collectActions(host: HTMLElement): Omit<ActionGraphNodeAction, 'id'>[] 
     }
     actions.push({
       label,
+      sessionName:
+        row.querySelector<HTMLInputElement>('[data-field=sessionName]')?.value.trim() ?? '',
       profile: row.querySelector<HTMLSelectElement>('[data-field=profile]')?.value ?? 'terminal',
       cwd: row.querySelector<HTMLInputElement>('[data-field=cwd]')?.value.trim() ?? '',
       prompt: row.querySelector<HTMLTextAreaElement>('[data-field=prompt]')?.value.trim() ?? '',

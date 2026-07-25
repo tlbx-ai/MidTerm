@@ -19036,12 +19036,18 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
 .action-graphs-select {
   max-width: 240px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-settings-opaque, var(--bg-settings));
   color: var(--text-primary);
   font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.action-graphs-select:focus {
+  border-color: var(--accent-blue);
+  outline: none;
 }
 
 .action-graphs-select.hidden {
@@ -19053,19 +19059,11 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   gap: 8px;
 }
 
-.action-graphs-header-actions button {
-  padding: 5px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
+/* Header actions reuse the app button family at compact header size. */
+.action-graphs-header-actions .btn-primary,
+.action-graphs-header-actions .btn-secondary {
+  padding: 6px 14px;
   font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.action-graphs-header-actions button:hover {
-  color: var(--text-primary);
-  border-color: var(--text-muted);
 }
 
 .action-graphs-body {
@@ -19421,32 +19419,41 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
 .ag-manage-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-settings-opaque, var(--bg-settings));
 }
 
 .ag-manage-row input {
-  min-width: 160px;
-  padding: 4px 8px;
+  min-width: 170px;
+  padding: 6px 10px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-primary);
   font-size: var(--fs-sm);
 }
 
+.ag-manage-row input:focus {
+  border-color: var(--accent-blue);
+  outline: none;
+}
+
 .ag-manage-row button {
-  padding: 4px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--btn-secondary);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
 
 .ag-manage-row button:hover {
-  color: var(--text-primary);
-  border-color: var(--text-muted);
+  background: var(--btn-secondary);
 }
 
 #ag-delete-graph[data-confirm='armed'] {

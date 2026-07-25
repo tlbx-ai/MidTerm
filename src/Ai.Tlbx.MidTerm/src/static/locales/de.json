@@ -1062,5 +1062,7 @@
   "actionGraphs.fieldWidth": "Breite (px)",
   "actionGraphs.fieldHeight": "Höhe (px)",
   "settings.behavior.actionGraphsCwd": "Standardverzeichnis für Aktionen",
-  "settings.behavior.actionGraphsCwdHint": "Knoten-Aktionen ohne eigenes Arbeitsverzeichnis starten hier. Leer lassen, um das allgemeine Standard-Arbeitsverzeichnis zu verwenden."
+  "settings.behavior.actionGraphsCwdHint": "Knoten-Aktionen ohne eigenes Arbeitsverzeichnis starten hier. Leer lassen, um das allgemeine Standard-Arbeitsverzeichnis zu verwenden.",
+  "actionGraphs.fit": "Einpassen",
+  "actionGraphs.actionSessionName": "Session-Name"
 }
