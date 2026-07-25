@@ -18,8 +18,24 @@ $publishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm/bin/$Configuration/net10.
 $exePath = Join-Path $publishDir $exeName
 
 if (-not $SkipPublish) {
+    # The release preflight builds the frontend in a temp snapshot, so the repo wwwroot
+    # is usually in debug layout here — build the publish-mode frontend ourselves.
     if (-not (Test-Path $wwwrootProbe)) {
-        throw "AOT smoke probe requires a publish-mode frontend build (missing $wwwrootProbe). Run the frontend publish preflight first."
+        $version = (Get-Content (Join-Path $RepoRoot 'src/version.json') -Raw | ConvertFrom-Json).web
+        Write-Host "Building publish-mode frontend ($version) for smoke probe..." -ForegroundColor Cyan
+        Push-Location (Join-Path $RepoRoot 'src/Ai.Tlbx.MidTerm')
+        try {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $version -Publish
+            if ($LASTEXITCODE -ne 0) {
+                throw "frontend publish build failed for smoke probe"
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    if (-not (Test-Path $wwwrootProbe)) {
+        throw "AOT smoke probe still misses the publish frontend artifact: $wwwrootProbe"
     }
     Write-Host "Publishing Native AOT $Rid binary for smoke probe..." -ForegroundColor Cyan
     & dotnet publish $projectPath -c $Configuration -r $Rid -p:IsPublishing=true -p:SkipFrontendBuild=true -p:ContinuousIntegrationBuild=true --verbosity minimal
