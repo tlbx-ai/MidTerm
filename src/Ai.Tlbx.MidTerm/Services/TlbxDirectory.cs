@@ -172,7 +172,9 @@ public static class TlbxDirectory
 
         try
         {
-            TlbxCliScriptWriter.WriteScripts(tlbxDir, _port, _authService.CreateSessionToken());
+            var token = _authService.CreateSessionToken();
+            TlbxCliScriptWriter.WriteScripts(tlbxDir, _port, token);
+            TlbxGraphsScriptWriter.WriteScripts(tlbxDir, _port, token);
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
         }
@@ -233,7 +235,7 @@ public static class TlbxDirectory
         | `screenshots/` | Web preview screenshots (`mt_screenshot`) |
         | `snapshot_*/` | DOM snapshots with downloaded CSS (`mt_snapshot`) |
         | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`mt_run_isolated`) |
-        | `*.ps1`, `*.sh` | Saved command scripts, tlbx_cli helper scripts |
+        | `*.ps1`, `*.sh` | Saved command scripts, tlbx_cli and tlbx_graphs helper scripts |
         | `CLAUDE.md`, `AGENTS.md` | This guide — identical AI agent guidance |
 
         ## Tmux Split Panes
@@ -448,6 +450,36 @@ public static class TlbxDirectory
         ### Detach/dock preview
 
         mt_detach → (preview opens in popup) → mt_dock → (back in panel)
+
+        ## Graph boards
+
+        tlbx persists named graphs of nodes, edges, positions, and per-node launch actions, and renders them on a pan/zoom canvas (sidebar entry, off by default). The graph is a canvas: tlbx stores everything verbatim and prescribes no use case — what the nodes mean belongs to the instructions of the agents that fill them. Helpers live in a separate script: bash/zsh `. .tlbx/tlbx_graphs.sh`, PowerShell `. .tlbx/tlbx_graphs.ps1`.
+
+        | Command | What it does |
+        |---------|-------------|
+        | `mtg_graphs` | List graphs with node/edge counts |
+        | `mtg_graph <graph>` | Dump one graph (nodes + edges) as JSON |
+        | `mtg_graph_new <id> [name]` | Create or rename a graph |
+        | `mtg_graph_rm <graph>` | Delete a graph |
+        | `mtg_node_add <graph> [json\|-]` | Create a node from a JSON body (stdin when omitted or `-`) |
+        | `mtg_node_set <graph> <node> [json\|-]` | Partial update; omitted fields stay, `x`/`y` move only when sent |
+        | `mtg_node_rm <graph> <node>` | Delete a node and its edges |
+        | `mtg_move <graph> <node> <x> <y>` | Set a node position |
+        | `mtg_edge_add <graph> <from> <to> [label] [kind]` | Connect two nodes |
+        | `mtg_edge_rm <graph> <edge>` | Delete an edge |
+
+        Node JSON fields: `id?`, `kind`, `title` (required), `state`, `html` (rich HTML body, rendered sandboxed), `x`, `y`, `width`, `color`, `url`, `path`, `host`, `project`, `sessionId`, `externalRef`, `date`, `actions`. Known kinds get default styling: `email`, `appointment`, `todo`, `project`, `task`, `asset`, `plan`, `note`, `repo`, `place`, `server`, `application`, `service`, `secret`, `identity` — unknown kinds are accepted and rendered like `identity`. For `secret` nodes, store only names and locations, never secret values.
+
+        Actions are stored launch specs the user executes from the canvas: `{"label": "...", "cwd": "...", "profile": "claude|codex|terminal", "prompt": "...", "sessionName": "..."}`. tlbx runs them verbatim as a new agent session plus prompt; it never interprets them.
+
+        Example (a service map — the ontology is yours):
+
+        mtg_node_add ops '{"id":"api","kind":"service","title":"API gateway","state":"healthy","x":100,"y":80}'
+        mtg_node_add ops '{"id":"db","kind":"server","title":"postgres01","host":"10.0.0.5","x":100,"y":260}'
+        mtg_edge_add ops api db "reads/writes"
+        mtg_move ops db 140 300
+
+        Updates keep manual layout: a node update without `x`/`y` never moves the node the user dragged.
 
         ## Session Topic Hygiene
 

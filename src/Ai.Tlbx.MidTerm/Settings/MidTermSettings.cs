@@ -117,6 +117,9 @@ public sealed class MidTermSettings
     // Linked worktree root - when empty, MidTerm falls back to an OS-specific managed default directory
     public string WorktreeRootDirectory { get; set; } = "";
 
+    // Action Graphs - agent-curated canvas boards; sidebar entry off by default
+    public bool ActionGraphsEnabled { get; set; } = false;
+
     // Middle Manager Bar - Quick-action buttons below terminal area
     public bool ManagerBarEnabled { get; set; } = true;
     public bool CommandBayLigaturesEnabled { get; set; } = true;

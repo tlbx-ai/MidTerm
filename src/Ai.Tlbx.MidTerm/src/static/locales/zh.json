@@ -987,5 +987,19 @@
   "session.notes": "备注",
   "session.expandNotes": "显示备注",
   "session.collapseNotes": "隐藏备注",
-  "session.notesPlaceholder": "备注"
+  "session.notesPlaceholder": "备注",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "刷新",
+  "actionGraphs.close": "关闭",
+  "actionGraphs.empty": "还没有图。代理通过 .tlbx/tlbx_graphs 助手创建它们。",
+  "actionGraphs.noActions": "此节点没有操作。",
+  "actionGraphs.kind": "类型",
+  "actionGraphs.state": "状态",
+  "actionGraphs.updated": "更新时间",
+  "actionGraphs.date": "日期",
+  "actionGraphs.project": "项目",
+  "actionGraphs.path": "路径",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "在侧边栏中显示由代理维护的图板。无论此设置如何，代理都可以通过 .tlbx/tlbx_graphs 助手填充图。"
 }

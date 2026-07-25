@@ -231,6 +231,24 @@
                 /></svg></span
             ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
           </button>
+          <button class="sidebar-nav-btn btn-action-graphs hidden" id="btn-action-graphs">
+            <span class="icon icon-svg"
+              ><svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="5" cy="6" r="2.5" />
+                <circle cx="19" cy="6" r="2.5" />
+                <circle cx="12" cy="18" r="2.5" />
+                <path d="M7 7.5 10.5 16M17 7.5 13.5 16M7.5 6h9" /></svg></span
+            ><span data-i18n="sidebar.actionGraphs">Action Graphs</span>
+          </button>
         </div>
         <div id="session-filter-bar" class="session-filter-bar" hidden>
           <input
@@ -757,6 +775,42 @@
                 </header>
                 <div id="operator-checkpoints" class="operator-checkpoint-list"></div>
               </section>
+            </div>
+          </section>
+          <section
+            id="action-graphs-view"
+            class="action-graphs-view hidden"
+            aria-labelledby="action-graphs-title"
+          >
+            <header class="action-graphs-header">
+              <div class="action-graphs-header-info">
+                <h1 id="action-graphs-title" data-i18n="actionGraphs.title">Action Graphs</h1>
+                <select
+                  id="action-graphs-select"
+                  class="action-graphs-select hidden"
+                  aria-label="Action Graphs"
+                ></select>
+              </div>
+              <div class="action-graphs-header-actions">
+                <button id="action-graphs-refresh" type="button" data-i18n="actionGraphs.refresh">
+                  Refresh
+                </button>
+                <button id="action-graphs-close" type="button" data-i18n="actionGraphs.close">
+                  Close
+                </button>
+              </div>
+            </header>
+            <div class="action-graphs-body">
+              <div id="action-graphs-canvas" class="action-graphs-canvas">
+                <div id="action-graphs-stage" class="action-graphs-stage">
+                  <svg id="action-graphs-edges" class="action-graphs-edges"></svg>
+                  <div id="action-graphs-nodes" class="action-graphs-nodes"></div>
+                </div>
+                <p id="action-graphs-empty" class="action-graphs-empty hidden" data-i18n="actionGraphs.empty">
+                  No graphs yet. Agents create them through the .tlbx/tlbx_graphs helpers.
+                </p>
+              </div>
+              <aside id="action-graphs-detail" class="action-graphs-detail hidden"></aside>
             </div>
           </section>
           <div id="empty-state" class="empty-state">
@@ -2406,6 +2460,18 @@
                     <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
                       Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
                       into remote hosts that run real tmux. Requires restart.
+                    </p>
+                    <div class="setting-row">
+                      <label
+                        for="setting-action-graphs"
+                        data-i18n="settings.behavior.actionGraphs"
+                        >Action Graphs</label
+                      >
+                      <input type="checkbox" id="setting-action-graphs" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.actionGraphsHint">
+                      Shows the agent-curated graph boards in the sidebar. Agents can fill graphs
+                      through the .tlbx/tlbx_graphs helpers either way.
                     </p>
                   </div>
 

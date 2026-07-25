@@ -987,5 +987,19 @@
   "session.notes": "メモ",
   "session.expandNotes": "メモを表示",
   "session.collapseNotes": "メモを隠す",
-  "session.notesPlaceholder": "メモ"
+  "session.notesPlaceholder": "メモ",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "更新",
+  "actionGraphs.close": "閉じる",
+  "actionGraphs.empty": "まだグラフがありません。エージェントが .tlbx/tlbx_graphs ヘルパーで作成します。",
+  "actionGraphs.noActions": "このノードにはアクションがありません。",
+  "actionGraphs.kind": "種類",
+  "actionGraphs.state": "状態",
+  "actionGraphs.updated": "更新日時",
+  "actionGraphs.date": "日付",
+  "actionGraphs.project": "プロジェクト",
+  "actionGraphs.path": "パス",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "エージェントが管理するグラフボードをサイドバーに表示します。エージェントは設定に関係なく .tlbx/tlbx_graphs ヘルパーでグラフを作成できます。"
 }

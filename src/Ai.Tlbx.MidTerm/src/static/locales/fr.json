@@ -987,5 +987,19 @@
   "session.notes": "Notes",
   "session.expandNotes": "Afficher les notes",
   "session.collapseNotes": "Masquer les notes",
-  "session.notesPlaceholder": "Notes"
+  "session.notesPlaceholder": "Notes",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "Actualiser",
+  "actionGraphs.close": "Fermer",
+  "actionGraphs.empty": "Aucun graphe pour l'instant. Les agents les créent via les assistants .tlbx/tlbx_graphs.",
+  "actionGraphs.noActions": "Aucune action sur ce nœud.",
+  "actionGraphs.kind": "Type",
+  "actionGraphs.state": "État",
+  "actionGraphs.updated": "Mis à jour",
+  "actionGraphs.date": "Date",
+  "actionGraphs.project": "Projet",
+  "actionGraphs.path": "Chemin",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "Affiche les tableaux de graphes gérés par les agents dans la barre latérale. Les agents peuvent remplir les graphes via les assistants .tlbx/tlbx_graphs dans tous les cas."
 }

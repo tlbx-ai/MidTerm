@@ -987,5 +987,19 @@
   "session.notes": "নোট",
   "session.expandNotes": "নোট দেখান",
   "session.collapseNotes": "নোট লুকান",
-  "session.notesPlaceholder": "নোট"
+  "session.notesPlaceholder": "নোট",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "রিফ্রেশ",
+  "actionGraphs.close": "বন্ধ করুন",
+  "actionGraphs.empty": "এখনও কোনো গ্রাফ নেই। এজেন্টরা .tlbx/tlbx_graphs হেল্পার দিয়ে এগুলি তৈরি করে।",
+  "actionGraphs.noActions": "এই নোডে কোনো অ্যাকশন নেই।",
+  "actionGraphs.kind": "ধরন",
+  "actionGraphs.state": "অবস্থা",
+  "actionGraphs.updated": "আপডেট হয়েছে",
+  "actionGraphs.date": "তারিখ",
+  "actionGraphs.project": "প্রকল্প",
+  "actionGraphs.path": "পথ",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "সাইডবারে এজেন্ট-পরিচালিত গ্রাফ বোর্ড দেখায়। এজেন্টরা যেকোনো অবস্থায় .tlbx/tlbx_graphs হেল্পার দিয়ে গ্রাফ পূরণ করতে পারে।"
 }

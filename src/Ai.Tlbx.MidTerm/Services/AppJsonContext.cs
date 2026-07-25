@@ -19,6 +19,7 @@ using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Models.InputHistory;
+using Ai.Tlbx.MidTerm.Models.ActionGraphs;
 using Ai.Tlbx.MidTerm.Models.ControlPlane;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Security;
@@ -43,6 +44,16 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ControlPlaneDispatchResponse))]
 [JsonSerializable(typeof(ControlPlaneSessionCapability))]
 [JsonSerializable(typeof(ControlPlaneCapabilitiesResponse))]
+[JsonSerializable(typeof(ActionGraph))]
+[JsonSerializable(typeof(ActionGraphNode))]
+[JsonSerializable(typeof(ActionGraphEdge))]
+[JsonSerializable(typeof(ActionGraphNodeAction))]
+[JsonSerializable(typeof(ActionGraphListResponse))]
+[JsonSerializable(typeof(ActionGraphSummary))]
+[JsonSerializable(typeof(CreateActionGraphRequest))]
+[JsonSerializable(typeof(UpsertActionGraphNodeRequest))]
+[JsonSerializable(typeof(SetActionGraphNodePositionRequest))]
+[JsonSerializable(typeof(CreateActionGraphEdgeRequest))]
 
 // --- Bootstrap & System ---
 [JsonSerializable(typeof(BootstrapResponse))]

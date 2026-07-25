@@ -987,5 +987,19 @@
   "session.notes": "नोट्स",
   "session.expandNotes": "नोट्स दिखाएँ",
   "session.collapseNotes": "नोट्स छिपाएँ",
-  "session.notesPlaceholder": "नोट्स"
+  "session.notesPlaceholder": "नोट्स",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "रीफ़्रेश",
+  "actionGraphs.close": "बंद करें",
+  "actionGraphs.empty": "अभी कोई ग्राफ़ नहीं है। एजेंट .tlbx/tlbx_graphs हेल्पर्स से इन्हें बनाते हैं।",
+  "actionGraphs.noActions": "इस नोड पर कोई क्रिया नहीं है।",
+  "actionGraphs.kind": "प्रकार",
+  "actionGraphs.state": "स्थिति",
+  "actionGraphs.updated": "अपडेट किया गया",
+  "actionGraphs.date": "तारीख़",
+  "actionGraphs.project": "प्रोजेक्ट",
+  "actionGraphs.path": "पथ",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "साइडबार में एजेंट-प्रबंधित ग्राफ़ बोर्ड दिखाता है। एजेंट किसी भी स्थिति में .tlbx/tlbx_graphs हेल्पर्स से ग्राफ़ भर सकते हैं।"
 }

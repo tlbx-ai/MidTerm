@@ -987,5 +987,19 @@
   "session.notes": "Заметки",
   "session.expandNotes": "Показать заметки",
   "session.collapseNotes": "Скрыть заметки",
-  "session.notesPlaceholder": "Заметки"
+  "session.notesPlaceholder": "Заметки",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "Обновить",
+  "actionGraphs.close": "Закрыть",
+  "actionGraphs.empty": "Графов пока нет. Агенты создают их через помощники .tlbx/tlbx_graphs.",
+  "actionGraphs.noActions": "У этого узла нет действий.",
+  "actionGraphs.kind": "Тип",
+  "actionGraphs.state": "Состояние",
+  "actionGraphs.updated": "Обновлено",
+  "actionGraphs.date": "Дата",
+  "actionGraphs.project": "Проект",
+  "actionGraphs.path": "Путь",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "Показывает поддерживаемые агентами графовые доски в боковой панели. Агенты могут заполнять графы через помощники .tlbx/tlbx_graphs в любом случае."
 }

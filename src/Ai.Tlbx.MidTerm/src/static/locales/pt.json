@@ -987,5 +987,19 @@
   "session.notes": "Notas",
   "session.expandNotes": "Mostrar notas",
   "session.collapseNotes": "Ocultar notas",
-  "session.notesPlaceholder": "Notas"
+  "session.notesPlaceholder": "Notas",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "Atualizar",
+  "actionGraphs.close": "Fechar",
+  "actionGraphs.empty": "Ainda não há grafos. Os agentes os criam pelos auxiliares .tlbx/tlbx_graphs.",
+  "actionGraphs.noActions": "Nenhuma ação neste nó.",
+  "actionGraphs.kind": "Tipo",
+  "actionGraphs.state": "Estado",
+  "actionGraphs.updated": "Atualizado",
+  "actionGraphs.date": "Data",
+  "actionGraphs.project": "Projeto",
+  "actionGraphs.path": "Caminho",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "Mostra os quadros de grafos mantidos por agentes na barra lateral. Os agentes podem preencher os grafos pelos auxiliares .tlbx/tlbx_graphs de qualquer forma."
 }

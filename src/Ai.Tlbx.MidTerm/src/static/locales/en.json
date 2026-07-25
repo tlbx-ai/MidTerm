@@ -1121,5 +1121,19 @@
   "session.notes": "Notes",
   "session.expandNotes": "Show notes",
   "session.collapseNotes": "Hide notes",
-  "session.notesPlaceholder": "Notes"
+  "session.notesPlaceholder": "Notes",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "Refresh",
+  "actionGraphs.close": "Close",
+  "actionGraphs.empty": "No graphs yet. Agents create them through the .tlbx/tlbx_graphs helpers.",
+  "actionGraphs.noActions": "No actions on this node.",
+  "actionGraphs.kind": "Kind",
+  "actionGraphs.state": "State",
+  "actionGraphs.updated": "Updated",
+  "actionGraphs.date": "Date",
+  "actionGraphs.project": "Project",
+  "actionGraphs.path": "Path",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "Shows the agent-curated graph boards in the sidebar. Agents can fill graphs through the .tlbx/tlbx_graphs helpers either way."
 }

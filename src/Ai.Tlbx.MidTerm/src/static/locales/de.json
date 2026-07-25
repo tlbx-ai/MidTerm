@@ -1017,5 +1017,19 @@
   "session.notes": "Notizen",
   "session.expandNotes": "Notizen anzeigen",
   "session.collapseNotes": "Notizen ausblenden",
-  "session.notesPlaceholder": "Notizen"
+  "session.notesPlaceholder": "Notizen",
+  "sidebar.actionGraphs": "Action Graphs",
+  "actionGraphs.title": "Action Graphs",
+  "actionGraphs.refresh": "Aktualisieren",
+  "actionGraphs.close": "Schließen",
+  "actionGraphs.empty": "Noch keine Graphen. Agenten erstellen sie über die .tlbx/tlbx_graphs-Helfer.",
+  "actionGraphs.noActions": "Keine Aktionen an diesem Knoten.",
+  "actionGraphs.kind": "Art",
+  "actionGraphs.state": "Zustand",
+  "actionGraphs.updated": "Aktualisiert",
+  "actionGraphs.date": "Datum",
+  "actionGraphs.project": "Projekt",
+  "actionGraphs.path": "Pfad",
+  "settings.behavior.actionGraphs": "Action Graphs",
+  "settings.behavior.actionGraphsHint": "Zeigt die agentengepflegten Graph-Boards in der Sidebar. Agenten können Graphen unabhängig davon über die .tlbx/tlbx_graphs-Helfer füllen."
 }

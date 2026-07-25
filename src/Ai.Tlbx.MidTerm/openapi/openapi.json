@@ -5281,6 +5281,7 @@
           "worktreeRootDirectory",
           "tmuxCompatibility",
           "managerBarEnabled",
+          "actionGraphsEnabled",
           "commandBayLigaturesEnabled",
           "devMode",
           "terminalLatencyDiagnosticsEnabled",
@@ -5539,6 +5540,9 @@
             "type": "boolean"
           },
           "managerBarEnabled": {
+            "type": "boolean"
+          },
+          "actionGraphsEnabled": {
             "type": "boolean"
           },
           "commandBayLigaturesEnabled": {

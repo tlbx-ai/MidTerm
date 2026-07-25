@@ -4370,6 +4370,7 @@ export interface components {
       worktreeRootDirectory: string;
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
+      actionGraphsEnabled: boolean;
       commandBayLigaturesEnabled: boolean;
       devMode: boolean;
       terminalLatencyDiagnosticsEnabled: boolean;
