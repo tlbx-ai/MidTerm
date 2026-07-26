@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "অ্যাকশনের ডিফল্ট ডিরেক্টরি",
   "settings.behavior.actionGraphsCwdHint": "নিজস্ব কার্য ডিরেক্টরি ছাড়া নোড অ্যাকশনগুলি এখানে চালু হয়। সাধারণ ডিফল্ট কার্য ডিরেক্টরি ব্যবহার করতে খালি রাখুন।",
   "actionGraphs.fit": "ফিট করুন",
-  "actionGraphs.actionSessionName": "সেশনের নাম"
+  "actionGraphs.actionSessionName": "সেশনের নাম",
+  "actionGraphs.sync": "সিঙ্ক",
+  "actionGraphs.refreshSpec": "রিফ্রেশ",
+  "actionGraphs.refreshCommand": "এজেন্ট কমান্ড (যেমন claude)",
+  "actionGraphs.refreshCwd": "কার্যকরী ডিরেক্টরি",
+  "actionGraphs.refreshPrompt": "প্রম্পট",
+  "actionGraphs.refreshSave": "সংরক্ষণ"
 }

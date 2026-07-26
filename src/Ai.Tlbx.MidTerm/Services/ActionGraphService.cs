@@ -173,6 +173,7 @@ public sealed class ActionGraphService : IDisposable
         {
             ThrowIfDisposed();
             var id = GetOrCreateGraphLocked(request.Id, request.Name, request.ScopeId);
+            ApplyRefreshSpecLocked(id, request);
             return GetGraphLocked(id)!;
         }
     }
@@ -435,7 +436,11 @@ public sealed class ActionGraphService : IDisposable
         ActionGraph? graph = null;
         using (var command = _connection.CreateCommand())
         {
-            command.CommandText = "SELECT id, scope_id, name, created_at, updated_at FROM graphs WHERE id = $id";
+            command.CommandText = """
+                SELECT id, scope_id, name, created_at, updated_at,
+                       refresh_command, refresh_cwd, refresh_prompt
+                FROM graphs WHERE id = $id
+                """;
             command.Parameters.AddWithValue("$id", id);
             using var reader = command.ExecuteReader();
             if (reader.Read())
@@ -445,6 +450,9 @@ public sealed class ActionGraphService : IDisposable
                     Id = reader.GetString(0),
                     ScopeId = reader.GetString(1),
                     Name = reader.GetString(2),
+                    RefreshCommand = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    RefreshCwd = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    RefreshPrompt = reader.IsDBNull(7) ? null : reader.GetString(7),
                     CreatedAt = ReadTimestamp(reader.GetString(3)),
                     UpdatedAt = ReadTimestamp(reader.GetString(4))
                 };
@@ -687,6 +695,34 @@ public sealed class ActionGraphService : IDisposable
             "INSERT OR IGNORE INTO scopes(id, name, created_at) VALUES('default', 'Default', $now)",
             ("$now", Now()));
         EnsureColumnLocked("nodes", "height", "REAL NULL");
+        EnsureColumnLocked("graphs", "refresh_command", "TEXT NULL");
+        EnsureColumnLocked("graphs", "refresh_cwd", "TEXT NULL");
+        EnsureColumnLocked("graphs", "refresh_prompt", "TEXT NULL");
+    }
+
+    /// <summary>Persist the graph's refresh spec; only fields present in the request change, empty strings clear.</summary>
+    private void ApplyRefreshSpecLocked(string graphId, CreateActionGraphRequest request)
+    {
+        if (request.RefreshCommand is null && request.RefreshCwd is null && request.RefreshPrompt is null)
+        {
+            return;
+        }
+        var now = Now();
+        if (request.RefreshCommand is not null)
+        {
+            Execute("UPDATE graphs SET refresh_command = $v, updated_at = $now WHERE id = $id",
+                ("$v", (object?)Optional(request.RefreshCommand, 512) ?? DBNull.Value), ("$now", now), ("$id", graphId));
+        }
+        if (request.RefreshCwd is not null)
+        {
+            Execute("UPDATE graphs SET refresh_cwd = $v, updated_at = $now WHERE id = $id",
+                ("$v", (object?)Optional(request.RefreshCwd, MaxReferenceLength) ?? DBNull.Value), ("$now", now), ("$id", graphId));
+        }
+        if (request.RefreshPrompt is not null)
+        {
+            Execute("UPDATE graphs SET refresh_prompt = $v, updated_at = $now WHERE id = $id",
+                ("$v", (object?)Optional(request.RefreshPrompt, MaxPromptLength) ?? DBNull.Value), ("$now", now), ("$id", graphId));
+        }
     }
 
     private void EnsureColumnLocked(string table, string column, string definition)

@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "操作默认目录",
   "settings.behavior.actionGraphsCwdHint": "没有自身工作目录的节点操作将在此启动。留空则使用通用默认工作目录。",
   "actionGraphs.fit": "适应画布",
-  "actionGraphs.actionSessionName": "会话名称"
+  "actionGraphs.actionSessionName": "会话名称",
+  "actionGraphs.sync": "同步",
+  "actionGraphs.refreshSpec": "刷新",
+  "actionGraphs.refreshCommand": "代理命令（如 claude）",
+  "actionGraphs.refreshCwd": "工作目录",
+  "actionGraphs.refreshPrompt": "提示词",
+  "actionGraphs.refreshSave": "保存"
 }

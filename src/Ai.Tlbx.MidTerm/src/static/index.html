@@ -806,6 +806,14 @@
                   New node
                 </button>
                 <button
+                  id="ag-sync"
+                  type="button"
+                  class="btn-secondary hidden"
+                  data-i18n="actionGraphs.sync"
+                >
+                  Sync
+                </button>
+                <button
                   id="ag-fit"
                   type="button"
                   class="btn-secondary"
@@ -852,6 +860,30 @@
                 />
                 <button id="ag-create-scope" type="button" data-i18n="actionGraphs.newScope">
                   New scope
+                </button>
+              </div>
+              <div class="ag-manage-row ag-refresh-row">
+                <span class="ag-manage-label" data-i18n="actionGraphs.refreshSpec">Refresh</span>
+                <input
+                  id="ag-refresh-command"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.refreshCommand"
+                  placeholder="Agent command (e.g. claude)"
+                />
+                <input
+                  id="ag-refresh-cwd"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.refreshCwd"
+                  placeholder="Working directory"
+                />
+                <input
+                  id="ag-refresh-prompt"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.refreshPrompt"
+                  placeholder="Prompt"
+                />
+                <button id="ag-save-refresh" type="button" data-i18n="actionGraphs.refreshSave">
+                  Save
                 </button>
               </div>
               <div class="ag-manage-row">

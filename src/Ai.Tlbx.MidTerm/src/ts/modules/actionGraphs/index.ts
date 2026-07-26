@@ -21,7 +21,9 @@ import {
   fetchGraphList,
   fetchScopes,
   persistNodePosition,
+  runGraphRefresh,
   runNodeAction,
+  saveGraphRefresh,
   updateNode,
   type ActionGraph,
   type ActionGraphNode,
@@ -171,6 +173,7 @@ async function refreshGraphs(): Promise<void> {
     }
 
     currentGraph = await fetchGraph(currentGraphId, abort.signal);
+    syncRefreshControls();
     renderGraph();
   } catch (error) {
     if (!abort.signal.aborted) {
@@ -215,6 +218,31 @@ function wireHeaderControls(): void {
   const managePanel = document.getElementById('ag-manage-panel');
   document.getElementById('ag-manage')?.addEventListener('click', () => {
     managePanel?.classList.toggle('hidden');
+  });
+
+  document.getElementById('ag-save-refresh')?.addEventListener('click', () => {
+    if (!currentGraphId) return;
+    void saveGraphRefresh(currentGraphId, {
+      refreshCommand: refreshInput('ag-refresh-command'),
+      refreshCwd: refreshInput('ag-refresh-cwd'),
+      refreshPrompt: refreshInput('ag-refresh-prompt'),
+    }).then(() => refreshGraphs());
+  });
+
+  const syncButton = document.getElementById('ag-sync') as HTMLButtonElement | null;
+  syncButton?.addEventListener('click', () => {
+    if (!currentGraph?.refreshCommand) return;
+    syncButton.disabled = true;
+    void runGraphRefresh(currentGraph, $currentSettings.get()?.actionGraphsDefaultCwd)
+      .then((sessionId) => {
+        syncButton.disabled = false;
+        closeActionGraphsView();
+        options?.onSelectSession(sessionId);
+      })
+      .catch((error: unknown) => {
+        log.warn(() => `Graph refresh launch failed: ${String(error)}`);
+        syncButton.disabled = false;
+      });
   });
 
   document.getElementById('ag-create-graph')?.addEventListener('click', () => {
@@ -359,6 +387,24 @@ function renderGraph(): void {
     lastFitGraphId = currentGraphId;
     fitView();
   }
+}
+
+function refreshInput(id: string): string {
+  return (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
+}
+
+/** Mirror the loaded graph's refresh spec into the manage inputs and Sync button. */
+function syncRefreshControls(): void {
+  const setValue = (id: string, value: string | null | undefined): void => {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    if (input && document.activeElement !== input) input.value = value ?? '';
+  };
+  setValue('ag-refresh-command', currentGraph?.refreshCommand);
+  setValue('ag-refresh-cwd', currentGraph?.refreshCwd);
+  setValue('ag-refresh-prompt', currentGraph?.refreshPrompt);
+  document
+    .getElementById('ag-sync')
+    ?.classList.toggle('hidden', !currentGraph?.refreshCommand?.trim());
 }
 
 /** Fit the whole board into the visible canvas (never zooms beyond 1:1). */

@@ -1064,5 +1064,11 @@
   "settings.behavior.actionGraphsCwd": "Standardverzeichnis für Aktionen",
   "settings.behavior.actionGraphsCwdHint": "Knoten-Aktionen ohne eigenes Arbeitsverzeichnis starten hier. Leer lassen, um das allgemeine Standard-Arbeitsverzeichnis zu verwenden.",
   "actionGraphs.fit": "Einpassen",
-  "actionGraphs.actionSessionName": "Session-Name"
+  "actionGraphs.actionSessionName": "Session-Name",
+  "actionGraphs.sync": "Sync",
+  "actionGraphs.refreshSpec": "Aktualisierung",
+  "actionGraphs.refreshCommand": "Agent-Kommando (z. B. claude)",
+  "actionGraphs.refreshCwd": "Arbeitsverzeichnis",
+  "actionGraphs.refreshPrompt": "Prompt",
+  "actionGraphs.refreshSave": "Speichern"
 }

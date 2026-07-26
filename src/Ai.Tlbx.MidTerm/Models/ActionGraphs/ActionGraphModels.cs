@@ -126,6 +126,13 @@ public sealed class ActionGraph
     public string Name { get; set; } = string.Empty;
     public List<ActionGraphNode> Nodes { get; set; } = [];
     public List<ActionGraphEdge> Edges { get; set; } = [];
+
+    // Stored refresh spec: the UI launches this verbatim in a visible session —
+    // a free-form agent launch command (not a profile), cwd, and the prompt.
+    public string? RefreshCommand { get; set; }
+    public string? RefreshCwd { get; set; }
+    public string? RefreshPrompt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -155,6 +162,9 @@ public sealed class CreateActionGraphRequest
     public string? Id { get; set; }
     public string? Name { get; set; }
     public string? ScopeId { get; set; }
+    public string? RefreshCommand { get; set; }
+    public string? RefreshCwd { get; set; }
+    public string? RefreshPrompt { get; set; }
 }
 
 public sealed class UpsertActionGraphNodeRequest

@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "Diretório padrão das ações",
   "settings.behavior.actionGraphsCwdHint": "Ações de nó sem diretório de trabalho próprio iniciam aqui. Deixe vazio para usar o diretório de trabalho padrão geral.",
   "actionGraphs.fit": "Ajustar",
-  "actionGraphs.actionSessionName": "Nome da sessão"
+  "actionGraphs.actionSessionName": "Nome da sessão",
+  "actionGraphs.sync": "Sincronizar",
+  "actionGraphs.refreshSpec": "Atualização",
+  "actionGraphs.refreshCommand": "Comando do agente (ex.: claude)",
+  "actionGraphs.refreshCwd": "Diretório de trabalho",
+  "actionGraphs.refreshPrompt": "Prompt",
+  "actionGraphs.refreshSave": "Salvar"
 }

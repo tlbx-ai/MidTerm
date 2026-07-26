@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "アクションの既定ディレクトリ",
   "settings.behavior.actionGraphsCwdHint": "作業ディレクトリを持たないノードアクションはここで起動します。空のままにすると一般の既定作業ディレクトリを使用します。",
   "actionGraphs.fit": "全体表示",
-  "actionGraphs.actionSessionName": "セッション名"
+  "actionGraphs.actionSessionName": "セッション名",
+  "actionGraphs.sync": "同期",
+  "actionGraphs.refreshSpec": "更新",
+  "actionGraphs.refreshCommand": "エージェントコマンド（例: claude）",
+  "actionGraphs.refreshCwd": "作業ディレクトリ",
+  "actionGraphs.refreshPrompt": "プロンプト",
+  "actionGraphs.refreshSave": "保存"
 }

@@ -19461,6 +19461,23 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   border-color: var(--accent-red);
 }
 
+.ag-manage-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ag-refresh-row {
+  flex: 1 1 100%;
+}
+
+.ag-refresh-row #ag-refresh-prompt {
+  flex: 1;
+  min-width: 240px;
+}
+
 .action-graphs-canvas.ag-connecting {
   cursor: crosshair;
 }

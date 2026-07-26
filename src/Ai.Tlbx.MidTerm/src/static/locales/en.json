@@ -1168,5 +1168,11 @@
   "settings.behavior.actionGraphsCwd": "Action default directory",
   "settings.behavior.actionGraphsCwdHint": "Node actions without their own working directory launch here. Leave empty to use the general default working directory.",
   "actionGraphs.fit": "Fit",
-  "actionGraphs.actionSessionName": "Session name"
+  "actionGraphs.actionSessionName": "Session name",
+  "actionGraphs.sync": "Sync",
+  "actionGraphs.refreshSpec": "Refresh",
+  "actionGraphs.refreshCommand": "Agent command (e.g. claude)",
+  "actionGraphs.refreshCwd": "Working directory",
+  "actionGraphs.refreshPrompt": "Prompt",
+  "actionGraphs.refreshSave": "Save"
 }

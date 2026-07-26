@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "क्रियाओं की डिफ़ॉल्ट डायरेक्टरी",
   "settings.behavior.actionGraphsCwdHint": "अपनी कार्य डायरेक्टरी के बिना नोड क्रियाएँ यहाँ शुरू होती हैं। सामान्य डिफ़ॉल्ट कार्य डायरेक्टरी उपयोग करने के लिए खाली छोड़ें।",
   "actionGraphs.fit": "फ़िट करें",
-  "actionGraphs.actionSessionName": "सत्र का नाम"
+  "actionGraphs.actionSessionName": "सत्र का नाम",
+  "actionGraphs.sync": "सिंक",
+  "actionGraphs.refreshSpec": "रिफ़्रेश",
+  "actionGraphs.refreshCommand": "एजेंट कमांड (जैसे claude)",
+  "actionGraphs.refreshCwd": "कार्य निर्देशिका",
+  "actionGraphs.refreshPrompt": "प्रॉम्प्ट",
+  "actionGraphs.refreshSave": "सहेजें"
 }

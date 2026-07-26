@@ -49,6 +49,9 @@ export interface ActionGraph {
   name: string;
   nodes: ActionGraphNode[];
   edges: ActionGraphEdge[];
+  refreshCommand?: string | null;
+  refreshCwd?: string | null;
+  refreshPrompt?: string | null;
   updatedAt: string;
 }
 
@@ -138,6 +141,49 @@ export async function createScope(id: string, name: string): Promise<void> {
 
 export async function createGraph(id: string, name: string, scopeId: string): Promise<void> {
   await throwingFetch('/api/graphs', 'POST', { id, name, scopeId });
+}
+
+export async function saveGraphRefresh(
+  graphId: string,
+  spec: { refreshCommand: string; refreshCwd: string; refreshPrompt: string },
+): Promise<void> {
+  await throwingFetch('/api/graphs', 'POST', { id: graphId, ...spec });
+}
+
+/**
+ * Launch the graph's stored refresh spec in a visible session: plain shell in the
+ * configured cwd, the free-form agent command typed verbatim, then the prompt via
+ * the state-aware prompt API.
+ */
+export async function runGraphRefresh(graph: ActionGraph, defaultCwd?: string): Promise<string> {
+  const bootstrapResponse = await fetch('/api/workers/bootstrap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: `Sync: ${graph.name}`,
+      workingDirectory: graph.refreshCwd?.trim() || defaultCwd || undefined,
+      launchCommand: graph.refreshCommand?.trim(),
+      agentControlled: true,
+      injectGuidance: true,
+    }),
+  });
+  if (!bootstrapResponse.ok) {
+    throw new Error(`Refresh launch failed: ${bootstrapResponse.status}`);
+  }
+  const payload = (await bootstrapResponse.json()) as WorkerBootstrapResponsePayload;
+  const sessionId = payload.session?.id;
+  if (!sessionId) {
+    throw new Error('Refresh launch did not return a session id.');
+  }
+  const prompt = graph.refreshPrompt?.trim();
+  if (prompt) {
+    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/input/prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: prompt, mode: 'auto' }),
+    });
+  }
+  return sessionId;
 }
 
 export async function deleteGraph(graphId: string): Promise<void> {

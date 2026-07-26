@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "Directorio predeterminado de acciones",
   "settings.behavior.actionGraphsCwdHint": "Las acciones de nodo sin directorio de trabajo propio se inician aquí. Déjalo vacío para usar el directorio de trabajo predeterminado general.",
   "actionGraphs.fit": "Ajustar",
-  "actionGraphs.actionSessionName": "Nombre de sesión"
+  "actionGraphs.actionSessionName": "Nombre de sesión",
+  "actionGraphs.sync": "Sincronizar",
+  "actionGraphs.refreshSpec": "Actualización",
+  "actionGraphs.refreshCommand": "Comando del agente (p. ej. claude)",
+  "actionGraphs.refreshCwd": "Directorio de trabajo",
+  "actionGraphs.refreshPrompt": "Prompt",
+  "actionGraphs.refreshSave": "Guardar"
 }

@@ -1034,5 +1034,11 @@
   "settings.behavior.actionGraphsCwd": "Каталог действий по умолчанию",
   "settings.behavior.actionGraphsCwdHint": "Действия узлов без собственного рабочего каталога запускаются здесь. Оставьте пустым, чтобы использовать общий рабочий каталог по умолчанию.",
   "actionGraphs.fit": "Вписать",
-  "actionGraphs.actionSessionName": "Имя сессии"
+  "actionGraphs.actionSessionName": "Имя сессии",
+  "actionGraphs.sync": "Синхр.",
+  "actionGraphs.refreshSpec": "Обновление",
+  "actionGraphs.refreshCommand": "Команда агента (напр. claude)",
+  "actionGraphs.refreshCwd": "Рабочий каталог",
+  "actionGraphs.refreshPrompt": "Промпт",
+  "actionGraphs.refreshSave": "Сохранить"
 }
