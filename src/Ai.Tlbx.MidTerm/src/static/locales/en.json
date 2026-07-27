@@ -1174,5 +1174,18 @@
   "actionGraphs.refreshCommand": "Agent command (e.g. claude)",
   "actionGraphs.refreshCwd": "Working directory",
   "actionGraphs.refreshPrompt": "Prompt",
-  "actionGraphs.refreshSave": "Save"
+  "actionGraphs.refreshSave": "Save",
+  "actionGraphs.fieldMinZoom": "Visible from zoom",
+  "actionGraphs.fieldMaxZoom": "Visible until zoom",
+  "actionGraphs.fieldPinned": "Keep position when organizing",
+  "actionGraphs.actionCommand": "Terminal command",
+  "actionGraphs.actionProfile": "Legacy profile hint",
+  "actionGraphs.revision": "Revision",
+  "actionGraphs.openSession": "Open terminal session",
+  "actionGraphs.organize": "Organize",
+  "actionGraphs.search": "Find anything",
+  "actionGraphs.fieldAttention": "Demand attention",
+  "actionGraphs.fieldHidden": "Hide from working view",
+  "actionGraphs.attention": "attention",
+  "actionGraphs.hidden": "hidden"
 }

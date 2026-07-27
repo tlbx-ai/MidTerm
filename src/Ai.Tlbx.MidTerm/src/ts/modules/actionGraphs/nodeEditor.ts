@@ -32,8 +32,6 @@ const KNOWN_KINDS = [
   'frame',
 ];
 
-const PROFILES = ['terminal', 'claude', 'codex', 'grok'];
-
 interface EditorOptions {
   graphId: string;
   node: ActionGraphNode | null;
@@ -52,6 +50,11 @@ interface EditorFields {
   project: HTMLInputElement;
   width: HTMLInputElement;
   height: HTMLInputElement;
+  minZoom: HTMLInputElement;
+  maxZoom: HTMLInputElement;
+  pinned: HTMLInputElement;
+  attention: HTMLInputElement;
+  hidden: HTMLInputElement;
   body: HTMLElement;
   actionsHost: HTMLElement;
 }
@@ -119,6 +122,11 @@ interface EditorSeed {
   project: string;
   width: string;
   height: string;
+  minZoom: string;
+  maxZoom: string;
+  pinned: boolean;
+  attention: boolean;
+  hidden: boolean;
 }
 
 function seedValues(node: ActionGraphNode | null): EditorSeed {
@@ -133,6 +141,11 @@ function seedValues(node: ActionGraphNode | null): EditorSeed {
       project: '',
       width: '',
       height: '',
+      minZoom: '',
+      maxZoom: '',
+      pinned: false,
+      attention: false,
+      hidden: false,
     };
   }
   return {
@@ -145,6 +158,11 @@ function seedValues(node: ActionGraphNode | null): EditorSeed {
     project: node.project ?? '',
     width: node.width ? String(node.width) : '',
     height: node.height ? String(node.height) : '',
+    minZoom: node.minZoom ? String(node.minZoom) : '',
+    maxZoom: node.maxZoom ? String(node.maxZoom) : '',
+    pinned: node.pinned,
+    attention: node.attention,
+    hidden: node.hidden,
   };
 }
 
@@ -167,11 +185,35 @@ function buildFields(form: HTMLFormElement, node: ActionGraphNode | null): Edito
   const project = fieldInput(form, t('actionGraphs.project'), seed.project, 'text');
   const width = fieldInput(form, t('actionGraphs.fieldWidth'), seed.width, 'number');
   const height = fieldInput(form, t('actionGraphs.fieldHeight'), seed.height, 'number');
+  const minZoom = fieldInput(form, t('actionGraphs.fieldMinZoom'), seed.minZoom, 'number');
+  minZoom.step = '0.05';
+  const maxZoom = fieldInput(form, t('actionGraphs.fieldMaxZoom'), seed.maxZoom, 'number');
+  maxZoom.step = '0.05';
+  const pinned = fieldCheckbox(form, t('actionGraphs.fieldPinned'), seed.pinned);
+  const attention = fieldCheckbox(form, t('actionGraphs.fieldAttention'), seed.attention);
+  const hidden = fieldCheckbox(form, t('actionGraphs.fieldHidden'), seed.hidden);
 
   const body = buildBodyField(form, node);
   const actionsHost = buildActionsField(form, node);
 
-  return { title, kind, state, date, url, path, project, width, height, body, actionsHost };
+  return {
+    title,
+    kind,
+    state,
+    date,
+    url,
+    path,
+    project,
+    width,
+    height,
+    minZoom,
+    maxZoom,
+    pinned,
+    attention,
+    hidden,
+    body,
+    actionsHost,
+  };
 }
 
 function buildBodyField(form: HTMLFormElement, node: ActionGraphNode | null): HTMLElement {
@@ -227,11 +269,26 @@ function buildPayload(
     project: fields.project.value.trim(),
     actions: collectActions(fields.actionsHost),
     source: 'user',
+    pinned: fields.pinned.checked,
+    attention: fields.attention.checked,
+    hidden: fields.hidden.checked,
   };
+  if (node) {
+    payload.expectedRevision = node.revision;
+  }
   const isoDate = fromLocalDateTime(fields.date.value);
   if (isoDate) {
     payload.date = isoDate;
   }
+  assignGeometry(payload, fields);
+  if (!node && position) {
+    payload.x = position.x;
+    payload.y = position.y;
+  }
+  return payload;
+}
+
+function assignGeometry(payload: UpsertNodePayload, fields: EditorFields): void {
   const width = Number(fields.width.value);
   if (fields.width.value.trim() && Number.isFinite(width) && width > 0) {
     payload.width = width;
@@ -240,11 +297,27 @@ function buildPayload(
   if (fields.height.value.trim() && Number.isFinite(height) && height > 0) {
     payload.height = height;
   }
-  if (!node && position) {
-    payload.x = position.x;
-    payload.y = position.y;
+  const minZoom = Number(fields.minZoom.value);
+  if (fields.minZoom.value.trim() && Number.isFinite(minZoom)) {
+    payload.minZoom = minZoom;
   }
-  return payload;
+  const maxZoom = Number(fields.maxZoom.value);
+  if (fields.maxZoom.value.trim() && Number.isFinite(maxZoom)) {
+    payload.maxZoom = maxZoom;
+  }
+}
+
+function fieldCheckbox(form: HTMLElement, label: string, checked: boolean): HTMLInputElement {
+  const wrapper = document.createElement('label');
+  wrapper.className = 'ag-editor-field ag-editor-check';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = checked;
+  const caption = document.createElement('span');
+  caption.textContent = label;
+  wrapper.append(input, caption);
+  form.appendChild(wrapper);
+  return input;
 }
 
 function fieldInput(
@@ -365,16 +438,17 @@ function buildActionRow(action: ActionGraphNodeAction | null): HTMLElement {
   sessionName.value = action?.sessionName ?? '';
   sessionName.dataset.field = 'sessionName';
 
-  const profile = document.createElement('select');
+  const command = document.createElement('input');
+  command.type = 'text';
+  command.placeholder = t('actionGraphs.actionCommand');
+  command.value = action?.command ?? '';
+  command.dataset.field = 'command';
+
+  const profile = document.createElement('input');
+  profile.type = 'text';
+  profile.placeholder = t('actionGraphs.actionProfile');
   profile.dataset.field = 'profile';
-  for (const candidate of PROFILES) {
-    const option = document.createElement('option');
-    option.value = candidate;
-    option.textContent = candidate;
-    profile.appendChild(option);
-  }
-  profile.value =
-    action?.profile && PROFILES.includes(action.profile) ? action.profile : 'terminal';
+  profile.value = action?.profile ?? '';
 
   const cwd = document.createElement('input');
   cwd.type = 'text';
@@ -396,7 +470,7 @@ function buildActionRow(action: ActionGraphNodeAction | null): HTMLElement {
     row.remove();
   });
 
-  row.append(label, sessionName, profile, cwd, prompt, remove);
+  row.append(label, sessionName, command, profile, cwd, prompt, remove);
   return row;
 }
 
@@ -411,7 +485,8 @@ function collectActions(host: HTMLElement): Omit<ActionGraphNodeAction, 'id'>[] 
       label,
       sessionName:
         row.querySelector<HTMLInputElement>('[data-field=sessionName]')?.value.trim() ?? '',
-      profile: row.querySelector<HTMLSelectElement>('[data-field=profile]')?.value ?? 'terminal',
+      command: row.querySelector<HTMLInputElement>('[data-field=command]')?.value.trim() ?? '',
+      profile: row.querySelector<HTMLInputElement>('[data-field=profile]')?.value.trim() ?? '',
       cwd: row.querySelector<HTMLInputElement>('[data-field=cwd]')?.value.trim() ?? '',
       prompt: row.querySelector<HTMLTextAreaElement>('[data-field=prompt]')?.value.trim() ?? '',
     });

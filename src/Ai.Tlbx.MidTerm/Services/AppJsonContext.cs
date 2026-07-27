@@ -48,7 +48,10 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ActionGraphNode))]
 [JsonSerializable(typeof(ActionGraphEdge))]
 [JsonSerializable(typeof(ActionGraphNodeAction))]
+[JsonSerializable(typeof(ActionGraphSessionBinding))]
+[JsonSerializable(typeof(ActionGraphConflictResponse))]
 [JsonSerializable(typeof(ActionGraphListResponse))]
+[JsonSerializable(typeof(ActionGraphContextResponse))]
 [JsonSerializable(typeof(ActionGraphSummary))]
 [JsonSerializable(typeof(ActionGraphScope))]
 [JsonSerializable(typeof(ActionGraphScopeListResponse))]
@@ -58,6 +61,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(UpsertActionGraphNodeRequest))]
 [JsonSerializable(typeof(SetActionGraphNodePositionRequest))]
 [JsonSerializable(typeof(CreateActionGraphEdgeRequest))]
+[JsonSerializable(typeof(BindActionGraphSessionRequest))]
+[JsonSerializable(typeof(OrganizeActionGraphRequest))]
 
 // --- Bootstrap & System ---
 [JsonSerializable(typeof(BootstrapResponse))]
@@ -374,9 +379,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
-
-
 
 
 

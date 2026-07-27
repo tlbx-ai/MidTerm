@@ -10,7 +10,9 @@ import { createLogger } from '../logging';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { closeSettings } from '../settings';
 import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import {
+  bindSession,
   createEdge,
   createGraph,
   createScope,
@@ -20,16 +22,17 @@ import {
   fetchGraph,
   fetchGraphList,
   fetchScopes,
+  organizeGraph,
   persistNodePosition,
   runGraphRefresh,
   runNodeAction,
   saveGraphRefresh,
-  updateNode,
   type ActionGraph,
   type ActionGraphNode,
   type ActionGraphScope,
 } from './graphApi';
 import { renderNodeEditor } from './nodeEditor';
+import { graphBounds, nodeSearchText, nodeSize } from './graphGeometry';
 
 interface ActionGraphsViewOptions {
   onSelectSession: (sessionId: string) => void;
@@ -37,8 +40,12 @@ interface ActionGraphsViewOptions {
 
 const log = createLogger('actionGraphs');
 const REFRESH_INTERVAL_MS = 5000;
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 2.5;
+const MIN_ZOOM = 0.04;
+const MAX_ZOOM = 4;
+const VIEWPORT_OVERSCAN_PX = 420;
+const COMPACT_ZOOM = 0.52;
+const MAX_VISIBLE_NODES = 1_200;
+const MAX_VISIBLE_EDGES = 2_500;
 
 let options: ActionGraphsViewOptions | null = null;
 let view: HTMLElement | null = null;
@@ -49,6 +56,11 @@ let nodesHost: HTMLElement | null = null;
 let emptyHint: HTMLElement | null = null;
 let detailPanel: HTMLElement | null = null;
 let graphSelect: HTMLSelectElement | null = null;
+let minimap: HTMLCanvasElement | null = null;
+let zoomHud: HTMLElement | null = null;
+let graphStats: HTMLElement | null = null;
+let attentionButton: HTMLButtonElement | null = null;
+let hiddenButton: HTMLButtonElement | null = null;
 
 let currentGraphId: string | null = null;
 let currentGraph: ActionGraph | null = null;
@@ -64,6 +76,11 @@ let refreshTimer: number | null = null;
 let refreshAbort: AbortController | null = null;
 let releaseBackButtonLayer: (() => void) | null = null;
 let lastFitGraphId: string | null = null;
+let renderFrame: number | null = null;
+let searchQuery = '';
+let visibleNodeIds = new Set<string>();
+let showHidden = false;
+let attentionCursor = 0;
 
 export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void {
   options = nextOptions;
@@ -75,14 +92,45 @@ export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void
   emptyHint = document.getElementById('action-graphs-empty');
   detailPanel = document.getElementById('action-graphs-detail');
   graphSelect = document.getElementById('action-graphs-select') as HTMLSelectElement | null;
+  minimap = document.getElementById('ag-minimap') as HTMLCanvasElement | null;
+  zoomHud = document.getElementById('ag-zoom-hud');
+  graphStats = document.getElementById('ag-graph-stats');
+  attentionButton = document.getElementById('ag-attention') as HTMLButtonElement | null;
+  hiddenButton = document.getElementById('ag-show-hidden') as HTMLButtonElement | null;
 
   document.getElementById('btn-action-graphs')?.addEventListener('click', toggleActionGraphsView);
   document.getElementById('action-graphs-close')?.addEventListener('click', closeActionGraphsView);
   document.getElementById('ag-fit')?.addEventListener('click', fitView);
+  document.getElementById('ag-organize')?.addEventListener('click', () => {
+    if (!currentGraphId || !currentGraph) return;
+    const graphId = currentGraphId;
+    void organizeGraph(graphId, currentGraph.revision)
+      .then((graph) => {
+        currentGraph = graph;
+        lastFitGraphId = null;
+        renderGraph();
+      })
+      .catch((error: unknown) => {
+        log.warn(() => `Graph organization conflicted or failed: ${String(error)}`);
+        void refreshGraphs();
+      });
+  });
   graphSelect?.addEventListener('change', () => {
     currentGraphId = graphSelect?.value || null;
     selectNode(null);
     void refreshGraphs();
+  });
+  document.getElementById('ag-search')?.addEventListener('input', (event) => {
+    searchQuery = (event.currentTarget as HTMLInputElement).value.trim().toLocaleLowerCase();
+    scheduleViewportRender();
+  });
+  minimap?.addEventListener('pointerdown', navigateFromMinimap);
+  attentionButton?.addEventListener('click', focusNextAttentionNode);
+  hiddenButton?.addEventListener('click', () => {
+    showHidden = !showHidden;
+    hiddenButton?.classList.toggle('active', showHidden);
+    lastFitGraphId = null;
+    renderGraph();
   });
   wireHeaderControls();
   wireCanvasInteractions();
@@ -123,6 +171,22 @@ export function closeActionGraphsView(): void {
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
   stopRefreshTimer();
+  cancelViewportRender();
+  currentGraph = null;
+  currentGraphId = null;
+  lastFitGraphId = null;
+  selectedNodeId = null;
+  searchQuery = '';
+  showHidden = false;
+  attentionCursor = 0;
+  hiddenButton?.classList.remove('active');
+  const searchInput = document.getElementById('ag-search') as HTMLInputElement | null;
+  if (searchInput) searchInput.value = '';
+  visibleNodeIds.clear();
+  nodesHost?.replaceChildren();
+  edgesSvg?.replaceChildren();
+  detailPanel?.replaceChildren();
+  detailPanel?.classList.add('hidden');
 }
 
 function startRefreshTimer(): void {
@@ -158,28 +222,44 @@ async function refreshGraphs(): Promise<void> {
     const allGraphs = await fetchGraphList(abort.signal);
     const graphList = allGraphs.filter((graph) => graph.scopeId === activeScopeId);
     renderGraphSelect(graphList.map((graph) => ({ id: graph.id, name: graph.name })));
-    if (graphList.length === 0) {
+    const selectedGraphId = resolveGraphId(graphList.map((graph) => graph.id));
+    if (!selectedGraphId) {
       currentGraphId = null;
       currentGraph = null;
       renderGraph();
       return;
     }
-
-    if (!currentGraphId || !graphList.some((graph) => graph.id === currentGraphId)) {
-      const firstGraphId = graphList[0]?.id;
-      if (!firstGraphId) return;
-      currentGraphId = firstGraphId;
-      if (graphSelect) graphSelect.value = currentGraphId;
+    currentGraphId = selectedGraphId;
+    if (graphSelect) graphSelect.value = selectedGraphId;
+    const selectedSummary = graphList.find((graph) => graph.id === selectedGraphId);
+    if (isLoadedGraphCurrent(selectedGraphId, selectedSummary?.revision)) {
+      scheduleViewportRender();
+      return;
     }
-
-    currentGraph = await fetchGraph(currentGraphId, abort.signal);
+    const nextGraph = await fetchGraph(selectedGraphId, abort.signal);
+    const graphChanged =
+      currentGraph?.id !== nextGraph.id || currentGraph.revision !== nextGraph.revision;
+    currentGraph = nextGraph;
     syncRefreshControls();
-    renderGraph();
+    if (graphChanged) {
+      renderGraph();
+    } else {
+      scheduleViewportRender();
+    }
   } catch (error) {
     if (!abort.signal.aborted) {
       log.warn(() => `Graph refresh failed: ${String(error)}`);
     }
   }
+}
+
+function resolveGraphId(graphIds: readonly string[]): string | null {
+  if (currentGraphId && graphIds.includes(currentGraphId)) return currentGraphId;
+  return graphIds[0] ?? null;
+}
+
+function isLoadedGraphCurrent(graphId: string, revision: number | undefined): boolean {
+  return currentGraph?.id === graphId && currentGraph.revision === revision;
 }
 
 function renderScopeSelect(): void {
@@ -222,11 +302,15 @@ function wireHeaderControls(): void {
 
   document.getElementById('ag-save-refresh')?.addEventListener('click', () => {
     if (!currentGraphId) return;
-    void saveGraphRefresh(currentGraphId, {
+    const spec = {
       refreshCommand: refreshInput('ag-refresh-command'),
       refreshCwd: refreshInput('ag-refresh-cwd'),
       refreshPrompt: refreshInput('ag-refresh-prompt'),
-    }).then(() => refreshGraphs());
+    };
+    void saveGraphRefresh(
+      currentGraphId,
+      currentGraph ? { ...spec, expectedRevision: currentGraph.revision } : spec,
+    ).then(() => refreshGraphs());
   });
 
   const syncButton = document.getElementById('ag-sync') as HTMLButtonElement | null;
@@ -294,7 +378,7 @@ function wireHeaderControls(): void {
     }
     deleteButton.dataset.confirm = '';
     deleteButton.textContent = t('actionGraphs.deleteGraph');
-    void deleteGraph(currentGraphId)
+    void deleteGraph(currentGraphId, currentGraph?.revision)
       .then(() => {
         currentGraphId = null;
         selectNode(null);
@@ -356,36 +440,25 @@ function renderGraph(): void {
   if (!nodesHost || !edgesSvg || !emptyHint) return;
 
   applyStageTransform();
-  nodesHost.replaceChildren();
-  edgesSvg.replaceChildren();
 
   const graph = currentGraph;
   emptyHint.classList.toggle('hidden', graph !== null && graph.nodes.length > 0);
   if (!graph) {
+    nodesHost.replaceChildren();
+    edgesSvg.replaceChildren();
+    visibleNodeIds.clear();
+    updateGraphStats(0);
+    drawMinimap();
     renderDetail();
     return;
   }
-
-  const runningSessions = new Set(
-    $sessionList
-      .get()
-      .filter((session) => session.isRunning)
-      .map((session) => session.id),
-  );
-
-  // Frames paint first so they sit behind the cards they group.
-  const ordered = [...graph.nodes].sort(
-    (a, b) => Number(b.kind === 'frame') - Number(a.kind === 'frame'),
-  );
-  for (const node of ordered) {
-    nodesHost.appendChild(buildNodeCard(node, runningSessions));
-  }
-  renderEdges(graph);
   renderDetail();
 
   if (graph.nodes.length > 0 && currentGraphId !== lastFitGraphId) {
     lastFitGraphId = currentGraphId;
     fitView();
+  } else {
+    scheduleViewportRender();
   }
 }
 
@@ -407,103 +480,130 @@ function syncRefreshControls(): void {
     ?.classList.toggle('hidden', !currentGraph?.refreshCommand?.trim());
 }
 
-/** Fit the whole board into the visible canvas (never zooms beyond 1:1). */
+/** Fit the whole board into the visible canvas while honoring negative coordinates. */
 function fitView(): void {
-  if (!canvas || !nodesHost) return;
-  let maxX = 0;
-  let maxY = 0;
-  for (const element of nodesHost.querySelectorAll<HTMLElement>('.ag-node')) {
-    maxX = Math.max(maxX, element.offsetLeft + element.offsetWidth);
-    maxY = Math.max(maxY, element.offsetTop + element.offsetHeight);
-  }
-  if (maxX === 0 || maxY === 0) return;
+  if (!canvas || !currentGraph || currentGraph.nodes.length === 0) return;
+  const bounds = graphBounds(currentGraph.nodes.filter((node) => showHidden || !node.hidden));
+  if (bounds.width <= 0 || bounds.height <= 0) return;
   const pad = 32;
   zoom = Math.max(
     MIN_ZOOM,
-    Math.min((canvas.clientWidth - pad * 2) / maxX, (canvas.clientHeight - pad * 2) / maxY, 1),
+    Math.min(
+      (canvas.clientWidth - pad * 2) / bounds.width,
+      (canvas.clientHeight - pad * 2) / bounds.height,
+      1,
+    ),
   );
-  panX = pad;
-  panY = pad;
+  panX = pad - bounds.left * zoom;
+  panY = pad - bounds.top * zoom;
   applyStageTransform();
+  scheduleViewportRender();
 }
 
 function buildNodeCard(node: ActionGraphNode, runningSessions: Set<string>): HTMLElement {
-  if (node.kind === 'frame') {
-    return buildFrameCard(node);
-  }
   const card = document.createElement('div');
-  card.className = 'ag-node';
+  patchNodeCard(card, node, runningSessions);
+  return card;
+}
+
+function patchNodeCard(
+  card: HTMLElement,
+  node: ActionGraphNode,
+  runningSessions: Set<string>,
+): void {
+  const isFrame = node.kind === 'frame';
+  ensureNodeCardShape(card, isFrame);
   card.dataset.nodeId = node.id;
   card.dataset.kind = node.kind;
   card.style.left = `${node.x}px`;
   card.style.top = `${node.y}px`;
-  if (node.width) card.style.width = `${node.width}px`;
-  if (node.height) card.style.height = `${node.height}px`;
-  if (node.color) card.style.setProperty('--ag-node-accent', node.color);
-  if (node.id === selectedNodeId) card.classList.add('selected');
+  card.style.width = `${node.width ?? (isFrame ? 360 : 224)}px`;
+  card.style.height = node.height ? `${node.height}px` : isFrame ? '240px' : '';
+  applyNodeColor(card, node.color);
+  card.classList.toggle('selected', node.id === selectedNodeId);
+  card.classList.toggle('ag-node-pinned', node.pinned);
+  card.classList.toggle('ag-node-attention', node.attention);
+  card.classList.toggle('ag-node-hidden-revealed', node.hidden);
+  card.classList.toggle('ag-node-compact', zoom < COMPACT_ZOOM && !isFrame);
 
+  if (isFrame) {
+    patchFrameCard(card, node);
+    return;
+  }
+  patchLeafCard(card, node, runningSessions);
+}
+
+function ensureNodeCardShape(card: HTMLElement, isFrame: boolean): void {
+  if (card.classList.contains('ag-frame') === isFrame && card.childElementCount > 0) return;
+  card.replaceChildren();
+  card.className = isFrame ? 'ag-node ag-frame' : 'ag-node';
+  if (isFrame) {
+    const chip = document.createElement('div');
+    chip.className = 'ag-frame-title';
+    card.appendChild(chip);
+    return;
+  }
   const header = document.createElement('div');
   header.className = 'ag-node-top';
   const kind = document.createElement('span');
   kind.className = 'ag-node-kind';
-  kind.textContent = node.kind;
-  header.appendChild(kind);
-  if (node.sessionId && runningSessions.has(node.sessionId)) {
-    const live = document.createElement('span');
-    live.className = 'ag-node-live';
-    live.title = node.sessionId;
-    header.appendChild(live);
-  }
-  if (node.actions.length > 0) {
-    const actions = document.createElement('span');
-    actions.className = 'ag-node-actions-badge';
-    actions.textContent = `▶${node.actions.length}`;
-    header.appendChild(actions);
-  }
-  card.appendChild(header);
-
+  const live = document.createElement('span');
+  live.className = 'ag-node-live hidden';
+  const actions = document.createElement('span');
+  actions.className = 'ag-node-actions-badge';
+  header.append(kind, live, actions);
   const title = document.createElement('div');
   title.className = 'ag-node-title';
-  title.textContent = node.title;
-  card.appendChild(title);
-
-  if (node.state) {
-    const state = document.createElement('div');
-    state.className = 'ag-node-state';
-    state.textContent = node.state;
-    card.appendChild(state);
-  }
-  if (node.date) {
-    const date = document.createElement('div');
-    date.className = 'ag-node-date';
-    date.textContent = formatDate(node.date);
-    card.appendChild(date);
-  }
-  return card;
+  const state = document.createElement('div');
+  state.className = 'ag-node-state';
+  const date = document.createElement('div');
+  date.className = 'ag-node-date';
+  card.append(header, title, state, date);
 }
 
-/**
- * Frames are calm background regions used to group cards. The region itself is
- * click-through (panning and card drag keep working inside it); only the title
- * chip is interactive for selecting and moving the frame.
- */
-function buildFrameCard(node: ActionGraphNode): HTMLElement {
-  const frame = document.createElement('div');
-  frame.className = 'ag-node ag-frame';
-  frame.dataset.nodeId = node.id;
-  frame.dataset.kind = node.kind;
-  frame.style.left = `${node.x}px`;
-  frame.style.top = `${node.y}px`;
-  frame.style.width = `${node.width ?? 360}px`;
-  frame.style.height = `${node.height ?? 240}px`;
-  if (node.color) frame.style.setProperty('--ag-node-accent', node.color);
-  if (node.id === selectedNodeId) frame.classList.add('selected');
+function applyNodeColor(card: HTMLElement, color: string | null | undefined): void {
+  if (color) card.style.setProperty('--ag-node-accent', color);
+  else card.style.removeProperty('--ag-node-accent');
+}
 
-  const chip = document.createElement('div');
-  chip.className = 'ag-frame-title';
-  chip.textContent = node.title;
-  frame.appendChild(chip);
-  return frame;
+function patchFrameCard(card: HTMLElement, node: ActionGraphNode): void {
+  const chip = card.querySelector<HTMLElement>('.ag-frame-title');
+  if (chip) chip.textContent = node.title;
+}
+
+function patchLeafCard(
+  card: HTMLElement,
+  node: ActionGraphNode,
+  runningSessions: Set<string>,
+): void {
+  const kind = card.querySelector<HTMLElement>('.ag-node-kind');
+  if (kind) kind.textContent = node.kind;
+  const title = card.querySelector<HTMLElement>('.ag-node-title');
+  if (title) title.textContent = node.title;
+  const state = card.querySelector<HTMLElement>('.ag-node-state');
+  if (state) {
+    state.textContent = node.state ?? '';
+    state.classList.toggle('hidden', !node.state);
+  }
+  const date = card.querySelector<HTMLElement>('.ag-node-date');
+  if (date) {
+    date.textContent = node.date ? formatDate(node.date) : '';
+    date.classList.toggle('hidden', !node.date);
+  }
+  const boundSessionIds = sessionIds(node);
+  const running = boundSessionIds.filter((id) => runningSessions.has(id));
+  const live = card.querySelector<HTMLElement>('.ag-node-live');
+  if (live) {
+    live.classList.toggle('hidden', running.length === 0);
+    live.title = running.join(', ');
+  }
+  const actions = card.querySelector<HTMLElement>('.ag-node-actions-badge');
+  if (actions) {
+    const parts: string[] = [];
+    if (boundSessionIds.length > 0) parts.push(`◉${boundSessionIds.length}`);
+    if (node.actions.length > 0) parts.push(`▶${node.actions.length}`);
+    actions.textContent = parts.join(' ');
+  }
 }
 
 interface EdgeRect {
@@ -562,7 +662,6 @@ function buildArrowMarker(): SVGElement {
 
 function renderEdges(graph: ActionGraph): void {
   if (!edgesSvg || !nodesHost) return;
-  // Also called per pointermove while dragging — must always start from an empty layer.
   edgesSvg.replaceChildren();
   const rects = new Map<string, EdgeRect>();
   for (const element of nodesHost.querySelectorAll<HTMLElement>('.ag-node')) {
@@ -578,10 +677,14 @@ function renderEdges(graph: ActionGraph): void {
 
   edgesSvg.appendChild(buildArrowMarker());
 
+  let renderedEdges = 0;
   for (const edge of graph.edges) {
+    if (renderedEdges >= MAX_VISIBLE_EDGES) break;
+    if (!visibleNodeIds.has(edge.fromId) || !visibleNodeIds.has(edge.toId)) continue;
     const from = rects.get(edge.fromId);
     const to = rects.get(edge.toId);
     if (!from || !to) continue;
+    renderedEdges++;
 
     const { x1, y1, x2, y2, horizontal } = edgeEndpoints(from, to);
     const bend = Math.max(36, (horizontal ? Math.abs(x2 - x1) : Math.abs(y2 - y1)) / 2);
@@ -605,9 +708,214 @@ function renderEdges(graph: ActionGraph): void {
   }
 }
 
+function scheduleViewportRender(): void {
+  if (!$actionGraphsOpen.get() || renderFrame !== null) return;
+  renderFrame = window.requestAnimationFrame(() => {
+    renderFrame = null;
+    renderViewport();
+  });
+}
+
+function cancelViewportRender(): void {
+  if (renderFrame !== null) {
+    window.cancelAnimationFrame(renderFrame);
+    renderFrame = null;
+  }
+}
+
+function renderViewport(): void {
+  if (!canvas || !nodesHost || !edgesSvg || !currentGraph) return;
+  const graph = currentGraph;
+  const viewport = worldViewport();
+  const centerX = (viewport.left + viewport.right) / 2;
+  const centerY = (viewport.top + viewport.bottom) / 2;
+  const matching = graph.nodes.filter((node) => nodeVisible(node, viewport));
+  matching.sort((a, b) => {
+    if (a.kind === 'frame' && b.kind !== 'frame') return -1;
+    if (b.kind === 'frame' && a.kind !== 'frame') return 1;
+    if (a.id === selectedNodeId) return -1;
+    if (b.id === selectedNodeId) return 1;
+    if (a.attention !== b.attention) return a.attention ? -1 : 1;
+    const aDistance = Math.abs(a.x - centerX) + Math.abs(a.y - centerY);
+    const bDistance = Math.abs(b.x - centerX) + Math.abs(b.y - centerY);
+    return aDistance - bDistance;
+  });
+  const visible = matching.slice(0, MAX_VISIBLE_NODES);
+  visibleNodeIds = new Set(visible.map((node) => node.id));
+
+  const runningSessions = new Set(
+    $sessionList
+      .get()
+      .filter((session) => session.isRunning)
+      .map((session) => session.id),
+  );
+  reconcileKeyedChildren(nodesHost, visible, {
+    key: (node) => node.id,
+    create: (node) => buildNodeCard(node, runningSessions),
+    patch: (element, node) => {
+      patchNodeCard(element, node, runningSessions);
+    },
+  });
+  renderEdges(graph);
+  updateGraphStats(visible.length);
+  drawMinimap();
+  if (zoomHud) zoomHud.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+interface WorldViewport {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+function worldViewport(): WorldViewport {
+  if (!canvas) return { left: 0, top: 0, right: 0, bottom: 0 };
+  const overscan = VIEWPORT_OVERSCAN_PX / zoom;
+  return {
+    left: -panX / zoom - overscan,
+    top: -panY / zoom - overscan,
+    right: (canvas.clientWidth - panX) / zoom + overscan,
+    bottom: (canvas.clientHeight - panY) / zoom + overscan,
+  };
+}
+
+function nodeVisible(node: ActionGraphNode, viewport: WorldViewport): boolean {
+  if (node.hidden && !showHidden) return false;
+  if (!visibleAtZoom(node)) return false;
+  if (searchQuery && !nodeSearchText(node).includes(searchQuery)) return false;
+  const { width, height } = nodeSize(node);
+  return (
+    node.x + width >= viewport.left &&
+    node.x <= viewport.right &&
+    node.y + height >= viewport.top &&
+    node.y <= viewport.bottom
+  );
+}
+
+function visibleAtZoom(node: ActionGraphNode): boolean {
+  if (node.attention) return true;
+  if (node.minZoom !== null && node.minZoom !== undefined && zoom < node.minZoom) return false;
+  if (node.maxZoom !== null && node.maxZoom !== undefined && zoom > node.maxZoom) return false;
+  return true;
+}
+
+function updateGraphStats(visibleCount: number): void {
+  const graph = currentGraph;
+  if (graphStats) {
+    graphStats.textContent = graph
+      ? `${visibleCount}/${graph.nodes.length} nodes · ${graph.edges.length} edges · r${graph.revision}`
+      : '';
+  }
+  const attentionCount = graph?.nodes.filter((node) => node.attention && !node.hidden).length ?? 0;
+  const hiddenCount = graph?.nodes.filter((node) => node.hidden).length ?? 0;
+  if (attentionButton) {
+    attentionButton.textContent = `${attentionCount} ${t('actionGraphs.attention')}`;
+    attentionButton.classList.toggle('hidden', attentionCount === 0);
+  }
+  if (hiddenButton) {
+    hiddenButton.textContent = `${hiddenCount} ${t('actionGraphs.hidden')}`;
+    hiddenButton.classList.toggle('hidden', hiddenCount === 0);
+  }
+}
+
+function sessionIds(node: ActionGraphNode): string[] {
+  const ids = new Set(node.sessions.map((binding) => binding.sessionId));
+  if (node.sessionId) ids.add(node.sessionId);
+  return [...ids];
+}
+
+function drawMinimap(): void {
+  if (!minimap || !canvas) return;
+  const context = minimap.getContext('2d');
+  if (!context) return;
+  const ratio = window.devicePixelRatio || 1;
+  const width = minimap.clientWidth;
+  const height = minimap.clientHeight;
+  if (
+    minimap.width !== Math.round(width * ratio) ||
+    minimap.height !== Math.round(height * ratio)
+  ) {
+    minimap.width = Math.round(width * ratio);
+    minimap.height = Math.round(height * ratio);
+  }
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  const graph = currentGraph;
+  if (!graph || graph.nodes.length === 0) return;
+  const displayedNodes = graph.nodes.filter((node) => showHidden || !node.hidden);
+  const bounds = graphBounds(displayedNodes);
+  const scale = Math.min(width / Math.max(bounds.width, 1), height / Math.max(bounds.height, 1));
+  const offsetX = (width - bounds.width * scale) / 2 - bounds.left * scale;
+  const offsetY = (height - bounds.height * scale) / 2 - bounds.top * scale;
+  const rootStyle = getComputedStyle(document.documentElement);
+  const defaultColor = rootStyle.getPropertyValue('--text-muted').trim();
+  const attentionColor = rootStyle.getPropertyValue('--accent-gold').trim();
+  context.globalAlpha = 0.55;
+  for (const node of displayedNodes) {
+    const size = nodeSize(node);
+    context.fillStyle = node.attention ? attentionColor : defaultColor;
+    context.fillRect(
+      offsetX + node.x * scale,
+      offsetY + node.y * scale,
+      Math.max(1, size.width * scale),
+      Math.max(1, size.height * scale),
+    );
+  }
+  const viewport = worldViewport();
+  context.globalAlpha = 1;
+  context.strokeStyle = getComputedStyle(document.documentElement)
+    .getPropertyValue('--accent-blue')
+    .trim();
+  context.lineWidth = 1.5;
+  context.strokeRect(
+    offsetX + viewport.left * scale,
+    offsetY + viewport.top * scale,
+    (viewport.right - viewport.left) * scale,
+    (viewport.bottom - viewport.top) * scale,
+  );
+}
+
+function focusNextAttentionNode(): void {
+  if (!canvas || !currentGraph) return;
+  const nodes = currentGraph.nodes.filter((node) => node.attention && !node.hidden);
+  if (nodes.length === 0) return;
+  const node = nodes[attentionCursor % nodes.length];
+  if (!node) return;
+  attentionCursor++;
+  const size = nodeSize(node);
+  zoom = Math.max(zoom, 0.72);
+  panX = canvas.clientWidth / 2 - (node.x + size.width / 2) * zoom;
+  panY = canvas.clientHeight / 2 - (node.y + size.height / 2) * zoom;
+  applyStageTransform();
+  selectNode(node.id);
+}
+
+function navigateFromMinimap(event: PointerEvent): void {
+  if (!minimap || !canvas || !currentGraph || currentGraph.nodes.length === 0) return;
+  event.preventDefault();
+  const bounds = graphBounds(currentGraph.nodes);
+  const rect = minimap.getBoundingClientRect();
+  const scale = Math.min(
+    rect.width / Math.max(bounds.width, 1),
+    rect.height / Math.max(bounds.height, 1),
+  );
+  const offsetX = (rect.width - bounds.width * scale) / 2 - bounds.left * scale;
+  const offsetY = (rect.height - bounds.height * scale) / 2 - bounds.top * scale;
+  const worldX = (event.clientX - rect.left - offsetX) / scale;
+  const worldY = (event.clientY - rect.top - offsetY) / scale;
+  panX = canvas.clientWidth / 2 - worldX * zoom;
+  panY = canvas.clientHeight / 2 - worldY * zoom;
+  applyStageTransform();
+}
+
 function applyStageTransform(): void {
-  if (!stage) return;
+  if (!stage || !canvas) return;
   stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  canvas.style.setProperty('--ag-grid-size', `${26 * zoom}px`);
+  canvas.style.setProperty('--ag-grid-x', `${panX}px`);
+  canvas.style.setProperty('--ag-grid-y', `${panY}px`);
+  scheduleViewportRender();
 }
 
 function wireCanvasInteractions(): void {
@@ -661,7 +969,7 @@ function wireCanvasInteractions(): void {
     } else if (dragNodeEl) {
       dragNodeEl.style.left = `${startNodeX + deltaX / zoom}px`;
       dragNodeEl.style.top = `${startNodeY + deltaY / zoom}px`;
-      if (currentGraph) renderEdges(currentGraph);
+      scheduleViewportRender();
     }
   });
 
@@ -677,8 +985,18 @@ function wireCanvasInteractions(): void {
         if (node) {
           node.x = x;
           node.y = y;
+          const expectedRevision = node.revision;
+          void persistNodePosition(currentGraphId, dragNodeId, x, y, expectedRevision)
+            .then((updated) => {
+              Object.assign(node, updated);
+              if (currentGraph) currentGraph.revision++;
+              scheduleViewportRender();
+            })
+            .catch((error: unknown) => {
+              log.warn(() => `Node move conflicted or failed: ${String(error)}`);
+              void refreshGraphs();
+            });
         }
-        void persistNodePosition(currentGraphId, dragNodeId, x, y);
       } else if (!moved) {
         selectNode(dragNodeId);
       }
@@ -705,7 +1023,7 @@ function wireCanvasInteractions(): void {
       connectFromId = null;
       canvas?.classList.remove('ag-connecting');
       if (nodeId && nodeId !== fromId && currentGraphId) {
-        void createEdge(currentGraphId, fromId, nodeId)
+        void createEdge(currentGraphId, fromId, nodeId, currentGraph?.revision)
           .then(() => refreshGraphs())
           .catch((error: unknown) => {
             log.warn(() => `Edge create failed: ${String(error)}`);
@@ -741,9 +1059,7 @@ function wireCanvasInteractions(): void {
 
 function selectNode(nodeId: string | null): void {
   selectedNodeId = nodeId;
-  for (const element of nodesHost?.querySelectorAll<HTMLElement>('.ag-node') ?? []) {
-    element.classList.toggle('selected', element.dataset.nodeId === nodeId);
-  }
+  scheduleViewportRender();
   renderDetail();
 }
 
@@ -776,6 +1092,7 @@ function renderDetail(): void {
   appendMeta(meta, 'actionGraphs.date', node.date ? formatDate(node.date) : null);
   appendMeta(meta, 'actionGraphs.project', node.project);
   appendMeta(meta, 'actionGraphs.path', node.path ?? node.host);
+  appendMeta(meta, 'actionGraphs.revision', String(node.revision));
   detailPanel.appendChild(meta);
 
   if (node.url) {
@@ -810,6 +1127,31 @@ function renderDetail(): void {
     detailPanel.appendChild(edgeList);
   }
 
+  appendDetailSessions(detailPanel, node);
+  detailPanel.appendChild(buildDetailActions(node));
+}
+
+function appendDetailSessions(panel: HTMLElement, node: ActionGraphNode): void {
+  const boundSessions = sessionIds(node);
+  if (boundSessions.length === 0) return;
+  const sessions = document.createElement('div');
+  sessions.className = 'ag-detail-sessions';
+  for (const sessionId of boundSessions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ag-detail-session';
+    button.textContent = `◉ ${sessionId}`;
+    button.title = t('actionGraphs.openSession');
+    button.addEventListener('click', () => {
+      closeActionGraphsView();
+      options?.onSelectSession(sessionId);
+    });
+    sessions.appendChild(button);
+  }
+  panel.appendChild(sessions);
+}
+
+function buildDetailActions(node: ActionGraphNode): HTMLElement {
   const actions = document.createElement('div');
   actions.className = 'ag-detail-actions';
   if (node.actions.length === 0) {
@@ -826,14 +1168,15 @@ function renderDetail(): void {
     if (action.prompt) button.title = action.prompt;
     button.addEventListener('click', () => {
       button.disabled = true;
-      void runNodeAction(node.title, action, $currentSettings.get()?.actionGraphsDefaultCwd)
+      if (!currentGraphId) return;
+      const graphId = currentGraphId;
+      void runNodeAction(graphId, node, action, $currentSettings.get()?.actionGraphsDefaultCwd)
         .then((sessionId) => {
-          // Link the launched session to its node so the live dot tracks it.
-          if (currentGraphId) {
-            void updateNode(currentGraphId, node.id, { sessionId });
-          }
-          closeActionGraphsView();
-          options?.onSelectSession(sessionId);
+          // The executable leaf and the observable terminal are one durable unit.
+          return bindSession(graphId, node.id, sessionId, action.id || action.label).then(() => {
+            closeActionGraphsView();
+            options?.onSelectSession(sessionId);
+          });
         })
         .catch((error: unknown) => {
           log.warn(() => `Action launch failed: ${String(error)}`);
@@ -842,7 +1185,7 @@ function renderDetail(): void {
     });
     actions.appendChild(button);
   }
-  detailPanel.appendChild(actions);
+  return actions;
 }
 
 function buildDetailEditRow(node: ActionGraphNode): HTMLElement {
@@ -877,7 +1220,7 @@ function buildDetailEditRow(node: ActionGraphNode): HTMLElement {
       return;
     }
     if (!currentGraphId) return;
-    void deleteNode(currentGraphId, node.id)
+    void deleteNode(currentGraphId, node.id, node.revision, currentGraph?.revision)
       .then(() => {
         selectNode(null);
         void refreshGraphs();
@@ -913,7 +1256,7 @@ function buildDetailEdgeList(node: ActionGraphNode): HTMLElement | null {
     removeEdge.title = t('actionGraphs.removeEdge');
     removeEdge.addEventListener('click', () => {
       if (!currentGraphId) return;
-      void deleteEdge(currentGraphId, edge.id)
+      void deleteEdge(currentGraphId, edge.id, currentGraph?.revision)
         .then(() => refreshGraphs())
         .catch((error: unknown) => {
           log.warn(() => `Edge delete failed: ${String(error)}`);

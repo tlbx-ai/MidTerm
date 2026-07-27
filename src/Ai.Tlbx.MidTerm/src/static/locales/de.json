@@ -1070,5 +1070,18 @@
   "actionGraphs.refreshCommand": "Agent-Kommando (z. B. claude)",
   "actionGraphs.refreshCwd": "Arbeitsverzeichnis",
   "actionGraphs.refreshPrompt": "Prompt",
-  "actionGraphs.refreshSave": "Speichern"
+  "actionGraphs.refreshSave": "Speichern",
+  "actionGraphs.fieldMinZoom": "Sichtbar ab Zoom",
+  "actionGraphs.fieldMaxZoom": "Sichtbar bis Zoom",
+  "actionGraphs.fieldPinned": "Position beim Anordnen beibehalten",
+  "actionGraphs.actionCommand": "Terminalbefehl",
+  "actionGraphs.actionProfile": "Legacy-Profilhinweis",
+  "actionGraphs.revision": "Revision",
+  "actionGraphs.openSession": "Terminalsitzung öffnen",
+  "actionGraphs.organize": "Anordnen",
+  "actionGraphs.search": "Alles durchsuchen",
+  "actionGraphs.fieldAttention": "Aufmerksamkeit verlangen",
+  "actionGraphs.fieldHidden": "Aus Arbeitsansicht ausblenden",
+  "actionGraphs.attention": "dringend",
+  "actionGraphs.hidden": "ausgeblendet"
 }

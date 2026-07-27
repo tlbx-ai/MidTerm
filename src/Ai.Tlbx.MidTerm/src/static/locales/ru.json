@@ -1040,5 +1040,18 @@
   "actionGraphs.refreshCommand": "Команда агента (напр. claude)",
   "actionGraphs.refreshCwd": "Рабочий каталог",
   "actionGraphs.refreshPrompt": "Промпт",
-  "actionGraphs.refreshSave": "Сохранить"
+  "actionGraphs.refreshSave": "Сохранить",
+  "actionGraphs.fieldMinZoom": "Видно от масштаба",
+  "actionGraphs.fieldMaxZoom": "Видно до масштаба",
+  "actionGraphs.fieldPinned": "Сохранять позицию при упорядочивании",
+  "actionGraphs.actionCommand": "Команда терминала",
+  "actionGraphs.actionProfile": "Устаревший профиль",
+  "actionGraphs.revision": "Ревизия",
+  "actionGraphs.openSession": "Открыть сессию терминала",
+  "actionGraphs.organize": "Упорядочить",
+  "actionGraphs.search": "Найти всё",
+  "actionGraphs.fieldAttention": "Требует внимания",
+  "actionGraphs.fieldHidden": "Скрыть из рабочего вида",
+  "actionGraphs.attention": "внимание",
+  "actionGraphs.hidden": "скрыто"
 }

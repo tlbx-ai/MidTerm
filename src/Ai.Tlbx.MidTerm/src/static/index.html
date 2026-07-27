@@ -795,6 +795,16 @@
                   class="action-graphs-select hidden"
                   aria-label="Action Graphs"
                 ></select>
+                <label class="ag-search-shell">
+                  <span aria-hidden="true">⌕</span>
+                  <input
+                    id="ag-search"
+                    type="search"
+                    data-i18n-placeholder="actionGraphs.search"
+                    placeholder="Find anything"
+                  />
+                </label>
+                <span id="ag-graph-stats" class="ag-graph-stats" aria-live="polite"></span>
               </div>
               <div class="action-graphs-header-actions">
                 <button
@@ -812,6 +822,14 @@
                   data-i18n="actionGraphs.sync"
                 >
                   Sync
+                </button>
+                <button
+                  id="ag-organize"
+                  type="button"
+                  class="btn-secondary"
+                  data-i18n="actionGraphs.organize"
+                >
+                  Organize
                 </button>
                 <button
                   id="ag-fit"
@@ -901,6 +919,18 @@
                 <p id="action-graphs-empty" class="action-graphs-empty hidden" data-i18n="actionGraphs.empty">
                   No graphs yet. Agents create them through the .tlbx/tlbx_graphs helpers.
                 </p>
+                <div class="ag-canvas-hud">
+                  <button id="ag-attention" type="button" class="hidden"></button>
+                  <button id="ag-show-hidden" type="button" class="hidden"></button>
+                  <span id="ag-zoom-hud">100%</span>
+                </div>
+                <canvas
+                  id="ag-minimap"
+                  class="ag-minimap"
+                  width="168"
+                  height="108"
+                  aria-label="Graph minimap"
+                ></canvas>
               </div>
               <aside id="action-graphs-detail" class="action-graphs-detail hidden"></aside>
             </div>

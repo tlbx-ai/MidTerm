@@ -7,10 +7,17 @@ export interface ActionGraphNodeAction {
   id: string;
   label: string;
   cwd?: string | null;
+  command?: string | null;
   profile?: string | null;
   prompt?: string | null;
   sessionName?: string | null;
   slashCommands?: string[];
+}
+
+export interface ActionGraphSessionBinding {
+  sessionId: string;
+  role?: string | null;
+  createdAt: string;
 }
 
 export interface ActionGraphNode {
@@ -23,6 +30,11 @@ export interface ActionGraphNode {
   y: number;
   width?: number | null;
   height?: number | null;
+  minZoom?: number | null;
+  maxZoom?: number | null;
+  pinned: boolean;
+  attention: boolean;
+  hidden: boolean;
   color?: string | null;
   url?: string | null;
   path?: string | null;
@@ -32,8 +44,10 @@ export interface ActionGraphNode {
   externalRef?: string | null;
   date?: string | null;
   actions: ActionGraphNodeAction[];
+  sessions: ActionGraphSessionBinding[];
   source: string;
   updatedAt: string;
+  revision: number;
 }
 
 export interface ActionGraphEdge {
@@ -42,6 +56,7 @@ export interface ActionGraphEdge {
   toId: string;
   label?: string | null;
   kind?: string | null;
+  revision: number;
 }
 
 export interface ActionGraph {
@@ -53,6 +68,7 @@ export interface ActionGraph {
   refreshCwd?: string | null;
   refreshPrompt?: string | null;
   updatedAt: string;
+  revision: number;
 }
 
 export interface ActionGraphSummary {
@@ -62,6 +78,7 @@ export interface ActionGraphSummary {
   nodeCount: number;
   edgeCount: number;
   updatedAt: string;
+  revision: number;
 }
 
 export interface ActionGraphScope {
@@ -80,6 +97,11 @@ export interface UpsertNodePayload {
   y?: number;
   width?: number;
   height?: number;
+  minZoom?: number;
+  maxZoom?: number;
+  pinned?: boolean;
+  attention?: boolean;
+  hidden?: boolean;
   color?: string;
   sessionId?: string;
   url?: string;
@@ -89,6 +111,8 @@ export interface UpsertNodePayload {
   date?: string;
   actions?: Omit<ActionGraphNodeAction, 'id'>[];
   source?: string;
+  expectedRevision?: number;
+  expectedGraphRevision?: number;
 }
 
 export async function fetchGraphList(signal?: AbortSignal): Promise<ActionGraphSummary[]> {
@@ -115,15 +139,13 @@ export async function persistNodePosition(
   nodeId: string,
   x: number,
   y: number,
-): Promise<void> {
-  await fetch(
+  expectedRevision: number,
+): Promise<ActionGraphNode> {
+  return (await throwingFetch(
     `/api/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/position`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ x, y }),
-    },
-  );
+    'POST',
+    { x, y, expectedRevision },
+  )) as ActionGraphNode;
 }
 
 export async function fetchScopes(signal?: AbortSignal): Promise<ActionGraphScope[]> {
@@ -145,7 +167,12 @@ export async function createGraph(id: string, name: string, scopeId: string): Pr
 
 export async function saveGraphRefresh(
   graphId: string,
-  spec: { refreshCommand: string; refreshCwd: string; refreshPrompt: string },
+  spec: {
+    refreshCommand: string;
+    refreshCwd: string;
+    refreshPrompt: string;
+    expectedRevision?: number;
+  },
 ): Promise<void> {
   await throwingFetch('/api/graphs', 'POST', { id: graphId, ...spec });
 }
@@ -180,14 +207,40 @@ export async function runGraphRefresh(graph: ActionGraph, defaultCwd?: string): 
     await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/input/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: prompt, mode: 'auto' }),
+      body: JSON.stringify({
+        text: [
+          'tlbx Action Graph refresh context:',
+          `- graphId: ${graph.id}`,
+          `- graphRevision: ${graph.revision}`,
+          '- Read .tlbx/AGENTS.md or .tlbx/CLAUDE.md and load the generated tlbx_graphs helper.',
+          `- Start with: mtg_graph ${graph.id}`,
+          '- Use mtg_help before mutating and preserve optimistic-concurrency revisions.',
+          '',
+          'Task:',
+          prompt,
+        ].join('\n'),
+        mode: 'auto',
+      }),
     });
   }
   return sessionId;
 }
 
-export async function deleteGraph(graphId: string): Promise<void> {
-  await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}`, 'DELETE');
+export async function deleteGraph(graphId: string, expectedRevision?: number): Promise<void> {
+  const query =
+    expectedRevision === undefined
+      ? ''
+      : `?expectedRevision=${encodeURIComponent(expectedRevision)}`;
+  await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}${query}`, 'DELETE');
+}
+
+export async function organizeGraph(
+  graphId: string,
+  expectedGraphRevision?: number,
+): Promise<ActionGraph> {
+  return (await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}/organize`, 'POST', {
+    expectedGraphRevision,
+  })) as ActionGraph;
 }
 
 export async function createNode(
@@ -213,22 +266,64 @@ export async function updateNode(
   )) as ActionGraphNode;
 }
 
-export async function deleteNode(graphId: string, nodeId: string): Promise<void> {
+export async function deleteNode(
+  graphId: string,
+  nodeId: string,
+  expectedRevision?: number,
+  expectedGraphRevision?: number,
+): Promise<void> {
+  const search = new URLSearchParams();
+  if (expectedRevision !== undefined) search.set('expectedRevision', String(expectedRevision));
+  if (expectedGraphRevision !== undefined) {
+    search.set('expectedGraphRevision', String(expectedGraphRevision));
+  }
+  const query = search.size > 0 ? `?${search.toString()}` : '';
   await throwingFetch(
-    `/api/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}`,
+    `/api/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}${query}`,
     'DELETE',
   );
 }
 
-export async function createEdge(graphId: string, fromId: string, toId: string): Promise<void> {
-  await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}/edges`, 'POST', { fromId, toId });
+export async function createEdge(
+  graphId: string,
+  fromId: string,
+  toId: string,
+  expectedGraphRevision?: number,
+): Promise<void> {
+  await throwingFetch(`/api/graphs/${encodeURIComponent(graphId)}/edges`, 'POST', {
+    fromId,
+    toId,
+    expectedGraphRevision,
+  });
 }
 
-export async function deleteEdge(graphId: string, edgeId: string): Promise<void> {
+export async function deleteEdge(
+  graphId: string,
+  edgeId: string,
+  expectedGraphRevision?: number,
+): Promise<void> {
+  const query =
+    expectedGraphRevision === undefined
+      ? ''
+      : `?expectedGraphRevision=${encodeURIComponent(expectedGraphRevision)}`;
   await throwingFetch(
-    `/api/graphs/${encodeURIComponent(graphId)}/edges/${encodeURIComponent(edgeId)}`,
+    `/api/graphs/${encodeURIComponent(graphId)}/edges/${encodeURIComponent(edgeId)}${query}`,
     'DELETE',
   );
+}
+
+export async function bindSession(
+  graphId: string,
+  nodeId: string,
+  sessionId: string,
+  role: string,
+  expectedGraphRevision?: number,
+): Promise<ActionGraphNode> {
+  return (await throwingFetch(
+    `/api/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/sessions`,
+    'POST',
+    { sessionId, role, expectedGraphRevision },
+  )) as ActionGraphNode;
 }
 
 async function throwingFetch(url: string, method: string, body?: unknown): Promise<unknown> {
@@ -256,21 +351,15 @@ interface WorkerBootstrapResponsePayload {
  * cwd of their own fall back to the configured default working directory.
  */
 export async function runNodeAction(
-  nodeTitle: string,
+  graphId: string,
+  node: ActionGraphNode,
   action: ActionGraphNodeAction,
   defaultCwd?: string,
 ): Promise<string> {
   const bootstrapResponse = await fetch('/api/workers/bootstrap', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: action.sessionName?.trim() || nodeTitle,
-      workingDirectory: action.cwd?.trim() || defaultCwd || undefined,
-      profile: action.profile ?? 'terminal',
-      agentControlled: true,
-      injectGuidance: true,
-      slashCommands: action.slashCommands ?? [],
-    }),
+    body: JSON.stringify(workerBootstrapPayload(node, action, defaultCwd)),
   });
   if (!bootstrapResponse.ok) {
     throw new Error(`Session launch failed: ${bootstrapResponse.status}`);
@@ -281,7 +370,7 @@ export async function runNodeAction(
     throw new Error('Session launch did not return a session id.');
   }
 
-  const prompt = action.prompt?.trim();
+  const prompt = graphAwarePrompt(graphId, node, action.prompt?.trim());
   if (prompt) {
     await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/input/prompt`, {
       method: 'POST',
@@ -291,4 +380,40 @@ export async function runNodeAction(
   }
 
   return sessionId;
+}
+
+function workerBootstrapPayload(
+  node: ActionGraphNode,
+  action: ActionGraphNodeAction,
+  defaultCwd?: string,
+): Record<string, unknown> {
+  const command = action.command?.trim();
+  return {
+    name: action.sessionName?.trim() || node.title,
+    workingDirectory: action.cwd?.trim() || defaultCwd,
+    launchCommand: command,
+    profile: action.profile ?? (command ? undefined : 'terminal'),
+    agentControlled: true,
+    injectGuidance: true,
+    slashCommands: action.slashCommands ?? [],
+  };
+}
+
+function graphAwarePrompt(
+  graphId: string,
+  node: ActionGraphNode,
+  task: string | undefined,
+): string {
+  const context = [
+    'tlbx Action Graph context:',
+    `- graphId: ${graphId}`,
+    `- nodeId: ${node.id}`,
+    `- nodeRevision: ${node.revision}`,
+    '- tlbx stores exact graph/session facts but does not interpret their meaning.',
+    '- Read .tlbx/AGENTS.md or .tlbx/CLAUDE.md, then load the generated tlbx_graphs helper.',
+    `- Start with: mtg_context ${graphId} ${node.id}`,
+    '- Use mtg_help for mutation and concurrency examples.',
+    '- Keep this node and its graph neighborhood current as the work changes.',
+  ].join('\n');
+  return task ? `${context}\n\nTask:\n${task}` : context;
 }

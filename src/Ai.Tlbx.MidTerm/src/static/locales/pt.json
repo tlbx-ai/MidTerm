@@ -1040,5 +1040,18 @@
   "actionGraphs.refreshCommand": "Comando do agente (ex.: claude)",
   "actionGraphs.refreshCwd": "Diretório de trabalho",
   "actionGraphs.refreshPrompt": "Prompt",
-  "actionGraphs.refreshSave": "Salvar"
+  "actionGraphs.refreshSave": "Salvar",
+  "actionGraphs.fieldMinZoom": "Visível a partir do zoom",
+  "actionGraphs.fieldMaxZoom": "Visível até o zoom",
+  "actionGraphs.fieldPinned": "Manter posição ao organizar",
+  "actionGraphs.actionCommand": "Comando do terminal",
+  "actionGraphs.actionProfile": "Perfil legado",
+  "actionGraphs.revision": "Revisão",
+  "actionGraphs.openSession": "Abrir sessão do terminal",
+  "actionGraphs.organize": "Organizar",
+  "actionGraphs.search": "Pesquisar tudo",
+  "actionGraphs.fieldAttention": "Exige atenção",
+  "actionGraphs.fieldHidden": "Ocultar da vista de trabalho",
+  "actionGraphs.attention": "atenção",
+  "actionGraphs.hidden": "ocultos"
 }

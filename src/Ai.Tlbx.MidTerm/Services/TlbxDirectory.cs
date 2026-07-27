@@ -453,7 +453,9 @@ public static class TlbxDirectory
 
         ## Graph boards
 
-        tlbx persists named graphs of nodes, edges, positions, and per-node launch actions, and renders them on a pan/zoom canvas (sidebar entry, off by default). The graph is a canvas: tlbx stores everything verbatim and prescribes no use case — what the nodes mean belongs to the instructions of the agents that fill them. Helpers live in a separate script: bash/zsh `. .tlbx/tlbx_graphs.sh`, PowerShell `. .tlbx/tlbx_graphs.ps1`.
+        tlbx persists named graphs of nodes, edges, positions, session bindings, revisions, and per-node launch actions, and renders them on a virtualized pan/zoom canvas (sidebar entry, off by default). The graph is a shared precision surface: tlbx owns exact IDs, geometry, revisions, atomic mutation, session/process facts, event order, and rendering. It never infers semantics from PTY output. Agents own meaning, attention, completion, and graph evolution.
+
+        Every executable graph leaf must lead to a real observable/selectable tlbx terminal session. The terminal command is vendor-unbound: Claude, Codex, Grok, OpenCode, a plain shell, a script, or another terminal application are all equally valid. Helpers live in a separate self-documenting script: bash/zsh `. .tlbx/tlbx_graphs.sh`, PowerShell `. .tlbx/tlbx_graphs.ps1`. Start with `mtg_help`.
 
         | Command | What it does |
         |---------|-------------|
@@ -463,27 +465,36 @@ public static class TlbxDirectory
         | `mtg_graphs [scope]` | List graphs with node/edge counts, optionally filtered by scope |
         | `mtg_graph_scope <graph> <scope>` | Move a graph into a scope |
         | `mtg_graph <graph>` | Dump one graph (nodes + edges) as JSON |
+        | `mtg_context <graph> <node> [depth] [limit]` | Read an anchor node and bounded graph neighborhood |
         | `mtg_graph_new <id> [name]` | Create or rename a graph |
-        | `mtg_graph_rm <graph>` | Delete a graph |
+        | `mtg_graph_rm <graph> [graphRevision]` | Delete a graph without racing newer work |
+        | `mtg_organize <graph> [graphRevision]` | Deterministically arrange structure while retaining pinned nodes and frames |
         | `mtg_node_add <graph> [json\|-]` | Create a node from a JSON body (stdin when omitted or `-`) |
-        | `mtg_node_set <graph> <node> [json\|-]` | Partial update; omitted fields stay, `x`/`y` move only when sent |
-        | `mtg_node_rm <graph> <node>` | Delete a node and its edges |
-        | `mtg_move <graph> <node> <x> <y>` | Set a node position |
-        | `mtg_edge_add <graph> <from> <to> [label] [kind]` | Connect two nodes |
-        | `mtg_edge_rm <graph> <edge>` | Delete an edge |
+        | `mtg_node_set <graph> <node> [json\|-]` | Partial update; include `expectedRevision` from the last read |
+        | `mtg_node_rm <graph> <node> [nodeRevision] [graphRevision]` | Delete a node and its edges without racing newer structure |
+        | `mtg_move <graph> <node> <x> <y> [nodeRevision]` | Set a node position without overwriting a concurrent edit |
+        | `mtg_edge_add <graph> <from> <to> [label] [kind] [graphRevision]` | Connect two nodes |
+        | `mtg_edge_rm <graph> <edge> [graphRevision]` | Delete an edge |
+        | `mtg_session_bind <graph> <node> <session> [role] [graphRevision]` | Bind an existing observable terminal session |
+        | `mtg_session_unbind <graph> <node> <session> [graphRevision]` | Remove a session binding |
 
-        Node JSON fields: `id?`, `kind`, `title` (required), `state`, `html` (rich HTML body, rendered sandboxed), `x`, `y`, `width`, `height`, `color`, `url`, `path`, `host`, `project`, `sessionId`, `externalRef`, `date`, `actions`. Known kinds get default styling: `email`, `appointment`, `todo`, `project`, `task`, `asset`, `plan`, `note`, `repo`, `place`, `server`, `application`, `service`, `secret`, `identity`, `frame` — unknown kinds are accepted and rendered like `identity`. For `secret` nodes, store only names and locations, never secret values.
+        Node JSON fields: `id?`, `kind`, `title` (required), `state`, `html` (rich HTML body, rendered sandboxed), `x`, `y`, `width`, `height`, `minZoom`, `maxZoom`, `pinned`, `attention`, `hidden`, `color`, `url`, `path`, `host`, `project`, `sessionId`, `externalRef`, `date`, `actions`, `expectedRevision`, `expectedGraphRevision`. Known kinds get default styling: `email`, `appointment`, `todo`, `project`, `task`, `asset`, `plan`, `note`, `repo`, `place`, `server`, `application`, `service`, `secret`, `identity`, `frame` — unknown kinds are accepted and rendered like `identity`. For `secret` nodes, store only names and locations, never secret values.
 
         Group related nodes with `frame` nodes: a frame renders as a calm background region (`x`, `y`, `width`, `height`) with its title as a small chip; place member nodes on top of it. Frames are visual only — tlbx attaches no containment semantics.
 
-        Actions are stored launch specs the user executes from the canvas: `{"label": "...", "cwd": "...", "profile": "claude|codex|terminal", "prompt": "...", "sessionName": "..."}`. tlbx runs them verbatim as a new agent session plus prompt; it never interprets them. Set `sessionName` so the launched sidebar session is attributable to its item, and write prompts self-contained (item kind, identifying metadata, task). Actions without a `cwd` launch in the user's configured action default directory (settings), so omit `cwd` unless the item belongs to a specific repo.
+        Actions are stored launch specs the user executes from the canvas: `{"label": "...", "cwd": "...", "command": "codex|claude|opencode|pwsh ./work.ps1|...", "prompt": "...", "sessionName": "..."}`. tlbx launches the command verbatim in a real agent-controlled session, injects exact graph/node context into the optional prompt, and binds the returned session ID to the node. It never interprets the command or work. The older `profile` field remains a compatibility hint only. Actions without a `cwd` launch in the user's configured action default directory.
+
+        Graph mutations are optimistic. Read `graphRevision` and each node's `revision`, send the matching expected revision, and reload/reconcile after HTTP 409. This is what lets many graph-aware agents work safely without last-writer-wins data loss.
+
+        Use `attention`, `hidden`, `minZoom`, `maxZoom`, and `pinned` as agent-published presentation intent. For a whack-a-mole rhythm, publish `hidden: true` when completed context should leave the working view, `attention: true` when work should pop, and zoom bounds when context should remain discoverable only at certain scales. The canvas exposes attention navigation and an explicit hidden-item reveal. tlbx follows these fields exactly; it does not decide which state means complete or urgent.
 
         Example (a service map — the ontology is yours):
 
         mtg_node_add ops '{"id":"api","kind":"service","title":"API gateway","state":"healthy","x":100,"y":80}'
         mtg_node_add ops '{"id":"db","kind":"server","title":"postgres01","host":"10.0.0.5","x":100,"y":260}'
         mtg_edge_add ops api db "reads/writes"
-        mtg_move ops db 140 300
+        mtg_move ops db 140 300 1
+        mtg_context ops db
 
         Updates keep manual layout: a node update without `x`/`y` never moves the node the user dragged.
 

@@ -38,8 +38,30 @@ public static class ActionGraphEndpoints
                 : Results.Json(graph, AppJsonContext.Default.ActionGraph);
         }));
 
-        app.MapDelete("/api/graphs/{graphId}", (string graphId) => Try(() =>
-            graphs.DeleteGraph(graphId) ? Results.Ok() : Results.NotFound()));
+        app.MapGet("/api/graphs/{graphId}/nodes/{nodeId}/context", (
+            string graphId,
+            string nodeId,
+            int? depth,
+            int? limit) => Try(() =>
+        {
+            var context = graphs.GetNodeContext(graphId, nodeId, depth ?? 1, limit ?? 120);
+            return context is null
+                ? Results.NotFound()
+                : Results.Json(context, AppJsonContext.Default.ActionGraphContextResponse);
+        }));
+
+        app.MapDelete("/api/graphs/{graphId}", (string graphId, int? expectedRevision) => Try(() =>
+            graphs.DeleteGraph(graphId, expectedRevision) ? Results.Ok() : Results.NotFound()));
+
+        app.MapPost("/api/graphs/{graphId}/organize", (
+            string graphId,
+            OrganizeActionGraphRequest request) => Try(() =>
+        {
+            var graph = graphs.OrganizeGraph(graphId, request.ExpectedGraphRevision);
+            return graph is null
+                ? Results.NotFound()
+                : Results.Json(graph, AppJsonContext.Default.ActionGraph);
+        }));
 
         app.MapPost("/api/graphs/{graphId}/nodes", (string graphId, UpsertActionGraphNodeRequest request) =>
             Try(() => Results.Json(
@@ -61,20 +83,52 @@ public static class ActionGraphEndpoints
             string graphId,
             string nodeId,
             SetActionGraphNodePositionRequest request) => Try(() =>
-            graphs.SetNodePosition(graphId, nodeId, request.X, request.Y)
+        {
+            var node = graphs.SetNodePosition(graphId, nodeId, request.X, request.Y, request.ExpectedRevision);
+            return node is null
+                ? Results.NotFound()
+                : Results.Json(node, AppJsonContext.Default.ActionGraphNode);
+        }));
+
+        app.MapDelete("/api/graphs/{graphId}/nodes/{nodeId}", (
+            string graphId,
+            string nodeId,
+            int? expectedRevision,
+            int? expectedGraphRevision) => Try(() =>
+            graphs.DeleteNode(graphId, nodeId, expectedRevision, expectedGraphRevision)
                 ? Results.Ok()
                 : Results.NotFound()));
 
-        app.MapDelete("/api/graphs/{graphId}/nodes/{nodeId}", (string graphId, string nodeId) => Try(() =>
-            graphs.DeleteNode(graphId, nodeId) ? Results.Ok() : Results.NotFound()));
+        app.MapPost("/api/graphs/{graphId}/nodes/{nodeId}/sessions", (
+            string graphId,
+            string nodeId,
+            BindActionGraphSessionRequest request) => Try(() =>
+        {
+            var node = graphs.BindSession(graphId, nodeId, request);
+            return node is null
+                ? Results.NotFound()
+                : Results.Json(node, AppJsonContext.Default.ActionGraphNode);
+        }));
+
+        app.MapDelete("/api/graphs/{graphId}/nodes/{nodeId}/sessions/{sessionId}", (
+            string graphId,
+            string nodeId,
+            string sessionId,
+            int? expectedGraphRevision) => Try(() =>
+            graphs.UnbindSession(graphId, nodeId, sessionId, expectedGraphRevision)
+                ? Results.Ok()
+                : Results.NotFound()));
 
         app.MapPost("/api/graphs/{graphId}/edges", (string graphId, CreateActionGraphEdgeRequest request) =>
             Try(() => Results.Json(
                 graphs.CreateEdge(graphId, request),
                 AppJsonContext.Default.ActionGraphEdge)));
 
-        app.MapDelete("/api/graphs/{graphId}/edges/{edgeId}", (string graphId, string edgeId) => Try(() =>
-            graphs.DeleteEdge(graphId, edgeId) ? Results.Ok() : Results.NotFound()));
+        app.MapDelete("/api/graphs/{graphId}/edges/{edgeId}", (
+            string graphId,
+            string edgeId,
+            int? expectedGraphRevision) => Try(() =>
+            graphs.DeleteEdge(graphId, edgeId, expectedGraphRevision) ? Results.Ok() : Results.NotFound()));
     }
 
     private static IResult Try(Func<IResult> action)
@@ -86,6 +140,19 @@ public static class ActionGraphEndpoints
         catch (ArgumentException ex)
         {
             return Results.BadRequest(ex.Message);
+        }
+        catch (ActionGraphConflictException ex)
+        {
+            return Results.Json(
+                new ActionGraphConflictResponse
+                {
+                    Entity = ex.Entity,
+                    ExpectedRevision = ex.ExpectedRevision,
+                    CurrentRevision = ex.CurrentRevision,
+                    Message = ex.Message
+                },
+                AppJsonContext.Default.ActionGraphConflictResponse,
+                statusCode: StatusCodes.Status409Conflict);
         }
     }
 }

@@ -42,10 +42,19 @@ public sealed class ActionGraphNodeAction
     public string Id { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
     public string? Cwd { get; set; }
+    /// <summary>Free-form terminal command. When present, this wins over the legacy profile hint.</summary>
+    public string? Command { get; set; }
     public string? Profile { get; set; }
     public string? Prompt { get; set; }
     public string? SessionName { get; set; }
     public List<string> SlashCommands { get; set; } = [];
+}
+
+public sealed class ActionGraphSessionBinding
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string? Role { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public sealed class ActionGraphNode
@@ -62,6 +71,11 @@ public sealed class ActionGraphNode
     public double Y { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public double? MinZoom { get; set; }
+    public double? MaxZoom { get; set; }
+    public bool Pinned { get; set; }
+    public bool Attention { get; set; }
+    public bool Hidden { get; set; }
     public string? Color { get; set; }
 
     public string? Url { get; set; }
@@ -73,6 +87,7 @@ public sealed class ActionGraphNode
     public DateTimeOffset? Date { get; set; }
 
     public List<ActionGraphNodeAction> Actions { get; set; } = [];
+    public List<ActionGraphSessionBinding> Sessions { get; set; } = [];
     public string Source { get; set; } = "agent";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -87,6 +102,7 @@ public sealed class ActionGraphEdge
     public string? Label { get; set; }
     public string? Kind { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public int Revision { get; set; }
 }
 
 /// <summary>
@@ -135,6 +151,7 @@ public sealed class ActionGraph
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public int Revision { get; set; }
 }
 
 public sealed class ActionGraphsDocument
@@ -150,11 +167,21 @@ public sealed class ActionGraphSummary
     public int NodeCount { get; set; }
     public int EdgeCount { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public int Revision { get; set; }
 }
 
 public sealed class ActionGraphListResponse
 {
     public List<ActionGraphSummary> Graphs { get; set; } = [];
+}
+
+public sealed class ActionGraphContextResponse
+{
+    public string GraphId { get; set; } = string.Empty;
+    public int GraphRevision { get; set; }
+    public ActionGraphNode Anchor { get; set; } = new();
+    public List<ActionGraphNode> Nodes { get; set; } = [];
+    public List<ActionGraphEdge> Edges { get; set; } = [];
 }
 
 public sealed class CreateActionGraphRequest
@@ -165,6 +192,7 @@ public sealed class CreateActionGraphRequest
     public string? RefreshCommand { get; set; }
     public string? RefreshCwd { get; set; }
     public string? RefreshPrompt { get; set; }
+    public int? ExpectedRevision { get; set; }
 }
 
 public sealed class UpsertActionGraphNodeRequest
@@ -178,6 +206,11 @@ public sealed class UpsertActionGraphNodeRequest
     public double? Y { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public double? MinZoom { get; set; }
+    public double? MaxZoom { get; set; }
+    public bool? Pinned { get; set; }
+    public bool? Attention { get; set; }
+    public bool? Hidden { get; set; }
     public string? Color { get; set; }
     public string? Url { get; set; }
     public string? Path { get; set; }
@@ -188,12 +221,15 @@ public sealed class UpsertActionGraphNodeRequest
     public DateTimeOffset? Date { get; set; }
     public List<ActionGraphNodeAction>? Actions { get; set; }
     public string? Source { get; set; }
+    public int? ExpectedRevision { get; set; }
+    public int? ExpectedGraphRevision { get; set; }
 }
 
 public sealed class SetActionGraphNodePositionRequest
 {
     public double X { get; set; }
     public double Y { get; set; }
+    public int? ExpectedRevision { get; set; }
 }
 
 public sealed class CreateActionGraphEdgeRequest
@@ -203,12 +239,34 @@ public sealed class CreateActionGraphEdgeRequest
     public string? ToId { get; set; }
     public string? Label { get; set; }
     public string? Kind { get; set; }
+    public int? ExpectedGraphRevision { get; set; }
+}
+
+public sealed class BindActionGraphSessionRequest
+{
+    public string? SessionId { get; set; }
+    public string? Role { get; set; }
+    public int? ExpectedGraphRevision { get; set; }
+}
+
+public sealed class OrganizeActionGraphRequest
+{
+    public int? ExpectedGraphRevision { get; set; }
+}
+
+public sealed class ActionGraphConflictResponse
+{
+    public string Entity { get; set; } = string.Empty;
+    public int ExpectedRevision { get; set; }
+    public int CurrentRevision { get; set; }
+    public string Message { get; set; } = string.Empty;
 }
 
 [JsonSerializable(typeof(ActionGraphsDocument))]
 [JsonSerializable(typeof(ActionGraph))]
 [JsonSerializable(typeof(ActionGraphNode))]
 [JsonSerializable(typeof(ActionGraphEdge))]
+[JsonSerializable(typeof(ActionGraphSessionBinding))]
 [JsonSerializable(typeof(List<string>))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 public partial class ActionGraphsJsonContext : JsonSerializerContext

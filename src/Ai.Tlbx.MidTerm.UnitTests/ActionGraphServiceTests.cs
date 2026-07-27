@@ -72,7 +72,7 @@ public sealed class ActionGraphServiceTests : IDisposable
         using var service = CreateService();
         service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "n", Title = "Node", X = 10, Y = 20 });
 
-        Assert.True(service.SetNodePosition("g", "n", 300, 400));
+        Assert.NotNull(service.SetNodePosition("g", "n", 300, 400));
         var afterContentUpdate = service.UpdateNode("g", "n", new UpsertActionGraphNodeRequest
         {
             State = "updated by agent"
@@ -228,6 +228,180 @@ public sealed class ActionGraphServiceTests : IDisposable
         Assert.Equal(["status"], action.SlashCommands);
         Assert.False(File.Exists(jsonPath));
         Assert.True(File.Exists(jsonPath + ".migrated"));
+    }
+
+    [Fact]
+    public void RejectsStaleNodeContentAndPositionUpdates()
+    {
+        using var service = CreateService();
+        var created = service.CreateNode("g", new UpsertActionGraphNodeRequest
+        {
+            Id = "n",
+            Title = "Node"
+        });
+
+        var updated = service.UpdateNode("g", "n", new UpsertActionGraphNodeRequest
+        {
+            State = "claimed",
+            ExpectedRevision = created.Revision
+        });
+
+        Assert.NotNull(updated);
+        Assert.Equal(2, updated!.Revision);
+        var staleContent = Assert.Throws<ActionGraphConflictException>(() =>
+            service.UpdateNode("g", "n", new UpsertActionGraphNodeRequest
+            {
+                State = "overwritten",
+                ExpectedRevision = created.Revision
+            }));
+        Assert.Equal(2, staleContent.CurrentRevision);
+
+        var moved = service.SetNodePosition("g", "n", 100, 200, expectedRevision: updated.Revision);
+        Assert.NotNull(moved);
+        Assert.Equal(3, moved!.Revision);
+        Assert.Throws<ActionGraphConflictException>(() =>
+            service.SetNodePosition("g", "n", 300, 400, expectedRevision: updated.Revision));
+    }
+
+    [Fact]
+    public void RejectsStaleGraphMutations()
+    {
+        using var service = CreateService();
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "a", Title = "A" });
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "b", Title = "B" });
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "c", Title = "C" });
+        var revision = service.GetGraph("g")!.Revision;
+
+        service.CreateEdge("g", new CreateActionGraphEdgeRequest
+        {
+            FromId = "a",
+            ToId = "b",
+            ExpectedGraphRevision = revision
+        });
+
+        var conflict = Assert.Throws<ActionGraphConflictException>(() =>
+            service.CreateEdge("g", new CreateActionGraphEdgeRequest
+            {
+                FromId = "b",
+                ToId = "c",
+                ExpectedGraphRevision = revision
+            }));
+        Assert.True(conflict.CurrentRevision > revision);
+    }
+
+    [Fact]
+    public void RejectsStaleDestructiveMutations()
+    {
+        using var service = CreateService();
+        var node = service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "a", Title = "A" });
+        var graphRevision = service.GetGraph("g")!.Revision;
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "b", Title = "B" });
+
+        Assert.Throws<ActionGraphConflictException>(() =>
+            service.DeleteNode("g", "a", node.Revision, graphRevision));
+        Assert.Throws<ActionGraphConflictException>(() =>
+            service.DeleteGraph("g", graphRevision));
+        Assert.Equal(2, service.GetGraph("g")!.Nodes.Count);
+    }
+
+    [Fact]
+    public void RoundTripsZoomHintsFreeFormCommandsAndMultipleSessionBindings()
+    {
+        using var service = CreateService();
+        var node = service.CreateNode("g", new UpsertActionGraphNodeRequest
+        {
+            Id = "work",
+            Title = "Investigate",
+            MinZoom = 0.35,
+            MaxZoom = 2.5,
+            Pinned = true,
+            Attention = true,
+            Hidden = true,
+            Actions =
+            [
+                new ActionGraphNodeAction
+                {
+                    Label = "Run",
+                    Command = "future-agent --mode build",
+                    Prompt = "Inspect the graph context."
+                }
+            ]
+        });
+        var graphRevision = service.GetGraph("g")!.Revision;
+
+        service.BindSession("g", "work", new BindActionGraphSessionRequest
+        {
+            SessionId = "session-a",
+            Role = "worker",
+            ExpectedGraphRevision = graphRevision
+        });
+        service.BindSession("g", "work", new BindActionGraphSessionRequest
+        {
+            SessionId = "session-b",
+            Role = "reviewer"
+        });
+
+        var loaded = Assert.Single(service.GetGraph("g")!.Nodes);
+        Assert.Equal(0.35, loaded.MinZoom);
+        Assert.Equal(2.5, loaded.MaxZoom);
+        Assert.True(loaded.Pinned);
+        Assert.True(loaded.Attention);
+        Assert.True(loaded.Hidden);
+        Assert.Equal("future-agent --mode build", Assert.Single(loaded.Actions).Command);
+        Assert.Equal(2, loaded.Sessions.Count);
+        Assert.Contains(loaded.Sessions, binding => binding.SessionId == "session-a" && binding.Role == "worker");
+        Assert.Contains(loaded.Sessions, binding => binding.SessionId == "session-b" && binding.Role == "reviewer");
+        Assert.True(loaded.Revision > node.Revision);
+    }
+
+    [Fact]
+    public void OrganizesFromStructureWhilePreservingPinnedNodesAndConcurrency()
+    {
+        using var service = CreateService();
+        service.CreateNode("g", new UpsertActionGraphNodeRequest
+        {
+            Id = "a",
+            Title = "A",
+            X = 900,
+            Y = 700,
+            Pinned = true
+        });
+        service.CreateNode("g", new UpsertActionGraphNodeRequest
+        {
+            Id = "b",
+            Title = "B",
+            X = 900,
+            Y = 700
+        });
+        service.CreateEdge("g", new CreateActionGraphEdgeRequest { FromId = "a", ToId = "b" });
+        var revision = service.GetGraph("g")!.Revision;
+
+        var arranged = service.OrganizeGraph("g", revision);
+
+        Assert.NotNull(arranged);
+        Assert.Equal(900, arranged!.Nodes.Single(node => node.Id == "a").X);
+        Assert.NotEqual(900, arranged.Nodes.Single(node => node.Id == "b").X);
+        Assert.True(arranged.Revision > revision);
+        Assert.Throws<ActionGraphConflictException>(() => service.OrganizeGraph("g", revision));
+    }
+
+    [Fact]
+    public void ReturnsBoundedGraphAwareNodeContext()
+    {
+        using var service = CreateService();
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "a", Title = "A" });
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "b", Title = "B" });
+        service.CreateNode("g", new UpsertActionGraphNodeRequest { Id = "c", Title = "C" });
+        service.CreateEdge("g", new CreateActionGraphEdgeRequest { FromId = "a", ToId = "b" });
+        service.CreateEdge("g", new CreateActionGraphEdgeRequest { FromId = "b", ToId = "c" });
+
+        var context = service.GetNodeContext("g", "a", depth: 1, limit: 10);
+
+        Assert.NotNull(context);
+        Assert.Equal("a", context!.Anchor.Id);
+        Assert.Equal(["a", "b"], context.Nodes.Select(node => node.Id).ToArray());
+        Assert.Single(context.Edges);
+        Assert.Equal(service.GetGraph("g")!.Revision, context.GraphRevision);
     }
 
     public void Dispose()

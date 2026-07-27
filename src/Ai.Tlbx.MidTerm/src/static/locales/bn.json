@@ -1040,5 +1040,18 @@
   "actionGraphs.refreshCommand": "এজেন্ট কমান্ড (যেমন claude)",
   "actionGraphs.refreshCwd": "কার্যকরী ডিরেক্টরি",
   "actionGraphs.refreshPrompt": "প্রম্পট",
-  "actionGraphs.refreshSave": "সংরক্ষণ"
+  "actionGraphs.refreshSave": "সংরক্ষণ",
+  "actionGraphs.fieldMinZoom": "এই জুম থেকে দৃশ্যমান",
+  "actionGraphs.fieldMaxZoom": "এই জুম পর্যন্ত দৃশ্যমান",
+  "actionGraphs.fieldPinned": "সাজানোর সময় অবস্থান রাখুন",
+  "actionGraphs.actionCommand": "টার্মিনাল কমান্ড",
+  "actionGraphs.actionProfile": "পুরনো প্রোফাইল ইঙ্গিত",
+  "actionGraphs.revision": "রিভিশন",
+  "actionGraphs.openSession": "টার্মিনাল সেশন খুলুন",
+  "actionGraphs.organize": "সাজান",
+  "actionGraphs.search": "সব খুঁজুন",
+  "actionGraphs.fieldAttention": "মনোযোগ প্রয়োজন",
+  "actionGraphs.fieldHidden": "কাজের দৃশ্য থেকে লুকান",
+  "actionGraphs.attention": "মনোযোগ",
+  "actionGraphs.hidden": "লুকানো"
 }

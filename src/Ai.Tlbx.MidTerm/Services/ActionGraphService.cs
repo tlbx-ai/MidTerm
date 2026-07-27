@@ -16,8 +16,8 @@ public sealed class ActionGraphService : IDisposable
 {
     internal const int MaxGraphs = 50;
     internal const int MaxScopes = 50;
-    internal const int MaxNodesPerGraph = 500;
-    internal const int MaxEdgesPerGraph = 1000;
+    internal const int MaxNodesPerGraph = 10_000;
+    internal const int MaxEdgesPerGraph = 25_000;
     internal const int MaxActionsPerNode = 8;
     private const int MaxTitleLength = 256;
     private const int MaxStateLength = 256;
@@ -141,7 +141,7 @@ public sealed class ActionGraphService : IDisposable
             var graphs = new List<ActionGraphSummary>();
             using var command = _connection.CreateCommand();
             command.CommandText = """
-                SELECT g.id, g.scope_id, g.name, g.updated_at,
+                SELECT g.id, g.scope_id, g.name, g.updated_at, g.revision,
                        (SELECT COUNT(*) FROM nodes n WHERE n.graph_id = g.id),
                        (SELECT COUNT(*) FROM edges e WHERE e.graph_id = g.id)
                 FROM graphs g
@@ -158,8 +158,9 @@ public sealed class ActionGraphService : IDisposable
                     ScopeId = reader.GetString(1),
                     Name = reader.GetString(2),
                     UpdatedAt = ReadTimestamp(reader.GetString(3)),
-                    NodeCount = reader.GetInt32(4),
-                    EdgeCount = reader.GetInt32(5)
+                    Revision = reader.GetInt32(4),
+                    NodeCount = reader.GetInt32(5),
+                    EdgeCount = reader.GetInt32(6)
                 });
             }
             return new ActionGraphListResponse { Graphs = graphs };
@@ -172,20 +173,23 @@ public sealed class ActionGraphService : IDisposable
         lock (_lock)
         {
             ThrowIfDisposed();
+            CheckGraphRevisionLocked(request.Id, request.ExpectedRevision);
             var id = GetOrCreateGraphLocked(request.Id, request.Name, request.ScopeId);
             ApplyRefreshSpecLocked(id, request);
             return GetGraphLocked(id)!;
         }
     }
 
-    public bool DeleteGraph(string graphId)
+    public bool DeleteGraph(string graphId, int? expectedRevision = null)
     {
         var id = ValidId(graphId, nameof(graphId));
         lock (_lock)
         {
             ThrowIfDisposed();
             using var transaction = _connection.BeginTransaction();
+            CheckGraphRevisionLocked(id, expectedRevision);
             Execute("DELETE FROM node_actions WHERE graph_id = $id", ("$id", id));
+            Execute("DELETE FROM node_sessions WHERE graph_id = $id", ("$id", id));
             Execute("DELETE FROM edges WHERE graph_id = $id", ("$id", id));
             Execute("DELETE FROM nodes WHERE graph_id = $id", ("$id", id));
             var removed = ExecuteRows("DELETE FROM graphs WHERE id = $id", ("$id", id)) > 0;
@@ -203,6 +207,232 @@ public sealed class ActionGraphService : IDisposable
         }
     }
 
+    public ActionGraphContextResponse? GetNodeContext(
+        string graphId,
+        string nodeId,
+        int depth = 1,
+        int limit = 120)
+    {
+        var id = ValidId(graphId, nameof(graphId));
+        var anchorId = ValidId(nodeId, nameof(nodeId));
+        if (depth is < 0 or > 4)
+        {
+            throw new ArgumentException("depth must be between 0 and 4.", nameof(depth));
+        }
+        if (limit is < 1 or > 500)
+        {
+            throw new ArgumentException("limit must be between 1 and 500.", nameof(limit));
+        }
+
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            var graph = GetGraphLocked(id);
+            var anchor = graph?.Nodes.FirstOrDefault(node => node.Id == anchorId);
+            if (graph is null || anchor is null)
+            {
+                return null;
+            }
+
+            var adjacency = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+            foreach (var edge in graph.Edges)
+            {
+                if (!adjacency.TryGetValue(edge.FromId, out var from))
+                {
+                    from = [];
+                    adjacency[edge.FromId] = from;
+                }
+                if (!adjacency.TryGetValue(edge.ToId, out var to))
+                {
+                    to = [];
+                    adjacency[edge.ToId] = to;
+                }
+                from.Add(edge.ToId);
+                to.Add(edge.FromId);
+            }
+
+            var included = new HashSet<string>(StringComparer.Ordinal) { anchorId };
+            var frontier = new List<string> { anchorId };
+            for (var level = 0; level < depth && included.Count < limit; level++)
+            {
+                var next = new List<string>();
+                foreach (var current in frontier)
+                {
+                    if (!adjacency.TryGetValue(current, out var neighbors))
+                    {
+                        continue;
+                    }
+                    foreach (var neighbor in neighbors)
+                    {
+                        if (included.Count >= limit)
+                        {
+                            break;
+                        }
+                        if (included.Add(neighbor))
+                        {
+                            next.Add(neighbor);
+                        }
+                    }
+                }
+                frontier = next;
+            }
+
+            return new ActionGraphContextResponse
+            {
+                GraphId = graph.Id,
+                GraphRevision = graph.Revision,
+                Anchor = anchor,
+                Nodes = graph.Nodes.Where(node => included.Contains(node.Id)).ToList(),
+                Edges = graph.Edges
+                    .Where(edge => included.Contains(edge.FromId) && included.Contains(edge.ToId))
+                    .ToList()
+            };
+        }
+    }
+
+    /// <summary>
+    /// Deterministically arranges exact graph structure without interpreting semantic fields.
+    /// Pinned nodes and frames retain their agent-published positions.
+    /// </summary>
+    public ActionGraph? OrganizeGraph(string graphId, int? expectedGraphRevision = null)
+    {
+        var id = ValidId(graphId, nameof(graphId));
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            using var transaction = _connection.BeginTransaction();
+            var graph = GetGraphLocked(id);
+            if (graph is null)
+            {
+                return null;
+            }
+            CheckRevision($"graph '{id}'", expectedGraphRevision, graph.Revision);
+
+            var movable = graph.Nodes
+                .Where(node => node.Kind != ActionGraphNodeKinds.Frame)
+                .ToDictionary(node => node.Id, StringComparer.Ordinal);
+            var outgoing = movable.Keys.ToDictionary(
+                nodeId => nodeId,
+                _ => new List<string>(),
+                StringComparer.Ordinal);
+            var indegree = movable.Keys.ToDictionary(nodeId => nodeId, _ => 0, StringComparer.Ordinal);
+            var connected = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var edge in graph.Edges)
+            {
+                if (!movable.ContainsKey(edge.FromId) || !movable.ContainsKey(edge.ToId))
+                {
+                    continue;
+                }
+                outgoing[edge.FromId].Add(edge.ToId);
+                indegree[edge.ToId]++;
+                connected.Add(edge.FromId);
+                connected.Add(edge.ToId);
+            }
+            foreach (var neighbors in outgoing.Values)
+            {
+                neighbors.Sort(StringComparer.Ordinal);
+            }
+
+            var ranks = movable.Keys.ToDictionary(nodeId => nodeId, _ => 0, StringComparer.Ordinal);
+            var queue = new SortedSet<string>(
+                indegree.Where(pair => pair.Value == 0 && connected.Contains(pair.Key)).Select(pair => pair.Key),
+                StringComparer.Ordinal);
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            while (queue.Count > 0)
+            {
+                var nodeId = queue.Min!;
+                queue.Remove(nodeId);
+                visited.Add(nodeId);
+                foreach (var nextId in outgoing[nodeId])
+                {
+                    ranks[nextId] = Math.Max(ranks[nextId], ranks[nodeId] + 1);
+                    indegree[nextId]--;
+                    if (indegree[nextId] == 0)
+                    {
+                        queue.Add(nextId);
+                    }
+                }
+            }
+
+            var cycleRank = visited.Count == 0 ? 0 : visited.Max(nodeId => ranks[nodeId]) + 1;
+            foreach (var nodeId in connected.Where(nodeId => !visited.Contains(nodeId)))
+            {
+                ranks[nodeId] = cycleRank;
+            }
+
+            const double horizontalGap = 112;
+            const double verticalGap = 46;
+            var positions = new Dictionary<string, (double X, double Y)>(StringComparer.Ordinal);
+            var x = 0d;
+            foreach (var layer in connected
+                         .GroupBy(nodeId => ranks[nodeId])
+                         .OrderBy(group => group.Key))
+            {
+                var ordered = layer
+                    .Select(nodeId => movable[nodeId])
+                    .OrderByDescending(node => node.Pinned)
+                    .ThenBy(node => node.Y)
+                    .ThenBy(node => node.Id, StringComparer.Ordinal)
+                    .ToList();
+                var y = 0d;
+                var layerWidth = 224d;
+                foreach (var node in ordered)
+                {
+                    positions[node.Id] = (x, y);
+                    y += NodeHeight(node) + verticalGap;
+                    layerWidth = Math.Max(layerWidth, NodeWidth(node));
+                }
+                x += layerWidth + horizontalGap;
+            }
+
+            var loose = movable.Values
+                .Where(node => !connected.Contains(node.Id))
+                .OrderByDescending(node => node.Pinned)
+                .ThenBy(node => node.Id, StringComparer.Ordinal)
+                .ToList();
+            if (loose.Count > 0)
+            {
+                var columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(loose.Count)));
+                const double looseColumnWidth = 304;
+                const double looseRowHeight = 150;
+                for (var index = 0; index < loose.Count; index++)
+                {
+                    var node = loose[index];
+                    positions[node.Id] = (
+                        x + (index % columns) * looseColumnWidth,
+                        (index / columns) * looseRowHeight);
+                }
+            }
+
+            var now = Now();
+            var changed = false;
+            foreach (var (nodeId, position) in positions)
+            {
+                var node = movable[nodeId];
+                if (node.Pinned ||
+                    (Math.Abs(node.X - position.X) < 0.01 && Math.Abs(node.Y - position.Y) < 0.01))
+                {
+                    continue;
+                }
+                Execute(
+                    """
+                    UPDATE nodes
+                    SET x = $x, y = $y, updated_at = $now, revision = revision + 1
+                    WHERE graph_id = $g AND id = $n
+                    """,
+                    ("$x", position.X), ("$y", position.Y), ("$now", now),
+                    ("$g", id), ("$n", nodeId));
+                changed = true;
+            }
+            if (changed)
+            {
+                TouchGraphLocked(id, now);
+            }
+            transaction.Commit();
+            return GetGraphLocked(id);
+        }
+    }
+
     // ----- Nodes -----
 
     public ActionGraphNode CreateNode(string graphId, UpsertActionGraphNodeRequest request)
@@ -215,6 +445,7 @@ public sealed class ActionGraphService : IDisposable
             ThrowIfDisposed();
             using var transaction = _connection.BeginTransaction();
             GetOrCreateGraphLocked(id, name: null, scopeId: null);
+            CheckGraphRevisionLocked(id, request.ExpectedGraphRevision);
             if (Scalar("SELECT COUNT(*) FROM nodes WHERE graph_id = $g", ("$g", id)) >= MaxNodesPerGraph)
             {
                 throw new ArgumentException($"Graph '{id}' already holds the maximum of {MaxNodesPerGraph} nodes.");
@@ -238,6 +469,11 @@ public sealed class ActionGraphService : IDisposable
                 Y = request.Y ?? 0,
                 Width = request.Width,
                 Height = request.Height,
+                MinZoom = NormalizedZoom(request.MinZoom, nameof(request.MinZoom)),
+                MaxZoom = NormalizedZoom(request.MaxZoom, nameof(request.MaxZoom)),
+                Pinned = request.Pinned ?? false,
+                Attention = request.Attention ?? false,
+                Hidden = request.Hidden ?? false,
                 Color = Optional(request.Color, 32),
                 Url = Optional(request.Url, MaxReferenceLength),
                 Path = Optional(request.Path, MaxReferenceLength),
@@ -252,6 +488,7 @@ public sealed class ActionGraphService : IDisposable
                 UpdatedAt = ReadTimestamp(now),
                 Revision = 1
             };
+            ValidateZoomRange(node.MinZoom, node.MaxZoom);
             InsertNodeLocked(id, node, now);
             TouchGraphLocked(id, now);
             transaction.Commit();
@@ -274,6 +511,7 @@ public sealed class ActionGraphService : IDisposable
             {
                 return null;
             }
+            CheckRevision($"node '{normalizedNodeId}'", request.ExpectedRevision, node.Revision);
 
             if (request.Kind is not null) node.Kind = Optional(request.Kind, 64) ?? node.Kind;
             if (request.Title is not null) node.Title = Required(request.Title, MaxTitleLength, nameof(request.Title));
@@ -284,6 +522,11 @@ public sealed class ActionGraphService : IDisposable
             if (request.Y is not null) node.Y = request.Y.Value;
             if (request.Width is not null) node.Width = request.Width;
             if (request.Height is not null) node.Height = request.Height;
+            if (request.MinZoom is not null) node.MinZoom = NormalizedZoom(request.MinZoom, nameof(request.MinZoom));
+            if (request.MaxZoom is not null) node.MaxZoom = NormalizedZoom(request.MaxZoom, nameof(request.MaxZoom));
+            if (request.Pinned is not null) node.Pinned = request.Pinned.Value;
+            if (request.Attention is not null) node.Attention = request.Attention.Value;
+            if (request.Hidden is not null) node.Hidden = request.Hidden.Value;
             if (request.Color is not null) node.Color = Optional(request.Color, 32);
             if (request.Url is not null) node.Url = Optional(request.Url, MaxReferenceLength);
             if (request.Path is not null) node.Path = Optional(request.Path, MaxReferenceLength);
@@ -294,6 +537,7 @@ public sealed class ActionGraphService : IDisposable
             if (request.Date is not null) node.Date = request.Date;
             if (request.Actions is not null) node.Actions = NormalizedActions(request.Actions);
             if (request.Source is not null) node.Source = Optional(request.Source, 128) ?? node.Source;
+            ValidateZoomRange(node.MinZoom, node.MaxZoom);
 
             var now = Now();
             node.UpdatedAt = ReadTimestamp(now);
@@ -307,27 +551,12 @@ public sealed class ActionGraphService : IDisposable
         }
     }
 
-    public bool SetNodePosition(string graphId, string nodeId, double x, double y)
-    {
-        var id = ValidId(graphId, nameof(graphId));
-        var normalizedNodeId = ValidId(nodeId, nameof(nodeId));
-
-        lock (_lock)
-        {
-            ThrowIfDisposed();
-            var now = Now();
-            var rows = ExecuteRows(
-                "UPDATE nodes SET x = $x, y = $y, updated_at = $now WHERE graph_id = $g AND id = $n",
-                ("$x", x), ("$y", y), ("$now", now), ("$g", id), ("$n", normalizedNodeId));
-            if (rows > 0)
-            {
-                TouchGraphLocked(id, now);
-            }
-            return rows > 0;
-        }
-    }
-
-    public bool DeleteNode(string graphId, string nodeId)
+    public ActionGraphNode? SetNodePosition(
+        string graphId,
+        string nodeId,
+        double x,
+        double y,
+        int? expectedRevision = null)
     {
         var id = ValidId(graphId, nameof(graphId));
         var normalizedNodeId = ValidId(nodeId, nameof(nodeId));
@@ -336,11 +565,52 @@ public sealed class ActionGraphService : IDisposable
         {
             ThrowIfDisposed();
             using var transaction = _connection.BeginTransaction();
+            var node = ReadNodeLocked(id, normalizedNodeId);
+            if (node is null)
+            {
+                return null;
+            }
+            CheckRevision($"node '{normalizedNodeId}'", expectedRevision, node.Revision);
+            var now = Now();
+            Execute(
+                """
+                UPDATE nodes
+                SET x = $x, y = $y, updated_at = $now, revision = revision + 1
+                WHERE graph_id = $g AND id = $n
+                """,
+                ("$x", x), ("$y", y), ("$now", now), ("$g", id), ("$n", normalizedNodeId));
+            TouchGraphLocked(id, now);
+            transaction.Commit();
+            return ReadNodeLocked(id, normalizedNodeId);
+        }
+    }
+
+    public bool DeleteNode(
+        string graphId,
+        string nodeId,
+        int? expectedRevision = null,
+        int? expectedGraphRevision = null)
+    {
+        var id = ValidId(graphId, nameof(graphId));
+        var normalizedNodeId = ValidId(nodeId, nameof(nodeId));
+
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            using var transaction = _connection.BeginTransaction();
+            CheckGraphRevisionLocked(id, expectedGraphRevision);
+            var node = ReadNodeLocked(id, normalizedNodeId);
+            if (node is null)
+            {
+                return false;
+            }
+            CheckRevision($"node '{normalizedNodeId}'", expectedRevision, node.Revision);
             var removed = ExecuteRows(
                 "DELETE FROM nodes WHERE graph_id = $g AND id = $n", ("$g", id), ("$n", normalizedNodeId)) > 0;
             if (removed)
             {
                 Execute("DELETE FROM node_actions WHERE graph_id = $g AND node_id = $n", ("$g", id), ("$n", normalizedNodeId));
+                Execute("DELETE FROM node_sessions WHERE graph_id = $g AND node_id = $n", ("$g", id), ("$n", normalizedNodeId));
                 Execute(
                     "DELETE FROM edges WHERE graph_id = $g AND (from_id = $n OR to_id = $n)",
                     ("$g", id), ("$n", normalizedNodeId));
@@ -368,6 +638,7 @@ public sealed class ActionGraphService : IDisposable
             {
                 throw new ArgumentException($"Graph '{id}' does not exist.");
             }
+            CheckGraphRevisionLocked(id, request.ExpectedGraphRevision);
             if (Scalar("SELECT COUNT(*) FROM edges WHERE graph_id = $g", ("$g", id)) >= MaxEdgesPerGraph)
             {
                 throw new ArgumentException($"Graph '{id}' already holds the maximum of {MaxEdgesPerGraph} edges.");
@@ -395,23 +666,24 @@ public sealed class ActionGraphService : IDisposable
                 ToId = toId,
                 Label = Optional(request.Label, MaxLabelLength),
                 Kind = Optional(request.Kind, 64),
-                CreatedAt = ReadTimestamp(now)
+                CreatedAt = ReadTimestamp(now),
+                Revision = 1
             };
             Execute(
                 """
-                INSERT INTO edges(graph_id, id, from_id, to_id, label, kind, created_at)
-                VALUES($g, $id, $from, $to, $label, $kind, $now)
+                INSERT INTO edges(graph_id, id, from_id, to_id, label, kind, created_at, revision)
+                VALUES($g, $id, $from, $to, $label, $kind, $now, $revision)
                 """,
                 ("$g", id), ("$id", edge.Id), ("$from", edge.FromId), ("$to", edge.ToId),
                 ("$label", (object?)edge.Label ?? DBNull.Value), ("$kind", (object?)edge.Kind ?? DBNull.Value),
-                ("$now", now));
+                ("$now", now), ("$revision", edge.Revision));
             TouchGraphLocked(id, now);
             transaction.Commit();
             return edge;
         }
     }
 
-    public bool DeleteEdge(string graphId, string edgeId)
+    public bool DeleteEdge(string graphId, string edgeId, int? expectedGraphRevision = null)
     {
         var id = ValidId(graphId, nameof(graphId));
         var normalizedEdgeId = ValidId(edgeId, nameof(edgeId));
@@ -419,13 +691,104 @@ public sealed class ActionGraphService : IDisposable
         lock (_lock)
         {
             ThrowIfDisposed();
+            using var transaction = _connection.BeginTransaction();
+            CheckGraphRevisionLocked(id, expectedGraphRevision);
             var removed = ExecuteRows(
                 "DELETE FROM edges WHERE graph_id = $g AND id = $e", ("$g", id), ("$e", normalizedEdgeId)) > 0;
             if (removed)
             {
                 TouchGraphLocked(id, Now());
             }
+            transaction.Commit();
             return removed;
+        }
+    }
+
+    // ----- Session bindings -----
+
+    public ActionGraphNode? BindSession(
+        string graphId,
+        string nodeId,
+        BindActionGraphSessionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var id = ValidId(graphId, nameof(graphId));
+        var normalizedNodeId = ValidId(nodeId, nameof(nodeId));
+        var sessionId = Required(request.SessionId, 128, nameof(request.SessionId));
+        var role = Optional(request.Role, 64);
+
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            using var transaction = _connection.BeginTransaction();
+            if (ReadNodeLocked(id, normalizedNodeId) is null)
+            {
+                return null;
+            }
+            CheckGraphRevisionLocked(id, request.ExpectedGraphRevision);
+            var now = Now();
+            Execute(
+                """
+                INSERT INTO node_sessions(graph_id, node_id, session_id, role, created_at)
+                VALUES($g, $n, $session, $role, $now)
+                ON CONFLICT(graph_id, node_id, session_id)
+                DO UPDATE SET role = excluded.role
+                """,
+                ("$g", id), ("$n", normalizedNodeId), ("$session", sessionId),
+                ("$role", (object?)role ?? DBNull.Value), ("$now", now));
+            Execute(
+                """
+                UPDATE nodes
+                SET session_id = COALESCE(session_id, $session), updated_at = $now, revision = revision + 1
+                WHERE graph_id = $g AND id = $n
+                """,
+                ("$session", sessionId), ("$now", now), ("$g", id), ("$n", normalizedNodeId));
+            TouchGraphLocked(id, now);
+            transaction.Commit();
+            return ReadNodeLocked(id, normalizedNodeId);
+        }
+    }
+
+    public bool UnbindSession(
+        string graphId,
+        string nodeId,
+        string sessionId,
+        int? expectedGraphRevision = null)
+    {
+        var id = ValidId(graphId, nameof(graphId));
+        var normalizedNodeId = ValidId(nodeId, nameof(nodeId));
+        var normalizedSessionId = Required(sessionId, 128, nameof(sessionId));
+
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            using var transaction = _connection.BeginTransaction();
+            CheckGraphRevisionLocked(id, expectedGraphRevision);
+            var removed = ExecuteRows(
+                """
+                DELETE FROM node_sessions
+                WHERE graph_id = $g AND node_id = $n AND session_id = $session
+                """,
+                ("$g", id), ("$n", normalizedNodeId), ("$session", normalizedSessionId)) > 0;
+            if (!removed)
+            {
+                return false;
+            }
+            var now = Now();
+            Execute(
+                """
+                UPDATE nodes
+                SET session_id = (
+                    SELECT session_id FROM node_sessions
+                    WHERE graph_id = $g AND node_id = $n
+                    ORDER BY created_at LIMIT 1
+                ), updated_at = $now, revision = revision + 1
+                WHERE graph_id = $g AND id = $n
+                """,
+                ("$now", now), ("$g", id), ("$n", normalizedNodeId));
+            TouchGraphLocked(id, now);
+            transaction.Commit();
+            return true;
         }
     }
 
@@ -438,7 +801,7 @@ public sealed class ActionGraphService : IDisposable
         {
             command.CommandText = """
                 SELECT id, scope_id, name, created_at, updated_at,
-                       refresh_command, refresh_cwd, refresh_prompt
+                       refresh_command, refresh_cwd, refresh_prompt, revision
                 FROM graphs WHERE id = $id
                 """;
             command.Parameters.AddWithValue("$id", id);
@@ -454,7 +817,8 @@ public sealed class ActionGraphService : IDisposable
                     RefreshCwd = reader.IsDBNull(6) ? null : reader.GetString(6),
                     RefreshPrompt = reader.IsDBNull(7) ? null : reader.GetString(7),
                     CreatedAt = ReadTimestamp(reader.GetString(3)),
-                    UpdatedAt = ReadTimestamp(reader.GetString(4))
+                    UpdatedAt = ReadTimestamp(reader.GetString(4)),
+                    Revision = reader.GetInt32(8)
                 };
             }
         }
@@ -467,7 +831,8 @@ public sealed class ActionGraphService : IDisposable
         {
             command.CommandText = """
                 SELECT id, kind, title, state, html, x, y, width, color, url, path, host, project,
-                       session_id, external_ref, date, source, created_at, updated_at, revision, height
+                       session_id, external_ref, date, source, created_at, updated_at, revision, height,
+                       min_zoom, max_zoom, pinned, attention, hidden
                 FROM nodes WHERE graph_id = $g ORDER BY created_at
                 """;
             command.Parameters.AddWithValue("$g", id);
@@ -496,7 +861,12 @@ public sealed class ActionGraphService : IDisposable
                     CreatedAt = ReadTimestamp(reader.GetString(17)),
                     UpdatedAt = ReadTimestamp(reader.GetString(18)),
                     Revision = reader.GetInt32(19),
-                    Height = reader.IsDBNull(20) ? null : reader.GetDouble(20)
+                    Height = reader.IsDBNull(20) ? null : reader.GetDouble(20),
+                    MinZoom = reader.IsDBNull(21) ? null : reader.GetDouble(21),
+                    MaxZoom = reader.IsDBNull(22) ? null : reader.GetDouble(22),
+                    Pinned = reader.GetInt32(23) != 0,
+                    Attention = reader.GetInt32(24) != 0,
+                    Hidden = reader.GetInt32(25) != 0
                 });
             }
         }
@@ -505,7 +875,7 @@ public sealed class ActionGraphService : IDisposable
         using (var command = _connection.CreateCommand())
         {
             command.CommandText = """
-                SELECT node_id, id, label, cwd, profile, prompt, session_name, slash_commands
+                SELECT node_id, id, label, cwd, command, profile, prompt, session_name, slash_commands
                 FROM node_actions WHERE graph_id = $g ORDER BY node_id, ord
                 """;
             command.Parameters.AddWithValue("$g", id);
@@ -523,10 +893,11 @@ public sealed class ActionGraphService : IDisposable
                     Id = reader.GetString(1),
                     Label = reader.GetString(2),
                     Cwd = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    Profile = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    Prompt = reader.IsDBNull(5) ? null : reader.GetString(5),
-                    SessionName = reader.IsDBNull(6) ? null : reader.GetString(6),
-                    SlashCommands = DeserializeSlashCommands(reader.GetString(7))
+                    Command = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    Profile = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    Prompt = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    SessionName = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    SlashCommands = DeserializeSlashCommands(reader.GetString(8))
                 });
             }
         }
@@ -538,10 +909,55 @@ public sealed class ActionGraphService : IDisposable
             }
         }
 
+        var sessionsByNode = new Dictionary<string, List<ActionGraphSessionBinding>>(StringComparer.Ordinal);
         using (var command = _connection.CreateCommand())
         {
             command.CommandText = """
-                SELECT id, from_id, to_id, label, kind, created_at
+                SELECT node_id, session_id, role, created_at
+                FROM node_sessions WHERE graph_id = $g ORDER BY node_id, created_at
+                """;
+            command.Parameters.AddWithValue("$g", id);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var nodeId = reader.GetString(0);
+                if (!sessionsByNode.TryGetValue(nodeId, out var sessions))
+                {
+                    sessions = [];
+                    sessionsByNode[nodeId] = sessions;
+                }
+                sessions.Add(new ActionGraphSessionBinding
+                {
+                    SessionId = reader.GetString(1),
+                    Role = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    CreatedAt = ReadTimestamp(reader.GetString(3))
+                });
+            }
+        }
+        foreach (var node in graph.Nodes)
+        {
+            if (sessionsByNode.TryGetValue(node.Id, out var sessions))
+            {
+                node.Sessions = sessions;
+            }
+            else if (!string.IsNullOrWhiteSpace(node.SessionId))
+            {
+                node.Sessions =
+                [
+                    new ActionGraphSessionBinding
+                    {
+                        SessionId = node.SessionId,
+                        Role = "legacy",
+                        CreatedAt = node.UpdatedAt
+                    }
+                ];
+            }
+        }
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT id, from_id, to_id, label, kind, created_at, revision
                 FROM edges WHERE graph_id = $g ORDER BY created_at
                 """;
             command.Parameters.AddWithValue("$g", id);
@@ -555,7 +971,8 @@ public sealed class ActionGraphService : IDisposable
                     ToId = reader.GetString(2),
                     Label = reader.IsDBNull(3) ? null : reader.GetString(3),
                     Kind = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    CreatedAt = ReadTimestamp(reader.GetString(5))
+                    CreatedAt = ReadTimestamp(reader.GetString(5)),
+                    Revision = reader.GetInt32(6)
                 });
             }
         }
@@ -573,14 +990,14 @@ public sealed class ActionGraphService : IDisposable
             if (name is not null)
             {
                 Execute(
-                    "UPDATE graphs SET name = $name, updated_at = $now WHERE id = $id",
+                    "UPDATE graphs SET name = $name, updated_at = $now, revision = revision + 1 WHERE id = $id",
                     ("$name", Required(name, MaxTitleLength, nameof(name))), ("$now", now), ("$id", id));
             }
             if (normalizedScope is not null)
             {
                 EnsureScopeExistsLocked(normalizedScope);
                 Execute(
-                    "UPDATE graphs SET scope_id = $scope, updated_at = $now WHERE id = $id",
+                    "UPDATE graphs SET scope_id = $scope, updated_at = $now, revision = revision + 1 WHERE id = $id",
                     ("$scope", normalizedScope), ("$now", now), ("$id", id));
             }
             return id;
@@ -616,15 +1033,22 @@ public sealed class ActionGraphService : IDisposable
     {
         Execute(
             """
-            INSERT INTO nodes(graph_id, id, kind, title, state, html, x, y, width, height, color, url, path, host,
-                              project, session_id, external_ref, date, source, created_at, updated_at, revision)
-            VALUES($g, $id, $kind, $title, $state, $html, $x, $y, $width, $height, $color, $url, $path, $host,
-                   $project, $sessionId, $externalRef, $date, $source, $createdAt, $updatedAt, $revision)
+            INSERT INTO nodes(graph_id, id, kind, title, state, html, x, y, width, height, min_zoom, max_zoom,
+                              pinned, attention, hidden, color, url, path, host, project, session_id, external_ref, date, source,
+                              created_at, updated_at, revision)
+            VALUES($g, $id, $kind, $title, $state, $html, $x, $y, $width, $height, $minZoom, $maxZoom,
+                   $pinned, $attention, $hidden, $color, $url, $path, $host, $project, $sessionId, $externalRef, $date, $source,
+                   $createdAt, $updatedAt, $revision)
             """,
             ("$g", graphId), ("$id", node.Id), ("$kind", node.Kind), ("$title", node.Title),
             ("$state", (object?)node.State ?? DBNull.Value), ("$html", (object?)node.Html ?? DBNull.Value),
             ("$x", node.X), ("$y", node.Y), ("$width", (object?)node.Width ?? DBNull.Value),
             ("$height", (object?)node.Height ?? DBNull.Value),
+            ("$minZoom", (object?)node.MinZoom ?? DBNull.Value),
+            ("$maxZoom", (object?)node.MaxZoom ?? DBNull.Value),
+            ("$pinned", node.Pinned ? 1 : 0),
+            ("$attention", node.Attention ? 1 : 0),
+            ("$hidden", node.Hidden ? 1 : 0),
             ("$color", (object?)node.Color ?? DBNull.Value), ("$url", (object?)node.Url ?? DBNull.Value),
             ("$path", (object?)node.Path ?? DBNull.Value), ("$host", (object?)node.Host ?? DBNull.Value),
             ("$project", (object?)node.Project ?? DBNull.Value),
@@ -641,11 +1065,12 @@ public sealed class ActionGraphService : IDisposable
         {
             Execute(
                 """
-                INSERT INTO node_actions(graph_id, node_id, id, ord, label, cwd, profile, prompt, session_name, slash_commands)
-                VALUES($g, $n, $id, $ord, $label, $cwd, $profile, $prompt, $sessionName, $slash)
+                INSERT INTO node_actions(graph_id, node_id, id, ord, label, cwd, command, profile, prompt, session_name, slash_commands)
+                VALUES($g, $n, $id, $ord, $label, $cwd, $command, $profile, $prompt, $sessionName, $slash)
                 """,
                 ("$g", graphId), ("$n", node.Id), ("$id", action.Id), ("$ord", ord++),
                 ("$label", action.Label), ("$cwd", (object?)action.Cwd ?? DBNull.Value),
+                ("$command", (object?)action.Command ?? DBNull.Value),
                 ("$profile", (object?)action.Profile ?? DBNull.Value),
                 ("$prompt", (object?)action.Prompt ?? DBNull.Value),
                 ("$sessionName", (object?)action.SessionName ?? DBNull.Value),
@@ -655,13 +1080,170 @@ public sealed class ActionGraphService : IDisposable
 
     private ActionGraphNode? ReadNodeLocked(string graphId, string nodeId)
     {
-        var graph = GetGraphLocked(graphId);
-        return graph?.Nodes.FirstOrDefault(node => string.Equals(node.Id, nodeId, StringComparison.Ordinal));
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, kind, title, state, html, x, y, width, height, min_zoom, max_zoom, pinned,
+                   color, url, path, host, project, session_id, external_ref, date, source,
+                   created_at, updated_at, revision, attention, hidden
+            FROM nodes WHERE graph_id = $g AND id = $n
+            """;
+        command.Parameters.AddWithValue("$g", graphId);
+        command.Parameters.AddWithValue("$n", nodeId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+        var node = new ActionGraphNode
+        {
+            Id = reader.GetString(0),
+            Kind = reader.GetString(1),
+            Title = reader.GetString(2),
+            State = reader.IsDBNull(3) ? null : reader.GetString(3),
+            Html = reader.IsDBNull(4) ? null : reader.GetString(4),
+            X = reader.GetDouble(5),
+            Y = reader.GetDouble(6),
+            Width = reader.IsDBNull(7) ? null : reader.GetDouble(7),
+            Height = reader.IsDBNull(8) ? null : reader.GetDouble(8),
+            MinZoom = reader.IsDBNull(9) ? null : reader.GetDouble(9),
+            MaxZoom = reader.IsDBNull(10) ? null : reader.GetDouble(10),
+            Pinned = reader.GetInt32(11) != 0,
+            Color = reader.IsDBNull(12) ? null : reader.GetString(12),
+            Url = reader.IsDBNull(13) ? null : reader.GetString(13),
+            Path = reader.IsDBNull(14) ? null : reader.GetString(14),
+            Host = reader.IsDBNull(15) ? null : reader.GetString(15),
+            Project = reader.IsDBNull(16) ? null : reader.GetString(16),
+            SessionId = reader.IsDBNull(17) ? null : reader.GetString(17),
+            ExternalRef = reader.IsDBNull(18) ? null : reader.GetString(18),
+            Date = reader.IsDBNull(19) ? null : ReadTimestamp(reader.GetString(19)),
+            Source = reader.GetString(20),
+            CreatedAt = ReadTimestamp(reader.GetString(21)),
+            UpdatedAt = ReadTimestamp(reader.GetString(22)),
+            Revision = reader.GetInt32(23),
+            Attention = reader.GetInt32(24) != 0,
+            Hidden = reader.GetInt32(25) != 0
+        };
+        reader.Close();
+        PopulateNodeActionsLocked(graphId, node);
+        PopulateNodeSessionsLocked(graphId, node);
+        return node;
     }
+
+    private void PopulateNodeActionsLocked(string graphId, ActionGraphNode node)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, label, cwd, command, profile, prompt, session_name, slash_commands
+            FROM node_actions
+            WHERE graph_id = $g AND node_id = $n
+            ORDER BY ord
+            """;
+        command.Parameters.AddWithValue("$g", graphId);
+        command.Parameters.AddWithValue("$n", node.Id);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            node.Actions.Add(new ActionGraphNodeAction
+            {
+                Id = reader.GetString(0),
+                Label = reader.GetString(1),
+                Cwd = reader.IsDBNull(2) ? null : reader.GetString(2),
+                Command = reader.IsDBNull(3) ? null : reader.GetString(3),
+                Profile = reader.IsDBNull(4) ? null : reader.GetString(4),
+                Prompt = reader.IsDBNull(5) ? null : reader.GetString(5),
+                SessionName = reader.IsDBNull(6) ? null : reader.GetString(6),
+                SlashCommands = DeserializeSlashCommands(reader.GetString(7))
+            });
+        }
+    }
+
+    private void PopulateNodeSessionsLocked(string graphId, ActionGraphNode node)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT session_id, role, created_at
+            FROM node_sessions
+            WHERE graph_id = $g AND node_id = $n
+            ORDER BY created_at
+            """;
+        command.Parameters.AddWithValue("$g", graphId);
+        command.Parameters.AddWithValue("$n", node.Id);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            node.Sessions.Add(new ActionGraphSessionBinding
+            {
+                SessionId = reader.GetString(0),
+                Role = reader.IsDBNull(1) ? null : reader.GetString(1),
+                CreatedAt = ReadTimestamp(reader.GetString(2))
+            });
+        }
+        if (node.Sessions.Count == 0 && !string.IsNullOrWhiteSpace(node.SessionId))
+        {
+            node.Sessions.Add(new ActionGraphSessionBinding
+            {
+                SessionId = node.SessionId,
+                Role = "legacy",
+                CreatedAt = node.UpdatedAt
+            });
+        }
+    }
+
+    private void CheckGraphRevisionLocked(string? graphId, int? expectedRevision)
+    {
+        if (expectedRevision is null || string.IsNullOrWhiteSpace(graphId))
+        {
+            return;
+        }
+        var id = ValidId(graphId, nameof(graphId));
+        var current = Scalar("SELECT revision FROM graphs WHERE id = $id", ("$id", id));
+        if (current == 0)
+        {
+            throw new ArgumentException($"Graph '{id}' does not exist.");
+        }
+        CheckRevision($"graph '{id}'", expectedRevision, checked((int)current));
+    }
+
+    private static void CheckRevision(string entity, int? expectedRevision, int currentRevision)
+    {
+        if (expectedRevision is not null && expectedRevision.Value != currentRevision)
+        {
+            throw new ActionGraphConflictException(entity, expectedRevision.Value, currentRevision);
+        }
+    }
+
+    private static double? NormalizedZoom(double? value, string field)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+        if (!double.IsFinite(value.Value) || value.Value is < 0.02 or > 8)
+        {
+            throw new ArgumentException($"{field} must be a finite value between 0.02 and 8.");
+        }
+        return value.Value;
+    }
+
+    private static void ValidateZoomRange(double? minZoom, double? maxZoom)
+    {
+        if (minZoom is not null && maxZoom is not null && minZoom.Value > maxZoom.Value)
+        {
+            throw new ArgumentException("minZoom cannot be greater than maxZoom.");
+        }
+    }
+
+    private static double NodeWidth(ActionGraphNode node) =>
+        node.Width ?? (node.Kind == ActionGraphNodeKinds.Frame ? 360 : 224);
+
+    private static double NodeHeight(ActionGraphNode node) =>
+        node.Height ?? (node.Kind == ActionGraphNodeKinds.Frame ? 240 : 92);
 
     private void TouchGraphLocked(string graphId, string now)
     {
-        Execute("UPDATE graphs SET updated_at = $now WHERE id = $id", ("$now", now), ("$id", graphId));
+        Execute(
+            "UPDATE graphs SET updated_at = $now, revision = revision + 1 WHERE id = $id",
+            ("$now", now), ("$id", graphId));
     }
 
     private void CreateSchema()
@@ -672,32 +1254,47 @@ public sealed class ActionGraphService : IDisposable
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS graphs(
                 id TEXT PRIMARY KEY, scope_id TEXT NOT NULL DEFAULT 'default',
-                name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1);
             CREATE TABLE IF NOT EXISTS nodes(
                 graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
                 state TEXT NULL, html TEXT NULL, x REAL NOT NULL, y REAL NOT NULL, width REAL NULL,
-                height REAL NULL,
+                height REAL NULL, min_zoom REAL NULL, max_zoom REAL NULL, pinned INTEGER NOT NULL DEFAULT 0,
+                attention INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0,
                 color TEXT NULL, url TEXT NULL, path TEXT NULL, host TEXT NULL, project TEXT NULL,
                 session_id TEXT NULL, external_ref TEXT NULL, date TEXT NULL, source TEXT NOT NULL,
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL, revision INTEGER NOT NULL,
                 PRIMARY KEY(graph_id, id));
             CREATE TABLE IF NOT EXISTS node_actions(
                 graph_id TEXT NOT NULL, node_id TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL,
-                label TEXT NOT NULL, cwd TEXT NULL, profile TEXT NULL, prompt TEXT NULL,
+                label TEXT NOT NULL, cwd TEXT NULL, command TEXT NULL, profile TEXT NULL, prompt TEXT NULL,
                 session_name TEXT NULL, slash_commands TEXT NOT NULL,
                 PRIMARY KEY(graph_id, node_id, id));
+            CREATE TABLE IF NOT EXISTS node_sessions(
+                graph_id TEXT NOT NULL, node_id TEXT NOT NULL, session_id TEXT NOT NULL,
+                role TEXT NULL, created_at TEXT NOT NULL,
+                PRIMARY KEY(graph_id, node_id, session_id));
             CREATE TABLE IF NOT EXISTS edges(
                 graph_id TEXT NOT NULL, id TEXT NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL,
                 label TEXT NULL, kind TEXT NULL, created_at TEXT NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY(graph_id, id));
             """);
         Execute(
             "INSERT OR IGNORE INTO scopes(id, name, created_at) VALUES('default', 'Default', $now)",
             ("$now", Now()));
         EnsureColumnLocked("nodes", "height", "REAL NULL");
+        EnsureColumnLocked("nodes", "min_zoom", "REAL NULL");
+        EnsureColumnLocked("nodes", "max_zoom", "REAL NULL");
+        EnsureColumnLocked("nodes", "pinned", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumnLocked("nodes", "attention", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumnLocked("nodes", "hidden", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumnLocked("graphs", "revision", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumnLocked("graphs", "refresh_command", "TEXT NULL");
         EnsureColumnLocked("graphs", "refresh_cwd", "TEXT NULL");
         EnsureColumnLocked("graphs", "refresh_prompt", "TEXT NULL");
+        EnsureColumnLocked("node_actions", "command", "TEXT NULL");
+        EnsureColumnLocked("edges", "revision", "INTEGER NOT NULL DEFAULT 1");
     }
 
     /// <summary>Persist the graph's refresh spec; only fields present in the request change, empty strings clear.</summary>
@@ -710,17 +1307,17 @@ public sealed class ActionGraphService : IDisposable
         var now = Now();
         if (request.RefreshCommand is not null)
         {
-            Execute("UPDATE graphs SET refresh_command = $v, updated_at = $now WHERE id = $id",
+            Execute("UPDATE graphs SET refresh_command = $v, updated_at = $now, revision = revision + 1 WHERE id = $id",
                 ("$v", (object?)Optional(request.RefreshCommand, 512) ?? DBNull.Value), ("$now", now), ("$id", graphId));
         }
         if (request.RefreshCwd is not null)
         {
-            Execute("UPDATE graphs SET refresh_cwd = $v, updated_at = $now WHERE id = $id",
+            Execute("UPDATE graphs SET refresh_cwd = $v, updated_at = $now, revision = revision + 1 WHERE id = $id",
                 ("$v", (object?)Optional(request.RefreshCwd, MaxReferenceLength) ?? DBNull.Value), ("$now", now), ("$id", graphId));
         }
         if (request.RefreshPrompt is not null)
         {
-            Execute("UPDATE graphs SET refresh_prompt = $v, updated_at = $now WHERE id = $id",
+            Execute("UPDATE graphs SET refresh_prompt = $v, updated_at = $now, revision = revision + 1 WHERE id = $id",
                 ("$v", (object?)Optional(request.RefreshPrompt, MaxPromptLength) ?? DBNull.Value), ("$now", now), ("$id", graphId));
         }
     }
@@ -819,6 +1416,7 @@ public sealed class ActionGraphService : IDisposable
                 Id = string.IsNullOrWhiteSpace(action.Id) ? NewId() : ValidId(action.Id, "actionId"),
                 Label = Required(action.Label, MaxLabelLength, "action label"),
                 Cwd = Optional(action.Cwd, MaxReferenceLength),
+                Command = Optional(action.Command, 512),
                 Profile = Optional(action.Profile, 64),
                 Prompt = Optional(action.Prompt, MaxPromptLength),
                 SessionName = Optional(action.SessionName, MaxTitleLength),

@@ -492,6 +492,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("## Graph boards", agents, StringComparison.Ordinal);
         Assert.Contains("mtg_node_add", agents, StringComparison.Ordinal);
         Assert.Contains("mtg_edge_add", agents, StringComparison.Ordinal);
+        Assert.Contains("mtg_context", agents, StringComparison.Ordinal);
+        Assert.Contains("Every executable graph leaf", agents, StringComparison.Ordinal);
+        Assert.Contains("optimistic", agents, StringComparison.Ordinal);
         Assert.Contains(". .tlbx/tlbx_graphs.ps1", agents, StringComparison.Ordinal);
         Assert.Contains("never secret values", agents, StringComparison.Ordinal);
         Assert.Contains("mt_apply_update", agents, StringComparison.Ordinal);
@@ -556,12 +559,19 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mtg_node_set()", shell, StringComparison.Ordinal);
         Assert.Contains("mtg_move()", shell, StringComparison.Ordinal);
         Assert.Contains("mtg_edge_add()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_context()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_session_bind()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_organize()", shell, StringComparison.Ordinal);
+        Assert.Contains("expectedGraphRevision", shell, StringComparison.Ordinal);
         Assert.Contains("/api/graphs", shell, StringComparison.Ordinal);
         Assert.Contains("Authorization: Bearer $MT_API_KEY", shell, StringComparison.Ordinal);
 
         Assert.Contains("function Mtg-Graphs", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mtg-NodeAdd", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mtg-Move", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-Context", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-SessionBind", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-Help", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mtg_node_add -Value Mtg-NodeAdd", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mtg_edge_rm -Value Mtg-EdgeRm", powershell, StringComparison.Ordinal);
         Assert.Contains("/api/graphs", powershell, StringComparison.Ordinal);

@@ -1040,5 +1040,18 @@
   "actionGraphs.refreshCommand": "エージェントコマンド（例: claude）",
   "actionGraphs.refreshCwd": "作業ディレクトリ",
   "actionGraphs.refreshPrompt": "プロンプト",
-  "actionGraphs.refreshSave": "保存"
+  "actionGraphs.refreshSave": "保存",
+  "actionGraphs.fieldMinZoom": "表示開始ズーム",
+  "actionGraphs.fieldMaxZoom": "表示終了ズーム",
+  "actionGraphs.fieldPinned": "整列時に位置を維持",
+  "actionGraphs.actionCommand": "ターミナルコマンド",
+  "actionGraphs.actionProfile": "レガシープロファイル",
+  "actionGraphs.revision": "リビジョン",
+  "actionGraphs.openSession": "ターミナルセッションを開く",
+  "actionGraphs.organize": "整列",
+  "actionGraphs.search": "すべて検索",
+  "actionGraphs.fieldAttention": "要注意",
+  "actionGraphs.fieldHidden": "作業ビューから非表示",
+  "actionGraphs.attention": "要注意",
+  "actionGraphs.hidden": "非表示"
 }

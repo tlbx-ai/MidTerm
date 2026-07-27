@@ -1040,5 +1040,18 @@
   "actionGraphs.refreshCommand": "代理命令（如 claude）",
   "actionGraphs.refreshCwd": "工作目录",
   "actionGraphs.refreshPrompt": "提示词",
-  "actionGraphs.refreshSave": "保存"
+  "actionGraphs.refreshSave": "保存",
+  "actionGraphs.fieldMinZoom": "从此缩放级别显示",
+  "actionGraphs.fieldMaxZoom": "显示到此缩放级别",
+  "actionGraphs.fieldPinned": "整理时保持位置",
+  "actionGraphs.actionCommand": "终端命令",
+  "actionGraphs.actionProfile": "旧版配置提示",
+  "actionGraphs.revision": "修订版",
+  "actionGraphs.openSession": "打开终端会话",
+  "actionGraphs.organize": "自动排列",
+  "actionGraphs.search": "搜索全部",
+  "actionGraphs.fieldAttention": "需要关注",
+  "actionGraphs.fieldHidden": "从工作视图隐藏",
+  "actionGraphs.attention": "待关注",
+  "actionGraphs.hidden": "已隐藏"
 }

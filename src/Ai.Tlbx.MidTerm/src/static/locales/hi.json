@@ -1040,5 +1040,18 @@
   "actionGraphs.refreshCommand": "एजेंट कमांड (जैसे claude)",
   "actionGraphs.refreshCwd": "कार्य निर्देशिका",
   "actionGraphs.refreshPrompt": "प्रॉम्प्ट",
-  "actionGraphs.refreshSave": "सहेजें"
+  "actionGraphs.refreshSave": "सहेजें",
+  "actionGraphs.fieldMinZoom": "इस ज़ूम से दिखाई दे",
+  "actionGraphs.fieldMaxZoom": "इस ज़ूम तक दिखाई दे",
+  "actionGraphs.fieldPinned": "व्यवस्थित करते समय स्थान रखें",
+  "actionGraphs.actionCommand": "टर्मिनल कमांड",
+  "actionGraphs.actionProfile": "पुराना प्रोफ़ाइल संकेत",
+  "actionGraphs.revision": "संशोधन",
+  "actionGraphs.openSession": "टर्मिनल सत्र खोलें",
+  "actionGraphs.organize": "व्यवस्थित करें",
+  "actionGraphs.search": "सब कुछ खोजें",
+  "actionGraphs.fieldAttention": "ध्यान चाहिए",
+  "actionGraphs.fieldHidden": "कार्य दृश्य से छिपाएँ",
+  "actionGraphs.attention": "ध्यान",
+  "actionGraphs.hidden": "छिपे"
 }
