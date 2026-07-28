@@ -33,6 +33,8 @@ import {
 } from './graphApi';
 import { renderNodeEditor } from './nodeEditor';
 import { graphBounds, nodeSearchText, nodeSize } from './graphGeometry';
+import { renderGraphEdges } from './edgeRenderer';
+import { createInteractionRenderScheduler } from './viewportRenderScheduler';
 
 interface ActionGraphsViewOptions {
   onSelectSession: (sessionId: string) => void;
@@ -81,6 +83,12 @@ let searchQuery = '';
 let visibleNodeIds = new Set<string>();
 let showHidden = false;
 let attentionCursor = 0;
+let edgeRenderKey = '';
+const interactionRenderer = createInteractionRenderScheduler(
+  window,
+  commitStageTransform,
+  scheduleViewportRender,
+);
 
 export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void {
   options = nextOptions;
@@ -183,6 +191,7 @@ export function closeActionGraphsView(): void {
   const searchInput = document.getElementById('ag-search') as HTMLInputElement | null;
   if (searchInput) searchInput.value = '';
   visibleNodeIds.clear();
+  edgeRenderKey = '';
   nodesHost?.replaceChildren();
   edgesSvg?.replaceChildren();
   detailPanel?.replaceChildren();
@@ -447,6 +456,7 @@ function renderGraph(): void {
     nodesHost.replaceChildren();
     edgesSvg.replaceChildren();
     visibleNodeIds.clear();
+    edgeRenderKey = '';
     updateGraphStats(0);
     drawMinimap();
     renderDetail();
@@ -512,6 +522,18 @@ function patchNodeCard(
   runningSessions: Set<string>,
 ): void {
   const isFrame = node.kind === 'frame';
+  const runningKey = sessionIds(node)
+    .filter((id) => runningSessions.has(id))
+    .sort()
+    .join(',');
+  const renderKey = [
+    node.revision,
+    node.id === selectedNodeId ? 1 : 0,
+    zoom < COMPACT_ZOOM && !isFrame ? 1 : 0,
+    runningKey,
+  ].join(':');
+  if (card.dataset.renderKey === renderKey) return;
+  card.dataset.renderKey = renderKey;
   ensureNodeCardShape(card, isFrame);
   card.dataset.nodeId = node.id;
   card.dataset.kind = node.kind;
@@ -606,106 +628,17 @@ function patchLeafCard(
   }
 }
 
-interface EdgeRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-/** Anchor the edge on the facing card sides so curves flow between cards instead of piercing them. */
-function edgeEndpoints(
-  from: EdgeRect,
-  to: EdgeRect,
-): { x1: number; y1: number; x2: number; y2: number; horizontal: boolean } {
-  const fromCx = from.left + from.width / 2;
-  const fromCy = from.top + from.height / 2;
-  const toCx = to.left + to.width / 2;
-  const toCy = to.top + to.height / 2;
-  if (Math.abs(toCx - fromCx) >= Math.abs(toCy - fromCy)) {
-    const fromRight = toCx >= fromCx;
-    return {
-      x1: fromRight ? from.left + from.width : from.left,
-      y1: fromCy,
-      x2: fromRight ? to.left : to.left + to.width,
-      y2: toCy,
-      horizontal: true,
-    };
-  }
-  const fromBelow = toCy >= fromCy;
-  return {
-    x1: fromCx,
-    y1: fromBelow ? from.top + from.height : from.top,
-    x2: toCx,
-    y2: fromBelow ? to.top : to.top + to.height,
-    horizontal: false,
-  };
-}
-
-function buildArrowMarker(): SVGElement {
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-  marker.setAttribute('id', 'ag-arrow');
-  marker.setAttribute('viewBox', '0 0 10 10');
-  marker.setAttribute('refX', '9');
-  marker.setAttribute('refY', '5');
-  marker.setAttribute('markerWidth', '6');
-  marker.setAttribute('markerHeight', '6');
-  marker.setAttribute('orient', 'auto-start-reverse');
-  const tip = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  tip.setAttribute('d', 'M 0 1 L 9 5 L 0 9 z');
-  tip.setAttribute('class', 'ag-edge-arrow');
-  marker.appendChild(tip);
-  defs.appendChild(marker);
-  return defs;
-}
-
 function renderEdges(graph: ActionGraph): void {
   if (!edgesSvg || !nodesHost) return;
-  edgesSvg.replaceChildren();
-  const rects = new Map<string, EdgeRect>();
-  for (const element of nodesHost.querySelectorAll<HTMLElement>('.ag-node')) {
-    const nodeId = element.dataset.nodeId;
-    if (!nodeId) continue;
-    rects.set(nodeId, {
-      left: element.offsetLeft,
-      top: element.offsetTop,
-      width: element.offsetWidth,
-      height: element.offsetHeight,
-    });
-  }
-
-  edgesSvg.appendChild(buildArrowMarker());
-
-  let renderedEdges = 0;
-  for (const edge of graph.edges) {
-    if (renderedEdges >= MAX_VISIBLE_EDGES) break;
-    if (!visibleNodeIds.has(edge.fromId) || !visibleNodeIds.has(edge.toId)) continue;
-    const from = rects.get(edge.fromId);
-    const to = rects.get(edge.toId);
-    if (!from || !to) continue;
-    renderedEdges++;
-
-    const { x1, y1, x2, y2, horizontal } = edgeEndpoints(from, to);
-    const bend = Math.max(36, (horizontal ? Math.abs(x2 - x1) : Math.abs(y2 - y1)) / 2);
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    const controls = horizontal
-      ? `${x1 + Math.sign(x2 - x1) * bend} ${y1}, ${x2 - Math.sign(x2 - x1) * bend} ${y2}`
-      : `${x1} ${y1 + Math.sign(y2 - y1) * bend}, ${x2} ${y2 - Math.sign(y2 - y1) * bend}`;
-    path.setAttribute('d', `M ${x1} ${y1} C ${controls}, ${x2} ${y2}`);
-    path.setAttribute('class', 'ag-edge');
-    path.setAttribute('marker-end', 'url(#ag-arrow)');
-    edgesSvg.appendChild(path);
-
-    if (edge.label) {
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', String((x1 + x2) / 2));
-      label.setAttribute('y', String((y1 + y2) / 2 - 5));
-      label.setAttribute('class', 'ag-edge-label');
-      label.textContent = edge.label;
-      edgesSvg.appendChild(label);
-    }
-  }
+  edgeRenderKey = renderGraphEdges({
+    edgesSvg,
+    nodesHost,
+    graph,
+    visibleNodeIds,
+    compact: zoom < COMPACT_ZOOM,
+    maxVisibleEdges: MAX_VISIBLE_EDGES,
+    previousRenderKey: edgeRenderKey,
+  });
 }
 
 function scheduleViewportRender(): void {
@@ -721,6 +654,7 @@ function cancelViewportRender(): void {
     window.cancelAnimationFrame(renderFrame);
     renderFrame = null;
   }
+  interactionRenderer.cancel();
 }
 
 function renderViewport(): void {
@@ -730,16 +664,16 @@ function renderViewport(): void {
   const centerX = (viewport.left + viewport.right) / 2;
   const centerY = (viewport.top + viewport.bottom) / 2;
   const matching = graph.nodes.filter((node) => nodeVisible(node, viewport));
-  matching.sort((a, b) => {
-    if (a.kind === 'frame' && b.kind !== 'frame') return -1;
-    if (b.kind === 'frame' && a.kind !== 'frame') return 1;
-    if (a.id === selectedNodeId) return -1;
-    if (b.id === selectedNodeId) return 1;
-    if (a.attention !== b.attention) return a.attention ? -1 : 1;
-    const aDistance = Math.abs(a.x - centerX) + Math.abs(a.y - centerY);
-    const bDistance = Math.abs(b.x - centerX) + Math.abs(b.y - centerY);
-    return aDistance - bDistance;
-  });
+  if (matching.length > MAX_VISIBLE_NODES) {
+    matching.sort((a, b) => {
+      if (a.id === selectedNodeId) return -1;
+      if (b.id === selectedNodeId) return 1;
+      if (a.attention !== b.attention) return a.attention ? -1 : 1;
+      const aDistance = Math.abs(a.x - centerX) + Math.abs(a.y - centerY);
+      const bDistance = Math.abs(b.x - centerX) + Math.abs(b.y - centerY);
+      return aDistance - bDistance;
+    });
+  }
   const visible = matching.slice(0, MAX_VISIBLE_NODES);
   visibleNodeIds = new Set(visible.map((node) => node.id));
 
@@ -909,12 +843,15 @@ function navigateFromMinimap(event: PointerEvent): void {
   applyStageTransform();
 }
 
-function applyStageTransform(): void {
+function commitStageTransform(): void {
   if (!stage || !canvas) return;
-  stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-  canvas.style.setProperty('--ag-grid-size', `${26 * zoom}px`);
-  canvas.style.setProperty('--ag-grid-x', `${panX}px`);
-  canvas.style.setProperty('--ag-grid-y', `${panY}px`);
+  stage.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
+  if (zoomHud) zoomHud.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function applyStageTransform(): void {
+  interactionRenderer.cancel();
+  commitStageTransform();
   scheduleViewportRender();
 }
 
@@ -965,10 +902,11 @@ function wireCanvasInteractions(): void {
     if (mode === 'pan') {
       panX = startPanX + deltaX;
       panY = startPanY + deltaY;
-      applyStageTransform();
+      interactionRenderer.schedule();
     } else if (dragNodeEl) {
       dragNodeEl.style.left = `${startNodeX + deltaX / zoom}px`;
       dragNodeEl.style.top = `${startNodeY + deltaY / zoom}px`;
+      edgeRenderKey = '';
       scheduleViewportRender();
     }
   });
@@ -1000,6 +938,9 @@ function wireCanvasInteractions(): void {
       } else if (!moved) {
         selectNode(dragNodeId);
       }
+    }
+    if (mode === 'pan') {
+      interactionRenderer.finish();
     }
     mode = 'none';
     dragNodeId = null;
@@ -1051,7 +992,7 @@ function wireCanvasInteractions(): void {
       panX = cursorX - ((cursorX - panX) / zoom) * nextZoom;
       panY = cursorY - ((cursorY - panY) / zoom) * nextZoom;
       zoom = nextZoom;
-      applyStageTransform();
+      interactionRenderer.schedule();
     },
     { passive: false },
   );

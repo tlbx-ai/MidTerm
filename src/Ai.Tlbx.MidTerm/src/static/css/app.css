@@ -19136,6 +19136,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   top: 0;
   left: 0;
   transform-origin: 0 0;
+  will-change: transform;
+  contain: layout style;
 }
 
 .action-graphs-edges {
