@@ -230,6 +230,7 @@ describe('fitSessionToScreen', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     sessionTerminals.clear();
     dom.terminalsArea = null;
     $sessions.set({});
@@ -313,6 +314,42 @@ describe('fitSessionToScreen', () => {
     scheduleForegroundResizeRecovery();
 
     expect(recoverTerminalRendererAfterForeground).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a timer and unlocks later recovery when foreground animation frames stall', () => {
+    vi.useFakeTimers();
+    const harness = createFitHarness();
+    harness.state.terminal.cols = 81;
+    harness.state.serverCols = 81;
+    sessionTerminals.set('s1', harness.state as never);
+    globalThis.requestAnimationFrame = vi.fn(() => 1) as typeof requestAnimationFrame;
+
+    scheduleForegroundResizeRecovery();
+    scheduleForegroundResizeRecovery();
+
+    expect(recoverTerminalRendererAfterForeground).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(250);
+
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(1);
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledWith('s1', harness.state, {
+      preferDomRenderer: true,
+    });
+
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    vi.advanceTimersByTime(100);
+
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(2);
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenLastCalledWith('s1', harness.state, {
+      preferDomRenderer: true,
+    });
+
+    scheduleForegroundResizeRecovery();
+
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(3);
   });
 
   it('coalesces repeated scaling requests for the same terminal into one animation frame', () => {

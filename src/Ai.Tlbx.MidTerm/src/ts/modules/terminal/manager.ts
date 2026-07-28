@@ -802,14 +802,27 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
 export function recoverTerminalRendererAfterForeground(
   sessionId: string,
   state: TerminalState,
+  options: { preferDomRenderer?: boolean } = {},
 ): void {
   if (!state.opened) {
     return;
   }
 
+  const settings = $currentSettings.get();
+  if (options.preferDomRenderer) {
+    // A foreground watchdog only reaches this path after animation frames
+    // stopped firing. Keep the terminal on xterm's DOM renderer for this
+    // recovery pass: recreating WebGL while the compositor is still waking
+    // can leave a healthy terminal buffer behind a permanently blank canvas.
+    detachWebglAddon(sessionId, state);
+    syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
+    syncTerminalRgbBackgroundTransparency(state, settings);
+    refreshTerminalRenderer(state);
+    return;
+  }
+
   refreshTerminalRenderer(state);
 
-  const settings = $currentSettings.get();
   if (!state.hasWebgl) {
     // A context lost while backgrounded (or denied at open) must come back as
     // soon as the terminal is in the foreground again.

@@ -1211,21 +1211,83 @@ function scheduleFooterReserveResize(): void {
 }
 
 let foregroundResizeRecoveryScheduled = false;
+let foregroundResizeRecoveryTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+let foregroundResizeRecoveryGeneration = 0;
+let foregroundResizeRecoveryRetryCount = 0;
+let foregroundResizeRecoveryUsedFallback = false;
+const FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS = 250;
+const FOREGROUND_RESIZE_RECOVERY_RETRY_MS = 100;
+const FOREGROUND_RESIZE_RECOVERY_MAX_RETRIES = 50;
+
+function runForegroundResizeRecoveryPass(): void {
+  ensureTerminalContainerResizeObserver();
+  sessionTerminals.forEach((state, sessionId) => {
+    if (!state.opened || !isTerminalVisible(state)) return;
+    if (foregroundResizeRecoveryUsedFallback) {
+      terminalManager.recoverTerminalRendererAfterForeground(sessionId, state, {
+        preferDomRenderer: true,
+      });
+    } else {
+      terminalManager.recoverTerminalRendererAfterForeground(sessionId, state);
+    }
+  });
+  periodicResizeCheck();
+}
+
+function finishForegroundResizeRecovery(generation: number): void {
+  if (!foregroundResizeRecoveryScheduled || generation !== foregroundResizeRecoveryGeneration) {
+    return;
+  }
+
+  foregroundResizeRecoveryScheduled = false;
+  foregroundResizeRecoveryRetryCount = 0;
+  if (foregroundResizeRecoveryTimeout !== null) {
+    globalThis.clearTimeout(foregroundResizeRecoveryTimeout);
+    foregroundResizeRecoveryTimeout = null;
+  }
+  runForegroundResizeRecoveryPass();
+}
+
+function requestForegroundResizeRecoveryFrame(generation: number): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      finishForegroundResizeRecovery(generation);
+    });
+  });
+}
+
+function retryForegroundResizeRecovery(generation: number): void {
+  if (!foregroundResizeRecoveryScheduled || generation !== foregroundResizeRecoveryGeneration) {
+    return;
+  }
+
+  if (foregroundResizeRecoveryRetryCount === 0) {
+    foregroundResizeRecoveryUsedFallback = true;
+    runForegroundResizeRecoveryPass();
+  }
+  foregroundResizeRecoveryRetryCount += 1;
+
+  if (foregroundResizeRecoveryRetryCount >= FOREGROUND_RESIZE_RECOVERY_MAX_RETRIES) {
+    finishForegroundResizeRecovery(generation);
+    return;
+  }
+
+  requestForegroundResizeRecoveryFrame(generation);
+  foregroundResizeRecoveryTimeout = globalThis.setTimeout(() => {
+    retryForegroundResizeRecovery(generation);
+  }, FOREGROUND_RESIZE_RECOVERY_RETRY_MS);
+}
 
 export function scheduleForegroundResizeRecovery(): void {
   if (foregroundResizeRecoveryScheduled) return;
   foregroundResizeRecoveryScheduled = true;
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      foregroundResizeRecoveryScheduled = false;
-      ensureTerminalContainerResizeObserver();
-      sessionTerminals.forEach((state, sessionId) => {
-        if (!state.opened || !isTerminalVisible(state)) return;
-        terminalManager.recoverTerminalRendererAfterForeground(sessionId, state);
-      });
-      periodicResizeCheck();
-    });
-  });
+  foregroundResizeRecoveryRetryCount = 0;
+  foregroundResizeRecoveryUsedFallback = false;
+  const generation = ++foregroundResizeRecoveryGeneration;
+  requestForegroundResizeRecoveryFrame(generation);
+  foregroundResizeRecoveryTimeout = globalThis.setTimeout(() => {
+    retryForegroundResizeRecovery(generation);
+  }, FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS);
 }
 
 /**
