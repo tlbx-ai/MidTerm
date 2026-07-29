@@ -421,7 +421,7 @@ try {
   const firstSession = page.locator(".session-item[data-session-id]").first();
   if ((await firstSession.count()) > 0) {
     await firstSession.click();
-    await page.waitForSelector(".xterm", { timeout: 15_000 });
+    await page.locator(".xterm:visible").first().waitFor({ timeout: 15_000 });
   }
   await installPageProbe(page);
   const client = await context.newCDPSession(page);
