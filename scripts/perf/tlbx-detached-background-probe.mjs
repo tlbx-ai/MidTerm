@@ -327,6 +327,32 @@ async function findPageTarget(port, targetId = null, timeoutMs = 15_000) {
   );
 }
 
+async function readPageVisibility(port, targetId) {
+  const target = await findPageTarget(port, targetId, 5000);
+  const pageClient = new CdpClient(target.webSocketDebuggerUrl);
+  await pageClient.ready;
+  const queriedAt = new Date().toISOString();
+  let evidence;
+  try {
+    const result = await pageClient.send("Runtime.evaluate", {
+      expression: `({
+        visibilityState: document.visibilityState,
+        hidden: document.hidden,
+        focus: document.hasFocus(),
+      })`,
+      returnByValue: true,
+    });
+    evidence = result.result.value;
+  } finally {
+    await pageClient.close();
+  }
+  return {
+    queriedAt,
+    detachedAt: new Date().toISOString(),
+    ...evidence,
+  };
+}
+
 async function evaluate(client, expression, options = {}) {
   const result = await client.send(
     "Runtime.evaluate",
@@ -948,6 +974,7 @@ let initialForegroundEvidence;
 let setupForegroundEvidence;
 let backgroundEvidence;
 let backgroundTargetEvidence;
+let backgroundVisibilityEvidence;
 let minimizeEvidence;
 let restoreEvidence;
 let reactivationForegroundEvidence;
@@ -1055,19 +1082,31 @@ try {
   await client.close();
   client = null;
 
-  setupForegroundEvidence = await setChromeWindowState(
-    backgroundMode === "tab" ? "restore" : "restore-then-minimize",
-    3000,
-  );
+  setupForegroundEvidence =
+    backgroundMode === "tab"
+      ? null
+      : await setChromeWindowState("restore-then-minimize", 3000);
   backgroundTargetEvidence =
     backgroundMode === "tab"
       ? await switchChromeTarget(chromePort, "background", pageTargetId)
       : null;
+  backgroundVisibilityEvidence =
+    backgroundMode === "tab"
+      ? await readPageVisibility(chromePort, pageTargetId)
+      : null;
+  if (
+    backgroundMode === "tab" &&
+    backgroundVisibilityEvidence?.hidden !== true
+  ) {
+    throw new Error(
+      `The tlbx target did not become hidden after the tab switch: ${JSON.stringify(backgroundVisibilityEvidence)}`,
+    );
+  }
   backgroundEvidence = backgroundTargetEvidence || setupForegroundEvidence;
-  minimizeEvidence = setupForegroundEvidence;
+  minimizeEvidence = setupForegroundEvidence || initialForegroundEvidence;
   hiddenStartedAt =
     backgroundTargetEvidence?.requestedAt ||
-    setupForegroundEvidence.minimizeRequestedAt ||
+    setupForegroundEvidence?.minimizeRequestedAt ||
     new Date().toISOString();
   console.log(
     `PHASE=background mode=${backgroundMode} durationMs=${backgroundMs} pid=${minimizeEvidence.pid}`,
@@ -1081,10 +1120,7 @@ try {
       pageTargetId,
       backgroundTargetEvidence?.targetId,
     );
-    reactivationForegroundEvidence = await setChromeWindowState(
-      "restore",
-      5000,
-    );
+    reactivationForegroundEvidence = restoreEvidence;
   } else {
     restoreEvidence = await setChromeWindowState("restore", 5000);
     reactivationForegroundEvidence = restoreEvidence;
@@ -1268,6 +1304,7 @@ const summary = {
   setupForegroundEvidence,
   backgroundEvidence,
   backgroundTargetEvidence,
+  backgroundVisibilityEvidence,
   minimizeEvidence,
   restoreEvidence,
   reactivationForegroundEvidence,
