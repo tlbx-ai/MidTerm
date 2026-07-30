@@ -3,14 +3,16 @@
  * window without Playwright's background-throttling overrides.
  *
  * The probe creates and removes a temporary terminal session, fully disconnects
- * CDP while Chrome is minimized, samples the complete Chrome process tree, and
- * writes summary.json plus optional Chrome trace artifacts.
+ * CDP while tlbx is on a genuine background tab or Chrome is minimized, samples
+ * the complete Chrome process tree, and writes summary.json plus optional Chrome
+ * trace artifacts.
  *
  * Key environment variables:
  *   TLBX_PERF_URL=https://localhost:2000/
  *   TLBX_COOKIE_HEADER="mm-session=..."
  *   TLBX_PROBE_BACKGROUND_MS=300000
  *   TLBX_PROBE_WARMUP_MS=30000
+ *   TLBX_PROBE_BACKGROUND_MODE=tab|minimize
  *   TLBX_PROBE_PROFILE_DIR=C:\path\to\dedicated-profile
  *   TLBX_PROBE_TRACE=true|false
  */
@@ -32,6 +34,12 @@ const processSampleMs = Number(
 const backgroundCommand = process.env.TLBX_PROBE_BACKGROUND_COMMAND || "";
 const expectedTerminalText = process.env.TLBX_PROBE_EXPECT_TERMINAL_TEXT || "";
 const traceEnabled = process.env.TLBX_PROBE_TRACE !== "false";
+const backgroundMode = process.env.TLBX_PROBE_BACKGROUND_MODE || "tab";
+if (!["tab", "minimize"].includes(backgroundMode)) {
+  throw new Error(
+    `TLBX_PROBE_BACKGROUND_MODE must be "tab" or "minimize", got ${backgroundMode}.`,
+  );
+}
 const chromeExecutable =
   process.env.TLBX_PROBE_CHROME_PATH ||
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
@@ -230,6 +238,53 @@ async function listTargets(port) {
     throw new Error(`Chrome target list failed: ${response.status}`);
   }
   return response.json();
+}
+
+async function switchChromeTarget(
+  port,
+  action,
+  originalTargetId,
+  closeTargetId = null,
+) {
+  const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+  if (!response.ok) {
+    throw new Error(`Chrome version target failed: ${response.status}`);
+  }
+  const version = await response.json();
+  if (!version.webSocketDebuggerUrl) {
+    throw new Error("Chrome did not expose a browser CDP endpoint.");
+  }
+
+  const browserClient = new CdpClient(version.webSocketDebuggerUrl);
+  await browserClient.ready;
+  const requestedAt = new Date().toISOString();
+  let targetId = originalTargetId;
+  let closedTargetId = null;
+  try {
+    if (action === "background") {
+      const created = await browserClient.send("Target.createTarget", {
+        url: "about:blank",
+        background: false,
+      });
+      targetId = created.targetId;
+    }
+    await browserClient.send("Target.activateTarget", { targetId });
+    if (closeTargetId && closeTargetId !== targetId) {
+      const closed = await browserClient.send("Target.closeTarget", {
+        targetId: closeTargetId,
+      });
+      if (closed.success !== false) closedTargetId = closeTargetId;
+    }
+  } finally {
+    await browserClient.close();
+  }
+  return {
+    action,
+    requestedAt,
+    detachedAt: new Date().toISOString(),
+    targetId,
+    closedTargetId,
+  };
 }
 
 async function closeChromeGracefully(port, chromeProcess) {
@@ -888,7 +943,11 @@ let pageTargetId;
 let createdSessionId;
 let hiddenStartedAt;
 let hiddenEndedAt;
+let initialTargetEvidence;
+let initialForegroundEvidence;
 let setupForegroundEvidence;
+let backgroundEvidence;
+let backgroundTargetEvidence;
 let minimizeEvidence;
 let restoreEvidence;
 let reactivationForegroundEvidence;
@@ -925,6 +984,11 @@ try {
   );
   const pageTarget = await findPageTarget(chromePort, bootTarget?.id);
   pageTargetId = pageTarget.id;
+  initialTargetEvidence = await switchChromeTarget(
+    chromePort,
+    "foreground",
+    pageTargetId,
+  );
   client = new CdpClient(pageTarget.webSocketDebuggerUrl);
   await client.ready;
   await Promise.all([
@@ -946,6 +1010,13 @@ try {
     client,
     "Boolean(document.querySelector('.terminal-page'))",
     30_000,
+  );
+  await client.send("Page.bringToFront");
+  initialForegroundEvidence = await setChromeWindowState("restore", 3000);
+  await waitForExpression(
+    client,
+    "document.visibilityState === 'visible' && !document.hidden",
+    10_000,
   );
   createdSessionId = (
     await api("/api/sessions", {
@@ -985,18 +1056,39 @@ try {
   client = null;
 
   setupForegroundEvidence = await setChromeWindowState(
-    "restore-then-minimize",
+    backgroundMode === "tab" ? "restore" : "restore-then-minimize",
     3000,
   );
+  backgroundTargetEvidence =
+    backgroundMode === "tab"
+      ? await switchChromeTarget(chromePort, "background", pageTargetId)
+      : null;
+  backgroundEvidence = backgroundTargetEvidence || setupForegroundEvidence;
   minimizeEvidence = setupForegroundEvidence;
   hiddenStartedAt =
-    setupForegroundEvidence.minimizeRequestedAt || new Date().toISOString();
+    backgroundTargetEvidence?.requestedAt ||
+    setupForegroundEvidence.minimizeRequestedAt ||
+    new Date().toISOString();
   console.log(
-    `PHASE=background durationMs=${backgroundMs} pid=${minimizeEvidence.pid}`,
+    `PHASE=background mode=${backgroundMode} durationMs=${backgroundMs} pid=${minimizeEvidence.pid}`,
   );
   await new Promise((resolve) => setTimeout(resolve, backgroundMs));
   hiddenEndedAt = new Date().toISOString();
-  restoreEvidence = await setChromeWindowState("restore", 5000);
+  if (backgroundMode === "tab") {
+    restoreEvidence = await switchChromeTarget(
+      chromePort,
+      "foreground",
+      pageTargetId,
+      backgroundTargetEvidence?.targetId,
+    );
+    reactivationForegroundEvidence = await setChromeWindowState(
+      "restore",
+      5000,
+    );
+  } else {
+    restoreEvidence = await setChromeWindowState("restore", 5000);
+    reactivationForegroundEvidence = restoreEvidence;
+  }
   console.log("PHASE=reactivation");
 
   const reactivatedTarget = await findPageTarget(
@@ -1010,7 +1102,6 @@ try {
     client.send("Page.enable"),
     client.send("Runtime.enable"),
   ]);
-  reactivationForegroundEvidence = restoreEvidence;
   try {
     immediateReactivationState = await evaluate(
       client,
@@ -1152,7 +1243,7 @@ const summary = {
   screenshotPath: screenshotCaptured ? screenshotPath : null,
   chromeStdoutPath,
   chromeStderrPath,
-  launchMode: "standalone-google-chrome-raw-cdp-detached-while-hidden",
+  launchMode: `standalone-google-chrome-raw-cdp-detached-while-hidden-${backgroundMode}`,
   chromePid: minimizeEvidence?.pid ?? null,
   chromePort,
   initialPageTargets,
@@ -1161,6 +1252,7 @@ const summary = {
   ),
   profileDir,
   warmupMs,
+  backgroundMode,
   backgroundMs,
   processSampleMs,
   traceEnabled,
@@ -1171,7 +1263,11 @@ const summary = {
   createdSessionId,
   hiddenStartedAt,
   hiddenEndedAt,
+  initialTargetEvidence,
+  initialForegroundEvidence,
   setupForegroundEvidence,
+  backgroundEvidence,
+  backgroundTargetEvidence,
   minimizeEvidence,
   restoreEvidence,
   reactivationForegroundEvidence,
