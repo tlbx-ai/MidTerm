@@ -916,6 +916,14 @@ function getCurrentBrowserActivity(): boolean {
   return visible && focused;
 }
 
+function getCurrentBrowserVisibility(): boolean {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+
+  return document.visibilityState === 'visible' && !document.hidden;
+}
+
 function getCurrentActiveSurface(): string | null {
   const sessionId = $activeSessionId.get();
   if (!sessionId) {
@@ -934,26 +942,43 @@ function getCurrentActiveSurface(): string | null {
   return session.surface ?? 'terminal';
 }
 
-let lastReportedBrowserActivity: boolean | undefined;
+let lastReportedBrowserActivity:
+  | {
+      isActive: boolean;
+      isVisible: boolean;
+    }
+  | undefined;
 
 export function reportBrowserActivity(
   isActive: boolean = getCurrentBrowserActivity(),
   force: boolean = false,
 ): void {
   if (isSharedSessionRoute() || !isStateConnected()) return;
-  if (!force && lastReportedBrowserActivity === isActive) return;
+  const report = {
+    isActive,
+    isVisible: getCurrentBrowserVisibility(),
+  };
+  if (
+    !force &&
+    lastReportedBrowserActivity?.isActive === report.isActive &&
+    lastReportedBrowserActivity.isVisible === report.isVisible
+  ) {
+    return;
+  }
+
+  const previousReport = lastReportedBrowserActivity;
+  lastReportedBrowserActivity = report;
 
   sendCommand('browser.setActivity', {
-    isActive,
+    ...report,
     activeSessionId: $activeSessionId.get(),
     activeSurface: getCurrentActiveSurface(),
-  })
-    .then(() => {
-      lastReportedBrowserActivity = isActive;
-    })
-    .catch((e: unknown) => {
-      log.warn(() => `Failed to report browser activity: ${String(e)}`);
-    });
+  }).catch((e: unknown) => {
+    if (lastReportedBrowserActivity === report) {
+      lastReportedBrowserActivity = previousReport;
+    }
+    log.warn(() => `Failed to report browser activity: ${String(e)}`);
+  });
 }
 
 /**

@@ -187,6 +187,7 @@ export type WsCommand =
       action: 'browser.setActivity';
       payload: {
         isActive: boolean;
+        isVisible: boolean;
         activeSessionId?: string | null;
         activeSurface?: string | null;
       };
@@ -226,6 +227,7 @@ interface WsCommandPayloadMap {
   'browser.releaseMain': undefined;
   'browser.setActivity': {
     isActive: boolean;
+    isVisible: boolean;
     activeSessionId?: string | null;
     activeSurface?: string | null;
   };
