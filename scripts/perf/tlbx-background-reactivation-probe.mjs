@@ -36,6 +36,12 @@ const url = process.env.TLBX_PERF_URL || "https://localhost:2000/";
 const cookieHeader = process.env.TLBX_COOKIE_HEADER || "";
 const cyclesPerLane = Number(process.env.TLBX_PROBE_CYCLES_PER_LANE || 2);
 const backgroundMs = Number(process.env.TLBX_PROBE_BACKGROUND_MS || 8000);
+const includeGraph = process.env.TLBX_PROBE_INCLUDE_GRAPH !== "false";
+const includeStall = process.env.TLBX_PROBE_INCLUDE_STALL !== "false";
+const forceTemporarySession =
+  process.env.TLBX_PROBE_FORCE_TEMP_SESSION === "true";
+const backgroundCommand = process.env.TLBX_PROBE_BACKGROUND_COMMAND || "";
+const expectedTerminalText = process.env.TLBX_PROBE_EXPECT_TERMINAL_TEXT || "";
 
 await fs.mkdir(profileDir, { recursive: true });
 
@@ -379,6 +385,31 @@ async function runStalledRafRecovery(page) {
   return result;
 }
 
+async function terminalBufferContains(page, text) {
+  if (!text) return null;
+  return page.evaluate((expected) => {
+    const sessionId = window.mmDebug?.activeId ?? null;
+    const terminal = sessionId
+      ? window.mmDebug?.terminals?.get(sessionId)?.terminal
+      : null;
+    if (!terminal) return false;
+    const buffer = terminal.buffer.active;
+    for (
+      let index = Math.max(0, buffer.length - 2000);
+      index < buffer.length;
+      index += 1
+    ) {
+      if (
+        buffer.getLine(index)?.translateToString(true).includes(expected) ===
+        true
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, text);
+}
+
 let context;
 let page;
 let createdSessionId = null;
@@ -401,7 +432,10 @@ try {
   page = context.pages()[0] || (await context.newPage());
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
   await page.waitForSelector(".terminal-page", { timeout: 30_000 });
-  if ((await page.locator(".session-item[data-session-id]").count()) === 0) {
+  if (
+    forceTemporarySession ||
+    (await page.locator(".session-item[data-session-id]").count()) === 0
+  ) {
     createdSessionId = await page.evaluate(async () => {
       const response = await fetch("/api/sessions", {
         method: "POST",
@@ -418,9 +452,11 @@ try {
       { timeout: 15_000 },
     );
   }
-  const firstSession = page.locator(".session-item[data-session-id]").first();
-  if ((await firstSession.count()) > 0) {
-    await firstSession.click();
+  const targetSession = createdSessionId
+    ? page.locator(`.session-item[data-session-id="${createdSessionId}"]`)
+    : page.locator(".session-item[data-session-id]").first();
+  if ((await targetSession.count()) > 0) {
+    await targetSession.click();
     await page.locator(".xterm:visible").first().waitFor({ timeout: 15_000 });
   }
   await installPageProbe(page);
@@ -435,6 +471,22 @@ try {
   await page.bringToFront();
   await page.waitForTimeout(3000);
   const before = await snapshot(page, client, "before");
+  if (backgroundCommand) {
+    await page.evaluate(async (command) => {
+      const sessionId = window.mmDebug?.activeId ?? null;
+      if (!sessionId) throw new Error("No active terminal session.");
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/input/text`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: command, appendNewline: true }),
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Terminal input failed: ${response.status}`);
+    }, backgroundCommand);
+  }
 
   for (let index = 1; index <= cyclesPerLane; index += 1) {
     cycles.push(
@@ -452,6 +504,7 @@ try {
 
   const graphButton = page.locator("#btn-action-graphs");
   const graphAvailable =
+    includeGraph &&
     (await graphButton.count()) > 0 &&
     !(await graphButton.evaluate((element) =>
       element.classList.contains("hidden"),
@@ -489,8 +542,12 @@ try {
       { timeout: 5000 },
     );
   }
-  const stallRecovery = await runStalledRafRecovery(page);
+  const stallRecovery = includeStall ? await runStalledRafRecovery(page) : null;
   await page.waitForTimeout(1000);
+  const expectedTerminalTextVisible = await terminalBufferContains(
+    page,
+    expectedTerminalText,
+  );
   const after = await snapshot(page, client, "after");
   const cpuProfile = await client.send("Profiler.stop");
   await fs.writeFile(
@@ -506,8 +563,9 @@ try {
   const summary = {
     ok:
       cycles.every((cycle) => cycle.twoRaf.ok) &&
-      stallRecovery.stickyDomFallback &&
-      stallRecovery.markerRendered,
+      (!stallRecovery ||
+        (stallRecovery.stickyDomFallback && stallRecovery.markerRendered)) &&
+      (expectedTerminalTextVisible ?? true),
     url,
     runDir,
     summaryPath,
@@ -515,6 +573,12 @@ try {
     graphAvailable,
     cyclesPerLane,
     backgroundMs,
+    includeGraph,
+    includeStall,
+    forceTemporarySession,
+    backgroundCommandStarted: Boolean(backgroundCommand),
+    expectedTerminalText,
+    expectedTerminalTextVisible,
     createdSessionId,
     before,
     after,

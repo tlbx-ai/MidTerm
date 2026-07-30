@@ -14,6 +14,7 @@ import {
   resetMuxChannelRuntimeForTests,
   sendInput,
   setInputLatencyTracingEnabled,
+  suspendMuxForBrowserBackground,
   updateTerminalVisibility,
 } from './muxChannel';
 
@@ -1220,6 +1221,39 @@ describe('muxChannel', () => {
     expect(frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST)).toBe(
       false,
     );
+  });
+
+  it('suspends hidden-browser transport and reconnects with the terminal cursor', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        'sess1234',
+        7n,
+        'foreground-output',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+
+    suspendMuxForBrowserBackground();
+    suspendMuxForBrowserBackground();
+
+    expect(stores.$muxWsConnected.get()).toBe(false);
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess1234']);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const reconnectUrl = new URL(MockWebSocket.instances[1]!.url);
+    expect(reconnectUrl.searchParams.get('activeSessionId')).toBe('sess1234');
+    expect(reconnectUrl.searchParams.get('visibleSessionIds')).toBe('sess1234');
+    expect(reconnectUrl.searchParams.get('resumeCursors')).toContain('sess1234');
+
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess1234']);
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 
   it('reconnects mux with visible sessions after mobile browser resume closes the socket', async () => {

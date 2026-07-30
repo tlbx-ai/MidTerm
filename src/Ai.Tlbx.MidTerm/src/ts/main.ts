@@ -37,6 +37,7 @@ import {
   setupGlobalFocusReclaim,
   handleClipboardPaste,
   initMobilePiP,
+  isMobilePiPEnabled,
   initDevSoftKeyboardSimulator,
   resolveLaunchDimensions,
   syncWebglSessionPriority,
@@ -669,6 +670,7 @@ function setupVisibilityChangeHandler(): void {
     syncMuxTerminalVisibility,
     focusActiveTerminal,
     applyScrollbackProtection,
+    keepTerminalOutputActiveWhileHidden: isMobilePiPEnabled,
   });
 }
 

@@ -425,6 +425,7 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
+let muxSuspendedForBrowserBackground = false;
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -1398,6 +1399,10 @@ function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8A
  * Uses a binary protocol with 9-byte header.
  */
 export function connectMuxWebSocket(): void {
+  if (muxSuspendedForBrowserBackground) {
+    return;
+  }
+
   closeWebSocket(muxWs, setMuxWs);
 
   const activeId = $activeSessionId.get();
@@ -1815,12 +1820,38 @@ export function updateTerminalVisibility(
   }
 }
 
+/**
+ * Stop terminal transport while the whole browser document is hidden.
+ *
+ * PTYs and agents remain live in mthost. Closing this browser-owned mux socket
+ * prevents invisible xterm/WebGL parsing and painting from exhausting Chrome's
+ * renderer or compositor. The reconnect carries exact per-session cursors, so
+ * foreground recovery resumes transactionally without losing terminal bytes.
+ */
+export function suspendMuxForBrowserBackground(): void {
+  if (muxSuspendedForBrowserBackground) {
+    return;
+  }
+
+  muxSuspendedForBrowserBackground = true;
+  muxReconnect.cancel();
+  closeWebSocket(muxWs, setMuxWs);
+  $muxWsConnected.set(false);
+  clearQueuedOutput();
+}
+
 export function recoverVisibleTerminalsAfterBrowserResume(
   activeSessionId: string | null,
   visibleSessionIds: readonly string[],
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
   currentVisibleSessionIds = normalizedVisibleSessionIds;
+
+  if (muxSuspendedForBrowserBackground) {
+    muxSuspendedForBrowserBackground = false;
+    connectMuxWebSocket();
+    return;
+  }
 
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
     connectMuxWebSocket();
@@ -1896,6 +1927,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
+  muxSuspendedForBrowserBackground = false;
   replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();
   discardAllSessionRecoveries();
