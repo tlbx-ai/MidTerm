@@ -188,14 +188,13 @@ function applyTerminalSettingsToState(args: {
   state.terminal.options.letterSpacing = letterSpacing;
   state.terminal.options.fontWeight = fontWeight;
   state.terminal.options.fontWeightBold = fontWeightBold;
-  state.terminal.options.customGlyphs = customGlyphs;
   if (theme) {
     state.terminal.options.theme = theme;
   }
   state.terminal.options.minimumContrastRatio = contrastRatio;
   state.terminal.options.smoothScrollDuration = settings.smoothScrolling ? 150 : 0;
   state.terminal.options.scrollback = settings.scrollbackLines;
-  syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+  syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings), customGlyphs);
   syncTerminalLigatureState(state, settings.terminalLigaturesEnabled);
   syncTerminalRgbBackgroundTransparency(state, settings);
 

@@ -79,7 +79,6 @@ function resolveGeneralTerminalOptions(
   | 'cursorBlink'
   | 'cursorInactiveStyle'
   | 'cursorStyle'
-  | 'customGlyphs'
   | 'minimumContrastRatio'
   | 'rescaleOverlappingGlyphs'
   | 'scrollback'
@@ -94,7 +93,6 @@ function resolveGeneralTerminalOptions(
     | 'cursorBlink'
     | 'cursorInactiveStyle'
     | 'cursorStyle'
-    | 'customGlyphs'
     | 'minimumContrastRatio'
     | 'rescaleOverlappingGlyphs'
     | 'scrollback'
@@ -109,7 +107,6 @@ function resolveGeneralTerminalOptions(
     smoothScrollDuration: currentSettings?.smoothScrolling ? 50 : 0,
     allowProposedApi: true,
     allowTransparency: true,
-    customGlyphs: currentSettings?.customGlyphs ?? true,
     minimumContrastRatio: resolveEffectiveTerminalMinimumContrastRatio(currentSettings),
     rescaleOverlappingGlyphs: true,
     theme: getEffectiveXtermTheme(),

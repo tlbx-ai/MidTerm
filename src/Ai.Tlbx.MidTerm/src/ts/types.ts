@@ -129,6 +129,7 @@ export interface TerminalState {
   enterOverrideHandler?: (e: KeyboardEvent) => void;
   hasWebgl?: boolean;
   webglAddon?: WebglAddon | null;
+  webglCustomGlyphs: boolean;
   ligatureJoinerId?: number | null;
   richBackgroundTransparencyAlpha?: number | null;
   richBackgroundTransparencyDisposable?: { dispose: () => void } | undefined;

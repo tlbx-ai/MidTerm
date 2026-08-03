@@ -734,7 +734,10 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
   try {
     // Preserve the draw buffer so browser screenshot capture paths (html2canvas)
     // can read terminal pixels when WebGL rendering is enabled.
-    const webglAddon = new WebglAddon(true);
+    const webglAddon = new WebglAddon({
+      customGlyphs: state.webglCustomGlyphs,
+      preserveDrawingBuffer: true,
+    });
     webglAddon.onContextLoss(() => {
       if (state.webglAddon !== webglAddon) {
         return;
@@ -765,7 +768,13 @@ export function syncTerminalWebglState(
   sessionId: string,
   state: TerminalState,
   enabled: boolean,
+  customGlyphs: boolean = state.webglCustomGlyphs,
 ): void {
+  if (customGlyphs !== state.webglCustomGlyphs) {
+    state.webglCustomGlyphs = customGlyphs;
+    detachWebglAddon(sessionId, state);
+  }
+
   if (!enabled) {
     // An explicit WebGL off/on settings cycle is also the operator-controlled
     // escape hatch from a foreground compositor quarantine.
@@ -1043,6 +1052,7 @@ export function createTerminalForSession(
     opened: false,
     hasWebgl: false,
     webglAddon: null,
+    webglCustomGlyphs: $currentSettings.get()?.customGlyphs ?? true,
     ligatureJoinerId: null,
     pendingVisualRefresh: false,
   };
@@ -1137,7 +1147,12 @@ export function createTerminalForSession(
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
     const settings = $currentSettings.get();
     syncWebglTerminalCellBackgroundAlpha(settings);
-    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+    syncTerminalWebglState(
+      sessionId,
+      state,
+      shouldUseWebglRenderer(settings),
+      settings?.customGlyphs ?? true,
+    );
     syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
 
