@@ -11,6 +11,7 @@ import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
   sessionTerminals,
   pendingOutputFrames,
+  pendingTerminalReplayModes,
   sessionsNeedingResync,
   fontsReadyPromise,
   dom,
@@ -27,6 +28,7 @@ import {
 import { parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
+import { createAlternateScreenReplayPrefix } from './replayState';
 import {
   isBracketedPasteEnabled,
   forgetMuxSession,
@@ -1219,17 +1221,34 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
   if (sessionsNeedingResync.has(sessionId)) {
     sessionsNeedingResync.delete(sessionId);
     pendingOutputFrames.delete(sessionId);
+    pendingTerminalReplayModes.delete(sessionId);
     requestBufferRefresh(sessionId);
     return;
   }
 
-  const frames = pendingOutputFrames.get(sessionId);
-  if (frames && frames.length > 0) {
-    frames.forEach((payload) => {
-      writeOutputFrame(sessionId, state, payload);
-    });
+  const replayFrames = (): void => {
+    const frames = pendingOutputFrames.get(sessionId);
+    if (frames && frames.length > 0) {
+      frames.forEach((payload) => {
+        writeOutputFrame(sessionId, state, payload);
+      });
+    }
     pendingOutputFrames.delete(sessionId);
+  };
+
+  const replayMode = pendingTerminalReplayModes.get(sessionId) ?? 0;
+  pendingTerminalReplayModes.delete(sessionId);
+  const replayPrefix = createAlternateScreenReplayPrefix(replayMode);
+  if (replayPrefix !== null) {
+    try {
+      state.terminal.write(replayPrefix, replayFrames);
+      return;
+    } catch {
+      // Fall through and replay bytes so opening the terminal cannot deadlock.
+    }
   }
+
+  replayFrames();
 }
 
 /**

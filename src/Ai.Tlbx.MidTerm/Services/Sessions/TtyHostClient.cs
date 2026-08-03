@@ -64,6 +64,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     private int _consecutiveReadTimeouts;
     private DateTime _lastDataReceived = DateTime.UtcNow;
     private ulong _lastOutputSequenceEndExclusive;
+    private int _terminalReplayStateVersion;
 
     private TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>? _pendingResponse;
 
@@ -202,7 +203,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                     var request = TtyHostProtocol.CreateInfoRequest();
                     var response = await SendRequestAsync(request, TtyHostMessageType.Info, ct).ConfigureAwait(false);
                     if (response is null) continue;
-                    return TtyHostProtocol.ParseInfo(response);
+                    return RememberHostCapabilities(TtyHostProtocol.ParseInfo(response));
                 }
 
                 var requestBytes = TtyHostProtocol.CreateInfoRequest();
@@ -222,7 +223,7 @@ public sealed class TtyHostClient : IAsyncDisposable
                     var (type, payload) = directResponse.Value;
                     if (type == TtyHostMessageType.Info)
                     {
-                        return TtyHostProtocol.ParseInfo(payload.Span);
+                        return RememberHostCapabilities(TtyHostProtocol.ParseInfo(payload.Span));
                     }
                 }
 
@@ -234,6 +235,16 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
 
         return null;
+    }
+
+    private SessionInfo? RememberHostCapabilities(SessionInfo? info)
+    {
+        if (info is not null)
+        {
+            _terminalReplayStateVersion = info.TerminalReplayStateVersion;
+        }
+
+        return info;
     }
 
     public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
@@ -361,9 +372,23 @@ public sealed class TtyHostClient : IAsyncDisposable
 
             try
             {
-                var msg = TtyHostProtocol.CreateGetBuffer(maxBytes, reason, sinceSequence);
+                var replayStateVersion = Math.Min(
+                    _terminalReplayStateVersion,
+                    TtyHostProtocol.TerminalReplayStateVersion);
+                var msg = TtyHostProtocol.CreateGetBuffer(
+                    maxBytes,
+                    reason,
+                    sinceSequence,
+                    replayStateVersion);
                 var response = await SendRequestAsync(msg, TtyHostMessageType.Buffer, ct).ConfigureAwait(false);
-                return response is null ? null : TtyHostProtocol.ParseBuffer(response);
+                if (response is null)
+                {
+                    return null;
+                }
+
+                return replayStateVersion > 0
+                    ? TtyHostProtocol.ParseBufferWithReplayState(response)
+                    : TtyHostProtocol.ParseBuffer(response);
             }
             catch
             {

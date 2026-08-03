@@ -94,6 +94,7 @@ import {
 import { handleStateUpdate } from './stateChannel';
 import { getSessions } from '../../api/client';
 import { applyTerminalScaling } from '../terminal/scaling';
+import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
@@ -108,6 +109,7 @@ import {
   muxWs,
   sessionTerminals,
   pendingOutputFrames,
+  pendingTerminalReplayModes,
   sessionsNeedingResync,
   setMuxWs,
   setServerProtocolVersion,
@@ -544,6 +546,7 @@ export function getBrowserTransportSnapshot(sessionId: string): BrowserTransport
 export function forgetMuxSession(sessionId: string): void {
   clearQueuedOutput(sessionId);
   pendingOutputFrames.delete(sessionId);
+  pendingTerminalReplayModes.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
   replaySuppressedSessions.delete(sessionId);
   browserTransportSnapshots.delete(sessionId);
@@ -1131,11 +1134,13 @@ function handleMuxRecoveryBeginFrame(
   const reasonCode = view.getUint8(5);
   const sequenceStart = view.getBigUint64(6, true);
   const sourceSequenceEndExclusive = view.getBigUint64(14, true);
+  const alternateScreenMode = payload.length >= 24 ? view.getUint16(22, true) : 0;
 
   // Invalidate only this session. Async decompression and xterm callbacks from
   // other terminals must remain live while this transaction re-establishes one cursor.
   clearQueuedOutput(sessionId);
   pendingOutputFrames.delete(sessionId);
+  pendingTerminalReplayModes.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   bracketedPasteState.delete(sessionId);
@@ -1166,20 +1171,36 @@ function handleMuxRecoveryBeginFrame(
       return;
     }
 
+    const finishPreparation = (): void => {
+      snapshot.receivedSeq = sequenceStart;
+      snapshot.renderedSeq = sequenceStart;
+      recovery.prepared = true;
+      recovery.ready = null;
+      releaseRecoveryBarrier();
+      tryCompleteSessionRecovery(sessionId);
+    };
+
     if (resetTerminal) {
-      const state = sessionTerminals.get(sessionId);
-      if (state?.opened) {
+      const terminalState = sessionTerminals.get(sessionId);
+      if (terminalState?.opened) {
         // Missing terminal bytes may end inside UTF-8 or ANSI state. reset() is the
         // only operation that repairs parser state; clear() only erases the viewport.
-        state.terminal.reset();
+        terminalState.terminal.reset();
+        const replayPrefix = createAlternateScreenReplayPrefix(alternateScreenMode);
+        if (replayPrefix !== null) {
+          try {
+            terminalState.terminal.write(replayPrefix, finishPreparation);
+            return;
+          } catch {
+            // Fall through and release the barrier so recovery can continue.
+          }
+        }
+      } else if (createAlternateScreenReplayPrefix(alternateScreenMode) !== null) {
+        pendingTerminalReplayModes.set(sessionId, alternateScreenMode);
       }
     }
-    snapshot.receivedSeq = sequenceStart;
-    snapshot.renderedSeq = sequenceStart;
-    recovery.prepared = true;
-    recovery.ready = null;
-    releaseRecoveryBarrier();
-    tryCompleteSessionRecovery(sessionId);
+
+    finishPreparation();
   };
 
   const state = sessionTerminals.get(sessionId);
@@ -1282,6 +1303,7 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
   });
   if (sessionId) {
     pendingOutputFrames.delete(sessionId);
+    pendingTerminalReplayModes.delete(sessionId);
     sessionsNeedingResync.delete(sessionId);
     const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
     snapshot.receivedSeq = 0n;
@@ -1294,6 +1316,7 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     clearQueuedOutput(sessionId);
   } else {
     pendingOutputFrames.clear();
+    pendingTerminalReplayModes.clear();
     sessionsNeedingResync.clear();
     browserTransportSnapshots.forEach((snapshot) => {
       snapshot.receivedSeq = 0n;
@@ -1946,6 +1969,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   clearQueuedOutput();
   sessionOutputGenerations.clear();
   pendingOutputFrames.clear();
+  pendingTerminalReplayModes.clear();
   sessionsNeedingResync.clear();
   closeWebSocket(muxWs, setMuxWs);
 }

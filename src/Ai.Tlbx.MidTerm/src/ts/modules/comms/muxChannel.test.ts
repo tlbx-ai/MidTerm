@@ -175,8 +175,9 @@ function buildRecoveryBeginMessage(
   sequenceStart: bigint,
   sourceSequenceEndExclusive: bigint,
   resetTerminal = false,
+  alternateScreenMode = 0,
 ): ArrayBuffer {
-  const frame = new Uint8Array(headerSize + 22);
+  const frame = new Uint8Array(headerSize + 24);
   const view = new DataView(frame.buffer);
   frame[0] = recoveryBeginType;
   encodeSessionId(frame, 1, sessionId);
@@ -185,6 +186,7 @@ function buildRecoveryBeginMessage(
   frame[headerSize + 5] = 7;
   view.setBigUint64(headerSize + 6, sequenceStart, true);
   view.setBigUint64(headerSize + 14, sourceSequenceEndExclusive, true);
+  view.setUint16(headerSize + 22, alternateScreenMode, true);
   return frame.buffer;
 }
 
@@ -1092,6 +1094,105 @@ describe('muxChannel', () => {
       recoveryCompleted: 1,
       recoveryResetCount: 1,
     });
+  });
+
+  it('restores alternate screen mode before replaying a truncated snapshot', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_BEGIN,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5,
+        100n,
+        102n,
+        true,
+        1049,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        102n,
+        'de',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_END,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5,
+        102n,
+        2,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    expect(harness.sessionTerminals.get(sessionId)?.terminal.reset).toHaveBeenCalledOnce();
+    expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+    expect(terminal.writeMock.mock.calls[1]?.[0]).toBe('\x1b[?1049h');
+    expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(0);
+
+    terminal.pendingCallbacks[0]?.();
+    await vi.waitFor(() => {
+      expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
+    });
+    expect(terminal.writeMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps replay mode with output that arrives before the terminal opens', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_BEGIN,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        6,
+        100n,
+        102n,
+        true,
+        1049,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        102n,
+        'de',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_END,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        6,
+        102n,
+        2,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await vi.waitFor(() => {
+      expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
+    });
+    expect(harness.sessionTerminals.has(sessionId)).toBe(false);
+    expect(state.pendingTerminalReplayModes.get(sessionId)).toBe(1049);
+    expect(state.pendingOutputFrames.get(sessionId)).toHaveLength(1);
   });
 
   it('requests one follow-up when data loss arrives inside a recovery transaction', async () => {
