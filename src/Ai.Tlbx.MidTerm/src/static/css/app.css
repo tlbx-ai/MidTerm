@@ -3002,7 +3002,7 @@ body::before {
   display: none;
 }
 
-.terminal-container.scrollbar-off .xterm .xterm-scrollable-element > .scrollbar {
+.terminal-container.scrollbar-off .xterm .xterm-scrollable-element > .xterm-scrollbar {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -3015,7 +3015,7 @@ body::before {
   display: none;
 }
 
-.terminal-container.scrollbar-hover .xterm .xterm-scrollable-element > .scrollbar {
+.terminal-container.scrollbar-hover .xterm .xterm-scrollable-element > .xterm-scrollbar {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -3040,7 +3040,7 @@ body::before {
     background: transparent;
   }
 
-  .terminal-container.scrollbar-hover:hover .xterm .xterm-scrollable-element > .scrollbar {
+  .terminal-container.scrollbar-hover:hover .xterm .xterm-scrollable-element > .xterm-scrollbar {
     opacity: 1 !important;
     pointer-events: auto !important;
   }
@@ -3067,7 +3067,7 @@ body::before {
     background: transparent;
   }
 
-  .terminal-container.scrollbar-hover .xterm .xterm-scrollable-element > .scrollbar {
+  .terminal-container.scrollbar-hover .xterm .xterm-scrollable-element > .xterm-scrollbar {
     opacity: 1 !important;
     pointer-events: auto !important;
   }
@@ -3091,7 +3091,7 @@ body::before {
   background: transparent;
 }
 
-.terminal-container.scrollbar-always .xterm .xterm-scrollable-element > .scrollbar {
+.terminal-container.scrollbar-always .xterm .xterm-scrollable-element > .xterm-scrollbar {
   opacity: 1 !important;
   pointer-events: auto !important;
 }
