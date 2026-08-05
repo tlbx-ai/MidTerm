@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const crypto = require('node:crypto');
 const https = require('node:https');
 const net = require('node:net');
 const os = require('node:os');
@@ -18,6 +19,7 @@ const SERVER_READY_INTERVAL_MS = 500;
 const LEGACY_REPOSITORY = 'tlbx-ai/MidTerm';
 const RENAMED_REPOSITORY = 'tlbx-ai/tlbx';
 const REPOSITORY_COORDINATE_URL = 'https://get.tlbx.ai/v1/repository';
+const RELEASE_PUBLIC_KEY_BASE64 = 'MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE9txOtWhrtgO7q8Hlpe7tzv8ARMHaLYpO1JFm9psIc6LyBMLgwgz0GXfL+kU7iDVK0GyE6q2nsz7AEhKfwfbQY7d+k/WKPDEvV6OzYIYStxW4v2mAKNY1XHyuOntapcb/';
 
 async function main() {
   const { launcher, passthrough } = parseArgs(process.argv.slice(2));
@@ -405,6 +407,7 @@ async function ensureInstalledRelease(release, target) {
     await downloadFile(targetAsset.browser_download_url, archivePath);
     console.error(`MidTerm ${release.tag}: extracting`);
     extractArchive(archivePath, extractDir);
+    await verifyExtractedRelease(extractDir, release, target);
     await ensureExecutableBits(extractDir, target);
     await fsp.rm(versionDir, { recursive: true, force: true });
     await fsp.rename(extractDir, versionDir);
@@ -457,6 +460,7 @@ async function ensureInstalledReleaseInWsl(release, target, runtime) {
     await downloadFile(targetAsset.browser_download_url, archiveUnc);
     console.error(`MidTerm ${release.tag}: extracting`);
     runWslCommand(runtime, ['tar', '-xzf', archiveLinux, '-C', extractLinux], '/');
+    await verifyExtractedRelease(extractUnc, release, target);
     runWslCommand(runtime, ['chmod', '755', path.posix.join(extractLinux, target.binaryName), path.posix.join(extractLinux, target.hostBinaryName)], '/');
     await fsp.rm(versionDirUnc, { recursive: true, force: true });
     await fsp.rename(extractUnc, versionDirUnc);
@@ -469,6 +473,125 @@ async function ensureInstalledReleaseInWsl(release, target, runtime) {
   } finally {
     await fsp.rm(tempRootUnc, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function verifyExtractedRelease(extractDir, release, target, publicKeyBase64 = RELEASE_PUBLIC_KEY_BASE64) {
+  const manifestPath = path.join(extractDir, 'version.json');
+  let manifest;
+  try {
+    manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Release manifest is missing or invalid: ${error.message}`);
+  }
+
+  if (
+    manifest.signatureVersion !== 2 ||
+    typeof manifest.signedPayload !== 'string' ||
+    typeof manifest.metadataSignature !== 'string' ||
+    !manifest.checksums ||
+    typeof manifest.checksums !== 'object'
+  ) {
+    throw new Error('Release manifest is not signed with the required manifest-v2 format');
+  }
+
+  let payloadBytes;
+  let signatureBytes;
+  try {
+    payloadBytes = Buffer.from(manifest.signedPayload, 'base64');
+    signatureBytes = Buffer.from(manifest.metadataSignature, 'base64');
+  } catch (error) {
+    throw new Error(`Release signature encoding is malformed: ${error.message}`);
+  }
+
+  const publicKey = crypto.createPublicKey({
+    key: Buffer.from(publicKeyBase64, 'base64'),
+    format: 'der',
+    type: 'spki'
+  });
+  if (!crypto.verify('sha256', payloadBytes, publicKey, signatureBytes)) {
+    throw new Error('Release metadata signature verification failed');
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadBytes.toString('utf8'));
+  } catch (error) {
+    throw new Error(`Signed release metadata is malformed: ${error.message}`);
+  }
+
+  const expectedPlatform = platformFromAssetName(target.assetName);
+  const expectedVersion = normalizeReleaseVersion(release.tag);
+  const expectedChannel = release.tag.includes('-dev') ? 'dev' : 'stable';
+  const metadataFields = [
+    ['signatureVersion', 2],
+    ['web', manifest.web],
+    ['pty', manifest.pty],
+    ['protocol', manifest.protocol],
+    ['minCompatiblePty', manifest.minCompatiblePty],
+    ['webOnly', manifest.webOnly],
+    ['platform', expectedPlatform],
+    ['channel', expectedChannel]
+  ];
+  for (const [field, expected] of metadataFields) {
+    if (payload[field] !== expected) {
+      throw new Error(`Signed release metadata mismatch: ${field}`);
+    }
+  }
+
+  if (normalizeReleaseVersion(payload.web) !== expectedVersion) {
+    throw new Error(`Signed release version ${payload.web} does not match ${release.tag}`);
+  }
+
+  const signedChecksums = payload.checksums;
+  const manifestChecksums = manifest.checksums;
+  if (
+    !signedChecksums ||
+    typeof signedChecksums !== 'object' ||
+    Object.keys(signedChecksums).length === 0 ||
+    Object.keys(signedChecksums).length !== Object.keys(manifestChecksums).length
+  ) {
+    throw new Error('Signed release checksums are missing or inconsistent');
+  }
+
+  for (const [filename, expectedHash] of Object.entries(signedChecksums)) {
+    if (
+      !filename ||
+      path.basename(filename) !== filename ||
+      typeof expectedHash !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(expectedHash) ||
+      String(manifestChecksums[filename]).toLowerCase() !== expectedHash.toLowerCase()
+    ) {
+      throw new Error(`Unsafe or inconsistent signed checksum entry: ${filename}`);
+    }
+
+    const filePath = path.join(extractDir, filename);
+    const actualHash = await hashFile(filePath);
+    if (actualHash !== expectedHash.toLowerCase()) {
+      throw new Error(`Release checksum mismatch: ${filename}`);
+    }
+  }
+}
+
+function platformFromAssetName(assetName) {
+  const match = /^mt-(.+?)(?:\.tar\.gz|\.zip)$/.exec(assetName);
+  if (!match) {
+    throw new Error(`Cannot determine release platform from ${assetName}`);
+  }
+  return match[1];
+}
+
+function normalizeReleaseVersion(version) {
+  return String(version).trim().replace(/^v/i, '');
+}
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const input = fs.createReadStream(filePath);
+    input.on('error', reject);
+    input.on('data', (chunk) => hash.update(chunk));
+    input.on('end', () => resolve(hash.digest('hex')));
+  });
 }
 
 function getCacheRoot() {
@@ -905,8 +1028,15 @@ function parseVersion(tag) {
   };
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`@tlbx-ai/midterm: ${message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`@tlbx-ai/midterm: ${message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  platformFromAssetName,
+  verifyExtractedRelease
+};

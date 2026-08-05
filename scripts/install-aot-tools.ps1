@@ -42,7 +42,8 @@ function Assert-ChildPath {
 function Invoke-Download {
     param(
         [Parameter(Mandatory = $true)][string]$Url,
-        [Parameter(Mandatory = $true)][string]$DestinationPath
+        [Parameter(Mandatory = $true)][string]$DestinationPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedSha256
     )
 
     $parent = Split-Path -Parent $DestinationPath
@@ -55,6 +56,11 @@ function Invoke-Download {
         -Uri $Url `
         -OutFile $DestinationPath `
         -Headers @{ "User-Agent" = "MidTerm-AotToolsInstaller"; "Accept" = "application/octet-stream" }
+
+    $actualSha256 = (Get-FileHash -LiteralPath $DestinationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $ExpectedSha256.ToLowerInvariant()) {
+        throw "Checksum mismatch for $Url. Expected $ExpectedSha256, got $actualSha256."
+    }
 }
 
 function Reset-Directory {
@@ -72,14 +78,6 @@ function Reset-Directory {
     return $resolvedTarget
 }
 
-function Get-GitHubJson {
-    param([Parameter(Mandatory = $true)][string]$Url)
-
-    return Invoke-RestMethod `
-        -Uri $Url `
-        -Headers @{ "User-Agent" = "MidTerm-AotToolsInstaller"; "Accept" = "application/vnd.github+json" }
-}
-
 $toolsRoot = Resolve-AbsolutePath $ToolsRoot
 $downloadsRoot = Join-Path $toolsRoot "_downloads"
 New-Item -ItemType Directory -Force -Path $toolsRoot | Out-Null
@@ -90,27 +88,25 @@ Write-Host "Installing portable AOT inspection tools into $toolsRoot" -Foregroun
 # Resource Hacker official download page lists the current ZIP installer.
 $resourceHackerVersion = "5.2.8"
 $resourceHackerUrl = "https://www.angusj.com/resourcehacker/resource_hacker.zip"
+$resourceHackerSha256 = "52f81ee4778070d6aa72d8719a1a68fea2f288005deb02667542754f747776f8"
 $resourceHackerArchive = Join-Path $downloadsRoot "resource_hacker_$resourceHackerVersion.zip"
 $resourceHackerRoot = Join-Path $toolsRoot "resourcehacker-$resourceHackerVersion"
 
 if ($Force -or -not (Test-Path (Join-Path $resourceHackerRoot "ResourceHacker.exe"))) {
-    Invoke-Download -Url $resourceHackerUrl -DestinationPath $resourceHackerArchive
+    Invoke-Download -Url $resourceHackerUrl -DestinationPath $resourceHackerArchive -ExpectedSha256 $resourceHackerSha256
     $resourceHackerExtract = Reset-Directory -Root $toolsRoot -Target $resourceHackerRoot
     Expand-Archive -LiteralPath $resourceHackerArchive -DestinationPath $resourceHackerExtract -Force
 }
 
-$peBearRelease = Get-GitHubJson -Url "https://api.github.com/repos/hasherezade/pe-bear/releases/latest"
-$peBearAsset = @($peBearRelease.assets | Where-Object { $_.name -match '^PE-bear_.*_qt6.*_x64_win_.*\.zip$' } | Select-Object -First 1)
-if ($peBearAsset.Count -ne 1) {
-    throw "Could not find a Windows x64 PE-bear asset in release '$($peBearRelease.tag_name)'."
-}
-
-$peBearVersion = $peBearRelease.tag_name.TrimStart('v')
-$peBearArchive = Join-Path $downloadsRoot $peBearAsset.name
+$peBearVersion = "0.7.2"
+$peBearAssetName = "PE-bear_0.7.2_qt6_x64_win_vs22.zip"
+$peBearUrl = "https://github.com/hasherezade/pe-bear/releases/download/v0.7.2/$peBearAssetName"
+$peBearSha256 = "d2b995b213d0e6b3910a863c12fdb842722ce47387e65fc8e711ee9013d0876e"
+$peBearArchive = Join-Path $downloadsRoot $peBearAssetName
 $peBearRoot = Join-Path $toolsRoot "pe-bear-$peBearVersion"
 
 if ($Force -or -not (Get-ChildItem -Path $peBearRoot -Filter "PE-bear.exe" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
-    Invoke-Download -Url $peBearAsset.browser_download_url -DestinationPath $peBearArchive
+    Invoke-Download -Url $peBearUrl -DestinationPath $peBearArchive -ExpectedSha256 $peBearSha256
     $peBearExtract = Reset-Directory -Root $toolsRoot -Target $peBearRoot
     Expand-Archive -LiteralPath $peBearArchive -DestinationPath $peBearExtract -Force
 }
@@ -128,11 +124,13 @@ $manifest = [ordered]@{
         version = $resourceHackerVersion
         path = $resourceHackerExe
         source = $resourceHackerUrl
+        sha256 = $resourceHackerSha256
     }
     peBear = [ordered]@{
         version = $peBearVersion
         path = $peBearExe
-        source = $peBearAsset.browser_download_url
+        source = $peBearUrl
+        sha256 = $peBearSha256
     }
 }
 

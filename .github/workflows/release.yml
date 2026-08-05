@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '10.0.302'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -21,16 +21,17 @@ jobs:
 
   # ── Create dev prereleases immediately; keep stable releases unpublished ──
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
       is_dev: ${{ contains(github.ref_name, '-dev') }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 1
           fetch-tags: false
+          persist-credentials: false
 
       - name: Fetch tag annotation
         run: git fetch origin tag ${{ github.ref_name }} --no-tags --force
@@ -119,19 +120,54 @@ jobs:
               --notes-file "$RELEASE_NOTES_FILE"
           fi
 
-  # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
-  frontend:
-    runs-on: ubuntu-latest
+  supply-chain:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '24'
+          node-version: '24.14.0'
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17.0.20+8'
+
+      - name: Restore locked npm workspaces
+        shell: pwsh
+        run: |
+          npm ci --prefix src/Ai.Tlbx.MidTerm --no-audit --no-fund
+          npm ci --prefix docs/marketing/ScreenshotAutomation --no-audit --no-fund
+
+      - name: Audit complete locked dependency chain
+        shell: pwsh
+        run: ./scripts/audit-supply-chain.ps1
+
+  # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.14.0'
 
       - name: Install npm packages
         working-directory: src/Ai.Tlbx.MidTerm
@@ -146,7 +182,7 @@ jobs:
           if ($isDev) { $buildArgs.DevRelease = $true }
           ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 @buildArgs
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -155,13 +191,15 @@ jobs:
   frontend-tests:
     needs: prepare
     if: needs.prepare.outputs.is_dev != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          node-version: '24'
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.14.0'
 
       - name: Install npm packages
         working-directory: src/Ai.Tlbx.MidTerm
@@ -172,18 +210,20 @@ jobs:
         run: npm run verify
 
   dotnet-tests:
-    needs: [prepare, frontend]
+    needs: [prepare, frontend, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Download frontend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -198,6 +238,9 @@ jobs:
     if: needs.prepare.outputs.is_dev == 'true'
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -208,7 +251,7 @@ jobs:
           - os: macos-14
             rid: osx-x64
             ext: ''
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             rid: linux-x64
             ext: ''
           - os: ubuntu-24.04-arm
@@ -217,14 +260,16 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Download frontend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -338,15 +383,25 @@ jobs:
           SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
         run: ./scripts/sign-release.ps1 -ArtifactsPath staging
 
-      - name: Package and upload to release
+      - name: Package release
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $rid = "${{ matrix.rid }}"
           $archive = "staging/mt-$rid.tar.gz"
           tar -cf - -C "staging/$rid" . | gzip -9 > $archive
-          gh release upload "${{ github.ref_name }}" $archive --clobber
+
+      - name: Generate SBOM and attest release
+        uses: ./.github/actions/attest-release
+        with:
+          subject-path: staging/mt-${{ matrix.rid }}.tar.gz
+          scan-path: staging/${{ matrix.rid }}
+          sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
+
+      - name: Upload release archive and SBOM
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.tar.gz" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -357,10 +412,13 @@ jobs:
 
   # ── Build macOS + Linux for stable/public releases ─────────────────────────
   build:
-    needs: [prepare, frontend, frontend-tests, dotnet-tests]
+    needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -371,7 +429,7 @@ jobs:
           - os: macos-14
             rid: osx-x64
             ext: ''
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             rid: linux-x64
             ext: ''
           - os: ubuntu-24.04-arm
@@ -380,14 +438,16 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Download frontend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -495,15 +555,25 @@ jobs:
           SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
         run: ./scripts/sign-release.ps1 -ArtifactsPath staging
 
-      - name: Package and upload to release
+      - name: Package release
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $rid = "${{ matrix.rid }}"
           $archive = "staging/mt-$rid.tar.gz"
           tar -cf - -C "staging/$rid" . | gzip -9 > $archive
-          gh release upload "${{ github.ref_name }}" $archive --clobber
+
+      - name: Generate SBOM and attest release
+        uses: ./.github/actions/attest-release
+        with:
+          subject-path: staging/mt-${{ matrix.rid }}.tar.gz
+          scan-path: staging/${{ matrix.rid }}
+          sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
+
+      - name: Upload release archive and SBOM
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.tar.gz" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -514,27 +584,32 @@ jobs:
 
   # ── Build Windows: hosted runner for dev, self-hosted with signing for stable ─
   build-windows-dev:
-    needs: [prepare, frontend]
+    needs: [prepare, frontend, supply-chain]
     if: needs.prepare.outputs.is_dev == 'true'
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - rid: win-x64
           - rid: win-x86
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Download frontend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -581,10 +656,8 @@ jobs:
           SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
         run: ./scripts/sign-release.ps1 -ArtifactsPath staging
 
-      - name: Package and upload to release
+      - name: Package release
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $rid = '${{ matrix.rid }}'
           $archive = "staging/mt-$rid.zip"
@@ -593,13 +666,28 @@ jobs:
           } else {
             Compress-Archive -Path "./staging/$rid/*" -DestinationPath $archive -Force
           }
-          gh release upload "${{ github.ref_name }}" $archive --clobber
+
+      - name: Generate SBOM and attest release
+        uses: ./.github/actions/attest-release
+        with:
+          subject-path: staging/mt-${{ matrix.rid }}.zip
+          scan-path: staging/${{ matrix.rid }}
+          sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
+
+      - name: Upload release archive and SBOM
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
 
   build-windows:
-    needs: [prepare, frontend, frontend-tests, dotnet-tests]
+    needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -608,7 +696,9 @@ jobs:
     runs-on: [self-hosted, windows, signing]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Verify local .NET SDK on self-hosted Windows runner
         shell: pwsh
@@ -620,7 +710,7 @@ jobs:
           dotnet --version
 
       - name: Download frontend
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
@@ -701,10 +791,8 @@ jobs:
           SIGNING_PRIVATE_KEY: ${{ secrets.SIGNING_PRIVATE_KEY }}
         run: ./scripts/sign-release.ps1 -ArtifactsPath staging
 
-      - name: Package and upload to release
+      - name: Package release
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $rid = '${{ matrix.rid }}'
           $archive = "staging/mt-$rid.zip"
@@ -713,27 +801,41 @@ jobs:
           } else {
             Compress-Archive -Path "./staging/$rid/*" -DestinationPath $archive -Force
           }
-          gh release upload "${{ github.ref_name }}" $archive --clobber
+
+      - name: Generate SBOM and attest release
+        uses: ./.github/actions/attest-release
+        with:
+          subject-path: staging/mt-${{ matrix.rid }}.zip
+          scan-path: staging/${{ matrix.rid }}
+          sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
+
+      - name: Upload release archive and SBOM
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
 
   publish-npm:
     needs: [prepare, build, build-windows]
     if: needs.prepare.outputs.is_dev != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          node-version: '24'
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.14.0'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for trusted publishing
         run: |
-          npm install -g npm@11.5.1
+          npm install -g npm@11.18.0
           node --version
           npm --version
 
@@ -754,7 +856,7 @@ jobs:
   publish-release:
     needs: [prepare, build, build-windows]
     if: needs.prepare.outputs.is_dev != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -788,6 +890,12 @@ jobs:
               "mt-osx-x64.tar.gz",
               "mt-win-x64.zip",
               "mt-win-x86.zip",
+              "mt-linux-arm64.spdx.json",
+              "mt-linux-x64.spdx.json",
+              "mt-osx-arm64.spdx.json",
+              "mt-osx-x64.spdx.json",
+              "mt-win-x64.spdx.json",
+              "mt-win-x86.spdx.json",
           }
 
           if release.get("tagName") != expected_tag:
@@ -842,12 +950,14 @@ jobs:
   prune-artifacts:
     needs: [prepare, publish-release]
     if: needs.prepare.outputs.is_dev != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Prune old workflow artifacts outside retained release lines
         shell: pwsh

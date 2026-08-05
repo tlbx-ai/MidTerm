@@ -1068,6 +1068,121 @@ function Get-AssetUrl
     return $asset.browser_download_url
 }
 
+function Assert-SignedRelease
+{
+    param(
+        [Parameter(Mandatory=$true)][string]$ExtractDir,
+        [Parameter(Mandatory=$true)][string]$ExpectedVersion,
+        [Parameter(Mandatory=$true)][string]$ExpectedPlatform,
+        [Parameter(Mandatory=$true)][string]$ExpectedChannel
+    )
+
+    $publicKeyBase64 = "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE9txOtWhrtgO7q8Hlpe7tzv8ARMHaLYpO1JFm9psIc6LyBMLgwgz0GXfL+kU7iDVK0GyE6q2nsz7AEhKfwfbQY7d+k/WKPDEvV6OzYIYStxW4v2mAKNY1XHyuOntapcb/"
+    $manifestPath = Join-Path $ExtractDir "version.json"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf))
+    {
+        throw "Downloaded release is missing its signed version.json manifest."
+    }
+
+    try
+    {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        if ($manifest.signatureVersion -ne 2 -or
+            [string]::IsNullOrWhiteSpace([string]$manifest.signedPayload) -or
+            [string]::IsNullOrWhiteSpace([string]$manifest.metadataSignature))
+        {
+            throw "Downloaded release does not use the required signed manifest-v2 format."
+        }
+
+        $payloadBytes = [Convert]::FromBase64String([string]$manifest.signedPayload)
+        $signatureBytes = [Convert]::FromBase64String([string]$manifest.metadataSignature)
+        $publicKeyBytes = [Convert]::FromBase64String($publicKeyBase64)
+        $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
+        try
+        {
+            $bytesRead = 0
+            $ecdsa.ImportSubjectPublicKeyInfo($publicKeyBytes, [ref]$bytesRead)
+            $signatureValid = $ecdsa.VerifyData(
+                $payloadBytes,
+                $signatureBytes,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                [System.Security.Cryptography.DSASignatureFormat]::Rfc3279DerSequence)
+        }
+        finally
+        {
+            $ecdsa.Dispose()
+        }
+
+        if (-not $signatureValid)
+        {
+            throw "Downloaded release metadata signature is invalid."
+        }
+
+        $payloadJson = [System.Text.Encoding]::UTF8.GetString($payloadBytes)
+        $payload = $payloadJson | ConvertFrom-Json
+        $expectedVersionNormalized = $ExpectedVersion.Trim().TrimStart('v', 'V')
+        $payloadVersionNormalized = ([string]$payload.web).Trim().TrimStart('v', 'V')
+        $metadataMatches =
+            $payload.signatureVersion -eq 2 -and
+            [string]$payload.web -ceq [string]$manifest.web -and
+            [string]$payload.pty -ceq [string]$manifest.pty -and
+            [int]$payload.protocol -eq [int]$manifest.protocol -and
+            [string]$payload.minCompatiblePty -ceq [string]$manifest.minCompatiblePty -and
+            [bool]$payload.webOnly -eq [bool]$manifest.webOnly -and
+            [string]$payload.platform -ieq $ExpectedPlatform -and
+            [string]$manifest.platform -ieq $ExpectedPlatform -and
+            [string]$payload.channel -ieq $ExpectedChannel -and
+            [string]$manifest.channel -ieq $ExpectedChannel -and
+            $payloadVersionNormalized -ieq $expectedVersionNormalized
+        if (-not $metadataMatches)
+        {
+            throw "Downloaded release metadata does not match the selected version, channel, or platform."
+        }
+
+        $signedChecksums = @($payload.checksums.PSObject.Properties)
+        $manifestChecksums = @($manifest.checksums.PSObject.Properties)
+        if ($signedChecksums.Count -eq 0 -or $signedChecksums.Count -ne $manifestChecksums.Count)
+        {
+            throw "Downloaded release has missing or inconsistent signed checksums."
+        }
+
+        foreach ($checksum in $signedChecksums)
+        {
+            $fileName = [string]$checksum.Name
+            $expectedHash = ([string]$checksum.Value).ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($fileName) -or
+                [System.IO.Path]::IsPathRooted($fileName) -or
+                [System.IO.Path]::GetFileName($fileName) -cne $fileName -or
+                $expectedHash -notmatch '^[0-9a-f]{64}$')
+            {
+                throw "Downloaded release contains an unsafe checksum entry: $fileName"
+            }
+
+            $manifestProperty = $manifest.checksums.PSObject.Properties[$fileName]
+            if ($null -eq $manifestProperty -or ([string]$manifestProperty.Value).ToLowerInvariant() -ne $expectedHash)
+            {
+                throw "Downloaded release checksum metadata is inconsistent for $fileName."
+            }
+
+            $filePath = Join-Path $ExtractDir $fileName
+            if (-not (Test-Path -LiteralPath $filePath -PathType Leaf))
+            {
+                throw "Downloaded release is missing signed file $fileName."
+            }
+
+            $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash)
+            {
+                throw "Downloaded release checksum verification failed for $fileName."
+            }
+        }
+    }
+    catch [System.Management.Automation.MethodInvocationException]
+    {
+        throw "This installer requires PowerShell 7 or newer for release-signature verification: $($_.Exception.Message)"
+    }
+}
+
 function Write-ServiceSettings
 {
     param(
@@ -1236,8 +1351,9 @@ function Install-MidTerm
     Write-Log "Extracting to: $tempExtract"
     if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
+    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform "win-x64" -ExpectedChannel $channelLabel
     Unblock-DownloadedTree -Path $tempExtract
-    Write-Log "Extraction complete"
+    Write-Log "Extraction and release-signature verification complete"
 
     Write-Log "=== PHASE 2: Installing binaries ==="
     # Copy binaries

@@ -1,0 +1,49 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /src/Ai.Tlbx.MidTerm
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      frontend-development:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /docs/marketing/ScreenshotAutomation
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      marketing-automation:
+        dependency-type: development
+
+  - package-ecosystem: nuget
+    directory: /src
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      dotnet:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gradle
+    directory: /src/connectors/android
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      android:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

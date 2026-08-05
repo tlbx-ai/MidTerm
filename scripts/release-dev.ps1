@@ -372,10 +372,15 @@ catch {
 
 # Pre-release build verification (catches ESLint, TypeScript, C# errors before committing)
 Write-Host ""
-Write-Host "Running .NET test suite..." -ForegroundColor Cyan
+Write-Host "Running supply-chain audit gate..." -ForegroundColor Cyan
 $dotnetTestSuiteScript = Join-Path $PSScriptRoot "run-dotnet-test-suite.ps1"
 $runtimeBuildVerificationScript = Join-Path $PSScriptRoot "run-runtime-build-verification.ps1"
 try {
+    & (Join-Path $PSScriptRoot "audit-supply-chain.ps1")
+    Write-Host "Supply-chain audit gate succeeded." -ForegroundColor Green
+
+    Write-Host ""
+    Write-Host "Running .NET test suite..." -ForegroundColor Cyan
     & $dotnetTestSuiteScript -Configuration Release -WarnAsError
     Write-Host ".NET tests succeeded." -ForegroundColor Green
 

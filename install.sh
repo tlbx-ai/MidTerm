@@ -630,6 +630,146 @@ require_extracted_binaries() {
     return 0
 }
 
+decode_base64_to_file() {
+    local encoded="$1"
+    local destination="$2"
+
+    if printf '%s' "$encoded" | base64 --decode > "$destination" 2>/dev/null; then
+        return 0
+    fi
+
+    if printf '%s' "$encoded" | base64 -D > "$destination" 2>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
+extract_json_string_from_file() {
+    local json_file="$1"
+    local key="$2"
+    sed -nE "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/p" "$json_file" | head -1
+}
+
+compute_sha256() {
+    local file_path="$1"
+    if command_exists sha256sum; then
+        sha256sum "$file_path" | awk '{print tolower($1)}'
+    else
+        shasum -a 256 "$file_path" | awk '{print tolower($1)}'
+    fi
+}
+
+verify_signed_release() {
+    local extract_dir="$1"
+    local manifest_path="$extract_dir/version.json"
+    local payload_file="$extract_dir/.tlbx-signed-payload.json"
+    local signature_file="$extract_dir/.tlbx-metadata-signature.bin"
+    local public_key_file="$extract_dir/.tlbx-release-public-key.pem"
+
+    if [ ! -f "$manifest_path" ]; then
+        echo -e "${RED}Downloaded release is missing its signed version.json manifest.${NC}" >&2
+        return 1
+    fi
+
+    if ! command_exists openssl; then
+        echo -e "${RED}OpenSSL is required to verify the tlbx release signature.${NC}" >&2
+        return 1
+    fi
+
+    local signature_version
+    signature_version=$(sed -nE 's/.*"signatureVersion"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$manifest_path" | head -1)
+    local signed_payload
+    signed_payload=$(extract_json_string_from_file "$manifest_path" "signedPayload")
+    local metadata_signature
+    metadata_signature=$(extract_json_string_from_file "$manifest_path" "metadataSignature")
+    if [ "$signature_version" != "2" ] || [ -z "$signed_payload" ] || [ -z "$metadata_signature" ]; then
+        echo -e "${RED}Downloaded release does not use the required signed manifest-v2 format.${NC}" >&2
+        return 1
+    fi
+
+    if ! decode_base64_to_file "$signed_payload" "$payload_file" ||
+       ! decode_base64_to_file "$metadata_signature" "$signature_file"; then
+        echo -e "${RED}Downloaded release contains malformed signature data.${NC}" >&2
+        return 1
+    fi
+
+    cat > "$public_key_file" <<'TLBX_RELEASE_PUBLIC_KEY'
+-----BEGIN PUBLIC KEY-----
+MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE9txOtWhrtgO7q8Hlpe7tzv8ARMHaLYpO
+1JFm9psIc6LyBMLgwgz0GXfL+kU7iDVK0GyE6q2nsz7AEhKfwfbQY7d+k/WKPDEv
+V6OzYIYStxW4v2mAKNY1XHyuOntapcb/
+-----END PUBLIC KEY-----
+TLBX_RELEASE_PUBLIC_KEY
+
+    if ! openssl dgst -sha256 -verify "$public_key_file" -signature "$signature_file" "$payload_file" >/dev/null 2>&1; then
+        echo -e "${RED}Downloaded release metadata signature verification failed.${NC}" >&2
+        return 1
+    fi
+
+    local expected_platform="${PLATFORM}-${ARCH}"
+    local expected_channel="stable"
+    case "$VERSION" in
+        *-dev*) expected_channel="dev" ;;
+    esac
+    local payload_web payload_platform payload_channel manifest_web manifest_platform manifest_channel
+    payload_web=$(extract_json_string_from_file "$payload_file" "web")
+    payload_platform=$(extract_json_string_from_file "$payload_file" "platform")
+    payload_channel=$(extract_json_string_from_file "$payload_file" "channel")
+    manifest_web=$(extract_json_string_from_file "$manifest_path" "web")
+    manifest_platform=$(extract_json_string_from_file "$manifest_path" "platform")
+    manifest_channel=$(extract_json_string_from_file "$manifest_path" "channel")
+    if [ "${payload_web#v}" != "${VERSION#v}" ] ||
+       [ "$payload_web" != "$manifest_web" ] ||
+       [ "$payload_platform" != "$expected_platform" ] ||
+       [ "$payload_platform" != "$manifest_platform" ] ||
+       [ "$payload_channel" != "$expected_channel" ] ||
+       [ "$payload_channel" != "$manifest_channel" ]; then
+        echo -e "${RED}Signed release metadata does not match the selected version, channel, or platform.${NC}" >&2
+        return 1
+    fi
+
+    local checksum_entries
+    checksum_entries=$(sed -nE 's/.*"checksums":\{(.*)\}.*/\1/p' "$payload_file" | tr ',' '\n')
+    if [ -z "$checksum_entries" ]; then
+        echo -e "${RED}Signed release checksums are missing.${NC}" >&2
+        return 1
+    fi
+
+    local verified_count=0
+    while IFS= read -r checksum_entry; do
+        [ -n "$checksum_entry" ] || continue
+        local file_name expected_hash manifest_hash actual_hash
+        file_name=$(printf '%s' "$checksum_entry" | sed -nE 's/^[[:space:]]*"([^\"]+)":"[0-9a-fA-F]{64}"[[:space:]]*$/\1/p')
+        expected_hash=$(printf '%s' "$checksum_entry" | sed -nE 's/^[[:space:]]*"[^\"]+":"([0-9a-fA-F]{64})"[[:space:]]*$/\1/p' | tr '[:upper:]' '[:lower:]')
+        case "$file_name" in
+            ""|*/*|*\\*|.|..) echo -e "${RED}Unsafe signed checksum entry: $file_name${NC}" >&2; return 1 ;;
+        esac
+        if [ -z "$expected_hash" ] || [ ! -f "$extract_dir/$file_name" ]; then
+            echo -e "${RED}Signed release file is missing or invalid: $file_name${NC}" >&2
+            return 1
+        fi
+
+        manifest_hash=$(sed -nE "s/^[[:space:]]*\"$file_name\"[[:space:]]*:[[:space:]]*\"([0-9a-fA-F]{64})\".*/\1/p" "$manifest_path" | head -1 | tr '[:upper:]' '[:lower:]')
+        actual_hash=$(compute_sha256 "$extract_dir/$file_name")
+        if [ "$manifest_hash" != "$expected_hash" ] || [ "$actual_hash" != "$expected_hash" ]; then
+            echo -e "${RED}Downloaded release checksum verification failed for $file_name.${NC}" >&2
+            return 1
+        fi
+        verified_count=$((verified_count + 1))
+    done <<EOF
+$checksum_entries
+EOF
+
+    if [ "$verified_count" -lt 3 ]; then
+        echo -e "${RED}Signed release did not authenticate all required runtime binaries.${NC}" >&2
+        return 1
+    fi
+
+    rm -f "$payload_file" "$signature_file" "$public_key_file"
+    log "Release manifest signature and $verified_count file checksums verified"
+}
+
 prompt_service_mode() {
     echo -e "  ${CYAN}How would you like to install tlbx?${NC}"
     echo ""
@@ -1485,6 +1625,14 @@ install_binary() {
         rm -rf "$temp_dir"
         exit 1
     fi
+
+    print_step_inline "Verifying release signature..."
+    if ! verify_signed_release "$temp_dir"; then
+        finish_step_inline "failed" "$RED"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    finish_step_inline "verified" "$GREEN"
 
     # Create install directory
     mkdir -p "$install_dir"

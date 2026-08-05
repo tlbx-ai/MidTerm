@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
-# Sign tlbx release artifacts using openssl
-# Updates version.json files with checksums and ECDSA P-256 signatures
+# Sign tlbx release artifacts using openssl.
+# Updates version.json with a metadata-bound ECDSA P-384 signature and a
+# transitional checksum-only signature for clients predating manifest v2.
 
 param(
     [Parameter(Mandatory=$true)]
@@ -12,43 +13,34 @@ $ErrorActionPreference = "Stop"
 # Check for signing key (base64-encoded PKCS#8 PEM)
 $privateKeyB64 = $env:SIGNING_PRIVATE_KEY
 if (-not $privateKeyB64) {
-    Write-Host "Warning: SIGNING_PRIVATE_KEY not set, releases will be unsigned" -ForegroundColor Yellow
-    exit 0
+    throw "SIGNING_PRIVATE_KEY is required; refusing to produce an unsigned release"
 }
 
 Write-Host "Signing release artifacts..."
 
-function Get-ChecksumsFromManifest {
+function New-EcdsaSignature {
     param(
         [Parameter(Mandatory=$true)]
-        [string]$ManifestPath,
+        [byte[]]$Payload,
 
         [Parameter(Mandatory=$true)]
-        [string[]]$ExpectedFiles
+        [string]$PrivateKeyPath
     )
 
-    $checksums = @{}
-
-    foreach ($line in Get-Content $ManifestPath) {
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-
-        if ($line -match '^([0-9a-fA-F]{64})\s+\*?(.+)$') {
-            $hash = $matches[1].ToLowerInvariant()
-            $fileName = [System.IO.Path]::GetFileName($matches[2].Trim())
-            $checksums[$fileName] = $hash
-        }
+    $msgFile = [System.IO.Path]::GetTempFileName()
+    $sigFile = [System.IO.Path]::GetTempFileName()
+    try {
+        [System.IO.File]::WriteAllBytes($msgFile, $Payload)
+        $opensslCmd = if (Get-Command openssl -ErrorAction SilentlyContinue) { 'openssl' }
+                      elseif (Test-Path 'C:\Program Files\Git\usr\bin\openssl.exe') { 'C:\Program Files\Git\usr\bin\openssl.exe' }
+                      else { throw 'openssl not found' }
+        & $opensslCmd dgst -sha256 -sign $PrivateKeyPath -out $sigFile $msgFile
+        if ($LASTEXITCODE -ne 0) { throw "openssl signing failed" }
+        return [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($sigFile))
+    } finally {
+        Remove-Item $msgFile -ErrorAction SilentlyContinue
+        Remove-Item $sigFile -ErrorAction SilentlyContinue
     }
-
-    $filteredChecksums = @{}
-    foreach ($expectedFile in $ExpectedFiles) {
-        if ($checksums.ContainsKey($expectedFile)) {
-            $filteredChecksums[$expectedFile] = $checksums[$expectedFile]
-        }
-    }
-
-    return $filteredChecksums
 }
 
 # Write private key to temp file
@@ -59,6 +51,7 @@ try {
     # Process each platform
     $platforms = @("win-x64", "win-x86", "osx-arm64", "osx-x64", "linux-x64", "linux-arm64")
 
+    $signedPlatformCount = 0
     foreach ($platform in $platforms) {
         $platformDir = Join-Path $ArtifactsPath $platform
         if (-not (Test-Path $platformDir)) {
@@ -70,59 +63,36 @@ try {
 
         $versionJsonPath = Join-Path $platformDir "version.json"
         if (-not (Test-Path $versionJsonPath)) {
-            Write-Host "    Warning: version.json not found" -ForegroundColor Yellow
-            continue
+            throw "version.json not found for $platform"
         }
 
         # Read version.json to check for web-only release
         $versionJson = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
         $isWebOnly = $versionJson.webOnly -eq $true
 
-        # Compute checksums for binaries. Web-only releases remain a single release mode:
-        # running installs preserve their current mthost + mtagenthost, but release archives
-        # may still include host binaries for fresh installs and offline/manual flows.
-        # The signed manifest intentionally omits mthost for web-only releases so the PTY host
-        # preservation contract stays explicit. mtagenthost stays signed when present because
-        # it still ships in the archive set even though durable self-updaters preserve the
-        # installed runtime on web-only updates.
+        # Authenticate every executable shipped in the archive. Web-only controls which
+        # installed binaries are replaced; it must not leave fresh-install payloads unsigned.
         $checksums = @{}
-        $binaries = if ($isWebOnly) { @("mt", "mtagenthost") } else { @("mt", "mthost", "mtagenthost") }
+        $binaries = @("mt", "mthost", "mtagenthost")
         if ($platform.StartsWith("win-")) {
             $binaries += "mttmux"
         }
         $ext = if ($platform.StartsWith("win-")) { ".exe" } else { "" }
         $expectedFiles = $binaries | ForEach-Object { "$_$ext" }
-        $checksumManifestPath = Join-Path $platformDir "SHA256SUMS.txt"
 
         if ($isWebOnly) {
-            Write-Host "    Web-only release: signing mt + mtagenthost; running installs still preserve mthost + mtagenthost" -ForegroundColor Cyan
+            Write-Host "    Web-only release: authenticating the full archive; running installs still preserve mthost + mtagenthost" -ForegroundColor Cyan
         }
 
-        if (Test-Path $checksumManifestPath) {
-            $checksums = Get-ChecksumsFromManifest -ManifestPath $checksumManifestPath -ExpectedFiles $expectedFiles
-
-            if ($checksums.Count -gt 0) {
-                Write-Host "    Reusing checksums from SHA256SUMS.txt" -ForegroundColor DarkGray
-                foreach ($fileName in $checksums.Keys | Sort-Object) {
-                    Write-Host "    $fileName = $($checksums[$fileName])"
-                }
+        foreach ($fileName in $expectedFiles) {
+            $binaryPath = Join-Path $platformDir $fileName
+            if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+                throw "Expected release binary $fileName not found for $platform"
             }
-        }
 
-        if ($checksums.Count -eq 0) {
-            foreach ($binary in $binaries) {
-                $binaryPath = Join-Path $platformDir "$binary$ext"
-                if (Test-Path $binaryPath) {
-                    $hash = (Get-FileHash -Path $binaryPath -Algorithm SHA256).Hash.ToLower()
-                    $checksums["$binary$ext"] = $hash
-                    Write-Host "    $binary$ext = $hash"
-                }
-            }
-        }
-
-        if ($checksums.Count -eq 0) {
-            Write-Host "    Warning: No binaries found" -ForegroundColor Yellow
-            continue
+            $hash = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $checksums[$fileName] = $hash
+            Write-Host "    $fileName = $hash"
         }
 
         # Create sorted JSON of checksums (deterministic for signing)
@@ -132,29 +102,45 @@ try {
         }
         $checksumJson = $sortedChecksums | ConvertTo-Json -Compress
 
-        # Sign with openssl
-        $msgFile = [System.IO.Path]::GetTempFileName()
-        $sigFile = [System.IO.Path]::GetTempFileName()
-        try {
-            $checksumJson | Set-Content $msgFile -NoNewline -Encoding UTF8
-            $opensslCmd = if (Get-Command openssl -ErrorAction SilentlyContinue) { 'openssl' }
-                          elseif (Test-Path 'C:\Program Files\Git\usr\bin\openssl.exe') { 'C:\Program Files\Git\usr\bin\openssl.exe' }
-                          else { throw 'openssl not found' }
-            & $opensslCmd dgst -sha256 -sign $keyFile -out $sigFile $msgFile
-            if ($LASTEXITCODE -ne 0) { throw "openssl signing failed" }
-            $signature = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($sigFile))
-        } finally {
-            Remove-Item $msgFile -ErrorAction SilentlyContinue
-            Remove-Item $sigFile -ErrorAction SilentlyContinue
+        # Keep the checksum-only signature for one migration release so older
+        # installed clients can authenticate and install the manifest-v2 updater.
+        $legacyPayloadBytes = [System.Text.Encoding]::UTF8.GetBytes($checksumJson)
+        $signature = New-EcdsaSignature -Payload $legacyPayloadBytes -PrivateKeyPath $keyFile
+
+        $channel = if ([string]$versionJson.web -match '-dev(?:\.|$)') { 'dev' } else { 'stable' }
+        $signedPayloadObject = [ordered]@{
+            signatureVersion = 2
+            web = [string]$versionJson.web
+            pty = [string]$versionJson.pty
+            protocol = [int]$versionJson.protocol
+            minCompatiblePty = [string]$versionJson.minCompatiblePty
+            webOnly = [bool]$versionJson.webOnly
+            platform = $platform
+            channel = $channel
+            checksums = $sortedChecksums
         }
+        $signedPayloadJson = $signedPayloadObject | ConvertTo-Json -Compress -Depth 10
+        $signedPayloadBytes = [System.Text.Encoding]::UTF8.GetBytes($signedPayloadJson)
+        $signedPayload = [Convert]::ToBase64String($signedPayloadBytes)
+        $metadataSignature = New-EcdsaSignature -Payload $signedPayloadBytes -PrivateKeyPath $keyFile
 
         # Update version.json with checksums and signature
+        $versionJson | Add-Member -NotePropertyName "signatureVersion" -NotePropertyValue 2 -Force
+        $versionJson | Add-Member -NotePropertyName "platform" -NotePropertyValue $platform -Force
+        $versionJson | Add-Member -NotePropertyName "channel" -NotePropertyValue $channel -Force
         $versionJson | Add-Member -NotePropertyName "checksums" -NotePropertyValue $checksums -Force
         $versionJson | Add-Member -NotePropertyName "signature" -NotePropertyValue $signature -Force
+        $versionJson | Add-Member -NotePropertyName "signedPayload" -NotePropertyValue $signedPayload -Force
+        $versionJson | Add-Member -NotePropertyName "metadataSignature" -NotePropertyValue $metadataSignature -Force
 
         # Write updated version.json
         $versionJson | ConvertTo-Json -Depth 10 | Set-Content $versionJsonPath -Encoding UTF8
-        Write-Host "    Signed version.json"
+        $signedPlatformCount++
+        Write-Host "    Signed version.json (manifest v2, metadata bound)"
+    }
+
+    if ($signedPlatformCount -eq 0) {
+        throw "No platform directories were signed under $ArtifactsPath"
     }
 } finally {
     Remove-Item $keyFile -ErrorAction SilentlyContinue

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Xunit;
@@ -8,15 +9,20 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class UpdateVerificationTests : IDisposable
 {
     private readonly string _tempDir;
+    private readonly ECDsa _signingKey;
+    private readonly string _publicKeyBase64;
 
     public UpdateVerificationTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_update_verify_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
+        _signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        _publicKeyBase64 = Convert.ToBase64String(_signingKey.ExportSubjectPublicKeyInfo());
     }
 
     public void Dispose()
     {
+        _signingKey.Dispose();
         try
         {
             if (Directory.Exists(_tempDir))
@@ -30,132 +36,188 @@ public sealed class UpdateVerificationTests : IDisposable
     }
 
     [Fact]
-    public void VerifyUpdate_NoChecksums_ReturnsTrueForBackwardCompatibility()
+    public void VerifyUpdate_NoChecksums_ReturnsFalse()
     {
-        var manifest = new VersionManifest
-        {
-            Web = "1.0.0",
-            Pty = "1.0.0",
-            Protocol = 1,
-            Checksums = null
-        };
+        var manifest = CreateManifest([]);
+        manifest.Checksums = null;
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
-
-        Assert.True(ok);
+        Assert.False(Verify(manifest));
     }
 
     [Fact]
-    public void VerifyUpdate_EmptyChecksums_ReturnsTrueEvenWithInvalidSignature()
+    public void VerifyUpdate_EmptyChecksums_ReturnsFalse()
     {
-        var manifest = new VersionManifest
-        {
-            Web = "1.0.0",
-            Pty = "1.0.0",
-            Protocol = 1,
-            Checksums = [],
-            Signature = "not base64"
-        };
+        var manifest = CreateManifest([]);
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
-
-        Assert.True(ok);
+        Assert.False(Verify(manifest));
     }
 
     [Fact]
-    public void VerifyUpdate_MatchingChecksums_NoSignature_ReturnsTrue()
+    public void VerifyUpdate_ChecksumsWithoutMetadataSignature_ReturnsFalse()
     {
-        var filePath = Path.Combine(_tempDir, "mt.exe");
-        var agentHostPath = Path.Combine(_tempDir, "mtagenthost.exe");
-        File.WriteAllText(filePath, "hello update");
-        File.WriteAllText(agentHostPath, "agent host update");
-
-        var manifest = new VersionManifest
+        var filePath = WriteFile("mt.exe", "unsigned payload");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["mt.exe"] = ComputeHash(filePath),
-                ["mtagenthost.exe"] = ComputeHash(agentHostPath)
-            }
-        };
+            ["mt.exe"] = ComputeHash(filePath)
+        });
+        manifest.MetadataSignature = null;
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
-
-        Assert.True(ok);
+        Assert.False(Verify(manifest));
     }
 
     [Fact]
-    public void VerifyUpdate_MissingExpectedFile_ReturnsFalse()
+    public void VerifyUpdate_ValidMetadataSignatureAndChecksums_ReturnsTrue()
     {
-        var manifest = new VersionManifest
+        var filePath = WriteFile("mt.exe", "signed payload");
+        var agentHostPath = WriteFile("mtagenthost.exe", "signed agent host");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["missing.bin"] = "abcd"
-            }
-        };
+            ["mt.exe"] = ComputeHash(filePath),
+            ["mtagenthost.exe"] = ComputeHash(agentHostPath)
+        });
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
+        Assert.True(Verify(manifest, "win-x64", "1.2.3-dev", "dev"));
+    }
 
-        Assert.False(ok);
+    [Theory]
+    [InlineData("linux-x64", "1.2.3-dev", "dev")]
+    [InlineData("win-x64", "1.2.4-dev", "dev")]
+    [InlineData("win-x64", "1.2.3-dev", "stable")]
+    public void VerifyUpdate_ExpectedReleaseIdentityMismatch_ReturnsFalse(
+        string expectedPlatform,
+        string expectedVersion,
+        string expectedChannel)
+    {
+        var filePath = WriteFile("mt.exe", "signed payload");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["mt.exe"] = ComputeHash(filePath)
+        });
+
+        Assert.False(Verify(manifest, expectedPlatform, expectedVersion, expectedChannel));
+    }
+
+    [Fact]
+    public void VerifyUpdate_TamperedTopLevelMetadata_ReturnsFalse()
+    {
+        var filePath = WriteFile("mt.exe", "signed payload");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["mt.exe"] = ComputeHash(filePath)
+        });
+        manifest.Web = "9.9.9-dev";
+
+        Assert.False(Verify(manifest));
+    }
+
+    [Fact]
+    public void VerifyUpdate_TamperedSignedPayload_ReturnsFalse()
+    {
+        var filePath = WriteFile("mt.exe", "signed payload");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["mt.exe"] = ComputeHash(filePath)
+        });
+        var payload = Convert.FromBase64String(manifest.SignedPayload!);
+        payload[^1] ^= 1;
+        manifest.SignedPayload = Convert.ToBase64String(payload);
+
+        Assert.False(Verify(manifest));
     }
 
     [Fact]
     public void VerifyUpdate_ChecksumMismatch_ReturnsFalse()
     {
-        var filePath = Path.Combine(_tempDir, "version.json");
-        File.WriteAllText(filePath, "{\"web\":\"1.0.0\"}");
-
-        var manifest = new VersionManifest
+        var filePath = WriteFile("mt.exe", "signed payload");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["version.json"] = "deadbeef"
-            }
-        };
+            ["mt.exe"] = ComputeHash(filePath)
+        });
+        File.WriteAllText(filePath, "tampered after signing");
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
-
-        Assert.False(ok);
+        Assert.False(Verify(manifest));
     }
 
     [Fact]
-    public void VerifyUpdate_ChecksumComparison_IsCaseInsensitive()
+    public void VerifyUpdate_UnsafeChecksumPath_ReturnsFalse()
     {
-        var filePath = Path.Combine(_tempDir, "mthost.exe");
-        File.WriteAllText(filePath, "host payload");
-
-        var manifest = new VersionManifest
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["mthost.exe"] = ComputeHash(filePath).ToUpperInvariant()
-            }
-        };
+            ["../mt.exe"] = new string('a', 64)
+        });
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
-
-        Assert.True(ok);
+        Assert.False(Verify(manifest));
     }
 
     [Fact]
-    public void VerifyUpdate_InvalidSignature_ReturnsFalseWhenChecksumsPresent()
+    public void VerifyUpdate_InvalidMetadataSignature_ReturnsFalse()
     {
-        var filePath = Path.Combine(_tempDir, "mt.exe");
-        File.WriteAllText(filePath, "signed payload");
-
-        var manifest = new VersionManifest
+        var filePath = WriteFile("mt.exe", "signed payload");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            Checksums = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["mt.exe"] = ComputeHash(filePath)
-            },
-            Signature = "definitely-not-base64"
+            ["mt.exe"] = ComputeHash(filePath)
+        });
+        manifest.MetadataSignature = "definitely-not-base64";
+
+        Assert.False(Verify(manifest));
+    }
+
+    private VersionManifest CreateManifest(Dictionary<string, string> checksums)
+    {
+        var orderedChecksums = new SortedDictionary<string, string>(checksums, StringComparer.Ordinal);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            signatureVersion = 2,
+            web = "1.2.3-dev",
+            pty = "1.2.3-dev",
+            protocol = 1,
+            minCompatiblePty = "2.0.0",
+            webOnly = false,
+            platform = "win-x64",
+            channel = "dev",
+            checksums = orderedChecksums
+        });
+        var signature = _signingKey.SignData(
+            payload,
+            HashAlgorithmName.SHA256,
+            DSASignatureFormat.Rfc3279DerSequence);
+
+        return new VersionManifest
+        {
+            Web = "1.2.3-dev",
+            Pty = "1.2.3-dev",
+            Protocol = 1,
+            MinCompatiblePty = "2.0.0",
+            WebOnly = false,
+            SignatureVersion = 2,
+            Platform = "win-x64",
+            Channel = "dev",
+            Checksums = new Dictionary<string, string>(checksums, StringComparer.OrdinalIgnoreCase),
+            SignedPayload = Convert.ToBase64String(payload),
+            MetadataSignature = Convert.ToBase64String(signature)
         };
+    }
 
-        var ok = UpdateVerification.VerifyUpdate(_tempDir, manifest);
+    private bool Verify(
+        VersionManifest manifest,
+        string? expectedPlatform = null,
+        string? expectedVersion = null,
+        string? expectedChannel = null)
+    {
+        return UpdateVerification.VerifyUpdateForTesting(
+            _tempDir,
+            manifest,
+            _publicKeyBase64,
+            expectedPlatform,
+            expectedVersion,
+            expectedChannel);
+    }
 
-        Assert.False(ok);
+    private string WriteFile(string name, string content)
+    {
+        var path = Path.Combine(_tempDir, name);
+        File.WriteAllText(path, content);
+        return path;
     }
 
     private static string ComputeHash(string filePath)

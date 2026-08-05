@@ -7247,8 +7247,13 @@
           "protocol",
           "minCompatiblePty",
           "webOnly",
+          "signatureVersion",
+          "platform",
+          "channel",
           "checksums",
-          "signature"
+          "signature",
+          "signedPayload",
+          "metadataSignature"
         ],
         "type": "object",
         "properties": {
@@ -7268,6 +7273,16 @@
           "webOnly": {
             "type": "boolean"
           },
+          "signatureVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
           "checksums": {
             "type": [
               "null",
@@ -7278,6 +7293,18 @@
             }
           },
           "signature": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "signedPayload": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "metadataSignature": {
             "type": [
               "null",
               "string"

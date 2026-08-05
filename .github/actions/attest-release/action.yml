@@ -1,0 +1,33 @@
+name: Attest release archive
+description: Generate an SPDX SBOM plus provenance and SBOM attestations for a release archive.
+inputs:
+  subject-path:
+    description: Archive to attest
+    required: true
+  scan-path:
+    description: Staging directory represented by the archive
+    required: true
+  sbom-path:
+    description: SPDX JSON output path
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Generate SPDX SBOM
+      uses: anchore/sbom-action@aa0e114b2e19480f157109b9922bda359bd98b90 # v0.20.8
+      with:
+        path: ${{ inputs.scan-path }}
+        format: spdx-json
+        output-file: ${{ inputs.sbom-path }}
+        upload-artifact: false
+
+    - name: Attest build provenance
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Attest SBOM
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+      with:
+        subject-path: ${{ inputs.subject-path }}
+        sbom-path: ${{ inputs.sbom-path }}
