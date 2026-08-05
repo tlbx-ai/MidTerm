@@ -11,6 +11,7 @@
     <PublishAot>true</PublishAot>
     <SelfContained>true</SelfContained>
     <ServerGarbageCollection>false</ServerGarbageCollection>
+    <RuntimeIdentifiers>win-x64;win-x86;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;BeforeCompile">

@@ -13,6 +13,7 @@
     <PublishAot>true</PublishAot>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <SqlitePclRawVersion>2.1.12</SqlitePclRawVersion>
+    <RuntimeIdentifiers>win-x64;win-x86;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <!-- Publish-only: AOT optimizations (Speed over Size) -->
