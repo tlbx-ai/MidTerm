@@ -25,7 +25,10 @@ public sealed class VersionManifest
     /// <summary>Release channel represented by this archive (stable or dev).</summary>
     public string Channel { get; set; } = "";
 
-    /// <summary>SHA256 checksums of binary files (filename -> hex hash).</summary>
+    /// <summary>
+    /// SHA256 checksums of binary files in the authenticated release archive (filename -> hex hash).
+    /// For a web-only update, preserved installed host binaries can intentionally differ.
+    /// </summary>
     public Dictionary<string, string>? Checksums { get; set; }
 
     /// <summary>
