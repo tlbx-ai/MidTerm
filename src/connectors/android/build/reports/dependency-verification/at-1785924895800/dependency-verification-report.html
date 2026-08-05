@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Dependency verification report</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="css/uikit.min.css" />
+        <script src="js/uikit.min.js"></script>
+        <script src="js/uikit-icons.min.js"></script>
+    </head>
+    <body>
+<nav class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-left">
+        <a href="" class="uk-navbar-item uk-logo"><img src="img/gradle-logo.png" width="120"></a>
+        <ul class="uk-navbar-nav">
+<li class="uk-active"><a href="#">Dependency verification report</a></li>
+        </ul>
+    </div>
+</nav>
+
+<div class="uk-container uk-container-expand">
+        <ul uk-accordion>
+            <li class="uk-open">
+<a class="uk-accordion-title" href="#"><span uk-icon="chevron-right"></span>configuration 'classpath'&nbsp;<span class="uk-badge">3 errors</span></a><div class="uk-accordion-content"><table class="uk-table uk-table-hover uk-table-divider uk-table-middle uk-table-small">
+    <thead>
+        <tr>
+            <th class="uk-table-shrink uk-width-auto uk-text-nowrap">Module</th>
+            <th class="uk-table-shrink uk-width-auto uk-text-nowrap">Artifact</th>
+            <th class="uk-table-shrink uk-width-expand">Problem(s)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="uk-text-nowrap">com.google.guava:guava-parent:33.3.1-jre</td>
+            <td class="uk-text-nowrap"><div uk-tooltip="title: From repository 'MavenRepo'"><a href="file:/C:/Users/johan/.gradle/caches/modules-2/files-2.1/com.google.guava/guava-parent/33.3.1-jre/94729a0ed1dc35f623edd13afa6c1c2fe9a15d7c/guava-parent-33.3.1-jre.pom">guava-parent-33.3.1-jre.pom</a></div></td>
+            <td>
+            <p><span style="font-weight:bold; color: #c59434">Checksums are missing from verification metadata</span>&nbsp;<a uk-toggle="target: #missing-checksums" uk-icon="icon: info"></a></p>
+            </td>
+        </tr>
+        <tr>
+            <td class="uk-text-nowrap">org.junit:junit-bom:5.10.2</td>
+            <td class="uk-text-nowrap"><div uk-tooltip="title: From repository 'MavenRepo'"><a href="file:/C:/Users/johan/.gradle/caches/modules-2/files-2.1/org.junit/junit-bom/5.10.2/ce536748a853ae6ac09e7815fce0678a96cff778/junit-bom-5.10.2.module">junit-bom-5.10.2.module</a></div></td>
+            <td>
+            <p><span style="font-weight:bold; color: #c59434">Checksums are missing from verification metadata</span>&nbsp;<a uk-toggle="target: #missing-checksums" uk-icon="icon: info"></a></p>
+            </td>
+        </tr>
+        <tr>
+            <td class="uk-text-nowrap">org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.6.4</td>
+            <td class="uk-text-nowrap"><div uk-tooltip="title: From repository 'MavenRepo'"><a href="file:/C:/Users/johan/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlinx/kotlinx-coroutines-bom/1.6.4/88f782b09538e0bda7fa5ee6926f102564009bb6/kotlinx-coroutines-bom-1.6.4.pom">kotlinx-coroutines-bom-1.6.4.pom</a></div></td>
+            <td>
+            <p><span style="font-weight:bold; color: #c59434">Checksums are missing from verification metadata</span>&nbsp;<a uk-toggle="target: #missing-checksums" uk-icon="icon: info"></a></p>
+            </td>
+        </tr>
+    </tbody>
+</table></div>            </li>
+         </ul>
+        </div>
+<div id="verified-not-trusted" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Key isn't trusted</h2>
+        <p>This indicates that a dependency was <i>verified</i>, that the signature matched, but that you don't <i>trust</i> this signature.</p>
+
+        <p>If you trust the author of the signature, you need to add the key to the trusted keys.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="signature-didnt-match" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Signature didn't match</h2>
+        <p>This indicates that a dependency was <i>signed</i> but that the signature verification <b>failed</b>.</p>
+        <p>This happens when a dependency was compromised or that the signature was made for a different artifact than the one you got.</p>
+        <p>It's important that you <b>carefully review this problem</b>.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="ignored-key" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">A key was ignored</h2>
+        <p>This indicates that a dependency was <i>signed with an ignored key</i>.</p>
+        <p>You must provide at least one checksum so that verification can pass.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="missing-key" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Public key couldn't be found</h2>
+        <p>This indicates that a dependency was <i>signed</i> but that Gradle couldn't download the public key to verify the signature.</p>
+        <p>You should check if the key is valid, and if so, provide a key server where to download it.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="missing-checksums" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Checksums are missing</h2>
+        <p>This indicates that the dependency verification file doesn't contain at least one checksum for this artifact.</p>
+        <p>You must provide at least one checksum for artifact verification to pass.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="checksum-mismatch" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Incorrect checksum</h2>
+        <p>This indicates that the dependency verification file <b>failed</b> because the actual checksum of the dependency artifact didn't match the expected checksum declared in the verification metadata.</p>
+        <p>This happens when a dependency was compromised or that downloaded artifact isn't the one that you expected.</p>
+        <p>It's important that you <b>carefully review this problem</b>.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="deleted-artifact" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Deleted artifact</h2>
+        <p>This error usually indicated that the local dependency cache was tampered with.</p>
+        <p>This happens when someone manually deletes an artifact from the Gradle dependency cache, which is now corrupt.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+<div id="signature-file-missing" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <h2 class="uk-modal-title">Missing signature file</h2>
+        <p>The signature file for this artifact wasn't found.</p>
+        <p>Usually it indicates that the signature doesn't exist in the repository the artifact was downloaded from.</p>
+        <p>In general this is not a problem but you should then declare at least one checksum for verification to pass.</p>
+        <p>See the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html#sec:^" target="_blank">documentation</a> to get more information.</p>
+        <button class="uk-button uk-button-primary uk-modal-close" type="button">Ok</button>
+    </div>
+</div>
+    <div class="uk-container uk-padding">
+        <div class="uk-card uk-card-default uk-card-body" style="z-index: 980;" uk-sticky="bottom: true">
+            <h2 class="uk-modal-title">Troubleshooting</h2>
+            <p>Please review the errors reported above carefully.            Click on the icons near to the error descriptions for information about how to fix a particular problem.            It is recommended that you edit the <a href="file:/Q:/repos/tlbx/src/connectors/android/gradle/verification-metadata.xml">verification file</a> manually.             However, if you are confident that those are false positives, Gradle can help you by generating the missing verification metadata.            In this case, you can run with the following command-line:</p>            <pre>gradle --write-verification-metadata sha256 help</pre>            <p>In any case you <b>must review the result</b> of this operation.            <p>Please refer to the <a href="https://docs.gradle.org/8.13/userguide/dependency_verification.html" target="_blank">documentation</a> for more information.</p>
+        </div>
+    </div>
+    </body>
+</html>
+
