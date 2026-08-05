@@ -6060,44 +6060,62 @@ body::before {
   }
 }
 
-/* License items */
-.license-item {
+/* Security, release evidence, and authoritative notices */
+.integrity-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--border-subtle);
+}
+
+.integrity-links a {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  background-color: var(--bg-dropdown);
-  border-radius: 4px;
-  margin-bottom: 8px;
-}
-
-.license-item strong {
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);
-}
-
-.license-version {
-  font-size: var(--fs-md);
-  color: var(--text-secondary);
-}
-
-.license-type {
-  font-size: var(--fs-md);
-  color: var(--accent-green);
-  background-color: var(--bg-success);
-  padding: 2px 8px;
-  border-radius: 3px;
-}
-
-.license-item a {
-  font-size: var(--fs-md);
-  color: var(--accent-blue);
   text-decoration: none;
-  margin-left: auto;
 }
 
-.license-item a:hover {
-  text-decoration: underline;
+.integrity-links a:nth-child(odd) {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.integrity-links a:hover,
+.integrity-links a:focus-visible {
+  background: var(--bg-hover-opaque, var(--bg-hover));
+}
+
+.integrity-links strong {
+  color: var(--accent-blue);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.integrity-links span {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+  line-height: 1.4;
+}
+
+.integrity-links-compact {
+  grid-template-columns: 1fr;
+}
+
+.integrity-links-compact a:nth-child(odd) {
+  border-right: 0;
+}
+
+@media (max-width: 720px) {
+  .integrity-links {
+    grid-template-columns: 1fr;
+  }
+
+  .integrity-links a:nth-child(odd) {
+    border-right: 0;
+  }
 }
 
 /* Bell flash animation - uses opacity for GPU compositing */

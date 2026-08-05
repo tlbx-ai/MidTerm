@@ -1201,6 +1201,50 @@
                     </div>
                   </div>
 
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.general.releaseIntegrity">Security &amp; Release Integrity</h3>
+                    <p class="setting-hint" data-i18n="settings.general.releaseIntegrityHint">
+                      tlbx verifies signed update metadata and packaged-file hashes. Public releases
+                      also include platform-specific SPDX SBOMs and GitHub attestations.
+                    </p>
+                    <div class="integrity-links">
+                      <a href="https://tlbx.ai/security" target="_blank" rel="noopener">
+                        <strong data-i18n="settings.general.securityPolicy">Security policy</strong>
+                        <span>tlbx.ai/security</span>
+                      </a>
+                      <a
+                        href="https://github.com/tlbx-ai/tlbx/security/advisories/new"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <strong data-i18n="settings.general.reportVulnerability"
+                          >Report a vulnerability</strong
+                        >
+                        <span>GitHub Private Vulnerability Reporting</span>
+                      </a>
+                      <a
+                        href="https://github.com/tlbx-ai/tlbx/releases"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <strong data-i18n="settings.general.releaseEvidence">Release evidence</strong>
+                        <span data-i18n="settings.general.releaseEvidenceHint"
+                          >Archives, SBOMs and attestations</span
+                        >
+                      </a>
+                      <a
+                        href="https://github.com/tlbx-ai/tlbx/blob/dev/SUPPORT.md"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <strong data-i18n="settings.general.supportPolicy">Support policy</strong>
+                        <span data-i18n="settings.general.supportPolicyHint"
+                          >Supported release lines and security updates</span
+                        >
+                      </a>
+                    </div>
+                  </div>
+
                   <div class="settings-section system-status-section">
                     <h3 data-i18n="settings.general.systemStatus">System Status</h3>
                     <div id="system-status-content">
@@ -1227,207 +1271,32 @@
                   <div class="settings-section">
                     <h3 data-i18n="settings.general.ossLicenses">Open Source Licenses</h3>
                     <p class="setting-hint" data-i18n="settings.general.ossHint">
-                      tlbx uses the following open source components:
+                      Authoritative notices ship with this build. Release-specific dependency
+                      versions are recorded in the platform SBOM rather than duplicated here.
                     </p>
-                    <div class="license-item">
-                      <strong>.NET Runtime Libraries</strong>
-                      <span class="license-version">v10.0.5</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/dotnet/runtime" target="_blank" rel="noopener"
-                        >github.com/dotnet/runtime</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>ASP.NET Core</strong>
-                      <span class="license-version">v10.0.5</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/dotnet/aspnetcore" target="_blank" rel="noopener"
-                        >github.com/dotnet/aspnetcore</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>CsWin32</strong> <span class="license-version">v0.3.269</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/microsoft/CsWin32" target="_blank" rel="noopener"
-                        >github.com/microsoft/CsWin32</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm.js</strong> <span class="license-version">v6.0.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-fit</strong> <span class="license-version">v0.11.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-search</strong>
-                      <span class="license-version">v0.16.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-unicode11</strong>
-                      <span class="license-version">v0.9.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-web-links</strong>
-                      <span class="license-version">v0.12.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-webgl</strong>
-                      <span class="license-version">v0.19.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-link-provider</strong>
-                      <span class="license-version">v2.0.0</span>
-                      <span class="license-type">MIT License</span>
+                    <div class="integrity-links integrity-links-compact">
+                      <a href="/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener">
+                        <strong data-i18n="settings.general.thirdPartyNotices"
+                          >Third-party notices</strong
+                        >
+                        <span>THIRD-PARTY-NOTICES.txt</span>
+                      </a>
+                      <a href="/THIRD-PARTY-LICENSES.txt" target="_blank" rel="noopener">
+                        <strong data-i18n="settings.general.thirdPartyLicenses"
+                          >Third-party licences</strong
+                        >
+                        <span>THIRD-PARTY-LICENSES.txt</span>
+                      </a>
                       <a
-                        href="https://github.com/LabhanshAgrawal/xterm-link-provider"
+                        href="https://github.com/tlbx-ai/tlbx/releases"
                         target="_blank"
                         rel="noopener"
-                        >github.com/LabhanshAgrawal/xterm-link-provider</a
                       >
-                    </div>
-                    <div class="license-item">
-                      <strong>nanostores</strong> <span class="license-version">v1.2.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/nanostores/nanostores"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/nanostores/nanostores</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>openapi-fetch</strong> <span class="license-version">v0.17.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/openapi-ts/openapi-typescript"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/openapi-ts/openapi-typescript</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>openapi-typescript-helpers</strong>
-                      <span class="license-version">v0.1.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/openapi-ts/openapi-typescript"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/openapi-ts/openapi-typescript</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>html2canvas</strong> <span class="license-version">v1.4.1</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/html2canvas"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/html2canvas</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>css-line-break</strong> <span class="license-version">v2.1.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/css-line-break"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/css-line-break</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>text-segmentation</strong>
-                      <span class="license-version">v1.0.3</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/text-segmentation"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/text-segmentation</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>utrie</strong> <span class="license-version">v1.0.2</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/niklasvh/utrie" target="_blank" rel="noopener"
-                        >github.com/niklasvh/utrie</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>base64-arraybuffer</strong>
-                      <span class="license-version">v1.0.2</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/base64-arraybuffer"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/base64-arraybuffer</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>Swagger UI</strong> <span class="license-version">v5.32.0</span>
-                      <span class="license-type">Apache License 2.0</span>
-                      <a
-                        href="https://github.com/swagger-api/swagger-ui"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/swagger-api/swagger-ui</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>JetBrains Mono</strong>
-                      <span class="license-type">SIL Open Font License 1.1</span>
-                      <a
-                        href="https://github.com/JetBrains/JetBrainsMono"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/JetBrains/JetBrainsMono</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>Cascadia Code</strong>
-                      <span class="license-type">SIL Open Font License 1.1</span>
-                      <a
-                        href="https://github.com/microsoft/cascadia-code"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/microsoft/cascadia-code</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>Terminus Font</strong>
-                      <span class="license-type">SIL Open Font License 1.1</span>
-                      <a
-                        href="https://terminus-font.sourceforge.net/"
-                        target="_blank"
-                        rel="noopener"
-                        >terminus-font.sourceforge.net</a
-                      >
+                        <strong data-i18n="settings.general.platformSbom">Platform SBOM</strong>
+                        <span data-i18n="settings.general.platformSbomHint"
+                          >Select the SPDX file matching the release RID</span
+                        >
+                      </a>
                     </div>
                   </div>
                 </section>
