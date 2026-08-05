@@ -61,11 +61,13 @@ jobs:
           prefix = "## What's Changed\n"
           notes = os.environ.get("NOTES", "").rstrip("\n")
           release_tag = os.environ["RELEASE_TAG"]
-          integrity = f"""## Release integrity
-
-Native archives have matching platform-specific SPDX SBOM assets plus GitHub build-provenance and SBOM attestations. Installers and the built-in updater additionally verify a signed manifest and all packaged-file hashes.
-
-[Verification guide](https://github.com/tlbx-ai/tlbx/blob/{release_tag}/docs/RELEASE-INTEGRITY.md) · [Security policy](https://github.com/tlbx-ai/tlbx/blob/{release_tag}/SECURITY.md)"""
+          integrity = (
+              "## Release integrity\n\n"
+              "Native archives have matching platform-specific SPDX SBOM assets plus GitHub build-provenance and SBOM attestations. "
+              "Installers and the built-in updater additionally verify a signed manifest and all packaged-file hashes.\n\n"
+              f"[Verification guide](https://github.com/tlbx-ai/tlbx/blob/{release_tag}/docs/RELEASE-INTEGRITY.md) · "
+              f"[Security policy](https://github.com/tlbx-ai/tlbx/blob/{release_tag}/SECURITY.md)"
+          )
           notes = f"{notes}\n\n{integrity}" if notes else integrity
 
           full = prefix + notes
