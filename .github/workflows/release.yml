@@ -7,6 +7,7 @@ on:
 
 env:
   DOTNET_VERSION: '10.0.302'
+  NPM_VERSION: '11.18.0'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -143,6 +144,9 @@ jobs:
           distribution: temurin
           java-version: '17.0.20+8'
 
+      - name: Pin npm with strict lifecycle allowlisting support
+        run: npm install --global "npm@$NPM_VERSION" --ignore-scripts
+
       - name: Restore locked npm workspaces
         shell: pwsh
         run: |
@@ -168,6 +172,9 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.14.0'
+
+      - name: Pin npm with strict lifecycle allowlisting support
+        run: npm install --global "npm@$NPM_VERSION" --ignore-scripts
 
       - name: Install npm packages
         working-directory: src/Ai.Tlbx.MidTerm
@@ -200,6 +207,9 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.14.0'
+
+      - name: Pin npm with strict lifecycle allowlisting support
+        run: npm install --global "npm@$NPM_VERSION" --ignore-scripts
 
       - name: Install npm packages
         working-directory: src/Ai.Tlbx.MidTerm
@@ -234,7 +244,7 @@ jobs:
 
   # ── Build macOS ARM64 + Linux ARM64 for dev prereleases ────────────────────
   build-dev:
-    needs: [prepare, frontend]
+    needs: [prepare, frontend, supply-chain]
     if: needs.prepare.outputs.is_dev == 'true'
     permissions:
       contents: write
@@ -835,7 +845,7 @@ jobs:
 
       - name: Upgrade npm for trusted publishing
         run: |
-          npm install -g npm@11.18.0
+          npm install --global "npm@$NPM_VERSION" --ignore-scripts
           node --version
           npm --version
 

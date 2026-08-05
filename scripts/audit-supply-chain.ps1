@@ -52,6 +52,11 @@ if (@($mutableActions).Count -gt 0) {
 }
 
 Write-Host "Supply-chain gate: npm advisories and registry signatures" -ForegroundColor Cyan
+$requiredNpmVersion = "11.18.0"
+$actualNpmVersion = (& npm --version).Trim()
+if ($LASTEXITCODE -ne 0 -or $actualNpmVersion -ne $requiredNpmVersion) {
+    throw "npm $requiredNpmVersion is required for strict lifecycle-script allowlisting; found $actualNpmVersion."
+}
 $npmWorkspaces = @(
     (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm"),
     (Join-Path $repoRoot "docs/marketing/ScreenshotAutomation")
