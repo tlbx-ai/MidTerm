@@ -89,18 +89,18 @@ The native installer configures the service, password-protected HTTPS, and updat
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://get.tlbx.ai/install.sh | bash -s -- --dev
+curl -fsSL https://get.tlbx.ai/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1))) -Dev
+& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1)))
 ```
 
 Open `https://localhost:2000`. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
 
-The installer currently selects the verified dev channel because the previously published stable `v9.19.0` is missing native assets. The `get.tlbx.ai` origin stays stable; remove the explicit dev flag after the corrected stable promotion.
+These commands install the current stable release. Add `--dev` on macOS/Linux or `-Dev` on Windows only when you explicitly want the prerelease channel.
 
 ## Private remote access
 
