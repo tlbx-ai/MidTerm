@@ -95,7 +95,7 @@ curl -fsSL https://get.tlbx.ai/install.sh | bash
 **Windows PowerShell**
 
 ```powershell
-& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1)))
+irm https://get.tlbx.ai/install.ps1 | iex
 ```
 
 Open `https://localhost:2000`. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.

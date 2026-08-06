@@ -67,7 +67,7 @@
     "xterm-link-provider": "^2.0.0"
   },
   "allowScripts": {
-    "esbuild@0.28.1": true,
-    "@scarf/scarf": false
+    "@scarf/scarf": false,
+    "esbuild": true
   }
 }

@@ -19,7 +19,7 @@ Run Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or 
 Install tlbx:
 
 - macOS/Linux: `curl -fsSL https://get.tlbx.ai/install.sh | bash`
-- Windows: `& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1)))`
+- Windows: `irm https://get.tlbx.ai/install.ps1 | iex`
 - Optional prerelease channel: add `--dev` on macOS/Linux or `-Dev` on Windows.
 - Source repo: [github.com/tlbx-ai/tlbx](https://github.com/tlbx-ai/tlbx)
 - Product website: [tlbx.ai](https://tlbx.ai)

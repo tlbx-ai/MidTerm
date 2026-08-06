@@ -9,8 +9,8 @@ import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { closeSettings } from '../settings';
-import { isDevMode, onDevModeChanged } from '../sidebar/voiceSection';
 import { reconcileKeyedChildren } from '../../utils/domReconcile';
+import { isActionGraphsAvailable } from './availability';
 import {
   bindSession,
   createEdge,
@@ -144,11 +144,10 @@ export function initActionGraphsView(nextOptions: ActionGraphsViewOptions): void
   wireCanvasInteractions();
 
   $currentSettings.subscribe(syncButtonVisibility);
-  onDevModeChanged(syncButtonVisibility);
 }
 
 function syncButtonVisibility(): void {
-  const enabled = $currentSettings.get()?.actionGraphsEnabled === true || isDevMode();
+  const enabled = isActionGraphsAvailable($currentSettings.get());
   document.getElementById('btn-action-graphs')?.classList.toggle('hidden', !enabled);
   if (!enabled && $actionGraphsOpen.get()) {
     closeActionGraphsView();
