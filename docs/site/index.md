@@ -18,10 +18,9 @@ Run Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or 
 
 Install tlbx:
 
-> **Development channel:** stable `v9.19.0` was published without platform packages. Use these verified commands until the corrected stable release is promoted.
-
-- macOS/Linux: `curl -fsSL https://get.tlbx.ai/install.sh | bash -s -- --dev`
-- Windows: `& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1))) -Dev`
+- macOS/Linux: `curl -fsSL https://get.tlbx.ai/install.sh | bash`
+- Windows: `& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1)))`
+- Optional prerelease channel: add `--dev` on macOS/Linux or `-Dev` on Windows.
 - Source repo: [github.com/tlbx-ai/tlbx](https://github.com/tlbx-ai/tlbx)
 - Product website: [tlbx.ai](https://tlbx.ai)
 - Product docs: [docs/FEATURES.md](https://github.com/tlbx-ai/tlbx/blob/main/docs/FEATURES.md)
