@@ -29,7 +29,7 @@ struct TlbxApp: App {
 }
 
 enum BackgroundRefresh {
-    static let identifier = "ai.tlbx.midterm.refresh"
+    static let identifier = "ai.tlbx.app.refresh"
 
     static func schedule() {
         let request = BGAppRefreshTaskRequest(identifier: identifier)

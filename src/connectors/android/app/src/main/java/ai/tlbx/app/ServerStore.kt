@@ -1,4 +1,4 @@
-package ai.tlbx.midterm
+package ai.tlbx.app
 
 import android.content.Context
 import org.json.JSONArray

@@ -1,4 +1,4 @@
-package ai.tlbx.midterm
+package ai.tlbx.app
 
 import android.app.job.JobInfo
 import android.app.job.JobParameters

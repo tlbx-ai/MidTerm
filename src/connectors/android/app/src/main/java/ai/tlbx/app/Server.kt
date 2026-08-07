@@ -1,4 +1,4 @@
-package ai.tlbx.midterm
+package ai.tlbx.app
 
 import org.json.JSONObject
 import java.net.URI

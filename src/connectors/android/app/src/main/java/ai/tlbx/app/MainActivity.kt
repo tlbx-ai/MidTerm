@@ -1,4 +1,4 @@
-package ai.tlbx.midterm
+package ai.tlbx.app
 
 import android.app.Activity
 import android.app.AlertDialog

@@ -47,7 +47,7 @@
     <string>tlbx connects to the private tlbx instances that you configure.</string>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
-        <string>ai.tlbx.midterm.refresh</string>
+        <string>ai.tlbx.app.refresh</string>
     </array>
     <key>UIBackgroundModes</key>
     <array>

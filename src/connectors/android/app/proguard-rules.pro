@@ -4,8 +4,8 @@
 -mergeinterfacesaggressively
 
 # Keep the entry points
--keep class ai.tlbx.midterm.MainActivity { *; }
--keep class ai.tlbx.midterm.TerminalActivity { *; }
+-keep class ai.tlbx.app.MainActivity { *; }
+-keep class ai.tlbx.app.TerminalActivity { *; }
 
 # Strip Kotlin metadata
 -dontwarn kotlin.**

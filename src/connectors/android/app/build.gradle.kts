@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "ai.tlbx.midterm"
+    namespace = "ai.tlbx.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "ai.tlbx.midterm"
+        applicationId = "ai.tlbx.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

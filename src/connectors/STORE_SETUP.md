@@ -5,14 +5,14 @@ The source is ready for the manual signing and store-account steps below. The na
 ## Fixed application identity
 
 - Store name: `tlbx`
-- Android application ID: `ai.tlbx.midterm`
-- Apple bundle ID: `ai.tlbx.midterm`
+- Android application ID: `ai.tlbx.app`
+- Apple bundle ID: `ai.tlbx.app`
 - Version: `1.0.0`
 - Minimum Android: API 26 (Android 8)
 - Android target/compile SDK: API 36 (Android 16)
 - Minimum Apple OS: iOS/iPadOS 16
 
-The `midterm` suffix is a retained technical identifier. It is not user-visible. Do not create a second store record with another identifier after signing or publication starts.
+The application identity is final for the first store publication. Do not create a second store record with another identifier after signing or publication starts.
 
 ## What the app does natively
 
@@ -31,7 +31,7 @@ Background execution is always best-effort. Android schedules periodic work no m
 ### 1. Create the app record
 
 1. In Play Console, create an app named `tlbx` with default language English.
-2. Use package name `ai.tlbx.midterm`.
+2. Use package name `ai.tlbx.app`.
 3. Enable Play App Signing. Keep the upload key described below separate from Google's app-signing key.
 
 New submissions after 31 August 2026 must target API 36. The project already does.
@@ -81,11 +81,11 @@ Apple has required uploads to use Xcode 26 and the iOS 26 SDK since 28 April 202
 
 ### 1. Register identity and signing
 
-1. In Certificates, Identifiers & Profiles, register explicit App ID `ai.tlbx.midterm` with display name `tlbx`.
+1. In Certificates, Identifiers & Profiles, register explicit App ID `ai.tlbx.app` with display name `tlbx`.
 2. Open `src/connectors/ios/MidTermConnector.xcodeproj` in Xcode 26 or newer.
 3. Select the `MidTermConnector` target, then Signing & Capabilities.
 4. Select team `FK7G5C74WH` if it is still the correct developer team. Keep Automatically manage signing enabled for the shortest path.
-5. For manual signing instead, create an Apple Distribution certificate and an App Store distribution profile for `ai.tlbx.midterm`, install both on the Mac, disable automatic signing for Release, and select that profile.
+5. For manual signing instead, create an Apple Distribution certificate and an App Store distribution profile for `ai.tlbx.app`, install both on the Mac, disable automatic signing for Release, and select that profile.
 
 The project already contains the Background fetch mode, the permitted refresh-task identifier, the local-network usage description, and `PrivacyInfo.xcprivacy` for its local preferences access.
 

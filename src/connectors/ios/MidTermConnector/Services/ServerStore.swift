@@ -74,7 +74,7 @@ final class ServerStore: ObservableObject {
         defaults.set(activeID?.uuidString, forKey: activeKey)
     }
 
-    private static let serversKey = "ai.tlbx.midterm.servers.v2"
-    private static let activeKey = "ai.tlbx.midterm.active-server"
-    private static let legacyKey = "ai.tlbx.midterm.server"
+    private static let serversKey = "ai.tlbx.app.servers.v2"
+    private static let activeKey = "ai.tlbx.app.active-server"
+    private static let legacyKey = "ai.tlbx.app.server"
 }
