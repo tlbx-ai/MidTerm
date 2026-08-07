@@ -4834,6 +4834,10 @@ body::before {
   overflow: visible;
 }
 
+.sidebar-nav-btn.hidden {
+  display: none;
+}
+
 .sidebar-nav-btn:hover {
   background-color: var(--bg-session-hover);
   color: var(--text-primary);
