@@ -82,9 +82,9 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           cp src/connectors/android/app/build/outputs/apk/release/app-release.apk \
-             "$RUNNER_TEMP/MidTermConnector-${VERSION}.apk"
+             "$RUNNER_TEMP/tlbx-android-${VERSION}.apk"
           cp src/connectors/android/app/build/outputs/bundle/release/app-release.aab \
-             "$RUNNER_TEMP/MidTermConnector-${VERSION}.aab"
+             "$RUNNER_TEMP/tlbx-android-${VERSION}.aab"
 
       - name: Upload AAB to Google Play
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1
@@ -105,8 +105,8 @@ jobs:
 
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" \
-              --title "MidTerm Connector v${VERSION}" \
-              --notes "## MidTerm Connector v${VERSION} (build ${{ env.BUILD_NUMBER }})
+              --title "tlbx app v${VERSION}" \
+              --notes "## tlbx app v${VERSION} (build ${{ env.BUILD_NUMBER }})
 
           ### Downloads
           - **Android APK** — sideload or install directly
@@ -114,8 +114,8 @@ jobs:
           - **iOS IPA** — available after iOS workflow runs"
 
           gh release upload "$TAG" \
-            "$RUNNER_TEMP/MidTermConnector-${VERSION}.apk" \
-            "$RUNNER_TEMP/MidTermConnector-${VERSION}.aab" \
+            "$RUNNER_TEMP/tlbx-android-${VERSION}.apk" \
+            "$RUNNER_TEMP/tlbx-android-${VERSION}.aab" \
             --clobber
 
       - name: Summary

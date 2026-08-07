@@ -14,6 +14,7 @@
 		A1000006 /* AddEditServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
 		A1000007 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
 		A1000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000008; };
+		A1000009 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A2000010; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,7 +26,8 @@
 		A2000007 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		A2000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A3000001 /* MidTermConnector.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MidTermConnector.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A3000001 /* tlbx.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = tlbx.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +58,7 @@
 				A5000005 /* Views */,
 				A2000008 /* Assets.xcassets */,
 				A2000009 /* Info.plist */,
+				A2000010 /* PrivacyInfo.xcprivacy */,
 			);
 			path = MidTermConnector;
 			sourceTree = "<group>";
@@ -89,7 +92,7 @@
 		A5000006 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A3000001 /* MidTermConnector.app */,
+				A3000001 /* tlbx.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -110,8 +113,8 @@
 			dependencies = (
 			);
 			name = MidTermConnector;
-			productName = MidTermConnector;
-			productReference = A3000001 /* MidTermConnector.app */;
+			productName = tlbx;
+			productReference = A3000001 /* tlbx.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -153,6 +156,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000008 /* Assets.xcassets in Resources */,
+				A1000009 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -234,7 +238,7 @@
 				DEVELOPMENT_TEAM = FK7G5C74WH;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MidTermConnector/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = MidTerm;
+				INFOPLIST_KEY_CFBundleDisplayName = tlbx;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -246,7 +250,7 @@
 				);
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.tlbx.midterm;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = tlbx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -262,7 +266,7 @@
 				DEVELOPMENT_TEAM = FK7G5C74WH;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MidTermConnector/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = MidTerm;
+				INFOPLIST_KEY_CFBundleDisplayName = tlbx;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -274,7 +278,7 @@
 				);
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.tlbx.midterm;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = tlbx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

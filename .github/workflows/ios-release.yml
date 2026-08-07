@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -66,7 +66,7 @@ jobs:
           PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$PROVISIONING_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/midterm.mobileprovision
+          echo "$PROVISIONING_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/tlbx.mobileprovision
 
       - name: Set version
         run: |
@@ -105,7 +105,7 @@ jobs:
             -exportOptionsPlist $RUNNER_TEMP/export.plist \
             -exportPath $RUNNER_TEMP/export
           echo "=== IPA size ==="
-          ls -lh $RUNNER_TEMP/export/MidTermConnector.ipa
+          ls -lh $RUNNER_TEMP/export/tlbx.ipa
 
       - name: Setup App Store Connect API key
         env:
@@ -121,7 +121,7 @@ jobs:
           API_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_API_ISSUER_ID }}
         run: |
           xcrun altool --validate-app \
-            -f $RUNNER_TEMP/export/MidTermConnector.ipa \
+            -f $RUNNER_TEMP/export/tlbx.ipa \
             --type ios \
             --apiKey "$API_KEY_ID" \
             --apiIssuer "$API_ISSUER_ID"
@@ -132,7 +132,7 @@ jobs:
           API_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_API_ISSUER_ID }}
         run: |
           xcrun altool --upload-app \
-            -f $RUNNER_TEMP/export/MidTermConnector.ipa \
+            -f $RUNNER_TEMP/export/tlbx.ipa \
             --type ios \
             --apiKey "$API_KEY_ID" \
             --apiIssuer "$API_ISSUER_ID"
@@ -140,8 +140,8 @@ jobs:
       - name: Rename artifact for release
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          cp $RUNNER_TEMP/export/MidTermConnector.ipa \
-             "$RUNNER_TEMP/MidTermConnector-${VERSION}.ipa"
+          cp $RUNNER_TEMP/export/tlbx.ipa \
+             "$RUNNER_TEMP/tlbx-ios-${VERSION}.ipa"
 
       - name: Create or update GitHub Release
         env:
@@ -154,8 +154,8 @@ jobs:
 
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" \
-              --title "MidTerm Connector v${VERSION}" \
-              --notes "## MidTerm Connector v${VERSION} (build ${{ env.BUILD_NUMBER }})
+              --title "tlbx app v${VERSION}" \
+              --notes "## tlbx app v${VERSION} (build ${{ env.BUILD_NUMBER }})
 
           ### Downloads
           - **iOS IPA** — validated and uploaded to App Store Connect
@@ -164,13 +164,13 @@ jobs:
           iOS: Available on the App Store after Apple review."
 
           gh release upload "$TAG" \
-            "$RUNNER_TEMP/MidTermConnector-${VERSION}.ipa" \
+            "$RUNNER_TEMP/tlbx-ios-${VERSION}.ipa" \
             --clobber
 
       - name: Summary
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          IPA_SIZE=$(stat -f%z "$RUNNER_TEMP/MidTermConnector-${VERSION}.ipa")
+          IPA_SIZE=$(stat -f%z "$RUNNER_TEMP/tlbx-ios-${VERSION}.ipa")
           IPA_KB=$((IPA_SIZE / 1024))
           echo "### iOS Release v${VERSION} (build ${{ env.BUILD_NUMBER }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -185,4 +185,4 @@ jobs:
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
           rm -rf ~/.private_keys
-          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/midterm.mobileprovision
+          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/tlbx.mobileprovision

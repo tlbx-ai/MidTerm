@@ -5,16 +5,16 @@ plugins {
 
 android {
     namespace = "ai.tlbx.midterm"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ai.tlbx.midterm"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
 
-        resourceConfigurations += "en"
+        androidResources.localeFilters += "en"
     }
 
     signingConfigs {
@@ -59,8 +59,4 @@ android {
             excludes += "kotlin-tooling-metadata.json"
         }
     }
-}
-
-dependencies {
-    implementation("androidx.core:core-splashscreen:1.0.1")
 }

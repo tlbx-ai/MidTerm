@@ -1,8 +1,6 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
-androidx.annotation:annotation:1.2.0=debugRuntimeClasspath,debugUnitTestRuntimeClasspath,releaseRuntimeClasspath,releaseUnitTestRuntimeClasspath
-androidx.core:core-splashscreen:1.0.1=debugAndroidTestCompileClasspath,debugCompileClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath,implementationDependenciesMetadata,releaseCompileClasspath,releaseRuntimeClasspath,releaseUnitTestCompileClasspath,releaseUnitTestRuntimeClasspath
 com.android.tools.ddms:ddmlib:31.13.2=_internal-unified-test-platform-android-device-provider-ddmlib
 com.android.tools.emulator:proto:31.13.2=_internal-unified-test-platform-android-test-plugin-host-emulator-control
 com.android.tools.emulator:proto:31.7.3=_internal-unified-test-platform-android-test-plugin-host-retention

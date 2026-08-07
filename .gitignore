@@ -100,6 +100,7 @@ node_modules/
 # Gradle local state
 .gradle/
 src/connectors/android/build/
+src/connectors/android/app/build/
 
 # Marketing generated output
 docs/marketing/output/

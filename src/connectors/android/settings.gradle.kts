@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MidTermConnector"
+rootProject.name = "tlbx-app"
 include(":app")

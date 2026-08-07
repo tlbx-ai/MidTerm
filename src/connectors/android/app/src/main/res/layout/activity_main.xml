@@ -27,10 +27,26 @@
             android:textColor="@color/text_secondary"
             android:textSize="16sp" />
 
+        <TextView
+            android:id="@+id/saved_instances_heading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/saved_instances"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/server_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="24dp"
             android:background="@color/surface"
             android:orientation="vertical"
             android:padding="20dp">
@@ -38,10 +54,21 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/address_label"
+                android:text="@string/add_instance"
                 android:textColor="@color/text_primary"
-                android:textSize="14sp"
+                android:textSize="18sp"
                 android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/edit_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:hint="@string/hint_name"
+                android:importantForAutofill="no"
+                android:inputType="textCapWords"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary" />
 
             <EditText
                 android:id="@+id/edit_url"
@@ -58,36 +85,49 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="10dp"
                 android:text="@string/address_hint"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
-            <Button
-                android:id="@+id/btn_open"
+            <CheckBox
+                android:id="@+id/allow_untrusted_certificate"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="10dp"
+                android:text="@string/allow_untrusted_certificate"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/certificate_warning"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_save"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
                 android:backgroundTint="@color/accent"
-                android:text="@string/open_midterm"
+                android:text="@string/add_and_open"
                 android:textColor="@android:color/white" />
+
+            <Button
+                android:id="@+id/btn_cancel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@android:string/cancel"
+                android:visibility="gone" />
         </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="@string/hub_hint"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
             android:text="@string/persistence_hint"
             android:textColor="@color/text_secondary"
             android:textSize="14sp" />
-
     </LinearLayout>
 </ScrollView>
