@@ -21,8 +21,6 @@ import path from "node:path";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 const execFileAsync = promisify(execFile);
 const targetUrl = process.env.TLBX_PERF_URL || "https://localhost:2000/";
 const cookieHeader = process.env.TLBX_COOKIE_HEADER || "";
@@ -392,24 +390,33 @@ async function waitForExpression(
   throw new Error(`Expression did not become true: ${expression}`);
 }
 
-async function api(pathname, init = {}) {
-  const response = await fetch(new URL(pathname, targetUrl), {
-    ...init,
-    headers: {
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...(cookieHeader ? { cookie: cookieHeader } : {}),
-      ...init.headers,
-    },
-  });
+async function api(pageClient, pathname, init = {}) {
+  const response = await evaluate(
+    pageClient,
+    `(async () => {
+      const response = await fetch(${JSON.stringify(pathname)}, ${JSON.stringify({
+        ...init,
+        headers: {
+          ...(init.body ? { "content-type": "application/json" } : {}),
+          ...init.headers,
+        },
+      })});
+      return {
+        ok: response.ok,
+        status: response.status,
+        contentType: response.headers.get("content-type") || "",
+        text: await response.text(),
+      };
+    })()`,
+  );
   if (!response.ok) {
     throw new Error(
       `${init.method || "GET"} ${pathname} failed: ${response.status}`,
     );
   }
-  const contentType = response.headers.get("content-type") || "";
-  return contentType.includes("application/json")
-    ? response.json()
-    : response.text();
+  return response.contentType.includes("application/json") && response.text
+    ? JSON.parse(response.text)
+    : response.text;
 }
 
 const windowStateScript = String.raw`
@@ -1046,7 +1053,7 @@ try {
     10_000,
   );
   createdSessionId = (
-    await api("/api/sessions", {
+    await api(client, "/api/sessions", {
       method: "POST",
       body: JSON.stringify({ cols: 120, rows: 36, shell: "Pwsh" }),
     })
@@ -1067,6 +1074,7 @@ try {
   );
   if (backgroundCommand) {
     await api(
+      client,
       `/api/sessions/${encodeURIComponent(createdSessionId)}/input/text`,
       {
         method: "POST",
@@ -1174,6 +1182,7 @@ try {
   } while (Date.now() < markerDeadline);
   if (expectedTerminalText) {
     const buffer = await api(
+      client,
       `/api/sessions/${encodeURIComponent(createdSessionId)}/buffer`,
     );
     serverBufferContainsExpected =
@@ -1202,12 +1211,28 @@ try {
   errorText = error?.stack || String(error);
   console.error(errorText);
 } finally {
-  if (client) await client.close().catch(() => {});
-  if (createdSessionId) {
-    await api(`/api/sessions/${encodeURIComponent(createdSessionId)}`, {
-      method: "DELETE",
-    }).catch(() => {});
+  let cleanupClient = client;
+  if (!cleanupClient && chromePort && pageTargetId) {
+    try {
+      const cleanupTarget = await findPageTarget(chromePort, pageTargetId, 5000);
+      cleanupClient = new CdpClient(cleanupTarget.webSocketDebuggerUrl);
+      await cleanupClient.ready;
+      await cleanupClient.send("Runtime.enable");
+    } catch {
+      cleanupClient = null;
+    }
   }
+  if (createdSessionId) {
+    await api(
+      cleanupClient,
+      `/api/sessions/${encodeURIComponent(createdSessionId)}`,
+      { method: "DELETE" },
+    ).catch(() => {});
+  }
+  if (cleanupClient && cleanupClient !== client) {
+    await cleanupClient.close().catch(() => {});
+  }
+  if (client) await client.close().catch(() => {});
   stopSampler = true;
   if (samplerPromise) await samplerPromise.catch(() => {});
   const closedGracefully = await closeChromeGracefully(
