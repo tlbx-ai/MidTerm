@@ -24,7 +24,7 @@
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
 
-# Run your coding agents on your machines. Steer them from anywhere.
+# Persistent terminals and coding agents in any browser.
 
 tlbx is a self-hosted browser control station for remote AI coding agents. Run Codex, Claude Code, Gemini CLI, Grok Build, OpenCode, Copilot CLI, Antigravity CLI—or several together—on the machines that own your repos, credentials, and tools. Supervise them from any desktop, tablet, or phone browser.
 
@@ -32,11 +32,9 @@ tlbx is a self-hosted browser control station for remote AI coding agents. Run C
 
 The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running. It's a general terminal too—pwsh, bash, or zsh and any PTY app, not just agents.
 
-**Your machines are browser tabs. Your agents keep working when you leave.**
+Technical guides: **[remote coding agents](https://tlbx.ai/remote-coding-agents)** · **[coding-agent web terminal](https://tlbx.ai/coding-agent-web-terminal)** · **[features](https://tlbx.ai/features)** · **[architecture](https://tlbx.ai/architecture)** · **[install](https://tlbx.ai/install)**
 
-Technical guides: **[remote AI agents](https://tlbx.ai/remote-ai-agents)** · **[Claude Code + Codex](https://tlbx.ai/claude-code-codex-browser)** · **[features](https://tlbx.ai/features)** · **[architecture](https://tlbx.ai/architecture)** · **[install](https://tlbx.ai/install)**
-
-## Real sessions
+## Product screenshots
 
 Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessions—each a real PTY, all steered from one browser tab.
 
@@ -78,10 +76,6 @@ SSH opens a shell connection. tlbx reopens the machine's living context: agents,
 
 Run one independent tlbx instance per host. Open your home workstation, office laptop, or server as adjacent tabs. Bring LAN, VPN, or reverse-tunnel connectivity; tlbx becomes the working interface.
 
-<p align="center">
-  <img src="docs/marketing/readme/your-machines-are-tabs.svg" alt="A browser anywhere connects to independent tlbx instances on a home workstation, office laptop, and server; each machine keeps its own repositories, agents, and processes" width="100%">
-</p>
-
 ## Install
 
 The native installer configures the service, password-protected HTTPS, and updates.
@@ -111,10 +105,6 @@ tlbx is not a VPN or hosted relay. You choose the network path.
 This is a strong security baseline: tailnet traffic is end-to-end encrypted, and [grants/ACLs](https://tailscale.com/docs/features/access-control) can restrict which identities and devices reach the host. Keep tlbx's HTTPS/password authentication enabled, use least-privilege rules, and keep both products updated.
 
 Cloudflare Tunnel, nginx/Caddy, LAN, and other private-network setups also work.
-
-<p align="center">
-  <img src="docs/marketing/readme/host-session-anywhere.svg" alt="A tlbx session remains on its host while browsers at a desk, on a laptop, and on a phone reconnect to it from different locations" width="100%">
-</p>
 
 > [!IMPORTANT]
 > tlbx has no repository-hosting cloud. Repos, credentials, tools, and processes stay on each host. Agent-provider traffic remains subject to that provider's configuration and terms.
