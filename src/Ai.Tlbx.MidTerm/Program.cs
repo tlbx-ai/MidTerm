@@ -215,6 +215,7 @@ public class Program
         var historyService = app.Services.GetRequiredService<HistoryService>();
         var inputHistoryService = app.Services.GetRequiredService<InputHistoryService>();
         var controlPlaneService = app.Services.GetRequiredService<ControlPlaneService>();
+        var actionGraphService = app.Services.GetRequiredService<ActionGraphService>();
         var spaceService = app.Services.GetRequiredService<SpaceService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
@@ -426,6 +427,7 @@ public class Program
             appServerControlRuntime,
             managerBarQueueService,
             inputHistoryService);
+        ActionGraphEndpoints.MapActionGraphEndpoints(app, actionGraphService);
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService, gitWatcher);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);

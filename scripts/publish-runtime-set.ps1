@@ -36,11 +36,17 @@ $projects = @(
     }
 )
 
+if (-not $Rid.StartsWith("win-", [System.StringComparison]::OrdinalIgnoreCase)) {
+    $projects = @($projects | Where-Object { $_.Name -ne "mttmux" })
+}
+
 $processes = @()
 Push-Location $RepoRoot
 try {
     foreach ($project in $projects) {
-        & dotnet restore $project.Path -r $Rid --verbosity minimal
+        # Each project declares and locks every RID it publishes. Restore that complete
+        # graph once so the selected-RID publish below cannot rewrite dependency state.
+        & dotnet restore $project.Path --locked-mode --verbosity minimal
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet restore failed for $($project.Name)"
         }
@@ -48,6 +54,7 @@ try {
 
     & dotnet build "src/Ai.Tlbx.MidTerm.Common/Ai.Tlbx.MidTerm.Common.csproj" `
         -c $Configuration `
+        -r $Rid `
         --no-restore `
         --verbosity minimal `
         -p:ContinuousIntegrationBuild=true

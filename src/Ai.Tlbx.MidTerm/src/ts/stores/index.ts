@@ -43,6 +43,9 @@ export const $activeSessionId = atom<string | null>(null);
 /** Full-fleet operator view is covering terminal surfaces. */
 export const $operatorOpen = atom(false);
 
+/** Agent-curated action graph canvas is covering terminal surfaces. */
+export const $actionGraphsOpen = atom(false);
+
 /**
  * Pending renames awaiting server confirmation.
  * Maps sessionId -> pending name (empty string means clearing the name).

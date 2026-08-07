@@ -303,9 +303,10 @@ public static class MuxProtocol
         bool resetTerminal,
         TerminalReplayReason reason,
         ulong sequenceStart,
-        ulong sourceSequenceEndExclusive)
+        ulong sourceSequenceEndExclusive,
+        ushort alternateScreenMode = 0)
     {
-        var frame = new byte[HeaderSize + 22];
+        var frame = new byte[HeaderSize + 24];
         frame[0] = TypeRecoveryBegin;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         var payload = frame.AsSpan(HeaderSize);
@@ -314,6 +315,7 @@ public static class MuxProtocol
         payload[5] = (byte)reason;
         BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(6, 8), sequenceStart);
         BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(14, 8), sourceSequenceEndExclusive);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.Slice(22, 2), alternateScreenMode);
         return frame;
     }
 
@@ -329,7 +331,10 @@ public static class MuxProtocol
             payload[4] != 0,
             (TerminalReplayReason)payload[5],
             BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(6, 8)),
-            BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(14, 8)));
+            BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(14, 8)),
+            payload.Length >= 24
+                ? BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(22, 2))
+                : (ushort)0);
     }
 
     public static byte[] CreateRecoveryEndFrame(
@@ -552,7 +557,8 @@ public readonly record struct MuxRecoveryBegin(
     bool ResetTerminal,
     TerminalReplayReason Reason,
     ulong SequenceStart,
-    ulong SourceSequenceEndExclusive);
+    ulong SourceSequenceEndExclusive,
+    ushort AlternateScreenMode);
 
 public readonly record struct MuxRecoveryEnd(
     uint Generation,

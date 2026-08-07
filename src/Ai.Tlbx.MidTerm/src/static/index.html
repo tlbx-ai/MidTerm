@@ -231,6 +231,24 @@
                 /></svg></span
             ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
           </button>
+          <button class="sidebar-nav-btn btn-action-graphs hidden" id="btn-action-graphs">
+            <span class="icon icon-svg"
+              ><svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="5" cy="6" r="2.5" />
+                <circle cx="19" cy="6" r="2.5" />
+                <circle cx="12" cy="18" r="2.5" />
+                <path d="M7 7.5 10.5 16M17 7.5 13.5 16M7.5 6h9" /></svg></span
+            ><span data-i18n="sidebar.actionGraphs">Action Graphs</span>
+          </button>
         </div>
         <div id="session-filter-bar" class="session-filter-bar" hidden>
           <input
@@ -759,6 +777,164 @@
               </section>
             </div>
           </section>
+          <section
+            id="action-graphs-view"
+            class="action-graphs-view hidden"
+            aria-labelledby="action-graphs-title"
+          >
+            <header class="action-graphs-header">
+              <div class="action-graphs-header-info">
+                <h1 id="action-graphs-title" data-i18n="actionGraphs.title">Action Graphs</h1>
+                <select
+                  id="action-graphs-scope"
+                  class="action-graphs-select hidden"
+                  aria-label="Scope"
+                ></select>
+                <select
+                  id="action-graphs-select"
+                  class="action-graphs-select hidden"
+                  aria-label="Action Graphs"
+                ></select>
+                <label class="ag-search-shell">
+                  <span aria-hidden="true">⌕</span>
+                  <input
+                    id="ag-search"
+                    type="search"
+                    data-i18n-placeholder="actionGraphs.search"
+                    placeholder="Find anything"
+                  />
+                </label>
+                <span id="ag-graph-stats" class="ag-graph-stats" aria-live="polite"></span>
+              </div>
+              <div class="action-graphs-header-actions">
+                <button
+                  id="ag-new-node"
+                  type="button"
+                  class="btn-primary"
+                  data-i18n="actionGraphs.newNode"
+                >
+                  New node
+                </button>
+                <button
+                  id="ag-sync"
+                  type="button"
+                  class="btn-secondary hidden"
+                  data-i18n="actionGraphs.sync"
+                >
+                  Sync
+                </button>
+                <button
+                  id="ag-organize"
+                  type="button"
+                  class="btn-secondary"
+                  data-i18n="actionGraphs.organize"
+                >
+                  Organize
+                </button>
+                <button
+                  id="ag-fit"
+                  type="button"
+                  class="btn-secondary"
+                  data-i18n="actionGraphs.fit"
+                >
+                  Fit
+                </button>
+                <button
+                  id="ag-manage"
+                  type="button"
+                  class="btn-secondary"
+                  aria-label="Manage graphs"
+                >
+                  ⋯
+                </button>
+                <button
+                  id="action-graphs-close"
+                  type="button"
+                  class="btn-secondary"
+                  data-i18n="actionGraphs.close"
+                >
+                  Close
+                </button>
+              </div>
+            </header>
+            <div id="ag-manage-panel" class="ag-manage-panel hidden">
+              <div class="ag-manage-row">
+                <input
+                  id="ag-new-graph-name"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.graphName"
+                  placeholder="Graph name"
+                />
+                <button id="ag-create-graph" type="button" data-i18n="actionGraphs.newGraph">
+                  New graph
+                </button>
+              </div>
+              <div class="ag-manage-row">
+                <input
+                  id="ag-new-scope-name"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.scopeName"
+                  placeholder="Scope name"
+                />
+                <button id="ag-create-scope" type="button" data-i18n="actionGraphs.newScope">
+                  New scope
+                </button>
+              </div>
+              <div class="ag-manage-row ag-refresh-row">
+                <span class="ag-manage-label" data-i18n="actionGraphs.refreshSpec">Refresh</span>
+                <input
+                  id="ag-refresh-command"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.refreshCommand"
+                  placeholder="Agent command (e.g. claude)"
+                />
+                <input
+                  id="ag-refresh-cwd"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.refreshCwd"
+                  placeholder="Working directory"
+                />
+                <input
+                  id="ag-refresh-prompt"
+                  type="text"
+                  data-i18n-placeholder="actionGraphs.refreshPrompt"
+                  placeholder="Prompt"
+                />
+                <button id="ag-save-refresh" type="button" data-i18n="actionGraphs.refreshSave">
+                  Save
+                </button>
+              </div>
+              <div class="ag-manage-row">
+                <button id="ag-delete-graph" type="button" data-i18n="actionGraphs.deleteGraph">
+                  Delete current graph
+                </button>
+              </div>
+            </div>
+            <div class="action-graphs-body">
+              <div id="action-graphs-canvas" class="action-graphs-canvas">
+                <div id="action-graphs-stage" class="action-graphs-stage">
+                  <svg id="action-graphs-edges" class="action-graphs-edges"></svg>
+                  <div id="action-graphs-nodes" class="action-graphs-nodes"></div>
+                </div>
+                <p id="action-graphs-empty" class="action-graphs-empty hidden" data-i18n="actionGraphs.empty">
+                  No graphs yet. Agents create them through the .tlbx/tlbx_graphs helpers.
+                </p>
+                <div class="ag-canvas-hud">
+                  <button id="ag-attention" type="button" class="hidden"></button>
+                  <button id="ag-show-hidden" type="button" class="hidden"></button>
+                  <span id="ag-zoom-hud">100%</span>
+                </div>
+                <canvas
+                  id="ag-minimap"
+                  class="ag-minimap"
+                  width="168"
+                  height="108"
+                  aria-label="Graph minimap"
+                ></canvas>
+              </div>
+              <aside id="action-graphs-detail" class="action-graphs-detail hidden"></aside>
+            </div>
+          </section>
           <div id="empty-state" class="empty-state">
             <img src="/img/tlbx-toolbox.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
             <p data-i18n="terminal.noTerminals">No terminals open</p>
@@ -1025,6 +1201,50 @@
                     </div>
                   </div>
 
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.general.releaseIntegrity">Security &amp; Release Integrity</h3>
+                    <p class="setting-hint" data-i18n="settings.general.releaseIntegrityHint">
+                      tlbx verifies signed update metadata and packaged-file hashes. Public releases
+                      also include platform-specific SPDX SBOMs and GitHub attestations.
+                    </p>
+                    <div class="integrity-links">
+                      <a href="https://tlbx.ai/security" target="_blank" rel="noopener">
+                        <strong data-i18n="settings.general.securityPolicy">Security policy</strong>
+                        <span>tlbx.ai/security</span>
+                      </a>
+                      <a
+                        href="https://github.com/tlbx-ai/tlbx/security/advisories/new"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <strong data-i18n="settings.general.reportVulnerability"
+                          >Report a vulnerability</strong
+                        >
+                        <span>GitHub Private Vulnerability Reporting</span>
+                      </a>
+                      <a
+                        href="https://github.com/tlbx-ai/tlbx/releases"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <strong data-i18n="settings.general.releaseEvidence">Release evidence</strong>
+                        <span data-i18n="settings.general.releaseEvidenceHint"
+                          >Archives, SBOMs and attestations</span
+                        >
+                      </a>
+                      <a
+                        href="https://github.com/tlbx-ai/tlbx/blob/dev/SUPPORT.md"
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <strong data-i18n="settings.general.supportPolicy">Support policy</strong>
+                        <span data-i18n="settings.general.supportPolicyHint"
+                          >Supported release lines and security updates</span
+                        >
+                      </a>
+                    </div>
+                  </div>
+
                   <div class="settings-section system-status-section">
                     <h3 data-i18n="settings.general.systemStatus">System Status</h3>
                     <div id="system-status-content">
@@ -1051,207 +1271,32 @@
                   <div class="settings-section">
                     <h3 data-i18n="settings.general.ossLicenses">Open Source Licenses</h3>
                     <p class="setting-hint" data-i18n="settings.general.ossHint">
-                      tlbx uses the following open source components:
+                      Authoritative notices ship with this build. Release-specific dependency
+                      versions are recorded in the platform SBOM rather than duplicated here.
                     </p>
-                    <div class="license-item">
-                      <strong>.NET Runtime Libraries</strong>
-                      <span class="license-version">v10.0.5</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/dotnet/runtime" target="_blank" rel="noopener"
-                        >github.com/dotnet/runtime</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>ASP.NET Core</strong>
-                      <span class="license-version">v10.0.5</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/dotnet/aspnetcore" target="_blank" rel="noopener"
-                        >github.com/dotnet/aspnetcore</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>CsWin32</strong> <span class="license-version">v0.3.269</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/microsoft/CsWin32" target="_blank" rel="noopener"
-                        >github.com/microsoft/CsWin32</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm.js</strong> <span class="license-version">v6.0.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-fit</strong> <span class="license-version">v0.11.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-search</strong>
-                      <span class="license-version">v0.16.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-unicode11</strong>
-                      <span class="license-version">v0.9.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-web-links</strong>
-                      <span class="license-version">v0.12.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-addon-webgl</strong>
-                      <span class="license-version">v0.19.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/xtermjs/xterm.js" target="_blank" rel="noopener"
-                        >github.com/xtermjs/xterm.js</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>xterm-link-provider</strong>
-                      <span class="license-version">v2.0.0</span>
-                      <span class="license-type">MIT License</span>
+                    <div class="integrity-links integrity-links-compact">
+                      <a href="/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener">
+                        <strong data-i18n="settings.general.thirdPartyNotices"
+                          >Third-party notices</strong
+                        >
+                        <span>THIRD-PARTY-NOTICES.txt</span>
+                      </a>
+                      <a href="/THIRD-PARTY-LICENSES.txt" target="_blank" rel="noopener">
+                        <strong data-i18n="settings.general.thirdPartyLicenses"
+                          >Third-party licences</strong
+                        >
+                        <span>THIRD-PARTY-LICENSES.txt</span>
+                      </a>
                       <a
-                        href="https://github.com/LabhanshAgrawal/xterm-link-provider"
+                        href="https://github.com/tlbx-ai/tlbx/releases"
                         target="_blank"
                         rel="noopener"
-                        >github.com/LabhanshAgrawal/xterm-link-provider</a
                       >
-                    </div>
-                    <div class="license-item">
-                      <strong>nanostores</strong> <span class="license-version">v1.2.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/nanostores/nanostores"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/nanostores/nanostores</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>openapi-fetch</strong> <span class="license-version">v0.17.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/openapi-ts/openapi-typescript"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/openapi-ts/openapi-typescript</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>openapi-typescript-helpers</strong>
-                      <span class="license-version">v0.1.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/openapi-ts/openapi-typescript"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/openapi-ts/openapi-typescript</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>html2canvas</strong> <span class="license-version">v1.4.1</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/html2canvas"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/html2canvas</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>css-line-break</strong> <span class="license-version">v2.1.0</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/css-line-break"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/css-line-break</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>text-segmentation</strong>
-                      <span class="license-version">v1.0.3</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/text-segmentation"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/text-segmentation</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>utrie</strong> <span class="license-version">v1.0.2</span>
-                      <span class="license-type">MIT License</span>
-                      <a href="https://github.com/niklasvh/utrie" target="_blank" rel="noopener"
-                        >github.com/niklasvh/utrie</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>base64-arraybuffer</strong>
-                      <span class="license-version">v1.0.2</span>
-                      <span class="license-type">MIT License</span>
-                      <a
-                        href="https://github.com/niklasvh/base64-arraybuffer"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/niklasvh/base64-arraybuffer</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>Swagger UI</strong> <span class="license-version">v5.32.0</span>
-                      <span class="license-type">Apache License 2.0</span>
-                      <a
-                        href="https://github.com/swagger-api/swagger-ui"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/swagger-api/swagger-ui</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>JetBrains Mono</strong>
-                      <span class="license-type">SIL Open Font License 1.1</span>
-                      <a
-                        href="https://github.com/JetBrains/JetBrainsMono"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/JetBrains/JetBrainsMono</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>Cascadia Code</strong>
-                      <span class="license-type">SIL Open Font License 1.1</span>
-                      <a
-                        href="https://github.com/microsoft/cascadia-code"
-                        target="_blank"
-                        rel="noopener"
-                        >github.com/microsoft/cascadia-code</a
-                      >
-                    </div>
-                    <div class="license-item">
-                      <strong>Terminus Font</strong>
-                      <span class="license-type">SIL Open Font License 1.1</span>
-                      <a
-                        href="https://terminus-font.sourceforge.net/"
-                        target="_blank"
-                        rel="noopener"
-                        >terminus-font.sourceforge.net</a
-                      >
+                        <strong data-i18n="settings.general.platformSbom">Platform SBOM</strong>
+                        <span data-i18n="settings.general.platformSbomHint"
+                          >Select the SPDX file matching the release RID</span
+                        >
+                      </a>
                     </div>
                   </div>
                 </section>
@@ -2406,6 +2451,30 @@
                     <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
                       Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
                       into remote hosts that run real tmux. Requires restart.
+                    </p>
+                    <div class="setting-row">
+                      <label
+                        for="setting-action-graphs"
+                        data-i18n="settings.behavior.actionGraphs"
+                        >Action Graphs</label
+                      >
+                      <input type="checkbox" id="setting-action-graphs" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.actionGraphsHint">
+                      Shows the agent-curated graph boards in the sidebar. Agents can fill graphs
+                      through the .tlbx/tlbx_graphs helpers either way.
+                    </p>
+                    <div class="setting-row">
+                      <label
+                        for="setting-action-graphs-cwd"
+                        data-i18n="settings.behavior.actionGraphsCwd"
+                        >Action default directory</label
+                      >
+                      <input type="text" id="setting-action-graphs-cwd" placeholder="" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.actionGraphsCwdHint">
+                      Node actions without their own working directory launch here. Leave empty to
+                      use the general default working directory.
                     </p>
                   </div>
 

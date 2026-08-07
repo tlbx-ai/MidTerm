@@ -4370,6 +4370,8 @@ export interface components {
       worktreeRootDirectory: string;
       tmuxCompatibility: boolean;
       managerBarEnabled: boolean;
+      actionGraphsEnabled: boolean;
+      actionGraphsDefaultCwd: string;
       commandBayLigaturesEnabled: boolean;
       devMode: boolean;
       terminalLatencyDiagnosticsEnabled: boolean;
@@ -4801,10 +4803,16 @@ export interface components {
       protocol: number;
       minCompatiblePty: string;
       webOnly: boolean;
+      /** Format: int32 */
+      signatureVersion: number;
+      platform: string;
+      channel: string;
       checksums: null | {
         [key: string]: string;
       };
       signature: null | string;
+      signedPayload: null | string;
+      metadataSignature: null | string;
     };
     ViewportRequest: {
       /** Format: int32 */

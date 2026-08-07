@@ -108,6 +108,10 @@ export function initMobilePiP(): void {
   }
 }
 
+export function isMobilePiPEnabled(): boolean {
+  return enabled;
+}
+
 function handleVisibilityChange(): void {
   if (document.visibilityState === 'hidden') {
     void openPiPIfEligibleAsync();

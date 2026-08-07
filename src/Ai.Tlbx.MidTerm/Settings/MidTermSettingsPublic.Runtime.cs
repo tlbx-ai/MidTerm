@@ -119,6 +119,8 @@ public sealed partial class MidTermSettingsPublic
             WorktreeRootDirectory = SettingsService.ResolveEffectiveWorktreeRootDirectory(settings, ensureExists: true),
             TmuxCompatibility = settings.TmuxCompatibility,
             ManagerBarEnabled = settings.ManagerBarEnabled,
+            ActionGraphsEnabled = settings.ActionGraphsEnabled,
+            ActionGraphsDefaultCwd = settings.ActionGraphsDefaultCwd,
             CommandBayLigaturesEnabled = settings.CommandBayLigaturesEnabled,
             ManagerBarButtons = ManagerBarButton.NormalizeList(settings.ManagerBarButtons),
             DevMode = settings.DevMode,
@@ -242,6 +244,8 @@ public sealed partial class MidTermSettingsPublic
         settings.WorktreeRootDirectory = NormalizeOptionalDirectorySetting(WorktreeRootDirectory);
         settings.TmuxCompatibility = TmuxCompatibility;
         settings.ManagerBarEnabled = ManagerBarEnabled;
+        settings.ActionGraphsEnabled = ActionGraphsEnabled;
+        settings.ActionGraphsDefaultCwd = NormalizeOptionalDirectorySetting(ActionGraphsDefaultCwd);
         settings.CommandBayLigaturesEnabled = CommandBayLigaturesEnabled;
         settings.ManagerBarButtons = ManagerBarButton.NormalizeList(ManagerBarButtons);
         settings.DevMode = DevMode;

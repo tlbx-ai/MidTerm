@@ -155,11 +155,11 @@ public static class TtyHostSpawner
                 }
 
                 var mthostName = OperatingSystem.IsWindows() ? "mthost.exe" : "mthost";
-                if (!manifest.Checksums.TryGetValue(mthostName, out var expectedHash))
+                if (!TryGetInstalledMthostChecksum(manifest, mthostName, out var expectedHash))
                 {
                     if (manifest.WebOnly)
                     {
-                        Log.Info(() => "TtyHostSpawner: web-only manifest omits mthost checksum; preserving installed host");
+                        Log.Info(() => "TtyHostSpawner: web-only manifest authenticates the release archive; installed mthost was intentionally preserved");
                     }
                     else
                     {
@@ -190,6 +190,22 @@ public static class TtyHostSpawner
                 return true;
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves a checksum only when the installed manifest describes a full runtime update.
+    /// A web-only release authenticates every binary in its fresh-install archive, while an
+    /// existing installation deliberately preserves its older compatible mthost binary.
+    /// </summary>
+    internal static bool TryGetInstalledMthostChecksum(
+        VersionManifest manifest,
+        string mthostName,
+        [NotNullWhen(true)] out string? expectedHash)
+    {
+        expectedHash = null;
+        return !manifest.WebOnly
+            && manifest.Checksums is not null
+            && manifest.Checksums.TryGetValue(mthostName, out expectedHash);
     }
 
     internal static TtyHostSpawnResult SpawnTtyHost(

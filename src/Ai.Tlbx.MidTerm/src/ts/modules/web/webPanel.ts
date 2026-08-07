@@ -5,6 +5,7 @@
  */
 
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
+import { applyStoredViewportToFrame } from './webViewport';
 import {
   clearWebPreviewState,
   getBrowserPreviewStatus,
@@ -27,6 +28,7 @@ import {
   PREVIEW_LOAD_TOKEN_ATTRIBUTE,
   PREVIEW_LOAD_TOKEN_DATASET_KEY,
   shouldReloadPreviewFrame,
+  shouldRemountPreviewFrame,
 } from './previewLoadToken';
 import {
   buildProxyUrl,
@@ -612,6 +614,7 @@ function createPreviewIframe(frameKey: string): HTMLIFrameElement | null {
   frame.dataset.previewFrameKey = frameKey;
   iframeHost.appendChild(frame);
   previewFrames.set(frameKey, frame);
+  applyStoredViewportToFrame(frame);
   return frame;
 }
 
@@ -658,22 +661,6 @@ export function destroyPreviewFrame(sessionId: string, previewName: string): voi
   destroyPreviewFrameByKey(getPreviewFrameKey(sessionId, previewName));
 }
 
-function shouldRemountPreviewFrame(
-  frame: HTMLIFrameElement,
-  previewClient: BrowserPreviewClientResponse,
-  targetUrl: string,
-  targetRevision: number,
-): boolean {
-  const nextLoadToken = buildPreviewLoadToken(targetUrl, targetRevision);
-  if (frame.dataset[PREVIEW_LOAD_TOKEN_DATASET_KEY] !== nextLoadToken) {
-    return true;
-  }
-
-  const currentFrameIdentity = frame.name || '';
-  const nextFrameIdentity = JSON.stringify(previewClient);
-  return currentFrameIdentity !== nextFrameIdentity;
-}
-
 function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFrameElement | null {
   if (!source) {
     return null;
@@ -717,6 +704,9 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.classList.toggle('hidden', !isActive);
     frame.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     frame.tabIndex = isActive ? 0 : -1;
+    if (isActive) {
+      applyStoredViewportToFrame(frame);
+    }
     refreshPreviewBridgeVisibility(frame, isActive);
   }
   applyResponsiveFrameChrome(frameKey);
@@ -947,7 +937,14 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
   let frame: HTMLIFrameElement = initialFrame;
 
   try {
-    if (shouldRemountPreviewFrame(frame, previewClient, currentUrl, currentTargetRevision)) {
+    if (
+      shouldRemountPreviewFrame(
+        frame,
+        JSON.stringify(previewClient),
+        currentUrl,
+        currentTargetRevision,
+      )
+    ) {
       const replacementFrame = replacePreviewIframe(frameKey);
       if (!replacementFrame) {
         log.warn(() => `Failed to recreate dock iframe for ${sessionId}/${previewName}`);

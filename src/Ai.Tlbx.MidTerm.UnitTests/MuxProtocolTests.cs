@@ -229,13 +229,17 @@ public class MuxProtocolTests
             resetTerminal: true,
             TerminalReplayReason.IpcSequenceGap,
             sequenceStart: 100,
-            sourceSequenceEndExclusive: 150);
+            sourceSequenceEndExclusive: 150,
+            alternateScreenMode: 1049);
         Assert.True(MuxProtocol.TryParseFrame(beginFrame, out var beginType, out var sessionId, out var beginPayload));
         Assert.Equal(MuxProtocol.TypeRecoveryBegin, beginType);
         Assert.Equal("session1", sessionId);
         Assert.Equal(
-            new MuxRecoveryBegin(42, true, TerminalReplayReason.IpcSequenceGap, 100, 150),
+            new MuxRecoveryBegin(42, true, TerminalReplayReason.IpcSequenceGap, 100, 150, 1049),
             MuxProtocol.ParseRecoveryBeginPayload(beginPayload));
+        Assert.Equal(
+            new MuxRecoveryBegin(42, true, TerminalReplayReason.IpcSequenceGap, 100, 150, 0),
+            MuxProtocol.ParseRecoveryBeginPayload(beginPayload[..22]));
 
         var endFrame = MuxProtocol.CreateRecoveryEndFrame("session1", 42, 150, 50);
         Assert.True(MuxProtocol.TryParseFrame(endFrame, out var endType, out _, out var endPayload));

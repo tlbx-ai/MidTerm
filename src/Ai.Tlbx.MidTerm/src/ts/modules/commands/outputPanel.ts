@@ -100,13 +100,19 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
     opened: true,
     hasWebgl: false,
     webglAddon: null,
+    webglCustomGlyphs: $currentSettings.get()?.customGlyphs ?? true,
     ligatureJoinerId: null,
   };
   sessionTerminals.set(hiddenSessionId, termState);
 
   const settings = $currentSettings.get();
   if (settings) {
-    syncTerminalWebglState(hiddenSessionId, termState, shouldUseWebglRenderer(settings));
+    syncTerminalWebglState(
+      hiddenSessionId,
+      termState,
+      shouldUseWebglRenderer(settings),
+      settings.customGlyphs,
+    );
     syncTerminalLigatureState(termState, settings.terminalLigaturesEnabled);
   }
 

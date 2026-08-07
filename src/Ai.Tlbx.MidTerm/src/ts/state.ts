@@ -67,6 +67,9 @@ export const pendingSessions = new Set<string>();
 /** Buffer WebSocket output frames for terminals not yet opened */
 export const pendingOutputFrames = new Map<string, Uint8Array[]>();
 
+/** Terminal mode that must be restored before pending replay frames are parsed */
+export const pendingTerminalReplayModes = new Map<string, number>();
+
 /** Sessions that overflowed pending frames and need full resync when opened */
 export const sessionsNeedingResync = new Set<string>();
 

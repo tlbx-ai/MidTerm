@@ -168,6 +168,7 @@ let stores: typeof import('../../stores');
 let state: typeof import('../../state');
 let connectStateWebSocket: typeof import('./stateChannel').connectStateWebSocket;
 let handleStateUpdate: typeof import('./stateChannel').handleStateUpdate;
+let reportBrowserActivity: typeof import('./stateChannel').reportBrowserActivity;
 let resetStateChannelRuntimeForTests: typeof import('./stateChannel').resetStateChannelRuntimeForTests;
 let setSelectSessionCallback: typeof import('./stateChannel').setSelectSessionCallback;
 const stateChannelModulePromise = import('./stateChannel');
@@ -236,6 +237,7 @@ describe('stateChannel browser-ui handling', () => {
     ({
       connectStateWebSocket,
       handleStateUpdate,
+      reportBrowserActivity,
       resetStateChannelRuntimeForTests,
       setSelectSessionCallback,
     } = await stateChannelModulePromise);
@@ -369,6 +371,73 @@ describe('stateChannel browser-ui handling', () => {
 
     next.onopen?.(new Event('open'));
     expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports page visibility separately from browser focus activity', async () => {
+    const { ws } = await loadHarness();
+    vi.stubGlobal('document', {
+      visibilityState: 'visible',
+      hidden: false,
+      hasFocus: () => false,
+    });
+    vi.stubGlobal('window', { setTimeout: globalThis.setTimeout });
+    ws.onopen?.(new Event('open'));
+    ws.send.mockClear();
+
+    reportBrowserActivity(false, true);
+
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(ws.send.mock.calls[0][0])).toMatchObject({
+      action: 'browser.setActivity',
+      payload: {
+        isActive: false,
+        isVisible: true,
+      },
+    });
+  });
+
+  it('reports a hidden page as ineligible for live state delivery', async () => {
+    const { ws } = await loadHarness();
+    vi.stubGlobal('document', {
+      visibilityState: 'hidden',
+      hidden: true,
+      hasFocus: () => false,
+    });
+    vi.stubGlobal('window', { setTimeout: globalThis.setTimeout });
+    ws.onopen?.(new Event('open'));
+    ws.send.mockClear();
+
+    reportBrowserActivity(false, true);
+
+    expect(JSON.parse(ws.send.mock.calls[0][0])).toMatchObject({
+      action: 'browser.setActivity',
+      payload: {
+        isActive: false,
+        isVisible: false,
+      },
+    });
+  });
+
+  it('reports visibility changes even when focus activity stays false', async () => {
+    const { ws } = await loadHarness();
+    const fakeDocument = {
+      visibilityState: 'visible',
+      hidden: false,
+      hasFocus: () => false,
+    };
+    vi.stubGlobal('document', fakeDocument);
+    vi.stubGlobal('window', { setTimeout: globalThis.setTimeout });
+
+    reportBrowserActivity(false);
+    fakeDocument.visibilityState = 'hidden';
+    fakeDocument.hidden = true;
+    reportBrowserActivity(false);
+
+    expect(ws.send).toHaveBeenCalledTimes(2);
+    expect(ws.send.mock.calls.map(([raw]) => JSON.parse(raw).payload.isVisible)).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it('stores browser session tree from main browser status messages', async () => {

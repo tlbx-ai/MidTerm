@@ -176,6 +176,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<HistoryService>();
         builder.Services.AddSingleton<InputHistoryService>();
         builder.Services.AddSingleton<ControlPlaneService>();
+        builder.Services.AddSingleton<ActionGraphService>();
         builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();

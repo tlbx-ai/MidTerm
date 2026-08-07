@@ -240,7 +240,7 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public async Task UnregisterClient_CancelsOnlyPendingCommandsForThatPreview()
+    public async Task UnregisterClient_RetriesPendingCommandAgainstSuccessorAndKeepsOtherPreviews()
     {
         var service = new BrowserCommandService();
         BrowserWsMessage? keptMessage = null;
@@ -251,7 +251,7 @@ public class BrowserCommandServiceTests
             keptMessage = msg;
         }));
 
-        var disconnectedTask = service.ExecuteCommandAsync(new BrowserCommandRequest
+        var retriedTask = service.ExecuteCommandAsync(new BrowserCommandRequest
         {
             Command = "url",
             SessionId = "session-a"
@@ -263,11 +263,22 @@ public class BrowserCommandServiceTests
             SessionId = "session-b"
         }, CancellationToken.None);
 
+        // Reload/navigation kills the resolved bridge mid-command; the successor frame must answer the retry.
         service.UnregisterClient("c1");
-        var disconnected = await disconnectedTask;
+        Assert.True(service.TryRegisterClient("c1-successor", "session-a", "user1", "preview-a2", msg =>
+        {
+            service.ReceiveResult(new BrowserWsResult
+            {
+                Id = msg.Id,
+                Success = true,
+                Result = "successor-ok",
+                PreviewId = "preview-a2"
+            });
+        }));
 
-        Assert.False(disconnected.Success);
-        Assert.Equal("Browser disconnected.", disconnected.Error);
+        var retried = await retriedTask;
+        Assert.True(retried.Success);
+        Assert.Equal("successor-ok", retried.Result);
 
         Assert.NotNull(keptMessage);
         service.ReceiveResult(new BrowserWsResult

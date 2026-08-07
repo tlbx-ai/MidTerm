@@ -8,6 +8,7 @@
   },
   "scripts": {
     "postinstall": "patch-package",
+    "patches:xterm:build": "node scripts/build-patched-xterm-bundles.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "locales:report": "node scripts/check-locale-parity.cjs",
     "locales:check": "node scripts/check-locale-parity.cjs --strict",
@@ -48,18 +49,25 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "js-yaml": "^4.3.1"
+    "js-yaml": "^4.3.1",
+    "xterm-link-provider": {
+      "@xterm/xterm": "$@xterm/xterm"
+    }
   },
   "dependencies": {
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/addon-search": "^0.16.0",
-    "@xterm/addon-unicode11": "^0.9.0",
-    "@xterm/addon-web-links": "^0.12.0",
-    "@xterm/addon-webgl": "^0.19.0",
-    "@xterm/xterm": "^6.0.0",
+    "@xterm/addon-fit": "0.12.0-beta.292",
+    "@xterm/addon-search": "0.17.0-beta.292",
+    "@xterm/addon-unicode11": "0.10.0-beta.292",
+    "@xterm/addon-web-links": "0.13.0-beta.292",
+    "@xterm/addon-webgl": "0.20.0-beta.291",
+    "@xterm/xterm": "6.1.0-beta.292",
     "html2canvas": "^1.4.1",
     "nanostores": "^1.4.2",
     "openapi-fetch": "^0.17.0",
     "xterm-link-provider": "^2.0.0"
+  },
+  "allowScripts": {
+    "@scarf/scarf": false,
+    "esbuild": true
   }
 }

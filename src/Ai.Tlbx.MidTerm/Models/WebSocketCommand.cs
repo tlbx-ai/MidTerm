@@ -34,6 +34,7 @@ public sealed class WsCommandPayload
 
     // browser.setActivity
     public bool? IsActive { get; init; }
+    public bool? IsVisible { get; init; }
     public string? ActiveSessionId { get; init; }
     public string? ActiveSurface { get; init; }
 

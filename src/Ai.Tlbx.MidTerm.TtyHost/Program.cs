@@ -1046,6 +1046,8 @@ public static class Program
                         try
                         {
                             var request = TtyHostProtocol.ParseGetBuffer(payload) ?? new TtyHostGetBufferRequest();
+                            var includeReplayState = request.TerminalReplayStateVersion
+                                >= TtyHostProtocol.TerminalReplayStateVersion;
                             var guess = session.GetBufferLength(request.MaxBytes, request.SinceSequence);
                             if (guess <= 0)
                             {
@@ -1053,10 +1055,22 @@ public static class Program
                                 var emptySequenceStart = request.SinceSequence == outputCursor
                                     ? request.SinceSequence.Value
                                     : outputCursor;
-                                TtyHostProtocol.WriteBufferResponse(emptySequenceStart, ReadOnlySpan<byte>.Empty, frame =>
+                                var terminalState = session.GetTerminalReplayState(emptySequenceStart);
+                                if (includeReplayState)
                                 {
-                                    EnqueueFrame(channelWriter, frame);
-                                });
+                                    TtyHostProtocol.WriteBufferResponseWithReplayState(
+                                        emptySequenceStart,
+                                        terminalState,
+                                        ReadOnlySpan<byte>.Empty,
+                                        frame => EnqueueFrame(channelWriter, frame));
+                                }
+                                else
+                                {
+                                    TtyHostProtocol.WriteBufferResponse(
+                                        emptySequenceStart,
+                                        ReadOnlySpan<byte>.Empty,
+                                        frame => EnqueueFrame(channelWriter, frame));
+                                }
                                 break;
                             }
 
@@ -1068,14 +1082,26 @@ public static class Program
                                     request.MaxBytes,
                                     request.Reason,
                                     out var sequenceStart,
+                                    out var terminalState,
                                     request.SinceSequence);
                                 if (written >= 0)
                                 {
                                     var payloadSlice = snapshot.AsSpan(0, written);
-                                    TtyHostProtocol.WriteBufferResponse(sequenceStart, payloadSlice, frame =>
+                                    if (includeReplayState)
                                     {
-                                        EnqueueFrame(channelWriter, frame);
-                                    });
+                                        TtyHostProtocol.WriteBufferResponseWithReplayState(
+                                            sequenceStart,
+                                            terminalState,
+                                            payloadSlice,
+                                            frame => EnqueueFrame(channelWriter, frame));
+                                    }
+                                    else
+                                    {
+                                        TtyHostProtocol.WriteBufferResponse(
+                                            sequenceStart,
+                                            payloadSlice,
+                                            frame => EnqueueFrame(channelWriter, frame));
+                                    }
                                     break;
                                 }
 
@@ -1333,6 +1359,7 @@ internal sealed class TerminalSession : IDisposable
     private readonly IPtyConnection _pty;
     private readonly IProcessMonitor? _processMonitor;
     private readonly CircularByteBuffer _outputBuffer;
+    private readonly TerminalReplayStateTracker _terminalReplayState = new();
     private readonly object _bufferLock = new();
     private readonly object _transportLock = new();
     private readonly object _inputTraceLock = new();
@@ -1462,7 +1489,9 @@ internal sealed class TerminalSession : IDisposable
                 lock (_bufferLock)
                 {
                     sequenceStart = _outputBuffer.TotalBytesWritten;
+                    _terminalReplayState.Consume(data.Span, sequenceStart);
                     _outputBuffer.Write(data.Span);
+                    _terminalReplayState.TrimBefore(_outputBuffer.TailPosition);
                     sequenceEndExclusive = sequenceStart + (ulong)data.Length;
                 }
 
@@ -1632,6 +1661,7 @@ internal sealed class TerminalSession : IDisposable
         int? maxBytes,
         TerminalReplayReason reason,
         out ulong sequenceStart,
+        out TerminalReplayState terminalState,
         ulong? sinceSequence = null)
     {
         lock (_bufferLock)
@@ -1650,6 +1680,7 @@ internal sealed class TerminalSession : IDisposable
             if (length == 0)
             {
                 sequenceStart = sinceSequence ?? _outputBuffer.TotalBytesWritten;
+                terminalState = _terminalReplayState.GetStateAt(sequenceStart);
                 RecordReplay(0, reason);
                 return 0;
             }
@@ -1657,6 +1688,7 @@ internal sealed class TerminalSession : IDisposable
             if (destination.Length < length)
             {
                 sequenceStart = 0;
+                terminalState = TerminalReplayState.Default;
                 return -length;
             }
 
@@ -1672,6 +1704,7 @@ internal sealed class TerminalSession : IDisposable
                             out var written))
                     {
                         sequenceStart = 0;
+                        terminalState = TerminalReplayState.Default;
                         return -_outputBuffer.Count;
                     }
 
@@ -1698,8 +1731,17 @@ internal sealed class TerminalSession : IDisposable
                 length = written;
             }
 
+            terminalState = _terminalReplayState.GetStateAt(sequenceStart);
             RecordReplay(length, reason);
             return length;
+        }
+    }
+
+    public TerminalReplayState GetTerminalReplayState(ulong sequence)
+    {
+        lock (_bufferLock)
+        {
+            return _terminalReplayState.GetStateAt(sequence);
         }
     }
 
@@ -1886,6 +1928,7 @@ internal sealed class TerminalSession : IDisposable
             CreatedAt = CreatedAt,
             TtyHostVersion = VersionInfo.Version,
             OwnerInstanceId = OwnerInstanceId,
+            TerminalReplayStateVersion = TtyHostProtocol.TerminalReplayStateVersion,
             Transport = GetTransportInfo()
         };
 

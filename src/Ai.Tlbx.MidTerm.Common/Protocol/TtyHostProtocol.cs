@@ -18,6 +18,9 @@ public static class TtyHostProtocol
     public const int InputTraceMarkerPayloadSize = 4;
     public const int MinimumInputTraceReportPayloadSize = 28;
     public const int InputTraceReportPayloadSize = 68;
+    public const int TerminalReplayStateVersion = 1;
+    private const uint BufferReplayStateMagic = 0x31535254; // "TRS1" in little endian
+    private const int BufferReplayStateHeaderSize = 8;
 
     public static byte[] CreateInfoRequest()
     {
@@ -181,13 +184,15 @@ public static class TtyHostProtocol
     public static byte[] CreateGetBuffer(
         int? maxBytes = null,
         TerminalReplayReason reason = TerminalReplayReason.Manual,
-        ulong? sinceSequence = null)
+        ulong? sinceSequence = null,
+        int terminalReplayStateVersion = 0)
     {
         var payload = new TtyHostGetBufferRequest
         {
             MaxBytes = maxBytes,
             Reason = reason,
-            SinceSequence = sinceSequence
+            SinceSequence = sinceSequence,
+            TerminalReplayStateVersion = terminalReplayStateVersion
         };
         var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.TtyHostGetBufferRequest);
         return CreateFrame(TtyHostMessageType.GetBuffer, json);
@@ -225,6 +230,35 @@ public static class TtyHostProtocol
         }
     }
 
+    public static void WriteBufferResponseWithReplayState(
+        ulong sequenceStart,
+        TerminalReplayState terminalState,
+        ReadOnlySpan<byte> data,
+        Action<ReadOnlySpan<byte>> callback)
+    {
+        var frameSize = HeaderSize + 8 + BufferReplayStateHeaderSize + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            buffer[0] = (byte)TtyHostMessageType.Buffer;
+            BinaryPrimitives.WriteInt32LittleEndian(
+                buffer.AsSpan(1, 4),
+                8 + BufferReplayStateHeaderSize + data.Length);
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(HeaderSize, 8), sequenceStart);
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(HeaderSize + 8, 4), BufferReplayStateMagic);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                buffer.AsSpan(HeaderSize + 12, 2),
+                terminalState.AlternateScreenMode);
+            buffer.AsSpan(HeaderSize + 14, 2).Clear();
+            data.CopyTo(buffer.AsSpan(HeaderSize + 8 + BufferReplayStateHeaderSize));
+            callback(buffer.AsSpan(0, frameSize));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
     public static TtyHostBufferSnapshot ParseBuffer(ReadOnlySpan<byte> payload)
     {
         if (payload.Length < 8)
@@ -240,6 +274,23 @@ public static class TtyHostProtocol
         {
             SequenceStart = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]),
             Data = payload[8..].ToArray()
+        };
+    }
+
+    public static TtyHostBufferSnapshot ParseBufferWithReplayState(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < 8 + BufferReplayStateHeaderSize
+            || BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(8, 4)) != BufferReplayStateMagic)
+        {
+            return ParseBuffer(payload);
+        }
+
+        return new TtyHostBufferSnapshot
+        {
+            SequenceStart = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]),
+            TerminalState = new TerminalReplayState(
+                BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(12, 2))),
+            Data = payload[(8 + BufferReplayStateHeaderSize)..].ToArray()
         };
     }
 
@@ -540,6 +591,7 @@ public sealed class SessionInfo
     public DateTime CreatedAt { get; set; }
     public string? TtyHostVersion { get; set; }
     public string? OwnerInstanceId { get; set; }
+    public int TerminalReplayStateVersion { get; set; }
 
     public int Cols { get => Lock(() => _cols); set => Lock(() => _cols = value); }
     public int Rows { get => Lock(() => _rows); set => Lock(() => _rows = value); }
@@ -638,12 +690,20 @@ public sealed class TtyHostGetBufferRequest
     public int? MaxBytes { get; set; }
     public TerminalReplayReason Reason { get; set; } = TerminalReplayReason.Manual;
     public ulong? SinceSequence { get; set; }
+    public int TerminalReplayStateVersion { get; set; }
 }
 
 public sealed class TtyHostBufferSnapshot
 {
     public ulong SequenceStart { get; set; }
+    public TerminalReplayState TerminalState { get; set; }
     public byte[] Data { get; set; } = [];
+}
+
+public readonly record struct TerminalReplayState(ushort AlternateScreenMode)
+{
+    public static TerminalReplayState Default => new(0);
+    public bool AlternateScreenActive => AlternateScreenMode is 47 or 1047 or 1049;
 }
 
 public sealed class TtyHostDataLossPayload

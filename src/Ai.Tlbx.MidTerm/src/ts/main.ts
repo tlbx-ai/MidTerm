@@ -37,6 +37,7 @@ import {
   setupGlobalFocusReclaim,
   handleClipboardPaste,
   initMobilePiP,
+  isMobilePiPEnabled,
   initDevSoftKeyboardSimulator,
   resolveLaunchDimensions,
   syncWebglSessionPriority,
@@ -168,6 +169,7 @@ import { openProviderResumePicker, type ResumeProvider } from './modules/provide
 import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
 import { initOperatorView } from './modules/operator';
+import { initActionGraphsView } from './modules/actionGraphs';
 import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
@@ -352,6 +354,7 @@ async function init(): Promise<void> {
   );
   initSessionInputHistoryMenus();
   initOperatorView({ onSelectSession: selectSession });
+  initActionGraphsView({ onSelectSession: selectSession });
   const spacesRuntimeOptions = {
     resolveLaunchDimensions: resolveNewSessionDimensions,
     resolveShell: resolveLauncherShell,
@@ -667,6 +670,7 @@ function setupVisibilityChangeHandler(): void {
     syncMuxTerminalVisibility,
     focusActiveTerminal,
     applyScrollbackProtection,
+    keepTerminalOutputActiveWhileHidden: isMobilePiPEnabled,
   });
 }
 

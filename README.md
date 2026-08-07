@@ -13,6 +13,8 @@
   ·
   <a href="#private-remote-access"><strong>Remote access</strong></a>
   ·
+  <a href="https://tlbx.ai/security"><strong>Security</strong></a>
+  ·
   <a href="https://tlbx.ai/features"><strong>All features</strong></a>
 </p>
 
@@ -93,7 +95,7 @@ curl -fsSL https://get.tlbx.ai/install.sh | bash
 **Windows PowerShell**
 
 ```powershell
-& ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1)))
+irm https://get.tlbx.ai/install.ps1 | iex
 ```
 
 Open `https://localhost:2000`. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
@@ -152,6 +154,12 @@ tlbx uses .NET 10 Native AOT, TypeScript, and xterm.js.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature guide](docs/FEATURES.md)
 - [Contributing](docs/CONTRIBUTING.md)
+
+## Security and release integrity
+
+Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/tlbx-ai/tlbx/security/advisories/new), not a public issue. The [security policy](SECURITY.md) describes disclosure handling and the [support policy](SUPPORT.md) identifies the supported release lines.
+
+Every native release archive has a matching platform-specific SPDX SBOM plus GitHub build-provenance and SBOM attestations. Installers and the built-in updater additionally verify a signed manifest and every packaged-file hash. See [Release integrity](docs/RELEASE-INTEGRITY.md) for verification commands and trust boundaries.
 
 ### Community client
 

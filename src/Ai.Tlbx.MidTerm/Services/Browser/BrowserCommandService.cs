@@ -92,7 +92,31 @@ public sealed class BrowserCommandService
 
     public async Task<BrowserWsResult> ExecuteCommandAsync(BrowserCommandRequest request, CancellationToken ct)
     {
-        if (!TryResolveClient(request, out var client, out var error))
+        var deadline = DateTime.UtcNow + BridgeAttachGrace;
+        while (true)
+        {
+            var result = await ExecuteCommandOnceAsync(request, deadline, ct).ConfigureAwait(false);
+            if (!result.Success
+                && string.Equals(result.Error, BridgeDisconnectedError, StringComparison.Ordinal)
+                && DateTime.UtcNow < deadline
+                && !ct.IsCancellationRequested)
+            {
+                // Reload and navigation tear the resolved bridge down mid-command; the caller
+                // intends the successor frame, so retry against it within the grace window.
+                continue;
+            }
+
+            return result;
+        }
+    }
+
+    private async Task<BrowserWsResult> ExecuteCommandOnceAsync(
+        BrowserCommandRequest request,
+        DateTime deadline,
+        CancellationToken ct)
+    {
+        var (client, error) = await ResolveClientWithAttachGraceAsync(request, deadline, ct).ConfigureAwait(false);
+        if (client is null)
         {
             return new BrowserWsResult
             {
@@ -201,7 +225,7 @@ public sealed class BrowserCommandService
                 {
                     Id = kvp.Key,
                     Success = false,
-                    Error = "Browser disconnected."
+                    Error = BridgeDisconnectedError
                 });
             }
         }
@@ -890,8 +914,43 @@ public sealed class BrowserCommandService
                 {
                     Id = kvp.Key,
                     Success = false,
-                    Error = "Browser disconnected."
+                    Error = BridgeDisconnectedError
                 });
+            }
+        }
+    }
+
+    // Reload, navigation, and viewport changes tear the preview bridge down for a moment while the
+    // iframe reattaches to /ws/browser. Commands issued in that window should wait for the bridge
+    // instead of failing hard; only the no-client-yet errors are transient, ambiguity is not.
+    private static readonly TimeSpan BridgeAttachGrace = TimeSpan.FromSeconds(8);
+    private const string BridgeDisconnectedError = "Browser disconnected.";
+
+    private async Task<(BrowserClient? Client, string Error)> ResolveClientWithAttachGraceAsync(
+        BrowserCommandRequest request,
+        DateTime deadline,
+        CancellationToken ct)
+    {
+        while (true)
+        {
+            if (TryResolveClient(request, out var client, out var error))
+            {
+                return (client, "");
+            }
+
+            var transient = error.StartsWith("No browser", StringComparison.Ordinal);
+            if (!transient || DateTime.UtcNow >= deadline || ct.IsCancellationRequested)
+            {
+                return (null, error);
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return (null, error);
             }
         }
     }

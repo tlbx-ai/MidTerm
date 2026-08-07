@@ -16,6 +16,7 @@ import {
   showIframe,
   unloadIframe,
 } from './webPanel';
+import { applyStoredViewportToFrame } from './webViewport';
 import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
@@ -362,29 +363,17 @@ export function setViewportSize(width: number, height: number): void {
   if (!iframe || !body) return;
 
   if (width <= 0 && height <= 0) {
-    iframe.style.width = '';
-    iframe.style.height = '';
-    iframe.style.maxWidth = '';
-    iframe.style.maxHeight = '';
-    iframe.style.left = '';
-    iframe.style.top = '';
-    iframe.style.transform = '';
-    body.classList.remove('viewport-constrained');
     $webPreviewViewport.set(null);
+    applyStoredViewportToFrame(iframe);
+    body.classList.remove('viewport-constrained');
     if (badge) badge.classList.add('hidden');
     log.info(() => 'Viewport reset to full size');
     return;
   }
 
-  iframe.style.width = `${width}px`;
-  iframe.style.height = `${height}px`;
-  iframe.style.maxWidth = `${width}px`;
-  iframe.style.maxHeight = `${height}px`;
-  iframe.style.left = '50%';
-  iframe.style.top = '50%';
-  iframe.style.transform = 'translate(-50%, -50%)';
-  body.classList.add('viewport-constrained');
   $webPreviewViewport.set({ width, height });
+  applyStoredViewportToFrame(iframe);
+  body.classList.add('viewport-constrained');
 
   if (badge) {
     badge.textContent = `${width}\u00D7${height}`;

@@ -14,6 +14,7 @@ import {
   resetMuxChannelRuntimeForTests,
   sendInput,
   setInputLatencyTracingEnabled,
+  suspendMuxForBrowserBackground,
   updateTerminalVisibility,
 } from './muxChannel';
 
@@ -174,8 +175,9 @@ function buildRecoveryBeginMessage(
   sequenceStart: bigint,
   sourceSequenceEndExclusive: bigint,
   resetTerminal = false,
+  alternateScreenMode = 0,
 ): ArrayBuffer {
-  const frame = new Uint8Array(headerSize + 22);
+  const frame = new Uint8Array(headerSize + 24);
   const view = new DataView(frame.buffer);
   frame[0] = recoveryBeginType;
   encodeSessionId(frame, 1, sessionId);
@@ -184,6 +186,7 @@ function buildRecoveryBeginMessage(
   frame[headerSize + 5] = 7;
   view.setBigUint64(headerSize + 6, sequenceStart, true);
   view.setBigUint64(headerSize + 14, sourceSequenceEndExclusive, true);
+  view.setUint16(headerSize + 22, alternateScreenMode, true);
   return frame.buffer;
 }
 
@@ -1093,6 +1096,105 @@ describe('muxChannel', () => {
     });
   });
 
+  it('restores alternate screen mode before replaying a truncated snapshot', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_BEGIN,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5,
+        100n,
+        102n,
+        true,
+        1049,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        102n,
+        'de',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_END,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5,
+        102n,
+        2,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    expect(harness.sessionTerminals.get(sessionId)?.terminal.reset).toHaveBeenCalledOnce();
+    expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+    expect(terminal.writeMock.mock.calls[1]?.[0]).toBe('\x1b[?1049h');
+    expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(0);
+
+    terminal.pendingCallbacks[0]?.();
+    await vi.waitFor(() => {
+      expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
+    });
+    expect(terminal.writeMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps replay mode with output that arrives before the terminal opens', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_BEGIN,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        6,
+        100n,
+        102n,
+        true,
+        1049,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        102n,
+        'de',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_RECOVERY_END,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        6,
+        102n,
+        2,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await vi.waitFor(() => {
+      expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
+    });
+    expect(harness.sessionTerminals.has(sessionId)).toBe(false);
+    expect(state.pendingTerminalReplayModes.get(sessionId)).toBe(1049);
+    expect(state.pendingOutputFrames.get(sessionId)).toHaveLength(1);
+  });
+
   it('requests one follow-up when data loss arrives inside a recovery transaction', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     const sessionId = 'sess1234';
@@ -1220,6 +1322,39 @@ describe('muxChannel', () => {
     expect(frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST)).toBe(
       false,
     );
+  });
+
+  it('suspends hidden-browser transport and reconnects with the terminal cursor', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        'sess1234',
+        7n,
+        'foreground-output',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+
+    suspendMuxForBrowserBackground();
+    suspendMuxForBrowserBackground();
+
+    expect(stores.$muxWsConnected.get()).toBe(false);
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess1234']);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const reconnectUrl = new URL(MockWebSocket.instances[1]!.url);
+    expect(reconnectUrl.searchParams.get('activeSessionId')).toBe('sess1234');
+    expect(reconnectUrl.searchParams.get('visibleSessionIds')).toBe('sess1234');
+    expect(reconnectUrl.searchParams.get('resumeCursors')).toContain('sess1234');
+
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess1234']);
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 
   it('reconnects mux with visible sessions after mobile browser resume closes the socket', async () => {

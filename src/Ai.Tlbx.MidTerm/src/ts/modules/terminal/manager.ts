@@ -11,6 +11,7 @@ import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
   sessionTerminals,
   pendingOutputFrames,
+  pendingTerminalReplayModes,
   sessionsNeedingResync,
   fontsReadyPromise,
   dom,
@@ -27,6 +28,7 @@ import {
 import { parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
+import { createAlternateScreenReplayPrefix } from './replayState';
 import {
   isBracketedPasteEnabled,
   forgetMuxSession,
@@ -625,6 +627,7 @@ export function refreshCursorBlink(terminal: Terminal): void {
 const webglPrioritySessionIds = new Set<string>();
 let webglPriorityKnown = false;
 const webglContextLossTimestamps = new Map<string, number[]>();
+const foregroundDomRendererQuarantine = new WeakSet<TerminalState>();
 const WEBGL_REATTACH_BASE_DELAY_MS = 1500;
 const WEBGL_REATTACH_MAX_DELAY_MS = 30000;
 const WEBGL_LOSS_WINDOW_MS = 60000;
@@ -717,6 +720,9 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
   if (!state.opened) {
     return false;
   }
+  if (foregroundDomRendererQuarantine.has(state)) {
+    return false;
+  }
   if (state.hasWebgl) {
     return true;
   }
@@ -730,7 +736,10 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
   try {
     // Preserve the draw buffer so browser screenshot capture paths (html2canvas)
     // can read terminal pixels when WebGL rendering is enabled.
-    const webglAddon = new WebglAddon(true);
+    const webglAddon = new WebglAddon({
+      customGlyphs: state.webglCustomGlyphs,
+      preserveDrawingBuffer: true,
+    });
     webglAddon.onContextLoss(() => {
       if (state.webglAddon !== webglAddon) {
         return;
@@ -761,8 +770,17 @@ export function syncTerminalWebglState(
   sessionId: string,
   state: TerminalState,
   enabled: boolean,
+  customGlyphs: boolean = state.webglCustomGlyphs,
 ): void {
+  if (customGlyphs !== state.webglCustomGlyphs) {
+    state.webglCustomGlyphs = customGlyphs;
+    detachWebglAddon(sessionId, state);
+  }
+
   if (!enabled) {
+    // An explicit WebGL off/on settings cycle is also the operator-controlled
+    // escape hatch from a foreground compositor quarantine.
+    foregroundDomRendererQuarantine.delete(state);
     detachWebglAddon(sessionId, state);
     return;
   }
@@ -802,36 +820,43 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
 export function recoverTerminalRendererAfterForeground(
   sessionId: string,
   state: TerminalState,
+  options: { preferDomRenderer?: boolean } = {},
 ): void {
   if (!state.opened) {
     return;
   }
 
-  refreshTerminalRenderer(state);
-
   const settings = $currentSettings.get();
-  if (!state.hasWebgl) {
-    // A context lost while backgrounded (or denied at open) must come back as
-    // soon as the terminal is in the foreground again.
-    if (!shouldUseWebglRenderer(settings) || !attachWebglAddon(sessionId, state)) {
-      return;
-    }
-  } else {
+  if (options.preferDomRenderer) {
+    // A foreground watchdog only reaches this path after animation frames
+    // stopped firing. Keep the terminal on xterm's DOM renderer for this
+    // recovery pass: recreating WebGL while the compositor is still waking
+    // can leave a healthy terminal buffer behind a permanently blank canvas.
+    // Keep this terminal on the DOM renderer for the rest of the page
+    // lifetime. A reload or an explicit WebGL off/on cycle starts clean.
+    foregroundDomRendererQuarantine.add(state);
     detachWebglAddon(sessionId, state);
+    syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
+    syncTerminalRgbBackgroundTransparency(state, settings);
+    refreshTerminalRenderer(state);
+    return;
+  }
+
+  if (
+    !foregroundDomRendererQuarantine.has(state) &&
+    !state.hasWebgl &&
+    shouldUseWebglRenderer(settings)
+  ) {
+    // A context genuinely lost while backgrounded gets one bounded reattach.
+    // Healthy contexts must not be destroyed and rebuilt on every tab focus.
     attachWebglAddon(sessionId, state);
   }
 
-  syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
-  syncTerminalRgbBackgroundTransparency(state, settings);
-
-  requestAnimationFrame(() => {
-    if (!sessionTerminals.has(sessionId) || !state.opened) {
-      return;
-    }
-
-    // The atlas was already cleared by the synchronous recovery refresh above.
-    refreshTerminalRenderer(state, { preserveTextureAtlas: true });
-  });
+  try {
+    state.terminal.refresh(0, Math.max(state.terminal.rows - 1, 0));
+  } catch {
+    // Terminal may have been disposed between foreground events.
+  }
 }
 
 /**
@@ -1029,6 +1054,7 @@ export function createTerminalForSession(
     opened: false,
     hasWebgl: false,
     webglAddon: null,
+    webglCustomGlyphs: $currentSettings.get()?.customGlyphs ?? true,
     ligatureJoinerId: null,
     pendingVisualRefresh: false,
   };
@@ -1123,7 +1149,12 @@ export function createTerminalForSession(
     // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
     const settings = $currentSettings.get();
     syncWebglTerminalCellBackgroundAlpha(settings);
-    syncTerminalWebglState(sessionId, state, shouldUseWebglRenderer(settings));
+    syncTerminalWebglState(
+      sessionId,
+      state,
+      shouldUseWebglRenderer(settings),
+      settings?.customGlyphs ?? true,
+    );
     syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
 
@@ -1190,17 +1221,34 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
   if (sessionsNeedingResync.has(sessionId)) {
     sessionsNeedingResync.delete(sessionId);
     pendingOutputFrames.delete(sessionId);
+    pendingTerminalReplayModes.delete(sessionId);
     requestBufferRefresh(sessionId);
     return;
   }
 
-  const frames = pendingOutputFrames.get(sessionId);
-  if (frames && frames.length > 0) {
-    frames.forEach((payload) => {
-      writeOutputFrame(sessionId, state, payload);
-    });
+  const replayFrames = (): void => {
+    const frames = pendingOutputFrames.get(sessionId);
+    if (frames && frames.length > 0) {
+      frames.forEach((payload) => {
+        writeOutputFrame(sessionId, state, payload);
+      });
+    }
     pendingOutputFrames.delete(sessionId);
+  };
+
+  const replayMode = pendingTerminalReplayModes.get(sessionId) ?? 0;
+  pendingTerminalReplayModes.delete(sessionId);
+  const replayPrefix = createAlternateScreenReplayPrefix(replayMode);
+  if (replayPrefix !== null) {
+    try {
+      state.terminal.write(replayPrefix, replayFrames);
+      return;
+    } catch {
+      // Fall through and replay bytes so opening the terminal cannot deadlock.
+    }
   }
+
+  replayFrames();
 }
 
 /**

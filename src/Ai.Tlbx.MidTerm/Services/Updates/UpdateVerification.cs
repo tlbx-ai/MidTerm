@@ -20,34 +20,78 @@ public static class UpdateVerification
     /// <param name="extractDir">Directory containing extracted update files</param>
     /// <param name="manifest">Version manifest with checksums and signature</param>
     /// <returns>True if verification passes, false otherwise</returns>
-    public static bool VerifyUpdate(string extractDir, VersionManifest manifest)
+    public static bool VerifyUpdate(
+        string extractDir,
+        VersionManifest manifest,
+        string? expectedPlatform = null,
+        string? expectedVersion = null,
+        string? expectedChannel = null)
     {
-        // If no checksums present, skip verification (backward compatibility with unsigned releases)
-        if (manifest.Checksums is null || manifest.Checksums.Count == 0)
+        return VerifyUpdateCore(
+            extractDir,
+            manifest,
+            PublicKeyBase64,
+            expectedPlatform,
+            expectedVersion,
+            expectedChannel);
+    }
+
+    internal static bool VerifyUpdateForTesting(
+        string extractDir,
+        VersionManifest manifest,
+        string publicKeyBase64,
+        string? expectedPlatform = null,
+        string? expectedVersion = null,
+        string? expectedChannel = null)
+    {
+        return VerifyUpdateCore(
+            extractDir,
+            manifest,
+            publicKeyBase64,
+            expectedPlatform,
+            expectedVersion,
+            expectedChannel);
+    }
+
+    private static bool VerifyUpdateCore(
+        string extractDir,
+        VersionManifest manifest,
+        string publicKeyBase64,
+        string? expectedPlatform,
+        string? expectedVersion,
+        string? expectedChannel)
+    {
+        var checksums = manifest.Checksums;
+        if (checksums is null || checksums.Count == 0)
         {
-            Log.Info(() => "UpdateVerification: No checksums in manifest, skipping verification (unsigned release)");
-            return true;
+            Log.Warn(() => "UpdateVerification: Signed checksums are required - update rejected");
+            return false;
         }
 
-        // Verify signature if present
-        if (!string.IsNullOrEmpty(manifest.Signature))
+        if (!VerifyMetadataSignature(
+                manifest,
+                publicKeyBase64,
+                expectedPlatform,
+                expectedVersion,
+                expectedChannel))
         {
-            if (!VerifySignature(manifest))
-            {
-                Log.Warn(() => "UpdateVerification: Signature verification failed - update rejected");
-                return false;
-            }
-            Log.Info(() => "UpdateVerification: Signature verified successfully");
+            Log.Warn(() => "UpdateVerification: Metadata signature verification failed - update rejected");
+            return false;
         }
-        else
-        {
-            // Checksums without signature - still verify checksums but warn
-            Log.Warn(() => "UpdateVerification: Checksums present but no signature - verifying checksums only");
-        }
+
+        Log.Info(() => "UpdateVerification: Metadata signature verified successfully");
 
         // Verify each file's checksum
-        foreach (var (filename, expectedHash) in manifest.Checksums)
+        foreach (var (filename, expectedHash) in checksums)
         {
+            if (string.IsNullOrWhiteSpace(filename) ||
+                Path.IsPathRooted(filename) ||
+                !string.Equals(filename, Path.GetFileName(filename), StringComparison.Ordinal))
+            {
+                Log.Warn(() => $"UpdateVerification: Unsafe checksum entry rejected: {filename}");
+                return false;
+            }
+
             var filePath = Path.Combine(extractDir, filename);
             if (!File.Exists(filePath))
             {
@@ -69,35 +113,120 @@ public static class UpdateVerification
     }
 
     /// <summary>
-    /// Verifies the ECDSA signature of the manifest checksums.
+    /// Verifies the ECDSA signature and the exact metadata/checksum binding.
     /// </summary>
-    private static bool VerifySignature(VersionManifest manifest)
+    private static bool VerifyMetadataSignature(
+        VersionManifest manifest,
+        string publicKeyBase64,
+        string? expectedPlatform,
+        string? expectedVersion,
+        string? expectedChannel)
     {
-        // Check if public key is configured (placeholder means not yet set up)
-        if (PublicKeyBase64.StartsWith("PLACEHOLDER", StringComparison.Ordinal))
+        if (manifest.SignatureVersion != 2 ||
+            string.IsNullOrWhiteSpace(manifest.Platform) ||
+            string.IsNullOrWhiteSpace(manifest.Channel) ||
+            string.IsNullOrWhiteSpace(manifest.SignedPayload) ||
+            string.IsNullOrWhiteSpace(manifest.MetadataSignature))
         {
-            Log.Warn(() => "UpdateVerification: Public key not configured, signature verification skipped");
-            return true;
+            return false;
         }
 
         try
         {
-            var publicKeyBytes = Convert.FromBase64String(PublicKeyBase64);
-            var signatureBytes = Convert.FromBase64String(manifest.Signature!);
-
-            // Create the message to verify: sorted JSON of checksums (deterministic)
-            var checksumJson = SerializeChecksumsForSigning(manifest.Checksums!);
-            var messageBytes = Encoding.UTF8.GetBytes(checksumJson);
+            var publicKeyBytes = Convert.FromBase64String(publicKeyBase64);
+            var signatureBytes = Convert.FromBase64String(manifest.MetadataSignature);
+            var payloadBytes = Convert.FromBase64String(manifest.SignedPayload);
 
             using var ecdsa = ECDsa.Create();
             ecdsa.ImportSubjectPublicKeyInfo(publicKeyBytes, out _);
-            return ecdsa.VerifyData(messageBytes, signatureBytes, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+            if (!ecdsa.VerifyData(
+                    payloadBytes,
+                    signatureBytes,
+                    HashAlgorithmName.SHA256,
+                    DSASignatureFormat.Rfc3279DerSequence))
+            {
+                return false;
+            }
+
+            using var payloadDocument = JsonDocument.Parse(payloadBytes);
+            var root = payloadDocument.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                root.GetProperty("signatureVersion").GetInt32() != 2 ||
+                !Matches(root, "web", manifest.Web) ||
+                !Matches(root, "pty", manifest.Pty) ||
+                root.GetProperty("protocol").GetInt32() != manifest.Protocol ||
+                !Matches(root, "minCompatiblePty", manifest.MinCompatiblePty) ||
+                root.GetProperty("webOnly").GetBoolean() != manifest.WebOnly ||
+                !Matches(root, "platform", manifest.Platform) ||
+                !Matches(root, "channel", manifest.Channel))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedPlatform) &&
+                !string.Equals(manifest.Platform, expectedPlatform, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedVersion) &&
+                !string.Equals(
+                    NormalizeVersion(manifest.Web),
+                    NormalizeVersion(expectedVersion),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(expectedChannel) &&
+                !string.Equals(manifest.Channel, expectedChannel, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var checksums = manifest.Checksums;
+            var signedChecksums = root.GetProperty("checksums");
+            if (checksums is null || signedChecksums.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var signedChecksumCount = 0;
+            using var checksumEnumerator = signedChecksums.EnumerateObject();
+            while (checksumEnumerator.MoveNext())
+            {
+                signedChecksumCount++;
+                var checksum = checksumEnumerator.Current;
+                if (!checksums.TryGetValue(checksum.Name, out var expectedHash) ||
+                    !string.Equals(checksum.Value.GetString(), expectedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            if (signedChecksumCount != checksums.Count)
+            {
+                return false;
+            }
+
+            return true;
         }
         catch (Exception ex)
         {
-            Log.Exception(ex, "UpdateVerification.VerifySignature");
+            Log.Exception(ex, "UpdateVerification.VerifyMetadataSignature");
             return false;
         }
+    }
+
+    private static bool Matches(JsonElement root, string propertyName, string expected)
+    {
+        return root.TryGetProperty(propertyName, out var value) &&
+               string.Equals(value.GetString(), expected, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeVersion(string version)
+    {
+        return version.Trim().TrimStart('v', 'V');
     }
 
     /// <summary>
@@ -114,7 +243,7 @@ public static class UpdateVerification
     /// Serializes checksums to a deterministic JSON string for signature verification.
     /// Uses manual JSON building to avoid AOT serialization issues.
     /// </summary>
-    private static string SerializeChecksumsForSigning(Dictionary<string, string> checksums)
+    internal static string SerializeChecksumsForSigning(Dictionary<string, string> checksums)
     {
         // Sort by key for deterministic output
         var sorted = checksums.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();

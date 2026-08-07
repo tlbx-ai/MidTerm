@@ -8,6 +8,7 @@
  */
 
 import {
+  $actionGraphsOpen,
   $currentSettings,
   $activeSessionId,
   $settingsOpen,
@@ -300,10 +301,15 @@ function getSmartInputVisibilityState(): SmartInputVisibilityState {
   };
 }
 
+/** Full-surface overlays (settings, action graphs) take the footer with them. */
+function isFullSurfaceOverlayOpen(): boolean {
+  return $settingsOpen.get() || $actionGraphsOpen.get();
+}
+
 function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
   const visibilityState = getSmartInputVisibilityState();
   const settings = $currentSettings.get();
-  const settingsOpen = $settingsOpen.get();
+  const settingsOpen = isFullSurfaceOverlayOpen();
   const activeSessionId = visibilityState.activeSessionId ?? null;
   const isMobile = isMobileViewport();
   const appServerControlActive = visibilityState.appServerControlActive;
@@ -984,6 +990,10 @@ export function initSmartInput(): void {
   });
 
   $settingsOpen.subscribe(() => {
+    syncSmartInputVisibility();
+  });
+
+  $actionGraphsOpen.subscribe(() => {
     syncSmartInputVisibility();
   });
 

@@ -12,6 +12,8 @@
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
     <PublishAot>true</PublishAot>
     <ServerGarbageCollection>false</ServerGarbageCollection>
+    <SqlitePclRawVersion>2.1.12</SqlitePclRawVersion>
+    <RuntimeIdentifiers>win-x64;win-x86;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <!-- Publish-only: AOT optimizations (Speed over Size) -->
@@ -71,14 +73,37 @@
     <LinkerArg Include="/OPT:ICF" />
   </ItemGroup>
 
+  <!-- SQLite (action graphs). All platforms — NuGet evaluates PackageReference
+       conditions RID-less, so putting these in a RID-conditional group has no effect. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(SqlitePclRawVersion)" />
+  </ItemGroup>
+
+  <!-- RID builds embed the matching SQLite native library so mt stays a single binary:
+       release archives and the web-only updater only ever move the executables.
+       SqliteNativeLoader extracts and loads it from the settings directory at startup. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('win'))">e_sqlite3.dll</_SqliteNativeFileName>
+    <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('linux'))">libe_sqlite3.so</_SqliteNativeFileName>
+    <_SqliteNativeFileName Condition="$(RuntimeIdentifier.StartsWith('osx'))">libe_sqlite3.dylib</_SqliteNativeFileName>
+    <_SqliteNativeLibPath>$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))sqlitepclraw.lib.e_sqlite3/$(SqlitePclRawVersion)/runtimes/$(RuntimeIdentifier)/native/$(_SqliteNativeFileName)</_SqliteNativeLibPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(_SqliteNativeLibPath)')">
+    <EmbeddedResource Include="$(_SqliteNativeLibPath)" LogicalName="tlbx.native.$(_SqliteNativeFileName)" />
+  </ItemGroup>
+  <Target Name="VerifySqliteNativeEmbed" BeforeTargets="PrepareForBuild" Condition="'$(RuntimeIdentifier)' != ''">
+    <Error Text="SQLite native library not found for embedding: $(_SqliteNativeLibPath)" Condition="!Exists('$(_SqliteNativeLibPath)')" />
+  </Target>
+
   <!-- Windows-specific: CsWin32 for ConPTY P/Invoke -->
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win')) Or '$(RuntimeIdentifier)' == ''">
-    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.269">
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.298">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.10" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
   </ItemGroup>
 
   <!-- ============================================ -->

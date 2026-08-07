@@ -686,16 +686,28 @@ public sealed partial class UpdateService : IDisposable
 
             // Verify update integrity using checksums and signature from version.json
             var manifestPath = Path.Combine(extractDir, "version.json");
-            if (File.Exists(manifestPath))
+            if (!File.Exists(manifestPath))
             {
-                var manifestJson = await File.ReadAllTextAsync(manifestPath);
-                var manifest = JsonSerializer.Deserialize<VersionManifest>(manifestJson, VersionManifestContext.Default.VersionManifest);
-                if (manifest is not null && !UpdateVerification.VerifyUpdate(extractDir, manifest))
-                {
-                    // Verification failed - clean up and reject update
-                    try { Directory.Delete(tempDir, true); } catch { }
-                    return null;
-                }
+                try { Directory.Delete(tempDir, true); } catch { }
+                return null;
+            }
+
+            var manifestJson = await File.ReadAllTextAsync(manifestPath);
+            var manifest = JsonSerializer.Deserialize<VersionManifest>(manifestJson, VersionManifestContext.Default.VersionManifest);
+            var expectedVersion = _latestUpdate?.LatestVersion;
+            var expectedChannel = string.IsNullOrWhiteSpace(expectedVersion)
+                ? null
+                : HasPrerelease(expectedVersion) ? "dev" : "stable";
+            if (manifest is null || !UpdateVerification.VerifyUpdate(
+                    extractDir,
+                    manifest,
+                    GetPlatformFromAssetName(assetName),
+                    expectedVersion,
+                    expectedChannel))
+            {
+                // Verification failed - clean up and reject update
+                try { Directory.Delete(tempDir, true); } catch { }
+                return null;
             }
 
             return extractDir;
@@ -889,6 +901,28 @@ public sealed partial class UpdateService : IDisposable
                System.Runtime.InteropServices.Architecture.Arm64
             ? "mt-linux-arm64.tar.gz"
             : "mt-linux-x64.tar.gz";
+    }
+
+    private static string? GetPlatformFromAssetName(string assetName)
+    {
+        const string prefix = "mt-";
+        if (!assetName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var platform = assetName[prefix.Length..];
+        if (platform.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+        {
+            return platform[..^".tar.gz".Length];
+        }
+
+        if (platform.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return platform[..^".zip".Length];
+        }
+
+        return null;
     }
 
     public static string GetCurrentBinaryPath()

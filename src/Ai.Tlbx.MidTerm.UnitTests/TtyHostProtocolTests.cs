@@ -20,7 +20,8 @@ public class TtyHostProtocolTests
             Rows = 30,
             IsRunning = true,
             Order = 3,
-            TtyHostVersion = "1.2.3"
+            TtyHostVersion = "1.2.3",
+            TerminalReplayStateVersion = TtyHostProtocol.TerminalReplayStateVersion
         };
 
         var frame = TtyHostProtocol.CreateInfoResponse(info);
@@ -34,6 +35,7 @@ public class TtyHostProtocolTests
         Assert.Equal(info.Id, parsed!.Id);
         Assert.Equal(info.HostPid, parsed.HostPid);
         Assert.Equal(info.ShellType, parsed.ShellType);
+        Assert.Equal(TtyHostProtocol.TerminalReplayStateVersion, parsed.TerminalReplayStateVersion);
     }
 
     [Fact]
@@ -120,7 +122,8 @@ public class TtyHostProtocolTests
         var requestFrame = TtyHostProtocol.CreateGetBuffer(
             4096,
             TerminalReplayReason.BufferRefreshTailReplay,
-            sinceSequence: 98765UL);
+            sinceSequence: 98765UL,
+            terminalReplayStateVersion: TtyHostProtocol.TerminalReplayStateVersion);
 
         Assert.True(TtyHostProtocol.TryReadHeader(requestFrame, out var requestType, out var requestPayloadLength));
         Assert.Equal(TtyHostMessageType.GetBuffer, requestType);
@@ -130,6 +133,7 @@ public class TtyHostProtocolTests
         Assert.Equal(4096, request!.MaxBytes);
         Assert.Equal(TerminalReplayReason.BufferRefreshTailReplay, request.Reason);
         Assert.Equal(98765UL, request.SinceSequence);
+        Assert.Equal(TtyHostProtocol.TerminalReplayStateVersion, request.TerminalReplayStateVersion);
 
         byte[]? bufferFrame = null;
         var snapshotData = Encoding.UTF8.GetBytes("tail");
@@ -141,6 +145,50 @@ public class TtyHostProtocolTests
 
         var snapshot = TtyHostProtocol.ParseBuffer(bufferFrame!.AsSpan(TtyHostProtocol.HeaderSize, bufferPayloadLength));
         Assert.Equal(222UL, snapshot.SequenceStart);
+        Assert.Equal(snapshotData, snapshot.Data);
+    }
+
+    [Fact]
+    public void BufferReplayState_RoundTrips_WithoutChangingPtySequenceData()
+    {
+        byte[]? bufferFrame = null;
+        var snapshotData = Encoding.UTF8.GetBytes("retained-output");
+        var terminalState = new TerminalReplayState(1049);
+
+        TtyHostProtocol.WriteBufferResponseWithReplayState(
+            500UL,
+            terminalState,
+            snapshotData,
+            span => bufferFrame = span.ToArray());
+
+        Assert.NotNull(bufferFrame);
+        Assert.True(TtyHostProtocol.TryReadHeader(bufferFrame!, out var type, out var payloadLength));
+        Assert.Equal(TtyHostMessageType.Buffer, type);
+
+        var snapshot = TtyHostProtocol.ParseBufferWithReplayState(
+            bufferFrame!.AsSpan(TtyHostProtocol.HeaderSize, payloadLength));
+
+        Assert.Equal(500UL, snapshot.SequenceStart);
+        Assert.Equal(1049, snapshot.TerminalState.AlternateScreenMode);
+        Assert.True(snapshot.TerminalState.AlternateScreenActive);
+        Assert.Equal(snapshotData, snapshot.Data);
+    }
+
+    [Fact]
+    public void BufferReplayStateParser_AcceptsLegacyBufferResponse()
+    {
+        byte[]? bufferFrame = null;
+        var snapshotData = Encoding.UTF8.GetBytes("legacy-buffer");
+        TtyHostProtocol.WriteBufferResponse(700UL, snapshotData, span => bufferFrame = span.ToArray());
+
+        Assert.NotNull(bufferFrame);
+        Assert.True(TtyHostProtocol.TryReadHeader(bufferFrame!, out _, out var payloadLength));
+
+        var snapshot = TtyHostProtocol.ParseBufferWithReplayState(
+            bufferFrame!.AsSpan(TtyHostProtocol.HeaderSize, payloadLength));
+
+        Assert.Equal(700UL, snapshot.SequenceStart);
+        Assert.False(snapshot.TerminalState.AlternateScreenActive);
         Assert.Equal(snapshotData, snapshot.Data);
     }
 

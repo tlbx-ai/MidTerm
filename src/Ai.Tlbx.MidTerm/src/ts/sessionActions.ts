@@ -82,6 +82,7 @@ import {
 import { sendActiveSessionHint } from './modules/comms';
 import { t } from './modules/i18n';
 import { closeOperatorView } from './modules/operator';
+import { closeActionGraphsView } from './modules/actionGraphs';
 import { repairTerminalDisplay } from './modules/terminal/displayRepair';
 
 const log = createLogger('main');
@@ -123,6 +124,12 @@ interface BookmarkSessionRef {
   machineId: string | null;
   remoteSessionId: string | null;
   session: Session;
+}
+
+/** Full-surface overlay views that must yield when a session takes focus. */
+function closeOverlayViews(): void {
+  closeOperatorView();
+  closeActionGraphsView();
 }
 
 export function createSessionActionHandlers({
@@ -268,7 +275,7 @@ export function createSessionActionHandlers({
   }
 
   function selectSession(sessionId: string, options?: SessionSelectionOptions): void {
-    closeOperatorView();
+    closeOverlayViews();
     closeMobileActionsMenu();
     if (options?.closeSettingsPanel !== false) {
       closeSettings();

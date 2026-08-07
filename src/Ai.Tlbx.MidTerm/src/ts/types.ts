@@ -129,6 +129,7 @@ export interface TerminalState {
   enterOverrideHandler?: (e: KeyboardEvent) => void;
   hasWebgl?: boolean;
   webglAddon?: WebglAddon | null;
+  webglCustomGlyphs: boolean;
   ligatureJoinerId?: number | null;
   richBackgroundTransparencyAlpha?: number | null;
   richBackgroundTransparencyDisposable?: { dispose: () => void } | undefined;
@@ -187,6 +188,7 @@ export type WsCommand =
       action: 'browser.setActivity';
       payload: {
         isActive: boolean;
+        isVisible: boolean;
         activeSessionId?: string | null;
         activeSurface?: string | null;
       };
@@ -226,6 +228,7 @@ interface WsCommandPayloadMap {
   'browser.releaseMain': undefined;
   'browser.setActivity': {
     isActive: boolean;
+    isVisible: boolean;
     activeSessionId?: string | null;
     activeSurface?: string | null;
   };

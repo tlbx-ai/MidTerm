@@ -140,6 +140,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_context -Value Mt-Context", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_close_preview -Value Mt-ClosePreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_capabilities -Value Mt-Capabilities", powershell, StringComparison.Ordinal);
@@ -190,7 +191,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("api/input-history?sessionId=", shell, StringComparison.Ordinal);
         Assert.Contains("[ -n \"$sid\" ] || { echo \"Session id required.\"", shell, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
-        Assert.Contains("mt_supervise()", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_supervise", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Redraw", powershell, StringComparison.Ordinal);
         Assert.Contains("Get-Command nohup -CommandType Application", powershell, StringComparison.Ordinal);
@@ -220,7 +221,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-InputHistoryReplay", powershell, StringComparison.Ordinal);
         Assert.Contains("if (-not $SessionId) { Write-Error \"Session id required.\"", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Bootstrap", powershell, StringComparison.Ordinal);
-        Assert.Contains("function Mt-Supervise", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_redraw -Value Mt-Redraw", powershell, StringComparison.Ordinal);
@@ -231,7 +232,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_agent_capabilities -Value Mt-AgentCapabilities", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_dispatch -Value Mt-Dispatch", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_publish_status -Value Mt-PublishStatus", powershell, StringComparison.Ordinal);
-        Assert.Contains("Set-Alias -Name mt_supervise -Value Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
         Assert.Contains("ValueFromRemainingArguments", powershell, StringComparison.Ordinal);
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
@@ -246,8 +246,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("/api/input-history", shell, StringComparison.Ordinal);
         Assert.Contains("/api/workers/bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("/activity?seconds=", powershell, StringComparison.Ordinal);
-        Assert.Contains("midterm supervisor snapshot", shell, StringComparison.Ordinal);
-        Assert.Contains("fleet attention:", powershell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -483,7 +481,22 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         var claudePath = Path.Combine(_tempDir, TlbxDirectory.DirectoryName, "CLAUDE.md");
         var claude = File.ReadAllText(claudePath);
 
-        Assert.Contains("guidance-version:", agents, StringComparison.Ordinal);
+        Assert.Equal(agents, claude);
+        Assert.Contains("tlbx-guidance:", agents, StringComparison.Ordinal);
+        Assert.Contains("https://tlbx.ai", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("midterm.sh", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("MidTerm", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("Q:/repos/", agents, StringComparison.Ordinal);
+        Assert.Contains(". .tlbx/tlbx_cli.ps1", agents, StringComparison.Ordinal);
+        Assert.Contains(". .tlbx/tlbx_cli.sh", agents, StringComparison.Ordinal);
+        Assert.Contains("## Graph boards", agents, StringComparison.Ordinal);
+        Assert.Contains("mtg_node_add", agents, StringComparison.Ordinal);
+        Assert.Contains("mtg_edge_add", agents, StringComparison.Ordinal);
+        Assert.Contains("mtg_context", agents, StringComparison.Ordinal);
+        Assert.Contains("Every executable graph leaf", agents, StringComparison.Ordinal);
+        Assert.Contains("optimistic", agents, StringComparison.Ordinal);
+        Assert.Contains(". .tlbx/tlbx_graphs.ps1", agents, StringComparison.Ordinal);
+        Assert.Contains("never secret values", agents, StringComparison.Ordinal);
         Assert.Contains("mt_apply_update", agents, StringComparison.Ordinal);
         Assert.Contains("continue with the new build", agents, StringComparison.Ordinal);
         Assert.Contains("mt_open` both sets the target", agents, StringComparison.Ordinal);
@@ -512,7 +525,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_events", agents, StringComparison.Ordinal);
         Assert.Contains("outlet for agents, not another agent", agents, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
-        Assert.Contains("mt_supervise", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_supervise", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_claim_preview", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_claim_main_browser", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_forcereload", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_proxylog_summary", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_mobile", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_inspect", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_capabilities", agents, StringComparison.Ordinal);
         Assert.Contains("mt_run_isolated", agents, StringComparison.Ordinal);
         Assert.Contains(".tlbx/runs/<run-id>/", agents, StringComparison.Ordinal);
         Assert.Contains("mt_run_isolated", claude, StringComparison.Ordinal);
@@ -522,6 +542,39 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("status` and `mt_status` both resolve", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);
         Assert.Contains("recreates and refreshes it automatically", agents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteScripts_WritesGraphCrudHelpers()
+    {
+        Directory.CreateDirectory(_tempDir);
+
+        TlbxGraphsScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_graphs.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_graphs.ps1"));
+
+        Assert.Contains("mtg_graphs()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_node_add()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_node_set()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_move()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_edge_add()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_context()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_session_bind()", shell, StringComparison.Ordinal);
+        Assert.Contains("mtg_organize()", shell, StringComparison.Ordinal);
+        Assert.Contains("expectedGraphRevision", shell, StringComparison.Ordinal);
+        Assert.Contains("/api/graphs", shell, StringComparison.Ordinal);
+        Assert.Contains("Authorization: Bearer $MT_API_KEY", shell, StringComparison.Ordinal);
+
+        Assert.Contains("function Mtg-Graphs", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-NodeAdd", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-Move", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-Context", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-SessionBind", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mtg-Help", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mtg_node_add -Value Mtg-NodeAdd", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mtg_edge_rm -Value Mtg-EdgeRm", powershell, StringComparison.Ordinal);
+        Assert.Contains("/api/graphs", powershell, StringComparison.Ordinal);
     }
 
     [Fact]

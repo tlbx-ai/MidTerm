@@ -1,12 +1,16 @@
 import { $activeSessionId, $stateWsConnected } from '../../stores';
 import { connectStateWebSocket, reportBrowserActivity } from './stateChannel';
-import { recoverVisibleTerminalsAfterBrowserResume } from './muxChannel';
+import {
+  recoverVisibleTerminalsAfterBrowserResume,
+  suspendMuxForBrowserBackground,
+} from './muxChannel';
 
 interface BrowserLifecycleRecoveryOptions {
   getVisibleTerminalSessionIds: () => string[];
   syncMuxTerminalVisibility: () => void;
   focusActiveTerminal: () => void;
   applyScrollbackProtection: () => void;
+  keepTerminalOutputActiveWhileHidden: () => boolean;
 }
 
 export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryOptions): void {
@@ -31,6 +35,9 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
     reportBrowserActivity();
 
     if (isDocumentHidden()) {
+      if (!options.keepTerminalOutputActiveWhileHidden()) {
+        suspendMuxForBrowserBackground();
+      }
       return;
     }
 

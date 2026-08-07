@@ -97,6 +97,10 @@ src/Ai.Tlbx.MidTerm/dist/
 # Node.js
 node_modules/
 
+# Gradle local state
+.gradle/
+src/connectors/android/build/
+
 # Marketing generated output
 docs/marketing/output/
 tmpclaude-*

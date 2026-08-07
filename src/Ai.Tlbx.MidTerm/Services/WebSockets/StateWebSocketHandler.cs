@@ -116,6 +116,7 @@ public sealed class StateWebSocketHandler
         var stateSendPending = false;
         var stateSendInFlight = false;
         Task? stateSendTask = null;
+        var stateDeliveryActive = 1;
         var connectionToken = new object();
         var browserId = BuildBrowserConnectionId(context.Request);
         var browserLabel = BrowserIdentity.GetDeviceLabel(context.Request);
@@ -145,6 +146,11 @@ public sealed class StateWebSocketHandler
 
         async Task SendStateAsync()
         {
+            if (Volatile.Read(ref stateDeliveryActive) == 0)
+            {
+                return;
+            }
+
             var sessionList = GetSessionListDto();
             if (shareAccess is not null)
             {
@@ -166,6 +172,11 @@ public sealed class StateWebSocketHandler
                     ? _terminalSizeControlService.GetStatuses(browserId, sessionList.Sessions.Select(s => s.Id))
                     : []
             };
+            if (Volatile.Read(ref stateDeliveryActive) == 0)
+            {
+                return;
+            }
+
             await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
         }
 
@@ -255,6 +266,11 @@ public sealed class StateWebSocketHandler
 
         void RequestCoalescedStateSend()
         {
+            if (Volatile.Read(ref stateDeliveryActive) == 0)
+            {
+                return;
+            }
+
             lock (stateSendGate)
             {
                 if (stateSendInFlight)
@@ -266,6 +282,15 @@ public sealed class StateWebSocketHandler
                 stateSendPending = false;
                 stateSendInFlight = true;
                 stateSendTask = Task.Run(RunCoalescedStateSendAsync, CancellationToken.None);
+            }
+        }
+
+        void SetStateDeliveryActive(bool isActive)
+        {
+            var wasActive = Interlocked.Exchange(ref stateDeliveryActive, isActive ? 1 : 0) == 1;
+            if (isActive && !wasActive)
+            {
+                RequestCoalescedStateSend();
             }
         }
 
@@ -497,7 +522,15 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, browserLabel, connectionToken, shareAccess, shutdownToken);
+                            await HandleCommandAsync(
+                                messageJson,
+                                SendCommandResponseAsync,
+                                SetStateDeliveryActive,
+                                browserId,
+                                browserLabel,
+                                connectionToken,
+                                shareAccess,
+                                shutdownToken);
                         }
                     }
                 }
@@ -588,6 +621,7 @@ public sealed class StateWebSocketHandler
     private async Task HandleCommandAsync(
         string json,
         Func<string, bool, object?, string?, Task> sendResponse,
+        Action<bool> setStateDeliveryActive,
         string browserId,
         string? browserLabel,
         object connectionToken,
@@ -650,6 +684,7 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "browser.setActivity":
+                    setStateDeliveryActive(cmd.Payload?.IsVisible != false);
                     _mainBrowserService.UpdateActivity(
                         browserId,
                         connectionToken,

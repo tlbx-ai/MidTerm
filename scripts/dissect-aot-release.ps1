@@ -472,6 +472,15 @@ New-Item -ItemType Directory -Force -Path $channelRoot | Out-Null
 if (-not (Test-Path $zipPath)) {
     Invoke-Download -Url $asset.browser_download_url -DestinationPath $zipPath
 }
+$expectedAssetDigest = [string]$asset.digest
+if (-not $expectedAssetDigest.StartsWith("sha256:", [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Release asset '$($asset.name)' does not expose a SHA-256 digest."
+}
+$expectedAssetHash = $expectedAssetDigest.Substring("sha256:".Length).ToLowerInvariant()
+$actualAssetHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualAssetHash -ne $expectedAssetHash) {
+    throw "Release asset digest mismatch for '$($asset.name)'. Expected $expectedAssetHash, got $actualAssetHash."
+}
 
 $safeReleaseRoot = Assert-ChildPath -Root $outputRoot -Candidate $releaseRoot
 if (Test-Path $safeReleaseRoot) {

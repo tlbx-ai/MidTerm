@@ -3,8 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const require = createRequire(import.meta.url);
 const { chromium } = require('../../docs/marketing/ScreenshotAutomation/node_modules/playwright');
 
@@ -34,25 +32,42 @@ function buildFloodCommand(index) {
   ].join('; ');
 }
 
+async function browserRequest(requestUrl, options = {}) {
+  if (!page) throw new Error('The profiling browser is not available.');
+  return page.evaluate(
+    async ({ requestUrl: path, options: requestOptions }) => {
+      const response = await fetch(path, {
+        ...requestOptions,
+        headers: {
+          ...(requestOptions.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(requestOptions.headers || {}),
+        },
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        text: await response.text(),
+      };
+    },
+    { requestUrl, options },
+  );
+}
+
 async function requestJson(requestUrl, options = {}) {
-  const response = await fetch(new URL(requestUrl, url), {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  });
+  const response = await browserRequest(requestUrl, options);
   if (!response.ok) {
     throw new Error(`${options.method || 'GET'} ${requestUrl} failed: ${response.status}`);
   }
   if (response.status === 204) return null;
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
+  return response.text ? JSON.parse(response.text) : null;
 }
 
 async function requestText(requestUrl) {
-  const response = await fetch(new URL(requestUrl, url));
+  const response = await browserRequest(requestUrl);
   if (!response.ok) {
     throw new Error(`GET ${requestUrl} failed: ${response.status}`);
   }
-  return response.text();
+  return response.text;
 }
 
 function getSessionId(response) {
@@ -73,6 +88,7 @@ async function readTracingStream(client, streamHandle) {
 
 const createdSessionIds = [];
 let browserContext;
+let page;
 let traceComplete;
 try {
   browserContext = await chromium.launchPersistentContext(profileDir, {
@@ -82,7 +98,7 @@ try {
     viewport: { width: 1440, height: 1000 },
     args: ['--ignore-certificate-errors', '--disable-background-networking'],
   });
-  const page = browserContext.pages()[0] || (await browserContext.newPage());
+  page = browserContext.pages()[0] || (await browserContext.newPage());
   const client = await browserContext.newCDPSession(page);
 
   traceComplete = new Promise((resolve) => {
@@ -213,7 +229,7 @@ try {
 } finally {
   for (const sessionId of createdSessionIds) {
     try {
-      await fetch(new URL(`/api/sessions/${encodeURIComponent(sessionId)}`, url), { method: 'DELETE' });
+      await browserRequest(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     } catch {
       // External cleanup best effort.
     }
