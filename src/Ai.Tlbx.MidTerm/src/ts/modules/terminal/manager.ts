@@ -627,7 +627,7 @@ export function refreshCursorBlink(terminal: Terminal): void {
 const webglPrioritySessionIds = new Set<string>();
 let webglPriorityKnown = false;
 const webglContextLossTimestamps = new Map<string, number[]>();
-const foregroundDomRendererQuarantine = new WeakSet<TerminalState>();
+const foregroundDomRendererRecovery = new WeakSet<TerminalState>();
 const WEBGL_REATTACH_BASE_DELAY_MS = 1500;
 const WEBGL_REATTACH_MAX_DELAY_MS = 30000;
 const WEBGL_LOSS_WINDOW_MS = 60000;
@@ -697,6 +697,29 @@ function scheduleWebglReattach(sessionId: string, state: TerminalState, delayMs:
   }, delayMs);
 }
 
+function restoreWebglAfterForegroundRecovery(sessionId: string, state: TerminalState): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      foregroundDomRendererRecovery.delete(state);
+      if (
+        sessionTerminals.get(sessionId) !== state ||
+        !state.opened ||
+        !shouldUseWebglRenderer($currentSettings.get()) ||
+        !hasWebglPriority(sessionId, state)
+      ) {
+        return;
+      }
+
+      if (attachWebglAddon(sessionId, state)) {
+        log.info(() => `Terminal ${sessionId} restored WebGL after foreground recovery`);
+        refreshTerminalRenderer(state, { preserveTextureAtlas: true });
+      } else {
+        scheduleWebglReattach(sessionId, state, WEBGL_REATTACH_BASE_DELAY_MS);
+      }
+    });
+  });
+}
+
 function detachWebglAddon(sessionId: string, state: TerminalState): void {
   detachTerminalLigatureState(state);
   const addon = state.webglAddon;
@@ -720,7 +743,7 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
   if (!state.opened) {
     return false;
   }
-  if (foregroundDomRendererQuarantine.has(state)) {
+  if (foregroundDomRendererRecovery.has(state)) {
     return false;
   }
   if (state.hasWebgl) {
@@ -778,9 +801,7 @@ export function syncTerminalWebglState(
   }
 
   if (!enabled) {
-    // An explicit WebGL off/on settings cycle is also the operator-controlled
-    // escape hatch from a foreground compositor quarantine.
-    foregroundDomRendererQuarantine.delete(state);
+    foregroundDomRendererRecovery.delete(state);
     detachWebglAddon(sessionId, state);
     return;
   }
@@ -828,14 +849,24 @@ export function recoverTerminalRendererAfterForeground(
 
   const settings = $currentSettings.get();
   if (options.preferDomRenderer) {
-    // A foreground watchdog only reaches this path after animation frames
-    // stopped firing. Keep the terminal on xterm's DOM renderer for this
-    // recovery pass: recreating WebGL while the compositor is still waking
-    // can leave a healthy terminal buffer behind a permanently blank canvas.
-    // Keep this terminal on the DOM renderer for the rest of the page
-    // lifetime. A reload or an explicit WebGL off/on cycle starts clean.
-    foregroundDomRendererQuarantine.add(state);
-    detachWebglAddon(sessionId, state);
+    // This emergency path is reached only after the foreground compositor has
+    // produced no animation frame for more than five seconds. Use the DOM
+    // renderer while it is stalled, then restore WebGL automatically after two
+    // healthy animation frames instead of quarantining the terminal for the
+    // rest of the page lifetime.
+    if (
+      state.hasWebgl &&
+      shouldUseWebglRenderer(settings) &&
+      !foregroundDomRendererRecovery.has(state)
+    ) {
+      log.warn(
+        () =>
+          `Terminal ${sessionId} temporarily using DOM renderer after foreground frames stalled`,
+      );
+      foregroundDomRendererRecovery.add(state);
+      detachWebglAddon(sessionId, state);
+      restoreWebglAfterForegroundRecovery(sessionId, state);
+    }
     syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
     refreshTerminalRenderer(state);
@@ -843,7 +874,7 @@ export function recoverTerminalRendererAfterForeground(
   }
 
   if (
-    !foregroundDomRendererQuarantine.has(state) &&
+    !foregroundDomRendererRecovery.has(state) &&
     !state.hasWebgl &&
     shouldUseWebglRenderer(settings)
   ) {

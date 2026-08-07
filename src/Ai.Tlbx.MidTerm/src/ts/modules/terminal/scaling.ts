@@ -1214,7 +1214,7 @@ let foregroundResizeRecoveryScheduled = false;
 let foregroundResizeRecoveryTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
 let foregroundResizeRecoveryGeneration = 0;
 let foregroundResizeRecoveryRetryCount = 0;
-let foregroundResizeRecoveryUsedFallback = false;
+let foregroundResizeRecoveryNeedsEmergencyFallback = false;
 const FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS = 250;
 const FOREGROUND_RESIZE_RECOVERY_RETRY_MS = 100;
 const FOREGROUND_RESIZE_RECOVERY_MAX_RETRIES = 50;
@@ -1223,7 +1223,7 @@ function runForegroundResizeRecoveryPass(): void {
   ensureTerminalContainerResizeObserver();
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened || !isTerminalVisible(state)) return;
-    if (foregroundResizeRecoveryUsedFallback) {
+    if (foregroundResizeRecoveryNeedsEmergencyFallback) {
       terminalManager.recoverTerminalRendererAfterForeground(sessionId, state, {
         preferDomRenderer: true,
       });
@@ -1262,12 +1262,19 @@ function retryForegroundResizeRecovery(generation: number): void {
   }
 
   if (foregroundResizeRecoveryRetryCount === 0) {
-    foregroundResizeRecoveryUsedFallback = true;
+    // A busy foreground tab can easily miss the initial 250 ms window while
+    // Chromium wakes the compositor and xterm rebuilds its glyph atlas. Refresh
+    // the current renderer without treating that ordinary delay as a WebGL
+    // failure.
     runForegroundResizeRecoveryPass();
   }
   foregroundResizeRecoveryRetryCount += 1;
 
   if (foregroundResizeRecoveryRetryCount >= FOREGROUND_RESIZE_RECOVERY_MAX_RETRIES) {
+    // Only fall back to the DOM renderer after more than five seconds without
+    // a single animation frame. The manager restores WebGL automatically once
+    // animation frames resume.
+    foregroundResizeRecoveryNeedsEmergencyFallback = true;
     finishForegroundResizeRecovery(generation);
     return;
   }
@@ -1282,7 +1289,7 @@ export function scheduleForegroundResizeRecovery(): void {
   if (foregroundResizeRecoveryScheduled) return;
   foregroundResizeRecoveryScheduled = true;
   foregroundResizeRecoveryRetryCount = 0;
-  foregroundResizeRecoveryUsedFallback = false;
+  foregroundResizeRecoveryNeedsEmergencyFallback = false;
   const generation = ++foregroundResizeRecoveryGeneration;
   requestForegroundResizeRecoveryFrame(generation);
   foregroundResizeRecoveryTimeout = globalThis.setTimeout(() => {
