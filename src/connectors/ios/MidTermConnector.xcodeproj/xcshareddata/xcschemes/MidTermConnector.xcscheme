@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A6000001"
-               BuildableName = "MidTermConnector.app"
+               BuildableName = "tlbx.app"
                BlueprintName = "MidTermConnector"
                ReferencedContainer = "container:MidTermConnector.xcodeproj">
             </BuildableReference>
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A6000001"
-            BuildableName = "MidTermConnector.app"
+            BuildableName = "tlbx.app"
             BlueprintName = "MidTermConnector"
             ReferencedContainer = "container:MidTermConnector.xcodeproj">
          </BuildableReference>
@@ -62,7 +62,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A6000001"
-            BuildableName = "MidTermConnector.app"
+            BuildableName = "tlbx.app"
             BlueprintName = "MidTermConnector"
             ReferencedContainer = "container:MidTermConnector.xcodeproj">
          </BuildableReference>

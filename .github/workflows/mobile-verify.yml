@@ -1,0 +1,55 @@
+name: Mobile app verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/mobile-verify.yml'
+      - 'src/connectors/android/**'
+      - 'src/connectors/ios/**'
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install Android 16 SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Verify Android debug build and lint
+        working-directory: src/connectors/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug lintDebug --no-daemon --console=plain
+
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Compile iOS app without signing
+        working-directory: src/connectors/ios
+        run: |
+          xcodebuild build \
+            -project MidTermConnector.xcodeproj \
+            -scheme MidTermConnector \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

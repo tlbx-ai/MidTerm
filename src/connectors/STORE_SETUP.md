@@ -1,127 +1,130 @@
-# Store Setup Guide
+# tlbx mobile app: manual store handoff
 
-Everything you need to create before the first release.
+The source is ready for the manual signing and store-account steps below. The native app is a connection manager for multiple user-configured tlbx instances. It keeps the selected WebView and browser session in memory while the operating system permits, performs best-effort background health refreshes, and reconnects the page when the app returns to the foreground.
 
-## Bundle ID
+## Fixed application identity
 
-`ai.tlbx.midterm` (both platforms)
+- Store name: `tlbx`
+- Android application ID: `ai.tlbx.app`
+- Apple bundle ID: `ai.tlbx.app`
+- Version: `1.0.0`
+- Minimum Android: API 26 (Android 8)
+- Android target/compile SDK: API 36 (Android 16)
+- Minimum Apple OS: iOS/iPadOS 16
 
----
+The application identity is final for the first store publication. Do not create a second store record with another identifier after signing or publication starts.
 
-## Google Play Store
+## What the app does natively
 
-### 1. Play Console App Listing
+- saves, edits, removes, and switches between multiple tlbx instances;
+- opens the last-used instance automatically after initial setup;
+- isolates in-app navigation to the configured HTTPS origin and opens external links in the system browser;
+- allows private/self-signed TLS only after an explicit per-instance opt-in;
+- retains WebView cookies and local storage on the device;
+- requests a periodic network health refresh and actively reconnects the page on foreground return;
+- collects no analytics, advertising identifier, contacts, location, photos, or other native personal data.
 
-- Go to [Google Play Console](https://play.google.com/console)
-- Create app → Android → package name: `ai.tlbx.midterm`
-- Fill in store listing (title, description, screenshots, icon)
-- Complete the content declaration and data safety form
+Background execution is always best-effort. Android schedules periodic work no more often than every 15 minutes. iOS chooses whether and when to grant `BGAppRefreshTask` time. Neither store platform permits an ordinary WebView app to promise permanent background execution.
 
-### 2. Upload Keystore
+## Google Play: manual path
 
-Generate once, keep forever:
+### 1. Create the app record
 
-```bash
-keytool -genkeypair -v \
-  -keystore upload.jks \
-  -keyalg RSA -keysize 2048 \
-  -validity 10000 \
-  -alias upload \
-  -dname "CN=tlbx, O=tlbx.ai, L=Vienna, C=AT"
+1. In Play Console, create an app named `tlbx` with default language English.
+2. Use package name `ai.tlbx.app`.
+3. Enable Play App Signing. Keep the upload key described below separate from Google's app-signing key.
+
+New submissions after 31 August 2026 must target API 36. The project already does.
+
+### 2. Generate and back up the upload key
+
+Run once in a private directory outside the repository:
+
+```powershell
+keytool -genkeypair -v -keystore tlbx-upload.jks -keyalg RSA -keysize 4096 -validity 10000 -alias upload -dname "CN=tlbx, O=tlbx.ai, C=DE"
 ```
 
-Store `upload.jks` securely — losing it means you can't push updates.
+Back up the keystore and both passwords in the password manager. Never commit the keystore.
 
-### 3. Google Cloud Service Account
+### 3. Build the signed Android artifacts
 
-- Go to [Google Cloud Console](https://console.cloud.google.com)
-- Create a service account (or reuse existing)
-- In Play Console → Setup → API access → Link the Google Cloud project
-- Grant the service account "Release manager" permissions
-- Download the service account JSON key
+From `src/connectors/android`:
 
-### 4. GitHub Secrets
+```powershell
+$env:ANDROID_HOME = 'C:\Program Files (x86)\Android\android-sdk'
+$env:KEYSTORE_PATH = 'C:\private\tlbx-upload.jks'
+$env:KEYSTORE_PASSWORD = '<keystore password>'
+$env:KEY_ALIAS = 'upload'
+$env:KEY_PASSWORD = '<key password>'
+.\gradlew.bat clean assembleRelease bundleRelease --no-daemon
+```
 
-Add these to the repo's GitHub Actions secrets:
+Outputs:
 
-| Secret | Value |
-|--------|-------|
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 upload.jks` |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | `upload` |
-| `ANDROID_KEY_PASSWORD` | Key password |
-| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Full JSON contents of service account key |
+- Play upload: `app/build/outputs/bundle/release/app-release.aab`
+- Direct test install: `app/build/outputs/apk/release/app-release.apk`
 
----
+Upload the AAB to Internal testing first. Add at least one tester, install from the Play-generated link, and verify initial setup, instance switching, login persistence, external links, background/foreground return, rotation, and the software keyboard.
 
-## Apple App Store
+### 4. Complete Play Console declarations
 
-### 1. App ID
+- App category: Tools
+- Ads: No
+- Target audience: adults/general productivity; do not target children
+- Data safety: the native layer has no analytics or ad SDK and stores instance addresses locally. It transmits WebView traffic only to the instance selected by the user. Recheck the declaration against the actual tlbx server features and privacy policy before submitting.
+- App access: provide a reachable review instance and test credentials in the review instructions. A reviewer cannot validate a blank user-supplied URL without them.
+- Add the privacy-policy URL, support URL, screenshots, 512x512 icon, feature graphic, short description, full description, and content rating.
 
-- Go to [Apple Developer Portal](https://developer.apple.com/account/resources/identifiers/list)
-- Identifiers → Register a new identifier → App IDs
-- Bundle ID: `ai.tlbx.midterm` (explicit)
-- Capabilities: none required (no push notifications, no special entitlements)
+## Apple App Store: manual path
 
-### 2. Distribution Certificate
+Apple has required uploads to use Xcode 26 and the iOS 26 SDK since 28 April 2026.
 
-- Certificates → Create → Apple Distribution
-- Download and install the `.cer`
-- Export as `.p12` from Keychain Access (include private key)
+### 1. Register identity and signing
 
-### 3. Provisioning Profile
+1. In Certificates, Identifiers & Profiles, register explicit App ID `ai.tlbx.app` with display name `tlbx`.
+2. Open `src/connectors/ios/MidTermConnector.xcodeproj` in Xcode 26 or newer.
+3. Select the `MidTermConnector` target, then Signing & Capabilities.
+4. Select team `FK7G5C74WH` if it is still the correct developer team. Keep Automatically manage signing enabled for the shortest path.
+5. For manual signing instead, create an Apple Distribution certificate and an App Store distribution profile for `ai.tlbx.app`, install both on the Mac, disable automatic signing for Release, and select that profile.
 
-- Profiles → Create → App Store Distribution
-- Select App ID: `ai.tlbx.midterm`
-- Select the distribution certificate
-- Download `MidTerm_AppStore.mobileprovision`
+The project already contains the Background fetch mode, the permitted refresh-task identifier, the local-network usage description, and `PrivacyInfo.xcprivacy` for its local preferences access.
 
-### 4. App Store Connect
+### 2. Archive and upload
 
-- Go to [App Store Connect](https://appstoreconnect.apple.com)
-- My Apps → New App
-- Bundle ID: `ai.tlbx.midterm`
-- Fill in app metadata, screenshots, description
+1. Select `Any iOS Device (arm64)`.
+2. Product -> Archive.
+3. In Organizer, run Validate App.
+4. Choose Distribute App -> App Store Connect -> Upload.
+5. Resolve signing, entitlement, privacy-manifest, or validation errors before continuing.
 
-### 5. App Store Connect API Key
+### 3. Complete App Store Connect
 
-- Users and Access → Integrations → App Store Connect API
-- Generate API Key (role: Admin or Developer)
-- Note the Key ID and Issuer ID
-- Download the `.p8` private key (one-time download)
+- Name: `tlbx`
+- Subtitle: `Your tlbx connections`
+- Category: Developer Tools or Productivity
+- Privacy: the native layer does not track and declares no collected data. Recheck this against the reachable tlbx instance and published privacy policy.
+- Export compliance: answer for the standard HTTPS encryption used by WebKit; complete App Store Connect's current questionnaire rather than copying an old answer.
+- EU distribution: complete the current DSA trader-status fields before submission.
+- Age rating: complete the current questionnaire.
+- App Review information: provide a reachable review instance, test credentials, and the notes below.
 
-### 6. GitHub Secrets
+Suggested review note:
 
-Add these to the repo's GitHub Actions secrets:
+> tlbx is a native connection manager for user-owned tlbx terminal workspaces. The native UI stores and switches multiple HTTPS instances, constrains embedded navigation to the selected origin, manages private-certificate opt-in, preserves the authenticated WebView session, performs best-effort background health refresh, and reconnects on foreground return. Review URL and credentials are provided in App Review Information.
 
-| Secret | Value |
-|--------|-------|
-| `IOS_DISTRIBUTION_CERT_P12` | `base64 -w0 distribution.p12` |
-| `IOS_DISTRIBUTION_CERT_PASSWORD` | P12 export password |
-| `IOS_PROVISIONING_PROFILE` | `base64 -w0 MidTerm_AppStore.mobileprovision` |
-| `APPSTORE_CONNECT_API_KEY_ID` | Key ID from App Store Connect |
-| `APPSTORE_CONNECT_API_ISSUER_ID` | Issuer ID from App Store Connect |
-| `APPSTORE_CONNECT_API_PRIVATE_KEY` | Full contents of `.p8` file |
+This native connection-management value is important for App Review guideline 4.2; do not describe the product as only a website wrapper.
 
----
+## Store assets still requiring real devices
 
-## Checklist
+Capture final screenshots only after the signed builds run on a representative Android phone, iPhone, and iPad. Show:
 
-### Google Play
-- [ ] App created in Play Console (`ai.tlbx.midterm`)
-- [ ] Upload keystore generated and backed up
-- [ ] Service account created and linked
-- [ ] All 5 GitHub secrets added
-- [ ] Store listing completed (icon, screenshots, description)
-- [ ] Content rating questionnaire completed
-- [ ] Data safety form completed
+1. the native multi-instance connection manager;
+2. a connected tlbx terminal;
+3. switching between two tlbx instances;
+4. return from background with the session restored.
 
-### Apple App Store
-- [ ] App ID registered (`ai.tlbx.midterm`)
-- [ ] Distribution certificate created and exported as P12
-- [ ] App Store provisioning profile created
-- [ ] App record created in App Store Connect
-- [ ] API key generated
-- [ ] All 6 GitHub secrets added
-- [ ] Store listing completed (icon, screenshots, description)
-- [ ] App privacy details completed
+Do not submit placeholder servers, dead URLs, or fabricated review credentials.
+
+## Optional CI automation later
+
+The existing Android and iOS release workflows can automate signed uploads after the manual store records work. They require the keystore/certificate/profile and store API secrets. CI setup is optional and is not a prerequisite for the first manual archive/upload.

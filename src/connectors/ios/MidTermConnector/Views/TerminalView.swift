@@ -4,76 +4,178 @@ import WebKit
 
 struct TerminalView: View {
     let server: Server
-    @Environment(\.dismiss) private var dismiss
+    let showSettings: () -> Void
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var model: WebViewModel
+
+    init(server: Server, showSettings: @escaping () -> Void) {
+        self.server = server
+        self.showSettings = showSettings
+        _model = StateObject(wrappedValue: WebViewModel(server: server))
+    }
 
     var body: some View {
-        WebViewContainer(url: server.url)
-            .ignoresSafeArea()
-            .overlay(alignment: .topLeading) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(12)
+        VStack(spacing: 0) {
+            HStack {
+                Button { showSettings() } label: {
+                    Label("Instances", systemImage: "shippingbox")
+                }
+                Spacer()
+                Text(server.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Button { model.reload() } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
                 }
             }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(.bar)
+
+            WebViewContainer(webView: model.webView)
+                .ignoresSafeArea(edges: .bottom)
+        }
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active: model.resume()
+            case .background:
+                model.enterBackground()
+                BackgroundRefresh.schedule()
+            default: break
+            }
+        }
     }
 }
 
 struct WebViewContainer: UIViewRepresentable {
-    let url: String
+    let webView: WKWebView
 
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
+    func makeUIView(context: Context) -> WKWebView { webView }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
 
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = context.coordinator
+final class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate {
+    let webView: WKWebView
+    private let server: Server
+    private let configuredOrigin: URLComponents?
+    private var pageFailed = false
+
+    init(server: Server) {
+        self.server = server
+        configuredOrigin = URLComponents(string: server.url)
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.websiteDataStore = .default()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.applicationNameForUserAgent = "tlbx-app/1.0"
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-
-        if let serverUrl = URL(string: url) {
-            webView.load(URLRequest(url: serverUrl))
-        }
-        return webView
+        loadConfiguredURL()
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func reload() { webView.reload() }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
+    func enterBackground() {
+        keepConnectionWarm()
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        let parent: WebViewContainer
-
-        init(parent: WebViewContainer) {
-            self.parent = parent
+    func resume() {
+        if webView.url == nil || pageFailed {
+            loadConfiguredURL()
+        } else {
+            keepConnectionWarm()
         }
+    }
 
-        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
-                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-            guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-                  let trust = challenge.protectionSpace.serverTrust else {
-                completionHandler(.performDefaultHandling, nil)
-                return
-            }
+    private func keepConnectionWarm() {
+        webView.evaluateJavaScript(
+            "window.dispatchEvent(new Event('online'));window.dispatchEvent(new Event('focus'));" +
+            "fetch('/api/version',{cache:'no-store',credentials:'include'}).catch(()=>{});"
+        )
+    }
 
-            // tlbx commonly fronts private and self-signed deployments.
-            completionHandler(.useCredential, URLCredential(trust: trust))
+    private func loadConfiguredURL() {
+        guard let url = URL(string: server.url) else { return }
+        webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30))
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        pageFailed = false
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pageFailed = false
+        let store = ServerStore()
+        store.markConnected(server.id)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        pageFailed = true
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        pageFailed = true
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        webView.reload()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        guard server.allowUntrustedCertificate,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              challenge.protectionSpace.host.caseInsensitiveCompare(configuredOrigin?.host ?? "") == .orderedSame,
+              challenge.protectionSpace.port == effectivePort(configuredOrigin),
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
         }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if let targetUrl = navigationAction.request.url,
-               navigationAction.navigationType == .linkActivated,
-               !targetUrl.absoluteString.hasPrefix(parent.url) {
-                UIApplication.shared.open(targetUrl)
-                decisionHandler(.cancel)
-                return
-            }
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let targetURL = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        if sameOrigin(targetURL) {
             decisionHandler(.allow)
+        } else if navigationAction.navigationType == .linkActivated {
+            UIApplication.shared.open(targetURL)
+            decisionHandler(.cancel)
+        } else {
+            decisionHandler(.cancel)
         }
+    }
+
+    private func sameOrigin(_ url: URL) -> Bool {
+        guard let target = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let configuredOrigin else { return false }
+        return target.scheme?.caseInsensitiveCompare(configuredOrigin.scheme ?? "") == .orderedSame
+            && target.host?.caseInsensitiveCompare(configuredOrigin.host ?? "") == .orderedSame
+            && effectivePort(target) == effectivePort(configuredOrigin)
+    }
+
+    private func effectivePort(_ components: URLComponents) -> Int {
+        components.port ?? (components.scheme?.lowercased() == "https" ? 443 : 80)
+    }
+
+    private func effectivePort(_ components: URLComponents?) -> Int {
+        guard let components else { return -1 }
+        return effectivePort(components)
     }
 }

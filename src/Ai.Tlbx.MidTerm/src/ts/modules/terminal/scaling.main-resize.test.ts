@@ -316,7 +316,7 @@ describe('fitSessionToScreen', () => {
     expect(recoverTerminalRendererAfterForeground).not.toHaveBeenCalled();
   });
 
-  it('falls back to a timer and unlocks later recovery when foreground animation frames stall', () => {
+  it('refreshes without a renderer downgrade when foreground animation frames are briefly delayed', () => {
     vi.useFakeTimers();
     const harness = createFitHarness();
     harness.state.terminal.cols = 81;
@@ -332,9 +332,7 @@ describe('fitSessionToScreen', () => {
     vi.advanceTimersByTime(250);
 
     expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(1);
-    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledWith('s1', harness.state, {
-      preferDomRenderer: true,
-    });
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledWith('s1', harness.state);
 
     globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
       callback(0);
@@ -343,13 +341,33 @@ describe('fitSessionToScreen', () => {
     vi.advanceTimersByTime(100);
 
     expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(2);
-    expect(recoverTerminalRendererAfterForeground).toHaveBeenLastCalledWith('s1', harness.state, {
-      preferDomRenderer: true,
-    });
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenLastCalledWith('s1', harness.state);
 
     scheduleForegroundResizeRecovery();
 
     expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the temporary DOM fallback only after animation frames stall for over five seconds', () => {
+    vi.useFakeTimers();
+    const harness = createFitHarness();
+    harness.state.terminal.cols = 81;
+    harness.state.serverCols = 81;
+    sessionTerminals.set('s1', harness.state as never);
+    globalThis.requestAnimationFrame = vi.fn(() => 1) as typeof requestAnimationFrame;
+
+    scheduleForegroundResizeRecovery();
+    vi.advanceTimersByTime(5149);
+
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(1);
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenLastCalledWith('s1', harness.state);
+
+    vi.advanceTimersByTime(1);
+
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledTimes(2);
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenLastCalledWith('s1', harness.state, {
+      preferDomRenderer: true,
+    });
   });
 
   it('coalesces repeated scaling requests for the same terminal into one animation frame', () => {
