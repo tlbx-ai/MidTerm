@@ -1,8 +1,8 @@
 import org.gradle.api.artifacts.dsl.LockMode
 
 plugins {
-    id("com.android.application") version "8.13.2" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    id("com.android.application") version "9.3.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.4.10" apply false
 }
 
 allprojects {
@@ -13,16 +13,16 @@ allprojects {
 
     configurations.configureEach {
         resolutionStrategy.force(
-            "com.google.protobuf:protobuf-java:3.25.9",
-            "com.google.protobuf:protobuf-java-util:3.25.9",
-            "com.google.protobuf:protobuf-kotlin:3.25.9",
+            "com.google.protobuf:protobuf-java:4.35.1",
+            "com.google.protobuf:protobuf-java-util:4.35.1",
+            "com.google.protobuf:protobuf-kotlin:4.35.1",
             "commons-io:commons-io:2.22.0",
-            "io.netty:netty-codec:4.1.136.Final",
-            "io.netty:netty-codec-http:4.1.136.Final",
-            "io.netty:netty-codec-http2:4.1.136.Final",
-            "io.netty:netty-common:4.1.136.Final",
-            "io.netty:netty-handler:4.1.136.Final",
-            "io.netty:netty-handler-proxy:4.1.136.Final"
+            "io.netty:netty-codec:4.2.16.Final",
+            "io.netty:netty-codec-http:4.2.16.Final",
+            "io.netty:netty-codec-http2:4.2.16.Final",
+            "io.netty:netty-common:4.2.16.Final",
+            "io.netty:netty-handler:4.2.16.Final",
+            "io.netty:netty-handler-proxy:4.2.16.Final"
         )
         resolutionStrategy.eachDependency {
             when {

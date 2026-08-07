@@ -62,5 +62,5 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.core:core-splashscreen:1.2.0")
 }
