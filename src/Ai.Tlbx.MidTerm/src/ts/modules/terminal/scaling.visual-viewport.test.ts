@@ -340,6 +340,59 @@ describe('setupVisualViewport', () => {
     expect(state.container.scrollTop).toBe(0);
   });
 
+  it('ignores focused soft-keyboard height jitter instead of rebuilding terminal layout', () => {
+    const resizeCallbacks: Array<() => void> = [];
+    const appEl = { style: createStyleObject() };
+    const documentElement = { style: createStyleObject() };
+    const bodyClasses = new Set<string>();
+    const visualViewport = {
+      width: 390,
+      height: 600,
+      offsetTop: 0,
+      addEventListener: vi.fn((type: string, callback: () => void) => {
+        if (type === 'resize') {
+          resizeCallbacks.push(callback);
+        }
+      }),
+    };
+
+    globalThis.document = {
+      querySelector: (selector: string) =>
+        selector === '.terminal-page' ? (appEl as unknown as Element) : null,
+      documentElement: documentElement as unknown as Document['documentElement'],
+      body: {
+        style: createStyleObject(),
+        classList: {
+          contains: (name: string) => bodyClasses.has(name),
+          toggle: vi.fn((name: string, force?: boolean) => {
+            const next = force ?? !bodyClasses.has(name);
+            if (next) bodyClasses.add(name);
+            else bodyClasses.delete(name);
+            return next;
+          }),
+        },
+      } as unknown as Document['body'],
+      activeElement: { tagName: 'TEXTAREA', isContentEditable: false },
+      getElementById: () => null,
+    } as unknown as Document;
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    });
+
+    setupVisualViewport();
+    visualViewport.height = 430;
+    resizeCallbacks.forEach((callback) => callback());
+    const keyboardHeight = appEl.style.height;
+    vi.mocked(sendResize).mockClear();
+
+    visualViewport.height = 429;
+    resizeCallbacks.forEach((callback) => callback());
+
+    expect(appEl.style.height).toBe(keyboardHeight);
+    expect(sendResize).not.toHaveBeenCalled();
+  });
+
   it('pins the app shell to the visual viewport and marks the keyboard-visible state', () => {
     const bodyClasses = new Set<string>();
     const appEl = { style: createStyleObject() };

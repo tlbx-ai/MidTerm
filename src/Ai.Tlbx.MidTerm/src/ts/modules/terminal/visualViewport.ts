@@ -12,6 +12,7 @@ const KEYBOARD_BOTTOM_GUARD_MIN_PX = 10;
 const KEYBOARD_BOTTOM_GUARD_MAX_PX = 24;
 const KEYBOARD_BOTTOM_GUARD_RATIO = 0.035;
 const LAYOUT_VISUAL_VIEWPORT_HEIGHT_TOLERANCE_PX = 2;
+const KEYBOARD_VIEWPORT_JITTER_TOLERANCE_PX = 4;
 
 function getVisualViewportShellTop(visualViewport: VisualViewport): number {
   // Chromium with interactive-widget=resizes-content already moves the layout
@@ -165,12 +166,14 @@ export function setupVisualViewport(): void {
     const viewportTop = getVisualViewportShellTop(vv);
     const viewportWidth = Math.max(1, vv.width || window.innerWidth);
     const keyboardVisible = isSoftKeyboardVisible(rawViewportHeight, baselineHeight);
-    const heightAndWidthStable =
-      Math.abs(vh - lastHeight) < 1 && Math.abs(viewportWidth - lastWidth) < 1;
-    if (keyboardVisible && hasEditableElementFocus() && heightAndWidthStable) {
+    const keyboardGeometryStable =
+      Math.abs(vh - lastHeight) <= KEYBOARD_VIEWPORT_JITTER_TOLERANCE_PX &&
+      Math.abs(viewportWidth - lastWidth) < 1;
+    if (keyboardVisible && hasEditableElementFocus() && keyboardGeometryStable) {
       // Mobile browsers can pan the focused xterm/prompt textarea on every
-      // character. The visible boundary did not change, so following that
-      // offset would move the whole shell and repeat terminal synchronization.
+      // character and jitter the reported height by a few subpixels. Neither
+      // changes the usable terminal boundary, so following them would move the
+      // whole shell and repeat terminal synchronization on every keystroke.
       return;
     }
     if (
