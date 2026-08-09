@@ -715,8 +715,8 @@ export async function getSettings(): ClientGetResult<'/api/settings'> {
 
 export async function updateSettings(
   settings: MidTermSettingsUpdate,
-): ClientPutResult<'/api/settings'> {
-  return client.PUT('/api/settings', {
+): ClientPatchResult<'/api/settings'> {
+  return client.PATCH('/api/settings', {
     body: settings as unknown as MidTermSettingsPublic,
   });
 }

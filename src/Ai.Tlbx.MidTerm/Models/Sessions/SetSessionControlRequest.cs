@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Ai.Tlbx.MidTerm.Models.Sessions;
 
 /// <summary>
@@ -5,5 +7,6 @@ namespace Ai.Tlbx.MidTerm.Models.Sessions;
 /// </summary>
 public sealed class SetSessionControlRequest
 {
+    [JsonRequired]
     public bool AgentControlled { get; init; }
 }

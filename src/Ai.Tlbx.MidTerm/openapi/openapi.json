@@ -2841,6 +2841,26 @@
             "description": "OK"
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/settings/reload": {
@@ -4752,6 +4772,7 @@
           }
         }
       },
+      "JsonElement": { },
       "LanguageSetting": {
         "enum": [
           "auto",
@@ -5682,6 +5703,9 @@
         }
       },
       "RenameSessionRequest": {
+        "required": [
+          "name"
+        ],
         "type": "object",
         "properties": {
           "name": {
@@ -6505,6 +6529,9 @@
         }
       },
       "SetSessionNotesRequest": {
+        "required": [
+          "notes"
+        ],
         "type": "object",
         "properties": {
           "notes": {
@@ -6516,6 +6543,9 @@
         }
       },
       "SetSessionTopicRequest": {
+        "required": [
+          "topic"
+        ],
         "type": "object",
         "properties": {
           "topic": {

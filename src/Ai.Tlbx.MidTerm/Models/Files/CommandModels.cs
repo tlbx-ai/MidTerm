@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Ai.Tlbx.MidTerm.Models.Files;
 
 public sealed class ScriptDefinition
@@ -25,7 +27,10 @@ public sealed class CreateScriptRequest
 
 public sealed class UpdateScriptRequest
 {
+    [JsonRequired]
     public string SessionId { get; set; } = "";
+
+    [JsonRequired]
     public string Content { get; set; } = "";
 }
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Api.Handlers;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
@@ -57,6 +58,9 @@ public class StubSystemHandler : ISystemHandler
         Results.Json(new MidTermSettingsPublic());
 
     public IResult UpdateSettings(MidTermSettingsPublic settings) =>
+        Results.Ok();
+
+    public IResult PatchSettings(JsonElement patch) =>
         Results.Ok();
 
     public IResult ReloadSettings() =>

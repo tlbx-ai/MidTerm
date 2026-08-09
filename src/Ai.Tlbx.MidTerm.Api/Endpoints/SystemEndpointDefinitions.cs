@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Api.Handlers;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
@@ -76,6 +77,11 @@ public static class SystemEndpointDefinitions
 
         app.MapPut("/api/settings", (MidTermSettingsPublic settings, ISystemHandler handler) =>
             handler.UpdateSettings(settings))
+            .Produces(StatusCodes.Status200OK);
+
+        app.MapPatch("/api/settings", (JsonElement patch, ISystemHandler handler) =>
+            handler.PatchSettings(patch))
+            .Accepts<JsonElement>("application/json")
             .Produces(StatusCodes.Status200OK);
 
         app.MapPost("/api/settings/reload", (ISystemHandler handler) =>

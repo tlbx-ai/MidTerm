@@ -653,20 +653,21 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
-        app.MapPut("/api/settings", (JsonElement patch) =>
+        IResult SaveSettings(JsonElement payload, bool partial, string method)
         {
             try
             {
                 var currentSettings = settingsService.Load();
                 var previousUpdateChannel = currentSettings.UpdateChannel;
-                var publicSettings = MidTermSettingsPatch.Merge(
-                    MidTermSettingsPublic.FromSettings(currentSettings),
-                    patch);
+                var currentPublicSettings = MidTermSettingsPublic.FromSettings(currentSettings);
+                var publicSettings = partial
+                    ? MidTermSettingsPatch.Merge(currentPublicSettings, payload)
+                    : MidTermSettingsPatch.Replace(currentPublicSettings, payload);
                 publicSettings.ApplyTo(currentSettings);
                 if (!string.Equals(previousUpdateChannel, currentSettings.UpdateChannel, StringComparison.Ordinal))
                 {
                     Log.Warn(() =>
-                        $"UpdateChannel changing via PUT /api/settings: {previousUpdateChannel} -> {currentSettings.UpdateChannel}");
+                        $"UpdateChannel changing via {method} /api/settings: {previousUpdateChannel} -> {currentSettings.UpdateChannel}");
                 }
                 settingsService.Save(currentSettings);
                 return Results.Ok();
@@ -677,10 +678,18 @@ Start-Service -Name $serviceName -ErrorAction Stop
             }
             catch (Exception ex)
             {
-                Common.Logging.Log.Exception(ex, "PUT /api/settings");
+                Common.Logging.Log.Exception(ex, $"{method} /api/settings");
                 return Results.Problem($"Failed to save settings: {ex.Message}");
             }
-        }).Accepts<MidTermSettingsPublic>("application/json");
+        }
+
+        app.MapPut("/api/settings", (JsonElement replacement) =>
+            SaveSettings(replacement, partial: false, "PUT"))
+            .Accepts<MidTermSettingsPublic>("application/json");
+
+        app.MapPatch("/api/settings", (JsonElement patch) =>
+            SaveSettings(patch, partial: true, "PATCH"))
+            .Accepts<JsonElement>("application/json");
 
         app.MapPost("/api/settings/reload", () =>
         {
