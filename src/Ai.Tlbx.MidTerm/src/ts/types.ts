@@ -1060,6 +1060,8 @@ export interface ManagerBarQueueEntry {
   nextPromptIndex: number;
   completedCycles: number;
   nextRunAt: string | null;
+  repeatEveryMs: number | null;
+  repeatCount: number | null;
   ignoreHeatUntil: string | null;
   awaitingHeatRise: boolean;
 }

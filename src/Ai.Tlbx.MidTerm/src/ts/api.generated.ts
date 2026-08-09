@@ -4266,6 +4266,10 @@ export interface components {
       completedCycles: number;
       /** Format: date-time */
       nextRunAt: null | string;
+      /** Format: int32 */
+      repeatEveryMs: null | number;
+      /** Format: int32 */
+      repeatCount: null | number;
       /** Format: date-time */
       ignoreHeatUntil: null | string;
       awaitingHeatRise: boolean;
@@ -4774,6 +4778,7 @@ export interface components {
       releaseNotes: null | string;
       type: components['schemas']['UpdateType'];
       sessionsPreserved: boolean;
+      lastResult: null | components['schemas']['UpdateResult'];
       environment: null | string;
       localUpdate: null | components['schemas']['LocalUpdateInfo'];
       isDowngrade: boolean;
@@ -4785,6 +4790,7 @@ export interface components {
       details: string;
       timestamp: string;
       logFile: string;
+      rollbackAttempted: boolean;
     };
     /** @enum {unknown} */
     UpdateType: 'none' | 'webOnly' | 'full';

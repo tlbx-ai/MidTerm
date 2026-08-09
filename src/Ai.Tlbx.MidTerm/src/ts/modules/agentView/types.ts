@@ -4,6 +4,8 @@ import type {
   AppServerControlInlineFileReference,
   AppServerControlInlineImagePreview,
   AppServerControlHistoryRuntimeNotice,
+  AppServerControlQuestion,
+  AppServerControlAnsweredQuestion,
 } from '../../api/types';
 
 export interface SessionAppServerControlViewState {
@@ -176,6 +178,10 @@ export interface AppServerControlHistoryEntry {
   sourceItemId?: string | null;
   sourceTurnId?: string | null;
   sourceItemType?: string | null;
+  sourceStatus?: string;
+  sourceUpdatedAt?: string;
+  questions?: AppServerControlQuestion[];
+  answers?: AppServerControlAnsweredQuestion[];
   busyIndicator?: boolean;
   busyElapsedText?: string | null;
   turnDurationNote?: boolean;

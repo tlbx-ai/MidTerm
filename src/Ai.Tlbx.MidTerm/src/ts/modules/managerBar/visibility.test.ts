@@ -11,4 +11,9 @@ describe('manager bar visibility', () => {
     expect(shouldShowManagerBar(true, 'session-1')).toBe(true);
     expect(shouldShowManagerBar(false, 'session-1')).toBe(false);
   });
+
+  it('keeps queued work visible when automation buttons are disabled', () => {
+    expect(shouldShowManagerBar(false, 'session-1', true)).toBe(true);
+    expect(shouldShowManagerBar(false, null, true)).toBe(false);
+  });
 });

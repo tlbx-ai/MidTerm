@@ -176,14 +176,15 @@ public static class BrowserEndpoints
                 return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
             }
 
-            if (!uiBridge.RequestOpen(
+            var openResult = await uiBridge.RequestOpenWhenAvailableAsync(
                 sessionId,
                 previewName,
                 url,
                 activateSession,
-                out var error))
+                cancellationToken: cancellationToken);
+            if (!openResult.Success)
             {
-                return Results.Text(error + "\n", statusCode: 409);
+                return Results.Text(openResult.Error + "\n", statusCode: 409);
             }
 
             var status = await commandService.WaitForControllableAsync(

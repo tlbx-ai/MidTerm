@@ -131,16 +131,19 @@ function Log {{
 }}
 
 function WriteResult {{
-    param([bool]$Success, [string]$Message, [string]$Details = '')
+    param([bool]$Success, [string]$Message, [string]$Details = '', [bool]$RollbackAttempted = $false)
     $result = @{{
         success = $Success
         message = $Message
         details = $Details
         timestamp = (Get-Date -Format 'o')
         logFile = $LogFile
+        rollbackAttempted = $RollbackAttempted
     }}
     try {{
-        $result | ConvertTo-Json -Depth 3 | Set-Content -Path $ResultFile -Encoding UTF8
+        $tempResultFile = ""$ResultFile.new""
+        $result | ConvertTo-Json -Depth 3 | Set-Content -Path $tempResultFile -Encoding UTF8
+        Move-Item -Path $tempResultFile -Destination $ResultFile -Force
     }} catch {{
         Log ""Failed to write result file: $_"" 'ERROR'
     }}
@@ -244,7 +247,6 @@ function SafeCopy {{
 
 # Clear previous logs
 Remove-Item $LogFile -Force -ErrorAction SilentlyContinue
-Remove-Item $ResultFile -Force -ErrorAction SilentlyContinue
 
 Log '=========================================='
 Log 'tlbx update starting'
@@ -264,6 +266,7 @@ if (Test-Path $CurrentVersionJson) {{
 }}
 
 $rollbackNeeded = $false
+$rollbackAttempted = $false
 $startedOk = $false
 
 try {{
@@ -609,6 +612,7 @@ try {{
     Log '==========================================' 'ERROR'
 
     if ($rollbackNeeded -and -not $startedOk) {{
+        $rollbackAttempted = $true
         Log ''
         Log '=== ROLLBACK ===' 'WARN'
 
@@ -732,7 +736,7 @@ try {{
         Log 'Rollback complete'
     }}
 
-    WriteResult $false $errorMessage
+    WriteResult $false $errorMessage '' $rollbackAttempted
 }}
 
 # Self-cleanup
@@ -827,7 +831,11 @@ IS_WEB_ONLY={( isWebOnly ? "true" : "false")}
 DELETE_SOURCE={( deleteSourceAfter ? "true" : "false")}
 
 ROLLBACK_NEEDED=false
+ROLLBACK_ATTEMPTED=false
 STARTED_OK=false
+LAST_RESULT_SUCCESS=false
+LAST_RESULT_MESSAGE=""""
+LAST_RESULT_DETAILS=""""
 
 # Detect service user from existing config file ownership
 # On macOS, launchd service runs as user (via UserName in plist), not root
@@ -849,15 +857,22 @@ write_result() {{
     local success=""$1""
     local message=""$2""
     local details=""${{3:-}}""
-    cat > ""$RESULT_FILE"" << RESULT_EOF
+    local rollback_attempted=""${{4:-false}}""
+    LAST_RESULT_SUCCESS=""$success""
+    LAST_RESULT_MESSAGE=""$message""
+    LAST_RESULT_DETAILS=""$details""
+    local temp_result_file=""$RESULT_FILE.new""
+    cat > ""$temp_result_file"" << RESULT_EOF
 {{
     ""success"": $success,
     ""message"": ""$message"",
     ""details"": ""$details"",
     ""timestamp"": ""$(date -u '+%Y-%m-%dT%H:%M:%SZ')"",
-    ""logFile"": ""$LOG_FILE""
+    ""logFile"": ""$LOG_FILE"",
+    ""rollbackAttempted"": $rollback_attempted
 }}
 RESULT_EOF
+    mv -f ""$temp_result_file"" ""$RESULT_FILE""
 }}
 
 describe_source_file() {{
@@ -985,6 +1000,7 @@ safe_copy() {{
 cleanup() {{
     log """"
     if [[ ""$ROLLBACK_NEEDED"" == ""true"" ]] && [[ ""$STARTED_OK"" != ""true"" ]]; then
+        ROLLBACK_ATTEMPTED=true
         log ""=== ROLLBACK ==="" ""WARN""
 
         # Stop any partially started process
@@ -1046,6 +1062,7 @@ cleanup() {{
         fi
 
         log ""Rollback complete""
+        write_result ""$LAST_RESULT_SUCCESS"" ""$LAST_RESULT_MESSAGE"" ""$LAST_RESULT_DETAILS"" ""$ROLLBACK_ATTEMPTED""
     fi
 
     # Self-cleanup
@@ -1061,8 +1078,8 @@ trap cleanup EXIT
 mkdir -p ""$LOG_DIR"" 2>/dev/null || true
 mkdir -p ""$BACKUP_DIR"" 2>/dev/null || true
 
-# Log file is already truncated by exec > redirect at script start
-rm -f ""$RESULT_FILE"" 2>/dev/null || true
+# Log file is already truncated by exec > redirect at script start.
+# Keep the previous completed result visible until this attempt writes its own result.
 
 log '=========================================='
 log 'tlbx update script v{generatingVersion}'

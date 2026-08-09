@@ -73,7 +73,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
 
         if (!_appServerControlRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
         {
-            return true;
+            return false;
         }
 
         if (historyWindow.Requests.Any(static request =>
@@ -119,6 +119,9 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             {
                 return;
             }
+
+            throw new InvalidOperationException(
+                $"Agent Controller session {sessionId} is not attached; refusing PTY fallback.");
         }
 
         var promptBytes = Encoding.UTF8.GetBytes(prompt);

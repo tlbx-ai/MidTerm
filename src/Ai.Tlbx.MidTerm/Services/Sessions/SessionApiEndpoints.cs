@@ -151,7 +151,12 @@ public static partial class SessionApiEndpoints
             {
                 if (runAt is not null)
                 {
-                    entry = managerBarQueueService.EnqueuePromptAt(request.SessionId, request.Turn, runAt.Value);
+                    entry = managerBarQueueService.EnqueuePromptAt(
+                        request.SessionId,
+                        request.Turn,
+                        runAt.Value,
+                        request.RepeatEveryMs,
+                        request.RepeatCount);
                     if (entry is null)
                     {
                         return Results.BadRequest("Only queued command-bay items can be enqueued.");
@@ -194,6 +199,21 @@ public static partial class SessionApiEndpoints
 
         app.MapPost("/api/manager-bar/queue", EnqueueCommandBayQueueItem);
         app.MapPost("/api/command-bay/queue", EnqueueCommandBayQueueItem);
+        app.MapGet("/api/command-bay/queue", (string? sessionId) =>
+        {
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            if (sessionManager.GetSession(sessionId) is null)
+            {
+                return Results.NotFound();
+            }
+
+            var entries = managerBarQueueService.GetSnapshot([sessionId]).ToList();
+            return Results.Json(entries, AppJsonContext.Default.ListManagerBarQueueEntryDto);
+        });
 
         IResult RemoveCommandBayQueueItem(string queueId)
         {
@@ -1228,8 +1248,43 @@ public static partial class SessionApiEndpoints
 
         var hasDelay = request.DelayMs is not null;
         var hasRunAt = request.RunAt is not null;
+        var hasRepeatInterval = request.RepeatEveryMs is not null;
+        if (request.RepeatCount is not null && !hasRepeatInterval)
+        {
+            error = "repeatCount requires repeatEveryMs.";
+            return false;
+        }
+
+        if (hasRepeatInterval)
+        {
+            var repeatEveryMs = request.RepeatEveryMs.GetValueOrDefault();
+            if (repeatEveryMs < 1000)
+            {
+                error = "repeatEveryMs must be at least 1000.";
+                return false;
+            }
+
+            if (request.RepeatCount is <= 1)
+            {
+                error = "repeatCount must be at least 2 when provided.";
+                return false;
+            }
+        }
+
         if (!hasDelay && !hasRunAt)
         {
+            if (hasRepeatInterval)
+            {
+                try
+                {
+                    runAt = now.AddMilliseconds(request.RepeatEveryMs!.Value);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    error = "repeatEveryMs is too large.";
+                    return false;
+                }
+            }
             return true;
         }
 

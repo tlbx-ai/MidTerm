@@ -112,6 +112,35 @@ public sealed class BrowserUiBridge
         return true;
     }
 
+    public async Task<(bool Success, string Error)> RequestOpenWhenAvailableAsync(
+        string? sessionId,
+        string? previewName,
+        string url,
+        bool activateSession,
+        TimeSpan? timeout = null,
+        TimeSpan? pollInterval = null,
+        CancellationToken cancellationToken = default)
+    {
+        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(4));
+        var retryDelay = pollInterval ?? TimeSpan.FromMilliseconds(100);
+        var lastError = "";
+
+        while (true)
+        {
+            if (RequestOpen(sessionId, previewName, url, activateSession, out lastError))
+            {
+                return (true, "");
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                return (false, lastError);
+            }
+
+            await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public bool RequestMobileDevice(
         string? sessionId,
         string? previewName,

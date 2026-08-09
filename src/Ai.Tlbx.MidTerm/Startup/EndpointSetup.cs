@@ -267,7 +267,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 SupportsOsc7 = s.SupportsOsc7
             }).ToList();
 
-            var updateResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory, clear: true);
+            var updateResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory);
             var isDevMode = UpdateService.IsDevEnvironment || settings.DevMode;
             var displayVersion = GetDisplayVersion(version);
 
@@ -515,13 +515,14 @@ Start-Service -Name $serviceName -ErrorAction Stop
 
         app.MapGet("/api/update/check", async () =>
         {
-            var update = await updateService.CheckForUpdateAsync();
-            return Results.Json(update ?? new UpdateInfo
+            var update = await updateService.CheckForUpdateAsync() ?? new UpdateInfo
             {
                 Available = false,
                 CurrentVersion = updateService.CurrentVersion,
                 LatestVersion = updateService.CurrentVersion
-            }, AppJsonContext.Default.UpdateInfo);
+            };
+            update.LastResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory);
+            return Results.Json(update, AppJsonContext.Default.UpdateInfo);
         });
 
         app.MapPost("/api/update/apply", async (string? source) =>

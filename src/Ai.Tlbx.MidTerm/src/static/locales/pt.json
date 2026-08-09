@@ -367,6 +367,7 @@
   "update.applying": "Aplicando...",
   "update.lastUpdate": "Última atualização:",
   "update.success": "Sucesso",
+  "update.rollbackAttempted": "Foi tentada uma reversão. Consulte o registro de atualização para obter detalhes.",
   "update.viewUpdateLog": "Ver Log de Atualização",
   "update.noLogFound": "Nenhum log de atualização encontrado",
   "update.copyLog": "Copiar Log",

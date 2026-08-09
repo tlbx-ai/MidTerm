@@ -1881,6 +1881,8 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.ItemType = request.Kind;
         entry.Title = request.KindLabel;
         entry.Body = BuildRequestBody(request);
+        entry.Questions = request.Questions.Select(CloneQuestion).ToList();
+        entry.Answers = request.Answers.Select(CloneAnsweredQuestion).ToList();
         entry.Streaming = false;
         entry.UpdatedAt = appServerControlEvent.CreatedAt;
     }
@@ -2219,6 +2221,8 @@ public sealed partial class SessionAppServerControlHistoryService
             Attachments = CloneAttachments(source.Attachments),
             FileMentions = CloneInlineFileReferences(source.FileMentions),
             ImagePreviews = CloneInlineImagePreviews(source.ImagePreviews),
+            Questions = source.Questions.Select(CloneQuestion).ToList(),
+            Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),
             Streaming = source.Streaming,
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt,
@@ -4042,7 +4046,6 @@ public sealed class SessionAppServerControlHistoryPatchSubscription : IDisposabl
         _state.Close();
     }
 }
-
 
 
 

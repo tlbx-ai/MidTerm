@@ -7,8 +7,10 @@ import type {
 } from '../../api/client';
 import type {
   AppServerControlAttachmentReference,
+  AppServerControlAnsweredQuestion,
   AppServerControlInlineFileReference,
   AppServerControlInlineImagePreview,
+  AppServerControlQuestion,
 } from '../../api/types';
 import { $currentSettings } from '../../stores';
 import {
@@ -100,6 +102,23 @@ function cloneImagePreviews(
   return imagePreviews?.map((preview) => ({ ...preview })) ?? [];
 }
 
+function cloneQuestions(
+  questions: readonly AppServerControlQuestion[] | undefined,
+): AppServerControlQuestion[] {
+  return (
+    questions?.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({ ...option })),
+    })) ?? []
+  );
+}
+
+function cloneAnswers(
+  answers: readonly AppServerControlAnsweredQuestion[] | undefined,
+): AppServerControlAnsweredQuestion[] {
+  return answers?.map((answer) => ({ ...answer, answers: [...answer.answers] })) ?? [];
+}
+
 export function buildAppServerControlHistoryEntries(
   snapshot: AppServerControlHistorySnapshot,
 ): AppServerControlHistoryEntry[] {
@@ -134,6 +153,10 @@ export function buildAppServerControlHistoryEntries(
         sourceItemId: entry.itemId ?? null,
         sourceTurnId: entry.turnId ?? null,
         sourceItemType: entry.itemType ?? null,
+        sourceStatus: entry.status,
+        sourceUpdatedAt: entry.updatedAt,
+        questions: cloneQuestions(entry.questions),
+        answers: cloneAnswers(entry.answers),
       };
       if (typeof entry.estimatedHeightPx === 'number' && entry.estimatedHeightPx > 0) {
         mapped.estimatedHeightPx = entry.estimatedHeightPx;
@@ -429,6 +452,8 @@ function cloneAppServerControlHistoryEntry(
     commandOutputTail: [...(entry.commandOutputTail ?? [])],
     fileMentions: cloneFileMentions(entry.fileMentions),
     imagePreviews: cloneImagePreviews(entry.imagePreviews),
+    questions: cloneQuestions(entry.questions),
+    answers: cloneAnswers(entry.answers),
   };
   if (entry.actions) {
     cloned.actions = entry.actions.map((action) => ({ ...action }));

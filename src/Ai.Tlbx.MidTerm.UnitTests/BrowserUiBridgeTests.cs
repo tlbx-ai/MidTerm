@@ -7,6 +7,37 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class BrowserUiBridgeTests
 {
     [Fact]
+    public async Task RequestOpenWhenAvailableAsync_WaitsForReconnectAndDispatchesExactlyOnce()
+    {
+        var mainBrowser = new MainBrowserService();
+        var bridge = new BrowserUiBridge(mainBrowser);
+        var openCount = 0;
+
+        var pending = bridge.RequestOpenWhenAvailableAsync(
+            "session-a",
+            "default",
+            "https://example.com",
+            activateSession: true,
+            timeout: TimeSpan.FromSeconds(2),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        await Task.Delay(50);
+        bridge.RegisterListener(
+            "connection-a",
+            "browser-a",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => openCount += 1);
+
+        var result = await pending;
+
+        Assert.True(result.Success);
+        Assert.Equal("", result.Error);
+        Assert.Equal(1, openCount);
+    }
+
+    [Fact]
     public void RequestMobileDevice_ForwardsToSelectedBrowserUi()
     {
         var bridge = new BrowserUiBridge(new MainBrowserService());

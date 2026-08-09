@@ -582,6 +582,48 @@ public static class TlbxCliScriptWriter
           local body="{\"sessionId\":\"$(_MJE "$sid")\",\"delayMs\":$delay_ms,\"turn\":{\"text\":\"$(_MJE "$text")\"} }"
           _MJ -d "$body" "$_MT/api/command-bay/queue"
         }
+        # mt_recur [SESSION_ID] INTERVAL TEXT  — repeat a prompt until its queue item is cancelled
+        mt_recur() {
+          local sid interval_arg amount unit interval_ms text
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -ge 2 ] || { echo "Usage: mt_recur [SESSION_ID] INTERVAL TEXT" >&2; return 1; }
+          interval_arg="$1"
+          shift
+          if [[ ! "$interval_arg" =~ ^([0-9]+)(ms|s|m|h|d)?$ ]]; then
+            echo "Interval must look like 30s, 5m, 2h, or 1d." >&2
+            return 1
+          fi
+          amount="${BASH_REMATCH[1]}"
+          unit="${BASH_REMATCH[2]:-m}"
+          case "$unit" in
+            ms) interval_ms="$amount" ;;
+            s) interval_ms=$((amount * 1000)) ;;
+            m) interval_ms=$((amount * 60000)) ;;
+            h) interval_ms=$((amount * 3600000)) ;;
+            d) interval_ms=$((amount * 86400000)) ;;
+            *) echo "Unsupported interval unit." >&2; return 1 ;;
+          esac
+          if [ "$interval_ms" -lt 1000 ] || [ "$interval_ms" -gt 2147483647 ]; then
+            echo "Interval must be between 1 second and 2147483647 ms." >&2
+            return 1
+          fi
+          text="$*"
+          local body="{\"sessionId\":\"$(_MJE "$sid")\",\"delayMs\":$interval_ms,\"repeatEveryMs\":$interval_ms,\"turn\":{\"text\":\"$(_MJE "$text")\"} }"
+          _MJ -d "$body" "$_MT/api/command-bay/queue"
+        }
+        # mt_queue [SESSION_ID]  — list queued one-shot and recurring prompts/actions
+        mt_queue() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then sid="$1"; else sid="$(_MSID)"; fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC "$_MT/api/command-bay/queue?sessionId=$(_MURLENC "$sid")"
+        }
         # mt_wake_cancel QUEUE_ID  — cancel a queued wake/prompt/action item
         mt_wake_cancel() {
           local queue_id="${1:-}"
@@ -1526,6 +1568,32 @@ public static class TlbxCliScriptWriter
                 turn = @{ text = $text }
             }) "$script:_MT/api/command-bay/queue"
         }
+        # Mt-Recur [SESSION_ID] INTERVAL TEXT  — repeat a prompt until its queue item is cancelled
+        function Mt-Recur {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ($resolved.Remaining.Count -lt 2) { Write-Error "Usage: Mt-Recur [SESSION_ID] INTERVAL TEXT"; return }
+
+            $intervalMs = _MParseDelayMs $resolved.Remaining[0]
+            if ($intervalMs -lt 1000) { Write-Error "Interval must be at least 1 second."; return }
+            $text = [string]::Join(' ', @($resolved.Remaining[1..($resolved.Remaining.Count - 1)]))
+            _MJ -d (_MH @{
+                sessionId = $sessionId
+                delayMs = $intervalMs
+                repeatEveryMs = $intervalMs
+                turn = @{ text = $text }
+            }) "$script:_MT/api/command-bay/queue"
+        }
+        # Mt-Queue [SESSION_ID]  — list queued one-shot and recurring prompts/actions
+        function Mt-Queue {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC "$script:_MT/api/command-bay/queue?sessionId=$([Uri]::EscapeDataString($resolved.SessionId))"
+        }
         # Mt-WakeCancel QUEUE_ID  — cancel a queued wake/prompt/action item
         function Mt-WakeCancel {
             param([string]$QueueId)
@@ -1890,6 +1958,8 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_prompt_now -Value Mt-PromptNow
         Set-Alias -Name mt_slash -Value Mt-Slash
         Set-Alias -Name mt_wake -Value Mt-Wake
+        Set-Alias -Name mt_recur -Value Mt-Recur
+        Set-Alias -Name mt_queue -Value Mt-Queue
         Set-Alias -Name mt_wake_cancel -Value Mt-WakeCancel
         Set-Alias -Name mt_sendkeys -Value Mt-SendKeys
         Set-Alias -Name mt_enter -Value Mt-Enter

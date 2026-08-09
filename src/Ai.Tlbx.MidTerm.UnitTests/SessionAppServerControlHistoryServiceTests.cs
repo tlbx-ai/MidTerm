@@ -112,6 +112,27 @@ public sealed class SessionAppServerControlHistoryServiceTests
         });
         service.Append(new AppServerControlProviderEvent
         {
+            EventId = "e5-resolved",
+            SessionId = "s1",
+            Provider = "codex",
+            ThreadId = "thread-1",
+            RequestId = "req-1",
+            CreatedAt = ParseUtc("2026-03-20T14:00:03.5000000Z"),
+            Type = "user-input.resolved",
+            UserInputResolved = new AppServerControlProviderUserInputResolvedPayload
+            {
+                Answers =
+                [
+                    new AppServerControlAnsweredQuestion
+                    {
+                        QuestionId = "q1",
+                        Answers = ["A"]
+                    }
+                ]
+            }
+        });
+        service.Append(new AppServerControlProviderEvent
+        {
             EventId = "e6",
             SessionId = "s1",
             Provider = "codex",
@@ -202,8 +223,19 @@ public sealed class SessionAppServerControlHistoryServiceTests
                     item.Attachments.Count == 1 &&
                     item.Attachments[0].DisplayName == "screenshot.png");
         Assert.Equal(2, snapshot.Requests.Count);
-        Assert.Contains(snapshot.Requests, request => request.Kind == "interview" && request.Questions.Count == 1);
+        Assert.Contains(
+            snapshot.Requests,
+            request => request.Kind == "interview" &&
+                       request.Questions.Count == 1 &&
+                       request.Answers.Count == 1);
         Assert.Contains(snapshot.Requests, request => request.Kind == "command_execution_approval" && request.Decision == "accept");
+        Assert.Contains(
+            snapshot.History,
+            entry => entry.ItemType == "interview" &&
+                     entry.RequestId == "req-1" &&
+                     entry.Questions.Count == 1 &&
+                     entry.Answers.Count == 1 &&
+                     entry.Answers[0].Answers.SequenceEqual(["A"], StringComparer.Ordinal));
     }
 
     [Fact]
@@ -2210,8 +2242,6 @@ public sealed class SessionAppServerControlHistoryServiceTests
 
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
-
-
 
 
 

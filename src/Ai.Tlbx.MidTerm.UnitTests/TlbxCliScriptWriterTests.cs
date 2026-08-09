@@ -173,6 +173,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_prompt_now()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_slash()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_wake()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_recur()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_queue()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_wake_cancel()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_sendkeys()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_inject()", shell, StringComparison.Ordinal);
@@ -202,6 +204,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-PromptNow", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Slash", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Wake", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Recur", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Queue", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-WakeCancel", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-SendKeys", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Inject", powershell, StringComparison.Ordinal);
@@ -228,6 +232,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_paste -Value Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_prompt -Value Mt-Prompt", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_wake -Value Mt-Wake", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_recur -Value Mt-Recur", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_queue -Value Mt-Queue", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_control_plane -Value Mt-ControlPlane", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_agent_capabilities -Value Mt-AgentCapabilities", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_dispatch -Value Mt-Dispatch", powershell, StringComparison.Ordinal);
@@ -513,6 +519,8 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_prompt_now", agents, StringComparison.Ordinal);
         Assert.Contains("mt_slash", agents, StringComparison.Ordinal);
         Assert.Contains("mt_wake", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_recur", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_queue", agents, StringComparison.Ordinal);
         Assert.Contains("mt_sendkeys", agents, StringComparison.Ordinal);
         Assert.Contains("mt_activity", agents, StringComparison.Ordinal);
         Assert.Contains("mt_attention", agents, StringComparison.Ordinal);

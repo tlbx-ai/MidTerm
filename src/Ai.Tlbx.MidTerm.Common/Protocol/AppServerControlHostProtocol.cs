@@ -250,6 +250,8 @@ public sealed class AppServerControlHistoryItem
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlInlineFileReference> FileMentions { get; set; } = [];
     public List<AppServerControlInlineImagePreview> ImagePreviews { get; set; } = [];
+    public List<AppServerControlQuestion> Questions { get; set; } = [];
+    public List<AppServerControlAnsweredQuestion> Answers { get; set; } = [];
     public bool Streaming { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -593,7 +595,6 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 public partial class AppServerControlHostJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

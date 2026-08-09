@@ -14,6 +14,8 @@ public sealed class UpdateInfo
     public string? ReleaseNotes { get; init; }
     public UpdateType Type { get; init; } = UpdateType.Full;
     public bool SessionsPreserved => Type == UpdateType.WebOnly;
+    /// <summary>The last completed update attempt, retained until explicitly dismissed.</summary>
+    public UpdateResult? LastResult { get; set; }
 
     /// <summary>Local development environment name (MIDTERM_ENVIRONMENT).</summary>
     public string? Environment { get; init; }

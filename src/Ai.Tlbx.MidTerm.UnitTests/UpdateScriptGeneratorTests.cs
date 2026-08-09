@@ -152,6 +152,35 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_RetainsPreviousResultUntilAtomicCompletionAndRecordsRollback()
+    {
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("rollbackAttempted", scriptText, StringComparison.Ordinal);
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.DoesNotContain("Remove-Item $ResultFile", scriptText, StringComparison.Ordinal);
+            Assert.Contains("$tempResultFile = \"$ResultFile.new\"", scriptText, StringComparison.Ordinal);
+            Assert.Contains("Move-Item -Path $tempResultFile -Destination $ResultFile -Force", scriptText, StringComparison.Ordinal);
+            Assert.Contains("WriteResult $false $errorMessage '' $rollbackAttempted", scriptText, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain("rm -f \"$RESULT_FILE\"", scriptText, StringComparison.Ordinal);
+            Assert.Contains("temp_result_file=\"$RESULT_FILE.new\"", scriptText, StringComparison.Ordinal);
+            Assert.Contains("mv -f \"$temp_result_file\" \"$RESULT_FILE\"", scriptText, StringComparison.Ordinal);
+            Assert.Contains("ROLLBACK_ATTEMPTED=true", scriptText, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void GenerateUpdateScript_PathsWithSingleQuotes_AreEscaped()
     {
         var extracted = Path.Combine(_tempDir, "O'Brien", "extract");

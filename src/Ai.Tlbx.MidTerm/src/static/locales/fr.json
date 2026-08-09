@@ -367,6 +367,7 @@
   "update.applying": "Application...",
   "update.lastUpdate": "Dernière mise à jour :",
   "update.success": "Succès",
+  "update.rollbackAttempted": "Une restauration a été tentée. Consultez le journal de mise à jour pour plus de détails.",
   "update.viewUpdateLog": "Voir le Journal des Mises à Jour",
   "update.noLogFound": "Aucun journal de mise à jour trouvé",
   "update.copyLog": "Copier le Journal",
