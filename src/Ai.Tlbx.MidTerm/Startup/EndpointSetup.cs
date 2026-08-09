@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -652,12 +653,15 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
-        app.MapPut("/api/settings", (Settings.MidTermSettingsPublic publicSettings) =>
+        app.MapPut("/api/settings", (JsonElement patch) =>
         {
             try
             {
                 var currentSettings = settingsService.Load();
                 var previousUpdateChannel = currentSettings.UpdateChannel;
+                var publicSettings = MidTermSettingsPatch.Merge(
+                    MidTermSettingsPublic.FromSettings(currentSettings),
+                    patch);
                 publicSettings.ApplyTo(currentSettings);
                 if (!string.Equals(previousUpdateChannel, currentSettings.UpdateChannel, StringComparison.Ordinal))
                 {
@@ -676,7 +680,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 Common.Logging.Log.Exception(ex, "PUT /api/settings");
                 return Results.Problem($"Failed to save settings: {ex.Message}");
             }
-        });
+        }).Accepts<MidTermSettingsPublic>("application/json");
 
         app.MapPost("/api/settings/reload", () =>
         {

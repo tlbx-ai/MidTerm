@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
@@ -6,6 +7,37 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
+    [Fact]
+    public void SettingsPatch_ChangesOnlyExplicitProperties()
+    {
+        var settings = new MidTermSettings
+        {
+            Language = LanguageSetting.English,
+            BackgroundImageEnabled = true,
+            BackgroundImageFileName = "app-background.png",
+            UiTransparency = 50,
+            TerminalColorSchemes =
+            [
+                new TerminalColorSchemeDefinition { Name = "Personal", Background = "#101010" }
+            ],
+            UpdateChannel = "stable"
+        };
+        var current = MidTermSettingsPublic.FromSettings(settings);
+        using var document = JsonDocument.Parse("""{"updateChannel":"dev"}""");
+
+        var merged = MidTermSettingsPatch.Merge(current, document.RootElement);
+        merged.ApplyTo(settings);
+
+        Assert.Equal("dev", settings.UpdateChannel);
+        Assert.Equal(LanguageSetting.English, settings.Language);
+        Assert.True(settings.BackgroundImageEnabled);
+        Assert.Equal("app-background.png", settings.BackgroundImageFileName);
+        Assert.Equal(50, settings.UiTransparency);
+        Assert.Collection(
+            settings.TerminalColorSchemes,
+            scheme => Assert.Equal("Personal", scheme.Name));
+    }
+
     [Fact]
     public void FromSettings_AndApplyTo_RoundTripTerminalTransparency()
     {

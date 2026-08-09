@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
@@ -268,6 +269,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ShareAccessMode))]
 
 // --- Settings ---
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(MidTermSettings))]
 [JsonSerializable(typeof(MidTermSettingsPublic))]
 [JsonSerializable(typeof(TerminalColorSchemeDefinition))]
@@ -379,7 +381,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 
