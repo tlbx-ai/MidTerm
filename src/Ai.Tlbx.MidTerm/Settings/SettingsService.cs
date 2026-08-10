@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services;
 
@@ -9,6 +10,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class SettingsService
 {
+    public const string TlbxSettingsDirectoryEnvironmentVariable = "TLBX_SETTINGS_DIR";
     public const string SettingsDirectoryEnvironmentVariable = "MIDTERM_SETTINGS_DIR";
     private readonly string _settingsPath;
     private readonly ISecretStorage _secretStorage;
@@ -65,26 +67,28 @@ public sealed class SettingsService
         {
             if (OperatingSystem.IsWindows())
             {
-                // Windows service: %ProgramData%\MidTerm (typically C:\ProgramData\MidTerm)
-                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                return Path.Combine(programData, "MidTerm", "settings.json");
+                var directory = TlbxProductIdentity.SelectSettingsDirectory(
+                    TlbxProductIdentity.GetWindowsServiceSettingsDirectory(),
+                    TlbxProductIdentity.GetLegacyWindowsServiceSettingsDirectory());
+                return Path.Combine(directory, "settings.json");
             }
-            else
-            {
-                // Unix service: lowercase 'midterm' - MUST match install.sh
-                return "/usr/local/etc/midterm/settings.json";
-            }
+
+            var unixDirectory = TlbxProductIdentity.SelectSettingsDirectory(
+                TlbxProductIdentity.UnixServiceSettingsDirectory,
+                TlbxProductIdentity.LegacyUnixServiceSettingsDirectory);
+            return Path.Combine(unixDirectory, "settings.json");
         }
 
-        // User mode: ~/.midterm
-        var userDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var configDir = Path.Combine(userDir, ".midterm");
-        return Path.Combine(configDir, "settings.json");
+        var userDirectory = TlbxProductIdentity.SelectSettingsDirectory(
+            TlbxProductIdentity.GetUserSettingsDirectory(),
+            TlbxProductIdentity.GetLegacyUserSettingsDirectory());
+        return Path.Combine(userDirectory, "settings.json");
     }
 
     internal static string? GetSettingsDirectoryOverride()
     {
-        var overrideDirectory = Environment.GetEnvironmentVariable(SettingsDirectoryEnvironmentVariable);
+        var overrideDirectory = Environment.GetEnvironmentVariable(TlbxSettingsDirectoryEnvironmentVariable)
+            ?? Environment.GetEnvironmentVariable(SettingsDirectoryEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(overrideDirectory))
         {
             return null;
@@ -95,7 +99,8 @@ public sealed class SettingsService
 
     internal static bool? GetServiceModeOverride()
     {
-        var value = Environment.GetEnvironmentVariable(Ai.Tlbx.MidTerm.Startup.MidTermRuntimeOptions.ServiceModeEnvironmentVariable);
+        var value = Environment.GetEnvironmentVariable(Ai.Tlbx.MidTerm.Startup.MidTermRuntimeOptions.TlbxServiceModeEnvironmentVariable)
+            ?? Environment.GetEnvironmentVariable(Ai.Tlbx.MidTerm.Startup.MidTermRuntimeOptions.ServiceModeEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(value))
         {
             return null;
@@ -134,29 +139,34 @@ public sealed class SettingsService
             return IsWindowsService();
         }
 
-        var serviceSettingsPath = "/usr/local/etc/midterm/settings.json";
-        if (!File.Exists(serviceSettingsPath))
+        foreach (var serviceDirectory in new[]
         {
-            return false;
+            TlbxProductIdentity.UnixServiceSettingsDirectory,
+            TlbxProductIdentity.LegacyUnixServiceSettingsDirectory
+        })
+        {
+            var serviceSettingsPath = Path.Combine(serviceDirectory, "settings.json");
+            if (!File.Exists(serviceSettingsPath))
+            {
+                continue;
+            }
+
+            // A non-root interactive invocation must not select a root-owned
+            // service profile that it cannot persist.
+            try
+            {
+                var testPath = Path.Combine(serviceDirectory, ".write-check");
+                File.WriteAllBytes(testPath, []);
+                File.Delete(testPath);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
-        // Service settings file exists, but verify we can actually write to it.
-        // On macOS/Linux, a root-owned service install creates this file, but if mt
-        // is run manually by a non-root user, writes would silently fail (settings
-        // appear saved in-memory but never persist to disk). Fall back to user mode
-        // (~/.midterm/settings.json) when we don't have write access.
-        try
-        {
-            var dir = Path.GetDirectoryName(serviceSettingsPath)!;
-            var testPath = Path.Combine(dir, ".write-check");
-            File.WriteAllBytes(testPath, []);
-            File.Delete(testPath);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        return false;
     }
 
     private static bool IsWindowsService()
@@ -191,20 +201,22 @@ public sealed class SettingsService
         {
             if (OperatingSystem.IsWindows())
             {
-                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                return Path.Combine(programData, "MidTerm", "Worktrees");
+                var directory = TlbxProductIdentity.SelectSettingsDirectory(
+                    TlbxProductIdentity.GetWindowsServiceSettingsDirectory(),
+                    TlbxProductIdentity.GetLegacyWindowsServiceSettingsDirectory());
+                return Path.Combine(directory, "Worktrees");
             }
 
-            return "/usr/local/etc/midterm/worktrees";
+            var unixDirectory = TlbxProductIdentity.SelectSettingsDirectory(
+                TlbxProductIdentity.UnixServiceSettingsDirectory,
+                TlbxProductIdentity.LegacyUnixServiceSettingsDirectory);
+            return Path.Combine(unixDirectory, "worktrees");
         }
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (OperatingSystem.IsWindows())
-        {
-            return Path.Combine(home, ".midTerm", "Worktrees");
-        }
-
-        return Path.Combine(home, ".midterm", "worktrees");
+        var userDirectory = TlbxProductIdentity.SelectSettingsDirectory(
+            TlbxProductIdentity.GetUserSettingsDirectory(),
+            TlbxProductIdentity.GetLegacyUserSettingsDirectory());
+        return Path.Combine(userDirectory, OperatingSystem.IsWindows() ? "Worktrees" : "worktrees");
     }
 
     private static string NormalizeDirectoryPath(string path)

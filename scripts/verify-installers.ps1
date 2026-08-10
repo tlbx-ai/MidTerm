@@ -1,0 +1,290 @@
+[CmdletBinding()]
+param(
+    [switch]$LiveRelease
+)
+
+$ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+
+function Assert-Contains {
+    param([string]$Content, [string]$Pattern, [string]$Message)
+    if ($Content -notmatch $Pattern) { throw $Message }
+}
+
+function Assert-NotContains {
+    param([string]$Content, [string]$Pattern, [string]$Message)
+    if ($Content -match $Pattern) { throw $Message }
+}
+
+$powerShellScripts = @("install.ps1", "uninstall.ps1", "install-multi.ps1")
+foreach ($relativePath in $powerShellScripts) {
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $repoRoot $relativePath),
+        [ref]$tokens,
+        [ref]$errors) | Out-Null
+    if ($errors.Count -gt 0) {
+        throw "$relativePath has PowerShell parser errors: $($errors.Message -join '; ')"
+    }
+}
+
+$bash = Get-Command bash -ErrorAction SilentlyContinue
+if ($bash) {
+    Push-Location $repoRoot
+    try {
+        foreach ($relativePath in @("install.sh", "uninstall.sh", "install-multi.sh")) {
+            & $bash.Source -n "./$relativePath"
+            if ($LASTEXITCODE -ne 0) { throw "$relativePath failed bash -n." }
+        }
+
+        $rollbackSmoke = @'
+set -e
+eval "$(awk '/^rollback_install_transaction\(\) \{/{emit=1} /^install_binary\(\) \{/{emit=0} emit' ./install.sh)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/backup" "$tmp/install"
+printf old > "$tmp/backup/mt"
+printf new > "$tmp/install/mt"
+printf new > "$tmp/install/mthost"
+log() { :; }
+YELLOW=''
+NC=''
+ACTIVE_INSTALL_TEMP="$tmp"
+INSTALL_TRANSACTION_ACTIVE=true
+INSTALL_TRANSACTION_INSTALL_DIR="$tmp/install"
+INSTALL_TRANSACTION_FILES='mt mthost'
+INSTALL_TRANSACTION_SERVICE_MODE=false
+INSTALL_TRANSACTION_HAD_SERVICE=false
+rollback_install_transaction
+test "$(cat "$tmp/install/mt")" = old
+test ! -e "$tmp/install/mthost"
+test "$INSTALL_TRANSACTION_ACTIVE" = false
+# end rollback smoke
+'@
+        $rollbackOutput = $rollbackSmoke | & $bash.Source -s 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "install.sh rollback smoke test failed: $($rollbackOutput -join [Environment]::NewLine)"
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+$windowsInstaller = Get-Content (Join-Path $repoRoot "install.ps1") -Raw
+$unixInstaller = Get-Content (Join-Path $repoRoot "install.sh") -Raw
+
+Assert-Contains $windowsInstaller '\$ServiceName\s*=\s*"tlbx"' "Fresh Windows service identity is not tlbx."
+Assert-Contains $windowsInstaller '\$TLBX_SERVICE_INSTALL_DIR\s*=\s*"\$env:ProgramFiles\\tlbx"' "Fresh Windows install directory is not tlbx."
+Assert-Contains $windowsInstaller '\$AssetArchitecture\s*=\s*if \(\$Is64BitWindows\)' "Windows x86/x64 release selection is missing."
+Assert-Contains $windowsInstaller 'Existing MidTerm installation detected' "Windows legacy-update detection is missing."
+Assert-Contains $windowsInstaller 'TLBX_PORT' "Windows user port selection is not persisted."
+Assert-Contains $windowsInstaller 'Test-ReleaseMetadataSignature' "Windows signed-release verification is missing."
+Assert-Contains $windowsInstaller 'Restore-PreviousBinarySet' "Windows post-swap rollback is missing."
+
+Assert-Contains $unixInstaller 'SERVICE_NAME="tlbx"' "Fresh Unix service identity is not tlbx."
+Assert-Contains $unixInstaller 'TLBX_SERVICE_SETTINGS_DIR="/usr/local/etc/tlbx"' "Fresh Unix settings directory is not tlbx."
+Assert-Contains $unixInstaller 'Existing MidTerm installation detected' "Unix legacy-update detection is missing."
+Assert-Contains $unixInstaller 'runtime\.json' "Unix user port selection is not persisted."
+Assert-Contains $unixInstaller 'validate_archive_members' "Unix archive allowlist is missing."
+Assert-Contains $unixInstaller 'rollback_install_transaction' "Unix post-swap rollback is missing."
+Assert-NotContains $unixInstaller 'sudo env[^\n]*PASSWORD_HASH' "Password material must not cross sudo in argv or environment."
+
+$windowsMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.ps1") -Raw
+$unixMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.sh") -Raw
+Assert-Contains $windowsMultiInstaller '\$instanceServicePrefix\s*=\s*"tlbx"' "Fresh Windows multi-instance services are not tlbx-branded."
+Assert-Contains $windowsMultiInstaller '\$env:ProgramData\\tlbx\\instances' "Fresh Windows multi-instance settings are not under tlbx."
+Assert-Contains $unixMultiInstaller 'ROOT_DIR="/usr/local/etc/tlbx-instances"' "Fresh Unix multi-instance settings are not under tlbx."
+Assert-Contains $unixMultiInstaller 'SERVICE_PREFIX="tlbx"' "Fresh Unix multi-instance services are not tlbx-branded."
+
+# Exercise the PowerShell archive guard and rollback helper without touching a
+# real installation. This catches unsafe extraction and partial-swap regressions
+# on both Windows and Linux CI runners.
+$tokens = $null
+$errors = $null
+$installerAst = [System.Management.Automation.Language.Parser]::ParseInput($windowsInstaller, [ref]$tokens, [ref]$errors)
+$safetyFunctions = ($installerAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -in @("Assert-SafeReleaseArchive", "Restore-PreviousBinarySet")
+}, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
+Invoke-Expression $safetyFunctions
+
+$safetyRoot = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-installer-safety-" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $safetyRoot | Out-Null
+try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $unsafeArchivePath = Join-Path $safetyRoot "unsafe.zip"
+    $unsafeArchive = [System.IO.Compression.ZipFile]::Open($unsafeArchivePath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $entry = $unsafeArchive.CreateEntry("../outside.exe")
+        $stream = $entry.Open()
+        try { $stream.WriteByte(1) } finally { $stream.Dispose() }
+    } finally {
+        $unsafeArchive.Dispose()
+    }
+    $unsafeRejected = $false
+    try { Assert-SafeReleaseArchive -Path $unsafeArchivePath } catch { $unsafeRejected = $true }
+    if (-not $unsafeRejected) { throw "PowerShell archive guard accepted a traversal entry." }
+
+    $installDir = Join-Path $safetyRoot "install"
+    $backupRoot = Join-Path $safetyRoot "transaction"
+    $backupDir = Join-Path $backupRoot "backup"
+    New-Item -ItemType Directory -Path $installDir, $backupDir | Out-Null
+    $script:WebBinaryName = "mt.exe"
+    $script:TtyHostBinaryName = "mthost.exe"
+    $script:AgentHostBinaryName = "mtagenthost.exe"
+    $script:TmuxShimBinaryName = "mttmux.exe"
+    foreach ($fileName in @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json")) {
+        Set-Content -LiteralPath (Join-Path $installDir $fileName) -Value "new" -NoNewline
+    }
+    Set-Content -LiteralPath (Join-Path $backupDir $WebBinaryName) -Value "old" -NoNewline
+    Restore-PreviousBinarySet -InstallDir $installDir -BackupRoot $backupRoot
+    if ((Get-Content -LiteralPath (Join-Path $installDir $WebBinaryName) -Raw) -ne "old") {
+        throw "PowerShell rollback did not restore the previous binary."
+    }
+    if (Test-Path -LiteralPath (Join-Path $installDir $TtyHostBinaryName)) {
+        throw "PowerShell rollback retained a newly introduced binary without a backup."
+    }
+} finally {
+    Remove-Item -LiteralPath $safetyRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if ($IsWindows) {
+    $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (Test-Path $windowsPowerShell) {
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($windowsInstaller, [ref]$tokens, [ref]$errors)
+        $verifierFunctions = ($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -in @("Convert-DerEcdsaSignatureToP1363", "Test-ReleaseMetadataSignature")
+        }, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
+
+        $key = [System.Security.Cryptography.ECDsa]::Create()
+        $key.GenerateKey([System.Security.Cryptography.ECCurve]::CreateFromFriendlyName("nistP384"))
+        try {
+            $payload = [Text.Encoding]::UTF8.GetBytes("tlbx-installer-powershell-5.1")
+            $signature = $key.SignData(
+                $payload,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                [System.Security.Cryptography.DSASignatureFormat]::Rfc3279DerSequence)
+            $publicKey = $key.ExportSubjectPublicKeyInfo()
+        } finally {
+            $key.Dispose()
+        }
+
+        $verificationCall = '$ok=Test-ReleaseMetadataSignature -PayloadBytes ([Convert]::FromBase64String(''' +
+            [Convert]::ToBase64String($payload) + ''')) -SignatureBytes ([Convert]::FromBase64String(''' +
+            [Convert]::ToBase64String($signature) + ''')) -PublicKeyBytes ([Convert]::FromBase64String(''' +
+            [Convert]::ToBase64String($publicKey) + ''')); if(-not $ok){exit 1}'
+        $encodedScript = '$ProgressPreference=''SilentlyContinue'';' + "`r`n" + $verifierFunctions + "`r`n" + $verificationCall
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($encodedScript))
+        & $windowsPowerShell -NoProfile -NonInteractive -EncodedCommand $encoded
+        if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 release-signature verification failed." }
+    }
+}
+
+if ($LiveRelease) {
+    $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-installer-live-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tempRoot | Out-Null
+    try {
+        $release = Invoke-RestMethod -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
+            -Uri "https://api.github.com/repos/tlbx-ai/tlbx/releases/latest"
+        $asset = $release.assets | Where-Object name -eq "mt-win-x64.zip" | Select-Object -First 1
+        if (-not $asset) { throw "Latest release has no mt-win-x64.zip asset." }
+
+        $archivePath = Join-Path $tempRoot "release.zip"
+        Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
+            -Uri $asset.browser_download_url -OutFile $archivePath
+
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($windowsInstaller, [ref]$tokens, [ref]$errors)
+        $names = @(
+            "Convert-DerEcdsaSignatureToP1363",
+            "Test-ReleaseMetadataSignature",
+            "Assert-SignedRelease",
+            "Assert-SafeReleaseArchive"
+        )
+        $verifierFunctions = ($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in $names
+        }, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
+        Invoke-Expression $verifierFunctions
+
+        Assert-SafeReleaseArchive -Path $archivePath
+        $extractDir = Join-Path $tempRoot "extract"
+        Expand-Archive -Path $archivePath -DestinationPath $extractDir
+        $version = $release.tag_name.TrimStart("v")
+        Assert-SignedRelease -ExtractDir $extractDir -ExpectedVersion $version -ExpectedPlatform "win-x64" -ExpectedChannel "stable"
+        Write-Host "PowerShell 7 live release verification passed ($($release.tag_name))." -ForegroundColor Green
+
+        if ($IsWindows) {
+            $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+            $escapedExtractDir = $extractDir.Replace("'", "''", [StringComparison]::Ordinal)
+            $call = '$ErrorActionPreference=''Stop''; Assert-SignedRelease -ExtractDir ''' + $escapedExtractDir +
+                ''' -ExpectedVersion ''' + $version + ''' -ExpectedPlatform ''win-x64'' -ExpectedChannel ''stable'''
+            $encodedScript = '$ProgressPreference=''SilentlyContinue'';' + "`r`n" + $verifierFunctions + "`r`n" + $call
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($encodedScript))
+            & $windowsPowerShell -NoProfile -NonInteractive -EncodedCommand $encoded
+            if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 live release verification failed." }
+            Write-Host "Windows PowerShell 5.1 live release verification passed ($($release.tag_name))." -ForegroundColor Green
+        }
+
+        $x86Asset = $release.assets | Where-Object name -eq "mt-win-x86.zip" | Select-Object -First 1
+        if (-not $x86Asset) { throw "Latest release has no mt-win-x86.zip asset." }
+        $x86ArchivePath = Join-Path $tempRoot "release-win-x86.zip"
+        Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
+            -Uri $x86Asset.browser_download_url -OutFile $x86ArchivePath
+        Assert-SafeReleaseArchive -Path $x86ArchivePath
+        $x86ExtractDir = Join-Path $tempRoot "extract-win-x86"
+        Expand-Archive -Path $x86ArchivePath -DestinationPath $x86ExtractDir
+        Assert-SignedRelease -ExtractDir $x86ExtractDir -ExpectedVersion $version -ExpectedPlatform "win-x86" -ExpectedChannel "stable"
+        Write-Host "Windows x86 live release verification passed ($($release.tag_name))." -ForegroundColor Green
+
+        $tar = Get-Command tar -ErrorAction SilentlyContinue
+        if ($tar) {
+            $unixTargets = @(
+                @{ Asset = "mt-linux-x64.tar.gz"; Platform = "linux-x64" },
+                @{ Asset = "mt-linux-arm64.tar.gz"; Platform = "linux-arm64" },
+                @{ Asset = "mt-osx-x64.tar.gz"; Platform = "osx-x64" },
+                @{ Asset = "mt-osx-arm64.tar.gz"; Platform = "osx-arm64" }
+            )
+            foreach ($target in $unixTargets) {
+                $unixAsset = $release.assets | Where-Object name -eq $target.Asset | Select-Object -First 1
+                if (-not $unixAsset) { throw "Latest release has no $($target.Asset) asset." }
+                $unixArchivePath = Join-Path $tempRoot $target.Asset
+                Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
+                    -Uri $unixAsset.browser_download_url -OutFile $unixArchivePath
+
+                $members = @(& $tar.Source -tzf $unixArchivePath)
+                if ($LASTEXITCODE -ne 0) { throw "Could not list $($target.Asset)." }
+                $allowed = @("mt", "mthost", "mtagenthost", "mttmux", "version.json", "SHA256SUMS.txt")
+                $seen = @{}
+                foreach ($member in $members) {
+                    $normalized = $member -replace '^\./', ''
+                    if ([string]::IsNullOrEmpty($normalized)) { continue }
+                    if ($normalized -notin $allowed) { throw "$($target.Asset) contains unexpected member '$member'." }
+                    if ($seen.ContainsKey($normalized)) { throw "$($target.Asset) contains duplicate member '$member'." }
+                    $seen[$normalized] = $true
+                }
+                foreach ($required in @("mt", "mthost", "mtagenthost", "version.json")) {
+                    if (-not $seen.ContainsKey($required)) { throw "$($target.Asset) is missing '$required'." }
+                }
+
+                $unixExtractDir = Join-Path $tempRoot ("extract-" + $target.Platform)
+                New-Item -ItemType Directory -Path $unixExtractDir | Out-Null
+                & $tar.Source -xzf $unixArchivePath -C $unixExtractDir
+                if ($LASTEXITCODE -ne 0) { throw "Could not extract $($target.Asset)." }
+                Assert-SignedRelease -ExtractDir $unixExtractDir -ExpectedVersion $version -ExpectedPlatform $target.Platform -ExpectedChannel "stable"
+                Write-Host "$($target.Platform) live release verification passed ($($release.tag_name))." -ForegroundColor Green
+            }
+        }
+    } finally {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "Installer verification passed." -ForegroundColor Green

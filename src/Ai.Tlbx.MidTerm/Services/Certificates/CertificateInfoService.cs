@@ -121,7 +121,7 @@ public sealed class CertificateInfoService
             <key>PayloadDisplayName</key>
             <string>tlbx Certificate</string>
             <key>PayloadIdentifier</key>
-            <string>ai.tlbx.midterm.cert.{payloadUuid}</string>
+            <string>ai.tlbx.cert.{payloadUuid}</string>
             <key>PayloadType</key>
             <string>com.apple.security.root</string>
             <key>PayloadUUID</key>
@@ -135,7 +135,7 @@ public sealed class CertificateInfoService
     <key>PayloadDisplayName</key>
     <string>tlbx Certificate</string>
     <key>PayloadIdentifier</key>
-    <string>ai.tlbx.midterm.profile.{profileUuid}</string>
+    <string>ai.tlbx.profile.{profileUuid}</string>
     <key>PayloadOrganization</key>
     <string>tlbx.ai</string>
     <key>PayloadRemovalDisallowed</key>

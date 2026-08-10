@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
@@ -136,7 +137,12 @@ public static class ServerSetup
         builder.Services.AddSingleton<SecurityStatusService>();
         builder.Services.AddSingleton<ApiKeyService>();
         builder.Services.AddSingleton<IPowerShellCommandRunner, WindowsPowerShellCommandRunner>();
-        builder.Services.AddSingleton<WindowsFirewallService>();
+        builder.Services.AddSingleton(sp => new WindowsFirewallService(
+            sp.GetRequiredService<ServerBindingInfo>(),
+            sp.GetRequiredService<IPowerShellCommandRunner>(),
+            TlbxProductIdentity.IsLegacySettingsDirectory(settingsService.SettingsDirectory)
+                ? WindowsFirewallService.LegacyManagedRuleName
+                : WindowsFirewallService.ManagedRuleName));
         builder.Services.AddSingleton<MainBrowserService>();
         builder.Services.AddSingleton<BackgroundImageService>();
         builder.Services.AddSingleton<ClipboardService>();

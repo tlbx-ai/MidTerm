@@ -35,7 +35,7 @@ public sealed class WindowsFirewallServiceTests
         Assert.True(status.RuleEnabled);
         Assert.True(status.MatchesCurrentPort);
         Assert.True(status.MatchesCurrentProgram);
-        Assert.Equal("MidTerm HTTPS", status.RuleName);
+        Assert.Equal("tlbx HTTPS", status.RuleName);
     }
 
     [Fact]

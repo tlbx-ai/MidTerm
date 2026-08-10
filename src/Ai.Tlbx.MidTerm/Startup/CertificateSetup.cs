@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -21,27 +22,11 @@ public static class CertificateSetup
         var settingsService = new SettingsService();
         var settings = settingsService.Load();
 
-        string settingsDir;
-        if (serviceMode)
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                settingsDir = Path.Combine(programData, "MidTerm");
-            }
-            else
-            {
-                settingsDir = "/usr/local/etc/midterm";
-            }
-            Directory.CreateDirectory(settingsDir);
-        }
-        else
-        {
-            settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
-        }
+        var settingsDir = settingsService.SettingsDirectory;
+        Directory.CreateDirectory(settingsDir);
 
-        var certPath = Path.Combine(settingsDir, "midterm.pem");
-        var keyId = "midterm";
+        var certPath = Path.Combine(settingsDir, TlbxProductIdentity.GetCertificateFileName(settingsDir));
+        var keyId = TlbxProductIdentity.GetCertificateKeyId(settingsDir);
 
         if (File.Exists(certPath) && !force)
         {
@@ -60,7 +45,11 @@ public static class CertificateSetup
         Console.WriteLine($"  DNS names: {string.Join(", ", dnsNames)}");
         Console.WriteLine($"  IP addresses: {string.Join(", ", ipAddresses)}");
 
-        using var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
+        using var cert = CertificateGenerator.GenerateSelfSigned(
+            dnsNames,
+            ipAddresses,
+            useEcdsa: true,
+            TlbxProductIdentity.GetCertificateSubject(settingsDir));
         CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
         var isService = serviceMode || settingsService.IsRunningAsService;
@@ -97,7 +86,7 @@ public static class CertificateSetup
     {
         LastCertificateError = null;
         var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
-        const string keyId = "midterm";
+        var keyId = ResolveCertificateKeyId(settingsDir, settings.CertificatePath);
 
         writeEventLog?.Invoke($"LoadOrGenerateCertificate: SettingsDir={settingsDir}, CertPath={settings.CertificatePath}, KeyProtection={settings.KeyProtection}", false);
 
@@ -107,8 +96,8 @@ public static class CertificateSetup
 
             // Pre-flight validation: check key file exists
             var keyPath = OperatingSystem.IsWindows()
-                ? Path.Combine(settingsDir, "keys", "midterm.dpapi")
-                : Path.Combine(settingsDir, "midterm.key.enc");
+                ? Path.Combine(settingsDir, "keys", $"{keyId}.dpapi")
+                : Path.Combine(settingsDir, $"{keyId}.key.enc");
 
             if (!File.Exists(keyPath))
             {
@@ -208,11 +197,15 @@ public static class CertificateSetup
 
         try
         {
-            var certPath = Path.Combine(settingsDir, "midterm.pem");
+            var certPath = Path.Combine(settingsDir, TlbxProductIdentity.GetCertificateFileName(settingsDir));
             var dnsNames = CertificateGenerator.GetDnsNames();
             var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
 
-            using var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
+            using var cert = CertificateGenerator.GenerateSelfSigned(
+                dnsNames,
+                ipAddresses,
+                useEcdsa: true,
+                TlbxProductIdentity.GetCertificateSubject(settingsDir));
             CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
             // Use persisted flag with runtime detection as fallback
@@ -249,5 +242,18 @@ public static class CertificateSetup
             Console.ResetColor();
             return null;
         }
+    }
+
+    private static string ResolveCertificateKeyId(string settingsDirectory, string? certificatePath)
+    {
+        if (!string.IsNullOrWhiteSpace(certificatePath) &&
+            Path.GetFileName(certificatePath).Equals(
+                TlbxProductIdentity.LegacyCertificateFileName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return TlbxProductIdentity.LegacyCertificateKeyId;
+        }
+
+        return TlbxProductIdentity.GetCertificateKeyId(settingsDirectory);
     }
 }

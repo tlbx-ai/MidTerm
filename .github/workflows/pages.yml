@@ -32,6 +32,9 @@ jobs:
           source: ./docs/site
           destination: ./_site
 
+      - name: Make Pages artifact writable
+        run: sudo chown -R "$(id -u):$(id -g)" ./_site
+
       - name: Publish canonical signed-release installers
         run: |
           cp ./install.sh ./_site/install.sh
@@ -43,9 +46,6 @@ jobs:
           test -f ./_site/install.ps1
           test -f ./_site/uninstall.sh
           test -f ./_site/uninstall.ps1
-
-      - name: Make Pages artifact writable
-        run: sudo chown -R "$(id -u):$(id -g)" ./_site
 
       - name: Normalize and verify duplicate Pages search metadata
         shell: python

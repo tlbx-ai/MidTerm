@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Security.Cryptography;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Secrets;
@@ -15,7 +16,6 @@ namespace Ai.Tlbx.MidTerm.Services.Secrets;
 [SupportedOSPlatform("macos")]
 public sealed class MacOsSecretStorage : ISecretStorage
 {
-    private const string ServiceNamePrefix = "ai.tlbx.midterm";
     private const int ErrSecSuccess = 0;
     private const int ErrSecItemNotFound = -25300;
     private const int ErrSecDuplicateItem = -25299;
@@ -33,7 +33,7 @@ public sealed class MacOsSecretStorage : ISecretStorage
         var normalized = Path.GetFullPath(settingsDirectory);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         var suffix = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
-        _serviceName = $"{ServiceNamePrefix}.{suffix}";
+        _serviceName = $"{TlbxProductIdentity.GetMacOsKeychainPrefix(normalized)}.{suffix}";
     }
 
     public string? GetSecret(string key)

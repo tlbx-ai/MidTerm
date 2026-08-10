@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services.Security;
 using Ai.Tlbx.MidTerm.Settings;
@@ -10,8 +11,8 @@ public static class CertificateService
     public static void RegenerateCertificate(SettingsService settingsService)
     {
         var settingsDir = Path.GetDirectoryName(settingsService.SettingsPath) ?? ".";
-        var certPath = Path.Combine(settingsDir, "midterm.pem");
-        const string keyId = "midterm";
+        var certPath = Path.Combine(settingsDir, TlbxProductIdentity.GetCertificateFileName(settingsDir));
+        var keyId = TlbxProductIdentity.GetCertificateKeyId(settingsDir);
 
         var isServiceInstall = settingsService.Load().IsServiceInstall || settingsService.IsRunningAsService;
         var protector = CertificateProtectorFactory.Create(settingsDir, isServiceInstall);
@@ -21,7 +22,11 @@ public static class CertificateService
 
         var dnsNames = CertificateGenerator.GetDnsNames();
         var ipAddresses = CertificateGenerator.GetLocalIPAddresses();
-        using var cert = CertificateGenerator.GenerateSelfSigned(dnsNames, ipAddresses, useEcdsa: true);
+        using var cert = CertificateGenerator.GenerateSelfSigned(
+            dnsNames,
+            ipAddresses,
+            useEcdsa: true,
+            TlbxProductIdentity.GetCertificateSubject(settingsDir));
         CertificateGenerator.ExportPublicCertToPem(cert, certPath);
 
         var privateKeyBytes = CertificateGenerator.ExportPrivateKeyPkcs8(cert);

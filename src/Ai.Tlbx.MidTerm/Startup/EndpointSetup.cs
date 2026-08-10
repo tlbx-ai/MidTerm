@@ -417,7 +417,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(pemBytes, "application/x-pem-file", "midterm.pem");
+            return Results.File(pemBytes, "application/x-pem-file", "tlbx.pem");
         });
 
         app.MapGet("/api/certificate/download/crt", () =>
@@ -428,7 +428,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(derBytes, "application/x-x509-ca-cert", "midterm.crt");
+            return Results.File(derBytes, "application/x-x509-ca-cert", "tlbx.crt");
         });
 
         app.MapGet("/api/certificate/download/mobileconfig", (HttpContext context) =>
@@ -440,7 +440,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(configBytes, "application/x-apple-aspen-config", "midterm.mobileconfig");
+            return Results.File(configBytes, "application/x-apple-aspen-config", "tlbx.mobileconfig");
         });
 
         app.MapGet("/api/certificate/share-packet", (HttpContext context) =>

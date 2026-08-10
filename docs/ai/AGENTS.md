@@ -95,8 +95,9 @@ tlbx is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/Win
 - `mthost` / `mthost.exe` — TTY host (spawned per terminal, all platforms)
 
 **Settings locations:**
-- Service mode: `%ProgramData%\MidTerm\settings.json` (Win) or `/usr/local/etc/midterm/settings.json` (Unix)
-- User mode: `~/.midterm/settings.json`
+- Service mode: `%ProgramData%\tlbx\settings.json` (Win) or `/usr/local/etc/tlbx/settings.json` (Unix)
+- User mode: `~/.tlbx/settings.json`
+- Existing legacy installations continue to use their `MidTerm` / `.midterm` paths in place.
 
 **Platform defaults:**
 - Windows — ConPTY, default shell `Pwsh`

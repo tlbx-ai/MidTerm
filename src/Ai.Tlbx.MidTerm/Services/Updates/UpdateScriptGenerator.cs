@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Globalization;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Startup;
@@ -84,6 +85,7 @@ public static class UpdateScriptGenerator
         var logFilePath = Path.Combine(settingsDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
         var serviceName = EscapeForPowerShell(serviceIdentity.WindowsServiceName);
+        var certificateFileName = TlbxProductIdentity.GetCertificateFileName(settingsDir);
 
         var isWebOnly = updateType != UpdateType.Full;
 
@@ -744,6 +746,7 @@ Start-Sleep -Seconds 1
 Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 ";
 
+        script = script.Replace("midterm.pem", certificateFileName, StringComparison.Ordinal);
         File.WriteAllText(scriptPath, script);
         return scriptPath;
     }
@@ -1464,6 +1467,8 @@ log '=========================================='
 write_result true ""Update completed successfully""
 ";
 
+        var certificateFileName = TlbxProductIdentity.GetCertificateFileName(settingsDirectory);
+        script = script.Replace("midterm.pem", certificateFileName, StringComparison.Ordinal);
         File.WriteAllText(scriptPath, script);
 
         // Set executable permission (Unix only)
