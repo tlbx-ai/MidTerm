@@ -48,6 +48,7 @@ import { getAdaptiveFooterRailSequence } from './layout';
 import {
   clipboardDataMayContainAppServerControlComposerImage,
   extractAppServerControlComposerPasteParts,
+  shouldProbeMobileClipboardForComposerImage,
   type AppServerControlComposerPastePart,
   type AppServerControlComposerDraftAttachment,
   MAX_APP_SERVER_CONTROL_IMAGE_BYTES,
@@ -64,7 +65,6 @@ import { captureImageFromWebcam } from './cameraCapture';
 import { openAppServerControlDraftAttachment } from './attachmentDraftOpen';
 import { renderAppServerControlAttachmentDraftView } from './attachmentDraftView';
 import {
-  createTerminalTouchToggleButton,
   createSmartInputDom,
   createToolButton,
   createToolButtonsStrip,
@@ -152,6 +152,7 @@ let appServerControlAttachmentHost: HTMLDivElement | null = null;
 let sharedPhotoInput: HTMLInputElement | null = null;
 let sharedAttachInput: HTMLInputElement | null = null;
 let toolsPanelOpen = false;
+let mobileTouchControllerHost: HTMLDivElement | null = null;
 let appServerControlQuickSettingsRow: HTMLDivElement | null = null;
 let appServerControlQuickSettingsActions: HTMLDivElement | null = null;
 let appServerControlModelSelect: HTMLSelectElement | null = null;
@@ -1436,6 +1437,7 @@ function createDockedDOM(): void {
       const hasLargeTextReference = text && shouldConvertPastedTextToSmartInputReference(text);
       if (
         clipboardDataMayContainAppServerControlComposerImage(event.clipboardData) ||
+        shouldProbeMobileClipboardForComposerImage(event.clipboardData, isMobileViewport()) ||
         hasLargeTextReference
       ) {
         event.preventDefault();
@@ -1520,6 +1522,11 @@ function createDockedDOM(): void {
   toolButtonsStrip = dom.toolsStrip;
   toolsPanel.appendChild(toolButtonsStrip);
 
+  mobileTouchControllerHost = document.createElement('div');
+  mobileTouchControllerHost.className = 'smart-input-mobile-touch-host';
+  mobileTouchControllerHost.hidden = true;
+  toolsPanel.appendChild(mobileTouchControllerHost);
+
   touchControllerEl ??= document.getElementById('touch-controller');
   if (touchControllerEl && touchControllerEl.parentElement !== footerContextHost) {
     footerContextHost.appendChild(touchControllerEl);
@@ -1574,12 +1581,18 @@ function getToolButtonRenderArgs(): Parameters<typeof createToolButtonsStrip>[0]
   };
 }
 
-function createAutomationOverflowProxy(): HTMLButtonElement {
+function createAutomationOverflowProxy(asTool = false): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'manager-bar-overflow adaptive-footer-status-automation-proxy';
+  btn.className = asTool
+    ? 'smart-input-tool-button smart-input-mobile-aux-tool smart-input-mobile-automations'
+    : 'manager-bar-overflow adaptive-footer-status-automation-proxy';
   btn.title = t('managerBar.more');
-  btn.innerHTML = '<span class="icon">&#xe910;</span>';
+  btn.setAttribute('aria-label', t('managerBar.more'));
+  btn.innerHTML = asTool
+    ? '<span class="smart-input-tool-icon icon" aria-hidden="true">&#xe910;</span>' +
+      `<span class="smart-input-tool-label">${t('managerBar.more')}</span>`
+    : '<span class="icon">&#xe910;</span>';
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1588,18 +1601,73 @@ function createAutomationOverflowProxy(): HTMLButtonElement {
   return btn;
 }
 
-function createAutomationAddProxy(): HTMLButtonElement {
+function createAutomationAddProxy(asTool = false): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'manager-bar-add adaptive-footer-status-automation-proxy';
+  btn.className = asTool
+    ? 'smart-input-tool-button smart-input-mobile-aux-tool smart-input-mobile-automation-add'
+    : 'manager-bar-add adaptive-footer-status-automation-proxy';
   btn.title = t('managerBar.addButton');
-  btn.textContent = '+';
+  btn.setAttribute('aria-label', t('managerBar.addButton'));
+  btn.innerHTML = asTool
+    ? '<span class="smart-input-tool-icon" aria-hidden="true">+</span>' +
+      `<span class="smart-input-tool-label">${t('managerBar.addButton')}</span>`
+    : '+';
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (asTool) {
+      setToolsPanelOpen(false);
+    }
     triggerAddAutomation();
   });
   return btn;
+}
+
+function createMobileTouchKeysToolButton(
+  layoutState: AdaptiveFooterLayoutState,
+): HTMLButtonElement {
+  const button = document.createElement('button');
+  const expanded = layoutState.touchControlsExpanded;
+  button.type = 'button';
+  button.className =
+    'smart-input-tool-button smart-input-mobile-aux-tool smart-input-mobile-touch-toggle';
+  button.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+  button.setAttribute('aria-label', expanded ? t('smartInput.keysHide') : t('smartInput.keysShow'));
+  button.innerHTML =
+    '<span class="smart-input-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h.01M11 9h.01M15 9h.01M17 13H7"/></svg></span>' +
+    `<span class="smart-input-tool-label">${expanded ? t('smartInput.keysHide') : t('smartInput.keysShow')}</span>`;
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTouchKeysExpanded(!expanded);
+  });
+  return button;
+}
+
+function syncMobileAuxiliaryTools(layoutState: AdaptiveFooterLayoutState): void {
+  if (!toolButtonsStrip) {
+    return;
+  }
+
+  for (const node of toolButtonsStrip.querySelectorAll('.smart-input-mobile-aux-tool')) {
+    node.remove();
+  }
+  setAutomationOverflowProxyAnchor(null);
+
+  if (!layoutState.isMobile || layoutState.appServerControlActive) {
+    return;
+  }
+
+  if (layoutState.touchControlsAvailable) {
+    toolButtonsStrip.appendChild(createMobileTouchKeysToolButton(layoutState));
+  }
+  if (layoutState.showAutomation) {
+    const overflowProxy = createAutomationOverflowProxy(true);
+    toolButtonsStrip.appendChild(overflowProxy);
+    setAutomationOverflowProxyAnchor(overflowProxy);
+    toolButtonsStrip.appendChild(createAutomationAddProxy(true));
+  }
 }
 
 function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -1631,6 +1699,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
     inlineToolHost.hidden = true;
   }
   toolsToggleBtn?.removeAttribute('hidden');
+  syncMobileAuxiliaryTools(layoutState);
   setToolsPanelOpen(toolsPanelOpen);
 }
 
@@ -1639,16 +1708,23 @@ function syncContextRow(layoutState: AdaptiveFooterLayoutState): void {
     return;
   }
 
+  if (layoutState.isMobile) {
+    footerContextHost.hidden = true;
+    if (touchControllerEl && mobileTouchControllerHost) {
+      if (touchControllerEl.parentElement !== mobileTouchControllerHost) {
+        mobileTouchControllerHost.appendChild(touchControllerEl);
+      }
+      touchControllerEl.classList.add('embedded');
+      touchControllerEl.classList.toggle('visible', layoutState.touchControlsExpanded);
+      mobileTouchControllerHost.hidden = !layoutState.touchControlsExpanded;
+    }
+    return;
+  }
+
   footerContextHost.replaceChildren();
 
   if (toolButtonsStrip && toolsPanel && toolButtonsStrip.parentElement !== toolsPanel) {
     toolsPanel.appendChild(toolButtonsStrip);
-  }
-
-  if (layoutState.isMobile && !layoutState.touchControlsExpanded) {
-    touchControllerEl?.classList.remove('visible');
-    footerContextHost.hidden = true;
-    return;
   }
 
   if (layoutState.showContext && layoutState.touchControlsAvailable) {
@@ -1718,7 +1794,11 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   if (layoutState.isMobile) {
-    renderMobileTerminalStatusRow(layoutState);
+    setAutomationOverflowProxyAnchor(
+      (toolButtonsStrip?.querySelector('.smart-input-mobile-automations') as HTMLElement | null) ??
+        null,
+    );
+    footerStatusHost.toggleAttribute('hidden', true);
     return;
   }
 
@@ -1728,54 +1808,6 @@ function syncStatusRow(layoutState: AdaptiveFooterLayoutState): void {
     footerStatusHost,
   });
   footerStatusHost.toggleAttribute('hidden', !renderedTerminalStatus);
-}
-
-function renderMobileTerminalStatusRow(layoutState: AdaptiveFooterLayoutState): void {
-  if (!footerStatusHost) {
-    return;
-  }
-
-  setAutomationOverflowProxyAnchor(null);
-
-  const leftCluster = document.createElement('div');
-  leftCluster.className = 'adaptive-footer-status-left';
-
-  if (canUseSmartInputVoiceSupport() && autoSendEnabled) {
-    const autoSendPill = document.createElement('div');
-    autoSendPill.className = 'adaptive-footer-status-pill';
-    autoSendPill.textContent = t('smartInput.autoSend');
-    leftCluster.appendChild(autoSendPill);
-  }
-
-  if (layoutState.touchControlsAvailable) {
-    const keysToggle = createTerminalTouchToggleButton({
-      expanded: layoutState.touchControlsExpanded,
-      onToggle: () => {
-        setTouchKeysExpanded(!layoutState.touchControlsExpanded);
-      },
-    });
-    leftCluster.appendChild(keysToggle);
-  }
-
-  if (leftCluster.childElementCount > 0) {
-    footerStatusHost.appendChild(leftCluster);
-  }
-
-  if (layoutState.showAutomation) {
-    const rightCluster = document.createElement('div');
-    rightCluster.className = 'adaptive-footer-status-right';
-
-    const overflowProxy = createAutomationOverflowProxy();
-    rightCluster.appendChild(overflowProxy);
-    setAutomationOverflowProxyAnchor(overflowProxy);
-
-    const addProxy = createAutomationAddProxy();
-    rightCluster.appendChild(addProxy);
-
-    footerStatusHost.appendChild(rightCluster);
-  }
-
-  footerStatusHost.toggleAttribute('hidden', false);
 }
 
 function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState): void {
@@ -1978,7 +2010,7 @@ function setToolsPanelOpen(open: boolean): void {
   toolsPanel.parentElement?.classList.toggle('smart-input-row-tools-open', shouldOpen);
   toolsToggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   toolsToggleBtn.classList.toggle('open', shouldOpen);
-  if (!footerResizeObserver) {
+  if (!isMobileViewport() && !footerResizeObserver) {
     queueFooterReserveSync();
   }
 }
