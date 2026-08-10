@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWsUrl } from './websocket';
+import { closeWebSocket, createWsUrl } from './websocket';
 
 describe('createWsUrl', () => {
   const originalLocation = globalThis.location;
@@ -65,5 +65,25 @@ describe('createWsUrl', () => {
     expect(parsed.host).toBe('midterm.example');
     expect(parsed.pathname).toBe('/webpreview/route-123/ws/state');
     expect(parsed.searchParams.get('tabId')).toBe('tab-123');
+  });
+
+  it('detaches every callback before retiring a websocket generation', () => {
+    const socket = {
+      onopen: vi.fn(),
+      onmessage: vi.fn(),
+      onerror: vi.fn(),
+      onclose: vi.fn(),
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    const setter = vi.fn();
+
+    closeWebSocket(socket, setter);
+
+    expect(socket.onopen).toBeNull();
+    expect(socket.onmessage).toBeNull();
+    expect(socket.onerror).toBeNull();
+    expect(socket.onclose).toBeNull();
+    expect(socket.close).toHaveBeenCalledOnce();
+    expect(setter).toHaveBeenCalledWith(null);
   });
 });

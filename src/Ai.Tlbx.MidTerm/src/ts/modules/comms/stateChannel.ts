@@ -143,6 +143,14 @@ const pendingCommands = new Map<
     timeout: number;
   }
 >();
+
+function rejectPendingCommands(reason: string): void {
+  pendingCommands.forEach((command, id) => {
+    clearTimeout(command.timeout);
+    command.reject(new Error(reason));
+    pendingCommands.delete(id);
+  });
+}
 import {
   $settingsOpen,
   $stateWsConnected,
@@ -301,13 +309,17 @@ function handleStateSocketMessage(data: StateWsMessage): void {
  * Automatically reconnects with exponential backoff on disconnect.
  */
 export function connectStateWebSocket(): void {
+  stateReconnect.cancel();
+  rejectPendingCommands('Connection replaced');
   closeWebSocket(stateWs, setStateWs);
+  $stateWsConnected.set(false);
 
   const wsPath = isSharedSessionRoute() ? '/ws/share/state' : '/ws/state';
   const ws = new WebSocket(createWsUrl(wsPath));
   setStateWs(ws);
 
   ws.onopen = () => {
+    if (stateWs !== ws) return;
     stateReconnect.reset();
     const isReconnect = stateWsHasConnected;
     stateWsHasConnected = true;
@@ -319,6 +331,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onmessage = (event) => {
+    if (stateWs !== ws) return;
     try {
       const data = JSON.parse(event.data as string) as StateWsMessage;
       handleStateSocketMessage(data);
@@ -329,14 +342,11 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onclose = (event) => {
+    if (stateWs !== ws) return;
     $stateWsConnected.set(false);
 
     // Reject all pending commands immediately (don't wait for timeout)
-    pendingCommands.forEach((cmd, id) => {
-      clearTimeout(cmd.timeout);
-      cmd.reject(new Error('Connection lost'));
-      pendingCommands.delete(id);
-    });
+    rejectPendingCommands('Connection lost');
 
     if (handleAuthenticatedWebSocketClose(event)) {
       return;
@@ -346,6 +356,7 @@ export function connectStateWebSocket(): void {
   };
 
   ws.onerror = (e) => {
+    if (stateWs !== ws) return;
     log.error(() => `WebSocket error: ${e.type}`);
   };
 }

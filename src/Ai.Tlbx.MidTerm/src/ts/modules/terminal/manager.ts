@@ -76,7 +76,6 @@ import {
   DEFAULT_TERMINAL_LETTER_SPACING,
   DEFAULT_TERMINAL_LINE_HEIGHT,
   ensureTerminalFontLoaded,
-  getBundledTerminalFontFamilies,
   getConfiguredTerminalFontFamily,
 } from './fontConfig';
 import { getTerminalOptions } from './terminalOptions';
@@ -1654,41 +1653,48 @@ export function refreshActiveTerminalBuffer(): void {
 }
 
 /**
- * Preload the terminal font for consistent rendering.
- * Has a 3-second timeout to prevent indefinite hangs if fonts fail to load.
+ * Give the configured terminal font a short startup budget. Alternate font
+ * choices must never delay xterm creation, and a late font only triggers one
+ * renderer remeasure instead of reopening or resizing the terminal.
  */
 export function preloadTerminalFont(): Promise<void> {
-  const FONT_TIMEOUT_MS = 3000;
+  const FONT_STARTUP_BUDGET_MS = 250;
   const baseFontSize = $currentSettings.get()?.fontSize ?? 14;
   const fontSize = getEffectiveTerminalFontSize(baseFontSize);
+  const fontFamily = getConfiguredTerminalFontFamily();
+  let startupBudgetExpired = false;
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
 
-  const fontLoadPromise = Promise.allSettled(
-    getBundledTerminalFontFamilies().map((fontFamily) =>
-      ensureTerminalFontLoaded(fontFamily, fontSize),
-    ),
-  )
-    .then(() => document.fonts.ready)
-    .then(() => {
-      const testSpan = document.createElement('span');
-      testSpan.style.fontFamily = buildTerminalFontStack(getConfiguredTerminalFontFamily());
-      testSpan.style.position = 'absolute';
-      testSpan.style.left = '-9999px';
-      testSpan.textContent = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      document.body.appendChild(testSpan);
-
-      return new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          testSpan.remove();
-          resolve();
-        });
+  const fontLoadPromise = ensureTerminalFontLoaded(fontFamily, fontSize).then(() => {
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        resolve();
       });
     });
+  });
 
   const timeoutPromise = new Promise<void>((resolve) => {
-    setTimeout(resolve, FONT_TIMEOUT_MS);
+    timeoutId = globalThis.setTimeout(() => {
+      startupBudgetExpired = true;
+      timeoutId = null;
+      resolve();
+    }, FONT_STARTUP_BUDGET_MS);
   });
 
   const promise = Promise.race([fontLoadPromise, timeoutPromise]);
+  void fontLoadPromise.then(() => {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (!startupBudgetExpired) return;
+
+    sessionTerminals.forEach((state) => {
+      if (!state.opened) return;
+      refreshTerminalRenderer(state);
+      applyTerminalScalingSync(state);
+    });
+  });
   setFontsReadyPromise(promise);
   return promise;
 }
