@@ -81,6 +81,7 @@ public sealed class MuxWebSocketHandler
         var client = _muxManager.AddClient(clientId, ws, shareAccess?.SessionId);
         var initialPrioritySessionId = ResolveInitialPrioritySessionId(context, shareAccess);
         var initialVisibleSessionIds = ResolveInitialVisibleSessionIds(context, shareAccess);
+        var initialBackgroundSessionIds = ResolveInitialBackgroundSessionIds(context, shareAccess);
         var initialReplayRows = ResolveInitialReplayRows(context);
         var initialResumeCursors = ResolveInitialResumeCursors(context, shareAccess);
         Task? deferredReplayTask = null;
@@ -129,6 +130,7 @@ public sealed class MuxWebSocketHandler
                 client.SetActiveSession(initialPrioritySessionId);
             }
             client.SetVisibleSessions(initialVisibleSessionIds);
+            client.SetBackgroundSessions(initialBackgroundSessionIds);
 
             client.SuspendFlush();
             await SendInitFrameAsync(client, clientId);
@@ -231,28 +233,43 @@ public sealed class MuxWebSocketHandler
 
     private static HashSet<string> ResolveInitialVisibleSessionIds(HttpContext context, ShareAccessContext? shareAccess)
     {
-        var visibleSessionIds = new HashSet<string>(StringComparer.Ordinal);
+        return ResolveInitialSessionIds(context, shareAccess, "visibleSessionIds");
+    }
+
+    private static HashSet<string> ResolveInitialBackgroundSessionIds(HttpContext context, ShareAccessContext? shareAccess)
+    {
+        return shareAccess is null
+            ? ResolveInitialSessionIds(context, null, "backgroundSessionIds")
+            : new HashSet<string>(StringComparer.Ordinal);
+    }
+
+    private static HashSet<string> ResolveInitialSessionIds(
+        HttpContext context,
+        ShareAccessContext? shareAccess,
+        string queryName)
+    {
+        var sessionIds = new HashSet<string>(StringComparer.Ordinal);
         if (shareAccess is not null)
         {
-            visibleSessionIds.Add(shareAccess.SessionId);
-            return visibleSessionIds;
+            sessionIds.Add(shareAccess.SessionId);
+            return sessionIds;
         }
 
-        var raw = context.Request.Query["visibleSessionIds"].ToString();
+        var raw = context.Request.Query[queryName].ToString();
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return visibleSessionIds;
+            return sessionIds;
         }
 
         foreach (var token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (!string.IsNullOrWhiteSpace(token))
             {
-                visibleSessionIds.Add(token);
+                sessionIds.Add(token);
             }
         }
 
-        return visibleSessionIds;
+        return sessionIds;
     }
 
     private static int? ResolveInitialReplayRows(HttpContext context)
@@ -608,6 +625,14 @@ public sealed class MuxWebSocketHandler
             case MuxProtocol.TypeVisibleSessionsHint:
                 client.SetVisibleSessions(MuxProtocol.ParseVisibleSessionsHintPayload(payload));
                 foreach (var pausedSession in client.GetVisiblePausedSessions().ToArray())
+                {
+                    await RecoverPausedSessionAsync(client, pausedSession.Key);
+                }
+                break;
+
+            case MuxProtocol.TypeBackgroundSessionsHint:
+                client.SetBackgroundSessions(MuxProtocol.ParseBackgroundSessionsHintPayload(payload));
+                foreach (var pausedSession in client.GetBackgroundPausedSessions().ToArray())
                 {
                     await RecoverPausedSessionAsync(client, pausedSession.Key);
                 }

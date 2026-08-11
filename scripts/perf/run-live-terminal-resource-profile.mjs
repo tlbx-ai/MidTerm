@@ -314,6 +314,7 @@ function summarizeProcessGroup(samples, predicate) {
 const createdSessionIds = [];
 const samples = [];
 const switchMeasurements = [];
+let backgroundIngestEvidence = null;
 let baseline = null;
 let windowsProcessIds = null;
 let browserContext;
@@ -418,6 +419,39 @@ try {
   // can produce output. Readiness itself is established above from live state.
   await page.waitForTimeout(250);
 
+  await page.evaluate((ids) => {
+    const renderCounts = Object.fromEntries(ids.map((id) => [id, 0]));
+    const parseCounts = Object.fromEntries(ids.map((id) => [id, 0]));
+    const disposables = [];
+    for (const id of ids) {
+      const state = window.mmDebug?.terminals.get(id);
+      if (!state) continue;
+      disposables.push(
+        state.terminal.onRender(() => {
+          renderCounts[id] = (renderCounts[id] ?? 0) + 1;
+        }),
+        state.terminal.onWriteParsed(() => {
+          parseCounts[id] = (parseCounts[id] ?? 0) + 1;
+        }),
+      );
+    }
+    window.__tlbxBackgroundRenderProbe = {
+      renderCounts,
+      parseCounts,
+      disposables,
+    };
+  }, createdSessionIds);
+  await page.waitForTimeout(100);
+  await page.evaluate((ids) => {
+    const probe = window.__tlbxBackgroundRenderProbe;
+    if (probe) {
+      for (const id of ids) {
+        probe.renderCounts[id] = 0;
+        probe.parseCounts[id] = 0;
+      }
+    }
+  }, createdSessionIds);
+
   const sessionsBeforeTraffic = await requestJson(page, "/api/sessions");
   const lastOutputBeforeTraffic = Object.fromEntries(
     sessionsBeforeTraffic.sessions
@@ -468,6 +502,49 @@ try {
       { timeout: 15000 },
     );
 
+    // Hidden xterms keep their parser state current from four batched mux
+    // deliveries per second. Their renderer must remain completely idle.
+    await page.waitForTimeout(1500);
+    backgroundIngestEvidence = await page.evaluate(
+      (ids) => {
+        const probe = window.__tlbxBackgroundRenderProbe;
+        const terminals = ids.map((id) => {
+          const state = window.mmDebug?.terminals.get(id);
+          const hidden = state?.container.classList.contains('hidden') ?? true;
+          return {
+            sessionId: id,
+            hidden,
+            renderEvents: probe?.renderCounts[id] ?? null,
+            parseEvents: probe?.parseCounts[id] ?? null,
+          };
+        });
+        for (const disposable of probe?.disposables ?? []) disposable.dispose();
+        delete window.__tlbxBackgroundRenderProbe;
+        const hiddenTerminals = terminals.filter((terminal) => terminal.hidden);
+        return {
+          terminals,
+          allHiddenParsersAdvanced: hiddenTerminals.every(
+            (terminal) => (terminal.parseEvents ?? 0) > 0,
+          ),
+          hiddenRenderEvents: hiddenTerminals.reduce(
+            (sum, terminal) => sum + (terminal.renderEvents ?? 0),
+            0,
+          ),
+        };
+      },
+      createdSessionIds,
+    );
+    if (!backgroundIngestEvidence.allHiddenParsersAdvanced) {
+      throw new Error(
+        `At least one hidden terminal stopped parsing output: ${JSON.stringify(backgroundIngestEvidence.terminals)}`,
+      );
+    }
+    if (backgroundIngestEvidence.hiddenRenderEvents !== 0) {
+      throw new Error(
+        `Hidden terminals emitted ${backgroundIngestEvidence.hiddenRenderEvents} renderer events.`,
+      );
+    }
+
     const expectsWebgl = await page.evaluate(
       () => window.mmDebug?.settings?.useWebGL !== false,
     );
@@ -512,7 +589,7 @@ try {
               )
             ) {
               if (performance.now() >= deadline) {
-                throw new Error(`Session ${id} did not finish catch-up.`);
+                throw new Error(`Session ${id} did not become activation-ready.`);
               }
               await nextFrame();
               state = window.mmDebug?.terminals.get(id);
@@ -521,8 +598,10 @@ try {
             return {
               sessionId: id,
               visibleMs: Math.round(visibleMs * 100) / 100,
-              caughtUpMs:
+              activationReadyMs:
                 Math.round((performance.now() - startedAt) * 100) / 100,
+              postVisibleGapMs:
+                Math.round((performance.now() - startedAt - visibleMs) * 100) / 100,
             };
           },
           { id: sessionId, webglRequired: expectsWebgl },
@@ -612,17 +691,21 @@ try {
         switchMeasurements.map((measurement) => measurement.visibleMs),
         0.95,
       ),
-      caughtUpAverageMs:
+      activationReadyAverageMs:
         switchMeasurements.length > 0
           ? Math.round(
               switchMeasurements.reduce(
-                (sum, value) => sum + value.caughtUpMs,
+                (sum, value) => sum + value.activationReadyMs,
                 0,
               ) / switchMeasurements.length,
             )
           : null,
-      caughtUpP95Ms: percentile(
-        switchMeasurements.map((measurement) => measurement.caughtUpMs),
+      activationReadyP95Ms: percentile(
+        switchMeasurements.map((measurement) => measurement.activationReadyMs),
+        0.95,
+      ),
+      postVisibleGapP95Ms: percentile(
+        switchMeasurements.map((measurement) => measurement.postVisibleGapMs),
         0.95,
       ),
       samples: switchMeasurements,
@@ -639,6 +722,7 @@ try {
       ),
     },
     mountedBeforeTraffic,
+    backgroundIngestEvidence,
     sampleCount: samples.length,
     browser: {
       peakJsHeapUsedMB: bytesToMb(
@@ -705,6 +789,13 @@ try {
   console.log(JSON.stringify(summary, null, 2));
 } finally {
   if (page) {
+    await page
+      .evaluate(() => {
+        const probe = window.__tlbxBackgroundRenderProbe;
+        for (const disposable of probe?.disposables ?? []) disposable.dispose();
+        delete window.__tlbxBackgroundRenderProbe;
+      })
+      .catch(() => {});
     for (const sessionId of createdSessionIds) {
       try {
         await browserRequest(

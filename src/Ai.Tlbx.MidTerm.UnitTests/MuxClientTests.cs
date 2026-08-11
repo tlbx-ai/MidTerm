@@ -10,7 +10,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MuxClientTests
 {
     [Fact]
-    public async Task HintedClient_DeliversOnlyActiveAndVisibleSessions()
+    public async Task HintedClient_DeliversActiveVisibleAndSubscribedBackgroundSessions()
     {
         using var socket = new FakeWebSocket();
         await using var client = new MuxClient(
@@ -20,9 +20,11 @@ public sealed class MuxClientTests
 
         client.SetActiveSession("active");
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible" });
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { "background" });
 
         Assert.True(client.ShouldDeliverSession("active"));
         Assert.True(client.ShouldDeliverSession("visible"));
+        Assert.True(client.ShouldDeliverSession("background"));
         Assert.False(client.ShouldDeliverSession("hidden"));
     }
 
@@ -37,11 +39,13 @@ public sealed class MuxClientTests
 
         client.SetActiveSession("active");
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible" });
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { "background" });
         client.MarkTransportDegradedForTests();
 
         Assert.True(client.IsTransportDegraded);
         Assert.True(client.ShouldDeliverSession("active"));
         Assert.True(client.ShouldDeliverSession("visible"));
+        Assert.False(client.ShouldDeliverSession("background"));
         Assert.False(client.ShouldDeliverSession("hidden"));
     }
 
@@ -75,7 +79,7 @@ public sealed class MuxClientTests
         Assert.Equal(0UL, paused.ResumeSequence);
         Assert.Equal(4UL, paused.SourceSequenceEndExclusive);
 
-        client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1", "hidden01" });
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { "hidden01" });
         Assert.False(client.QueueOutput("hidden01", 9, 120, 30, RentOutput("after")));
 
         Assert.True(await client.ExecuteRecoveryAsync(
@@ -324,6 +328,27 @@ public sealed class MuxClientTests
         Assert.Equal(sessionId, parsedSessionId);
         Assert.Equal((ulong)2, MuxProtocol.ParseOutputSequenceEnd(payload));
         Assert.Equal("ab", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(payload)));
+    }
+
+    [Fact]
+    public async Task BackgroundSessionOutput_IsBatchedAtLowFrequency()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        const string sessionId = "session1";
+        client.SetActiveSession("active01");
+        client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { sessionId });
+
+        Assert.True(client.QueueOutput(sessionId, 1, 120, 30, RentOutput("a")));
+        await Task.Delay(80);
+        Assert.Empty(socket.SentFrames);
+
+        await WaitForAsync(() => socket.SentFrames.Count == 1);
+        Assert.InRange(client.GetFlushDelay(sessionId), 150, 1_000);
     }
 
     private static SharedOutputBuffer RentOutput(string text)

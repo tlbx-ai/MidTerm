@@ -53,6 +53,7 @@ export const MUX_TYPE_INPUT_TRACE_MARKER = 0x0f; // Client -> Server: Sample nex
 export const MUX_TYPE_INPUT_TRACE_RESULT = 0x10; // Server -> Client: Sampled input latency trace result
 export const MUX_TYPE_RECOVERY_BEGIN = 0x11; // Server -> Client: Per-session recovery transaction starts
 export const MUX_TYPE_RECOVERY_END = 0x12; // Server -> Client: Per-session recovery transaction commits
+export const MUX_TYPE_BACKGROUND_SESSIONS_HINT = 0x13; // Client -> Server: Hidden terminals kept parsed without render priority
 
 // Custom WebSocket close codes (4000-4999 range)
 export const WS_CLOSE_AUTH_FAILED = 4401;

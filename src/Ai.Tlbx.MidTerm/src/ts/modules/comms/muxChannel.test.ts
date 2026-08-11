@@ -536,6 +536,31 @@ describe('muxChannel', () => {
     expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
   });
 
+  it('subscribes hidden mounted terminals through the background ingest hint', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', [], ['sess5678', 'sess9999']);
+
+    expect(harness.ws.send).toHaveBeenCalledTimes(1);
+    const frame = harness.ws.send.mock.calls[0]?.[0] as Uint8Array;
+    expect(frame[0]).toBe(harness.constants.MUX_TYPE_BACKGROUND_SESSIONS_HINT);
+    expect(harness.decodeSessionId(frame, harness.constants.MUX_HEADER_SIZE)).toBe('sess5678');
+    expect(harness.decodeSessionId(frame, harness.constants.MUX_HEADER_SIZE + 8)).toBe('sess9999');
+  });
+
+  it('carries background subscriptions into mux reconnects', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    harness.updateTerminalVisibility('sess1234', [], ['sess5678']);
+
+    connectMuxWebSocket();
+
+    const ws = MockWebSocket.instances.at(-1);
+    expect(ws).toBeDefined();
+    const url = new URL(ws!.url);
+    expect(url.searchParams.get('backgroundSessionIds')).toBe('sess5678');
+  });
+
   it('does not include local replay rows in full buffer refresh requests', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     attachFakeTerminal(harness.sessionTerminals, 'sess1234', 41);

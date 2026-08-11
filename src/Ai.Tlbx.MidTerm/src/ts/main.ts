@@ -174,6 +174,7 @@ import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
   sessionTerminals,
+  hiddenSessionIds,
   dom,
   setFontsReadyPromise,
   newlyCreatedSessions,
@@ -543,12 +544,22 @@ function getVisibleTerminalSessionIds(): string[] {
 function syncMuxTerminalVisibility(): void {
   const activeSessionId = $activeSessionId.get();
   const visibleSessionIds = getVisibleTerminalSessionIds();
-  updateTerminalVisibility(activeSessionId, visibleSessionIds);
-
   const prioritySessionIds = new Set(visibleSessionIds);
   if (activeSessionId && !isHubSessionId(activeSessionId)) {
     prioritySessionIds.add(activeSessionId);
   }
+  const backgroundSessionIds: string[] = [];
+  sessionTerminals.forEach((_state, sessionId) => {
+    if (
+      !isHubSessionId(sessionId) &&
+      !hiddenSessionIds.has(sessionId) &&
+      !prioritySessionIds.has(sessionId)
+    ) {
+      backgroundSessionIds.push(sessionId);
+    }
+  });
+  updateTerminalVisibility(activeSessionId, visibleSessionIds, backgroundSessionIds);
+
   syncWebglSessionPriority([...prioritySessionIds]);
 }
 

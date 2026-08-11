@@ -23,6 +23,7 @@ import {
   MUX_TYPE_PONG,
   MUX_TYPE_SYNC_COMPLETE,
   MUX_TYPE_VISIBLE_SESSIONS_HINT,
+  MUX_TYPE_BACKGROUND_SESSIONS_HINT,
   MUX_TYPE_RECOVERY_BEGIN,
   MUX_TYPE_RECOVERY_END,
   WS_CLOSE_SERVER_SHUTDOWN,
@@ -427,6 +428,7 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
+let currentBackgroundSessionIds: string[] = [];
 let muxSuspendedForBrowserBackground = false;
 
 // =============================================================================
@@ -1438,6 +1440,9 @@ export function connectMuxWebSocket(): void {
   if (currentVisibleSessionIds.length > 0) {
     query.set('visibleSessionIds', currentVisibleSessionIds.join(','));
   }
+  if (currentBackgroundSessionIds.length > 0) {
+    query.set('backgroundSessionIds', currentBackgroundSessionIds.join(','));
+  }
   const resumeCursors = buildResumeCursorQueryValue(
     sessionTerminals,
     (sessionId) => browserTransportSnapshots.get(sessionId),
@@ -1512,6 +1517,7 @@ export function connectMuxWebSocket(): void {
       sendActiveSessionHint(activeSessionId);
     }
     sendVisibleSessionsHint(currentVisibleSessionIds);
+    sendBackgroundSessionsHint(currentBackgroundSessionIds);
 
     // Flush any input buffered during disconnection
     flushPendingInput();
@@ -1823,11 +1829,19 @@ export function sendActiveSessionHint(sessionId: string | null): void {
 }
 
 export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
+  sendSessionIdsHint(MUX_TYPE_VISIBLE_SESSIONS_HINT, sessionIds);
+}
+
+export function sendBackgroundSessionsHint(sessionIds: readonly string[]): void {
+  sendSessionIdsHint(MUX_TYPE_BACKGROUND_SESSIONS_HINT, sessionIds);
+}
+
+function sendSessionIdsHint(type: number, sessionIds: readonly string[]): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   const normalizedSessionIds = muxSessionRouting.normalizeSessionIds(sessionIds);
   const frame = new Uint8Array(MUX_HEADER_SIZE + normalizedSessionIds.length * 8);
-  frame[0] = MUX_TYPE_VISIBLE_SESSIONS_HINT;
+  frame[0] = type;
   let offset = MUX_HEADER_SIZE;
   normalizedSessionIds.forEach((sessionId) => {
     encodeSessionId(frame, offset, sessionId);
@@ -1839,14 +1853,30 @@ export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
 export function updateTerminalVisibility(
   _activeSessionId: string | null,
   visibleSessionIds: readonly string[],
+  backgroundSessionIds: readonly string[] = [],
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
+  const normalizedBackgroundSessionIds =
+    muxSessionRouting.normalizeSessionIds(backgroundSessionIds);
+  const visibleChanged = !sameSessionIds(currentVisibleSessionIds, normalizedVisibleSessionIds);
+  const backgroundChanged = !sameSessionIds(
+    currentBackgroundSessionIds,
+    normalizedBackgroundSessionIds,
+  );
 
   currentVisibleSessionIds = normalizedVisibleSessionIds;
+  currentBackgroundSessionIds = normalizedBackgroundSessionIds;
 
   if (muxWs && muxWs.readyState === WebSocket.OPEN) {
-    sendVisibleSessionsHint(normalizedVisibleSessionIds);
+    if (visibleChanged) sendVisibleSessionsHint(normalizedVisibleSessionIds);
+    if (backgroundChanged) sendBackgroundSessionsHint(normalizedBackgroundSessionIds);
   }
+}
+
+function sameSessionIds(left: readonly string[], right: readonly string[]): boolean {
+  return (
+    left.length === right.length && left.every((sessionId, index) => sessionId === right[index])
+  );
 }
 
 /**
@@ -1889,6 +1919,7 @@ export function recoverVisibleTerminalsAfterBrowserResume(
   }
 
   sendVisibleSessionsHint(normalizedVisibleSessionIds);
+  sendBackgroundSessionsHint(currentBackgroundSessionIds);
   sendActiveSessionHint(activeSessionId);
 }
 
@@ -1957,6 +1988,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
+  currentBackgroundSessionIds = [];
   muxSuspendedForBrowserBackground = false;
   replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();

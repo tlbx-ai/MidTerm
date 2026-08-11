@@ -294,6 +294,20 @@ public class MuxProtocolTests
     }
 
     [Fact]
+    public void CreateBackgroundSessionsHintFrame_RoundTrips_SessionIds()
+    {
+        var frame = MuxProtocol.CreateBackgroundSessionsHintFrame(["sess0003", "sess0004"]);
+
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out _, out var payload));
+        Assert.Equal(MuxProtocol.TypeBackgroundSessionsHint, type);
+
+        var sessionIds = MuxProtocol.ParseBackgroundSessionsHintPayload(payload);
+        Assert.Equal(2, sessionIds.Count);
+        Assert.Contains("sess0003", sessionIds);
+        Assert.Contains("sess0004", sessionIds);
+    }
+
+    [Fact]
     public void InputTraceMarker_RoundTrips_TraceId()
     {
         Span<byte> payload = stackalloc byte[MuxProtocol.InputTraceMarkerPayloadSize];
