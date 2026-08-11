@@ -87,7 +87,7 @@ import {
   syncTerminalRgbBackgroundTransparency,
 } from './rgbBackgroundTransparency';
 import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
-import { shouldUseWebglRenderer } from './webglSupport';
+import { shouldOwnWebglContext, shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
 import { refreshTerminalRenderer } from './presentationRefresh';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
@@ -640,11 +640,23 @@ function isWebglOwnershipManaged(state: TerminalState): boolean {
 }
 
 function hasWebglPriority(sessionId: string, state: TerminalState): boolean {
-  if (!webglPriorityKnown || !isWebglOwnershipManaged(state)) {
-    return true;
-  }
+  return shouldOwnWebglContext(
+    isWebglOwnershipManaged(state),
+    webglPriorityKnown,
+    webglPrioritySessionIds.has(sessionId),
+    sessionTerminals.size <= 1,
+  );
+}
 
-  return webglPrioritySessionIds.has(sessionId);
+function enforceManagedWebglLimit(): void {
+  if (sessionTerminals.size <= 1) return;
+
+  for (const sessionId of [...terminalsWithWebgl]) {
+    const state = sessionTerminals.get(sessionId);
+    if (state) {
+      detachWebglAddon(sessionId, state);
+    }
+  }
 }
 
 function evictWebglContextForPrioritySession(): boolean {
@@ -746,6 +758,9 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
   if (foregroundDomRendererRecovery.has(state)) {
     return false;
   }
+  if (!hasWebglPriority(sessionId, state)) {
+    return false;
+  }
   if (state.hasWebgl) {
     return true;
   }
@@ -823,6 +838,19 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
 
   if (!shouldUseWebglRenderer($currentSettings.get())) {
     return;
+  }
+
+  // A hidden tab retains its xterm buffer, but it must not retain a GPU
+  // renderer. Xterm 6.1/WebGL 0.20 makes each preserved context materially
+  // expensive, so keeping one per previously visited tab multiplies Chrome's
+  // private memory without producing a visible pixel. With multiple managed
+  // terminals, keep all of them on the built-in renderer: even one WebGL
+  // context plus repeated ownership transfers exceeds its measured benefit.
+  for (const sessionId of [...terminalsWithWebgl]) {
+    const state = sessionTerminals.get(sessionId);
+    if (state && isWebglOwnershipManaged(state) && !hasWebglPriority(sessionId, state)) {
+      detachWebglAddon(sessionId, state);
+    }
   }
 
   webglPrioritySessionIds.forEach((sessionId) => {
@@ -1091,6 +1119,7 @@ export function createTerminalForSession(
   };
 
   sessionTerminals.set(sessionId, state);
+  enforceManagedWebglLimit();
 
   // Wait for fonts to be ready before opening terminal
   // This ensures xterm.js measures the correct font for canvas rendering

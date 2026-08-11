@@ -1538,6 +1538,7 @@ internal sealed class TerminalSession : IDisposable
         await _ptyWriteLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            _processMonitor?.NotifyActivity();
             await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
             await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);
         }

@@ -10,7 +10,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MuxClientTests
 {
     [Fact]
-    public async Task FullReplayClient_DeliversAllAccessibleSessions()
+    public async Task HintedClient_DeliversOnlyActiveAndVisibleSessions()
     {
         using var socket = new FakeWebSocket();
         await using var client = new MuxClient(
@@ -23,7 +23,7 @@ public sealed class MuxClientTests
 
         Assert.True(client.ShouldDeliverSession("active"));
         Assert.True(client.ShouldDeliverSession("visible"));
-        Assert.True(client.ShouldDeliverSession("hidden"));
+        Assert.False(client.ShouldDeliverSession("hidden"));
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class MuxClientTests
     }
 
     [Fact]
-    public async Task DegradedHiddenSession_PausesAtDeliveredCursorUntilRecoveryCompletes()
+    public async Task HiddenSession_PausesAtDeliveredCursorUntilRecoveryCompletes()
     {
         using var socket = new RecordingWebSocket();
         await using var client = new MuxClient(
@@ -70,8 +70,6 @@ public sealed class MuxClientTests
 
         client.SetActiveSession("active01");
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1" });
-        client.MarkTransportDegradedForTests();
-
         Assert.False(client.QueueOutput("hidden01", 4, 120, 30, RentOutput("lost")));
         Assert.True(client.TryGetPausedSession("hidden01", out var paused));
         Assert.Equal(0UL, paused.ResumeSequence);

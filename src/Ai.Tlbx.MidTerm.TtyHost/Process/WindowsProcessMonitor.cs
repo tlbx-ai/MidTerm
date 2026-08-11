@@ -23,7 +23,14 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     private ForegroundProcessInfo? _cachedForeground;
     private Timer? _timer;
     private int _polling;
+    private long _lastActivityMs;
+    private bool _fastPolling;
+    private readonly object _timerGate = new();
     private bool _disposed;
+
+    internal const int ActivePollIntervalMs = 500;
+    internal const int IdlePollIntervalMs = 30000;
+    internal const int ActivePollingWindowMs = 2000;
 
     // Reusable buffers for ReadProcessMemory (thread-safe via ThreadStatic)
     [ThreadStatic]
@@ -42,14 +49,33 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
 
         _shellPid = shellPid;
         var previousTimer = _timer;
-        _timer = new Timer(_ => Poll(), null, 0, 500);
+        _lastActivityMs = Environment.TickCount64;
+        _fastPolling = true;
+        _timer = new Timer(_ => Poll(), null, 0, Timeout.Infinite);
         previousTimer?.Dispose();
     }
 
     public void StopMonitoring()
     {
-        _timer?.Dispose();
-        _timer = null;
+        lock (_timerGate)
+        {
+            _timer?.Dispose();
+            _timer = null;
+            _fastPolling = false;
+        }
+    }
+
+    public void NotifyActivity()
+    {
+        lock (_timerGate)
+        {
+            _lastActivityMs = Environment.TickCount64;
+            if (_timer is not null && !_fastPolling)
+            {
+                _fastPolling = true;
+                _timer.Change(0, Timeout.Infinite);
+            }
+        }
     }
 
     public ForegroundProcessInfo GetCurrentForeground()
@@ -160,6 +186,29 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         finally
         {
             Volatile.Write(ref _polling, 0);
+            ScheduleNextPoll();
+        }
+    }
+
+    internal static int ResolvePollDelay(long lastActivityMs, long nowMs)
+    {
+        return nowMs - lastActivityMs < ActivePollingWindowMs
+            ? ActivePollIntervalMs
+            : IdlePollIntervalMs;
+    }
+
+    private void ScheduleNextPoll()
+    {
+        lock (_timerGate)
+        {
+            if (_timer is null || _disposed)
+            {
+                return;
+            }
+
+            var delay = ResolvePollDelay(_lastActivityMs, Environment.TickCount64);
+            _fastPolling = delay == ActivePollIntervalMs;
+            _timer.Change(delay, Timeout.Infinite);
         }
     }
 

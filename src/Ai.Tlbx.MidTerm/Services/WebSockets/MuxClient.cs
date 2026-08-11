@@ -809,7 +809,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if ((buffer.TotalBytes == 0 && buffer.DroppedBytes == 0) || sessionId == activeId) continue;
             if (_activeRecoveries.ContainsKey(sessionId)) continue;
-            if (IsTransportDegradedAt(Environment.TickCount64) && !ShouldDeliverSession(sessionId))
+            if (!ShouldDeliverSession(sessionId))
             {
                 PauseSessionOutput(sessionId, buffer.LastSequenceEndExclusive, buffer.TotalBytes);
                 buffer.Reset();
@@ -1020,16 +1020,17 @@ public sealed class MuxClient : IAsyncDisposable
             return false;
         }
 
-        if (!IsTransportDegradedAt(Environment.TickCount64))
-        {
-            return true;
-        }
-
         if (IsActiveSession(sessionId) || _visibleSessionIds.Contains(sessionId))
         {
             return true;
         }
 
+        // Before browser visibility hints arrive, preserve the compatibility
+        // behavior and deliver every accessible session. Once a browser names
+        // an active or visible terminal, hidden sessions stay live in mthost but
+        // their bytes are held at the last delivered cursor. Activating one runs
+        // the existing ordered recovery instead of making every hidden xterm
+        // parse and paint output that cannot be seen.
         return _activeSessionId is null && _visibleSessionIds.Count == 0;
     }
 
