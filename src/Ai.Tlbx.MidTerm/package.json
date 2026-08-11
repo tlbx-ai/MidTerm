@@ -26,7 +26,8 @@
     "watch:typecheck": "tsc --noEmit -p tsconfig.json --watch",
     "generate:types": "npx openapi-typescript openapi/openapi.json -o src/ts/api.generated.ts && npx prettier --write src/ts/api.generated.ts",
     "generate:openapi": "dotnet build ../Ai.Tlbx.MidTerm.OpenApi/Ai.Tlbx.MidTerm.OpenApi.csproj && npm run generate:types",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:kitty-graphics",
+    "test:kitty-graphics": "node ../../scripts/kitty-graphics-test.mjs --self-test",
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
@@ -56,6 +57,7 @@
   },
   "dependencies": {
     "@xterm/addon-fit": "0.12.0-beta.292",
+    "@xterm/addon-image": "0.10.0-beta.292",
     "@xterm/addon-search": "0.17.0-beta.292",
     "@xterm/addon-unicode11": "0.10.0-beta.292",
     "@xterm/addon-web-links": "0.13.0-beta.292",

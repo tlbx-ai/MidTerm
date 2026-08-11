@@ -1364,6 +1364,8 @@ internal sealed class TerminalSession : IDisposable
     private readonly object _transportLock = new();
     private readonly object _inputTraceLock = new();
     private readonly object _metadataLock = new();
+    private readonly SemaphoreSlim _ptyWriteLock = new(1, 1);
+    private readonly KittyGraphicsCapabilityResponder _kittyGraphicsResponder = new();
     private readonly int _scrollbackBytes;
     private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
@@ -1483,6 +1485,14 @@ internal sealed class TerminalSession : IDisposable
                 var ptyOutputReadAtMs = Environment.TickCount64;
                 var data = buffer.AsMemory(0, bytesRead);
                 Log.Verbose(() => string.Create(CultureInfo.InvariantCulture, $"[PTY-READ] {bytesRead} bytes"));
+                var kittyResponses = _kittyGraphicsResponder.Consume(data.Span);
+                if (kittyResponses is not null)
+                {
+                    foreach (var response in kittyResponses)
+                    {
+                        WritePtyInputAsync(response, ct).GetAwaiter().GetResult();
+                    }
+                }
                 ulong sequenceStart;
                 ulong sequenceEndExclusive;
 
@@ -1513,8 +1523,28 @@ internal sealed class TerminalSession : IDisposable
 
     public async Task SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
+        if (_kittyGraphicsResponder.IsDuplicateClientResponse(data.Span))
+        {
+            Log.Verbose(() => "[PTY-WRITE] suppressed duplicate Kitty capability response");
+            return;
+        }
+
+        await WritePtyInputAsync(data, ct).ConfigureAwait(false);
+    }
+
+    private async Task WritePtyInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
+    {
         Log.Verbose(() => $"[PTY-WRITE] {data.Length} bytes");
-        await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
+        await _ptyWriteLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _pty.WriterStream.WriteAsync(data, ct).ConfigureAwait(false);
+            await _pty.WriterStream.FlushAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ptyWriteLock.Release();
+        }
     }
 
     public void BeginInputTrace(uint traceId, long markerReceivedAtMs, long inputReceivedAtMs)
@@ -1909,6 +1939,7 @@ internal sealed class TerminalSession : IDisposable
         }
 
         _outputBuffer.Dispose();
+        _ptyWriteLock.Dispose();
     }
 
     public SessionInfo GetInfo()

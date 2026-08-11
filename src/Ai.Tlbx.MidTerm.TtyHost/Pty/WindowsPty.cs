@@ -22,6 +22,7 @@ public sealed class WindowsPty : IPtyConnection
     private SafeFileHandle? _outputReadHandle;
     private FileStream? _writerStream;
     private FileStream? _readerStream;
+    private bool _usesPackagedConPty;
     private bool _disposed;
 
     public Stream WriterStream
@@ -134,7 +135,12 @@ public sealed class WindowsPty : IPtyConnection
             _outputReadHandle = outputReadHandle;
 
             var size = new Coord((short)cols, (short)rows);
-            var hr = CreatePseudoConsole(size, inputReadHandle, outputWriteHandle, 0, out _pseudoConsoleHandle);
+            var hr = TryCreatePackagedPseudoConsole(size, inputReadHandle, outputWriteHandle);
+            if (hr != 0)
+            {
+                _pseudoConsoleHandle = IntPtr.Zero;
+                hr = CreatePseudoConsole(size, inputReadHandle, outputWriteHandle, 0, out _pseudoConsoleHandle);
+            }
             if (hr != 0)
             {
                 throw new Win32Exception(hr, "Failed to create pseudo console");
@@ -203,6 +209,15 @@ public sealed class WindowsPty : IPtyConnection
                 _processHandle = processInfo.hProcess;
                 _threadHandle = processInfo.hThread;
                 Pid = processInfo.dwProcessId;
+
+                if (_usesPackagedConPty)
+                {
+                    var releaseHr = ConptyReleasePseudoConsole(_pseudoConsoleHandle);
+                    if (releaseHr != 0)
+                    {
+                        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Failed to release packaged pseudo console server handles for PID {Pid}: HRESULT=0x{releaseHr:X8}"));
+                    }
+                }
             }
             finally
             {
@@ -224,6 +239,30 @@ public sealed class WindowsPty : IPtyConnection
             inputReadHandle?.Dispose();
             outputWriteHandle?.Dispose();
             throw;
+        }
+    }
+
+    private int TryCreatePackagedPseudoConsole(
+        Coord size,
+        SafeFileHandle inputReadHandle,
+        SafeFileHandle outputWriteHandle)
+    {
+        try
+        {
+            var hr = ConptyCreatePseudoConsole(size, inputReadHandle, outputWriteHandle, 0, out _pseudoConsoleHandle);
+            _usesPackagedConPty = hr == 0;
+            if (hr != 0)
+            {
+                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Packaged ConPTY returned HRESULT=0x{hr:X8}; using the Windows system ConPTY"));
+            }
+            return hr;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            _usesPackagedConPty = false;
+            _pseudoConsoleHandle = IntPtr.Zero;
+            Log.Warn(() => $"Packaged ConPTY unavailable; using the Windows system ConPTY: {ex.Message}");
+            return -1;
         }
     }
 
@@ -291,7 +330,9 @@ public sealed class WindowsPty : IPtyConnection
                 try
                 {
                     var size = new Coord((short)cols, (short)rows);
-                    var hr = ResizePseudoConsole(_pseudoConsoleHandle, size);
+                    var hr = _usesPackagedConPty
+                        ? ConptyResizePseudoConsole(_pseudoConsoleHandle, size)
+                        : ResizePseudoConsole(_pseudoConsoleHandle, size);
                     if (hr != 0)
                     {
                         Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"Failed to resize pseudo console for PID {Pid}: HRESULT=0x{hr:X8}"));
@@ -365,7 +406,18 @@ public sealed class WindowsPty : IPtyConnection
 
         if (_pseudoConsoleHandle != IntPtr.Zero)
         {
-            try { ClosePseudoConsole(_pseudoConsoleHandle); } catch { }
+            try
+            {
+                if (_usesPackagedConPty)
+                {
+                    ConptyClosePseudoConsole(_pseudoConsoleHandle);
+                }
+                else
+                {
+                    ClosePseudoConsole(_pseudoConsoleHandle);
+                }
+            }
+            catch { }
             _pseudoConsoleHandle = IntPtr.Zero;
         }
 
@@ -426,7 +478,18 @@ public sealed class WindowsPty : IPtyConnection
 
             if (_pseudoConsoleHandle != IntPtr.Zero)
             {
-                try { ClosePseudoConsole(_pseudoConsoleHandle); } catch { }
+                try
+                {
+                    if (_usesPackagedConPty)
+                    {
+                        ConptyClosePseudoConsole(_pseudoConsoleHandle);
+                    }
+                    else
+                    {
+                        ClosePseudoConsole(_pseudoConsoleHandle);
+                    }
+                }
+                catch { }
                 _pseudoConsoleHandle = IntPtr.Zero;
             }
 

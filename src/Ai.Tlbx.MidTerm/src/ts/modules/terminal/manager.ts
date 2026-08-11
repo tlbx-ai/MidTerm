@@ -41,6 +41,7 @@ import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { ImageAddon } from '@xterm/addon-image';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -1187,6 +1188,32 @@ export function createTerminalForSession(
     );
     syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
+
+    // ImageAddon needs the opened terminal and its active renderer. Loading it
+    // after the WebGL/canvas selection keeps the image renderer bound to the
+    // renderer that will actually paint the session, including replayed output.
+    // Capability discovery itself is answered by mthost so it also works before
+    // a browser attaches. Keep decoded memory and individual payloads bounded.
+    try {
+      terminal.loadAddon(
+        new ImageAddon({
+          enableSizeReports: true,
+          pixelLimit: 4_194_304,
+          storageLimit: 32,
+          showPlaceholder: true,
+          kittySupport: true,
+          kittySizeLimit: 16_777_216,
+          sixelSupport: true,
+          sixelSizeLimit: 16_777_216,
+          iipSupport: true,
+          iipSizeLimit: 16_777_216,
+        }),
+      );
+    } catch (error) {
+      // Graphics are progressive enhancement. A future xterm/addon mismatch
+      // must degrade to text instead of making the session unusable.
+      log.warn(() => `Terminal ${sessionId} graphics initialization failed: ${String(error)}`);
+    }
 
     // Load Web-Links addon for clickable URLs
     try {

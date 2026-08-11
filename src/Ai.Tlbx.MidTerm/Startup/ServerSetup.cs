@@ -433,7 +433,7 @@ public static class ServerSetup
         }
 
         return "default-src 'self'; " +
-               "script-src 'self'; " +
+               "script-src 'self' 'wasm-unsafe-eval'; " +
                "worker-src 'self' blob:; " +
                "style-src 'self' 'unsafe-inline'; " +
                "img-src 'self' data:; " +

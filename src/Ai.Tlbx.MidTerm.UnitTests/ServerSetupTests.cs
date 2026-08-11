@@ -28,6 +28,7 @@ public class ServerSetupTests
     {
         var csp = ServerSetup.BuildContentSecurityPolicy();
 
+        Assert.Contains("script-src 'self' 'wasm-unsafe-eval';", csp, StringComparison.Ordinal);
         Assert.Contains("frame-src 'self' blob: data:;", csp, StringComparison.Ordinal);
     }
 

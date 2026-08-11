@@ -91,6 +91,11 @@
           "Microsoft.TestPlatform.ObjectModel": "18.8.1"
         }
       },
+      "Microsoft.Windows.Console.ConPTY": {
+        "type": "Transitive",
+        "resolved": "1.24.260710001",
+        "contentHash": "JR1xAkZbNnAALBjzFpqSwEx7YZfD1LI228jF9j9cgKknBPCiFy9mpphlgH+TpTN8vajTUpcgg9Miy5Y8eUAH9g=="
+      },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "Transitive",
         "resolved": "2.1.12",
@@ -184,7 +189,8 @@
       "mthost": {
         "type": "Project",
         "dependencies": {
-          "Ai.Tlbx.MidTerm.Common": "[4.0.1, )"
+          "Ai.Tlbx.MidTerm.Common": "[4.0.1, )",
+          "Microsoft.Windows.Console.ConPTY": "[1.24.260710001, )"
         }
       }
     }

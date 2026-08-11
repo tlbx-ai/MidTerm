@@ -6,6 +6,27 @@ namespace Ai.Tlbx.MidTerm.TtyHost.Pty;
 
 internal static class ConPtyNative
 {
+    [DefaultDllImportSearchPaths(DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.SafeDirectories)]
+    [DllImport("conpty.dll", EntryPoint = "ConptyCreatePseudoConsole", SetLastError = true)]
+    public static extern int ConptyCreatePseudoConsole(
+        Coord size,
+        SafeFileHandle hInput,
+        SafeFileHandle hOutput,
+        uint dwFlags,
+        out IntPtr phPC);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.SafeDirectories)]
+    [DllImport("conpty.dll", EntryPoint = "ConptyResizePseudoConsole", SetLastError = true)]
+    public static extern int ConptyResizePseudoConsole(IntPtr hPC, Coord size);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.SafeDirectories)]
+    [DllImport("conpty.dll", EntryPoint = "ConptyReleasePseudoConsole", SetLastError = true)]
+    public static extern int ConptyReleasePseudoConsole(IntPtr hPC);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.SafeDirectories)]
+    [DllImport("conpty.dll", EntryPoint = "ConptyClosePseudoConsole", SetLastError = true)]
+    public static extern void ConptyClosePseudoConsole(IntPtr hPC);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern int CreatePseudoConsole(
         Coord size,

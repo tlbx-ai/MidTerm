@@ -12,6 +12,12 @@
     <SelfContained>true</SelfContained>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <RuntimeIdentifiers>win-x64;win-x86;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <ConptyNativePlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</ConptyNativePlatform>
+    <ConptyNativePlatform Condition="'$(RuntimeIdentifier)' == 'win-x86'">x86</ConptyNativePlatform>
+    <ConptyNativePlatform Condition="'$(RuntimeIdentifier)' == 'win-arm64'">ARM64</ConptyNativePlatform>
+    <ConptyRequiresx86Host Condition="'$(RuntimeIdentifier)' == 'win-x86'">true</ConptyRequiresx86Host>
+    <ConptyRequiresx64Host Condition="'$(RuntimeIdentifier)' == 'win-x86' Or '$(RuntimeIdentifier)' == 'win-x64'">true</ConptyRequiresx64Host>
+    <ConptyRequiresARM64Host Condition="'$(RuntimeIdentifier)' == 'win-x86' Or '$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-arm64'">true</ConptyRequiresARM64Host>
     <!-- Version is set dynamically from version.json via ReadVersionJson target -->
   </PropertyGroup>
 
@@ -71,6 +77,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
+    <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" />
   </ItemGroup>
 
   <ItemGroup>
