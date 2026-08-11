@@ -277,6 +277,29 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void GenerateUpdateScript_WindowsFullUpdate_InstallsAndRollsBackConptyRuntime()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var scriptText = ReadScript(
+            UpdateScriptGenerator.GenerateUpdateScript(
+                _extractedDir,
+                _currentBinaryPath,
+                _settingsDir,
+                UpdateType.Full,
+                deleteSourceAfter: true));
+
+        Assert.Contains("$ConptyRuntimeFiles", scriptText, StringComparison.Ordinal);
+        Assert.Contains("conpty.dll", scriptText, StringComparison.Ordinal);
+        Assert.Contains("x64\\OpenConsole.exe", scriptText, StringComparison.Ordinal);
+        Assert.Contains("SafeCopy $newRuntimePath $currentRuntimePath $relativePath", scriptText, StringComparison.Ordinal);
+        Assert.Contains("$backupRuntimePath", scriptText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GenerateUpdateScript_Linux_StoresBackupsOutsideInstallDirectory()
     {
         if (OperatingSystem.IsWindows())

@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
@@ -86,6 +87,10 @@ public static class UpdateScriptGenerator
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
         var serviceName = EscapeForPowerShell(serviceIdentity.WindowsServiceName);
         var certificateFileName = TlbxProductIdentity.GetCertificateFileName(settingsDir);
+        var conptyRuntimeFiles = RuntimeInformation.ProcessArchitecture == Architecture.X86
+            ? new[] { "conpty.dll", "x86\\OpenConsole.exe", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe" }
+            : new[] { "conpty.dll", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe" };
+        var conptyRuntimeFilesLiteral = string.Join(", ", conptyRuntimeFiles.Select(path => $"'{EscapeForPowerShell(path)}'"));
 
         var isWebOnly = updateType != UpdateType.Full;
 
@@ -121,6 +126,7 @@ $MaxRetries = {MaxRetries}
 $IsWebOnly = ${(isWebOnly ? "true" : "false")}
 $DeleteSource = ${(deleteSourceAfter ? "true" : "false")}
 $ServiceName = '{serviceName}'
+$ConptyRuntimeFiles = @({conptyRuntimeFilesLiteral})
 
 # === Helper Functions ===
 
@@ -301,6 +307,12 @@ try {{
         Log 'Killing mthost.exe processes...'
         KillProcessByPath $CurrentMthost
 
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            if ([IO.Path]::GetFileName($relativePath) -eq 'OpenConsole.exe') {{
+                KillProcessByPath (Join-Path $InstallDir $relativePath)
+            }}
+        }}
+
         if (Test-Path $CurrentAgentHost) {{
             Log 'Killing {AgentHostBinaryName}.exe processes...'
             KillProcessByPath $CurrentAgentHost
@@ -322,6 +334,15 @@ try {{
     if ((-not $IsWebOnly) -and (Test-Path $CurrentMthost)) {{
         if (-not (WaitForFileWritable $CurrentMthost)) {{
             throw ""mthost.exe is still locked after $MaxRetries retries. Another process may be using it.""
+        }}
+    }}
+
+    if (-not $IsWebOnly) {{
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            $currentRuntimePath = Join-Path $InstallDir $relativePath
+            if ((Test-Path $currentRuntimePath) -and (-not (WaitForFileWritable $currentRuntimePath))) {{
+                throw ""ConPTY runtime file is still locked after $MaxRetries retries: $currentRuntimePath""
+            }}
         }}
     }}
 
@@ -355,6 +376,16 @@ try {{
         Log 'Backing up mthost.exe...'
         Copy-Item $CurrentMthost ""$CurrentMthost.bak"" -Force -ErrorAction Stop
         Log 'mthost.exe backed up'
+    }}
+
+    if (-not $IsWebOnly) {{
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            $currentRuntimePath = Join-Path $InstallDir $relativePath
+            if (Test-Path $currentRuntimePath) {{
+                Log ""Backing up $relativePath...""
+                Copy-Item $currentRuntimePath ""$currentRuntimePath.bak"" -Force -ErrorAction Stop
+            }}
+        }}
     }}
 
     if ((-not $IsWebOnly) -and (Test-Path $CurrentAgentHost)) {{
@@ -480,6 +511,13 @@ try {{
 
     if ((-not $IsWebOnly) -and (Test-Path $NewMthost)) {{
         SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
+
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            $newRuntimePath = Join-Path $ExtractedDir $relativePath
+            $currentRuntimePath = Join-Path $InstallDir $relativePath
+            New-Item -ItemType Directory -Path (Split-Path -Parent $currentRuntimePath) -Force | Out-Null
+            SafeCopy $newRuntimePath $currentRuntimePath $relativePath
+        }}
     }}
 
     if ((-not $IsWebOnly) -and (Test-Path $NewAgentHost)) {{
@@ -649,6 +687,24 @@ try {{
                 Log 'mthost.exe restored'
             }} catch {{
                 Log ""Failed to restore mthost.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (-not $IsWebOnly) {{
+            foreach ($relativePath in $ConptyRuntimeFiles) {{
+                $currentRuntimePath = Join-Path $InstallDir $relativePath
+                $backupRuntimePath = ""$currentRuntimePath.bak""
+                try {{
+                    if (Test-Path $backupRuntimePath) {{
+                        New-Item -ItemType Directory -Path (Split-Path -Parent $currentRuntimePath) -Force | Out-Null
+                        Copy-Item $backupRuntimePath $currentRuntimePath -Force -ErrorAction Stop
+                        Log ""$relativePath restored""
+                    }} else {{
+                        Remove-Item $currentRuntimePath -Force -ErrorAction SilentlyContinue
+                    }}
+                }} catch {{
+                    Log ""Failed to restore $relativePath`: $_"" 'ERROR'
+                }}
             }}
         }}
 

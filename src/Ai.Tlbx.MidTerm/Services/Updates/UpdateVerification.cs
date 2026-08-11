@@ -84,15 +84,12 @@ public static class UpdateVerification
         // Verify each file's checksum
         foreach (var (filename, expectedHash) in checksums)
         {
-            if (string.IsNullOrWhiteSpace(filename) ||
-                Path.IsPathRooted(filename) ||
-                !string.Equals(filename, Path.GetFileName(filename), StringComparison.Ordinal))
+            if (!TryResolveChecksumPath(extractDir, filename, out var filePath))
             {
                 Log.Warn(() => $"UpdateVerification: Unsafe checksum entry rejected: {filename}");
                 return false;
             }
 
-            var filePath = Path.Combine(extractDir, filename);
             if (!File.Exists(filePath))
             {
                 Log.Warn(() => $"UpdateVerification: Expected file not found: {filename}");
@@ -109,6 +106,31 @@ public static class UpdateVerification
             Log.Info(() => $"UpdateVerification: Checksum verified: {filename}");
         }
 
+        return true;
+    }
+
+    private static bool TryResolveChecksumPath(string extractDir, string filename, out string filePath)
+    {
+        filePath = "";
+        if (string.IsNullOrWhiteSpace(filename) || Path.IsPathRooted(filename))
+        {
+            return false;
+        }
+
+        var segments = filename.Replace('\\', '/').Split('/');
+        if (segments.Any(segment => string.IsNullOrWhiteSpace(segment) || segment is "." or ".."))
+        {
+            return false;
+        }
+
+        var extractRoot = Path.GetFullPath(extractDir);
+        var candidate = Path.GetFullPath(Path.Combine([extractRoot, .. segments]));
+        if (!candidate.StartsWith(extractRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        filePath = candidate;
         return true;
     }
 

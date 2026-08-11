@@ -249,6 +249,7 @@ public sealed class WindowsPty : IPtyConnection
     {
         try
         {
+            PackagedConPtyRuntime.EnsureLoaded();
             var hr = ConptyCreatePseudoConsole(size, inputReadHandle, outputWriteHandle, 0, out _pseudoConsoleHandle);
             _usesPackagedConPty = hr == 0;
             if (hr != 0)
@@ -257,7 +258,7 @@ public sealed class WindowsPty : IPtyConnection
             }
             return hr;
         }
-        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             _usesPackagedConPty = false;
             _pseudoConsoleHandle = IntPtr.Zero;

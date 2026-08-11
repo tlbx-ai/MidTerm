@@ -119,6 +119,20 @@ try {
         $failedNames = ($failed | ForEach-Object { $_.Name }) -join ", "
         throw "Parallel dotnet publish failed for: $failedNames"
     }
+
+    if ($Rid -in @("win-x64", "win-x86")) {
+        $mthostPublishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TtyHost/bin/$Configuration/net10.0/$Rid/publish"
+        $requiredConptyFiles = @("conpty.dll", "x64/OpenConsole.exe", "arm64/OpenConsole.exe")
+        if ($Rid -eq "win-x86") {
+            $requiredConptyFiles += "x86/OpenConsole.exe"
+        }
+        foreach ($relativePath in $requiredConptyFiles) {
+            $path = Join-Path $mthostPublishDir $relativePath
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                throw "Published $Rid mthost runtime is missing $relativePath"
+            }
+        }
+    }
 }
 finally {
     Pop-Location

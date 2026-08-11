@@ -1473,9 +1473,12 @@ function Assert-SignedRelease
         {
             $fileName = [string]$checksum.Name
             $expectedHash = ([string]$checksum.Value).ToLowerInvariant()
+            $normalizedFileName = $fileName.Replace('\', '/')
+            $segments = @($normalizedFileName.Split('/'))
             if ([string]::IsNullOrWhiteSpace($fileName) -or
                 [System.IO.Path]::IsPathRooted($fileName) -or
-                [System.IO.Path]::GetFileName($fileName) -cne $fileName -or
+                $segments.Count -eq 0 -or
+                @($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -in @('.', '..') }).Count -gt 0 -or
                 $expectedHash -notmatch '^[0-9a-f]{64}$')
             {
                 throw "Downloaded release contains an unsafe checksum entry: $fileName"
@@ -1487,7 +1490,13 @@ function Assert-SignedRelease
                 throw "Downloaded release checksum metadata is inconsistent for $fileName."
             }
 
-            $filePath = Join-Path $ExtractDir $fileName
+            $relativePlatformPath = $normalizedFileName.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+            $filePath = [System.IO.Path]::GetFullPath((Join-Path $ExtractDir $relativePlatformPath))
+            $extractRoot = [System.IO.Path]::GetFullPath($ExtractDir).TrimEnd([char[]]@('\', '/'))
+            if (-not $filePath.StartsWith($extractRoot + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
+            {
+                throw "Downloaded release contains an unsafe checksum entry: $fileName"
+            }
             if (-not (Test-Path -LiteralPath $filePath -PathType Leaf))
             {
                 throw "Downloaded release is missing signed file $fileName."
@@ -1506,6 +1515,20 @@ function Assert-SignedRelease
     }
 }
 
+function Get-WindowsReleaseFileNames
+{
+    $files = @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json")
+    if ($ExpectedReleasePlatform -in @("win-x64", "win-x86"))
+    {
+        $files += @("conpty.dll", "x64/OpenConsole.exe", "arm64/OpenConsole.exe")
+        if ($ExpectedReleasePlatform -eq "win-x86")
+        {
+            $files += "x86/OpenConsole.exe"
+        }
+    }
+    return $files
+}
+
 function Assert-SafeReleaseArchive
 {
     param([Parameter(Mandatory=$true)][string]$Path)
@@ -1514,12 +1537,26 @@ function Assert-SafeReleaseArchive
     $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
     try
     {
-        $required = @("mt.exe", "mthost.exe", "mtagenthost.exe", "mttmux.exe", "version.json")
+        $required = @(Get-WindowsReleaseFileNames)
         $allowed = @($required + "SHA256SUMS.txt")
+        $allowedDirectories = @("x64/", "arm64/")
+        if ($ExpectedReleasePlatform -eq "win-x86")
+        {
+            $allowedDirectories += "x86/"
+        }
         $seen = @{}
         foreach ($entry in $archive.Entries)
         {
-            if ($entry.FullName -notin $allowed -or $entry.Name -ne $entry.FullName)
+            $normalizedName = $entry.FullName.Replace('\', '/')
+            if ($normalizedName.EndsWith('/'))
+            {
+                if ($normalizedName -notin $allowedDirectories -or $entry.Length -ne 0)
+                {
+                    throw "Downloaded release archive contains unexpected or unsafe entry '$($entry.FullName)'."
+                }
+                continue
+            }
+            if ($normalizedName -notin $allowed -or [string]::IsNullOrWhiteSpace($entry.Name))
             {
                 throw "Downloaded release archive contains unexpected or unsafe entry '$($entry.FullName)'."
             }
@@ -1532,11 +1569,11 @@ function Assert-SafeReleaseArchive
             {
                 throw "Downloaded release archive entry '$($entry.FullName)' is empty."
             }
-            if ($seen.ContainsKey($entry.FullName))
+            if ($seen.ContainsKey($normalizedName))
             {
                 throw "Downloaded release archive contains duplicate entry '$($entry.FullName)'."
             }
-            $seen[$entry.FullName] = $true
+            $seen[$normalizedName] = $true
         }
         foreach ($name in $required)
         {
@@ -1592,7 +1629,7 @@ function Install-VerifiedBinarySet
         [Parameter(Mandatory=$true)][string]$BackupRoot
     )
 
-    $fileNames = @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json")
+    $fileNames = @(Get-WindowsReleaseFileNames)
     $stagingDir = Join-Path $InstallDir (".tlbx-install-" + [Guid]::NewGuid().ToString("N"))
     $backupDir = Join-Path $BackupRoot "backup"
     New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
@@ -1605,7 +1642,9 @@ function Install-VerifiedBinarySet
         {
             throw "Verified release is missing $fileName."
         }
-        Copy-Item -LiteralPath $source -Destination (Join-Path $stagingDir $fileName) -Force
+        $stagedPath = Join-Path $stagingDir $fileName
+        New-Item -ItemType Directory -Path (Split-Path -Parent $stagedPath) -Force | Out-Null
+        Copy-Item -LiteralPath $source -Destination $stagedPath -Force
     }
 
     $backedUp = New-Object System.Collections.Generic.List[string]
@@ -1616,14 +1655,18 @@ function Install-VerifiedBinarySet
             $destination = Join-Path $InstallDir $fileName
             if (Test-Path -LiteralPath $destination)
             {
-                Copy-Item -LiteralPath $destination -Destination (Join-Path $backupDir $fileName) -Force
+                $backupPath = Join-Path $backupDir $fileName
+                New-Item -ItemType Directory -Path (Split-Path -Parent $backupPath) -Force | Out-Null
+                Copy-Item -LiteralPath $destination -Destination $backupPath -Force
                 $backedUp.Add($fileName)
             }
         }
 
         foreach ($fileName in $fileNames)
         {
-            Move-Item -LiteralPath (Join-Path $stagingDir $fileName) -Destination (Join-Path $InstallDir $fileName) -Force
+            $destination = Join-Path $InstallDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Move-Item -LiteralPath (Join-Path $stagingDir $fileName) -Destination $destination -Force
             Write-Host "  Installed: $(Join-Path $InstallDir $fileName)" -ForegroundColor Gray
         }
     }
@@ -1635,7 +1678,9 @@ function Install-VerifiedBinarySet
         }
         foreach ($fileName in $backedUp)
         {
-            Copy-Item -LiteralPath (Join-Path $backupDir $fileName) -Destination (Join-Path $InstallDir $fileName) -Force -ErrorAction SilentlyContinue
+            $destination = Join-Path $InstallDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $backupDir $fileName) -Destination $destination -Force -ErrorAction SilentlyContinue
         }
         throw "Installing the verified binary set failed; the previous files were restored. $_"
     }
@@ -1653,13 +1698,15 @@ function Restore-PreviousBinarySet
     )
 
     $backupDir = Join-Path $BackupRoot "backup"
-    foreach ($fileName in @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json"))
+    foreach ($fileName in @(Get-WindowsReleaseFileNames))
     {
         Remove-Item -LiteralPath (Join-Path $InstallDir $fileName) -Force -ErrorAction SilentlyContinue
         $backupPath = Join-Path $backupDir $fileName
         if (Test-Path -LiteralPath $backupPath -PathType Leaf)
         {
-            Copy-Item -LiteralPath $backupPath -Destination (Join-Path $InstallDir $fileName) -Force -ErrorAction Stop
+            $destination = Join-Path $InstallDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Copy-Item -LiteralPath $backupPath -Destination $destination -Force -ErrorAction Stop
         }
     }
 }

@@ -77,7 +77,58 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
-    <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" />
+    <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <!--
+    Native AOT does not reliably carry the ConPTY package's native sidecars into
+    publish output. Keep the package's expected layout explicit so release
+    staging cannot silently ship mthost.exe without its Windows PTY runtime.
+  -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">
+    <None Condition="'$(RuntimeIdentifier)' == 'win-x64'"
+          Include="$(PkgMicrosoft_Windows_Console_ConPTY)\runtimes\win-x64\native\conpty.dll"
+          Link="conpty.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Condition="'$(RuntimeIdentifier)' == 'win-x86'"
+          Include="$(PkgMicrosoft_Windows_Console_ConPTY)\runtimes\win-x86\native\conpty.dll"
+          Link="conpty.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Condition="'$(RuntimeIdentifier)' == 'win-x86'"
+          Include="$(PkgMicrosoft_Windows_Console_ConPTY)\build\native\runtimes\x86\OpenConsole.exe"
+          Link="x86\OpenConsole.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-x86'"
+          Include="$(PkgMicrosoft_Windows_Console_ConPTY)\build\native\runtimes\x64\OpenConsole.exe"
+          Link="x64\OpenConsole.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-x86'"
+          Include="$(PkgMicrosoft_Windows_Console_ConPTY)\build\native\runtimes\arm64\OpenConsole.exe"
+          Link="arm64\OpenConsole.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">
+    <EmbeddedResource Condition="'$(RuntimeIdentifier)' == 'win-x64'"
+                      Include="$(PkgMicrosoft_Windows_Console_ConPTY)\runtimes\win-x64\native\conpty.dll"
+                      LogicalName="tlbx.conpty.conpty.dll" />
+    <EmbeddedResource Condition="'$(RuntimeIdentifier)' == 'win-x86'"
+                      Include="$(PkgMicrosoft_Windows_Console_ConPTY)\runtimes\win-x86\native\conpty.dll"
+                      LogicalName="tlbx.conpty.conpty.dll" />
+    <EmbeddedResource Condition="'$(RuntimeIdentifier)' == 'win-x86'"
+                      Include="$(PkgMicrosoft_Windows_Console_ConPTY)\build\native\runtimes\x86\OpenConsole.exe"
+                      LogicalName="tlbx.conpty.x86.OpenConsole.exe" />
+    <EmbeddedResource Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-x86'"
+                      Include="$(PkgMicrosoft_Windows_Console_ConPTY)\build\native\runtimes\x64\OpenConsole.exe"
+                      LogicalName="tlbx.conpty.x64.OpenConsole.exe" />
+    <EmbeddedResource Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-x86'"
+                      Include="$(PkgMicrosoft_Windows_Console_ConPTY)\build\native\runtimes\arm64\OpenConsole.exe"
+                      LogicalName="tlbx.conpty.arm64.OpenConsole.exe" />
   </ItemGroup>
 
   <ItemGroup>

@@ -131,9 +131,14 @@ $installerAst = [System.Management.Automation.Language.Parser]::ParseInput($wind
 $safetyFunctions = ($installerAst.FindAll({
     param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        $node.Name -in @("Assert-SafeReleaseArchive", "Restore-PreviousBinarySet")
+        $node.Name -in @("Get-WindowsReleaseFileNames", "Assert-SafeReleaseArchive", "Restore-PreviousBinarySet")
 }, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
 Invoke-Expression $safetyFunctions
+$script:ExpectedReleasePlatform = "win-x64"
+$script:WebBinaryName = "mt.exe"
+$script:TtyHostBinaryName = "mthost.exe"
+$script:AgentHostBinaryName = "mtagenthost.exe"
+$script:TmuxShimBinaryName = "mttmux.exe"
 
 $readinessFunctions = ($installerAst.FindAll({
     param($node)
@@ -162,6 +167,17 @@ $safetyRoot = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-installer-safety-" + [
 New-Item -ItemType Directory -Path $safetyRoot | Out-Null
 try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $validArchiveRoot = Join-Path $safetyRoot "valid"
+    New-Item -ItemType Directory -Path (Join-Path $validArchiveRoot "x64"), (Join-Path $validArchiveRoot "arm64") -Force | Out-Null
+    foreach ($fileName in @(Get-WindowsReleaseFileNames) + "SHA256SUMS.txt") {
+        $path = Join-Path $validArchiveRoot $fileName
+        New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+        Set-Content -LiteralPath $path -Value "payload" -NoNewline
+    }
+    $validArchivePath = Join-Path $safetyRoot "valid.zip"
+    Compress-Archive -Path (Join-Path $validArchiveRoot "*") -DestinationPath $validArchivePath
+    Assert-SafeReleaseArchive -Path $validArchivePath
+
     $unsafeArchivePath = Join-Path $safetyRoot "unsafe.zip"
     $unsafeArchive = [System.IO.Compression.ZipFile]::Open($unsafeArchivePath, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -183,8 +199,10 @@ try {
     $script:TtyHostBinaryName = "mthost.exe"
     $script:AgentHostBinaryName = "mtagenthost.exe"
     $script:TmuxShimBinaryName = "mttmux.exe"
-    foreach ($fileName in @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json")) {
-        Set-Content -LiteralPath (Join-Path $installDir $fileName) -Value "new" -NoNewline
+    foreach ($fileName in @(Get-WindowsReleaseFileNames)) {
+        $path = Join-Path $installDir $fileName
+        New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+        Set-Content -LiteralPath $path -Value "new" -NoNewline
     }
     Set-Content -LiteralPath (Join-Path $backupDir $WebBinaryName) -Value "old" -NoNewline
     Restore-PreviousBinarySet -InstallDir $installDir -BackupRoot $backupRoot
@@ -193,6 +211,9 @@ try {
     }
     if (Test-Path -LiteralPath (Join-Path $installDir $TtyHostBinaryName)) {
         throw "PowerShell rollback retained a newly introduced binary without a backup."
+    }
+    if (Test-Path -LiteralPath (Join-Path $installDir "conpty.dll")) {
+        throw "PowerShell rollback retained a newly introduced ConPTY runtime without a backup."
     }
 } finally {
     Remove-Item -LiteralPath $safetyRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -254,6 +275,7 @@ if ($LiveRelease) {
             "Convert-DerEcdsaSignatureToP1363",
             "Test-ReleaseMetadataSignature",
             "Assert-SignedRelease",
+            "Get-WindowsReleaseFileNames",
             "Assert-SafeReleaseArchive"
         )
         $verifierFunctions = ($ast.FindAll({
@@ -262,6 +284,7 @@ if ($LiveRelease) {
         }, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
         Invoke-Expression $verifierFunctions
 
+        $script:ExpectedReleasePlatform = "win-x64"
         Assert-SafeReleaseArchive -Path $archivePath
         $extractDir = Join-Path $tempRoot "extract"
         Expand-Archive -Path $archivePath -DestinationPath $extractDir
@@ -286,6 +309,7 @@ if ($LiveRelease) {
         $x86ArchivePath = Join-Path $tempRoot "release-win-x86.zip"
         Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
             -Uri $x86Asset.browser_download_url -OutFile $x86ArchivePath
+        $script:ExpectedReleasePlatform = "win-x86"
         Assert-SafeReleaseArchive -Path $x86ArchivePath
         $x86ExtractDir = Join-Path $tempRoot "extract-win-x86"
         Expand-Archive -Path $x86ArchivePath -DestinationPath $x86ExtractDir
