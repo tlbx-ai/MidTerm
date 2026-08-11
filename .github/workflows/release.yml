@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  DOTNET_VERSION: '10.0.302'
+  DOTNET_VERSION: '10.0.303'
   NPM_VERSION: '11.18.0'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
