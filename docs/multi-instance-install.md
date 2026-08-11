@@ -39,9 +39,9 @@ Use the normal installer when:
 - the service should stay at the default identity and port
 - you are upgrading an existing normal installation
 
-Do not mix installer families for the same instance. A normal `MidTerm` service
-should be managed by the normal installer. `MidTerm-<name>`,
-`midterm-<name>`, and `ai.tlbx.midterm.<name>` services should be managed by
+Do not mix installer families for the same instance. A normal `tlbx` service
+should be managed by the normal installer. `tlbx-<name>` and
+`ai.tlbx.instance.<name>` services should be managed by
 the multi-instance installer.
 
 ## Platform and architecture support
@@ -95,9 +95,9 @@ For an instance named `alice`, the generated identities are:
 
 | Platform | Service identity |
 | --- | --- |
-| Windows | `MidTerm-alice` |
-| Linux | `midterm-alice` |
-| macOS | `ai.tlbx.midterm.alice` |
+| Windows | `tlbx-alice` |
+| Linux | `tlbx-alice` |
+| macOS | `ai.tlbx.instance.alice` |
 
 The settings directory contains an `instance.json` manifest with the effective
 name, port, bind address, service identity, install directory, settings
@@ -109,19 +109,19 @@ Windows defaults:
 
 | Purpose | Default |
 | --- | --- |
-| Settings root | `%ProgramData%\MidTerm\instances` |
-| Install root | `%ProgramFiles%\MidTerm\instances` |
-| Instance settings | `%ProgramData%\MidTerm\instances\<name>` |
-| Instance binaries | `%ProgramFiles%\MidTerm\instances\<name>` |
+| Settings root | `%ProgramData%\tlbx\instances` |
+| Install root | `%ProgramFiles%\tlbx\instances` |
+| Instance settings | `%ProgramData%\tlbx\instances\<name>` |
+| Instance binaries | `%ProgramFiles%\tlbx\instances\<name>` |
 
 macOS and Linux defaults:
 
 | Purpose | Default |
 | --- | --- |
-| Settings root | `/usr/local/etc/midterm-instances` |
-| Install root | `/usr/local/lib/midterm/instances` |
-| Instance settings | `/usr/local/etc/midterm-instances/<name>` |
-| Instance binaries | `/usr/local/lib/midterm/instances/<name>` |
+| Settings root | `/usr/local/etc/tlbx-instances` |
+| Install root | `/usr/local/lib/tlbx/instances` |
+| Instance settings | `/usr/local/etc/tlbx-instances/<name>` |
+| Instance binaries | `/usr/local/lib/tlbx/instances/<name>` |
 
 These roots are intentionally separate from the normal installer paths. Do not
 point a multi-instance install at the normal service directory.
@@ -149,8 +149,8 @@ Run from an elevated PowerShell session.
 | `-BasePort` | `int` | `2000` | `install`, `plan` | First candidate port when `-Ports` is not provided. Used ports are skipped. |
 | `-Ports` | `int[]` | empty | `install`, `plan`, `update`, `remove` | Explicit ports. Must contain exactly one port per resolved instance name. |
 | `-BindAddress` | `string` | `0.0.0.0` | `install`, `update`, `update-all`, `plan` | Address passed to `mt --bind`. Use `127.0.0.1` for local-only access. |
-| `-RootDir` | `string` | `%ProgramData%\MidTerm\instances` | all | Root for instance settings and manifests. |
-| `-InstallRoot` | `string` | `%ProgramFiles%\MidTerm\instances` | install/update/remove | Root for instance binaries. |
+| `-RootDir` | `string` | `%ProgramData%\tlbx\instances` | all | Root for instance settings and manifests. |
+| `-InstallRoot` | `string` | `%ProgramFiles%\tlbx\instances` | install/update/remove | Root for instance binaries. |
 | `-VersionTag` | `string` | `latest` | install/update/update-all | GitHub release tag, for example `v9.18.0-dev`. |
 | `-AssetPath` | `string` | empty | install/update/update-all | Local zip asset. Overrides GitHub download. |
 | `-PasswordHash` | `string` | empty | install | Precomputed PBKDF2 password hash. Preferred for automated agents. |
@@ -182,8 +182,8 @@ sudo ./install-multi.sh --mode remove --names alice
 | `--base-port` | `N` | `2000` | `install`, `plan` | First candidate port when `--ports` is not provided. Used ports are skipped when `ss` or `lsof` is available. |
 | `--ports` | `p1,p2,p3` | empty | `install`, `plan`, `update`, `remove` | Explicit ports. Must contain exactly one port per resolved instance name. |
 | `--bind` | address | `0.0.0.0` | `install`, `update`, `update-all`, `plan` | Address passed to `mt --bind`. Use `127.0.0.1` for local-only access. |
-| `--root-dir` | path | `/usr/local/etc/midterm-instances` | all | Root for instance settings and manifests. |
-| `--install-root` | path | `/usr/local/lib/midterm/instances` | install/update/remove | Root for instance binaries. |
+| `--root-dir` | path | `/usr/local/etc/tlbx-instances` | all | Root for instance settings and manifests. |
+| `--install-root` | path | `/usr/local/lib/tlbx/instances` | install/update/remove | Root for instance binaries. |
 | `--version-tag` | tag | `latest` | install/update/update-all | GitHub release tag, for example `v9.18.0-dev`. |
 | `--asset-path` | path | empty | install/update/update-all | Local tar.gz asset. Overrides GitHub download. |
 | `--password-hash` | hash | empty | install | Precomputed PBKDF2 password hash. Preferred for automated agents. |
@@ -200,14 +200,16 @@ valid for manual diagnostics.
 
 | Runtime flag | Environment variable | Meaning |
 | --- | --- | --- |
-| `--port <port>` | `MIDTERM_PORT` | HTTPS listener port. |
-| `--bind <address>` | `MIDTERM_BIND` | Listener bind address. |
-| `--settings-dir <path>` | `MIDTERM_SETTINGS_DIR` | Settings, secrets, certs, logs, sessions, update state. |
-| `--service-mode` | `MIDTERM_SERVICE_MODE=true` | Force service-mode paths and secret storage behavior. |
-| `--user-mode` | `MIDTERM_SERVICE_MODE=false` | Force user-mode behavior. Do not use for installed multi-instance services. |
-| `--service-name <name>` | `MIDTERM_SERVICE_NAME` | Windows service identity used by updates and restarts. |
-| `--launchd-label <label>` | `MIDTERM_LAUNCHD_LABEL` | macOS launchd identity used by updates and restarts. |
-| `--systemd-service <name>` | `MIDTERM_SYSTEMD_SERVICE` | Linux systemd unit used by updates and restarts. |
+| `--port <port>` | `TLBX_PORT` | HTTPS listener port. |
+| `--bind <address>` | `TLBX_BIND` | Listener bind address. |
+| `--settings-dir <path>` | `TLBX_SETTINGS_DIR` | Settings, secrets, certs, logs, sessions, update state. |
+| `--service-mode` | `TLBX_SERVICE_MODE=true` | Force service-mode paths and secret storage behavior. |
+| `--user-mode` | `TLBX_SERVICE_MODE=false` | Force user-mode behavior. Do not use for installed multi-instance services. |
+| `--service-name <name>` | `TLBX_SERVICE_NAME` | Windows service identity used by updates and restarts. |
+| `--launchd-label <label>` | `TLBX_LAUNCHD_LABEL` | macOS launchd identity used by updates and restarts. |
+| `--systemd-service <name>` | `TLBX_SYSTEMD_SERVICE` | Linux systemd unit used by updates and restarts. |
+
+The legacy `MIDTERM_*` environment-variable aliases remain accepted for existing automation; when both forms are set, `TLBX_*` wins.
 
 For multi-instance services, always pass `--settings-dir` and `--service-mode`.
 Do not rely on default settings paths, because defaults resolve to the normal
@@ -428,25 +430,25 @@ File system:
 Windows:
 
 ```powershell
-Get-Service MidTerm-alice
-Restart-Service MidTerm-alice
-Stop-Service MidTerm-alice
-Start-Service MidTerm-alice
+Get-Service tlbx-alice
+Restart-Service tlbx-alice
+Stop-Service tlbx-alice
+Start-Service tlbx-alice
 ```
 
 Linux:
 
 ```bash
-systemctl status midterm-alice
-sudo systemctl restart midterm-alice
-sudo journalctl -u midterm-alice -n 200 --no-pager
+systemctl status tlbx-alice
+sudo systemctl restart tlbx-alice
+sudo journalctl -u tlbx-alice -n 200 --no-pager
 ```
 
 macOS:
 
 ```bash
-sudo launchctl print system/ai.tlbx.midterm.alice
-sudo launchctl kickstart -k system/ai.tlbx.midterm.alice
+sudo launchctl print system/ai.tlbx.instance.alice
+sudo launchctl kickstart -k system/ai.tlbx.instance.alice
 sudo log show --predicate 'process == "mt"' --last 10m
 ```
 
@@ -464,7 +466,7 @@ For each instance:
 8. Updating one instance does not change the binary timestamp or version of
    another instance.
 9. Stopping one service does not stop another service.
-10. The normal `MidTerm` service on port `2000` is unchanged unless it was
+10. The normal `tlbx` service on port `2000` is unchanged unless it was
     intentionally part of the plan.
 
 PowerShell endpoint check:
@@ -529,12 +531,16 @@ The multi-instance installer is intentionally separate from the normal
 installer. Do not change these normal-install invariants while working on
 multi-instance behavior:
 
-- default Windows service name remains `MidTerm`
-- default macOS launchd label remains `ai.tlbx.midterm`
-- default Linux service name remains `MidTerm`
+- default Windows service name remains `tlbx`
+- default macOS launchd label remains `ai.tlbx.service`
+- default Linux service name remains `tlbx`
 - default port remains `2000`
 - default service settings paths remain the normal installer paths
 - `install.ps1` and `install.sh` keep their single-instance behavior
+
+The installers automatically keep the legacy names and roots when updating an
+existing MidTerm multi-instance layout; fresh installations use the tlbx names
+shown above.
 
 When changing multi-instance support, verify at least one plan-mode command and
 review changes for accidental edits to the normal installer path.

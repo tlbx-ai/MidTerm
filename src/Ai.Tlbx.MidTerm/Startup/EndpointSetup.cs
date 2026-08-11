@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models;
@@ -267,7 +268,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 SupportsOsc7 = s.SupportsOsc7
             }).ToList();
 
-            var updateResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory, clear: true);
+            var updateResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory);
             var isDevMode = UpdateService.IsDevEnvironment || settings.DevMode;
             var displayVersion = GetDisplayVersion(version);
 
@@ -416,7 +417,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(pemBytes, "application/x-pem-file", "midterm.pem");
+            return Results.File(pemBytes, "application/x-pem-file", "tlbx.pem");
         });
 
         app.MapGet("/api/certificate/download/crt", () =>
@@ -427,7 +428,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(derBytes, "application/x-x509-ca-cert", "midterm.crt");
+            return Results.File(derBytes, "application/x-x509-ca-cert", "tlbx.crt");
         });
 
         app.MapGet("/api/certificate/download/mobileconfig", (HttpContext context) =>
@@ -439,7 +440,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(configBytes, "application/x-apple-aspen-config", "midterm.mobileconfig");
+            return Results.File(configBytes, "application/x-apple-aspen-config", "tlbx.mobileconfig");
         });
 
         app.MapGet("/api/certificate/share-packet", (HttpContext context) =>
@@ -515,13 +516,14 @@ Start-Service -Name $serviceName -ErrorAction Stop
 
         app.MapGet("/api/update/check", async () =>
         {
-            var update = await updateService.CheckForUpdateAsync();
-            return Results.Json(update ?? new UpdateInfo
+            var update = await updateService.CheckForUpdateAsync() ?? new UpdateInfo
             {
                 Available = false,
                 CurrentVersion = updateService.CurrentVersion,
                 LatestVersion = updateService.CurrentVersion
-            }, AppJsonContext.Default.UpdateInfo);
+            };
+            update.LastResult = UpdateService.ReadUpdateResult(settingsService.SettingsDirectory);
+            return Results.Json(update, AppJsonContext.Default.UpdateInfo);
         });
 
         app.MapPost("/api/update/apply", async (string? source) =>
@@ -651,17 +653,21 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(publicSettings, AppJsonContext.Default.MidTermSettingsPublic);
         });
 
-        app.MapPut("/api/settings", (Settings.MidTermSettingsPublic publicSettings) =>
+        IResult SaveSettings(JsonElement payload, bool partial, string method)
         {
             try
             {
                 var currentSettings = settingsService.Load();
                 var previousUpdateChannel = currentSettings.UpdateChannel;
+                var currentPublicSettings = MidTermSettingsPublic.FromSettings(currentSettings);
+                var publicSettings = partial
+                    ? MidTermSettingsPatch.Merge(currentPublicSettings, payload)
+                    : MidTermSettingsPatch.Replace(currentPublicSettings, payload);
                 publicSettings.ApplyTo(currentSettings);
                 if (!string.Equals(previousUpdateChannel, currentSettings.UpdateChannel, StringComparison.Ordinal))
                 {
                     Log.Warn(() =>
-                        $"UpdateChannel changing via PUT /api/settings: {previousUpdateChannel} -> {currentSettings.UpdateChannel}");
+                        $"UpdateChannel changing via {method} /api/settings: {previousUpdateChannel} -> {currentSettings.UpdateChannel}");
                 }
                 settingsService.Save(currentSettings);
                 return Results.Ok();
@@ -672,10 +678,18 @@ Start-Service -Name $serviceName -ErrorAction Stop
             }
             catch (Exception ex)
             {
-                Common.Logging.Log.Exception(ex, "PUT /api/settings");
+                Common.Logging.Log.Exception(ex, $"{method} /api/settings");
                 return Results.Problem($"Failed to save settings: {ex.Message}");
             }
-        });
+        }
+
+        app.MapPut("/api/settings", (JsonElement replacement) =>
+            SaveSettings(replacement, partial: false, "PUT"))
+            .Accepts<MidTermSettingsPublic>("application/json");
+
+        app.MapPatch("/api/settings", (JsonElement patch) =>
+            SaveSettings(patch, partial: true, "PATCH"))
+            .Accepts<JsonElement>("application/json");
 
         app.MapPost("/api/settings/reload", () =>
         {

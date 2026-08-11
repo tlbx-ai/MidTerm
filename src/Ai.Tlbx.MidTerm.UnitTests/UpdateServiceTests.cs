@@ -354,7 +354,8 @@ public sealed class UpdateServiceTests : IDisposable
             Message = "done",
             Details = "ok",
             Timestamp = "2026-02-28T00:00:00Z",
-            LogFile = "update.log"
+            LogFile = "update.log",
+            RollbackAttempted = true
         };
         File.WriteAllText(path, JsonSerializer.Serialize(payload, AppJsonContext.Default.UpdateResult));
 
@@ -365,6 +366,7 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.True(result.Success);
         Assert.Equal("done", result.Message);
         Assert.Equal("ok", result.Details);
+        Assert.True(result.RollbackAttempted);
     }
 
     [Fact]

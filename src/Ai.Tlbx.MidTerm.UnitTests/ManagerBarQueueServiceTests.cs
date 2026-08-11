@@ -126,6 +126,32 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task EnqueuePromptAt_PersistsRecurringPromptProgressAcrossRestart()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        var runAt = _timeProvider.GetUtcNow().AddMinutes(5);
+        await using (var initial = new ManagerBarQueueService(_stateDir, runtime, _timeProvider))
+        {
+            var entry = initial.EnqueuePromptAt(
+                "session-1",
+                new AppServerControlTurnRequest { Text = "check again" },
+                runAt,
+                repeatEveryMs: 60_000,
+                repeatCount: 3);
+
+            Assert.NotNull(entry);
+            Assert.Equal(60_000, entry!.RepeatEveryMs);
+            Assert.Equal(3, entry.RepeatCount);
+        }
+
+        await using var restarted = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        var snapshot = Assert.Single(restarted.GetSnapshot(["session-1"]));
+        Assert.Equal(60_000, snapshot.RepeatEveryMs);
+        Assert.Equal(3, snapshot.RepeatCount);
+        Assert.Equal(runAt, snapshot.NextRunAt);
+    }
+
+    [Fact]
     public async Task SubmitPromptAsync_FastTracksTerminalPromptWhenQueueEmptyAndHeatIsLow()
     {
         var runtime = new FakeRuntime(["session-1"])
@@ -169,6 +195,23 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         Assert.NotNull(entry);
         Assert.Empty(runtime.SentPrompts);
         Assert.Single(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task SubmitPromptAsync_QueueInAnotherSessionDoesNotBlockImmediateDispatch()
+    {
+        var runtime = new FakeRuntime(["session-1", "session-2"]) { CurrentHeat = 0.1 };
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.EnqueuePrompt("session-1", new AppServerControlTurnRequest { Text = "later" });
+
+        var (accepted, entry) = await service.SubmitPromptAsync(
+            "session-2",
+            new AppServerControlTurnRequest { Text = "now" });
+
+        Assert.True(accepted);
+        Assert.Null(entry);
+        Assert.Equal(["now"], runtime.SentPrompts);
+        Assert.Single(service.GetSnapshot(["session-1", "session-2"]));
     }
 
     [Fact]
@@ -457,6 +500,100 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ProcessLoop_RearmsRecurringPromptUntilConfiguredRunCount()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.Start();
+
+        service.EnqueuePromptAt(
+            "session-1",
+            new AppServerControlTurnRequest { Text = "recurring status" },
+            _timeProvider.GetUtcNow().AddSeconds(1),
+            repeatEveryMs: 2_000,
+            repeatCount: 2);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await Task.Delay(700);
+
+        Assert.Equal(["recurring status"], runtime.SentPrompts);
+        var rearmed = Assert.Single(service.GetSnapshot(["session-1"]));
+        Assert.Equal(1, rearmed.CompletedCycles);
+        Assert.NotNull(rearmed.NextRunAt);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        await Task.Delay(700);
+
+        Assert.Equal(["recurring status", "recurring status"], runtime.SentPrompts);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public async Task ProcessLoop_RetainsFailedOccurrenceAndRetriesWithoutAdvancing()
+    {
+        var runtime = new FakeRuntime(["session-1"]) { SendFailuresRemaining = 1 };
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.Start();
+
+        service.EnqueuePromptAt(
+            "session-1",
+            new AppServerControlTurnRequest { Text = "retry me" },
+            _timeProvider.GetUtcNow().AddSeconds(1));
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await Task.Delay(700);
+
+        Assert.Empty(runtime.SentPrompts);
+        var retained = Assert.Single(service.GetSnapshot(["session-1"]));
+        Assert.Equal(0, retained.CompletedCycles);
+        Assert.Equal("pendingInterval", retained.Phase);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+        await Task.Delay(700);
+
+        Assert.Equal(["retry me"], runtime.SentPrompts);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
+    public void ComputeNextScheduleTime_UsesConfiguredWallClockZoneAndSkipsMissingDstTime()
+    {
+        var berlin = FindBerlinTimeZone();
+        var schedule = new[]
+        {
+            new ManagerBarScheduleEntry { TimeOfDay = "02:30", Repeat = "daily" }
+        };
+
+        var next = ManagerBarQueueService.ComputeNextScheduleTime(
+            schedule,
+            DateTimeOffset.Parse("2026-03-29T00:00:00Z", CultureInfo.InvariantCulture),
+            berlin);
+
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-03-30T00:30:00Z", CultureInfo.InvariantCulture),
+            next?.ToUniversalTime());
+    }
+
+    [Fact]
+    public void ComputeNextScheduleTime_SelectsRemainingAmbiguousDstOccurrence()
+    {
+        var berlin = FindBerlinTimeZone();
+        var schedule = new[]
+        {
+            new ManagerBarScheduleEntry { TimeOfDay = "02:30", Repeat = "daily" }
+        };
+
+        var next = ManagerBarQueueService.ComputeNextScheduleTime(
+            schedule,
+            DateTimeOffset.Parse("2026-10-25T00:45:00Z", CultureInfo.InvariantCulture),
+            berlin);
+
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-10-25T01:30:00Z", CultureInfo.InvariantCulture),
+            next?.ToUniversalTime());
+    }
+
+    [Fact]
     public async Task ProcessLoop_WaitsForAppServerControlTurnToReturnBeforeSendingQueuedTurn()
     {
         var runtime = new FakeRuntime(["session-1"])
@@ -512,6 +649,12 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         };
     }
 
+    private static TimeZoneInfo FindBerlinTimeZone()
+    {
+        return TimeZoneInfo.FindSystemTimeZoneById(
+            OperatingSystem.IsWindows() ? "W. Europe Standard Time" : "Europe/Berlin");
+    }
+
     private sealed class FakeRuntime : IManagerBarQueueRuntime
     {
         private readonly HashSet<string> _sessionIds;
@@ -519,6 +662,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         public DateTimeOffset? LastOutputAt { get; set; }
         public bool UsesTurnQueueValue { get; set; }
         public bool TurnQueueReady { get; set; } = true;
+        public int SendFailuresRemaining { get; set; }
         public List<string> SentPrompts { get; } = [];
         public List<AppServerControlTurnRequest> SentTurns { get; } = [];
 
@@ -558,12 +702,24 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         public Task SendPromptAsync(string sessionId, string prompt, CancellationToken cancellationToken)
         {
+            if (SendFailuresRemaining > 0)
+            {
+                SendFailuresRemaining -= 1;
+                throw new InvalidOperationException("synthetic send failure");
+            }
+
             SentPrompts.Add(prompt);
             return Task.CompletedTask;
         }
 
         public Task SendTurnAsync(string sessionId, AppServerControlTurnRequest request, CancellationToken cancellationToken)
         {
+            if (SendFailuresRemaining > 0)
+            {
+                SendFailuresRemaining -= 1;
+                throw new InvalidOperationException("synthetic send failure");
+            }
+
             if (!UsesTurnQueueValue)
             {
                 if (!string.IsNullOrWhiteSpace(request.Text))

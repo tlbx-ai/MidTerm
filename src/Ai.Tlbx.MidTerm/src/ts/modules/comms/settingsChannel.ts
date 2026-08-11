@@ -9,7 +9,12 @@ import type { MidTermSettingsPublic, UpdateInfo } from '../../types';
 import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
 import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
-import { $currentSettings, $updateInfo, $settingsWsConnected } from '../../stores';
+import {
+  $currentSettings,
+  $updateInfo,
+  $settingsWsConnected,
+  areJsonLikeEqual,
+} from '../../stores';
 import { applyReceivedSettings } from '../settings/persistence';
 import { handleUpdateInfo } from '../updating/checker';
 
@@ -30,20 +35,24 @@ let settingsWs: WebSocket | null = null;
  * Automatically reconnects with exponential backoff on disconnect.
  */
 export function connectSettingsWebSocket(): void {
+  settingsReconnect.cancel();
   closeWebSocket(settingsWs, (ws) => {
     settingsWs = ws;
   });
+  $settingsWsConnected.set(false);
 
   const ws = new WebSocket(createWsUrl('/ws/settings'));
   settingsWs = ws;
 
   ws.onopen = () => {
+    if (settingsWs !== ws) return;
     settingsReconnect.reset();
     $settingsWsConnected.set(true);
     log.info(() => 'Settings WebSocket connected');
   };
 
   ws.onmessage = (event) => {
+    if (settingsWs !== ws) return;
     try {
       const message = JSON.parse(event.data as string) as SettingsWsMessage;
       handleMessage(message);
@@ -54,6 +63,7 @@ export function connectSettingsWebSocket(): void {
   };
 
   ws.onclose = (event) => {
+    if (settingsWs !== ws) return;
     $settingsWsConnected.set(false);
     log.info(() => 'Settings WebSocket disconnected');
     if (handleAuthenticatedWebSocketClose(event)) {
@@ -77,10 +87,14 @@ export function connectSettingsWebSocket(): void {
 
 function handleMessage(message: SettingsWsMessage): void {
   if (message.type === 'settings' && message.settings) {
-    $currentSettings.set(message.settings);
+    if (areJsonLikeEqual(message.settings, $currentSettings.get())) {
+      return;
+    }
     applyReceivedSettings(message.settings);
   } else if (message.type === 'update' && message.update) {
-    $updateInfo.set(message.update);
+    if (areJsonLikeEqual(message.update, $updateInfo.get())) {
+      return;
+    }
     handleUpdateInfo(message.update);
   }
 }

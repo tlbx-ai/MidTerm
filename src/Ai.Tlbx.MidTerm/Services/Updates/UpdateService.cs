@@ -1239,7 +1239,12 @@ public sealed partial class UpdateService : IDisposable
                 currentVersionJsonPath,
                 backupVersionJsonPath,
                 writeLog);
-            WriteUpdateResult(artifacts, success: false, "Failed to install update", ex.Message);
+            WriteUpdateResult(
+                artifacts,
+                success: false,
+                "Failed to install update",
+                ex.Message,
+                rollbackAttempted: true);
             Log.Error(() => $"Failed to apply Linux web-only service update in-process: {ex.Message}");
             return (false, $"Failed to install update: {ex.Message}");
         }
@@ -1331,7 +1336,12 @@ public sealed partial class UpdateService : IDisposable
         {
             writeLog($"Failed to apply Unix user update in-process: {ex.Message}", "ERROR");
             TryRestoreUnixFiles(replacedFiles, writeLog);
-            WriteUpdateResult(artifacts, success: false, "Failed to install update", ex.Message);
+            WriteUpdateResult(
+                artifacts,
+                success: false,
+                "Failed to install update",
+                ex.Message,
+                rollbackAttempted: true);
             return (false, $"Failed to install update: {ex.Message}");
         }
         finally
@@ -1485,7 +1495,6 @@ public sealed partial class UpdateService : IDisposable
         }
 
         try { File.WriteAllText(artifacts.LogPath, string.Empty); } catch { }
-        try { File.Delete(artifacts.ResultPath); } catch { }
     }
 
     private static void AppendUpdateLog(string logPath, string message, string level = "INFO")
@@ -1506,7 +1515,12 @@ public sealed partial class UpdateService : IDisposable
         }
     }
 
-    private static void WriteUpdateResult(UpdateArtifacts artifacts, bool success, string message, string details = "")
+    private static void WriteUpdateResult(
+        UpdateArtifacts artifacts,
+        bool success,
+        string message,
+        string details = "",
+        bool rollbackAttempted = false)
     {
         try
         {
@@ -1516,12 +1530,13 @@ public sealed partial class UpdateService : IDisposable
                 Message = message,
                 Details = details,
                 Timestamp = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-                LogFile = artifacts.LogPath
+                LogFile = artifacts.LogPath,
+                RollbackAttempted = rollbackAttempted
             };
 
-            File.WriteAllText(
-                artifacts.ResultPath,
-                JsonSerializer.Serialize(result, AppJsonContext.Default.UpdateResult));
+            var tempPath = artifacts.ResultPath + ".new";
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(result, AppJsonContext.Default.UpdateResult));
+            File.Move(tempPath, artifacts.ResultPath, overwrite: true);
         }
         catch (Exception ex)
         {

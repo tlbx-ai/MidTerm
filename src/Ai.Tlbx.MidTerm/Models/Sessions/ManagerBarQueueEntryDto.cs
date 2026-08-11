@@ -14,6 +14,8 @@ public sealed class ManagerBarQueueEntryDto
     public int NextPromptIndex { get; set; }
     public int CompletedCycles { get; set; }
     public DateTimeOffset? NextRunAt { get; set; }
+    public int? RepeatEveryMs { get; set; }
+    public int? RepeatCount { get; set; }
     public DateTimeOffset? IgnoreHeatUntil { get; set; }
     public bool AwaitingHeatRise { get; set; }
 }

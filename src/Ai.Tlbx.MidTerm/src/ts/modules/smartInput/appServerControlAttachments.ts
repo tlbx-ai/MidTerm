@@ -351,6 +351,23 @@ export function clipboardDataMayContainAppServerControlComposerImage(
   return getClipboardImageSourceUrls(clipboardData).some((url) => looksLikeClipboardImageUrl(url));
 }
 
+/**
+ * Android keyboards can expose an image paste as an empty/data-poor paste event (or only an
+ * object-replacement character). The paste gesture is the permission-bearing user action, so on
+ * mobile these events should still reach the async Clipboard API image fallback.
+ */
+export function shouldProbeMobileClipboardForComposerImage(
+  clipboardData: ClipboardTransferData | null | undefined,
+  isMobile: boolean,
+): boolean {
+  if (!isMobile) {
+    return false;
+  }
+
+  const plainText = clipboardData?.getData('text/plain') ?? '';
+  return plainText.length === 0 || plainText.includes(CLIPBOARD_OBJECT_REPLACEMENT);
+}
+
 export async function extractAppServerControlComposerPasteImageFiles(
   clipboardData: ClipboardTransferData | null | undefined,
   readClipboardItems: ClipboardReadImageProvider | null = getDefaultClipboardReadImageProvider(),
@@ -411,8 +428,9 @@ export async function extractAppServerControlComposerPasteParts(
     clipboardData,
     readClipboardItems,
   );
+  const fallbackText = plainText.split(CLIPBOARD_OBJECT_REPLACEMENT).join('');
   return [
-    ...(plainText ? [{ kind: 'text' as const, text: plainText }] : []),
+    ...(fallbackText ? [{ kind: 'text' as const, text: fallbackText }] : []),
     ...imageFiles.map((file) => ({ kind: 'image' as const, file })),
   ];
 }

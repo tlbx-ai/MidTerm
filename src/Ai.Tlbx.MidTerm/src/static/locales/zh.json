@@ -370,6 +370,7 @@
   "update.applying": "应用中...",
   "update.lastUpdate": "上次更新：",
   "update.success": "成功",
+  "update.rollbackAttempted": "已尝试回滚。详情请查看更新日志。",
   "update.viewUpdateLog": "查看更新日志",
   "update.noLogFound": "未找到更新日志",
   "update.copyLog": "复制日志",

@@ -18662,12 +18662,12 @@ body.keyboard-visible .adaptive-footer-dock {
   max-height: 100%;
 }
 
-body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable both-edges;
+body.keyboard-visible
+  .adaptive-footer-dock[data-device='mobile']:not([data-composer-expanded='true']) {
+  overflow: visible;
   scroll-padding-top: 6px;
-  scroll-padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: 0;
+  padding-bottom: 2px;
 }
 
 .adaptive-footer-dock[data-device='mobile'] .smart-input-row {
@@ -18731,7 +18731,7 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .manager-bar {
 }
 
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {
-  max-height: min(24vh, 168px);
+  max-height: min(46dvh, 320px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -18862,11 +18862,13 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
 @media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .adaptive-footer-dock {
+    --command-bay-control-height-mobile: 40px;
     --command-bay-control-height: var(--command-bay-control-height-mobile);
-    padding: 4px;
-    padding-left: calc(4px + env(safe-area-inset-left, 0px));
-    padding-right: calc(4px + env(safe-area-inset-right, 0px));
-    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    --command-bay-gap: 4px;
+    padding: 2px;
+    padding-left: calc(2px + env(safe-area-inset-left, 0px));
+    padding-right: calc(2px + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px));
     background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -18877,19 +18879,74 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   }
 
   .smart-input-row.smart-input-row-tools-open {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .smart-input-row.smart-input-row-tools-open .smart-input-tools-surface:not([hidden]) {
-    position: static;
-    order: -1;
-    flex: 1 0 100%;
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + var(--command-bay-gap));
+    z-index: 4;
     width: 100%;
     min-width: 0;
     max-width: none;
-    max-height: min(28vh, 180px);
+    max-height: min(46dvh, 320px);
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  .smart-input-tools-surface .smart-input-tools-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .smart-input-tools-surface .smart-input-tool-button {
+    min-height: var(--command-bay-control-height);
+    padding: 0 9px;
+  }
+
+  .smart-input-mobile-touch-host {
+    width: 100%;
+    margin-top: var(--command-bay-gap);
+  }
+
+  .smart-input-mobile-touch-host[hidden] {
+    display: none !important;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded {
+    position: static;
+    display: flex !important;
+    width: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-dismiss {
+    display: none;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-bar-main {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
+    gap: var(--command-bay-gap);
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-group {
+    display: contents;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-key {
+    width: auto;
+    min-width: 38px;
+    min-height: 38px;
+    margin-left: 0;
+    padding: 6px 8px;
+    border-radius: 8px;
   }
 
   .smart-input-editor {

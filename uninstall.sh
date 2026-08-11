@@ -1,5 +1,5 @@
 #!/bin/bash
-# MidTerm macOS/Linux Uninstaller
+# tlbx macOS/Linux Uninstaller
 # Usage: curl -fsSL https://get.tlbx.ai/uninstall.sh | bash
 
 set -u
@@ -15,17 +15,17 @@ bootstrap_download() {
     if command_exists curl; then
         curl --fail --silent --show-error --location \
             --retry 3 --retry-delay 1 --retry-all-errors \
-            -H "User-Agent: MidTerm-Uninstaller" \
+            -H "User-Agent: tlbx-Uninstaller" \
             "$url" -o "$dest"
         return
     fi
 
     if command_exists wget; then
-        wget -qO "$dest" --user-agent="MidTerm-Uninstaller" "$url"
+        wget -qO "$dest" --user-agent="tlbx-Uninstaller" "$url"
         return
     fi
 
-    echo "Error: MidTerm uninstaller requires 'curl' or 'wget' to download files." >&2
+    echo "Error: tlbx uninstaller requires 'curl' or 'wget' to download files." >&2
     echo "Install one of them and run the uninstaller again." >&2
     exit 1
 }
@@ -43,17 +43,22 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "$SCRIPT_PATH")" && pwd)
 SCRIPT_PATH="$SCRIPT_DIR/$(basename "$SCRIPT_PATH")"
 
-SERVICE_NAME="MidTerm"
+SERVICE_NAME="tlbx"
+LEGACY_SERVICE_NAME="MidTerm"
 OLD_HOST_SERVICE_NAME="MidTerm-host"
-LAUNCHD_LABEL="ai.tlbx.midterm"
+LAUNCHD_LABEL="ai.tlbx.service"
+LEGACY_LAUNCHD_LABEL="ai.tlbx.midterm"
 OLD_LAUNCHD_LABEL="com.aitlbx.MidTerm"
 OLD_LAUNCHD_HOST_LABEL="com.aitlbx.MidTerm-host"
 
-UNIX_SERVICE_SETTINGS_DIR="/usr/local/etc/midterm"
+UNIX_SERVICE_SETTINGS_DIR="/usr/local/etc/tlbx"
+LEGACY_SERVICE_SETTINGS_DIR="/usr/local/etc/midterm"
 UNIX_SERVICE_LOG_DIR="/usr/local/var/log"
 UNIX_SERVICE_BIN_DIR="/usr/local/bin"
-UNIX_SERVICE_LIB_DIR="/usr/local/lib/MidTerm"
-LINUX_CERT_PATH="/usr/local/share/ca-certificates/midterm.crt"
+UNIX_SERVICE_LIB_DIR="/usr/local/lib/tlbx"
+LEGACY_SERVICE_LIB_DIR="/usr/local/lib/MidTerm"
+LINUX_CERT_PATH="/usr/local/share/ca-certificates/tlbx.crt"
+LEGACY_LINUX_CERT_PATH="/usr/local/share/ca-certificates/midterm.crt"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -67,20 +72,19 @@ INSTALLING_USER="${INSTALLING_USER:-}"
 INSTALLING_HOME="${INSTALLING_HOME:-}"
 ELEVATED=false
 
-print_midterm_banner() {
+print_tlbx_banner() {
     echo ""
-    echo -e "            ${WHITE}//   \\\\${NC}"
-    echo -e "           ${WHITE}//     \\\\         __  __ _     _ _____${NC}"
-    echo -e "          ${WHITE}//       \\\\       |  \\/  (_) __| |_   _|__ _ __ _ __ ___${NC}"
-    echo -e "         ${WHITE}//  ( ${CYAN}·${WHITE} )  \\\\      | |\\/| | |/ _\` | | |/ _ \\\\ '__| '_ \` _ \\\\${NC}"
-    echo -e "        ${WHITE}//           \\\\     | |  | | | (_| | | |  __/ |  | | | | | |${NC}"
-    echo -e "       ${WHITE}//             \\\\    |_|  |_|_|\\__,_| |_|\\___|_|  |_| |_| |_|${NC}"
-    echo -e "      ${WHITE}//               \\\\   ${GREEN}tlbx.ai - https://github.com/tlbx-ai/tlbx${NC}"
+    echo -e "       ${WHITE}_   _ _${NC}"
+    echo -e "      ${WHITE}| |_| | |__  __  __${NC}"
+    echo -e "      ${WHITE}| __| | '_ \\\\ \\\\ \\/ /${NC}"
+    echo -e "      ${WHITE}| |_| | |_) | >  <${NC}"
+    echo -e "       ${WHITE}\\\\__|_|_.__/ /_/\\\\_\\\\${NC}"
+    echo -e "      ${GREEN}tlbx.ai - https://github.com/tlbx-ai/tlbx${NC}"
     echo ""
 }
 
 print_header() {
-    print_midterm_banner
+    print_tlbx_banner
     echo -e "  ${CYAN}Uninstaller${NC}"
     echo ""
 }
@@ -229,9 +233,12 @@ detect_user_traces() {
     path_exists "$UNIX_USER_BIN_DIR/mt" ||
         path_exists "$UNIX_USER_BIN_DIR/mthost" ||
         path_exists "$UNIX_USER_BIN_DIR/mtagenthost" ||
+        path_exists "$UNIX_USER_BIN_DIR/mttmux" ||
         path_exists "$UNIX_USER_BIN_DIR/mt-host" ||
         path_exists "$UNIX_USER_LIB_DIR" ||
-        path_exists "$UNIX_USER_SETTINGS_DIR"
+        path_exists "$LEGACY_USER_LIB_DIR" ||
+        path_exists "$UNIX_USER_SETTINGS_DIR" ||
+        path_exists "$LEGACY_USER_SETTINGS_DIR"
 }
 
 detect_temp_traces() {
@@ -256,31 +263,37 @@ detect_service_traces() {
     path_exists "$UNIX_SERVICE_BIN_DIR/mt" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mthost" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mtagenthost" ||
+        path_exists "$UNIX_SERVICE_BIN_DIR/mttmux" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/mt-host" ||
         path_exists "$UNIX_SERVICE_BIN_DIR/version.json" ||
         path_exists "$UNIX_SERVICE_LIB_DIR" ||
+        path_exists "$LEGACY_SERVICE_LIB_DIR" ||
         path_exists "$UNIX_SERVICE_SETTINGS_DIR" ||
+        path_exists "$LEGACY_SERVICE_SETTINGS_DIR" ||
+        path_exists "$UNIX_SERVICE_LOG_DIR/tlbx.log" ||
         path_exists "$UNIX_SERVICE_LOG_DIR/MidTerm.log" ||
         path_exists "$UNIX_SERVICE_LOG_DIR/update.log" ||
         path_exists "$UNIX_SERVICE_LOG_DIR/data" ||
         path_exists "$UNIX_SERVICE_LOG_DIR/midterm-backgrounds" ||
         path_exists "/etc/systemd/system/${SERVICE_NAME}.service" ||
+        path_exists "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service" ||
         path_exists "/etc/systemd/system/${OLD_HOST_SERVICE_NAME}.service" ||
         path_exists "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" ||
+        path_exists "/Library/LaunchDaemons/${LEGACY_LAUNCHD_LABEL}.plist" ||
         path_exists "/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist" ||
         path_exists "/Library/LaunchDaemons/${OLD_LAUNCHD_HOST_LABEL}.plist"
 }
 
 detect_system_trust_traces() {
     if [ "$(uname -s)" = "Darwin" ]; then
-        command_exists security && security find-certificate -a -c ai.tlbx.midterm /Library/Keychains/System.keychain >/dev/null 2>&1
+        command_exists security && { security find-certificate -a -c tlbx /Library/Keychains/System.keychain >/dev/null 2>&1 || security find-certificate -a -c ai.tlbx.midterm /Library/Keychains/System.keychain >/dev/null 2>&1; }
         return
     fi
 
-    path_exists "$LINUX_CERT_PATH"
+    path_exists "$LINUX_CERT_PATH" || path_exists "$LEGACY_LINUX_CERT_PATH"
 }
 
-stop_midterm_binary_processes() {
+stop_tlbx_binary_processes() {
     local pattern
     local path
     local pids=""
@@ -316,6 +329,8 @@ stop_service_processes() {
         if command_exists launchctl; then
             launchctl bootout system/"$LAUNCHD_LABEL" >/dev/null 2>&1 || \
                 launchctl unload "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" >/dev/null 2>&1 || true
+            launchctl bootout system/"$LEGACY_LAUNCHD_LABEL" >/dev/null 2>&1 || \
+                launchctl unload "/Library/LaunchDaemons/${LEGACY_LAUNCHD_LABEL}.plist" >/dev/null 2>&1 || true
             launchctl bootout system/"$OLD_LAUNCHD_LABEL" >/dev/null 2>&1 || \
                 launchctl unload "/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist" >/dev/null 2>&1 || true
             launchctl bootout system/"$OLD_LAUNCHD_HOST_LABEL" >/dev/null 2>&1 || \
@@ -398,6 +413,7 @@ stop_service_processes() {
             }
 
             stop_linux_unit "$SERVICE_NAME"
+            stop_linux_unit "$LEGACY_SERVICE_NAME"
             stop_linux_unit "$OLD_HOST_SERVICE_NAME"
         fi
     fi
@@ -414,11 +430,16 @@ remove_system_trust() {
             [ -z "$cert_hash" ] && continue
             security delete-certificate -Z "$cert_hash" -t /Library/Keychains/System.keychain >/dev/null 2>&1 || true
         done < <(security find-certificate -a -Z -c ai.tlbx.midterm /Library/Keychains/System.keychain 2>/dev/null | sed -n 's/^SHA-256 hash: //p')
+        while IFS= read -r cert_hash; do
+            [ -z "$cert_hash" ] && continue
+            security delete-certificate -Z "$cert_hash" -t /Library/Keychains/System.keychain >/dev/null 2>&1 || true
+        done < <(security find-certificate -a -Z -c tlbx /Library/Keychains/System.keychain 2>/dev/null | sed -n 's/^SHA-256 hash: //p')
 
         return 0
     fi
 
     remove_path "$LINUX_CERT_PATH" || true
+    remove_path "$LEGACY_LINUX_CERT_PATH" || true
     if command_exists update-ca-certificates; then
         update-ca-certificates >/dev/null 2>&1 || true
     fi
@@ -427,17 +448,21 @@ remove_system_trust() {
 cleanup_user_scope() {
     print_info "Cleaning user install for $INSTALLING_USER..."
 
-    stop_midterm_binary_processes \
+    stop_tlbx_binary_processes \
         "$UNIX_USER_BIN_DIR/mt" \
         "$UNIX_USER_BIN_DIR/mthost" \
-        "$UNIX_USER_BIN_DIR/mtagenthost" || true
+        "$UNIX_USER_BIN_DIR/mtagenthost" \
+        "$UNIX_USER_BIN_DIR/mttmux" || true
 
     remove_path "$UNIX_USER_BIN_DIR/mt" || true
     remove_path "$UNIX_USER_BIN_DIR/mthost" || true
     remove_path "$UNIX_USER_BIN_DIR/mtagenthost" || true
+    remove_path "$UNIX_USER_BIN_DIR/mttmux" || true
     remove_path "$UNIX_USER_BIN_DIR/mt-host" || true
     remove_path "$UNIX_USER_LIB_DIR" || true
+    remove_path "$LEGACY_USER_LIB_DIR" || true
     remove_path "$UNIX_USER_SETTINGS_DIR" || true
+    remove_path "$LEGACY_USER_SETTINGS_DIR" || true
 
     while IFS= read -r root; do
         cleanup_temp_root "$root"
@@ -448,25 +473,32 @@ cleanup_service_scope() {
     print_info "Cleaning system install..."
 
     stop_service_processes
-    stop_midterm_binary_processes \
+    stop_tlbx_binary_processes \
         "$UNIX_SERVICE_BIN_DIR/mt" \
         "$UNIX_SERVICE_BIN_DIR/mthost" \
         "$UNIX_SERVICE_BIN_DIR/mtagenthost" \
+        "$UNIX_SERVICE_BIN_DIR/mttmux" \
         "$UNIX_SERVICE_SETTINGS_DIR/mtagenthost" || true
 
     remove_path "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" || true
+    remove_path "/Library/LaunchDaemons/${LEGACY_LAUNCHD_LABEL}.plist" || true
     remove_path "/Library/LaunchDaemons/${OLD_LAUNCHD_LABEL}.plist" || true
     remove_path "/Library/LaunchDaemons/${OLD_LAUNCHD_HOST_LABEL}.plist" || true
     remove_path "/etc/systemd/system/${SERVICE_NAME}.service" || true
+    remove_path "/etc/systemd/system/${LEGACY_SERVICE_NAME}.service" || true
     remove_path "/etc/systemd/system/${OLD_HOST_SERVICE_NAME}.service" || true
 
     remove_path "$UNIX_SERVICE_BIN_DIR/mt" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mthost" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mtagenthost" || true
+    remove_path "$UNIX_SERVICE_BIN_DIR/mttmux" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/mt-host" || true
     remove_path "$UNIX_SERVICE_BIN_DIR/version.json" || true
     remove_path "$UNIX_SERVICE_LIB_DIR" || true
+    remove_path "$LEGACY_SERVICE_LIB_DIR" || true
     remove_path "$UNIX_SERVICE_SETTINGS_DIR" || true
+    remove_path "$LEGACY_SERVICE_SETTINGS_DIR" || true
+    remove_path "$UNIX_SERVICE_LOG_DIR/tlbx.log" || true
     remove_path "$UNIX_SERVICE_LOG_DIR/MidTerm.log" || true
     remove_path "$UNIX_SERVICE_LOG_DIR/update.log" || true
     remove_path "$UNIX_SERVICE_LOG_DIR/data" || true
@@ -476,6 +508,7 @@ cleanup_service_scope() {
 
     if [ "$(uname -s)" != "Darwin" ] && command_exists systemctl; then
         systemctl reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
+        systemctl reset-failed "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
         systemctl reset-failed "$OLD_HOST_SERVICE_NAME" >/dev/null 2>&1 || true
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
@@ -519,8 +552,10 @@ done
 resolve_user_context
 
 UNIX_USER_BIN_DIR="$INSTALLING_HOME/.local/bin"
-UNIX_USER_LIB_DIR="$INSTALLING_HOME/.local/lib/MidTerm"
-UNIX_USER_SETTINGS_DIR="$INSTALLING_HOME/.midterm"
+UNIX_USER_LIB_DIR="$INSTALLING_HOME/.local/lib/tlbx"
+LEGACY_USER_LIB_DIR="$INSTALLING_HOME/.local/lib/MidTerm"
+UNIX_USER_SETTINGS_DIR="$INSTALLING_HOME/.tlbx"
+LEGACY_USER_SETTINGS_DIR="$INSTALLING_HOME/.midterm"
 
 print_header
 print_info "User context: $INSTALLING_USER ($INSTALLING_HOME)"
@@ -550,7 +585,7 @@ print_info "Detected trusted certificate traces: $SYSTEM_TRUST_TRACES"
 
 if [ "$USER_TRACES" = false ] && [ "$TEMP_TRACES" = false ] && [ "$SERVICE_TRACES" = false ] && [ "$SYSTEM_TRUST_TRACES" = false ]; then
     echo ""
-    print_success "No known MidTerm installation traces were found."
+    print_success "No known tlbx installation traces were found."
     exit 0
 fi
 
@@ -561,4 +596,4 @@ if [ "$SERVICE_TRACES" = true ] || [ "$SYSTEM_TRUST_TRACES" = true ]; then
 fi
 
 echo ""
-print_success "MidTerm uninstall complete."
+print_success "tlbx uninstall complete."

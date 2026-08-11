@@ -11,4 +11,5 @@ public sealed class UpdateResult
     public string Details { get; set; } = "";
     public string Timestamp { get; set; } = "";
     public string LogFile { get; set; } = "";
+    public bool RollbackAttempted { get; set; }
 }

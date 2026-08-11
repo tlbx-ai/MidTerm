@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionTerminals } from '../../state';
 import {
+  observeMobileVerticalViewportChange,
+  rememberCurrentMobileViewportSnapshot,
   revealMobileStableTerminalCursor,
   resumeMobileStableTerminalCursorFollowing,
   setMobileVerticalStability,
@@ -100,5 +102,13 @@ describe('mobile terminal vertical stability', () => {
 
     expect(state.container.dataset.mobileCursorFollowing).toBe('true');
     expect(state.container.scrollTop).toBe(0);
+  });
+
+  it('classifies a one-pixel keyboard height change as vertical-only', () => {
+    rememberCurrentMobileViewportSnapshot();
+    const viewport = window.visualViewport as VisualViewport;
+    Object.defineProperty(viewport, 'height', { configurable: true, value: 429 });
+
+    expect(observeMobileVerticalViewportChange()).toBe(true);
   });
 });

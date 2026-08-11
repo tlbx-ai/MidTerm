@@ -642,9 +642,14 @@ jobs:
           Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
           Copy-Item src/version.json "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" "staging/$rid/"
           $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
             Copy-Item $mthostPath "staging/$rid/"
+            ./scripts/copy-windows-conpty-runtime.ps1 `
+              -SourceDir (Split-Path -Parent $mthostPath) `
+              -DestinationDir "staging/$rid" `
+              -Rid $rid
           } else {
             Write-Host "mthost.exe not found for $rid; continuing with web-only artifact set"
           }
@@ -654,13 +659,12 @@ jobs:
         shell: pwsh
         run: |
           $rid = '${{ matrix.rid }}'
-          $files = @("staging/$rid/mt.exe", "staging/$rid/mtagenthost.exe", "staging/$rid/mttmux.exe")
-          if (Test-Path "staging/$rid/mthost.exe") {
-            $files += "staging/$rid/mthost.exe"
-          }
-          $hashes = Get-ChildItem $files | ForEach-Object {
+          $root = (Resolve-Path "staging/$rid").Path
+          $files = Get-ChildItem $root -Recurse -File | Where-Object Name -NotIn @("version.json", "SHA256SUMS.txt")
+          $hashes = $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)"
+            $relativePath = [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/')
+            "$hash  $relativePath"
           }
           $hashes | Set-Content "staging/$rid/SHA256SUMS.txt"
           Write-Host "=== $rid ==="
@@ -743,9 +747,14 @@ jobs:
           Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
           Copy-Item src/version.json "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" "staging/$rid/"
           $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
             Copy-Item $mthostPath "staging/$rid/"
+            ./scripts/copy-windows-conpty-runtime.ps1 `
+              -SourceDir (Split-Path -Parent $mthostPath) `
+              -DestinationDir "staging/$rid" `
+              -Rid $rid
           } else {
             Write-Host "mthost.exe not found for $rid; continuing with web-only artifact set"
           }
@@ -789,13 +798,12 @@ jobs:
         shell: pwsh
         run: |
           $rid = '${{ matrix.rid }}'
-          $files = @("staging/$rid/mt.exe", "staging/$rid/mtagenthost.exe", "staging/$rid/mttmux.exe")
-          if (Test-Path "staging/$rid/mthost.exe") {
-            $files += "staging/$rid/mthost.exe"
-          }
-          $hashes = Get-ChildItem $files | ForEach-Object {
+          $root = (Resolve-Path "staging/$rid").Path
+          $files = Get-ChildItem $root -Recurse -File | Where-Object Name -NotIn @("version.json", "SHA256SUMS.txt")
+          $hashes = $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)"
+            $relativePath = [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/')
+            "$hash  $relativePath"
           }
           $hashes | Set-Content "staging/$rid/SHA256SUMS.txt"
           Write-Host "=== $rid ==="

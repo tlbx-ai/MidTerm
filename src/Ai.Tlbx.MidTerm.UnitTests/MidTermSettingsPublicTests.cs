@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
@@ -6,6 +7,81 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
+    [Fact]
+    public void SettingsReplacement_RejectsPartialDocument()
+    {
+        var current = MidTermSettingsPublic.FromSettings(new MidTermSettings { UpdateChannel = "stable" });
+        using var document = JsonDocument.Parse("""{"updateChannel":"dev"}""");
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => MidTermSettingsPatch.Replace(current, document.RootElement));
+
+        Assert.Contains("requires a complete settings document", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Use PATCH /api/settings", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsReplacement_AcceptsFullRoundTripDocument()
+    {
+        var current = MidTermSettingsPublic.FromSettings(new MidTermSettings
+        {
+            Language = LanguageSetting.English,
+            BackgroundImageEnabled = true,
+            UpdateChannel = "dev"
+        });
+        var json = JsonSerializer.Serialize(current, Ai.Tlbx.MidTerm.Services.AppJsonContext.Default.MidTermSettingsPublic);
+        using var document = JsonDocument.Parse(json);
+
+        var replacement = MidTermSettingsPatch.Replace(current, document.RootElement);
+
+        Assert.Equal(LanguageSetting.English, replacement.Language);
+        Assert.True(replacement.BackgroundImageEnabled);
+        Assert.Equal("dev", replacement.UpdateChannel);
+    }
+
+    [Fact]
+    public void SettingsPatch_RejectsUnknownProperty()
+    {
+        var current = MidTermSettingsPublic.FromSettings(new MidTermSettings());
+        using var document = JsonDocument.Parse("""{"updateChanel":"dev"}""");
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => MidTermSettingsPatch.Merge(current, document.RootElement));
+
+        Assert.Contains("unknown settings: updateChanel", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsPatch_ChangesOnlyExplicitProperties()
+    {
+        var settings = new MidTermSettings
+        {
+            Language = LanguageSetting.English,
+            BackgroundImageEnabled = true,
+            BackgroundImageFileName = "app-background.png",
+            UiTransparency = 50,
+            TerminalColorSchemes =
+            [
+                new TerminalColorSchemeDefinition { Name = "Personal", Background = "#101010" }
+            ],
+            UpdateChannel = "stable"
+        };
+        var current = MidTermSettingsPublic.FromSettings(settings);
+        using var document = JsonDocument.Parse("""{"updateChannel":"dev"}""");
+
+        var merged = MidTermSettingsPatch.Merge(current, document.RootElement);
+        merged.ApplyTo(settings);
+
+        Assert.Equal("dev", settings.UpdateChannel);
+        Assert.Equal(LanguageSetting.English, settings.Language);
+        Assert.True(settings.BackgroundImageEnabled);
+        Assert.Equal("app-background.png", settings.BackgroundImageFileName);
+        Assert.Equal(50, settings.UiTransparency);
+        Assert.Collection(
+            settings.TerminalColorSchemes,
+            scheme => Assert.Equal("Personal", scheme.Name));
+    }
+
     [Fact]
     public void FromSettings_AndApplyTo_RoundTripTerminalTransparency()
     {

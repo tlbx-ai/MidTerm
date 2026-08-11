@@ -173,6 +173,8 @@ public sealed partial class SessionAppServerControlHistoryService
             Attachments = CloneAttachments(enriched.Attachments),
             FileMentions = CloneInlineFileReferences(enriched.FileMentions),
             ImagePreviews = CloneInlineImagePreviews(enriched.ImagePreviews),
+            Questions = enriched.Questions.Select(CloneQuestion).ToList(),
+            Answers = enriched.Answers.Select(CloneAnsweredQuestion).ToList(),
             Streaming = enriched.Streaming,
             CreatedAt = enriched.CreatedAt,
             UpdatedAt = enriched.UpdatedAt
@@ -812,4 +814,3 @@ public sealed partial class SessionAppServerControlHistoryService
         int? Column,
         int Priority);
 }
-

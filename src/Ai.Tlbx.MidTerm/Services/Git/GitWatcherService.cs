@@ -78,11 +78,29 @@ public sealed class GitWatcherService : IDisposable
                 watcher.Filters.Add("index");
                 watcher.Filters.Add("HEAD");
                 watcher.Filters.Add("FETCH_HEAD");
+                watcher.Filters.Add("packed-refs");
                 watcher.Changed += onIndexChange;
                 watcher.Created += onIndexChange;
                 watcher.Renamed += (s, e) => onIndexChange(s, e);
                 watcher.EnableRaisingEvents = true;
                 _indexWatchers.Add(watcher);
+
+                var remoteRefsDir = Path.Combine(gitDir, "refs", "remotes");
+                if (Directory.Exists(remoteRefsDir))
+                {
+                    var remoteRefsWatcher = new FileSystemWatcher(remoteRefsDir)
+                    {
+                        Filter = "*",
+                        IncludeSubdirectories = true,
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName
+                    };
+                    remoteRefsWatcher.Changed += onIndexChange;
+                    remoteRefsWatcher.Created += onIndexChange;
+                    remoteRefsWatcher.Deleted += onIndexChange;
+                    remoteRefsWatcher.Renamed += (s, e) => onIndexChange(s, e);
+                    remoteRefsWatcher.EnableRaisingEvents = true;
+                    _indexWatchers.Add(remoteRefsWatcher);
+                }
             }
         }
 
@@ -438,6 +456,37 @@ public sealed class GitWatcherService : IDisposable
 
     public async Task RefreshStatusAsync(string repoRoot)
     {
+        if (!_watchers.TryGetValue(repoRoot, out var watcher))
+        {
+            await RefreshStatusCoreAsync(repoRoot).ConfigureAwait(false);
+            return;
+        }
+
+        await watcher.RefreshGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await _globalRefreshThrottle.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                do
+                {
+                    watcher.RefreshPending = false;
+                    await RefreshStatusCoreAsync(repoRoot).ConfigureAwait(false);
+                } while (watcher.RefreshPending && !watcher.IsDisposed);
+            }
+            finally
+            {
+                _globalRefreshThrottle.Release();
+            }
+        }
+        finally
+        {
+            watcher.RefreshGate.Release();
+        }
+    }
+
+    private async Task RefreshStatusCoreAsync(string repoRoot)
+    {
         try
         {
             var statusTask = GitCommandRunner.GetStatusAsync(repoRoot);
@@ -445,18 +494,21 @@ public sealed class GitWatcherService : IDisposable
             var stashCountTask = GitCommandRunner.GetStashCountAsync(repoRoot);
             var numStatTask = GitCommandRunner.GetNumStatAsync(repoRoot);
 
-            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, numStatTask);
+            await Task.WhenAll(statusTask, recentCommitsTask, stashCountTask, numStatTask).ConfigureAwait(false);
 
-            var status = await statusTask;
-            status.RecentCommits = await recentCommitsTask;
-            status.StashCount = await stashCountTask;
-            var numStat = await numStatTask;
-            MergeNumStat(status, numStat);
+            var status = await statusTask.ConfigureAwait(false);
+            status.RecentCommits = await recentCommitsTask.ConfigureAwait(false);
+            status.StashCount = await stashCountTask.ConfigureAwait(false);
+            MergeNumStat(status, await numStatTask.ConfigureAwait(false));
 
             if (_watchers.TryGetValue(repoRoot, out var watcher))
             {
                 var fingerprint = StatusFingerprint(status);
-                if (watcher.LastFingerprint == fingerprint) return;
+                if (watcher.LastFingerprint == fingerprint)
+                {
+                    return;
+                }
+
                 watcher.CachedStatus = status;
                 watcher.LastFingerprint = fingerprint;
             }
@@ -575,7 +627,7 @@ public sealed class GitWatcherService : IDisposable
                 do
                 {
                     watcher.RefreshPending = false;
-                    await RefreshStatusAsync(repoRoot);
+                    await RefreshStatusCoreAsync(repoRoot).ConfigureAwait(false);
                 } while (watcher.RefreshPending && !watcher.IsDisposed);
             }
             finally

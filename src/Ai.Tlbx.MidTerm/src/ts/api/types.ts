@@ -230,6 +230,8 @@ export interface AppServerControlHistoryItem {
   attachments: AppServerControlAttachmentReference[];
   fileMentions?: AppServerControlInlineFileReference[];
   imagePreviews?: AppServerControlInlineImagePreview[];
+  questions?: AppServerControlQuestion[];
+  answers?: AppServerControlAnsweredQuestion[];
   streaming: boolean;
   createdAt: string;
   updatedAt: string;

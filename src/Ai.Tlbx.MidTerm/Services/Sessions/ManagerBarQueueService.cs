@@ -26,6 +26,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private List<ManagerBarQueueEntryDto> _entries = [];
     private readonly Dictionary<string, RecentEnqueue> _recentEnqueues = new(StringComparer.Ordinal);
     private readonly HashSet<string> _activeImmediateDispatchSessions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _activeQueuedDispatchSessions = new(StringComparer.Ordinal);
     private string _serializedState = string.Empty;
     private Task? _processingTask;
 
@@ -124,9 +125,16 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     public ManagerBarQueueEntryDto? EnqueuePromptAt(
         string sessionId,
         AppServerControlTurnRequest turn,
-        DateTimeOffset runAt)
+        DateTimeOffset runAt,
+        int? repeatEveryMs = null,
+        int? repeatCount = null)
     {
         if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
+        {
+            return null;
+        }
+
+        if (repeatEveryMs is < 1000 || repeatCount is <= 1 || (repeatCount is not null && repeatEveryMs is null))
         {
             return null;
         }
@@ -134,7 +142,13 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         ManagerBarQueueEntryDto entry;
         lock (_lock)
         {
-            entry = EnqueuePromptLocked(trimmedSessionId, normalizedTurn, QueuePhase.PendingInterval, runAt);
+            entry = EnqueuePromptLocked(
+                trimmedSessionId,
+                normalizedTurn,
+                QueuePhase.PendingInterval,
+                runAt,
+                repeatEveryMs,
+                repeatCount);
         }
 
         OnChanged?.Invoke();
@@ -423,7 +437,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
         lock (_lock)
         {
-            var dispatchedSessions = new HashSet<string>(StringComparer.Ordinal);
+            var dispatchedSessions = new HashSet<string>(_activeQueuedDispatchSessions, StringComparer.Ordinal);
             for (var index = 0; index < _entries.Count;)
             {
                 var entry = _entries[index];
@@ -455,22 +469,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 }
 
                 pendingSends.Add(dispatch);
-                var queueId = entry.QueueId;
-                var sessionId = entry.SessionId;
-                var usesTurnQueue = _runtime.UsesTurnQueue(sessionId);
-                var removed = AdvanceQueueEntry(entry, index, now);
-                if (!usesTurnQueue)
-                {
-                    ApplyTerminalRearmFenceLocked(sessionId, now, queueId);
-                }
-
-                dispatchedSessions.Add(sessionId);
-                changed = true;
-
-                if (!removed)
-                {
-                    index += 1;
-                }
+                _activeQueuedDispatchSessions.Add(entry.SessionId);
+                dispatchedSessions.Add(entry.SessionId);
+                index += 1;
             }
 
             if (changed)
@@ -486,6 +487,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
         foreach (var send in pendingSends)
         {
+            var succeeded = false;
             try
             {
                 if (send.Kind == PromptQueueKind && send.Turn is not null)
@@ -496,6 +498,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 {
                     await _runtime.SendPromptAsync(send.SessionId, send.Prompt, cancellationToken).ConfigureAwait(false);
                 }
+                succeeded = true;
             }
             catch (OperationCanceledException)
             {
@@ -505,6 +508,57 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             {
                 Log.Warn(() => $"Manager bar queue send failed for session {send.SessionId}: {ex.Message}");
             }
+            finally
+            {
+                CompleteQueueDispatch(send, succeeded);
+            }
+        }
+    }
+
+    private void CompleteQueueDispatch(PendingQueueDispatch send, bool succeeded)
+    {
+        var changed = false;
+        lock (_lock)
+        {
+            _activeQueuedDispatchSessions.Remove(send.SessionId);
+
+            var index = _entries.FindIndex(entry =>
+                string.Equals(entry.QueueId, send.QueueId, StringComparison.Ordinal));
+            if (index < 0)
+            {
+                return;
+            }
+
+            var entry = _entries[index];
+            var now = _timeProvider.GetUtcNow();
+            if (succeeded)
+            {
+                var removed = AdvanceQueueEntry(entry, index, now);
+                if (!_runtime.UsesTurnQueue(send.SessionId))
+                {
+                    ApplyTerminalRearmFenceLocked(send.SessionId, now, send.QueueId);
+                }
+
+                changed = removed || index < _entries.Count;
+            }
+            else
+            {
+                entry.Phase = QueuePhase.PendingInterval;
+                entry.NextRunAt = now.AddSeconds(5);
+                entry.IgnoreHeatUntil = null;
+                entry.AwaitingHeatRise = false;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                PersistLocked();
+            }
+        }
+
+        if (changed)
+        {
+            OnChanged?.Invoke();
         }
     }
 
@@ -609,6 +663,17 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     {
         if (string.Equals(entry.Kind, PromptQueueKind, StringComparison.Ordinal))
         {
+            entry.CompletedCycles += 1;
+            if (entry.RepeatEveryMs is >= 1000 &&
+                (entry.RepeatCount is null || entry.CompletedCycles < entry.RepeatCount.Value))
+            {
+                entry.Phase = QueuePhase.PendingInterval;
+                entry.NextRunAt = now.AddMilliseconds(entry.RepeatEveryMs.Value);
+                entry.IgnoreHeatUntil = null;
+                entry.AwaitingHeatRise = false;
+                return false;
+            }
+
             _entries.RemoveAt(index);
             return true;
         }
@@ -749,7 +814,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 return;
             }
 
-            File.WriteAllText(_statePath, _serializedState);
+            var tempPath = _statePath + ".new";
+            File.WriteAllText(tempPath, _serializedState);
+            File.Move(tempPath, _statePath, overwrite: true);
         }
         catch (Exception ex)
         {
@@ -848,8 +915,12 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                 Turn = normalizedTurn,
                 Phase = ParsePhase(entry.Phase),
                 NextPromptIndex = 0,
-                CompletedCycles = 0,
+                CompletedCycles = Math.Max(0, entry.CompletedCycles),
                 NextRunAt = entry.NextRunAt,
+                RepeatEveryMs = entry.RepeatEveryMs is >= 1000 ? entry.RepeatEveryMs : null,
+                RepeatCount = entry.RepeatEveryMs is >= 1000 && entry.RepeatCount is > 1
+                    ? entry.RepeatCount
+                    : null,
                 IgnoreHeatUntil = entry.IgnoreHeatUntil,
                 AwaitingHeatRise = entry.AwaitingHeatRise
             };
@@ -921,6 +992,8 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             NextPromptIndex = entry.NextPromptIndex,
             CompletedCycles = entry.CompletedCycles,
             NextRunAt = entry.NextRunAt,
+            RepeatEveryMs = entry.RepeatEveryMs,
+            RepeatCount = entry.RepeatCount,
             IgnoreHeatUntil = entry.IgnoreHeatUntil,
             AwaitingHeatRise = entry.AwaitingHeatRise
         };
@@ -991,12 +1064,14 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         };
     }
 
-    private static DateTimeOffset? ComputeNextScheduleTime(
+    internal static DateTimeOffset? ComputeNextScheduleTime(
         IEnumerable<ManagerBarScheduleEntry> schedule,
-        DateTimeOffset from)
+        DateTimeOffset from,
+        TimeZoneInfo? timeZone = null)
     {
         DateTimeOffset? best = null;
-        var baseLocal = from.LocalDateTime;
+        timeZone ??= TimeZoneInfo.Local;
+        var baseLocal = TimeZoneInfo.ConvertTime(from, timeZone).DateTime;
 
         for (var dayOffset = 0; dayOffset < 8; dayOffset += 1)
         {
@@ -1017,16 +1092,29 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
                     continue;
                 }
 
-                var candidateLocal = day.AddHours(hours).AddMinutes(minutes);
-                var candidate = new DateTimeOffset(candidateLocal, from.Offset);
-                if (candidate <= from)
+                var candidateLocal = DateTime.SpecifyKind(
+                    day.AddHours(hours).AddMinutes(minutes),
+                    DateTimeKind.Unspecified);
+                if (timeZone.IsInvalidTime(candidateLocal))
                 {
                     continue;
                 }
 
-                if (best is null || candidate < best.Value)
+                var offsets = timeZone.IsAmbiguousTime(candidateLocal)
+                    ? timeZone.GetAmbiguousTimeOffsets(candidateLocal)
+                    : [timeZone.GetUtcOffset(candidateLocal)];
+                foreach (var offset in offsets)
                 {
-                    best = candidate;
+                    var candidate = new DateTimeOffset(candidateLocal, offset);
+                    if (candidate <= from)
+                    {
+                        continue;
+                    }
+
+                    if (best is null || candidate < best.Value)
+                    {
+                        best = candidate;
+                    }
                 }
             }
         }
@@ -1056,14 +1144,14 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             var turn = NormalizeTurn(entry.Turn);
             return turn is null
                 ? null
-                : new PendingQueueDispatch(entry.SessionId, PromptQueueKind, turn.Text, turn);
+                : new PendingQueueDispatch(entry.QueueId, entry.SessionId, PromptQueueKind, turn.Text, turn);
         }
 
         var action = entry.Action?.Normalize();
         var prompt = action?.Prompts.ElementAtOrDefault(entry.NextPromptIndex);
         return string.IsNullOrWhiteSpace(prompt)
             ? null
-            : new PendingQueueDispatch(entry.SessionId, AutomationQueueKind, prompt, null);
+            : new PendingQueueDispatch(entry.QueueId, entry.SessionId, AutomationQueueKind, prompt, null);
     }
 
     private static AppServerControlTurnRequest? NormalizeTurn(AppServerControlTurnRequest? turn)
@@ -1164,6 +1252,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     }
 
     private sealed record PendingQueueDispatch(
+        string QueueId,
         string SessionId,
         string Kind,
         string? Prompt,
@@ -1225,7 +1314,9 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         string sessionId,
         AppServerControlTurnRequest normalizedTurn,
         string phase = QueuePhase.PendingCooldown,
-        DateTimeOffset? nextRunAt = null)
+        DateTimeOffset? nextRunAt = null,
+        int? repeatEveryMs = null,
+        int? repeatCount = null)
     {
         var entry = new ManagerBarQueueEntryDto
         {
@@ -1238,6 +1329,8 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             NextPromptIndex = 0,
             CompletedCycles = 0,
             NextRunAt = nextRunAt,
+            RepeatEveryMs = repeatEveryMs,
+            RepeatCount = repeatCount,
             IgnoreHeatUntil = null,
             AwaitingHeatRise = false
         };
@@ -1249,7 +1342,8 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
 
     private bool CanDispatchImmediatelyLocked(string sessionId)
     {
-        if (_entries.Count > 0 || _activeImmediateDispatchSessions.Count > 0)
+        if (_entries.Any(entry => string.Equals(entry.SessionId, sessionId, StringComparison.Ordinal)) ||
+            _activeImmediateDispatchSessions.Contains(sessionId))
         {
             return false;
         }

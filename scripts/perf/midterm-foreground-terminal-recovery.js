@@ -13,6 +13,16 @@ perf.scenario = {
   claimedReferenceBrowser: false,
   isMainBrowserBeforeFreeze: null,
   xtermsAfterOpen: 0,
+  hiddenAtMs: null,
+  visibleAtMs: null,
+  reconnectedAtMs: null,
+  inputReadyAtMs: null,
+  resumeConnectedMs: null,
+  resumeInputReadyMs: null,
+  connectionTransitions: [],
+  terminalElementPreserved: null,
+  terminalContainerPreserved: null,
+  xtermsAfterResume: null,
 };
 
 function sleep(ms) {
@@ -81,6 +91,70 @@ state.terminal.refresh = (...args) => {
   perf.scenario.refreshCallsAfterResume += 1;
   return originalRefresh(...args);
 };
+
+const terminalElementBeforeFreeze = state.container.querySelector(".xterm");
+const inputBeforeFreeze = state.container.querySelector(
+  "textarea.xterm-helper-textarea",
+);
+let sawReconnectTransition = false;
+
+function recordConnectionState() {
+  const badge = document.getElementById("connection-status");
+  const status = badge?.className ?? "missing";
+  perf.scenario.connectionTransitions.push({
+    atMs: performance.now(),
+    status,
+  });
+
+  if (!perf.scenario.visibleAtMs) return;
+  if (!badge?.classList.contains("connected")) {
+    sawReconnectTransition = true;
+    return;
+  }
+  if (!sawReconnectTransition || perf.scenario.reconnectedAtMs) return;
+
+  perf.scenario.reconnectedAtMs = performance.now();
+  perf.scenario.resumeConnectedMs =
+    perf.scenario.reconnectedAtMs - perf.scenario.visibleAtMs;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const currentState = window.mmDebug?.terminals?.get(created.id);
+      const inputAfterResume = currentState?.container?.querySelector(
+        "textarea.xterm-helper-textarea",
+      );
+      perf.scenario.inputReadyAtMs = performance.now();
+      perf.scenario.resumeInputReadyMs =
+        perf.scenario.inputReadyAtMs - perf.scenario.visibleAtMs;
+      perf.scenario.terminalElementPreserved =
+        currentState?.container?.querySelector(".xterm") ===
+        terminalElementBeforeFreeze;
+      perf.scenario.terminalContainerPreserved =
+        currentState?.container === state.container;
+      perf.scenario.inputElementPreserved =
+        inputAfterResume === inputBeforeFreeze;
+      perf.scenario.xtermsAfterResume =
+        document.querySelectorAll(".xterm").length;
+    });
+  });
+}
+
+const connectionBadge = document.getElementById("connection-status");
+if (connectionBadge) {
+  new MutationObserver(recordConnectionState).observe(connectionBadge, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+  recordConnectionState();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    perf.scenario.hiddenAtMs = performance.now();
+    return;
+  }
+  perf.scenario.visibleAtMs = performance.now();
+});
 
 perf.scenario.refreshCallsBeforeFreeze = perf.scenario.refreshCallsAfterResume;
 perf.scenario.isMainBrowserBeforeFreeze =

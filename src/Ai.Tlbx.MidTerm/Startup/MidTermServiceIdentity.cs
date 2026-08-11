@@ -7,6 +7,9 @@ public sealed record MidTermServiceIdentity(
     string LaunchdLabel,
     string SystemdServiceName)
 {
+    public const string TlbxWindowsServiceNameEnvironmentVariable = "TLBX_SERVICE_NAME";
+    public const string TlbxLaunchdLabelEnvironmentVariable = "TLBX_LAUNCHD_LABEL";
+    public const string TlbxSystemdServiceEnvironmentVariable = "TLBX_SYSTEMD_SERVICE";
     public const string WindowsServiceNameEnvironmentVariable = "MIDTERM_SERVICE_NAME";
     public const string LaunchdLabelEnvironmentVariable = "MIDTERM_LAUNCHD_LABEL";
     public const string SystemdServiceEnvironmentVariable = "MIDTERM_SYSTEMD_SERVICE";
@@ -21,12 +24,15 @@ public sealed record MidTermServiceIdentity(
         DefaultSystemdServiceName);
 
     public static MidTermServiceIdentity FromEnvironment() => new(
-        ResolveEnvironmentValue(WindowsServiceNameEnvironmentVariable, DefaultWindowsServiceName),
-        ResolveEnvironmentValue(LaunchdLabelEnvironmentVariable, DefaultLaunchdLabel),
-        ResolveEnvironmentValue(SystemdServiceEnvironmentVariable, DefaultSystemdServiceName));
+        ResolveEnvironmentValue(TlbxWindowsServiceNameEnvironmentVariable, WindowsServiceNameEnvironmentVariable, DefaultWindowsServiceName),
+        ResolveEnvironmentValue(TlbxLaunchdLabelEnvironmentVariable, LaunchdLabelEnvironmentVariable, DefaultLaunchdLabel),
+        ResolveEnvironmentValue(TlbxSystemdServiceEnvironmentVariable, SystemdServiceEnvironmentVariable, DefaultSystemdServiceName));
 
     public void ApplyProcessEnvironment()
     {
+        Environment.SetEnvironmentVariable(TlbxWindowsServiceNameEnvironmentVariable, WindowsServiceName);
+        Environment.SetEnvironmentVariable(TlbxLaunchdLabelEnvironmentVariable, LaunchdLabel);
+        Environment.SetEnvironmentVariable(TlbxSystemdServiceEnvironmentVariable, SystemdServiceName);
         Environment.SetEnvironmentVariable(WindowsServiceNameEnvironmentVariable, WindowsServiceName);
         Environment.SetEnvironmentVariable(LaunchdLabelEnvironmentVariable, LaunchdLabel);
         Environment.SetEnvironmentVariable(SystemdServiceEnvironmentVariable, SystemdServiceName);
@@ -41,9 +47,10 @@ public sealed record MidTermServiceIdentity(
     public static string BuildInstanceSystemdServiceName(string instanceName) =>
         string.Create(CultureInfo.InvariantCulture, $"midterm-{NormalizeInstanceName(instanceName).ToLowerInvariant()}");
 
-    private static string ResolveEnvironmentValue(string variableName, string fallback)
+    private static string ResolveEnvironmentValue(string preferredVariableName, string legacyVariableName, string fallback)
     {
-        var value = Environment.GetEnvironmentVariable(variableName);
+        var value = Environment.GetEnvironmentVariable(preferredVariableName)
+            ?? Environment.GetEnvironmentVariable(legacyVariableName);
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 

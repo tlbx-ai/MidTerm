@@ -198,6 +198,14 @@ function Invoke-FrontendBuild {
     }
 }
 
+function Invoke-StaticAssetSync {
+    Write-Host "  Syncing transformed static assets..." -ForegroundColor Cyan
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $WebProjectDir "frontend-build.ps1") -StaticOnly
+    if ($LASTEXITCODE -ne 0) {
+        throw "Static asset sync failed"
+    }
+}
+
 function Build-AgentHost {
     Write-Host "  Building local mtagenthost..." -ForegroundColor DarkGray
     & dotnet build $AgentHostProjectFile -c Debug --nologo
@@ -263,6 +271,35 @@ function New-CodeWatcher {
     $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, CreationTime, Size'
     $watcher.EnableRaisingEvents = $true
     return $watcher
+}
+
+function New-StaticWatcher {
+    $watcher = [System.IO.FileSystemWatcher]::new()
+    $watcher.Path = Join-Path $WebProjectDir "src/static"
+    $watcher.Filter = "*.*"
+    $watcher.IncludeSubdirectories = $true
+    $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, DirectoryName, LastWrite, CreationTime, Size'
+    $watcher.EnableRaisingEvents = $true
+    return $watcher
+}
+
+function Wait-ForStaticChange {
+    param([System.IO.FileSystemWatcher]$Watcher)
+
+    $change = $Watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, 1)
+    if ($change.TimedOut) {
+        return $null
+    }
+
+    $latestPath = if ([string]::IsNullOrWhiteSpace($change.Name)) { $change.OldName } else { $change.Name }
+    do {
+        $change = $Watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, 150)
+        if (-not $change.TimedOut) {
+            $latestPath = if ([string]::IsNullOrWhiteSpace($change.Name)) { $change.OldName } else { $change.Name }
+        }
+    } while (-not $change.TimedOut)
+
+    return $latestPath
 }
 
 function Should-RestartForPath([string]$relativePath) {
@@ -422,6 +459,11 @@ function Invoke-DevLoopCleanup {
         $script:codeWatcher = $null
     }
 
+    if ($script:staticWatcher) {
+        $script:staticWatcher.Dispose()
+        $script:staticWatcher = $null
+    }
+
     if ($script:esbuildProcess -and -not $script:esbuildProcess.HasExited) {
         Write-Host "Stopping esbuild watch..." -ForegroundColor Yellow
         Stop-ProcessTree -ProcessId $script:esbuildProcess.Id -Reason "script shutdown"
@@ -446,6 +488,7 @@ if ($Tailnet) {
 $stableVersion = Test-StableSupervisor
 $resolvedTtyHostPath = Resolve-TtyHostPath
 $codeWatcher = New-CodeWatcher
+$staticWatcher = New-StaticWatcher
 Stop-StaleSourceServerProcesses
 $serverState = $null
 $esbuildProcess = $null
@@ -462,7 +505,7 @@ Write-Host "  Settings dir   : $SettingsDir" -ForegroundColor DarkGray
 Write-Host "  mthost         : $resolvedTtyHostPath" -ForegroundColor DarkGray
 Write-Host "  mtagenthost    : local Debug build" -ForegroundColor DarkGray
 Write-Host "  TS changes     : esbuild watch rebuilds" -ForegroundColor DarkGray
-Write-Host "  CSS changes    : refresh browser" -ForegroundColor DarkGray
+Write-Host "  Static changes : transformed assets sync automatically; refresh browser" -ForegroundColor DarkGray
 Write-Host "  C# changes     : script rebuilds and restarts local source tlbx" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -487,6 +530,12 @@ try {
         }
 
         $changedPath = Wait-ForCodeChange -Watcher $codeWatcher -TimeoutMilliseconds $PollMilliseconds
+        $staticChangedPath = Wait-ForStaticChange -Watcher $staticWatcher
+        if ($staticChangedPath) {
+            Write-Host "  Static change detected: $staticChangedPath" -ForegroundColor Yellow
+            Invoke-StaticAssetSync
+        }
+
         if ($changedPath) {
             Stop-DevProcess -state $serverState -reason "C# change detected: $changedPath"
             Start-Sleep -Milliseconds 300

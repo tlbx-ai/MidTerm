@@ -367,6 +367,7 @@
   "update.applying": "लागू हो रहा है...",
   "update.lastUpdate": "अंतिम अपडेट:",
   "update.success": "सफल",
+  "update.rollbackAttempted": "रोलबैक का प्रयास किया गया। विवरण के लिए अपडेट लॉग देखें।",
   "update.viewUpdateLog": "अपडेट लॉग देखें",
   "update.noLogFound": "कोई अपडेट लॉग नहीं मिला",
   "update.copyLog": "लॉग कॉपी करें",

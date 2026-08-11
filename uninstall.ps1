@@ -1,4 +1,4 @@
-# MidTerm Windows Uninstaller
+# tlbx Windows Uninstaller
 # Usage: irm https://get.tlbx.ai/uninstall.ps1 | iex
 
 param(
@@ -35,27 +35,22 @@ function Invoke-CompatibleWebRequest
     return Invoke-WebRequest @params
 }
 
-$ServiceName = "MidTerm"
-$OldHostServiceName = "MidTermHost"
-$FirewallRuleName = "MidTerm HTTPS"
-$CertificateSubject = "CN=ai.tlbx.midterm"
-
-$WIN_SERVICE_SETTINGS_DIR = "$env:ProgramData\MidTerm"
-$WIN_SERVICE_INSTALL_DIR = "$env:ProgramFiles\MidTerm"
+$ServiceNames = @("tlbx", "MidTerm")
+$OldHostServiceNames = @("tlbxHost", "MidTermHost")
+$FirewallRuleNames = @("tlbx HTTPS", "MidTerm HTTPS")
+$CertificateSubjects = @("CN=tlbx", "CN=ai.tlbx.midterm")
+$ServiceSettingsDirs = @("$env:ProgramData\tlbx", "$env:ProgramData\MidTerm")
+$ServiceInstallDirs = @("$env:ProgramFiles\tlbx", "$env:ProgramFiles\MidTerm")
 
 function Write-Banner
 {
     Write-Host ""
-    Write-Host "            //   \\" -ForegroundColor White
-    Write-Host "           //     \\         __  __ _     _ _____" -ForegroundColor White
-    Write-Host "          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___" -ForegroundColor White
-    Write-Host "         //  ( " -NoNewline -ForegroundColor White
-    Write-Host "·" -NoNewline -ForegroundColor Cyan
-    Write-Host " )  \\      | |\/| | |/ _` | | |/ _ \\ '__| '_ ` _ \\" -ForegroundColor White
-    Write-Host "        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |" -ForegroundColor White
-    Write-Host "       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|" -ForegroundColor White
-    Write-Host "      //               \\   " -NoNewline -ForegroundColor White
-    Write-Host "tlbx.ai - https://github.com/tlbx-ai/tlbx" -ForegroundColor Green
+    Write-Host "       _   _ _            " -ForegroundColor White
+    Write-Host "      | |_| | |__  __  __ " -ForegroundColor White
+    Write-Host "      | __| | '_ \ \ \/ / " -ForegroundColor White
+    Write-Host "      | |_| | |_) | >  <  " -ForegroundColor White
+    Write-Host "       \__|_|_.__/ /_/\_\ " -ForegroundColor White
+    Write-Host "      tlbx.ai - https://github.com/tlbx-ai/tlbx" -ForegroundColor Green
     Write-Host ""
 }
 
@@ -197,7 +192,7 @@ function Test-GlobExists
     return [bool](Get-ChildItem -Path $BasePath -Filter $Filter -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
-function Stop-MidTermProcesses
+function Stop-TlbxProcesses
 {
     param([string[]]$KnownPaths)
 
@@ -209,7 +204,7 @@ function Stop-MidTermProcesses
 
     try
     {
-        $processes = Get-CimInstance Win32_Process -Filter "Name='mt.exe' OR Name='mthost.exe' OR Name='mt-host.exe'" -ErrorAction SilentlyContinue
+        $processes = Get-CimInstance Win32_Process -Filter "Name='mt.exe' OR Name='mthost.exe' OR Name='mtagenthost.exe' OR Name='mttmux.exe' OR Name='mt-host.exe'" -ErrorAction SilentlyContinue
         foreach ($proc in $processes)
         {
             $exePath = $proc.ExecutablePath
@@ -226,18 +221,18 @@ function Stop-MidTermProcesses
     }
     catch
     {
-        Write-WarnLine "Could not stop one or more running MidTerm processes."
+        Write-WarnLine "Could not stop one or more running tlbx processes."
     }
 }
 
-function Remove-MidTermCertificates
+function Remove-TlbxCertificates
 {
     try
     {
         $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
         $rootStore.Open("ReadWrite")
-        $midTermCerts = @($rootStore.Certificates | Where-Object { $_.Subject -eq $CertificateSubject })
-        foreach ($cert in $midTermCerts)
+        $tlbxCerts = @($rootStore.Certificates | Where-Object { $_.Subject -in $CertificateSubjects })
+        foreach ($cert in $tlbxCerts)
         {
             try
             {
@@ -250,14 +245,14 @@ function Remove-MidTermCertificates
         }
         $rootStore.Close()
 
-        if ($midTermCerts.Count -gt 0)
+        if ($tlbxCerts.Count -gt 0)
         {
-            Write-Step "Removed $($midTermCerts.Count) trusted MidTerm certificate(s)."
+            Write-Step "Removed $($tlbxCerts.Count) trusted tlbx certificate(s)."
         }
     }
     catch
     {
-        Write-WarnLine "Could not clean up trusted MidTerm certificates."
+        Write-WarnLine "Could not clean up trusted tlbx certificates."
     }
 }
 
@@ -280,7 +275,7 @@ function Remove-UserPathEntry
     }
 }
 
-function Remove-MidTermTempArtifacts
+function Remove-TlbxTempArtifacts
 {
     param([string[]]$Roots)
 
@@ -312,6 +307,7 @@ function Test-UserTraces
     return (
         (Test-Path $UserInstallDir) -or
         (Test-Path $UserSettingsDir) -or
+        (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\tlbx") -or
         (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm") -or
         (Test-Path (Join-Path $TempRoot "midterm-bin")) -or
         (Test-Path (Join-Path $TempRoot "mt-drops")) -or
@@ -333,7 +329,7 @@ function Test-ServiceTraces
     {
         $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
         $rootStore.Open("ReadOnly")
-        $hasCerts = [bool]($rootStore.Certificates | Where-Object { $_.Subject -eq $CertificateSubject } | Select-Object -First 1)
+        $hasCerts = [bool]($rootStore.Certificates | Where-Object { $_.Subject -in $CertificateSubjects } | Select-Object -First 1)
         $rootStore.Close()
     }
     catch
@@ -343,15 +339,16 @@ function Test-ServiceTraces
 
     if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue)
     {
-        $hasFirewallRule = [bool](Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction SilentlyContinue)
+        $hasFirewallRule = [bool](Get-NetFirewallRule -DisplayName $FirewallRuleNames -ErrorAction SilentlyContinue)
     }
 
     return (
-        (Test-Path $WIN_SERVICE_INSTALL_DIR) -or
-        (Test-Path $WIN_SERVICE_SETTINGS_DIR) -or
+        [bool]($ServiceInstallDirs | Where-Object { Test-Path $_ } | Select-Object -First 1) -or
+        [bool]($ServiceSettingsDirs | Where-Object { Test-Path $_ } | Select-Object -First 1) -or
+        (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\tlbx") -or
         (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm") -or
-        (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) -or
-        (Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue) -or
+        (Get-Service -Name $ServiceNames -ErrorAction SilentlyContinue) -or
+        (Get-Service -Name $OldHostServiceNames -ErrorAction SilentlyContinue) -or
         $hasFirewallRule -or
         $hasCerts
     )
@@ -367,72 +364,92 @@ function Invoke-UserCleanup
 
     Write-Step "Cleaning user install..."
 
-    Stop-MidTermProcesses -KnownPaths @(
+    Stop-TlbxProcesses -KnownPaths @(
         (Join-Path $UserInstallDir "mt.exe"),
         (Join-Path $UserInstallDir "mthost.exe"),
+        (Join-Path $UserInstallDir "mtagenthost.exe"),
+        (Join-Path $UserInstallDir "mttmux.exe"),
         (Join-Path $UserInstallDir "mt-host.exe")
     )
 
     Remove-UserPathEntry -PathToRemove $UserInstallDir
+    Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\tlbx" -Force -Recurse -ErrorAction SilentlyContinue
     Remove-Item -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm" -Force -Recurse -ErrorAction SilentlyContinue
     Remove-PathIfExists -Path $UserInstallDir
     Remove-PathIfExists -Path $UserSettingsDir
-    Remove-MidTermTempArtifacts -Roots @($TempRoot, [System.IO.Path]::GetTempPath())
+    Remove-TlbxTempArtifacts -Roots @($TempRoot, [System.IO.Path]::GetTempPath())
 }
 
 function Invoke-ServiceCleanup
 {
     Write-Step "Cleaning system install..."
 
-    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-    sc.exe delete $ServiceName | Out-Null 2>$null
-    Stop-Service -Name $OldHostServiceName -Force -ErrorAction SilentlyContinue
-    sc.exe delete $OldHostServiceName | Out-Null 2>$null
+    foreach ($serviceName in @($ServiceNames + $OldHostServiceNames))
+    {
+        Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+        sc.exe delete $serviceName | Out-Null 2>$null
+    }
 
-    Stop-MidTermProcesses -KnownPaths @(
-        (Join-Path $WIN_SERVICE_INSTALL_DIR "mt.exe"),
-        (Join-Path $WIN_SERVICE_INSTALL_DIR "mthost.exe"),
-        (Join-Path $WIN_SERVICE_INSTALL_DIR "mt-host.exe")
+    Stop-TlbxProcesses -KnownPaths @(
+        ($ServiceInstallDirs | ForEach-Object { Join-Path $_ "mt.exe" }),
+        ($ServiceInstallDirs | ForEach-Object { Join-Path $_ "mthost.exe" }),
+        ($ServiceInstallDirs | ForEach-Object { Join-Path $_ "mtagenthost.exe" }),
+        ($ServiceInstallDirs | ForEach-Object { Join-Path $_ "mttmux.exe" }),
+        ($ServiceInstallDirs | ForEach-Object { Join-Path $_ "mt-host.exe" })
     )
 
     if ((Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) -and
         (Get-Command Remove-NetFirewallRule -ErrorAction SilentlyContinue))
     {
-        Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction SilentlyContinue |
+        Get-NetFirewallRule -DisplayName $FirewallRuleNames -ErrorAction SilentlyContinue |
             Remove-NetFirewallRule -ErrorAction SilentlyContinue | Out-Null
     }
 
+    Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\tlbx" -Force -Recurse -ErrorAction SilentlyContinue
     Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm" -Force -Recurse -ErrorAction SilentlyContinue
-    Remove-MidTermCertificates
-    Remove-PathIfExists -Path $WIN_SERVICE_SETTINGS_DIR
-    Remove-PathIfExists -Path $WIN_SERVICE_INSTALL_DIR
+    Remove-TlbxCertificates
+    $ServiceSettingsDirs | ForEach-Object { Remove-PathIfExists -Path $_ }
+    $ServiceInstallDirs | ForEach-Object { Remove-PathIfExists -Path $_ }
 }
 
 Resolve-OriginalContext
 
-$userInstallDir = Join-Path $OriginalLocalAppData "MidTerm"
-$userSettingsDir = Join-Path $OriginalUserProfile ".midterm"
+$userInstallDirs = @((Join-Path $OriginalLocalAppData "tlbx"), (Join-Path $OriginalLocalAppData "MidTerm"))
+$userSettingsDirs = @((Join-Path $OriginalUserProfile ".tlbx"), (Join-Path $OriginalUserProfile ".midterm"))
 
 Write-Header
 Write-Step "User profile: $OriginalUserProfile"
-Write-Step "User install traces: $(Test-UserTraces -UserInstallDir $userInstallDir -UserSettingsDir $userSettingsDir -TempRoot $OriginalTempRoot)"
+Write-Step "User install traces: $([bool]($userInstallDirs | ForEach-Object { $installDir = $_; $settingsDir = $userSettingsDirs[[Array]::IndexOf($userInstallDirs, $_)]; Test-UserTraces -UserInstallDir $installDir -UserSettingsDir $settingsDir -TempRoot $OriginalTempRoot } | Where-Object { $_ } | Select-Object -First 1))"
 $serviceTraces = [bool](Test-ServiceTraces)
 Write-Step "System install traces: $serviceTraces"
 
-if (-not (Test-UserTraces -UserInstallDir $userInstallDir -UserSettingsDir $userSettingsDir -TempRoot $OriginalTempRoot) -and -not $serviceTraces)
+$userTraces = $false
+for ($i = 0; $i -lt $userInstallDirs.Count; $i++)
 {
-    Write-Host "  No known MidTerm installation traces were found." -ForegroundColor Green
+    if (Test-UserTraces -UserInstallDir $userInstallDirs[$i] -UserSettingsDir $userSettingsDirs[$i] -TempRoot $OriginalTempRoot)
+    {
+        $userTraces = $true
+    }
+}
+if (-not $userTraces -and -not $serviceTraces)
+{
+    Write-Host "  No known tlbx installation traces were found." -ForegroundColor Green
     return
 }
 
-Invoke-UserCleanup -UserInstallDir $userInstallDir -UserSettingsDir $userSettingsDir -TempRoot $OriginalTempRoot
+for ($i = 0; $i -lt $userInstallDirs.Count; $i++)
+{
+    Invoke-UserCleanup -UserInstallDir $userInstallDirs[$i] -UserSettingsDir $userSettingsDirs[$i] -TempRoot $OriginalTempRoot
+}
+[Environment]::SetEnvironmentVariable("TLBX_PORT", $null, "User")
+[Environment]::SetEnvironmentVariable("TLBX_BIND", $null, "User")
 
 if ($serviceTraces)
 {
     if (-not (Test-Administrator))
     {
         Write-Host ""
-        Write-Host "  Requesting administrator privileges to remove the MidTerm service, trusted certs, firewall rule, and system files..." -ForegroundColor Yellow
+        Write-Host "  Requesting administrator privileges to remove the tlbx service, trusted certs, firewall rule, and system files..." -ForegroundColor Yellow
 
         $scriptUrl = "https://get.tlbx.ai/uninstall.ps1"
         $tempScript = Join-Path $env:TEMP "mt-uninstall-elevated.ps1"
@@ -462,4 +479,4 @@ if ($serviceTraces)
 }
 
 Write-Host ""
-Write-Host "  MidTerm uninstall complete." -ForegroundColor Green
+Write-Host "  tlbx uninstall complete." -ForegroundColor Green

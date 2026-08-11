@@ -4,6 +4,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Ai.Tlbx.MidTerm.Common.Identity;
 
 namespace Ai.Tlbx.MidTerm.Services.Certificates;
 
@@ -12,18 +13,23 @@ public static class CertificateGenerator
     private const int ValidityYears = 2;
 
     /// <summary>
-    /// The CN used for certificates. Uses reverse-DNS style to avoid collisions with other apps.
+    /// The CN used for certificates created for fresh tlbx installations.
     /// This is the single source of truth - all code should reference this constant.
     /// </summary>
-    public const string CertificateSubject = "CN=ai.tlbx.midterm";
+    public const string CertificateSubject = TlbxProductIdentity.CertificateSubject;
 
-    public static X509Certificate2 GenerateSelfSigned(string[] dnsNames, string[] ipAddresses, bool useEcdsa = true)
+    public static X509Certificate2 GenerateSelfSigned(
+        string[] dnsNames,
+        string[] ipAddresses,
+        bool useEcdsa = true,
+        string? certificateSubject = null)
     {
+        certificateSubject ??= CertificateSubject;
         if (useEcdsa)
         {
             using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP384);
             var request = new CertificateRequest(
-                CertificateSubject,
+                certificateSubject,
                 ecdsa,
                 HashAlgorithmName.SHA384);
             return CreateExportableSelfSignedCertificate(request, dnsNames, ipAddresses);
@@ -31,7 +37,7 @@ public static class CertificateGenerator
 
         using var rsa = RSA.Create(4096);
         var rsaRequest = new CertificateRequest(
-                CertificateSubject,
+                certificateSubject,
                 rsa,
                 HashAlgorithmName.SHA256,
                 RSASignaturePadding.Pkcs1);
@@ -206,7 +212,8 @@ public static class CertificateGenerator
             Console.WriteLine("  To trust on Linux:");
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine($"    openssl pkcs12 -in \"{certPath}\" -out \"{pemPath}\" -nodes -password pass:");
-            Console.WriteLine($"    sudo cp \"{pemPath}\" /usr/local/share/ca-certificates/midterm.crt");
+            var certificateName = Path.GetFileNameWithoutExtension(certPath);
+            Console.WriteLine($"    sudo cp \"{pemPath}\" /usr/local/share/ca-certificates/{certificateName}.crt");
             Console.WriteLine("    sudo update-ca-certificates");
             Console.ResetColor();
         }

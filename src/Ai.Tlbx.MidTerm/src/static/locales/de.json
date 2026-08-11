@@ -392,6 +392,7 @@
   "update.applying": "Anwenden...",
   "update.lastUpdate": "Letztes Update:",
   "update.success": "Erfolgreich",
+  "update.rollbackAttempted": "Ein Rollback wurde versucht. Details stehen im Update-Protokoll.",
   "update.viewUpdateLog": "Update-Protokoll anzeigen",
   "update.noLogFound": "Kein Update-Protokoll gefunden",
   "update.copyLog": "Protokoll kopieren",

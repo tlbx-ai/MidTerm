@@ -139,9 +139,11 @@ export function initManagerBar(): void {
 
   const syncManagerBarVisibility = (): void => {
     const settings = $currentSettings.get();
+    const activeSessionId = $activeSessionId.get();
+    const hasQueuedItems = queueEntries.some((entry) => entry.sessionId === activeSessionId);
     const visible =
       !$settingsOpen.get() &&
-      shouldShowManagerBar(settings?.managerBarEnabled, $activeSessionId.get());
+      shouldShowManagerBar(settings?.managerBarEnabled, activeSessionId, hasQueuedItems);
     barEl?.classList.toggle('hidden', !visible);
     if (!visible) {
       overflowBtn?.setAttribute('hidden', '');
@@ -1024,7 +1026,7 @@ function describeQueueTitle(entry: ManagerBarQueueEntry): string {
 function describeQueueCondition(entry: ManagerBarQueueEntry): string {
   const usesTurnQueue = usesTurnQueueForSession(entry.sessionId);
   if (entry.kind === 'prompt' && entry.nextRunAt) {
-    return formatQueuedPromptRunAt(entry.nextRunAt);
+    return describeQueuedPromptCondition(entry);
   }
 
   if (entry.phase === 'chainCooldown') {
@@ -1059,6 +1061,29 @@ function describeQueueCondition(entry: ManagerBarQueueEntry): string {
     return t('managerBar.queue.chainRunning');
   }
   return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.cooldown');
+}
+
+function describeQueuedPromptCondition(entry: ManagerBarQueueEntry): string {
+  const nextRun = formatQueuedPromptRunAt(entry.nextRunAt ?? '');
+  return entry.repeatEveryMs && entry.repeatEveryMs >= 1000
+    ? `${t('managerBar.queue.every')} ${formatRepeatInterval(entry.repeatEveryMs)} · ${nextRun}`
+    : nextRun;
+}
+
+function formatRepeatInterval(intervalMs: number): string {
+  const units: Array<{ divisor: number; key: 'days' | 'hours' | 'minutes' | 'seconds' }> = [
+    { divisor: 86_400_000, key: 'days' },
+    { divisor: 3_600_000, key: 'hours' },
+    { divisor: 60_000, key: 'minutes' },
+    { divisor: 1000, key: 'seconds' },
+  ];
+  const unit = units.find(({ divisor }) => intervalMs % divisor === 0) ?? {
+    divisor: 1000,
+    key: 'seconds' as const,
+  };
+  return `${Math.max(1, Math.trunc(intervalMs / unit.divisor))} ${t(
+    `managerBar.intervalUnit.${unit.key}`,
+  )}`;
 }
 
 function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {

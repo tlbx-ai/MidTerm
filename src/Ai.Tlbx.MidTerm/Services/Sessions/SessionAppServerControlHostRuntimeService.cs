@@ -1297,6 +1297,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             Attachments = source.Attachments.Select(CloneAttachment).ToList(),
             FileMentions = source.FileMentions.Select(CloneInlineFileReference).ToList(),
             ImagePreviews = source.ImagePreviews.Select(CloneInlineImagePreview).ToList(),
+            Questions = source.Questions.Select(CloneQuestion).ToList(),
+            Answers = source.Answers.Select(CloneAnsweredQuestion).ToList(),
             Streaming = source.Streaming,
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt
@@ -2165,5 +2167,4 @@ internal sealed class SubscriptionState
         }
     }
 }
-
 

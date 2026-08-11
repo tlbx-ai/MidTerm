@@ -367,6 +367,7 @@
   "update.applying": "প্রয়োগ হচ্ছে...",
   "update.lastUpdate": "শেষ আপডেট:",
   "update.success": "সফল",
+  "update.rollbackAttempted": "রোলব্যাকের চেষ্টা করা হয়েছে। বিস্তারিত জানতে আপডেট লগ দেখুন।",
   "update.viewUpdateLog": "আপডেট লগ দেখুন",
   "update.noLogFound": "কোনো আপডেট লগ পাওয়া যায়নি",
   "update.copyLog": "লগ কপি করুন",

@@ -9,15 +9,21 @@ namespace Ai.Tlbx.MidTerm.Services.Security;
 
 public sealed class WindowsFirewallService
 {
-    public const string ManagedRuleName = "MidTerm HTTPS";
+    public const string ManagedRuleName = "tlbx HTTPS";
+    public const string LegacyManagedRuleName = "MidTerm HTTPS";
 
     private readonly ServerBindingInfo _bindingInfo;
     private readonly IPowerShellCommandRunner _commandRunner;
+    private readonly string _managedRuleName;
 
-    public WindowsFirewallService(ServerBindingInfo bindingInfo, IPowerShellCommandRunner commandRunner)
+    public WindowsFirewallService(
+        ServerBindingInfo bindingInfo,
+        IPowerShellCommandRunner commandRunner,
+        string managedRuleName = ManagedRuleName)
     {
         _bindingInfo = bindingInfo;
         _commandRunner = commandRunner;
+        _managedRuleName = managedRuleName;
     }
 
     public FirewallRuleStatusResponse GetStatus()
@@ -55,7 +61,7 @@ public sealed class WindowsFirewallService
             Port = status.Port,
             BindAddress = status.BindAddress,
             LoopbackOnly = status.LoopbackOnly,
-            RuleName = ManagedRuleName,
+            RuleName = _managedRuleName,
             RulePresent = true,
             RuleEnabled = string.Equals(snapshot.Enabled, "True", StringComparison.OrdinalIgnoreCase),
             MatchesCurrentPort = string.Equals(snapshot.LocalPort, expectedPort, StringComparison.OrdinalIgnoreCase),
@@ -104,7 +110,7 @@ public sealed class WindowsFirewallService
             Port = _bindingInfo.Port,
             BindAddress = _bindingInfo.BindAddress,
             LoopbackOnly = IsLoopbackBinding(_bindingInfo.BindAddress),
-            RuleName = ManagedRuleName
+            RuleName = _managedRuleName
         };
     }
 
@@ -159,7 +165,7 @@ public sealed class WindowsFirewallService
 
     private string BuildStatusScript()
     {
-        var ruleName = EscapeForPowerShell(ManagedRuleName);
+        var ruleName = EscapeForPowerShell(_managedRuleName);
         return $$"""
 $ErrorActionPreference = 'Stop'
 Import-Module NetSecurity -ErrorAction Stop
@@ -183,7 +189,7 @@ $appFilter = Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule |
 
     private string BuildAddScript()
     {
-        var ruleName = EscapeForPowerShell(ManagedRuleName);
+        var ruleName = EscapeForPowerShell(_managedRuleName);
         var programPath = EscapeForPowerShell(GetCurrentProgramPath());
         var localPort = _bindingInfo.Port.ToString(CultureInfo.InvariantCulture);
         return $$"""
@@ -199,13 +205,13 @@ New-NetFirewallRule `
   -Protocol TCP `
   -LocalPort {{localPort}} `
   -Program '{{programPath}}' `
-  -Description 'Allows inbound HTTPS access to MidTerm.' | Out-Null
+  -Description 'Allows inbound HTTPS access to tlbx.' | Out-Null
 """;
     }
 
     private string BuildRemoveScript()
     {
-        var ruleName = EscapeForPowerShell(ManagedRuleName);
+        var ruleName = EscapeForPowerShell(_managedRuleName);
         return $$"""
 $ErrorActionPreference = 'Stop'
 Import-Module NetSecurity -ErrorAction Stop

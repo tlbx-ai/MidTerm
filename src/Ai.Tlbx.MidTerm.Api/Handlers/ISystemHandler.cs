@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Settings;
@@ -28,6 +29,7 @@ public interface ISystemHandler
     IResult GetUsers();
     IResult GetSettings();
     IResult UpdateSettings(MidTermSettingsPublic settings);
+    IResult PatchSettings(JsonElement patch);
     IResult ReloadSettings();
     IResult GetPaths();
     Task<IResult> CheckUpdateAsync();

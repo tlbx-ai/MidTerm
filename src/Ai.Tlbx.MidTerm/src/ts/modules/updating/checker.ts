@@ -324,6 +324,10 @@ export function checkForUpdates(e?: MouseEvent): void {
       }
 
       if (data) {
+        if (data.lastResult?.found) {
+          lastUpdateResult = data.lastResult;
+          renderUpdateResult();
+        }
         $updateInfo.set(data);
         renderUpdatePanel();
         renderUpdateCards(data);
@@ -544,11 +548,6 @@ export function checkUpdateResult(): void {
       // Store for settings panel display
       lastUpdateResult = data;
       renderUpdateResult();
-
-      // Clear the result file after storing
-      deleteUpdateResult().catch((e: unknown) => {
-        log.verbose(() => `Failed to clear update result: ${String(e)}`);
-      });
     })
     .catch((e: unknown) => {
       log.warn(() => `Failed to check update result: ${String(e)}`);
@@ -579,11 +578,24 @@ export function renderUpdateResult(): void {
       <span class="update-result-time">${timestamp}</span>
     </div>
     ${!lastUpdateResult.success ? `<div class="update-result-message">${escapeHtml(lastUpdateResult.message)}</div>` : ''}
+    ${lastUpdateResult.details ? `<div class="update-result-message">${escapeHtml(lastUpdateResult.details)}</div>` : ''}
+    ${lastUpdateResult.rollbackAttempted ? `<div class="update-result-message">${t('update.rollbackAttempted')}</div>` : ''}
     <button class="btn-secondary btn-view-log">${t('update.viewUpdateLog')}</button>
+    <button class="btn-secondary btn-dismiss-result">${t('sidebar.updateDismiss')}</button>
   `;
 
   container.querySelector('.btn-view-log')?.addEventListener('click', () => {
     void showUpdateLog();
+  });
+  container.querySelector('.btn-dismiss-result')?.addEventListener('click', () => {
+    deleteUpdateResult()
+      .then(() => {
+        lastUpdateResult = null;
+        renderUpdateResult();
+      })
+      .catch((e: unknown) => {
+        log.warn(() => `Failed to dismiss update result: ${String(e)}`);
+      });
   });
 }
 

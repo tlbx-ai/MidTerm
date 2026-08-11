@@ -7,14 +7,18 @@ NAMES=()
 PORTS=()
 BASE_PORT=2000
 BIND_ADDRESS="0.0.0.0"
-ROOT_DIR="/usr/local/etc/midterm-instances"
-INSTALL_ROOT="/usr/local/lib/midterm/instances"
+ROOT_DIR="/usr/local/etc/tlbx-instances"
+INSTALL_ROOT="/usr/local/lib/tlbx/instances"
+ROOT_DIR_SET=false
+INSTALL_ROOT_SET=false
 VERSION_TAG="latest"
 ASSET_PATH=""
 PASSWORD_HASH=""
 PASSWORD=""
 FORCE=false
 REPO="tlbx-ai/tlbx"
+SERVICE_PREFIX="tlbx"
+LAUNCHD_PREFIX="ai.tlbx.instance"
 
 usage() {
   cat <<'EOF'
@@ -48,8 +52,8 @@ while [[ $# -gt 0 ]]; do
     --ports) IFS=',' read -r -a PORTS <<< "$2"; shift 2 ;;
     --base-port) BASE_PORT="$2"; shift 2 ;;
     --bind) BIND_ADDRESS="$2"; shift 2 ;;
-    --root-dir) ROOT_DIR="$2"; shift 2 ;;
-    --install-root) INSTALL_ROOT="$2"; shift 2 ;;
+    --root-dir) ROOT_DIR="$2"; ROOT_DIR_SET=true; shift 2 ;;
+    --install-root) INSTALL_ROOT="$2"; INSTALL_ROOT_SET=true; shift 2 ;;
     --version-tag) VERSION_TAG="$2"; shift 2 ;;
     --asset-path) ASSET_PATH="$2"; shift 2 ;;
     --password-hash) PASSWORD_HASH="$2"; shift 2 ;;
@@ -59,6 +63,15 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+if [[ "$ROOT_DIR_SET" != true && ! -d "$ROOT_DIR" && -d "/usr/local/etc/midterm-instances" ]]; then
+  ROOT_DIR="/usr/local/etc/midterm-instances"
+  SERVICE_PREFIX="midterm"
+  LAUNCHD_PREFIX="ai.tlbx.midterm"
+fi
+if [[ "$INSTALL_ROOT_SET" != true && ! -d "$INSTALL_ROOT" && -d "/usr/local/lib/midterm/instances" ]]; then
+  INSTALL_ROOT="/usr/local/lib/midterm/instances"
+fi
 
 normalize_name() {
   local value="${1//[^A-Za-z0-9_-]/-}"
@@ -98,8 +111,8 @@ asset_name() {
     Darwin:x86_64) echo "mt-osx-x64.tar.gz" ;;
     Linux:x86_64|Linux:amd64) echo "mt-linux-x64.tar.gz" ;;
     Linux:aarch64|Linux:arm64) echo "mt-linux-arm64.tar.gz" ;;
-    Darwin:i386|Darwin:i686|Darwin:x86) echo "32-bit macOS is not supported by current MidTerm release assets." >&2; exit 1 ;;
-    Linux:i386|Linux:i686|Linux:x86) echo "32-bit Linux is not supported by current MidTerm release assets." >&2; exit 1 ;;
+    Darwin:i386|Darwin:i686|Darwin:x86) echo "32-bit macOS is not supported by current tlbx release assets." >&2; exit 1 ;;
+    Linux:i386|Linux:i686|Linux:x86) echo "32-bit Linux is not supported by current tlbx release assets." >&2; exit 1 ;;
     *) echo "Unsupported platform/architecture: $os $arch" >&2; exit 1 ;;
   esac
 }
@@ -119,7 +132,7 @@ download_asset() {
     release_url="https://api.github.com/repos/$REPO/releases/tags/$VERSION_TAG"
   fi
 
-  api_json="$(curl -fsSL -H "User-Agent: MidTerm multi-instance installer" "$release_url")"
+  api_json="$(curl -fsSL -H "User-Agent: tlbx multi-instance installer" "$release_url")"
   url="$(printf '%s' "$api_json" | python3 -c 'import json,sys; name=sys.argv[1]; data=json.load(sys.stdin); matches=[a["browser_download_url"] for a in data.get("assets",[]) if a.get("name")==name]; print(matches[0] if matches else "")' "$name")"
   if [[ -z "$url" ]]; then
     printf '%s' "$api_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print("Available assets: " + ", ".join(a.get("name","") for a in data.get("assets",[])))' >&2
@@ -128,7 +141,7 @@ download_asset() {
   fi
 
   asset="$temp_dir/$name"
-  curl -fsSL -H "User-Agent: MidTerm multi-instance installer" "$url" -o "$asset"
+  curl -fsSL -H "User-Agent: tlbx multi-instance installer" "$url" -o "$asset"
   echo "$asset"
 }
 
@@ -139,7 +152,7 @@ resolve_password_hash() {
     return
   fi
   if [[ -z "$PASSWORD" ]]; then
-    read -rsp "Password for new MidTerm instances: " PASSWORD
+    read -rsp "Password for new tlbx instances: " PASSWORD
     echo
   fi
   [[ -n "$PASSWORD" ]] || { echo "A password or --password-hash is required." >&2; exit 1; }
@@ -147,11 +160,11 @@ resolve_password_hash() {
 }
 
 service_name() {
-  echo "midterm-$(normalize_name "$1" | tr '[:upper:]' '[:lower:]')"
+  echo "$SERVICE_PREFIX-$(normalize_name "$1" | tr '[:upper:]' '[:lower:]')"
 }
 
 launchd_label() {
-  echo "ai.tlbx.midterm.$(normalize_name "$1" | tr '[:upper:]' '[:lower:]')"
+  echo "$LAUNCHD_PREFIX.$(normalize_name "$1" | tr '[:upper:]' '[:lower:]')"
 }
 
 install_instance() {
@@ -174,7 +187,7 @@ install_instance() {
 
   mkdir -p "$install_dir" "$settings_dir"
   cp -R "$payload"/. "$install_dir"/
-  chmod +x "$install_dir"/mt "$install_dir"/mtagenthost 2>/dev/null || true
+  chmod +x "$install_dir"/mt "$install_dir"/mtagenthost "$install_dir"/mttmux 2>/dev/null || true
   [[ -f "$install_dir/mthost" ]] && chmod +x "$install_dir/mthost"
 
   printf '%s' "$hash" | "$mt" --write-secret password_hash --settings-dir "$settings_dir" --service-mode >/dev/null
@@ -228,7 +241,7 @@ EOF
     systemctl stop "$svc" >/dev/null 2>&1 || true
     cat > "/etc/systemd/system/$svc.service" <<EOF
 [Unit]
-Description=MidTerm isolated instance $name
+Description=tlbx isolated instance $name
 After=network.target
 
 [Service]
@@ -279,7 +292,7 @@ update_instance() {
 
   mkdir -p "$install_dir" "$settings_dir"
   cp -R "$payload"/. "$install_dir"/
-  chmod +x "$install_dir"/mt "$install_dir"/mtagenthost 2>/dev/null || true
+  chmod +x "$install_dir"/mt "$install_dir"/mtagenthost "$install_dir"/mttmux 2>/dev/null || true
   [[ -f "$install_dir/mthost" ]] && chmod +x "$install_dir/mthost"
 
   cat > "$settings_dir/instance.json" <<EOF

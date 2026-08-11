@@ -21,6 +21,7 @@ param(
     [switch]$Publish,        # Enable Brotli compression for publish builds
     [switch]$DevRelease,     # Include source maps in publish (for dev/prerelease builds)
     [switch]$SkipVerify,     # Skip npm verify/lint/typecheck gates when another job already owns them
+    [switch]$StaticOnly,     # Rebuild transformed static assets without regenerating or bundling TypeScript
     [string]$Version = "dev" # Version to inject into BUILD_VERSION
 )
 
@@ -33,6 +34,10 @@ $OutFile = Join-Path $WwwRoot "js/terminal.min.js"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $NodeModulesRoot = Join-Path $PSScriptRoot "node_modules"
 $AssetVersionPlaceholder = "__MIDTERM_ASSET_VERSION__"
+
+if ($StaticOnly -and $Publish) {
+    throw "-StaticOnly is a source-dev operation and cannot be combined with -Publish."
+}
 
 if (Test-Path $WwwRoot) {
     Get-ChildItem -Path $WwwRoot -Filter "*.br" -File -Recurse | Remove-Item -Force
@@ -181,6 +186,7 @@ $GeneratedTypes = Join-Path $TsSource "api.generated.ts"
 $SwaggerSource = Join-Path $StaticSource "swagger"
 $SwaggerUiRoot = Join-Path $NodeModulesRoot "swagger-ui-dist"
 
+if (-not $StaticOnly) {
 Write-Host "Generating API types from OpenAPI spec..." -ForegroundColor Cyan
 
 # Build OpenAPI project to regenerate spec
@@ -209,6 +215,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEX
 if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTEXITCODE }
 
 Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
+}
 
 $AssetVersion = Get-AssetFingerprint -Paths @(
     $TsSource,
@@ -224,7 +231,10 @@ Write-Host "Asset fingerprint: $AssetVersion" -ForegroundColor DarkGray
 # ===========================================
 # PHASE 1+2: Static verification
 # ===========================================
-if ($Publish) {
+if ($StaticOnly) {
+    Write-Host "Skipping TypeScript verification for static-only sync..." -ForegroundColor DarkGray
+}
+elseif ($Publish) {
     if ($SkipVerify) {
         Write-Host "Skipping publish TypeScript/lint/test gate..." -ForegroundColor Yellow
     }
@@ -240,6 +250,7 @@ else {
 # ===========================================
 # PHASE 3: Bundle with esbuild
 # ===========================================
+if (-not $StaticOnly) {
 Write-Host "Bundling with esbuild (version: $Version, assets: $AssetVersion)..." -ForegroundColor Cyan
 
 $mainTs = Join-Path $TsSource "main.ts"
@@ -260,10 +271,31 @@ if ($LASTEXITCODE -ne 0) {
 
 $jsSize = (Get-Item $OutFile).Length
 Write-Host "  terminal.min.js ($([math]::Round($jsSize/1KB, 1)) KB)" -ForegroundColor DarkGray
+}
 
 # ===========================================
 # PHASE 4: Copy binary assets
 # ===========================================
+if ($StaticOnly) {
+    # Source-dev sync is an exact mirror for static-owned destinations so deletes
+    # do not survive in wwwroot. Generated bundles and vendor assets stay intact.
+    Get-ChildItem -Path $WwwRoot -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.html', '.txt', '.json', '.webmanifest', '.svg', '.png', '.ico', '.css', '.js') } |
+        Remove-Item -Force
+    foreach ($ownedDir in @('css', 'fonts', 'img', 'locales')) {
+        $ownedPath = Join-Path $WwwRoot $ownedDir
+        if (Test-Path $ownedPath) {
+            Get-ChildItem -Path $ownedPath -File -Recurse | Remove-Item -Force
+        }
+    }
+    $jsDir = Join-Path $WwwRoot 'js'
+    if (Test-Path $jsDir) {
+        Get-ChildItem -Path $jsDir -Filter '*.js' -File |
+            Where-Object { $_.Name -notin @('terminal.min.js', 'html2canvas.min.js') } |
+            Remove-Item -Force
+    }
+}
+
 # Binary asset compression notes (tested 2025-01):
 #   - woff2 files are already Brotli-compressed internally, so most don't benefit
 #   - EXCEPT Terminus.woff2 which has 62% reduction (unoptimized metadata?)
@@ -643,4 +675,4 @@ if ($Publish) {
     Write-Host "  Total saved: $([math]::Round($totalSaved/1KB, 1)) KB" -ForegroundColor Green
 }
 
-Write-Host "Frontend build complete" -ForegroundColor Green
+Write-Host $(if ($StaticOnly) { "Static asset sync complete" } else { "Frontend build complete" }) -ForegroundColor Green

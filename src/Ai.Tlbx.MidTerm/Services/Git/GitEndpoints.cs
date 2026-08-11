@@ -164,17 +164,23 @@ public static class GitEndpoints
                 return Results.BadRequest("sessionId required");
             }
 
-            var repoRoot = gitWatcher.ResolveRepoRoot(request.SessionId, request.RepoRoot);
-            if (repoRoot is not null)
+            if (!string.IsNullOrWhiteSpace(request.RepoRoot))
             {
+                var repoRoot = gitWatcher.ResolveRepoRoot(request.SessionId, request.RepoRoot);
+                if (repoRoot is null)
+                {
+                    return Results.BadRequest("Repository is not bound to this session");
+                }
+
                 await gitWatcher.RefreshStatusAsync(repoRoot);
             }
             else
             {
-                foreach (var repo in gitWatcher.GetRepoBindings(request.SessionId))
-                {
-                    await gitWatcher.RefreshStatusAsync(repo.RepoRoot);
-                }
+                var repoRoots = gitWatcher.GetRepoBindings(request.SessionId)
+                    .Select(static repo => repo.RepoRoot)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                await Task.WhenAll(repoRoots.Select(gitWatcher.RefreshStatusAsync));
             }
 
             return Results.Json(

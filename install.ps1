@@ -1,4 +1,4 @@
-# tlbx Windows Installer (formerly MidTerm)
+# tlbx Windows Installer
 # Usage: irm https://get.tlbx.ai/install.ps1 | iex
 # Dev:   & ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1))) -Dev
 #
@@ -135,11 +135,11 @@ function Initialize-Log
 
     if ($Mode -eq "service")
     {
-        $logDir = "$env:ProgramData\MidTerm"
+        $logDir = $WIN_SERVICE_SETTINGS_DIR
     }
     else
     {
-        $logDir = "$env:USERPROFILE\.MidTerm"
+        $logDir = $WIN_USER_SETTINGS_DIR
     }
 
     if (-not (Test-Path $logDir))
@@ -180,19 +180,27 @@ function Write-Log
     }
 }
 
-$ServiceName = "MidTerm"
-$OldHostServiceName = "MidTermHost"
-$DisplayName = "MidTerm"
+$ServiceName = "tlbx"
+$OldHostServiceName = "tlbxHost"
+$DisplayName = "tlbx"
 $Publisher = "tlbx-ai"
 $RepoOwner = "tlbx-ai"
-$RepoName = "MidTerm"
+$RepoName = "tlbx"
 $WebBinaryName = "mt.exe"
 $TtyHostBinaryName = "mthost.exe"
 $AgentHostBinaryName = "mtagenthost.exe"
+$TmuxShimBinaryName = "mttmux.exe"
 $LegacyHostBinaryName = "mt-host.exe"
-$AssetPattern = "mt-win-x64.zip"
+$Is64BitWindows = [Environment]::Is64BitOperatingSystem
+$AssetArchitecture = if ($Is64BitWindows) { "x64" } else { "x86" }
+$AssetPattern = "mt-win-$AssetArchitecture.zip"
+$ExpectedReleasePlatform = "win-$AssetArchitecture"
 # Certificate subject CN - must match CertificateGenerator.CertificateSubject in C#
-$CertificateSubject = "CN=ai.tlbx.midterm"
+$CertificateSubject = "CN=tlbx"
+$CertificateFileName = "tlbx.pem"
+$CertificateKeyId = "tlbx"
+$UninstallRegistryName = "tlbx"
+$FirewallDisplayName = "tlbx HTTPS"
 
 try
 {
@@ -214,31 +222,145 @@ catch
 #   - UpdateScriptGenerator.cs (SettingsDir variable in generated scripts)
 #   - install.sh (PATH_CONSTANTS section)
 # ============================================================================
-# Windows service mode: %ProgramData%\MidTerm (typically C:\ProgramData\MidTerm)
-$WIN_SERVICE_SETTINGS_DIR = "$env:ProgramData\MidTerm"
-$WIN_SERVICE_INSTALL_DIR = "$env:ProgramFiles\MidTerm"
-# Windows user mode: %LOCALAPPDATA%\MidTerm and %USERPROFILE%\.midterm
-$WIN_USER_INSTALL_DIR = "$env:LOCALAPPDATA\MidTerm"
-$WIN_USER_SETTINGS_DIR = "$env:USERPROFILE\.midterm"
+# New installations use tlbx. Existing MidTerm layouts are selected explicitly
+# later and remain updateable in place.
+$TLBX_SERVICE_SETTINGS_DIR = "$env:ProgramData\tlbx"
+$TLBX_SERVICE_INSTALL_DIR = "$env:ProgramFiles\tlbx"
+$TLBX_USER_INSTALL_DIR = "$env:LOCALAPPDATA\tlbx"
+$TLBX_USER_SETTINGS_DIR = "$env:USERPROFILE\.tlbx"
+$LEGACY_SERVICE_SETTINGS_DIR = "$env:ProgramData\MidTerm"
+$LEGACY_SERVICE_INSTALL_DIR = "$env:ProgramFiles\MidTerm"
+$LEGACY_USER_INSTALL_DIR = "$env:LOCALAPPDATA\MidTerm"
+$LEGACY_USER_SETTINGS_DIR = "$env:USERPROFILE\.midterm"
+$WIN_SERVICE_SETTINGS_DIR = $TLBX_SERVICE_SETTINGS_DIR
+$WIN_SERVICE_INSTALL_DIR = $TLBX_SERVICE_INSTALL_DIR
+$WIN_USER_INSTALL_DIR = $TLBX_USER_INSTALL_DIR
+$WIN_USER_SETTINGS_DIR = $TLBX_USER_SETTINGS_DIR
 # Secrets file (secrets.bin on Windows, secrets.json on Unix)
 $WIN_SECRETS_FILENAME = "secrets.bin"
 # ============================================================================
+
+function Test-ServiceInstallIdentity
+{
+    param(
+        [string]$InstallDir,
+        [string]$SettingsDir,
+        [string]$RegistryName,
+        [string[]]$ServiceNames
+    )
+
+    if ((Test-Path (Join-Path $InstallDir $WebBinaryName)) -or
+        (Test-MeaningfulSettingsDirectory -Path $SettingsDir) -or
+        (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$RegistryName"))
+    {
+        return $true
+    }
+
+    foreach ($name in $ServiceNames)
+    {
+        if (Get-Service -Name $name -ErrorAction SilentlyContinue)
+        {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-UserInstallIdentity
+{
+    param(
+        [string]$InstallDir,
+        [string]$SettingsDir,
+        [string]$RegistryName
+    )
+
+    return ((Test-Path (Join-Path $InstallDir $WebBinaryName)) -or
+        (Test-MeaningfulSettingsDirectory -Path $SettingsDir) -or
+        (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$RegistryName"))
+}
+
+function Test-MeaningfulSettingsDirectory
+{
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+    $entry = Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notin @("Logs", "logs", "update.log", "startup-debug.log", ".write-check") } |
+        Select-Object -First 1
+    return [bool]$entry
+}
+
+function Select-InstallIdentity
+{
+    param([bool]$AsService)
+
+    $currentExists = if ($AsService)
+    {
+        Test-ServiceInstallIdentity -InstallDir $TLBX_SERVICE_INSTALL_DIR -SettingsDir $TLBX_SERVICE_SETTINGS_DIR -RegistryName "tlbx" -ServiceNames @("tlbx", "tlbxHost")
+    }
+    else
+    {
+        Test-UserInstallIdentity -InstallDir $TLBX_USER_INSTALL_DIR -SettingsDir $TLBX_USER_SETTINGS_DIR -RegistryName "tlbx"
+    }
+
+    $legacyExists = if ($AsService)
+    {
+        Test-ServiceInstallIdentity -InstallDir $LEGACY_SERVICE_INSTALL_DIR -SettingsDir $LEGACY_SERVICE_SETTINGS_DIR -RegistryName "MidTerm" -ServiceNames @("MidTerm", "MidTermHost")
+    }
+    else
+    {
+        Test-UserInstallIdentity -InstallDir $LEGACY_USER_INSTALL_DIR -SettingsDir $LEGACY_USER_SETTINGS_DIR -RegistryName "MidTerm"
+    }
+
+    if ($currentExists -and $legacyExists)
+    {
+        throw "Both tlbx and legacy MidTerm $($(if ($AsService) { 'service' } else { 'user' })) installations were found. Uninstall one copy before continuing."
+    }
+
+    if ($legacyExists)
+    {
+        $script:ServiceName = "MidTerm"
+        $script:OldHostServiceName = "MidTermHost"
+        $script:DisplayName = "MidTerm"
+        $script:CertificateSubject = "CN=ai.tlbx.midterm"
+        $script:CertificateFileName = "midterm.pem"
+        $script:CertificateKeyId = "midterm"
+        $script:UninstallRegistryName = "MidTerm"
+        $script:FirewallDisplayName = "MidTerm HTTPS"
+        $script:WIN_SERVICE_SETTINGS_DIR = $LEGACY_SERVICE_SETTINGS_DIR
+        $script:WIN_SERVICE_INSTALL_DIR = $LEGACY_SERVICE_INSTALL_DIR
+        $script:WIN_USER_INSTALL_DIR = $LEGACY_USER_INSTALL_DIR
+        $script:WIN_USER_SETTINGS_DIR = $LEGACY_USER_SETTINGS_DIR
+        Write-Host "  Existing MidTerm installation detected; updating it in place." -ForegroundColor Yellow
+        return
+    }
+
+    $script:ServiceName = "tlbx"
+    $script:OldHostServiceName = "tlbxHost"
+    $script:DisplayName = "tlbx"
+    $script:CertificateSubject = "CN=tlbx"
+    $script:CertificateFileName = "tlbx.pem"
+    $script:CertificateKeyId = "tlbx"
+    $script:UninstallRegistryName = "tlbx"
+    $script:FirewallDisplayName = "tlbx HTTPS"
+    $script:WIN_SERVICE_SETTINGS_DIR = $TLBX_SERVICE_SETTINGS_DIR
+    $script:WIN_SERVICE_INSTALL_DIR = $TLBX_SERVICE_INSTALL_DIR
+    $script:WIN_USER_INSTALL_DIR = $TLBX_USER_INSTALL_DIR
+    $script:WIN_USER_SETTINGS_DIR = $TLBX_USER_SETTINGS_DIR
+}
 
 $script:StatusLabelWidth = 12
 
 function Write-Banner
 {
     Write-Host ""
-    Write-Host "            //   \\" -ForegroundColor White
-    Write-Host "           //     \\         __  __ _     _ _____" -ForegroundColor White
-    Write-Host "          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___" -ForegroundColor White
-    Write-Host "         //  ( " -NoNewline -ForegroundColor White
-    Write-Host "·" -NoNewline -ForegroundColor Cyan
-    Write-Host " )  \\      | |\/| | |/ _` | | |/ _ \\ '__| '_ ` _ \\" -ForegroundColor White
-    Write-Host "        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |" -ForegroundColor White
-    Write-Host "       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|" -ForegroundColor White
-    Write-Host "      //               \\   " -NoNewline -ForegroundColor White
-    Write-Host "tlbx.ai - https://github.com/tlbx-ai/tlbx" -ForegroundColor Green
+    Write-Host "       _   _ _            " -ForegroundColor White
+    Write-Host "      | |_| | |__  __  __ " -ForegroundColor White
+    Write-Host "      | __| | '_ \ \ \/ / " -ForegroundColor White
+    Write-Host "      | |_| | |_) | >  <  " -ForegroundColor White
+    Write-Host "       \__|_|_.__/ /_/\_\ " -ForegroundColor White
+    Write-Host "      tlbx.ai - https://github.com/tlbx-ai/tlbx" -ForegroundColor Green
     Write-Host ""
 }
 
@@ -330,7 +452,7 @@ function Get-CurrentInstallerScriptContent
     }
 
     $scriptUrl = "https://get.tlbx.ai/install.ps1"
-    return Invoke-CompatibleRestMethod -Uri $scriptUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+    return Invoke-CompatibleRestMethod -Uri $scriptUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
 }
 
 function New-ElevationHandoffDirectory
@@ -340,7 +462,7 @@ function New-ElevationHandoffDirectory
         [string]$UserSid
     )
 
-    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("MidTerm-Install-" + [Guid]::NewGuid().ToString("N"))
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $root -Force | Out-Null
 
     $grants = @()
@@ -455,20 +577,16 @@ function Test-ExistingPassword
 function Test-ExistingServiceInstall
 {
     return (
-        (Test-Path $WIN_SERVICE_INSTALL_DIR) -or
-        (Test-Path $WIN_SERVICE_SETTINGS_DIR) -or
-        (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm") -or
-        (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) -or
-        (Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue)
+        (Test-ServiceInstallIdentity -InstallDir $TLBX_SERVICE_INSTALL_DIR -SettingsDir $TLBX_SERVICE_SETTINGS_DIR -RegistryName "tlbx" -ServiceNames @("tlbx", "tlbxHost")) -or
+        (Test-ServiceInstallIdentity -InstallDir $LEGACY_SERVICE_INSTALL_DIR -SettingsDir $LEGACY_SERVICE_SETTINGS_DIR -RegistryName "MidTerm" -ServiceNames @("MidTerm", "MidTermHost"))
     )
 }
 
 function Test-ExistingUserInstall
 {
     return (
-        (Test-Path $WIN_USER_INSTALL_DIR) -or
-        (Test-Path $WIN_USER_SETTINGS_DIR) -or
-        (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm")
+        (Test-UserInstallIdentity -InstallDir $TLBX_USER_INSTALL_DIR -SettingsDir $TLBX_USER_SETTINGS_DIR -RegistryName "tlbx") -or
+        (Test-UserInstallIdentity -InstallDir $LEGACY_USER_INSTALL_DIR -SettingsDir $LEGACY_USER_SETTINGS_DIR -RegistryName "MidTerm")
     )
 }
 
@@ -481,7 +599,7 @@ function Assert-NoCrossModeConflict
         Write-Host ""
         Write-Host "  Cannot install as a system service while a user install still exists." -ForegroundColor Red
         Write-Host "  Uninstall the user-mode copy first, then rerun the installer." -ForegroundColor Gray
-        Write-Host "  User traces: $WIN_USER_INSTALL_DIR or $WIN_USER_SETTINGS_DIR" -ForegroundColor Gray
+        Write-Host "  User traces: $TLBX_USER_INSTALL_DIR, $TLBX_USER_SETTINGS_DIR, or their legacy MidTerm equivalents" -ForegroundColor Gray
         exit 1
     }
 
@@ -490,7 +608,7 @@ function Assert-NoCrossModeConflict
         Write-Host ""
         Write-Host "  Cannot install in user mode while a system service install still exists." -ForegroundColor Red
         Write-Host "  Uninstall the service-mode copy first, then rerun the installer." -ForegroundColor Gray
-        Write-Host "  Service traces: $WIN_SERVICE_INSTALL_DIR or $WIN_SERVICE_SETTINGS_DIR" -ForegroundColor Gray
+        Write-Host "  Service traces: $TLBX_SERVICE_INSTALL_DIR, $TLBX_SERVICE_SETTINGS_DIR, or their legacy MidTerm equivalents" -ForegroundColor Gray
         exit 1
     }
 }
@@ -600,8 +718,8 @@ function Test-ExistingCertificate
         [string]$SettingsDir
     )
 
-    $certPath = Join-Path $SettingsDir "midterm.pem"
-    $keyPath = Join-Path (Join-Path $SettingsDir "keys") "midterm.dpapi"
+    $certPath = Join-Path $SettingsDir $CertificateFileName
+    $keyPath = Join-Path (Join-Path $SettingsDir "keys") "$CertificateKeyId.dpapi"
 
     # Check if both cert and key exist
     if (-not (Test-Path $certPath))
@@ -651,7 +769,7 @@ function Test-ExistingCertificate
     }
 }
 
-function Remove-OldMidTermCertificates
+function Remove-PreviousTlbxCertificates
 {
     param(
         [string]$ExceptThumbprint = $null
@@ -688,7 +806,7 @@ function Remove-OldMidTermCertificates
 
         if ($removed -gt 0)
         {
-            Write-Host "  Cleaned up $removed old MidTerm certificate(s) from trusted store" -ForegroundColor Green
+            Write-Host "  Cleaned up $removed old $DisplayName certificate(s) from trusted store" -ForegroundColor Green
         }
     }
     catch
@@ -779,7 +897,8 @@ function Generate-Certificate
             # Use mt.exe --generate-cert to generate certificate with DPAPI-protected key
             # Pass --service-mode for service installs so it uses ProgramData instead of user profile
             # Pass --force to regenerate since we already checked validity above
-            $certArgs = if ($IsService) { @("--generate-cert", "--service-mode", "--force") } else { @("--generate-cert", "--force") }
+            $modeArg = if ($IsService) { "--service-mode" } else { "--user-mode" }
+            $certArgs = @("--generate-cert", $modeArg, "--settings-dir", $SettingsDir, "--force")
             $output = & $mtPath @certArgs 2>&1
             $exitCode = $LASTEXITCODE
 
@@ -802,7 +921,7 @@ function Generate-Certificate
             if (-not $certPath)
             {
                 # Default path (matches what mt.exe generates)
-                $certPath = Join-Path $SettingsDir "midterm.pem"
+                $certPath = Join-Path $SettingsDir $CertificateFileName
             }
 
             Write-Host "  Certificate generated with DPAPI-protected private key" -ForegroundColor Green
@@ -825,8 +944,8 @@ function Generate-Certificate
     # Trust the certificate if requested (decision made before elevation)
     if ($TrustCert)
     {
-        # First, remove ALL old MidTerm certs from trusted store to avoid accumulation
-        Remove-OldMidTermCertificates -ExceptThumbprint $null  # Remove all, we'll add the current one
+        # First, remove old certificates for the selected install identity.
+        Remove-PreviousTlbxCertificates -ExceptThumbprint $null  # Remove all, we'll add the current one
 
         Write-Host "  Adding certificate to trusted root store..." -ForegroundColor Gray
         try
@@ -968,7 +1087,7 @@ function Get-LatestRelease
     {
         Write-Host "Fetching latest dev release..." -ForegroundColor Gray
         $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
-        $releases = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+        $releases = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
 
         # Find the first prerelease
         $release = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
@@ -977,7 +1096,7 @@ function Get-LatestRelease
         {
             Write-Host "  No dev releases found, falling back to latest stable..." -ForegroundColor Yellow
             $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
-            $release = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+            $release = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
         }
 
         return $release
@@ -986,7 +1105,7 @@ function Get-LatestRelease
     {
         Write-Host "Fetching latest release..." -ForegroundColor Gray
         $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
-        $release = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+        $release = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
         return $release
     }
 }
@@ -998,6 +1117,109 @@ function Test-NetworkBinding
     )
 
     return $BindAddress -ne "localhost" -and $BindAddress -ne "127.0.0.1" -and $BindAddress -ne "::1"
+}
+
+function Test-TailscaleIpv4Address
+{
+    param([string]$Address)
+
+    $parsed = $null
+    if (-not [Net.IPAddress]::TryParse($Address, [ref]$parsed))
+    {
+        return $false
+    }
+
+    $bytes = $parsed.GetAddressBytes()
+    return $bytes.Length -eq 4 -and $bytes[0] -eq 100 -and $bytes[1] -ge 64 -and $bytes[1] -le 127
+}
+
+function Get-TailscaleIpv4Addresses
+{
+    $addresses = @()
+    $tailscale = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($tailscale)
+    {
+        try
+        {
+            $addresses += @(& $tailscale.Source ip -4 2>$null)
+        }
+        catch
+        {
+            Write-Log "Could not query the Tailscale CLI: $_" "WARN"
+        }
+    }
+
+    try
+    {
+        $addresses += @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.IPAddress })
+    }
+    catch
+    {
+        Write-Log "Could not inspect Windows network addresses for Tailscale: $_" "WARN"
+    }
+
+    return @($addresses |
+        ForEach-Object { if ($null -ne $_) { $_.ToString().Trim() } } |
+        Where-Object { Test-TailscaleIpv4Address $_ } |
+        Sort-Object -Unique)
+}
+
+function Format-TlbxUrl
+{
+    param(
+        [string]$HostName,
+        [int]$Port
+    )
+
+    $urlHost = $HostName
+    if ($urlHost.Contains(":") -and -not $urlHost.StartsWith("["))
+    {
+        $urlHost = "[$urlHost]"
+    }
+    return "https://${urlHost}:$Port"
+}
+
+function Get-TlbxAccessUrls
+{
+    param(
+        [int]$Port,
+        [string]$BindAddress,
+        [AllowNull()]
+        [string[]]$TailscaleAddresses = $null
+    )
+
+    $wildcardBindings = @("*", "0.0.0.0", "::", "[::]")
+    $localBindings = @("", "localhost", "127.0.0.1", "::1", "[::1]")
+    $primaryHost = if ($BindAddress -in $wildcardBindings -or $BindAddress -in $localBindings)
+    {
+        "localhost"
+    }
+    else
+    {
+        $BindAddress
+    }
+
+    $urls = @((Format-TlbxUrl -HostName $primaryHost -Port $Port))
+    if ($BindAddress -in $wildcardBindings)
+    {
+        if ($null -eq $TailscaleAddresses)
+        {
+            $TailscaleAddresses = @(Get-TailscaleIpv4Addresses)
+        }
+        foreach ($address in $TailscaleAddresses)
+        {
+            if (Test-TailscaleIpv4Address $address)
+            {
+                $urls += Format-TlbxUrl -HostName $address -Port $Port
+            }
+        }
+    }
+    elseif (Test-TailscaleIpv4Address $BindAddress)
+    {
+        $urls += Format-TlbxUrl -HostName $BindAddress -Port $Port
+    }
+
+    return @($urls | Select-Object -Unique)
 }
 
 function Prompt-FirewallConfig
@@ -1015,7 +1237,7 @@ function Prompt-FirewallConfig
     Write-Host ""
     Write-Host "  Windows Firewall:" -ForegroundColor Cyan
     Write-Host "  Allow other PCs to reach tlbx on TCP port $Port?" -ForegroundColor Yellow
-    Write-Host "  (Creates or updates the inbound rule named 'MidTerm HTTPS')" -ForegroundColor Gray
+    Write-Host "  (Creates or updates the inbound rule named '$FirewallDisplayName')" -ForegroundColor Gray
     $choice = Read-Host "  Add firewall rule? [Y/n]"
     return ($choice -ne "n" -and $choice -ne "N")
 }
@@ -1027,7 +1249,7 @@ function Ensure-FirewallRule
         [string]$InstallDir
     )
 
-    $displayName = "MidTerm HTTPS"  # Sync with WindowsFirewallService.ManagedRuleName
+    $displayName = $FirewallDisplayName
     $programPath = Join-Path $InstallDir $WebBinaryName
 
     try
@@ -1037,7 +1259,7 @@ function Ensure-FirewallRule
 
         New-NetFirewallRule `
             -DisplayName $displayName `
-            -Group "MidTerm" `
+            -Group $DisplayName `
             -Direction Inbound `
             -Action Allow `
             -Enabled True `
@@ -1045,7 +1267,7 @@ function Ensure-FirewallRule
             -Protocol TCP `
             -LocalPort $Port `
             -Program $programPath `
-            -Description "Allows inbound HTTPS access to MidTerm." | Out-Null
+            -Description "Allows inbound HTTPS access to $DisplayName." | Out-Null
 
         Write-Log "Windows firewall rule ensured for TCP port $Port"
         Write-Host "  Firewall: added rule '$displayName' for TCP port $Port" -ForegroundColor Gray
@@ -1066,6 +1288,121 @@ function Get-AssetUrl
         throw "Could not find $AssetPattern in release assets"
     }
     return $asset.browser_download_url
+}
+
+function Convert-DerEcdsaSignatureToP1363
+{
+    param(
+        [Parameter(Mandatory=$true)][byte[]]$Signature,
+        [int]$CoordinateSize = 48
+    )
+
+    function Read-DerLength([byte[]]$Data, [ref]$Offset)
+    {
+        $first = $Data[$Offset.Value]
+        $Offset.Value++
+        if (($first -band 0x80) -eq 0) { return [int]$first }
+        $count = $first -band 0x7f
+        if ($count -lt 1 -or $count -gt 4) { throw "Invalid DER length." }
+        $length = 0
+        for ($i = 0; $i -lt $count; $i++)
+        {
+            $length = ($length -shl 8) -bor $Data[$Offset.Value]
+            $Offset.Value++
+        }
+        return $length
+    }
+
+    function Copy-DerInteger([byte[]]$Integer, [byte[]]$Destination, [int]$DestinationOffset, [int]$Size)
+    {
+        $sourceOffset = 0
+        while ($sourceOffset -lt ($Integer.Length - 1) -and $Integer[$sourceOffset] -eq 0)
+        {
+            $sourceOffset++
+        }
+        $length = $Integer.Length - $sourceOffset
+        if ($length -gt $Size) { throw "ECDSA signature coordinate is too large." }
+        [Array]::Copy($Integer, $sourceOffset, $Destination, $DestinationOffset + $Size - $length, $length)
+    }
+
+    $offset = 0
+    if ($Signature[$offset++] -ne 0x30) { throw "Invalid ECDSA DER sequence." }
+    $null = Read-DerLength $Signature ([ref]$offset)
+    if ($Signature[$offset++] -ne 0x02) { throw "Invalid ECDSA DER R value." }
+    $rLength = Read-DerLength $Signature ([ref]$offset)
+    $r = [byte[]]::new($rLength)
+    [Array]::Copy($Signature, $offset, $r, 0, $rLength)
+    $offset += $rLength
+    if ($Signature[$offset++] -ne 0x02) { throw "Invalid ECDSA DER S value." }
+    $sLength = Read-DerLength $Signature ([ref]$offset)
+    $s = [byte[]]::new($sLength)
+    [Array]::Copy($Signature, $offset, $s, 0, $sLength)
+
+    $p1363 = [byte[]]::new($CoordinateSize * 2)
+    Copy-DerInteger $r $p1363 0 $CoordinateSize
+    Copy-DerInteger $s $p1363 $CoordinateSize $CoordinateSize
+    return $p1363
+}
+
+function Test-ReleaseMetadataSignature
+{
+    param(
+        [Parameter(Mandatory=$true)][byte[]]$PayloadBytes,
+        [Parameter(Mandatory=$true)][byte[]]$SignatureBytes,
+        [Parameter(Mandatory=$true)][byte[]]$PublicKeyBytes
+    )
+
+    if ($PSVersionTable.PSVersion.Major -ge 7)
+    {
+        $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
+        try
+        {
+            $bytesRead = 0
+            $ecdsa.ImportSubjectPublicKeyInfo($PublicKeyBytes, [ref]$bytesRead)
+            return $ecdsa.VerifyData(
+                $PayloadBytes,
+                $SignatureBytes,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                [System.Security.Cryptography.DSASignatureFormat]::Rfc3279DerSequence)
+        }
+        finally
+        {
+            $ecdsa.Dispose()
+        }
+    }
+
+    # Windows PowerShell 5.1 lacks ImportSubjectPublicKeyInfo. Import the
+    # P-384 public point through CNG and convert the DER signature to P1363.
+    if (-not $IsWindows -and $env:OS -ne "Windows_NT")
+    {
+        throw "Windows PowerShell 5.1 signature verification is only supported on Windows."
+    }
+    if ($PublicKeyBytes.Length -lt 97 -or $PublicKeyBytes[$PublicKeyBytes.Length - 97] -ne 0x04)
+    {
+        throw "Release public key is not an uncompressed P-384 point."
+    }
+
+    $blob = [byte[]]::new(8 + 96)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]0x33534345), 0, $blob, 0, 4)
+    [Array]::Copy([BitConverter]::GetBytes([uint32]48), 0, $blob, 4, 4)
+    [Array]::Copy($PublicKeyBytes, $PublicKeyBytes.Length - 96, $blob, 8, 96)
+    $cngKey = [System.Security.Cryptography.CngKey]::Import(
+        $blob,
+        [System.Security.Cryptography.CngKeyBlobFormat]::EccPublicBlob)
+    $ecdsaCng = New-Object -TypeName System.Security.Cryptography.ECDsaCng -ArgumentList @(,$cngKey)
+    try
+    {
+        $p1363Signature = Convert-DerEcdsaSignatureToP1363 -Signature $SignatureBytes
+        return $ecdsaCng.VerifyData(
+            $PayloadBytes,
+            $p1363Signature,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    }
+    finally
+    {
+        $ecdsaCng.Dispose()
+        $cngKey.Dispose()
+    }
 }
 
 function Assert-SignedRelease
@@ -1097,21 +1434,7 @@ function Assert-SignedRelease
         $payloadBytes = [Convert]::FromBase64String([string]$manifest.signedPayload)
         $signatureBytes = [Convert]::FromBase64String([string]$manifest.metadataSignature)
         $publicKeyBytes = [Convert]::FromBase64String($publicKeyBase64)
-        $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
-        try
-        {
-            $bytesRead = 0
-            $ecdsa.ImportSubjectPublicKeyInfo($publicKeyBytes, [ref]$bytesRead)
-            $signatureValid = $ecdsa.VerifyData(
-                $payloadBytes,
-                $signatureBytes,
-                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-                [System.Security.Cryptography.DSASignatureFormat]::Rfc3279DerSequence)
-        }
-        finally
-        {
-            $ecdsa.Dispose()
-        }
+        $signatureValid = Test-ReleaseMetadataSignature -PayloadBytes $payloadBytes -SignatureBytes $signatureBytes -PublicKeyBytes $publicKeyBytes
 
         if (-not $signatureValid)
         {
@@ -1150,9 +1473,12 @@ function Assert-SignedRelease
         {
             $fileName = [string]$checksum.Name
             $expectedHash = ([string]$checksum.Value).ToLowerInvariant()
+            $normalizedFileName = $fileName.Replace('\', '/')
+            $segments = @($normalizedFileName.Split('/'))
             if ([string]::IsNullOrWhiteSpace($fileName) -or
                 [System.IO.Path]::IsPathRooted($fileName) -or
-                [System.IO.Path]::GetFileName($fileName) -cne $fileName -or
+                $segments.Count -eq 0 -or
+                @($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -in @('.', '..') }).Count -gt 0 -or
                 $expectedHash -notmatch '^[0-9a-f]{64}$')
             {
                 throw "Downloaded release contains an unsafe checksum entry: $fileName"
@@ -1164,7 +1490,13 @@ function Assert-SignedRelease
                 throw "Downloaded release checksum metadata is inconsistent for $fileName."
             }
 
-            $filePath = Join-Path $ExtractDir $fileName
+            $relativePlatformPath = $normalizedFileName.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+            $filePath = [System.IO.Path]::GetFullPath((Join-Path $ExtractDir $relativePlatformPath))
+            $extractRoot = [System.IO.Path]::GetFullPath($ExtractDir).TrimEnd([char[]]@('\', '/'))
+            if (-not $filePath.StartsWith($extractRoot + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
+            {
+                throw "Downloaded release contains an unsafe checksum entry: $fileName"
+            }
             if (-not (Test-Path -LiteralPath $filePath -PathType Leaf))
             {
                 throw "Downloaded release is missing signed file $fileName."
@@ -1177,9 +1509,205 @@ function Assert-SignedRelease
             }
         }
     }
-    catch [System.Management.Automation.MethodInvocationException]
+    catch
     {
-        throw "This installer requires PowerShell 7 or newer for release-signature verification: $($_.Exception.Message)"
+        throw
+    }
+}
+
+function Get-WindowsReleaseFileNames
+{
+    $files = @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json", "THIRD-PARTY-LICENSES.txt")
+    if ($ExpectedReleasePlatform -in @("win-x64", "win-x86"))
+    {
+        $files += @("conpty.dll", "x64/OpenConsole.exe", "arm64/OpenConsole.exe")
+        if ($ExpectedReleasePlatform -eq "win-x86")
+        {
+            $files += "x86/OpenConsole.exe"
+        }
+    }
+    return $files
+}
+
+function Assert-SafeReleaseArchive
+{
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    try
+    {
+        $required = @(Get-WindowsReleaseFileNames)
+        $allowed = @($required + "SHA256SUMS.txt")
+        $allowedDirectories = @("x64/", "arm64/")
+        if ($ExpectedReleasePlatform -eq "win-x86")
+        {
+            $allowedDirectories += "x86/"
+        }
+        $seen = @{}
+        foreach ($entry in $archive.Entries)
+        {
+            $normalizedName = $entry.FullName.Replace('\', '/')
+            if ($normalizedName.EndsWith('/'))
+            {
+                if ($normalizedName -notin $allowedDirectories -or $entry.Length -ne 0)
+                {
+                    throw "Downloaded release archive contains unexpected or unsafe entry '$($entry.FullName)'."
+                }
+                continue
+            }
+            if ($normalizedName -notin $allowed -or [string]::IsNullOrWhiteSpace($entry.Name))
+            {
+                throw "Downloaded release archive contains unexpected or unsafe entry '$($entry.FullName)'."
+            }
+            $unixFileType = (($entry.ExternalAttributes -shr 16) -band 0xF000)
+            if (($unixFileType -ne 0) -and ($unixFileType -ne 0x8000))
+            {
+                throw "Downloaded release archive entry '$($entry.FullName)' is not a regular file."
+            }
+            if ($entry.Length -le 0)
+            {
+                throw "Downloaded release archive entry '$($entry.FullName)' is empty."
+            }
+            if ($seen.ContainsKey($normalizedName))
+            {
+                throw "Downloaded release archive contains duplicate entry '$($entry.FullName)'."
+            }
+            $seen[$normalizedName] = $true
+        }
+        foreach ($name in $required)
+        {
+            if (-not $seen.ContainsKey($name))
+            {
+                throw "Downloaded release archive is missing '$name'."
+            }
+        }
+    }
+    finally
+    {
+        $archive.Dispose()
+    }
+}
+
+function Stop-ExistingInstallProcesses
+{
+    $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    $oldHostService = Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue
+
+    if ($existingService)
+    {
+        Write-Host "Stopping existing service..." -ForegroundColor Gray
+        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+        for ($waited = 0; $waited -lt 10; $waited++)
+        {
+            if (-not (Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue))
+            {
+                break
+            }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+
+    if ($oldHostService)
+    {
+        Write-Host "Migrating from old two-service architecture..." -ForegroundColor Yellow
+        Stop-Service -Name $OldHostServiceName -Force -ErrorAction SilentlyContinue
+        Get-Process -Name "mt-host" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        sc.exe delete $OldHostServiceName | Out-Null
+    }
+}
+
+function Install-VerifiedBinarySet
+{
+    param(
+        [Parameter(Mandatory=$true)][string]$ExtractDir,
+        [Parameter(Mandatory=$true)][string]$InstallDir,
+        [Parameter(Mandatory=$true)][string]$BackupRoot
+    )
+
+    $fileNames = @(Get-WindowsReleaseFileNames)
+    $stagingDir = Join-Path $InstallDir (".tlbx-install-" + [Guid]::NewGuid().ToString("N"))
+    $backupDir = Join-Path $BackupRoot "backup"
+    New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+
+    foreach ($fileName in $fileNames)
+    {
+        $source = Join-Path $ExtractDir $fileName
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf))
+        {
+            throw "Verified release is missing $fileName."
+        }
+        $stagedPath = Join-Path $stagingDir $fileName
+        New-Item -ItemType Directory -Path (Split-Path -Parent $stagedPath) -Force | Out-Null
+        Copy-Item -LiteralPath $source -Destination $stagedPath -Force
+    }
+
+    $backedUp = New-Object System.Collections.Generic.List[string]
+    try
+    {
+        foreach ($fileName in $fileNames)
+        {
+            $destination = Join-Path $InstallDir $fileName
+            if (Test-Path -LiteralPath $destination)
+            {
+                $backupPath = Join-Path $backupDir $fileName
+                New-Item -ItemType Directory -Path (Split-Path -Parent $backupPath) -Force | Out-Null
+                Copy-Item -LiteralPath $destination -Destination $backupPath -Force
+                $backedUp.Add($fileName)
+            }
+        }
+
+        foreach ($fileName in $fileNames)
+        {
+            $destination = Join-Path $InstallDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Move-Item -LiteralPath (Join-Path $stagingDir $fileName) -Destination $destination -Force
+            Write-Host "  Installed: $(Join-Path $InstallDir $fileName)" -ForegroundColor Gray
+        }
+    }
+    catch
+    {
+        foreach ($fileName in $fileNames)
+        {
+            Remove-Item -LiteralPath (Join-Path $InstallDir $fileName) -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($fileName in $backedUp)
+        {
+            $destination = Join-Path $InstallDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $backupDir $fileName) -Destination $destination -Force -ErrorAction SilentlyContinue
+        }
+        throw "Installing the verified binary set failed; the previous files were restored. $_"
+    }
+    finally
+    {
+        Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Restore-PreviousBinarySet
+{
+    param(
+        [Parameter(Mandatory=$true)][string]$InstallDir,
+        [Parameter(Mandatory=$true)][string]$BackupRoot
+    )
+
+    $backupDir = Join-Path $BackupRoot "backup"
+    foreach ($fileName in @(Get-WindowsReleaseFileNames))
+    {
+        Remove-Item -LiteralPath (Join-Path $InstallDir $fileName) -Force -ErrorAction SilentlyContinue
+        $backupPath = Join-Path $backupDir $fileName
+        if (Test-Path -LiteralPath $backupPath -PathType Leaf)
+        {
+            $destination = Join-Path $InstallDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            Copy-Item -LiteralPath $backupPath -Destination $destination -Force -ErrorAction Stop
+        }
     }
 }
 
@@ -1244,7 +1772,7 @@ function Write-ServiceSettings
         $secretsPath = "$WIN_SERVICE_SETTINGS_DIR\$WIN_SECRETS_FILENAME"
         try
         {
-            $PasswordHash | & $mtPath --write-secret password_hash --service-mode 2>&1 | Out-Null
+            $PasswordHash | & $mtPath --write-secret password_hash --service-mode --settings-dir $configDir 2>&1 | Out-Null
             Write-Host "  Password: stored in $secretsPath" -ForegroundColor Gray
         }
         catch
@@ -1259,7 +1787,160 @@ function Write-ServiceSettings
     if ($CertPath) { Write-Host "  Certificate: $CertPath" -ForegroundColor Gray }
 }
 
-function Install-MidTerm
+function Invoke-TlbxHealthRequest
+{
+    param([string]$Url)
+
+    if ($PSVersionTable.PSVersion.Major -ge 6)
+    {
+        return Invoke-RestMethod -Uri "$Url/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
+    }
+
+    Add-Type @"
+using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+public class TlbxInstallerTrustAllCerts {
+    public static void Ignore() {
+        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+    }
+    public static void Restore() {
+        ServicePointManager.ServerCertificateValidationCallback = null;
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+    try
+    {
+        [TlbxInstallerTrustAllCerts]::Ignore()
+        return Invoke-RestMethod -Uri "$Url/api/health" -TimeoutSec 5 -ErrorAction Stop
+    }
+    finally
+    {
+        [TlbxInstallerTrustAllCerts]::Restore()
+    }
+}
+
+function Get-TlbxProcess
+{
+    param(
+        [string]$ExecutablePath,
+        [int]$ExpectedProcessId = 0
+    )
+
+    if ($ExpectedProcessId -gt 0)
+    {
+        return Get-Process -Id $ExpectedProcessId -ErrorAction SilentlyContinue
+    }
+
+    $expectedFullPath = [IO.Path]::GetFullPath($ExecutablePath)
+    $processes = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($ExecutablePath)) -ErrorAction SilentlyContinue)
+    foreach ($process in $processes)
+    {
+        try
+        {
+            if ($process.Path -and [IO.Path]::GetFullPath($process.Path) -eq $expectedFullPath)
+            {
+                return $process
+            }
+        }
+        catch
+        {
+            # Process path access can race with startup/exit; retry on the next poll.
+        }
+    }
+    return $null
+}
+
+function Wait-TlbxReady
+{
+    param(
+        [string]$ExecutablePath,
+        [int]$Port,
+        [string]$BindAddress,
+        [bool]$AsService,
+        [int]$ExpectedProcessId = 0
+    )
+
+    $healthUrl = @(Get-TlbxAccessUrls -Port $Port -BindAddress $BindAddress -TailscaleAddresses @())[0]
+    $lastHealth = $null
+    $process = $null
+    $serviceStatus = if ($AsService) { "Unknown" } else { "Not applicable" }
+
+    for ($attempt = 1; $attempt -le 15; $attempt++)
+    {
+        $process = Get-TlbxProcess -ExecutablePath $ExecutablePath -ExpectedProcessId $ExpectedProcessId
+        if ($AsService)
+        {
+            $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            $serviceStatus = if ($service) { $service.Status.ToString() } else { "Not installed" }
+        }
+
+        try
+        {
+            $lastHealth = Invoke-TlbxHealthRequest -Url $healthUrl
+        }
+        catch
+        {
+            $lastHealth = $null
+        }
+
+        $serviceReady = -not $AsService -or $serviceStatus -eq "Running"
+        if ($process -and $serviceReady -and $lastHealth -and $lastHealth.healthy)
+        {
+            return [pscustomobject]@{
+                Ready = $true
+                Process = $process
+                ServiceStatus = $serviceStatus
+                Health = $lastHealth
+                HealthUrl = $healthUrl
+            }
+        }
+
+        if ($ExpectedProcessId -gt 0 -and -not $process)
+        {
+            break
+        }
+        if ($attempt -lt 15)
+        {
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    return [pscustomobject]@{
+        Ready = $false
+        Process = $process
+        ServiceStatus = $serviceStatus
+        Health = $lastHealth
+        HealthUrl = $healthUrl
+    }
+}
+
+function Start-TlbxUserProcess
+{
+    param(
+        [string]$ExecutablePath,
+        [string]$InstallDir,
+        [string]$SettingsDir,
+        [int]$Port,
+        [string]$BindAddress
+    )
+
+    $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { $BindAddress }
+    $stdoutLog = Join-Path $SettingsDir "tlbx-user.stdout.log"
+    $stderrLog = Join-Path $SettingsDir "tlbx-user.stderr.log"
+    $arguments = Join-ProcessArguments -Arguments @(
+        "--user-mode",
+        "--settings-dir", $SettingsDir,
+        "--port", $Port.ToString([Globalization.CultureInfo]::InvariantCulture),
+        "--bind", $bindArg)
+
+    Write-Log "Starting user-mode tlbx with stdout=$stdoutLog and stderr=$stderrLog"
+    return Start-Process -FilePath $ExecutablePath -ArgumentList $arguments -WorkingDirectory $InstallDir `
+        -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+}
+
+function Install-Tlbx
 {
     param(
         [bool]$AsService,
@@ -1273,6 +1954,52 @@ function Install-MidTerm
         [bool]$TrustCert = $false
     )
 
+    $tempRoot = $null
+    $installDir = $null
+    $binarySwapCompleted = $false
+    $installationCompleted = $false
+    $serviceExistedBefore = $false
+    $startedUserProcess = $null
+    trap
+    {
+        $installError = $_
+        if ($startedUserProcess -and -not $startedUserProcess.HasExited)
+        {
+            Stop-Process -Id $startedUserProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($binarySwapCompleted -and -not $installationCompleted -and $installDir -and $tempRoot)
+        {
+            Write-Host "  Installation failed; restoring the previous tlbx binary set..." -ForegroundColor Yellow
+            try
+            {
+                if ($AsService)
+                {
+                    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+                }
+                Restore-PreviousBinarySet -InstallDir $installDir -BackupRoot $tempRoot
+                if ($AsService -and $serviceExistedBefore)
+                {
+                    Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+                }
+                elseif ($AsService -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue))
+                {
+                    sc.exe delete $ServiceName | Out-Null
+                }
+                Write-Log "Previous binary set restored after installation failure" "WARN"
+            }
+            catch
+            {
+                Write-Log "Rollback failed: $_" "ERROR"
+                Write-Host "  Automatic rollback also failed. See $script:UpdateLogFile." -ForegroundColor Red
+            }
+        }
+        if ($tempRoot -and (Test-Path -LiteralPath $tempRoot))
+        {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw $installError
+    }
+
     # Initialize logging
     $mode = if ($AsService) { "service" } else { "user" }
     Initialize-Log -Mode $mode
@@ -1283,45 +2010,6 @@ function Install-MidTerm
         # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
         $installDir = $WIN_SERVICE_INSTALL_DIR
         Write-Log "Install directory: $installDir"
-
-        # Stop and remove old two-service architecture if present
-        $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-        $oldHostService = Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue
-
-        if ($existingService)
-        {
-            Write-Host "Stopping existing service..." -ForegroundColor Gray
-            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-
-            # Kill any remaining processes
-            Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-            # Wait for processes to fully exit (file handles released)
-            $maxWait = 10
-            $waited = 0
-            while ($waited -lt $maxWait)
-            {
-                $procs = Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue
-                if (-not $procs) { break }
-                Start-Sleep -Milliseconds 500
-                $waited++
-            }
-
-            if ($waited -ge $maxWait)
-            {
-                Write-Host "  Warning: Some processes may still be running" -ForegroundColor Yellow
-            }
-        }
-
-        # Migration: remove old MidTermHost service from v2.1.x
-        if ($oldHostService)
-        {
-            Write-Host "Migrating from old two-service architecture..." -ForegroundColor Yellow
-            Stop-Service -Name $OldHostServiceName -Force -ErrorAction SilentlyContinue
-            Get-Process -Name "mt-host" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 1
-            sc.exe delete $OldHostServiceName | Out-Null
-        }
     }
     else
     {
@@ -1329,15 +2017,11 @@ function Install-MidTerm
         $installDir = $WIN_USER_INSTALL_DIR
     }
 
-    # Create install directory
-    if (-not (Test-Path $installDir))
-    {
-        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-    }
-
     # Download and extract
-    $tempZip = Join-Path $env:TEMP "mt-download.zip"
-    $tempExtract = Join-Path $env:TEMP "mt-extract"
+    $tempRoot = Join-Path $env:TEMP ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
+    $tempZip = Join-Path $tempRoot "release.zip"
+    $tempExtract = Join-Path $tempRoot "extract"
+    New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
 
     Write-Log "=== PHASE 1: Downloading binaries ==="
     Write-Host "Downloading..." -ForegroundColor Gray
@@ -1349,136 +2033,42 @@ function Install-MidTerm
 
     Write-Host "Extracting..." -ForegroundColor Gray
     Write-Log "Extracting to: $tempExtract"
-    if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
+    Assert-SafeReleaseArchive -Path $tempZip
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
-    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform "win-x64" -ExpectedChannel $channelLabel
+    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform $ExpectedReleasePlatform -ExpectedChannel $channelLabel
     Unblock-DownloadedTree -Path $tempExtract
     Write-Log "Extraction and release-signature verification complete"
 
+    # Do not interrupt a working installation until the complete download has
+    # passed archive, metadata-signature, and checksum verification.
+    if ($AsService)
+    {
+        $serviceExistedBefore = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
+        Stop-ExistingInstallProcesses
+    }
+    if (-not (Test-Path $installDir))
+    {
+        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+    }
+
     Write-Log "=== PHASE 2: Installing binaries ==="
-    # Copy binaries
-    $sourceWebBinary = Join-Path $tempExtract $WebBinaryName
-    $sourceConHostBinary = Join-Path $tempExtract $TtyHostBinaryName
-    $sourceAgentHostBinary = Join-Path $tempExtract $AgentHostBinaryName
     $destWebBinary = Join-Path $installDir $WebBinaryName
-    $destConHostBinary = Join-Path $installDir $TtyHostBinaryName
-    $destAgentHostBinary = Join-Path $installDir $AgentHostBinaryName
 
     Write-Host "Installing binaries to $installDir..." -ForegroundColor Gray
     Write-Log "Installing binaries to $installDir"
-
-    if (-not (Test-Path $sourceWebBinary) -or -not (Test-Path $sourceConHostBinary) -or -not (Test-Path $sourceAgentHostBinary))
+    try
     {
-        throw "Downloaded release archive is incomplete. Expected $WebBinaryName, $TtyHostBinaryName, and $AgentHostBinaryName."
+        Install-VerifiedBinarySet -ExtractDir $tempExtract -InstallDir $installDir -BackupRoot $tempRoot
+        $binarySwapCompleted = $true
     }
-
-    # Retry logic for file copy (handles may take time to release)
-    $maxRetries = 15
-    $retryDelay = 500
-
-    # Copy mt.exe with retry
-    $copied = $false
-    for ($i = 0; $i -lt $maxRetries; $i++)
+    catch
     {
-        try
+        if ($AsService -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue))
         {
-            Copy-Item $sourceWebBinary $destWebBinary -Force -ErrorAction Stop
-            Write-Host "  Installed: $destWebBinary" -ForegroundColor Gray
-            $copied = $true
-            break
+            Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
         }
-        catch
-        {
-            if ($i -eq 0)
-            {
-                Write-Host "  Waiting for $WebBinaryName to be released..." -ForegroundColor Yellow
-            }
-            Start-Sleep -Milliseconds $retryDelay
-        }
+        throw
     }
-    if (-not $copied)
-    {
-        Write-Host "  Failed to copy $WebBinaryName after $maxRetries attempts - file is locked" -ForegroundColor Red
-        Write-Host "  Try manually stopping the MidTerm service or process" -ForegroundColor Red
-        throw "Failed to install $WebBinaryName - file locked"
-    }
-
-    # Copy mthost.exe with retry
-    if (Test-Path $sourceConHostBinary)
-    {
-        $copied = $false
-        for ($i = 0; $i -lt $maxRetries; $i++)
-        {
-            try
-            {
-                Copy-Item $sourceConHostBinary $destConHostBinary -Force -ErrorAction Stop
-                Write-Host "  Installed: $destConHostBinary" -ForegroundColor Gray
-                $copied = $true
-                break
-            }
-            catch
-            {
-                if ($i -eq 0)
-                {
-                    Write-Host "  Waiting for $TtyHostBinaryName to be released..." -ForegroundColor Yellow
-                }
-                Start-Sleep -Milliseconds $retryDelay
-            }
-        }
-        if (-not $copied)
-        {
-            Write-Host "  Failed to copy $TtyHostBinaryName after $maxRetries attempts - file is locked" -ForegroundColor Red
-            throw "Failed to install $TtyHostBinaryName - file locked"
-        }
-    }
-
-    # Copy mtagenthost.exe with retry
-    if (Test-Path $sourceAgentHostBinary)
-    {
-        $copied = $false
-        for ($i = 0; $i -lt $maxRetries; $i++)
-        {
-            try
-            {
-                Copy-Item $sourceAgentHostBinary $destAgentHostBinary -Force -ErrorAction Stop
-                Write-Host "  Installed: $destAgentHostBinary" -ForegroundColor Gray
-                $copied = $true
-                break
-            }
-            catch
-            {
-                if ($i -eq 0)
-                {
-                    Write-Host "  Waiting for $AgentHostBinaryName to be released..." -ForegroundColor Yellow
-                }
-                Start-Sleep -Milliseconds $retryDelay
-            }
-        }
-        if (-not $copied)
-        {
-            Write-Host "  Failed to copy $AgentHostBinaryName after $maxRetries attempts - file is locked" -ForegroundColor Red
-            throw "Failed to install $AgentHostBinaryName - file locked"
-        }
-    }
-
-    # Remove legacy mt-host.exe if present from previous installs
-    $legacyHostPath = Join-Path $installDir $LegacyHostBinaryName
-    if (Test-Path $legacyHostPath)
-    {
-        Remove-Item $legacyHostPath -Force -ErrorAction SilentlyContinue
-        Write-Host "  Removed legacy: $LegacyHostBinaryName" -ForegroundColor Gray
-    }
-
-    # Copy version manifest
-    $sourceVersionJson = Join-Path $tempExtract "version.json"
-    if (Test-Path $sourceVersionJson)
-    {
-        Copy-Item $sourceVersionJson (Join-Path $installDir "version.json") -Force
-    }
-
-    # Cleanup temp files
-    Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-    Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Log "=== PHASE 3: Password configuration ==="
     # Hash pending password now that mt.exe is installed
@@ -1550,65 +2140,35 @@ function Install-MidTerm
             Ensure-FirewallRule -Port $Port -InstallDir $installDir
         }
 
-        # Wait for mt.exe to spawn
-        Start-Sleep -Seconds 2
-
-        # Show final status
+        # Monitor both the supervised process and the configured HTTPS endpoint.
         Write-Section "Status"
-        $serviceStatus = (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue).Status
-        $mmProc = Get-Process -Name "mt" -ErrorAction SilentlyContinue
+        Write-StatusLine "Startup" "Waiting for process and https endpoint..." Yellow
+        $readiness = Wait-TlbxReady -ExecutablePath $destWebBinary -Port $Port -BindAddress $BindAddress -AsService $true
 
-        if ($serviceStatus -eq "Running") { Write-StatusLine "Service" "Running" Green }
-        else { Write-StatusLine "Service" "$serviceStatus" Red }
+        if ($readiness.ServiceStatus -eq "Running") { Write-StatusLine "Service" "Running" Green }
+        else { Write-StatusLine "Service" "$($readiness.ServiceStatus)" Red }
 
-        if ($mmProc) { Write-StatusLine "mt (web)" "Running (PID $($mmProc.Id))" Green }
-        else { Write-StatusLine "mt (web)" "Starting..." Yellow }
+        if ($readiness.Process) { Write-StatusLine "tlbx process" "Running (PID $($readiness.Process.Id))" Green }
+        else { Write-StatusLine "tlbx process" "Not running" Red }
 
-        # Check health endpoint (HTTPS with self-signed cert requires SkipCertificateCheck)
-        try
+        if ($readiness.Ready)
         {
-            if ($PSVersionTable.PSVersion.Major -ge 6)
-            {
-                $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
-            }
-            else
-            {
-                # PS 5.1 workaround for self-signed certs
-                try
-                {
-                    Add-Type @"
-using System.Net;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCerts {
-    public static void Ignore() {
-        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
-    }
-    public static void Restore() {
-        ServicePointManager.ServerCertificateValidationCallback = null;
-    }
-}
-"@ -ErrorAction SilentlyContinue
-                    [TrustAllCerts]::Ignore()
-                    $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -ErrorAction Stop
-                    [TrustAllCerts]::Restore()
-                }
-                catch
-                {
-                    $health = $null
-                }
-            }
-
-            if ($health)
-            {
-                if ($health.healthy) { Write-StatusLine "Health" "Healthy" Green }
-                else { Write-StatusLine "Health" "Unhealthy" Red; if ($health.hostError) { Write-StatusLine "Error" "$($health.hostError)" Red } }
-                Write-StatusLine "Version" "$($health.version)" Gray
-            }
+            Write-StatusLine "HTTPS" "Reachable and healthy" Green
+            Write-StatusLine "Version" "$($readiness.Health.version)" Gray
         }
-        catch
+        elseif ($readiness.Health)
         {
-            Write-StatusLine "Health" "Could not connect to https://localhost:$Port" Yellow
+            Write-StatusLine "Health" "Unhealthy" Red
+            if ($readiness.Health.hostError) { Write-StatusLine "Error" "$($readiness.Health.hostError)" Red }
+        }
+        else
+        {
+            Write-StatusLine "HTTPS" "Could not connect to $($readiness.HealthUrl)" Red
+        }
+
+        if (-not $readiness.Ready)
+        {
+            throw "tlbx was installed but did not pass the service and health verification. See $script:UpdateLogFile."
         }
     }
     else
@@ -1619,6 +2179,12 @@ public class TrustAllCerts {
         $userSettingsPath = Join-Path $userSettingsDir "settings.json"
         $userMergePath = Join-Path $userSettingsDir "merge-settings.json"
         if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
+
+        $runtimeSettings = @{
+            port = $Port
+            bindAddress = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
+        }
+        $runtimeSettings | ConvertTo-Json | Set-Content -Path (Join-Path $userSettingsDir "runtime.json") -Encoding UTF8
 
         # Build install-time settings
         $userSettings = @{
@@ -1650,7 +2216,7 @@ public class TrustAllCerts {
             $mtPath = Join-Path $installDir "mt.exe"
             try
             {
-                $PasswordHash | & $mtPath --write-secret password_hash 2>&1 | Out-Null
+                $PasswordHash | & $mtPath --write-secret password_hash --user-mode --settings-dir $userSettingsDir 2>&1 | Out-Null
                 Write-Host "  Password: stored in secure storage ($userSettingsDir\secrets.bin)" -ForegroundColor Gray
             }
             catch
@@ -1659,21 +2225,61 @@ public class TrustAllCerts {
             }
         }
 
-        Install-AsUserApp -InstallDir $installDir -Version $Version
+        Install-AsUserApp -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
+
+        Write-Section "Status"
+        Write-StatusLine "Startup" "Starting tlbx and waiting for https endpoint..." Yellow
+        $startedUserProcess = Start-TlbxUserProcess -ExecutablePath $destWebBinary -InstallDir $installDir `
+            -SettingsDir $userSettingsDir -Port $Port -BindAddress $BindAddress
+        $readiness = Wait-TlbxReady -ExecutablePath $destWebBinary -Port $Port -BindAddress $BindAddress `
+            -AsService $false -ExpectedProcessId $startedUserProcess.Id
+
+        if ($readiness.Process) { Write-StatusLine "tlbx process" "Running (PID $($readiness.Process.Id))" Green }
+        else { Write-StatusLine "tlbx process" "Not running" Red }
+
+        if ($readiness.Ready)
+        {
+            Write-StatusLine "HTTPS" "Reachable and healthy" Green
+            Write-StatusLine "Version" "$($readiness.Health.version)" Gray
+        }
+        else
+        {
+            Write-StatusLine "HTTPS" "Could not connect to $($readiness.HealthUrl)" Red
+            throw "tlbx was installed but the user process did not become reachable. See $userSettingsDir\tlbx-user.stderr.log."
+        }
     }
+
+    # Remove the obsolete split-host binary only after the complete install has
+    # succeeded so rollback never destroys a still-working legacy deployment.
+    $legacyHostPath = Join-Path $installDir $LegacyHostBinaryName
+    if (Test-Path $legacyHostPath)
+    {
+        Remove-Item $legacyHostPath -Force -ErrorAction SilentlyContinue
+        Write-Host "  Removed legacy: $LegacyHostBinaryName" -ForegroundColor Gray
+    }
+
+    $installationCompleted = $true
+    Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Log "=========================================="
     Write-Log "INSTALLATION COMPLETE"
     Write-Log "  Location: $installDir"
-    Write-Log "  URL: https://localhost:$Port"
+    $accessUrls = @(Get-TlbxAccessUrls -Port $Port -BindAddress $BindAddress)
+    foreach ($accessUrl in $accessUrls)
+    {
+        Write-Log "  URL: $accessUrl"
+    }
     Write-Log "  Settings: $settingsDir"
     Write-Log "=========================================="
 
     Write-Section "Complete"
-    Write-Host "  Installation complete" -ForegroundColor Green
+    Write-Host "  Your tlbx is ready at:" -ForegroundColor Green
     Write-Host ""
     Write-StatusLine "Location" "$installDir" Gray
-    Write-StatusLine "URL" "https://localhost:$Port" Cyan
+    foreach ($accessUrl in $accessUrls)
+    {
+        Write-Host "  $accessUrl" -ForegroundColor Cyan
+    }
     Write-StatusLine "Note" "Browser may show certificate warning until trusted" Yellow
     if ($AsService -and (Test-NetworkBinding -BindAddress $BindAddress) -and -not $ConfigureFirewall)
     {
@@ -1717,7 +2323,7 @@ function Install-AsService
         throw "Service '$Name' is still present after delete request$statusText."
     }
 
-    function Get-MidTermServiceDiagnostics
+    function Get-TlbxServiceDiagnostics
     {
         $details = New-Object System.Collections.Generic.List[string]
 
@@ -1805,8 +2411,8 @@ function Install-AsService
 
     # Create service - mt.exe spawns mthost per terminal session
     Write-Log "Creating Windows service..."
-    Write-Host "Creating MidTerm service..." -ForegroundColor Gray
-    $binPath = "`"$webBinaryPath`" --port $Port --bind $bindArg"
+    Write-Host "Creating $DisplayName service..." -ForegroundColor Gray
+    $binPath = "`"$webBinaryPath`" --service-mode --settings-dir `"$WIN_SERVICE_SETTINGS_DIR`" --service-name `"$ServiceName`" --port $Port --bind $bindArg"
     Write-Log "Service binPath: $binPath"
     $scCreateOutput = sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "$DisplayName" 2>&1
     Write-Log "sc.exe create output: $scCreateOutput"
@@ -1833,7 +2439,7 @@ function Install-AsService
         Write-Log "Failed to start service: $_" "ERROR"
         Write-Host "  Failed to start service: $_" -ForegroundColor Red
 
-        $diagnostics = Get-MidTermServiceDiagnostics
+        $diagnostics = Get-TlbxServiceDiagnostics
         foreach ($line in $diagnostics)
         {
             Write-Log $line "ERROR"
@@ -1861,7 +2467,9 @@ function Install-AsUserApp
 {
     param(
         [string]$InstallDir,
-        [string]$Version
+        [string]$Version,
+        [int]$Port,
+        [string]$BindAddress
     )
 
     # Add to user PATH
@@ -1872,14 +2480,18 @@ function Install-AsUserApp
         [Environment]::SetEnvironmentVariable("Path", "$userPath;$InstallDir", "User")
     }
 
+    $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
+    [Environment]::SetEnvironmentVariable("TLBX_PORT", $Port.ToString([Globalization.CultureInfo]::InvariantCulture), "User")
+    [Environment]::SetEnvironmentVariable("TLBX_BIND", $bindArg, "User")
+    $env:TLBX_PORT = $Port.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $env:TLBX_BIND = $bindArg
+
     # Register in Add/Remove Programs (user scope)
     Register-Uninstall -InstallDir $InstallDir -Version $Version -IsService $false
 
     # Create uninstall script
     Create-UninstallScript -InstallDir $InstallDir -IsService $false
 
-    Write-Host ""
-    Write-Host "Run 'mt' to start tlbx" -ForegroundColor Yellow
 }
 
 function Register-Uninstall
@@ -1894,11 +2506,11 @@ function Register-Uninstall
 
     if ($IsService)
     {
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm"
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallRegistryName"
     }
     else
     {
-        $regPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MidTerm"
+        $regPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$UninstallRegistryName"
     }
 
     $regValues = @{
@@ -1935,7 +2547,7 @@ function Create-UninstallScript
     # Keep the local uninstall stub tiny so it always delegates to the latest
     # published uninstaller instead of freezing old removal logic on disk.
     $content = @"
-# MidTerm Uninstaller
+# tlbx Uninstaller
 `$ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
@@ -1966,6 +2578,8 @@ if ($ServiceMode)
         Import-ElevatedReplayFile -Path $ReplayFile
     }
 
+    Select-InstallIdentity -AsService $true
+
     # If log file specified, redirect all output there for streaming to original terminal
     if ($LogFile)
     {
@@ -1982,7 +2596,7 @@ if ($ServiceMode)
             $channelLabel = if ($Dev) { "dev" } else { "stable" }
             Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
             Write-Host ""
-            Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
+            Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
         } *>&1 | ForEach-Object {
             $line = $_.ToString()
             Write-Host $_
@@ -1999,7 +2613,7 @@ if ($ServiceMode)
         $channelLabel = if ($Dev) { "dev" } else { "stable" }
         Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
         Write-Host ""
-        Install-MidTerm -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
+        Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
     }
     return
 }
@@ -2025,7 +2639,7 @@ Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
 Write-Host ""
 
 # Prompt for install mode with validation
-Write-Host "  How would you like to install MidTerm?" -ForegroundColor White
+Write-Host "  How would you like to install tlbx?" -ForegroundColor White
 Write-Host ""
 Write-Host "  [1] System service (recommended for always-on access)" -ForegroundColor Cyan
 Write-Host "      - Runs in background, starts on boot" -ForegroundColor Gray
@@ -2075,6 +2689,7 @@ for ($i = 0; $i -lt $maxAttempts; $i++)
 if ($asService)
 {
     Assert-NoCrossModeConflict -AsService $true
+    Select-InstallIdentity -AsService $true
 
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     $installDir = $WIN_SERVICE_INSTALL_DIR
@@ -2228,11 +2843,12 @@ if ($asService)
     }
 
     # Already admin, proceed with install
-    Install-MidTerm -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -ConfigureFirewall:$configureFirewall -TrustCert $trustCert
+    Install-Tlbx -AsService $true -Version $version -RunAsUser $currentUser.Name -RunAsUserSid $currentUser.Sid -PasswordHash $passwordHash -Port $port -BindAddress $bindAddress -ConfigureFirewall:$configureFirewall -TrustCert $trustCert
 }
 else
 {
     Assert-NoCrossModeConflict -AsService $false
+    Select-InstallIdentity -AsService $false
 
     # User install - still require password
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
@@ -2260,7 +2876,7 @@ else
         $passwordAction = Prompt-ExistingPasswordAction
         if ($passwordAction -eq "Replace")
         {
-            $tempDir = Join-Path $env:TEMP "MidTerm-Install"
+            $tempDir = Join-Path $env:TEMP "tlbx-install"
             $passwordHash = Prompt-Password -InstallDir $tempDir
         }
         else
@@ -2273,12 +2889,12 @@ else
     else
     {
         # Prompt for password - need a temp location for mt.exe to hash
-        $tempDir = Join-Path $env:TEMP "MidTerm-Install"
+        $tempDir = Join-Path $env:TEMP "tlbx-install"
         $passwordHash = Prompt-Password -InstallDir $tempDir
     }
 
     # Prompt for network configuration
     $networkConfig = Prompt-NetworkConfig
 
-    Install-MidTerm -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash
+    Install-Tlbx -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash -Port $networkConfig.Port -BindAddress $networkConfig.BindAddress
 }

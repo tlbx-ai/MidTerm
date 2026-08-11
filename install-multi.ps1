@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Installs multiple isolated MidTerm Windows service instances on one machine.
+    Installs multiple isolated tlbx Windows service instances on one machine.
 
 .DESCRIPTION
     This installer is intentionally separate from install.ps1. The normal install
-    path keeps the historical MidTerm service, paths, and port. Multi-instance
+    path keeps the standard tlbx service, paths, and port. Multi-instance
     installs use one install directory, settings directory, service name, and
     update scope per instance.
 #>
@@ -20,8 +20,8 @@ param(
     [int]$BasePort = 2000,
     [int[]]$Ports = @(),
     [string]$BindAddress = "0.0.0.0",
-    [string]$RootDir = "$env:ProgramData\MidTerm\instances",
-    [string]$InstallRoot = "$env:ProgramFiles\MidTerm\instances",
+    [string]$RootDir = "$env:ProgramData\tlbx\instances",
+    [string]$InstallRoot = "$env:ProgramFiles\tlbx\instances",
     [string]$VersionTag = "latest",
     [string]$AssetPath = "",
     [string]$PasswordHash = "",
@@ -31,6 +31,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repo = "tlbx-ai/tlbx"
+$instanceServicePrefix = "tlbx"
+
+if (-not $PSBoundParameters.ContainsKey("RootDir") -and
+    -not (Test-Path $RootDir) -and
+    (Test-Path "$env:ProgramData\MidTerm\instances")) {
+    $RootDir = "$env:ProgramData\MidTerm\instances"
+    $instanceServicePrefix = "MidTerm"
+}
+if (-not $PSBoundParameters.ContainsKey("InstallRoot") -and
+    -not (Test-Path $InstallRoot) -and
+    (Test-Path "$env:ProgramFiles\MidTerm\instances")) {
+    $InstallRoot = "$env:ProgramFiles\MidTerm\instances"
+}
 
 function Assert-Windows {
     if (-not $IsWindows) {
@@ -103,7 +116,7 @@ function Get-InstanceLayout([string]$name, [int]$port) {
     [pscustomobject]@{
         Name = $safe
         Port = $port
-        ServiceName = "MidTerm-$safe"
+        ServiceName = "$instanceServicePrefix-$safe"
         InstallDir = Join-Path $InstallRoot $safe
         SettingsDir = Join-Path $RootDir $safe
         ManifestPath = Join-Path (Join-Path $RootDir $safe) "instance.json"
@@ -131,7 +144,7 @@ function Download-ReleaseAsset([string]$destinationDir) {
         "https://api.github.com/repos/$repo/releases/tags/$VersionTag"
     }
 
-    $release = Invoke-RestMethod -Headers @{ "User-Agent" = "MidTerm multi-instance installer" } -Uri $releaseUri
+    $release = Invoke-RestMethod -Headers @{ "User-Agent" = "tlbx multi-instance installer" } -Uri $releaseUri
     $asset = @($release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1)
     if (-not $asset) {
         $available = ($release.assets | ForEach-Object { $_.name }) -join ", "
@@ -140,12 +153,12 @@ function Download-ReleaseAsset([string]$destinationDir) {
 
     New-Item -ItemType Directory -Force -Path $destinationDir | Out-Null
     $destination = Join-Path $destinationDir $assetName
-    Invoke-WebRequest -Headers @{ "User-Agent" = "MidTerm multi-instance installer" } -Uri $asset.browser_download_url -OutFile $destination
+    Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx multi-instance installer" } -Uri $asset.browser_download_url -OutFile $destination
     return $destination
 }
 
 function Expand-Asset([string]$assetPath) {
-    $extractDir = Join-Path ([IO.Path]::GetTempPath()) ("midterm-multi-" + [Guid]::NewGuid().ToString("N"))
+    $extractDir = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-multi-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
     Expand-Archive -Path $assetPath -DestinationPath $extractDir -Force
     return $extractDir
@@ -158,7 +171,7 @@ function Resolve-PasswordHash([string]$mtPath) {
 
     $plain = $Password
     if (-not $plain) {
-        $secure = Read-Host "Password for new MidTerm instances" -AsSecureString
+        $secure = Read-Host "Password for new tlbx instances" -AsSecureString
         $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         try {
             $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
@@ -232,8 +245,8 @@ function Install-Instance($layout, [string]$payloadDir, [string]$passwordHash) {
         "--service-name", "`"$($layout.ServiceName)`""
     )
     $binPath = "`"$mtPath`" $($args -join ' ')"
-    sc.exe create $layout.ServiceName binPath= $binPath start= auto DisplayName= "MidTerm ($($layout.Name))" | Out-Null
-    sc.exe description $layout.ServiceName "MidTerm isolated instance '$($layout.Name)' on port $($layout.Port)" | Out-Null
+    sc.exe create $layout.ServiceName binPath= $binPath start= auto DisplayName= "tlbx ($($layout.Name))" | Out-Null
+    sc.exe description $layout.ServiceName "tlbx isolated instance '$($layout.Name)' on port $($layout.Port)" | Out-Null
     sc.exe failure $layout.ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
     Start-Service -Name $layout.ServiceName
 }
@@ -262,8 +275,8 @@ function Remove-Instance($layout) {
 }
 
 Assert-Windows
-$instanceNames = Resolve-InstanceNames
-$resolvedPorts = Resolve-Ports $instanceNames
+$instanceNames = @(Resolve-InstanceNames)
+$resolvedPorts = @(Resolve-Ports $instanceNames)
 $layouts = for ($i = 0; $i -lt $instanceNames.Count; $i++) {
     Get-InstanceLayout $instanceNames[$i] $resolvedPorts[$i]
 }
@@ -289,7 +302,7 @@ if ($Mode -eq "remove") {
     return
 }
 
-$downloadDir = Join-Path ([IO.Path]::GetTempPath()) "midterm-multi-download"
+$downloadDir = Join-Path ([IO.Path]::GetTempPath()) "tlbx-multi-download"
 $asset = Download-ReleaseAsset $downloadDir
 $payloadDir = Expand-Asset $asset
 try {

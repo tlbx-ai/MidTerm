@@ -367,6 +367,7 @@
   "update.applying": "Применение...",
   "update.lastUpdate": "Последнее обновление:",
   "update.success": "Успешно",
+  "update.rollbackAttempted": "Была предпринята попытка отката. Подробности см. в журнале обновления.",
   "update.viewUpdateLog": "Просмотреть журнал обновлений",
   "update.noLogFound": "Журнал обновлений не найден",
   "update.copyLog": "Копировать журнал",

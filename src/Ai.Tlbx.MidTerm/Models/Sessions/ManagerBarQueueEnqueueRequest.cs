@@ -10,4 +10,6 @@ public sealed class ManagerBarQueueEnqueueRequest
     public AppServerControlTurnRequest? Turn { get; set; }
     public int? DelayMs { get; set; }
     public DateTimeOffset? RunAt { get; set; }
+    public int? RepeatEveryMs { get; set; }
+    public int? RepeatCount { get; set; }
 }

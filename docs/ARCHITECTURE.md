@@ -602,6 +602,8 @@ The root `install.ps1` and `install.sh` scripts handle:
 - certificate reuse plus trust flows for both newly generated and reused certificates
 - platform-specific install paths and service registration
 - channel selection and release download
+- detached user-mode startup, supervised service startup, and fatal process/HTTPS readiness verification
+- ready-to-open localhost plus reachable Tailscale URLs for the configured bind address and port
 - update logging
 
 ### Update Service

@@ -363,7 +363,7 @@ function areJsonLikeRecordsEqual(
   return true;
 }
 
-function areJsonLikeEqual(left: unknown, right: unknown): boolean {
+export function areJsonLikeEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) {
     return true;
   }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# tlbx macOS/Linux Installer (formerly MidTerm)
+# tlbx macOS/Linux Installer
 # Usage: curl -fsSL https://get.tlbx.ai/install.sh | bash
 # Dev:   curl -fsSL https://get.tlbx.ai/install.sh | bash -s -- --dev
 #
@@ -10,6 +10,28 @@
 # - keep the touched paths narrow and auditable for users who inspect the script
 
 set -e
+
+ACTIVE_INSTALL_TEMP=""
+INSTALL_TRANSACTION_ACTIVE=false
+INSTALL_TRANSACTION_INSTALL_DIR=""
+INSTALL_TRANSACTION_FILES=""
+INSTALL_TRANSACTION_SERVICE_MODE=false
+INSTALL_TRANSACTION_HAD_SERVICE=false
+STARTED_USER_PID=""
+cleanup_active_install_temp() {
+    local exit_status="${1:-0}"
+    if [ "$exit_status" -ne 0 ] && [ -n "$STARTED_USER_PID" ] && kill -0 "$STARTED_USER_PID" 2>/dev/null; then
+        kill "$STARTED_USER_PID" 2>/dev/null || true
+        wait "$STARTED_USER_PID" 2>/dev/null || true
+    fi
+    if [ "$exit_status" -ne 0 ] && [ "$INSTALL_TRANSACTION_ACTIVE" = true ]; then
+        rollback_install_transaction
+    fi
+    if [ -n "$ACTIVE_INSTALL_TEMP" ] && [ -d "$ACTIVE_INSTALL_TEMP" ]; then
+        rm -rf "$ACTIVE_INSTALL_TEMP"
+    fi
+}
+trap 'installer_exit_status=$?; cleanup_active_install_temp "$installer_exit_status"' EXIT
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -22,13 +44,13 @@ bootstrap_download() {
     if command_exists curl; then
         curl --fail --silent --show-error --location \
             --retry 3 --retry-delay 1 --retry-all-errors \
-            -H "User-Agent: MidTerm-Installer" \
+            -H "User-Agent: tlbx-Installer" \
             "$url" -o "$dest"
         return
     fi
 
     if command_exists wget; then
-        wget -qO "$dest" --user-agent="MidTerm-Installer" "$url"
+        wget -qO "$dest" --user-agent="tlbx-Installer" "$url"
         return
     fi
 
@@ -49,7 +71,7 @@ if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH
 fi
 
 REPO_OWNER="tlbx-ai"
-REPO_NAME="MidTerm"
+REPO_NAME="tlbx"
 if command_exists curl; then
     REPOSITORY_COORDINATE=$(curl --fail --silent --show-error --max-time 3 https://get.tlbx.ai/v1/repository 2>/dev/null || true)
 elif command_exists wget; then
@@ -61,8 +83,14 @@ case "${REPOSITORY_COORDINATE:-}" in
         REPO_NAME="${REPOSITORY_COORDINATE#*/}"
         ;;
 esac
-SERVICE_NAME="MidTerm"
-LAUNCHD_LABEL="ai.tlbx.midterm"
+SERVICE_NAME="tlbx"
+LAUNCHD_LABEL="ai.tlbx.service"
+DISPLAY_NAME="tlbx"
+CERTIFICATE_FILE_NAME="tlbx.pem"
+CERTIFICATE_SUBJECT="tlbx"
+SERVICE_LOG_NAME="tlbx.log"
+SERVICE_LIB_DIR="/usr/local/lib/tlbx"
+USER_LIB_DIR="$HOME/.local/lib/tlbx"
 DEV_CHANNEL=false
 # Legacy service names for migration
 OLD_HOST_SERVICE_NAME="MidTerm-host"
@@ -76,15 +104,83 @@ OLD_LAUNCHD_LABEL="com.aitlbx.MidTerm"
 #   - UpdateScriptGenerator.cs (CONFIG_DIR variable in generated scripts)
 #   - install.ps1 (Path Constants section)
 # ============================================================================
-# Unix service mode paths (lowercase 'midterm' - critical!)
-UNIX_SERVICE_SETTINGS_DIR="/usr/local/etc/midterm"
+# New installations use tlbx paths. Existing MidTerm layouts are selected
+# explicitly and remain updateable in place.
+TLBX_SERVICE_SETTINGS_DIR="/usr/local/etc/tlbx"
+LEGACY_SERVICE_SETTINGS_DIR="/usr/local/etc/midterm"
+TLBX_USER_SETTINGS_DIR="$HOME/.tlbx"
+LEGACY_USER_SETTINGS_DIR="$HOME/.midterm"
+UNIX_SERVICE_SETTINGS_DIR="$TLBX_SERVICE_SETTINGS_DIR"
 UNIX_SERVICE_LOG_DIR="/usr/local/var/log"
 UNIX_SERVICE_BIN_DIR="/usr/local/bin"
 # Unix user mode paths
-UNIX_USER_SETTINGS_DIR="$HOME/.midterm"
+UNIX_USER_SETTINGS_DIR="$TLBX_USER_SETTINGS_DIR"
 # Secrets file (NOT secrets.bin - that's Windows only!)
 UNIX_SECRETS_FILENAME="secrets.json"
 # ============================================================================
+
+select_install_identity() {
+    local current_service=false legacy_service=false
+    local current_user=false legacy_user=false
+
+    if settings_layout_has_state "$TLBX_SERVICE_SETTINGS_DIR" || [ -f "/usr/local/lib/tlbx/uninstall.sh" ] || \
+       [ -f "/etc/systemd/system/tlbx.service" ] || [ -f "/Library/LaunchDaemons/ai.tlbx.service.plist" ]; then
+        current_service=true
+    fi
+    if settings_layout_has_state "$LEGACY_SERVICE_SETTINGS_DIR" || [ -f "/usr/local/lib/MidTerm/uninstall.sh" ] || \
+       [ -f "/etc/systemd/system/MidTerm.service" ] || [ -f "/Library/LaunchDaemons/ai.tlbx.midterm.plist" ]; then
+        legacy_service=true
+    fi
+    if settings_layout_has_state "$TLBX_USER_SETTINGS_DIR" || [ -f "$HOME/.local/lib/tlbx/uninstall.sh" ]; then
+        current_user=true
+    fi
+    if settings_layout_has_state "$LEGACY_USER_SETTINGS_DIR" || [ -f "$HOME/.local/lib/MidTerm/uninstall.sh" ]; then
+        legacy_user=true
+    fi
+
+    if { [ "$current_service" = true ] && [ "$legacy_service" = true ]; } || \
+       { [ "$current_user" = true ] && [ "$legacy_user" = true ]; }; then
+        echo "Error: both tlbx and legacy MidTerm installations were found. Uninstall one copy before continuing." >&2
+        exit 1
+    fi
+
+    if [ "$legacy_service" = true ] || [ "$legacy_user" = true ]; then
+        SERVICE_NAME="MidTerm"
+        LAUNCHD_LABEL="ai.tlbx.midterm"
+        DISPLAY_NAME="MidTerm"
+        CERTIFICATE_FILE_NAME="midterm.pem"
+        CERTIFICATE_SUBJECT="ai.tlbx.midterm"
+        SERVICE_LOG_NAME="MidTerm.log"
+        SERVICE_LIB_DIR="/usr/local/lib/MidTerm"
+        USER_LIB_DIR="$HOME/.local/lib/MidTerm"
+        UNIX_SERVICE_SETTINGS_DIR="$LEGACY_SERVICE_SETTINGS_DIR"
+        UNIX_USER_SETTINGS_DIR="$LEGACY_USER_SETTINGS_DIR"
+        echo -e "  ${YELLOW}Existing MidTerm installation detected; updating it in place.${NC}"
+        return
+    fi
+
+    SERVICE_NAME="tlbx"
+    LAUNCHD_LABEL="ai.tlbx.service"
+    DISPLAY_NAME="tlbx"
+    CERTIFICATE_FILE_NAME="tlbx.pem"
+    CERTIFICATE_SUBJECT="tlbx"
+    SERVICE_LOG_NAME="tlbx.log"
+    SERVICE_LIB_DIR="/usr/local/lib/tlbx"
+    USER_LIB_DIR="$HOME/.local/lib/tlbx"
+    UNIX_SERVICE_SETTINGS_DIR="$TLBX_SERVICE_SETTINGS_DIR"
+    UNIX_USER_SETTINGS_DIR="$TLBX_USER_SETTINGS_DIR"
+}
+
+settings_layout_has_state() {
+    local directory="$1"
+    [ -f "$directory/settings.json" ] ||
+        [ -f "$directory/secrets.json" ] ||
+        [ -f "$directory/tlbx.pem" ] ||
+        [ -f "$directory/midterm.pem" ] ||
+        [ -f "$directory/runtime.json" ] ||
+        [ -d "$directory/keys" ] ||
+        [ -d "$directory/worktrees" ]
+}
 
 # Colors
 RED='\033[0;31m'
@@ -204,7 +300,7 @@ download_to_file() {
         if [ "$DOWNLOADER" = "curl" ]; then
             if curl --fail --silent --show-error --location \
                 --retry 3 --retry-delay 1 --retry-all-errors \
-                -H "User-Agent: MidTerm-Installer" \
+                -H "User-Agent: tlbx-Installer" \
                 "$url" -o "$dest"; then
                 if validate_archive "$dest"; then
                     log "Download and archive validation succeeded for $description"
@@ -212,7 +308,7 @@ download_to_file() {
                 fi
             fi
         else
-            if wget -qO "$dest" --user-agent="MidTerm-Installer" "$url"; then
+            if wget -qO "$dest" --user-agent="tlbx-Installer" "$url"; then
                 if validate_archive "$dest"; then
                     log "Download and archive validation succeeded for $description"
                     return 0
@@ -236,7 +332,7 @@ github_api_get() {
             --retry 3 --retry-delay 1 --retry-all-errors \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            -H "User-Agent: MidTerm-Installer" \
+            -H "User-Agent: tlbx-Installer" \
             "$url"
         return
     fi
@@ -244,7 +340,7 @@ github_api_get() {
     wget -qO- \
         --header="Accept: application/vnd.github+json" \
         --header="X-GitHub-Api-Version: 2022-11-28" \
-        --user-agent="MidTerm-Installer" \
+        --user-agent="tlbx-Installer" \
         "$url"
 }
 
@@ -254,14 +350,14 @@ resolve_redirect_url() {
     if [ "$DOWNLOADER" = "curl" ]; then
         curl --fail --silent --show-error --location --head \
             --output /dev/null --write-out '%{url_effective}' \
-            -H "User-Agent: MidTerm-Installer" \
+            -H "User-Agent: tlbx-Installer" \
             "$url"
         return
     fi
 
     local headers
     headers=$(wget --server-response --spider --max-redirect=0 \
-        --user-agent="MidTerm-Installer" "$url" 2>&1 || true)
+        --user-agent="tlbx-Installer" "$url" 2>&1 || true)
 
     printf '%s' "$headers" |
         tr -d '\r' |
@@ -278,15 +374,43 @@ ensure_prerequisites() {
     require_command tar tar
     require_command grep grep
     require_command sed sed
+    require_command awk gawk
     require_command stty coreutils
     require_command tee coreutils
     require_command base64 coreutils
     require_command pgrep procps/procps-ng
+    require_command openssl openssl
     require_any_download_tool
 
-    if [ "$DEV_CHANNEL" = true ]; then
-        require_command awk gawk
+    if ! command_exists sha256sum && ! command_exists shasum; then
+        echo -e "${RED}Missing required SHA-256 tool: sha256sum or shasum${NC}" >&2
+        exit 1
     fi
+}
+
+validate_archive_members() {
+    local archive_path="$1"
+    local member normalized
+
+    while IFS= read -r member; do
+        normalized="${member#./}"
+        case "$normalized" in
+            ""|mt|mthost|mtagenthost|mttmux|version.json|SHA256SUMS.txt) ;;
+            *)
+                log "Release archive contains unexpected member: $member" "ERROR"
+                return 1
+                ;;
+        esac
+    done < <(tar -tzf "$archive_path")
+
+    # Release payloads are regular files only. Reject links and device entries
+    # before extraction so an archive cannot redirect writes outside temp.
+    if tar -tvzf "$archive_path" | awk 'NF && substr($1,1,1) != "-" && $NF != "./" { exit 1 }'; then
+        return 0
+    fi
+
+    log "Release archive contains a non-regular member" "ERROR"
+    return 1
 }
 
 init_log() {
@@ -296,7 +420,7 @@ init_log() {
     if [ "$mode" = "service" ]; then
         log_dir="/usr/local/var/log"
     else
-        log_dir="$HOME/.midterm"
+        log_dir="$UNIX_USER_SETTINGS_DIR"
     fi
 
     mkdir -p "$log_dir" 2>/dev/null || true
@@ -355,15 +479,14 @@ repeat_char() {
     printf '%s' "$out"
 }
 
-print_midterm_banner() {
+print_tlbx_banner() {
     echo ""
-    echo -e "            ${WHITE}//   \\\\${NC}"
-    echo -e "           ${WHITE}//     \\\\         __  __ _     _ _____${NC}"
-    echo -e "          ${WHITE}//       \\\\       |  \\/  (_) __| |_   _|__ _ __ _ __ ___${NC}"
-    echo -e "         ${WHITE}//  ( ${CYAN}·${WHITE} )  \\\\      | |\\/| | |/ _\` | | |/ _ \\\\ '__| '_ \` _ \\\\${NC}"
-    echo -e "        ${WHITE}//           \\\\     | |  | | | (_| | | |  __/ |  | | | | | |${NC}"
-    echo -e "       ${WHITE}//             \\\\    |_|  |_|_|\\__,_| |_|\\___|_|  |_| |_| |_|${NC}"
-    echo -e "      ${WHITE}//               \\\\   ${GREEN}tlbx.ai - https://github.com/tlbx-ai/tlbx${NC}"
+    echo -e "       ${WHITE}_   _ _${NC}"
+    echo -e "      ${WHITE}| |_| | |__  __  __${NC}"
+    echo -e "      ${WHITE}| __| | '_ \\\\ \\\\ \\/ /${NC}"
+    echo -e "      ${WHITE}| |_| | |_) | >  <${NC}"
+    echo -e "       ${WHITE}\\\\__|_|_.__/ /_/\\\\_\\\\${NC}"
+    echo -e "      ${GREEN}tlbx.ai - https://github.com/tlbx-ai/tlbx${NC}"
     echo ""
 }
 
@@ -413,6 +536,45 @@ PORT="${PORT:-2000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 TRUST_CERT="${TRUST_CERT:-}"
 LOGGING_STARTED="${LOGGING_STARTED:-}"
+INSTALLER_HANDOFF_FILE="${INSTALLER_HANDOFF_FILE:-}"
+
+write_handoff_value() {
+    local key="$1"
+    local value="$2"
+    local destination="$3"
+    printf '%s=' "$key" >> "$destination"
+    printf '%s' "$value" | base64 | tr -d '\r\n' >> "$destination"
+    printf '\n' >> "$destination"
+}
+
+load_installer_handoff() {
+    local path="$1"
+    if [ -z "$path" ] || [ ! -f "$path" ] || [ -L "$path" ]; then
+        echo "Error: secure installer handoff file is missing or invalid." >&2
+        exit 1
+    fi
+
+    while IFS='=' read -r key encoded; do
+        local decoded
+        decoded=$(printf '%s' "$encoded" | base64 -d 2>/dev/null || printf '%s' "$encoded" | base64 -D 2>/dev/null) || {
+            echo "Error: secure installer handoff could not be decoded." >&2
+            exit 1
+        }
+        case "$key" in
+            INSTALLING_USER) INSTALLING_USER="$decoded" ;;
+            INSTALLING_UID) INSTALLING_UID="$decoded" ;;
+            INSTALLING_GID) INSTALLING_GID="$decoded" ;;
+            PASSWORD_HASH) PASSWORD_HASH="$decoded" ;;
+            PASSWORD_ACTION) PASSWORD_ACTION="$decoded" ;;
+            PORT) PORT="$decoded" ;;
+            BIND_ADDRESS) BIND_ADDRESS="$decoded" ;;
+            TRUST_CERT) TRUST_CERT="$decoded" ;;
+        esac
+    done < "$path"
+
+    rm -f "$path"
+    INSTALLER_HANDOFF_FILE=""
+}
 
 setup_logging() {
     local mode="$1"
@@ -420,11 +582,11 @@ setup_logging() {
 
     # Log paths - MUST match LogPaths.cs in C# codebase (source of truth)
     # Service mode: /usr/local/var/log/update.log
-    # User mode: ~/.midterm/update.log
+    # User mode: selected tlbx or compatible legacy settings directory.
     if [ "$mode" = "service" ]; then
         log_dir="/usr/local/var/log"
     else
-        log_dir="$HOME/.midterm"
+        log_dir="$UNIX_USER_SETTINGS_DIR"
     fi
 
     log_file="$log_dir/update.log"
@@ -450,7 +612,7 @@ setup_logging() {
 }
 
 print_header() {
-    print_midterm_banner
+    print_tlbx_banner
     echo -e "  ${CYAN}Installer${NC}"
     echo ""
 }
@@ -1206,15 +1368,15 @@ generate_certificate() {
     fi
 
     # Build args - service mode uses different paths
-    local cert_args="--generate-cert --force"
+    local cert_args=(--generate-cert --user-mode --settings-dir "$settings_dir" --force)
     if [ "$is_service" = true ]; then
-        cert_args="--generate-cert --service-mode --force"
+        cert_args=(--generate-cert --service-mode --settings-dir "$settings_dir" --force)
     fi
-    log "Running: $mt_path $cert_args"
+    log "Running certificate generator for selected settings directory"
 
     # Use mt --generate-cert to generate certificate with encrypted private key
     local output
-    output=$("$mt_path" $cert_args 2>&1)
+    output=$("$mt_path" "${cert_args[@]}" 2>&1)
     local exit_code=$?
 
     log "Certificate generation exit code: $exit_code"
@@ -1234,7 +1396,7 @@ generate_certificate() {
     fi
     if [ -z "$CERT_PATH" ]; then
         # Default path (matches what mt generates)
-        CERT_PATH="$settings_dir/midterm.pem"
+        CERT_PATH="$settings_dir/$CERTIFICATE_FILE_NAME"
     fi
 
     log "Certificate path: $CERT_PATH"
@@ -1300,6 +1462,14 @@ write_user_settings() {
     local merge_path="$config_dir/merge-settings.json"
 
     mkdir -p "$config_dir"
+
+    cat > "$config_dir/runtime.json" << EOF
+{
+  "port": $PORT,
+  "bindAddress": "$BIND_ADDRESS"
+}
+EOF
+    chmod 600 "$config_dir/runtime.json"
 
     # Build install-time settings for merge
     local json_content="{
@@ -1444,7 +1614,7 @@ execute_certificate_trust() {
     # user can trust the certificate manually later.
     if [ "$(uname -s)" = "Darwin" ]; then
         local existing_hashes current_hash
-        existing_hashes=$(security find-certificate -a -Z -c ai.tlbx.midterm /Library/Keychains/System.keychain 2>/dev/null | \
+        existing_hashes=$(security find-certificate -a -Z -c "$CERTIFICATE_SUBJECT" /Library/Keychains/System.keychain 2>/dev/null | \
             sed -n 's/^SHA-256 hash: //p')
         if command_exists openssl; then
             current_hash=$(openssl x509 -in "$cert_path" -noout -fingerprint -sha256 2>/dev/null | \
@@ -1480,7 +1650,7 @@ execute_certificate_trust() {
             fi
         fi
     else
-        if cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
+        if cp "$cert_path" "/usr/local/share/ca-certificates/${CERTIFICATE_FILE_NAME%.pem}.crt" 2>/dev/null && \
            update-ca-certificates 2>/dev/null; then
             print_step "Trusting certificate..." "done"
         else
@@ -1513,7 +1683,7 @@ prompt_certificate_trust() {
                 log "Could not auto-trust certificate (code: $exit_code): $output"
             fi
         else
-            if sudo cp "$cert_path" /usr/local/share/ca-certificates/midterm.crt 2>/dev/null && \
+            if sudo cp "$cert_path" "/usr/local/share/ca-certificates/${CERTIFICATE_FILE_NAME%.pem}.crt" 2>/dev/null && \
                sudo update-ca-certificates 2>/dev/null; then
                 print_step "Trusting certificate..." "done"
             else
@@ -1523,76 +1693,213 @@ prompt_certificate_trust() {
     fi
 }
 
-show_process_status() {
-    local port="$1"
+is_tailscale_ipv4() {
+    local address="$1" first second third fourth extra
+    IFS=. read -r first second third fourth extra <<< "$address"
+    [[ -z "$extra" && "$first" =~ ^[0-9]+$ && "$second" =~ ^[0-9]+$ && \
+       "$third" =~ ^[0-9]+$ && "$fourth" =~ ^[0-9]+$ ]] || return 1
+    [ "$first" -eq 100 ] && [ "$second" -ge 64 ] && [ "$second" -le 127 ] && \
+        [ "$third" -le 255 ] && [ "$fourth" -le 255 ]
+}
 
-    print_phase "Status"
+get_tailscale_ipv4_addresses() {
+    local candidates="" address
+    if command_exists tailscale; then
+        candidates="$(tailscale ip -4 2>/dev/null || true)"
+    fi
+    if command_exists ip; then
+        candidates="$candidates
+$(ip -4 -o address show 2>/dev/null | awk '{print $4}' | cut -d/ -f1)"
+    elif command_exists ifconfig; then
+        candidates="$candidates
+$(ifconfig 2>/dev/null | awk '/inet / {print $2}')"
+    fi
 
-    # Check service status
+    while IFS= read -r address; do
+        address="${address//[[:space:]]/}"
+        if is_tailscale_ipv4 "$address"; then
+            printf '%s\n' "$address"
+        fi
+    done <<< "$candidates" | awk '!seen[$0]++'
+}
+
+format_tlbx_url() {
+    local host="$1" port="$2"
+    if [[ "$host" == *:* && "$host" != \[*\] ]]; then
+        host="[$host]"
+    fi
+    printf 'https://%s:%s' "$host" "$port"
+}
+
+get_primary_access_url() {
+    local port="$1" bind_address="$2" host
+    case "$bind_address" in
+        ""|localhost|127.0.0.1|::1|\[::1\]|\*|0.0.0.0|::|\[::\]) host="localhost" ;;
+        *) host="$bind_address" ;;
+    esac
+    format_tlbx_url "$host" "$port"
+}
+
+print_ready_urls() {
+    local port="$1" bind_address="$2" primary_url tailscale_address tailscale_url
+    primary_url="$(get_primary_access_url "$port" "$bind_address")"
+
+    echo -e "  ${GREEN}Your tlbx is ready at:${NC}"
+    echo "  $primary_url"
+    log "  URL: $primary_url"
+
+    case "$bind_address" in
+        \*|0.0.0.0|::|\[::\])
+            while IFS= read -r tailscale_address; do
+                [ -n "$tailscale_address" ] || continue
+                tailscale_url="$(format_tlbx_url "$tailscale_address" "$port")"
+                echo "  $tailscale_url"
+                log "  URL: $tailscale_url"
+            done < <(get_tailscale_ipv4_addresses)
+            ;;
+        *) ;;
+    esac
+}
+
+service_is_running() {
     if [ "$(uname -s)" = "Darwin" ]; then
-        if launchctl list 2>/dev/null | grep -q "$LAUNCHD_LABEL"; then
-            print_status "Service" "running" "$GREEN"
-        else
-            print_status "Service" "starting..." "$YELLOW"
-        fi
+        launchctl print "system/$LAUNCHD_LABEL" >/dev/null 2>&1
     else
-        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-            print_status "Service" "running" "$GREEN"
-        else
-            print_status "Service" "starting..." "$YELLOW"
-        fi
-    fi
-
-    # Check mt process
-    local mt_pid
-    mt_pid=$(pgrep -f "^/usr/local/bin/mt" 2>/dev/null | head -1 || true)
-    if [ -n "$mt_pid" ]; then
-        print_status "mt (web)" "running (PID $mt_pid)" "$GREEN"
-    else
-        print_status "mt (web)" "starting..." "$YELLOW"
-    fi
-
-    # Health check with version info
-    sleep 2
-    local health_response
-    health_response=$(curl -fsSk "https://localhost:$port/api/health" 2>/dev/null || true)
-
-    if [ -n "$health_response" ]; then
-        local healthy version
-        healthy=$(echo "$health_response" | grep -o '"healthy"[[:space:]]*:[[:space:]]*true' || true)
-        version=$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
-
-        if [ -n "$healthy" ]; then
-            if [ -n "$version" ]; then
-                print_status "Health" "healthy (v$version)" "$GREEN"
-            else
-                print_status "Health" "healthy" "$GREEN"
-            fi
-        else
-            print_status "Health" "unhealthy" "$RED"
-        fi
-    else
-        print_status "Health" "could not connect" "$YELLOW"
+        systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null
     fi
 }
 
-check_health() {
-    local port="$1"
-    sleep 2
-
-    # Try curl with insecure flag (self-signed cert)
-    if curl -fsSk "https://localhost:$port/api/health" >/dev/null 2>&1; then
-        log "Health check passed"
-        return 0
+get_service_pid() {
+    if [ "$(uname -s)" = "Darwin" ]; then
+        launchctl print "system/$LAUNCHD_LABEL" 2>/dev/null | awk '/pid = / {print $3; exit}'
     else
-        log "Health check pending"
-        return 1
+        systemctl show "$SERVICE_NAME" --property MainPID --value 2>/dev/null | awk '$1 != 0 {print; exit}'
     fi
+}
+
+request_health() {
+    local url="$1"
+    if command_exists curl; then
+        curl -fsSk --max-time 5 "$url/api/health" 2>/dev/null
+    else
+        wget -qO- --timeout=5 --no-check-certificate "$url/api/health" 2>/dev/null
+    fi
+}
+
+READY_PID=""
+READY_HEALTH_RESPONSE=""
+READY_VERSION=""
+READY_URL=""
+wait_tlbx_ready() {
+    local port="$1" bind_address="$2" service_mode="$3" expected_pid="${4:-}"
+    local attempt service_ready process_ready health_response current_pid
+    READY_PID=""
+    READY_HEALTH_RESPONSE=""
+    READY_VERSION=""
+    READY_URL="$(get_primary_access_url "$port" "$bind_address")"
+
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        service_ready=true
+        current_pid="$expected_pid"
+        if [ "$service_mode" = true ]; then
+            service_is_running || service_ready=false
+            current_pid="$(get_service_pid || true)"
+        fi
+
+        process_ready=false
+        if [ -n "$current_pid" ] && kill -0 "$current_pid" 2>/dev/null; then
+            process_ready=true
+            READY_PID="$current_pid"
+        fi
+
+        health_response="$(request_health "$READY_URL" || true)"
+        READY_HEALTH_RESPONSE="$health_response"
+        if [ "$service_ready" = true ] && [ "$process_ready" = true ] && \
+           echo "$health_response" | grep -q '"healthy"[[:space:]]*:[[:space:]]*true'; then
+            READY_VERSION="$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')"
+            log "Process $READY_PID and health endpoint $READY_URL are ready"
+            return 0
+        fi
+
+        if [ -n "$expected_pid" ] && ! kill -0 "$expected_pid" 2>/dev/null; then
+            break
+        fi
+        [ "$attempt" -eq 15 ] || sleep 1
+    done
+
+    log "Process/health readiness failed for $READY_URL after 15 attempts" "ERROR"
+    return 1
+}
+
+start_user_tlbx() {
+    local install_dir="$1" settings_dir="$2" port="$3" bind_address="$4"
+    local stdout_log="$settings_dir/tlbx-user.stdout.log"
+    local stderr_log="$settings_dir/tlbx-user.stderr.log"
+
+    log "Starting user-mode tlbx with stdout=$stdout_log and stderr=$stderr_log"
+    nohup "$install_dir/mt" --user-mode --settings-dir "$settings_dir" \
+        --port "$port" --bind "$bind_address" </dev/null >"$stdout_log" 2>"$stderr_log" &
+    STARTED_USER_PID=$!
+}
+
+rollback_install_transaction() {
+    [ "$INSTALL_TRANSACTION_ACTIVE" = true ] || return 0
+
+    log "Installation failed after the binary swap; restoring the previous binary set" "WARN"
+    if [ "$INSTALL_TRANSACTION_SERVICE_MODE" = true ]; then
+        if [ "$PLATFORM" = "osx" ]; then
+            launchctl bootout system/"$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+        else
+            systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    local file_name backup_dir="$ACTIVE_INSTALL_TEMP/backup"
+    for file_name in $INSTALL_TRANSACTION_FILES; do
+        rm -f "$INSTALL_TRANSACTION_INSTALL_DIR/$file_name"
+        if [ -f "$backup_dir/$file_name" ]; then
+            cp -p "$backup_dir/$file_name" "$INSTALL_TRANSACTION_INSTALL_DIR/$file_name" || true
+        fi
+    done
+
+    if [ "$INSTALL_TRANSACTION_SERVICE_MODE" = true ]; then
+        if [ "$INSTALL_TRANSACTION_HAD_SERVICE" = true ]; then
+            if [ "$PLATFORM" = "osx" ]; then
+                local plist_path="/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist"
+                [ -f "$plist_path" ] && launchctl bootstrap system "$plist_path" >/dev/null 2>&1 || true
+                launchctl kickstart -k system/"$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+            else
+                systemctl start "$SERVICE_NAME" >/dev/null 2>&1 || true
+            fi
+        elif [ "$PLATFORM" = "osx" ]; then
+            rm -f "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist"
+        else
+            systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || true
+            rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+    fi
+
+    INSTALL_TRANSACTION_ACTIVE=false
+    echo -e "  ${YELLOW}Previous tlbx binaries restored after installation failure.${NC}" >&2
+}
+
+commit_install_transaction() {
+    [ "$INSTALL_TRANSACTION_ACTIVE" = true ] || return 0
+    rm -f "$INSTALL_TRANSACTION_INSTALL_DIR/mt-host"
+    rm -rf "$ACTIVE_INSTALL_TEMP"
+    ACTIVE_INSTALL_TEMP=""
+    INSTALL_TRANSACTION_ACTIVE=false
+    INSTALL_TRANSACTION_INSTALL_DIR=""
+    INSTALL_TRANSACTION_FILES=""
+    log "Installation transaction committed"
 }
 
 install_binary() {
     local install_dir="$1"
+    local service_mode="${2:-false}"
     local temp_dir=$(mktemp -d)
+    ACTIVE_INSTALL_TEMP="$temp_dir"
     local archive_path="$temp_dir/$ASSET_NAME"
 
     log "Downloading from: $ASSET_URL"
@@ -1611,6 +1918,11 @@ install_binary() {
 
     log "Extracting to: $temp_dir"
     print_step_inline "Extracting binaries..."
+    if ! validate_archive_members "$archive_path"; then
+        finish_step_inline "failed (unsafe archive)" "$RED"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
     if ! tar -xzf "$archive_path" -C "$temp_dir"; then
         log "Extraction failed for $archive_path" "ERROR"
         finish_step_inline "failed" "$RED"
@@ -1634,63 +1946,81 @@ install_binary() {
     fi
     finish_step_inline "verified" "$GREEN"
 
+    local had_service=false
+    if [ "$service_mode" = true ]; then
+        if [ "$PLATFORM" = "osx" ]; then
+            [ -f "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" ] && had_service=true
+            launchctl bootout system/"$LAUNCHD_LABEL" 2>/dev/null || true
+        else
+            [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] && had_service=true
+            systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+        fi
+        stop_conflicting_tlbx_processes "$install_dir"
+    fi
+
     # Create install directory
     mkdir -p "$install_dir"
 
-    # Copy web binary with retry (handles file lock during updates)
-    log "Copying mt to $install_dir/mt"
-    if ! copy_with_retry "$temp_dir/mt" "$install_dir/mt"; then
-        log "Failed to copy mt - file locked" "ERROR"
-        print_step "Copying mt..." "failed (locked)" "$RED"
+    local backup_dir="$temp_dir/backup"
+    local file_name install_ok=true
+    local runtime_files="mt mthost mtagenthost version.json"
+    if [ -f "$temp_dir/mttmux" ]; then
+        runtime_files="$runtime_files mttmux"
+    fi
+    mkdir -p "$backup_dir"
+    for file_name in $runtime_files; do
+        if [ -f "$install_dir/$file_name" ]; then
+            cp -p "$install_dir/$file_name" "$backup_dir/$file_name"
+        fi
+    done
+
+    for file_name in $runtime_files; do
+        if ! copy_with_retry "$temp_dir/$file_name" "$install_dir/$file_name"; then
+            log "Failed to install $file_name; restoring previous binary set" "ERROR"
+            install_ok=false
+            break
+        fi
+    done
+
+    if [ "$install_ok" != true ]; then
+        for file_name in $runtime_files; do
+            rm -f "$install_dir/$file_name"
+            if [ -f "$backup_dir/$file_name" ]; then
+                cp -p "$backup_dir/$file_name" "$install_dir/$file_name" || true
+            fi
+        done
+        if [ "$service_mode" = true ]; then
+            if [ "$PLATFORM" = "osx" ]; then
+                local existing_plist="/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist"
+                if [ -f "$existing_plist" ]; then
+                    launchctl bootstrap system "$existing_plist" 2>/dev/null || true
+                    launchctl kickstart -k system/"$LAUNCHD_LABEL" 2>/dev/null || true
+                fi
+            else
+                systemctl start "$SERVICE_NAME" 2>/dev/null || true
+            fi
+        fi
         rm -rf "$temp_dir"
         exit 1
     fi
-    chmod +x "$install_dir/mt"
-    log "mt copied and made executable"
 
-    # Copy tty host binary (terminal subprocess)
-    if [ -f "$temp_dir/mthost" ]; then
-        log "Copying mthost to $install_dir/mthost"
-        if ! copy_with_retry "$temp_dir/mthost" "$install_dir/mthost"; then
-            log "Failed to copy mthost - file locked" "ERROR"
-            print_step "Copying mthost..." "failed (locked)" "$RED"
-            rm -rf "$temp_dir"
-            exit 1
-        fi
-        chmod +x "$install_dir/mthost"
-        log "mthost copied and made executable"
-    fi
+    chmod +x "$install_dir/mt" "$install_dir/mthost" "$install_dir/mtagenthost"
+    [ -f "$install_dir/mttmux" ] && chmod +x "$install_dir/mttmux"
+    log "Verified binary set installed transactionally"
 
-    if [ -f "$temp_dir/mtagenthost" ]; then
-        log "Copying mtagenthost to $install_dir/mtagenthost"
-        if ! copy_with_retry "$temp_dir/mtagenthost" "$install_dir/mtagenthost"; then
-            log "Failed to copy mtagenthost - file locked" "ERROR"
-            print_step "Copying mtagenthost..." "failed (locked)" "$RED"
-            rm -rf "$temp_dir"
-            exit 1
-        fi
-        chmod +x "$install_dir/mtagenthost"
-        log "mtagenthost copied and made executable"
-    fi
-
-    # Copy version manifest
-    if [ -f "$temp_dir/version.json" ]; then
-        copy_with_retry "$temp_dir/version.json" "$install_dir/version.json" || true
-        log "version.json copied"
-    fi
-
-    # Cleanup
-    rm -rf "$temp_dir"
-    log "Temp directory cleaned up"
-
-    # Remove legacy mt-host if present (from pre-v4)
-    rm -f "$install_dir/mt-host"
+    # Keep the backup until password, certificate, settings, service, and health
+    # setup have all succeeded. The caller commits the transaction at the end.
+    INSTALL_TRANSACTION_ACTIVE=true
+    INSTALL_TRANSACTION_INSTALL_DIR="$install_dir"
+    INSTALL_TRANSACTION_FILES="$runtime_files"
+    INSTALL_TRANSACTION_SERVICE_MODE="$service_mode"
+    INSTALL_TRANSACTION_HAD_SERVICE="$had_service"
 }
 
 install_as_service() {
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     local install_dir="$UNIX_SERVICE_BIN_DIR"
-    local lib_dir="/usr/local/lib/MidTerm"
+    local lib_dir="$SERVICE_LIB_DIR"
     local settings_dir="$UNIX_SERVICE_SETTINGS_DIR"
 
     # Check for root first. Service-mode logging lives under /usr/local/var/log,
@@ -1705,20 +2035,29 @@ install_as_service() {
 
         echo ""
         echo -e "${YELLOW}Requesting sudo privileges...${NC}"
-        # Re-exec with sudo, passing all collected info as environment variables
+        # Re-exec with sudo. Sensitive password material is transferred through
+        # a mode-0600 handoff file rather than process arguments or sudo env.
         local dev_flag=""
         if [ "$DEV_CHANNEL" = true ]; then
             dev_flag="--dev"
         fi
-        exec sudo env INSTALLING_USER="$INSTALLING_USER" \
-                     INSTALLING_UID="$INSTALLING_UID" \
-                     INSTALLING_GID="$INSTALLING_GID" \
-                     PASSWORD_HASH="$PASSWORD_HASH" \
-                     PASSWORD_ACTION="$PASSWORD_ACTION" \
-                     PORT="$PORT" \
-                     BIND_ADDRESS="$BIND_ADDRESS" \
-                     TRUST_CERT="$TRUST_CERT" \
-                     "$SCRIPT_PATH" --service $dev_flag
+        local handoff_file
+        handoff_file=$(mktemp "${TMPDIR:-/tmp}/tlbx-install-handoff.XXXXXX")
+        chmod 600 "$handoff_file"
+        write_handoff_value INSTALLING_USER "$INSTALLING_USER" "$handoff_file"
+        write_handoff_value INSTALLING_UID "$INSTALLING_UID" "$handoff_file"
+        write_handoff_value INSTALLING_GID "$INSTALLING_GID" "$handoff_file"
+        write_handoff_value PASSWORD_HASH "$PASSWORD_HASH" "$handoff_file"
+        write_handoff_value PASSWORD_ACTION "$PASSWORD_ACTION" "$handoff_file"
+        write_handoff_value PORT "$PORT" "$handoff_file"
+        write_handoff_value BIND_ADDRESS "$BIND_ADDRESS" "$handoff_file"
+        write_handoff_value TRUST_CERT "$TRUST_CERT" "$handoff_file"
+        set +e
+        sudo env INSTALLER_HANDOFF_FILE="$handoff_file" "$SCRIPT_PATH" --service $dev_flag
+        local elevated_exit=$?
+        set -e
+        rm -f "$handoff_file"
+        exit "$elevated_exit"
     fi
 
     if [ "$PLATFORM" = "linux" ] && ! command_exists systemctl; then
@@ -1733,13 +2072,14 @@ install_as_service() {
     print_phase "Installing"
 
     log "=== PHASE 1: Installing binaries ==="
-    install_binary "$install_dir"
+    install_binary "$install_dir" true
 
     # Make binaries writable by the service user so self-update works without sudo.
     # The update script runs as the service user (non-root) and needs to overwrite
     # these files in-place. Without this, self-update silently fails.
     if [ -n "$INSTALLING_USER" ]; then
         chown "$INSTALLING_USER" "$install_dir/mt" "$install_dir/mthost" "$install_dir/mtagenthost" 2>/dev/null || true
+        [ -f "$install_dir/mttmux" ] && chown "$INSTALLING_USER" "$install_dir/mttmux" 2>/dev/null || true
         [ -f "$install_dir/version.json" ] && chown "$INSTALLING_USER" "$install_dir/version.json" 2>/dev/null || true
     fi
 
@@ -1822,7 +2162,7 @@ install_as_service() {
     # Store password in secure secrets storage. A failed new/replacement write is
     # fatal; we do not want to continue into a misleading partially secured state.
     if [ "$should_write_password" = true ] && [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
-        if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode 2>/dev/null; then
+        if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --service-mode --settings-dir "$settings_dir" 2>/dev/null; then
             log "Password stored in secure secrets storage"
             print_step "Storing password..." "done"
         else
@@ -1835,7 +2175,7 @@ install_as_service() {
 
     log "=== PHASE 3: Certificate configuration ==="
     # Check existing certificate before generating
-    local existing_cert="$settings_dir/midterm.pem"
+    local existing_cert="$settings_dir/$CERTIFICATE_FILE_NAME"
     if check_existing_certificate "$existing_cert"; then
         log "Existing certificate is valid, reusing"
         CERT_PATH="$existing_cert"
@@ -1867,8 +2207,28 @@ install_as_service() {
         install_systemd "$install_dir"
     fi
 
-    # Show detailed process status (like PS does)
-    show_process_status "$PORT"
+    print_phase "Status"
+    print_status "Startup" "waiting for process and https endpoint..." "$YELLOW"
+    if ! wait_tlbx_ready "$PORT" "$BIND_ADDRESS" true; then
+        if service_is_running; then
+            print_status "Service" "running" "$GREEN"
+        else
+            print_status "Service" "not running" "$RED"
+        fi
+        if [ -n "$READY_PID" ]; then
+            print_status "tlbx process" "running (PID $READY_PID)" "$GREEN"
+        else
+            print_status "tlbx process" "not running" "$RED"
+        fi
+        print_status "HTTPS" "could not connect to $READY_URL" "$RED"
+        echo -e "  ${RED}tlbx was installed but did not pass process and health verification.${NC}"
+        echo -e "  ${GRAY}See $LOG_FILE for details.${NC}"
+        exit 1
+    fi
+    print_status "Service" "running" "$GREEN"
+    print_status "tlbx process" "running (PID $READY_PID)" "$GREEN"
+    print_status "HTTPS" "reachable and healthy" "$GREEN"
+    [ -z "$READY_VERSION" ] || print_status "Version" "$READY_VERSION"
 
     # Create uninstall script
     create_uninstall_script "$lib_dir" true
@@ -1878,19 +2238,19 @@ install_as_service() {
         chown "$INSTALLING_USER" "$LOG_FILE" 2>/dev/null || true
     fi
 
+    commit_install_transaction
+
     log "=========================================="
     log "INSTALLATION COMPLETE"
     log "  Location: $install_dir/mt"
-    log "  URL: https://localhost:$PORT"
     log "  Settings: $settings_dir"
     log "=========================================="
 
     echo ""
     echo -e "  ${CYAN}════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}Installation complete${NC}"
-    echo ""
     print_status "Location" "$install_dir/mt"
-    print_status "URL" "https://localhost:$PORT" "$CYAN"
+    echo ""
+    print_ready_urls "$PORT" "$BIND_ADDRESS"
     if [ "$TRUST_CERT" != "yes" ]; then
         echo -e "  ${GRAY}Note: browser may show cert warning${NC}"
     fi
@@ -1915,8 +2275,8 @@ install_launchd() {
     # Create log directory and ensure log files are owned by the service user.
     # The self-update script runs as the service user and needs write access to these files.
     mkdir -p "$log_dir"
-    touch "$log_dir/MidTerm.log" "$log_dir/update.log"
-    chown "$INSTALLING_USER" "$log_dir/MidTerm.log" "$log_dir/update.log" 2>/dev/null || \
+    touch "$log_dir/$SERVICE_LOG_NAME" "$log_dir/update.log"
+    chown "$INSTALLING_USER" "$log_dir/$SERVICE_LOG_NAME" "$log_dir/update.log" 2>/dev/null || \
         log "Failed to set ownership on log files for user $INSTALLING_USER" "WARN"
 
     # Write launcher script — update-aware wrapper for launchd.
@@ -1925,13 +2285,13 @@ install_launchd() {
     # This eliminates race conditions: mt is never running when its binary is overwritten.
 cat > "$launcher_path" << 'LAUNCHER_EOF'
 #!/bin/bash
-# MidTerm Launcher - update-aware wrapper for launchd
+# tlbx Launcher - update-aware wrapper for launchd
 # launchd calls this instead of mt directly. On each respawn,
 # this script applies any staged update before exec'ing mt.
 
 set -euo pipefail
 
-CONFIG_DIR="/usr/local/etc/midterm"
+CONFIG_DIR="__TLBX_CONFIG_DIR__"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_AGENTHOST="$CONFIG_DIR/mtagenthost"
 STAGING="$CONFIG_DIR/update-staging"
@@ -2066,6 +2426,8 @@ fi
 # Replace this process with mt (launchd tracks the PID)
 exec "$INSTALL_DIR/mt" "$@"
 LAUNCHER_EOF
+    sed "s|__TLBX_CONFIG_DIR__|$config_dir|g" "$launcher_path" > "$launcher_path.tmp"
+    mv "$launcher_path.tmp" "$launcher_path"
     chmod +x "$launcher_path"
     chown "$INSTALLING_USER" "$launcher_path" 2>/dev/null || true
     log "Launcher script written to $launcher_path"
@@ -2105,6 +2467,11 @@ LAUNCHER_EOF
     <key>ProgramArguments</key>
     <array>
         <string>${launcher_path}</string>
+        <string>--service-mode</string>
+        <string>--settings-dir</string>
+        <string>${config_dir}</string>
+        <string>--launchd-label</string>
+        <string>${LAUNCHD_LABEL}</string>
         <string>--port</string>
         <string>${PORT}</string>
         <string>--bind</string>
@@ -2119,9 +2486,9 @@ LAUNCHER_EOF
     <key>UserName</key>
     <string>${INSTALLING_USER}</string>
     <key>StandardOutPath</key>
-    <string>${log_dir}/MidTerm.log</string>
+    <string>${log_dir}/${SERVICE_LOG_NAME}</string>
     <key>StandardErrorPath</key>
-    <string>${log_dir}/MidTerm.log</string>
+    <string>${log_dir}/${SERVICE_LOG_NAME}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -2160,7 +2527,7 @@ EOF
         bootstrap_ok=false
         log "Service NOT found in launchd after all registration attempts" "ERROR"
         finish_step_inline "failed" "$RED"
-        echo -e "  ${GRAY}Check logs at: /usr/local/var/log/MidTerm.log${NC}"
+        echo -e "  ${GRAY}Check logs at: /usr/local/var/log/$SERVICE_LOG_NAME${NC}"
         return 1
     fi
 
@@ -2218,7 +2585,7 @@ EOF
                 log "Service registered but may still be starting" "WARN"
                 finish_step_inline "starting..." "$YELLOW"
             fi
-            echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/MidTerm.log${NC}"
+            echo -e "  ${GRAY}Check logs: tail -f /usr/local/var/log/$SERVICE_LOG_NAME${NC}"
         fi
     fi
 
@@ -2247,20 +2614,21 @@ EOF
         log "  plist exists: NO" "ERROR"
     fi
 
-    log "Checking MidTerm.log for errors..."
-    if [ -f "/usr/local/var/log/MidTerm.log" ]; then
-        log "Last 10 lines of MidTerm.log:"
-        tail -10 "/usr/local/var/log/MidTerm.log" 2>/dev/null | while read -r line; do
+    log "Checking $SERVICE_LOG_NAME for errors..."
+    if [ -f "/usr/local/var/log/$SERVICE_LOG_NAME" ]; then
+        log "Last 10 lines of $SERVICE_LOG_NAME:"
+        tail -10 "/usr/local/var/log/$SERVICE_LOG_NAME" 2>/dev/null | while read -r line; do
             log "  $line"
         done
     else
-        log "  MidTerm.log does not exist yet"
+        log "  $SERVICE_LOG_NAME does not exist yet"
     fi
 
     log "=== PHASE 5 complete ==="
+    return 1
 }
 
-stop_conflicting_midterm_processes() {
+stop_conflicting_tlbx_processes() {
     local install_dir="$1"
     local process_pattern="^${install_dir}/mt( |$)"
     local agenthost_pattern="^${install_dir}/mtagenthost( |$)"
@@ -2273,7 +2641,7 @@ stop_conflicting_midterm_processes() {
         return 0
     fi
 
-    log "Stopping conflicting MidTerm processes: $(echo "$pids" | tr '\n' ' ')"
+    log "Stopping conflicting $DISPLAY_NAME processes: $(echo "$pids" | tr '\n' ' ')"
     kill $pids 2>/dev/null || true
     sleep 1
 
@@ -2281,7 +2649,7 @@ stop_conflicting_midterm_processes() {
         "$(pgrep -f "$process_pattern" 2>/dev/null || true)" \
         "$(pgrep -f "$agenthost_pattern" 2>/dev/null || true)" | awk 'NF' | sort -u)
     if [ -n "$pids" ]; then
-        log "Force killing remaining MidTerm processes: $(echo "$pids" | tr '\n' ' ')" "WARN"
+        log "Force killing remaining $DISPLAY_NAME processes: $(echo "$pids" | tr '\n' ' ')" "WARN"
         kill -9 $pids 2>/dev/null || true
         sleep 1
     fi
@@ -2297,7 +2665,7 @@ install_systemd() {
     # Unload existing service if present
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
-    stop_conflicting_midterm_processes "$install_dir"
+    stop_conflicting_tlbx_processes "$install_dir"
 
     # Migration: remove old host service from pre-v4
     if [ -f "$old_host_service" ]; then
@@ -2310,14 +2678,14 @@ install_systemd() {
     # Create systemd service
     cat > "$service_path" << EOF
 [Unit]
-Description=MidTerm Terminal Server
+Description=${DISPLAY_NAME} Terminal Server
 After=network.target
 
 [Service]
 Type=simple
 User=${INSTALLING_USER}
 WorkingDirectory=/tmp
-ExecStart=${install_dir}/mt --port ${PORT} --bind ${BIND_ADDRESS}
+ExecStart=${install_dir}/mt --service-mode --settings-dir ${UNIX_SERVICE_SETTINGS_DIR} --systemd-service ${SERVICE_NAME} --port ${PORT} --bind ${BIND_ADDRESS}
 Restart=always
 RestartSec=5
 Environment=PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
@@ -2344,6 +2712,7 @@ EOF
     else
         finish_step_inline "failed" "$RED"
         echo -e "  ${GRAY}Check logs with: journalctl -u $SERVICE_NAME -f${NC}"
+        return 1
     fi
 }
 
@@ -2436,7 +2805,7 @@ install_as_user() {
     # Store password in secure secrets storage. Like service mode, this is fatal
     # for a new/replacement password if the secret cannot be persisted.
     if [ "$should_write_password" = true ] && [ -n "$PASSWORD_HASH" ] && [[ "$PASSWORD_HASH" == '$PBKDF2$'* ]]; then
-        if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash 2>/dev/null; then
+        if echo "$PASSWORD_HASH" | "$install_dir/mt" --write-secret password_hash --user-mode --settings-dir "$settings_dir" 2>/dev/null; then
             log "Password stored in secure secrets storage"
             print_step "Storing password..." "done"
         else
@@ -2449,7 +2818,7 @@ install_as_user() {
 
     log "=== PHASE 3: Certificate configuration ==="
     # Check existing certificate before generating
-    local existing_cert="$settings_dir/midterm.pem"
+    local existing_cert="$settings_dir/$CERTIFICATE_FILE_NAME"
     if check_existing_certificate "$existing_cert"; then
         log "Existing certificate is valid, reusing"
         CERT_PATH="$existing_cert"
@@ -2477,25 +2846,42 @@ install_as_user() {
     fi
 
     # Create uninstall script
-    local lib_dir="$HOME/.local/lib/MidTerm"
+    local lib_dir="$USER_LIB_DIR"
     mkdir -p "$lib_dir"
 
     create_uninstall_script "$lib_dir" false
 
+    print_phase "Status"
+    print_status "Startup" "starting tlbx and waiting for https endpoint..." "$YELLOW"
+    start_user_tlbx "$install_dir" "$settings_dir" "$PORT" "$BIND_ADDRESS"
+    if ! wait_tlbx_ready "$PORT" "$BIND_ADDRESS" false "$STARTED_USER_PID"; then
+        if kill -0 "$STARTED_USER_PID" 2>/dev/null; then
+            print_status "tlbx process" "running (PID $STARTED_USER_PID)" "$GREEN"
+        else
+            print_status "tlbx process" "not running" "$RED"
+        fi
+        print_status "HTTPS" "could not connect to $READY_URL" "$RED"
+        echo -e "  ${RED}tlbx was installed but the user process did not become reachable.${NC}"
+        echo -e "  ${GRAY}See $settings_dir/tlbx-user.stderr.log for details.${NC}"
+        exit 1
+    fi
+    print_status "tlbx process" "running (PID $READY_PID)" "$GREEN"
+    print_status "HTTPS" "reachable and healthy" "$GREEN"
+    [ -z "$READY_VERSION" ] || print_status "Version" "$READY_VERSION"
+
+    commit_install_transaction
+
     log "=========================================="
     log "INSTALLATION COMPLETE"
     log "  Location: $install_dir/mt"
-    log "  URL: https://localhost:$PORT"
     log "  Settings: $settings_dir"
     log "=========================================="
 
     echo ""
     echo -e "  ${CYAN}════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}Installation complete${NC}"
-    echo ""
     print_status "Location" "$install_dir/mt"
-    print_status "URL" "https://localhost:$PORT" "$CYAN"
-    echo -e "  ${YELLOW}Run 'mt' to start MidTerm${NC}"
+    echo ""
+    print_ready_urls "$PORT" "$BIND_ADDRESS"
     echo -e "  ${CYAN}════════════════════════════════════════${NC}"
     echo ""
 }
@@ -2506,7 +2892,7 @@ create_uninstall_script() {
 
     cat > "$uninstall_script" << 'EOF'
 #!/bin/bash
-# MidTerm Uninstaller
+# tlbx Uninstaller
 
 set -e
 
@@ -2517,7 +2903,7 @@ if command -v curl >/dev/null 2>&1; then
 elif command -v wget >/dev/null 2>&1; then
     wget -qO- "$SCRIPT_URL" | bash
 else
-    echo "Error: MidTerm uninstaller requires 'curl' or 'wget'." >&2
+    echo "Error: tlbx uninstaller requires 'curl' or 'wget'." >&2
     exit 1
 fi
 EOF
@@ -2540,7 +2926,7 @@ detect_existing_install() {
 
     # Service install
     if [ -f "$UNIX_SERVICE_BIN_DIR/mt" ] || [ -f "$UNIX_SERVICE_BIN_DIR/mthost" ] || [ -f "$UNIX_SERVICE_BIN_DIR/mtagenthost" ] || \
-        [ -d "$UNIX_SERVICE_SETTINGS_DIR" ] || [ -d "/usr/local/lib/MidTerm" ] || \
+        [ -d "$UNIX_SERVICE_SETTINGS_DIR" ] || [ -d "$SERVICE_LIB_DIR" ] || \
         [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] || [ -f "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" ]; then
         EXISTING_SERVICE_PRESENT=true
     fi
@@ -2550,7 +2936,7 @@ detect_existing_install() {
     if check_existing_password_file "service" 2>/dev/null; then
         EXISTING_SERVICE_PASSWORD=true
     fi
-    local svc_cert="$UNIX_SERVICE_SETTINGS_DIR/midterm.pem"
+    local svc_cert="$UNIX_SERVICE_SETTINGS_DIR/$CERTIFICATE_FILE_NAME"
     if [ -f "$svc_cert" ]; then
         EXISTING_SERVICE_CERT=true
         if command_exists openssl; then
@@ -2572,7 +2958,7 @@ detect_existing_install() {
 
     # User install
     if [ -f "$HOME/.local/bin/mt" ] || [ -f "$HOME/.local/bin/mthost" ] || [ -f "$HOME/.local/bin/mtagenthost" ] || \
-        [ -d "$HOME/.local/lib/MidTerm" ] || [ -d "$UNIX_USER_SETTINGS_DIR" ]; then
+        [ -d "$USER_LIB_DIR" ] || [ -d "$UNIX_USER_SETTINGS_DIR" ]; then
         EXISTING_USER_PRESENT=true
     fi
     if [ -f "$HOME/.local/bin/mt" ]; then
@@ -2581,7 +2967,7 @@ detect_existing_install() {
     if check_existing_password_file "user" 2>/dev/null; then
         EXISTING_USER_PASSWORD=true
     fi
-    local usr_cert="$UNIX_USER_SETTINGS_DIR/midterm.pem"
+    local usr_cert="$UNIX_USER_SETTINGS_DIR/$CERTIFICATE_FILE_NAME"
     if [ -f "$usr_cert" ]; then
         EXISTING_USER_CERT=true
         if command_exists openssl; then
@@ -2678,7 +3064,7 @@ enforce_cross_mode_policy() {
         echo ""
         echo -e "  ${RED}Cannot install as a system service while a user install still exists.${NC}"
         echo -e "  ${GRAY}Uninstall the user-mode copy first, then rerun the installer.${NC}"
-        echo -e "  ${GRAY}User traces: ~/.local/bin/mt or ~/.midterm${NC}"
+        echo -e "  ${GRAY}User traces: ~/.local/bin/mt, ~/.tlbx, or legacy ~/.midterm${NC}"
         exit 1
     fi
 
@@ -2686,7 +3072,7 @@ enforce_cross_mode_policy() {
         echo ""
         echo -e "  ${RED}Cannot install in user mode while a system service install still exists.${NC}"
         echo -e "  ${GRAY}Uninstall the service-mode copy first, then rerun the installer.${NC}"
-        echo -e "  ${GRAY}Service traces: /usr/local/bin/mt or /usr/local/etc/midterm${NC}"
+        echo -e "  ${GRAY}Service traces: /usr/local/bin/mt, /usr/local/etc/tlbx, or legacy /usr/local/etc/midterm${NC}"
         exit 1
     fi
 }
@@ -2727,6 +3113,8 @@ done
 if [[ " $* " == *" --service "* ]] || [ "$1" = "--service" ]; then
     SERVICE_MODE=true
     ensure_prerequisites
+    load_installer_handoff "$INSTALLER_HANDOFF_FILE"
+    select_install_identity
     # Start logging to update.log (service mode)
     if [ -z "$LOGGING_STARTED" ]; then
         setup_logging "service"
@@ -2766,6 +3154,7 @@ fi
 
 detect_platform
 get_latest_release
+select_install_identity
 detect_existing_install
 prompt_service_mode
 enforce_cross_mode_policy

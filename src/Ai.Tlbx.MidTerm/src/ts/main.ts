@@ -461,7 +461,7 @@ async function init(): Promise<void> {
   initDiagnosticsPanel();
   bindHubSettings();
 
-  setupVisibilityChangeHandler();
+  setupVisibilityChangeHandler(true);
   initPwaInstall();
 
   let serviceWorker: ServiceWorkerContainer | undefined;
@@ -509,7 +509,7 @@ async function initShared(): Promise<void> {
   syncAppModeClasses();
   setupResizeObserver();
   setupVisualViewport();
-  setupVisibilityChangeHandler();
+  setupVisibilityChangeHandler(false);
 
   try {
     await claimSharedSessionAccess();
@@ -664,13 +664,16 @@ function applyScrollbackProtection(): void {
   }, 50);
 }
 
-function setupVisibilityChangeHandler(): void {
+function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
   setupBrowserLifecycleRecovery({
     getVisibleTerminalSessionIds,
     syncMuxTerminalVisibility,
     focusActiveTerminal,
     applyScrollbackProtection,
     keepTerminalOutputActiveWhileHidden: isMobilePiPEnabled,
+    ...(includeSettingsChannel
+      ? { reconnectSettingsAfterLongResume: connectSettingsWebSocket }
+      : {}),
   });
 }
 

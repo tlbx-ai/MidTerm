@@ -1,3 +1,5 @@
+using Ai.Tlbx.MidTerm.Common.Identity;
+
 namespace Ai.Tlbx.MidTerm.Common.Shells;
 
 /// <summary>
@@ -79,7 +81,7 @@ public abstract class ShellConfigurationBase : IShellConfiguration
 
         env["TERM"] = "xterm-256color";
         env["COLORTERM"] = "truecolor";
-        env["TERM_PROGRAM"] = "midterm";
+        env["TERM_PROGRAM"] = "tlbx";
         env["FORCE_COLOR"] = "3";
         env["CLICOLOR"] = "1";
         env["CLICOLOR_FORCE"] = "1";
@@ -310,7 +312,10 @@ public sealed class ZshShellConfiguration : ShellConfigurationBase
                 ? h
                 : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-            var initDir = Path.Combine(home, ".midterm", "zsh-init");
+            var settingsDir = TlbxProductIdentity.SelectSettingsDirectory(
+                Path.Combine(home, TlbxProductIdentity.UserSettingsDirectoryName),
+                Path.Combine(home, TlbxProductIdentity.LegacyUserSettingsDirectoryName));
+            var initDir = Path.Combine(settingsDir, "zsh-init");
             Directory.CreateDirectory(initDir);
 
             var zshenvPath = Path.Combine(initDir, ".zshenv");

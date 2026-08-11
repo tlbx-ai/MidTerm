@@ -510,11 +510,11 @@ public class Program
         }
         await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, shutdownService.Token);
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
+        await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         tmuxLayoutBridge?.UpdateLayout(layoutSnapshot.Root);
-        await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
         sleepInhibitorService.UpdateSessionCount(sessionManager.GetAllSessions().Count);
 
         async Task CleanupAsync()

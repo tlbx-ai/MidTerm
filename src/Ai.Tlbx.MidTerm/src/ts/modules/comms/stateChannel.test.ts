@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../utils', () => ({
   ReconnectController: class {
+    cancel(): void {}
     reset(): void {}
     schedule(callback?: () => void): void {
       callback?.();

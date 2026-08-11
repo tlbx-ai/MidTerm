@@ -1,5 +1,7 @@
 using System.Reflection;
 using System.Globalization;
+using System.Runtime.InteropServices;
+using Ai.Tlbx.MidTerm.Common.Identity;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Startup;
@@ -84,6 +86,11 @@ public static class UpdateScriptGenerator
         var logFilePath = Path.Combine(settingsDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
         var serviceName = EscapeForPowerShell(serviceIdentity.WindowsServiceName);
+        var certificateFileName = TlbxProductIdentity.GetCertificateFileName(settingsDir);
+        var conptyRuntimeFiles = RuntimeInformation.ProcessArchitecture == Architecture.X86
+            ? new[] { "conpty.dll", "x86\\OpenConsole.exe", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe", "THIRD-PARTY-LICENSES.txt" }
+            : new[] { "conpty.dll", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe", "THIRD-PARTY-LICENSES.txt" };
+        var conptyRuntimeFilesLiteral = string.Join(", ", conptyRuntimeFiles.Select(path => $"'{EscapeForPowerShell(path)}'"));
 
         var isWebOnly = updateType != UpdateType.Full;
 
@@ -119,6 +126,7 @@ $MaxRetries = {MaxRetries}
 $IsWebOnly = ${(isWebOnly ? "true" : "false")}
 $DeleteSource = ${(deleteSourceAfter ? "true" : "false")}
 $ServiceName = '{serviceName}'
+$ConptyRuntimeFiles = @({conptyRuntimeFilesLiteral})
 
 # === Helper Functions ===
 
@@ -131,16 +139,19 @@ function Log {{
 }}
 
 function WriteResult {{
-    param([bool]$Success, [string]$Message, [string]$Details = '')
+    param([bool]$Success, [string]$Message, [string]$Details = '', [bool]$RollbackAttempted = $false)
     $result = @{{
         success = $Success
         message = $Message
         details = $Details
         timestamp = (Get-Date -Format 'o')
         logFile = $LogFile
+        rollbackAttempted = $RollbackAttempted
     }}
     try {{
-        $result | ConvertTo-Json -Depth 3 | Set-Content -Path $ResultFile -Encoding UTF8
+        $tempResultFile = ""$ResultFile.new""
+        $result | ConvertTo-Json -Depth 3 | Set-Content -Path $tempResultFile -Encoding UTF8
+        Move-Item -Path $tempResultFile -Destination $ResultFile -Force
     }} catch {{
         Log ""Failed to write result file: $_"" 'ERROR'
     }}
@@ -244,7 +255,6 @@ function SafeCopy {{
 
 # Clear previous logs
 Remove-Item $LogFile -Force -ErrorAction SilentlyContinue
-Remove-Item $ResultFile -Force -ErrorAction SilentlyContinue
 
 Log '=========================================='
 Log 'tlbx update starting'
@@ -264,6 +274,7 @@ if (Test-Path $CurrentVersionJson) {{
 }}
 
 $rollbackNeeded = $false
+$rollbackAttempted = $false
 $startedOk = $false
 
 try {{
@@ -296,6 +307,12 @@ try {{
         Log 'Killing mthost.exe processes...'
         KillProcessByPath $CurrentMthost
 
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            if ([IO.Path]::GetFileName($relativePath) -eq 'OpenConsole.exe') {{
+                KillProcessByPath (Join-Path $InstallDir $relativePath)
+            }}
+        }}
+
         if (Test-Path $CurrentAgentHost) {{
             Log 'Killing {AgentHostBinaryName}.exe processes...'
             KillProcessByPath $CurrentAgentHost
@@ -317,6 +334,15 @@ try {{
     if ((-not $IsWebOnly) -and (Test-Path $CurrentMthost)) {{
         if (-not (WaitForFileWritable $CurrentMthost)) {{
             throw ""mthost.exe is still locked after $MaxRetries retries. Another process may be using it.""
+        }}
+    }}
+
+    if (-not $IsWebOnly) {{
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            $currentRuntimePath = Join-Path $InstallDir $relativePath
+            if ((Test-Path $currentRuntimePath) -and (-not (WaitForFileWritable $currentRuntimePath))) {{
+                throw ""ConPTY runtime file is still locked after $MaxRetries retries: $currentRuntimePath""
+            }}
         }}
     }}
 
@@ -350,6 +376,16 @@ try {{
         Log 'Backing up mthost.exe...'
         Copy-Item $CurrentMthost ""$CurrentMthost.bak"" -Force -ErrorAction Stop
         Log 'mthost.exe backed up'
+    }}
+
+    if (-not $IsWebOnly) {{
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            $currentRuntimePath = Join-Path $InstallDir $relativePath
+            if (Test-Path $currentRuntimePath) {{
+                Log ""Backing up $relativePath...""
+                Copy-Item $currentRuntimePath ""$currentRuntimePath.bak"" -Force -ErrorAction Stop
+            }}
+        }}
     }}
 
     if ((-not $IsWebOnly) -and (Test-Path $CurrentAgentHost)) {{
@@ -475,6 +511,13 @@ try {{
 
     if ((-not $IsWebOnly) -and (Test-Path $NewMthost)) {{
         SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
+
+        foreach ($relativePath in $ConptyRuntimeFiles) {{
+            $newRuntimePath = Join-Path $ExtractedDir $relativePath
+            $currentRuntimePath = Join-Path $InstallDir $relativePath
+            New-Item -ItemType Directory -Path (Split-Path -Parent $currentRuntimePath) -Force | Out-Null
+            SafeCopy $newRuntimePath $currentRuntimePath $relativePath
+        }}
     }}
 
     if ((-not $IsWebOnly) -and (Test-Path $NewAgentHost)) {{
@@ -609,6 +652,7 @@ try {{
     Log '==========================================' 'ERROR'
 
     if ($rollbackNeeded -and -not $startedOk) {{
+        $rollbackAttempted = $true
         Log ''
         Log '=== ROLLBACK ===' 'WARN'
 
@@ -643,6 +687,24 @@ try {{
                 Log 'mthost.exe restored'
             }} catch {{
                 Log ""Failed to restore mthost.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (-not $IsWebOnly) {{
+            foreach ($relativePath in $ConptyRuntimeFiles) {{
+                $currentRuntimePath = Join-Path $InstallDir $relativePath
+                $backupRuntimePath = ""$currentRuntimePath.bak""
+                try {{
+                    if (Test-Path $backupRuntimePath) {{
+                        New-Item -ItemType Directory -Path (Split-Path -Parent $currentRuntimePath) -Force | Out-Null
+                        Copy-Item $backupRuntimePath $currentRuntimePath -Force -ErrorAction Stop
+                        Log ""$relativePath restored""
+                    }} else {{
+                        Remove-Item $currentRuntimePath -Force -ErrorAction SilentlyContinue
+                    }}
+                }} catch {{
+                    Log ""Failed to restore $relativePath`: $_"" 'ERROR'
+                }}
             }}
         }}
 
@@ -732,7 +794,7 @@ try {{
         Log 'Rollback complete'
     }}
 
-    WriteResult $false $errorMessage
+    WriteResult $false $errorMessage '' $rollbackAttempted
 }}
 
 # Self-cleanup
@@ -740,6 +802,7 @@ Start-Sleep -Seconds 1
 Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 ";
 
+        script = script.Replace("midterm.pem", certificateFileName, StringComparison.Ordinal);
         File.WriteAllText(scriptPath, script);
         return scriptPath;
     }
@@ -827,7 +890,11 @@ IS_WEB_ONLY={( isWebOnly ? "true" : "false")}
 DELETE_SOURCE={( deleteSourceAfter ? "true" : "false")}
 
 ROLLBACK_NEEDED=false
+ROLLBACK_ATTEMPTED=false
 STARTED_OK=false
+LAST_RESULT_SUCCESS=false
+LAST_RESULT_MESSAGE=""""
+LAST_RESULT_DETAILS=""""
 
 # Detect service user from existing config file ownership
 # On macOS, launchd service runs as user (via UserName in plist), not root
@@ -849,15 +916,22 @@ write_result() {{
     local success=""$1""
     local message=""$2""
     local details=""${{3:-}}""
-    cat > ""$RESULT_FILE"" << RESULT_EOF
+    local rollback_attempted=""${{4:-false}}""
+    LAST_RESULT_SUCCESS=""$success""
+    LAST_RESULT_MESSAGE=""$message""
+    LAST_RESULT_DETAILS=""$details""
+    local temp_result_file=""$RESULT_FILE.new""
+    cat > ""$temp_result_file"" << RESULT_EOF
 {{
     ""success"": $success,
     ""message"": ""$message"",
     ""details"": ""$details"",
     ""timestamp"": ""$(date -u '+%Y-%m-%dT%H:%M:%SZ')"",
-    ""logFile"": ""$LOG_FILE""
+    ""logFile"": ""$LOG_FILE"",
+    ""rollbackAttempted"": $rollback_attempted
 }}
 RESULT_EOF
+    mv -f ""$temp_result_file"" ""$RESULT_FILE""
 }}
 
 describe_source_file() {{
@@ -985,6 +1059,7 @@ safe_copy() {{
 cleanup() {{
     log """"
     if [[ ""$ROLLBACK_NEEDED"" == ""true"" ]] && [[ ""$STARTED_OK"" != ""true"" ]]; then
+        ROLLBACK_ATTEMPTED=true
         log ""=== ROLLBACK ==="" ""WARN""
 
         # Stop any partially started process
@@ -1046,6 +1121,7 @@ cleanup() {{
         fi
 
         log ""Rollback complete""
+        write_result ""$LAST_RESULT_SUCCESS"" ""$LAST_RESULT_MESSAGE"" ""$LAST_RESULT_DETAILS"" ""$ROLLBACK_ATTEMPTED""
     fi
 
     # Self-cleanup
@@ -1061,8 +1137,8 @@ trap cleanup EXIT
 mkdir -p ""$LOG_DIR"" 2>/dev/null || true
 mkdir -p ""$BACKUP_DIR"" 2>/dev/null || true
 
-# Log file is already truncated by exec > redirect at script start
-rm -f ""$RESULT_FILE"" 2>/dev/null || true
+# Log file is already truncated by exec > redirect at script start.
+# Keep the previous completed result visible until this attempt writes its own result.
 
 log '=========================================='
 log 'tlbx update script v{generatingVersion}'
@@ -1447,6 +1523,8 @@ log '=========================================='
 write_result true ""Update completed successfully""
 ";
 
+        var certificateFileName = TlbxProductIdentity.GetCertificateFileName(settingsDirectory);
+        script = script.Replace("midterm.pem", certificateFileName, StringComparison.Ordinal);
         File.WriteAllText(scriptPath, script);
 
         // Set executable permission (Unix only)

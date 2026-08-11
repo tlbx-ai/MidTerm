@@ -34,7 +34,7 @@ public sealed class ShellConfigurationsTests
 
         Assert.Equal("xterm-256color", env["TERM"]);
         Assert.Equal("truecolor", env["COLORTERM"]);
-        Assert.Equal("midterm", env["TERM_PROGRAM"]);
+        Assert.Equal("tlbx", env["TERM_PROGRAM"]);
         Assert.Equal("3", env["FORCE_COLOR"]);
         Assert.Equal("1", env["CLICOLOR"]);
         Assert.Equal("1", env["CLICOLOR_FORCE"]);

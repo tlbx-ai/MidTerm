@@ -120,6 +120,62 @@ describe('appServerControlAttachments', () => {
     expect(files[0]?.name).toMatch(/\.avif$/);
   });
 
+  it('probes the async clipboard for data-poor Android image paste events only on mobile', async () => {
+    const { shouldProbeMobileClipboardForComposerImage } =
+      await import('./appServerControlAttachments');
+    const emptyClipboardData = {
+      files: [],
+      items: [],
+      getData: () => '',
+    };
+    const placeholderClipboardData = {
+      files: [],
+      items: [],
+      getData: (type: string) => (type === 'text/plain' ? '\ufffc' : ''),
+    };
+
+    expect(
+      shouldProbeMobileClipboardForComposerImage(
+        emptyClipboardData as unknown as DataTransfer,
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      shouldProbeMobileClipboardForComposerImage(
+        placeholderClipboardData as unknown as DataTransfer,
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      shouldProbeMobileClipboardForComposerImage(
+        emptyClipboardData as unknown as DataTransfer,
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it('turns a data-poor mobile paste into an image part through the async clipboard fallback', async () => {
+    const { extractAppServerControlComposerPasteParts } =
+      await import('./appServerControlAttachments');
+    const clipboardData = {
+      files: [],
+      items: [],
+      getData: (type: string) => (type === 'text/plain' ? '\ufffc' : ''),
+    };
+
+    await expect(
+      extractAppServerControlComposerPasteParts(
+        clipboardData as unknown as DataTransfer,
+        async () => [
+          {
+            types: ['image/png'],
+            getType: async () => new Blob(['png'], { type: 'image/png' }),
+          },
+        ],
+      ),
+    ).resolves.toMatchObject([{ kind: 'image', file: { type: 'image/png' } }]);
+  });
+
   it('interleaves plain text object placeholders with clipboard images in paste order', async () => {
     const { extractAppServerControlComposerPasteParts } =
       await import('./appServerControlAttachments');
@@ -132,10 +188,7 @@ describe('appServerControlAttachments', () => {
     };
 
     await expect(
-      extractAppServerControlComposerPasteParts(
-        clipboardData as unknown as DataTransfer,
-        null,
-      ),
+      extractAppServerControlComposerPasteParts(clipboardData as unknown as DataTransfer, null),
     ).resolves.toEqual([
       { kind: 'text', text: 'alpha' },
       { kind: 'image', file: firstImage },
@@ -160,10 +213,7 @@ describe('appServerControlAttachments', () => {
     };
 
     await expect(
-      extractAppServerControlComposerPasteParts(
-        clipboardData as unknown as DataTransfer,
-        null,
-      ),
+      extractAppServerControlComposerPasteParts(clipboardData as unknown as DataTransfer, null),
     ).resolves.toEqual([
       { kind: 'text', text: 'before\n' },
       { kind: 'image', file: firstImage },

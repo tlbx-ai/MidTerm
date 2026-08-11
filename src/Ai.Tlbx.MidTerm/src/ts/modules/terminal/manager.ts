@@ -41,6 +41,7 @@ import { showPasteIndicator, hidePasteIndicator } from '../badges';
 
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { ImageAddon } from '@xterm/addon-image';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -76,7 +77,6 @@ import {
   DEFAULT_TERMINAL_LETTER_SPACING,
   DEFAULT_TERMINAL_LINE_HEIGHT,
   ensureTerminalFontLoaded,
-  getBundledTerminalFontFamilies,
   getConfiguredTerminalFontFamily,
 } from './fontConfig';
 import { getTerminalOptions } from './terminalOptions';
@@ -1189,6 +1189,32 @@ export function createTerminalForSession(
     syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
     syncTerminalRgbBackgroundTransparency(state, settings);
 
+    // ImageAddon needs the opened terminal and its active renderer. Loading it
+    // after the WebGL/canvas selection keeps the image renderer bound to the
+    // renderer that will actually paint the session, including replayed output.
+    // Capability discovery itself is answered by mthost so it also works before
+    // a browser attaches. Keep decoded memory and individual payloads bounded.
+    try {
+      terminal.loadAddon(
+        new ImageAddon({
+          enableSizeReports: true,
+          pixelLimit: 4_194_304,
+          storageLimit: 32,
+          showPlaceholder: true,
+          kittySupport: true,
+          kittySizeLimit: 16_777_216,
+          sixelSupport: true,
+          sixelSizeLimit: 16_777_216,
+          iipSupport: true,
+          iipSizeLimit: 16_777_216,
+        }),
+      );
+    } catch (error) {
+      // Graphics are progressive enhancement. A future xterm/addon mismatch
+      // must degrade to text instead of making the session unusable.
+      log.warn(() => `Terminal ${sessionId} graphics initialization failed: ${String(error)}`);
+    }
+
     // Load Web-Links addon for clickable URLs
     try {
       const webLinksAddon = new WebLinksAddon(openTerminalWebLinkInNewTab);
@@ -1654,41 +1680,48 @@ export function refreshActiveTerminalBuffer(): void {
 }
 
 /**
- * Preload the terminal font for consistent rendering.
- * Has a 3-second timeout to prevent indefinite hangs if fonts fail to load.
+ * Give the configured terminal font a short startup budget. Alternate font
+ * choices must never delay xterm creation, and a late font only triggers one
+ * renderer remeasure instead of reopening or resizing the terminal.
  */
 export function preloadTerminalFont(): Promise<void> {
-  const FONT_TIMEOUT_MS = 3000;
+  const FONT_STARTUP_BUDGET_MS = 250;
   const baseFontSize = $currentSettings.get()?.fontSize ?? 14;
   const fontSize = getEffectiveTerminalFontSize(baseFontSize);
+  const fontFamily = getConfiguredTerminalFontFamily();
+  let startupBudgetExpired = false;
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
 
-  const fontLoadPromise = Promise.allSettled(
-    getBundledTerminalFontFamilies().map((fontFamily) =>
-      ensureTerminalFontLoaded(fontFamily, fontSize),
-    ),
-  )
-    .then(() => document.fonts.ready)
-    .then(() => {
-      const testSpan = document.createElement('span');
-      testSpan.style.fontFamily = buildTerminalFontStack(getConfiguredTerminalFontFamily());
-      testSpan.style.position = 'absolute';
-      testSpan.style.left = '-9999px';
-      testSpan.textContent = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      document.body.appendChild(testSpan);
-
-      return new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          testSpan.remove();
-          resolve();
-        });
+  const fontLoadPromise = ensureTerminalFontLoaded(fontFamily, fontSize).then(() => {
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        resolve();
       });
     });
+  });
 
   const timeoutPromise = new Promise<void>((resolve) => {
-    setTimeout(resolve, FONT_TIMEOUT_MS);
+    timeoutId = globalThis.setTimeout(() => {
+      startupBudgetExpired = true;
+      timeoutId = null;
+      resolve();
+    }, FONT_STARTUP_BUDGET_MS);
   });
 
   const promise = Promise.race([fontLoadPromise, timeoutPromise]);
+  void fontLoadPromise.then(() => {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (!startupBudgetExpired) return;
+
+    sessionTerminals.forEach((state) => {
+      if (!state.opened) return;
+      refreshTerminalRenderer(state);
+      applyTerminalScalingSync(state);
+    });
+  });
   setFontsReadyPromise(promise);
   return promise;
 }

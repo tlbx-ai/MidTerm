@@ -79,6 +79,18 @@ public sealed class UpdateVerificationTests : IDisposable
         Assert.True(Verify(manifest, "win-x64", "1.2.3-dev", "dev"));
     }
 
+    [Fact]
+    public void VerifyUpdate_SignedNestedRuntimePath_ReturnsTrue()
+    {
+        var filePath = WriteFile("x64/OpenConsole.exe", "signed ConPTY host");
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["x64/OpenConsole.exe"] = ComputeHash(filePath)
+        });
+
+        Assert.True(Verify(manifest));
+    }
+
     [Theory]
     [InlineData("linux-x64", "1.2.3-dev", "dev")]
     [InlineData("win-x64", "1.2.4-dev", "dev")]
@@ -216,6 +228,7 @@ public sealed class UpdateVerificationTests : IDisposable
     private string WriteFile(string name, string content)
     {
         var path = Path.Combine(_tempDir, name);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
         return path;
     }

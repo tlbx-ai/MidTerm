@@ -1426,7 +1426,9 @@ export function connectMuxWebSocket(): void {
     return;
   }
 
+  muxReconnect.cancel();
   closeWebSocket(muxWs, setMuxWs);
+  $muxWsConnected.set(false);
 
   const activeId = $activeSessionId.get();
   const query = new URLSearchParams();
@@ -1457,6 +1459,7 @@ export function connectMuxWebSocket(): void {
   setMuxWs(ws);
 
   ws.onopen = () => {
+    if (muxWs !== ws) return;
     muxReconnect.reset();
     syncCompletePending = false;
 
@@ -1515,6 +1518,7 @@ export function connectMuxWebSocket(): void {
   };
 
   ws.onmessage = (event) => {
+    if (muxWs !== ws) return;
     if (!(event.data instanceof ArrayBuffer)) return;
     addWsRxBytes(event.data.byteLength);
 
@@ -1553,6 +1557,7 @@ export function connectMuxWebSocket(): void {
   };
 
   ws.onclose = (event) => {
+    if (muxWs !== ws) return;
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
     syncCompletePending = false;
@@ -1578,6 +1583,7 @@ export function connectMuxWebSocket(): void {
   };
 
   ws.onerror = (e) => {
+    if (muxWs !== ws) return;
     log.error(() => `WebSocket error: ${e.type}`);
   };
 }
@@ -1866,11 +1872,12 @@ export function suspendMuxForBrowserBackground(): void {
 export function recoverVisibleTerminalsAfterBrowserResume(
   activeSessionId: string | null,
   visibleSessionIds: readonly string[],
+  options?: { forceReconnect?: boolean },
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
   currentVisibleSessionIds = normalizedVisibleSessionIds;
 
-  if (muxSuspendedForBrowserBackground) {
+  if (muxSuspendedForBrowserBackground || options?.forceReconnect) {
     muxSuspendedForBrowserBackground = false;
     connectMuxWebSocket();
     return;

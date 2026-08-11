@@ -1371,6 +1371,20 @@ describe('muxChannel', () => {
     expect(url.searchParams.get('visibleSessionIds')).toBe('sess5678');
   });
 
+  it('replaces a stale-open mux generation after a long browser resume', async () => {
+    const harness = await loadHarness([5000, 5000, 5000, 5000]);
+    expect(harness.ws.readyState).toBe(MockWebSocket.OPEN);
+
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess5678'], {
+      forceReconnect: true,
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const reconnectUrl = new URL(MockWebSocket.instances[1]!.url);
+    expect(reconnectUrl.searchParams.get('activeSessionId')).toBe('sess1234');
+    expect(reconnectUrl.searchParams.get('visibleSessionIds')).toBe('sess5678');
+  });
+
   it('sends sampled input trace markers before normal input when tracing is enabled', async () => {
     const harness = await loadHarness([10, 10, 10, 10]);
 

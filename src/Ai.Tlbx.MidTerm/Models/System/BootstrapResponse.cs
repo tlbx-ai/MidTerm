@@ -69,7 +69,7 @@ public sealed class BootstrapResponse
     public List<ShellInfoDto> Shells { get; init; } = [];
 
     /// <summary>
-    /// Update result from previous update (auto-cleared after read).
+    /// Update result from the previous update until the user dismisses it.
     /// Null if no update result exists.
     /// </summary>
     public UpdateResult? UpdateResult { get; init; }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Ai.Tlbx.MidTerm.Models.Files;
 
 /// <summary>
@@ -94,7 +96,10 @@ public sealed class FileTreeEntry
 
 public sealed class FileSaveRequest
 {
+    [JsonRequired]
     public string Path { get; set; } = string.Empty;
+
+    [JsonRequired]
     public string Content { get; set; } = string.Empty;
 }
 

@@ -98,6 +98,27 @@ type AgentHistoryDomDeps = {
   logWarn: (message: () => string) => void;
 };
 
+function buildEmbeddedInterviewRequest(
+  entry: AppServerControlHistoryEntry,
+): AppServerControlHistoryRequestSummary | null {
+  if (entry.sourceItemType !== 'interview' || !entry.requestId || !entry.questions?.length) {
+    return null;
+  }
+
+  return {
+    requestId: entry.requestId,
+    turnId: entry.sourceTurnId ?? null,
+    kind: 'interview',
+    kindLabel: entry.title || t('appServerControl.request.pendingInterview'),
+    state: entry.sourceStatus || 'open',
+    detail: entry.body || null,
+    decision: null,
+    questions: entry.questions,
+    answers: entry.answers ?? [],
+    updatedAt: entry.sourceUpdatedAt || new Date(0).toISOString(),
+  };
+}
+
 function appendInlineRequestWidgetToArticle(args: {
   article: HTMLElement;
   createRequestActionBlock: (
@@ -117,9 +138,10 @@ function appendInlineRequestWidgetToArticle(args: {
   }
 
   const state = deps.getState(sessionId);
-  const request = state?.snapshot?.requests.find(
-    (candidate) => candidate.requestId === entry.requestId,
-  );
+  const embeddedRequest = buildEmbeddedInterviewRequest(entry);
+  const request =
+    embeddedRequest ??
+    state?.snapshot?.requests.find((candidate) => candidate.requestId === entry.requestId);
   if (!state || !request) {
     return false;
   }

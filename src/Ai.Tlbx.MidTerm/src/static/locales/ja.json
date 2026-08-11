@@ -367,6 +367,7 @@
   "update.applying": "適用中...",
   "update.lastUpdate": "最終アップデート：",
   "update.success": "成功",
+  "update.rollbackAttempted": "ロールバックを試行しました。詳細は更新ログを確認してください。",
   "update.viewUpdateLog": "アップデートログを表示",
   "update.noLogFound": "アップデートログが見つかりません",
   "update.copyLog": "ログをコピー",

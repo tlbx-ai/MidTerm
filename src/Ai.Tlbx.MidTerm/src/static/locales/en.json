@@ -973,6 +973,7 @@
   "update.refreshingUi": "Refreshing UI...",
   "update.lastUpdate": "Last update:",
   "update.success": "Success",
+  "update.rollbackAttempted": "Rollback was attempted. Check the update log for details.",
   "update.viewUpdateLog": "View Update Log",
   "update.noLogFound": "No update log found",
   "update.copyLog": "Copy Log",

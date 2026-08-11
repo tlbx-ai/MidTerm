@@ -31,6 +31,9 @@ export function createWsUrl(path: string): string {
  */
 export function closeWebSocket(ws: WebSocket | null, setter?: (ws: null) => void): void {
   if (ws) {
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onerror = null;
     ws.onclose = null;
     ws.close();
     if (setter) setter(null);

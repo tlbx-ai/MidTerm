@@ -330,6 +330,8 @@ public static class TlbxDirectory
         | `mt_prompt_now [id] <text...>` | Force interrupt-first prompt delivery |
         | `mt_slash [id] <command...>` | Send slash commands through the prompt path |
         | `mt_wake [id] <delay> <text...>` | Queue a prompt to run later (`30s`, `5m`, `2h`, `1d`; visible and cancelable in the Command Bay queue) |
+        | `mt_recur [id] <interval> <text...>` | Repeat a prompt at an interval until its queue item is canceled |
+        | `mt_queue [id]` | List queued one-shot and recurring prompts/actions |
         | `mt_wake_cancel <queueId>` | Cancel a queued wake/prompt/action item by queue id |
         | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
         | `mt_enter` / `mt_ctrlc` / `mt_escape` | Convenience key sends for the current or target session |
@@ -539,6 +541,7 @@ public static class TlbxDirectory
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
         - mt_wake queues a future prompt through the Command Bay queue, so delayed work survives helper reloads and can be canceled from the queue
+        - mt_recur uses the same persistent queue for recurring prompts; inspect it with mt_queue and stop it with mt_wake_cancel
         - mt_input_history and its show/replay/delete helpers expose the same session-scoped deterministic Terminal history available in each session's top bar; use them instead of scraping terminal output to recover prior prompts or pasted paths
         - mt_control_plane is the machine-readable operator outlet; use mt_work_add/update, mt_publish_status, and mt_checkpoint to make work and next actions visible without asking tlbx to infer them
         - mt_agent_capabilities reports product-authored feature flags and exact session runtime flags; mt_dispatch acts only on the session IDs you pass and returns a separate accepted/queued/error result for each

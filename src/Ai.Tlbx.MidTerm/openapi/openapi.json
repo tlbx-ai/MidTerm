@@ -2841,6 +2841,26 @@
             "description": "OK"
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/settings/reload": {
@@ -4752,6 +4772,7 @@
           }
         }
       },
+      "JsonElement": { },
       "LanguageSetting": {
         "enum": [
           "auto",
@@ -5099,6 +5120,8 @@
           "nextPromptIndex",
           "completedCycles",
           "nextRunAt",
+          "repeatEveryMs",
+          "repeatCount",
           "ignoreHeatUntil",
           "awaitingHeatRise"
         ],
@@ -5150,6 +5173,20 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "repeatEveryMs": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "repeatCount": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           },
           "ignoreHeatUntil": {
             "type": [
@@ -5666,6 +5703,9 @@
         }
       },
       "RenameSessionRequest": {
+        "required": [
+          "name"
+        ],
         "type": "object",
         "properties": {
           "name": {
@@ -6489,6 +6529,9 @@
         }
       },
       "SetSessionNotesRequest": {
+        "required": [
+          "notes"
+        ],
         "type": "object",
         "properties": {
           "notes": {
@@ -6500,6 +6543,9 @@
         }
       },
       "SetSessionTopicRequest": {
+        "required": [
+          "topic"
+        ],
         "type": "object",
         "properties": {
           "topic": {
@@ -7105,6 +7151,7 @@
           "releaseNotes",
           "type",
           "sessionsPreserved",
+          "lastResult",
           "environment",
           "localUpdate",
           "isDowngrade"
@@ -7147,6 +7194,16 @@
           "sessionsPreserved": {
             "type": "boolean"
           },
+          "lastResult": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateResult"
+              }
+            ]
+          },
           "environment": {
             "type": [
               "null",
@@ -7175,7 +7232,8 @@
           "message",
           "details",
           "timestamp",
-          "logFile"
+          "logFile",
+          "rollbackAttempted"
         ],
         "type": "object",
         "properties": {
@@ -7196,6 +7254,9 @@
           },
           "logFile": {
             "type": "string"
+          },
+          "rollbackAttempted": {
+            "type": "boolean"
           }
         }
       },

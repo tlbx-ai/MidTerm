@@ -76,7 +76,7 @@
                         <li>Tap "Download Certificate" above</li>
                         <li>Open <strong>Settings &rarr; Security &rarr; Encryption & credentials</strong></li>
                         <li>Tap <strong>Install a certificate &rarr; CA certificate</strong></li>
-                        <li>Select the downloaded <code>midterm.crt</code> file</li>
+                        <li>Select the downloaded <code>tlbx.crt</code> file</li>
                         <li>Verify the fingerprint shown matches the one above</li>
                     </ol>
                     <p class="install-note">Note: Menu names vary by Android version and manufacturer.</p>
@@ -98,7 +98,7 @@
                             Download Certificate
                         </button>
                         <p>Then run as Administrator in the download folder:</p>
-                        <code class="command-block">certutil -addstore Root midterm.pem</code>
+                        <code class="command-block">certutil -addstore Root tlbx.pem</code>
                     </div>
 
                     <div class="os-instructions hidden" id="macos-instructions">
@@ -107,7 +107,7 @@
                         </button>
                         <p>Then run in Terminal from the download folder:</p>
                         <code class="command-block">sudo security add-trusted-cert -d -r trustRoot \
-    -k /Library/Keychains/System.keychain midterm.pem</code>
+    -k /Library/Keychains/System.keychain tlbx.pem</code>
                     </div>
 
                     <div class="os-instructions hidden" id="linux-instructions">
@@ -115,7 +115,7 @@
                             Download Certificate
                         </button>
                         <p>Then run in Terminal from the download folder:</p>
-                        <code class="command-block">sudo cp midterm.pem /usr/local/share/ca-certificates/midterm.crt
+                        <code class="command-block">sudo cp tlbx.pem /usr/local/share/ca-certificates/tlbx.crt
 sudo update-ca-certificates</code>
                     </div>
                 </div>

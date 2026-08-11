@@ -16,7 +16,7 @@ import {
  * Each WebSocket channel should create its own instance.
  */
 export class ReconnectController {
-  private _timer: number | undefined;
+  private _timer: ReturnType<typeof globalThis.setTimeout> | undefined;
   private _attempt = 0;
 
   schedule(connect: () => void): void {
@@ -27,11 +27,15 @@ export class ReconnectController {
     );
     const jitter = baseDelay * RECONNECT_JITTER * (2 * Math.random() - 1);
     const delay = Math.round(baseDelay + jitter);
-    this._timer = window.setTimeout(connect, delay);
+    this._timer = globalThis.setTimeout(() => {
+      this._timer = undefined;
+      connect();
+    }, delay);
     this._attempt++;
   }
 
   reset(): void {
+    this.cancel();
     this._attempt = 0;
   }
 
