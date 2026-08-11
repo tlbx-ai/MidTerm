@@ -66,6 +66,23 @@ test "$INSTALL_TRANSACTION_ACTIVE" = false
         if ($LASTEXITCODE -ne 0) {
             throw "install.sh rollback smoke test failed: $($rollbackOutput -join [Environment]::NewLine)"
         }
+
+        $readinessSmoke = @'
+set -e
+eval "$(awk '/^is_tailscale_ipv4\(\) \{/{emit=1} /^rollback_install_transaction\(\) \{/{emit=0} emit' ./install.sh)"
+test "$(get_primary_access_url 2443 0.0.0.0)" = "https://localhost:2443"
+test "$(get_primary_access_url 2443 127.0.0.1)" = "https://localhost:2443"
+test "$(get_primary_access_url 2443 100.64.12.34)" = "https://100.64.12.34:2443"
+is_tailscale_ipv4 100.64.0.1
+is_tailscale_ipv4 100.127.255.254
+! is_tailscale_ipv4 100.128.0.1
+! is_tailscale_ipv4 192.168.1.1
+# end readiness URL smoke
+'@
+        $readinessOutput = $readinessSmoke | & $bash.Source -s 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "install.sh readiness URL smoke test failed: $($readinessOutput -join [Environment]::NewLine)"
+        }
     } finally {
         Pop-Location
     }
@@ -81,6 +98,10 @@ Assert-Contains $windowsInstaller 'Existing MidTerm installation detected' "Wind
 Assert-Contains $windowsInstaller 'TLBX_PORT' "Windows user port selection is not persisted."
 Assert-Contains $windowsInstaller 'Test-ReleaseMetadataSignature' "Windows signed-release verification is missing."
 Assert-Contains $windowsInstaller 'Restore-PreviousBinarySet' "Windows post-swap rollback is missing."
+Assert-Contains $windowsInstaller 'Start-TlbxUserProcess' "Windows user-mode install does not start tlbx."
+Assert-Contains $windowsInstaller 'Wait-TlbxReady' "Windows process/health readiness verification is missing."
+Assert-Contains $windowsInstaller 'Your tlbx is ready at:' "Windows installer does not present the verified access URL."
+Assert-Contains $windowsInstaller 'Get-TailscaleIpv4Addresses' "Windows installer does not discover Tailscale access URLs."
 
 Assert-Contains $unixInstaller 'SERVICE_NAME="tlbx"' "Fresh Unix service identity is not tlbx."
 Assert-Contains $unixInstaller 'TLBX_SERVICE_SETTINGS_DIR="/usr/local/etc/tlbx"' "Fresh Unix settings directory is not tlbx."
@@ -89,6 +110,10 @@ Assert-Contains $unixInstaller 'runtime\.json' "Unix user port selection is not 
 Assert-Contains $unixInstaller 'validate_archive_members' "Unix archive allowlist is missing."
 Assert-Contains $unixInstaller 'rollback_install_transaction' "Unix post-swap rollback is missing."
 Assert-NotContains $unixInstaller 'sudo env[^\n]*PASSWORD_HASH' "Password material must not cross sudo in argv or environment."
+Assert-Contains $unixInstaller 'start_user_tlbx' "Unix user-mode install does not start tlbx."
+Assert-Contains $unixInstaller 'wait_tlbx_ready' "Unix process/health readiness verification is missing."
+Assert-Contains $unixInstaller 'Your tlbx is ready at:' "Unix installer does not present the verified access URL."
+Assert-Contains $unixInstaller 'get_tailscale_ipv4_addresses' "Unix installer does not discover Tailscale access URLs."
 
 $windowsMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.ps1") -Raw
 $unixMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.sh") -Raw
@@ -109,6 +134,29 @@ $safetyFunctions = ($installerAst.FindAll({
         $node.Name -in @("Assert-SafeReleaseArchive", "Restore-PreviousBinarySet")
 }, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
 Invoke-Expression $safetyFunctions
+
+$readinessFunctions = ($installerAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -in @("Test-TailscaleIpv4Address", "Format-TlbxUrl", "Get-TlbxAccessUrls")
+}, $true) | ForEach-Object { $_.Extent.Text }) -join "`r`n"
+Invoke-Expression $readinessFunctions
+
+if (-not (Test-TailscaleIpv4Address "100.64.0.1") -or
+    -not (Test-TailscaleIpv4Address "100.127.255.254") -or
+    (Test-TailscaleIpv4Address "100.128.0.1") -or
+    (Test-TailscaleIpv4Address "192.168.1.1")) {
+    throw "PowerShell Tailscale IPv4 detection does not enforce 100.64.0.0/10."
+}
+$wildcardUrls = @(Get-TlbxAccessUrls -Port 2443 -BindAddress "0.0.0.0" -TailscaleAddresses @("100.64.12.34"))
+if ($wildcardUrls -notcontains "https://localhost:2443" -or
+    $wildcardUrls -notcontains "https://100.64.12.34:2443") {
+    throw "PowerShell access URL generation omitted localhost or Tailscale."
+}
+$loopbackUrls = @(Get-TlbxAccessUrls -Port 2443 -BindAddress "127.0.0.1" -TailscaleAddresses @("100.64.12.34"))
+if ($loopbackUrls.Count -ne 1 -or $loopbackUrls[0] -ne "https://localhost:2443") {
+    throw "PowerShell loopback URL generation exposed a non-listening Tailscale address."
+}
 
 $safetyRoot = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-installer-safety-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $safetyRoot | Out-Null

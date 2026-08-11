@@ -92,7 +92,7 @@ curl -fsSL https://get.tlbx.ai/install.sh | bash
 irm https://get.tlbx.ai/install.ps1 | iex
 ```
 
-Open `https://localhost:2000`. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
+The installer starts tlbx, waits until its process and HTTPS health endpoint are ready, and then prints clickable localhost and available Tailscale URLs for the configured port. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
 
 These commands install the current stable release. Add `--dev` on macOS/Linux or `-Dev` on Windows only when you explicitly want the prerelease channel.
 

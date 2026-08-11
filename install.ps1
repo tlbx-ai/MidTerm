@@ -1119,6 +1119,109 @@ function Test-NetworkBinding
     return $BindAddress -ne "localhost" -and $BindAddress -ne "127.0.0.1" -and $BindAddress -ne "::1"
 }
 
+function Test-TailscaleIpv4Address
+{
+    param([string]$Address)
+
+    $parsed = $null
+    if (-not [Net.IPAddress]::TryParse($Address, [ref]$parsed))
+    {
+        return $false
+    }
+
+    $bytes = $parsed.GetAddressBytes()
+    return $bytes.Length -eq 4 -and $bytes[0] -eq 100 -and $bytes[1] -ge 64 -and $bytes[1] -le 127
+}
+
+function Get-TailscaleIpv4Addresses
+{
+    $addresses = @()
+    $tailscale = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($tailscale)
+    {
+        try
+        {
+            $addresses += @(& $tailscale.Source ip -4 2>$null)
+        }
+        catch
+        {
+            Write-Log "Could not query the Tailscale CLI: $_" "WARN"
+        }
+    }
+
+    try
+    {
+        $addresses += @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.IPAddress })
+    }
+    catch
+    {
+        Write-Log "Could not inspect Windows network addresses for Tailscale: $_" "WARN"
+    }
+
+    return @($addresses |
+        ForEach-Object { if ($null -ne $_) { $_.ToString().Trim() } } |
+        Where-Object { Test-TailscaleIpv4Address $_ } |
+        Sort-Object -Unique)
+}
+
+function Format-TlbxUrl
+{
+    param(
+        [string]$HostName,
+        [int]$Port
+    )
+
+    $urlHost = $HostName
+    if ($urlHost.Contains(":") -and -not $urlHost.StartsWith("["))
+    {
+        $urlHost = "[$urlHost]"
+    }
+    return "https://${urlHost}:$Port"
+}
+
+function Get-TlbxAccessUrls
+{
+    param(
+        [int]$Port,
+        [string]$BindAddress,
+        [AllowNull()]
+        [string[]]$TailscaleAddresses = $null
+    )
+
+    $wildcardBindings = @("*", "0.0.0.0", "::", "[::]")
+    $localBindings = @("", "localhost", "127.0.0.1", "::1", "[::1]")
+    $primaryHost = if ($BindAddress -in $wildcardBindings -or $BindAddress -in $localBindings)
+    {
+        "localhost"
+    }
+    else
+    {
+        $BindAddress
+    }
+
+    $urls = @((Format-TlbxUrl -HostName $primaryHost -Port $Port))
+    if ($BindAddress -in $wildcardBindings)
+    {
+        if ($null -eq $TailscaleAddresses)
+        {
+            $TailscaleAddresses = @(Get-TailscaleIpv4Addresses)
+        }
+        foreach ($address in $TailscaleAddresses)
+        {
+            if (Test-TailscaleIpv4Address $address)
+            {
+                $urls += Format-TlbxUrl -HostName $address -Port $Port
+            }
+        }
+    }
+    elseif (Test-TailscaleIpv4Address $BindAddress)
+    {
+        $urls += Format-TlbxUrl -HostName $BindAddress -Port $Port
+    }
+
+    return @($urls | Select-Object -Unique)
+}
+
 function Prompt-FirewallConfig
 {
     param(
@@ -1637,6 +1740,159 @@ function Write-ServiceSettings
     if ($CertPath) { Write-Host "  Certificate: $CertPath" -ForegroundColor Gray }
 }
 
+function Invoke-TlbxHealthRequest
+{
+    param([string]$Url)
+
+    if ($PSVersionTable.PSVersion.Major -ge 6)
+    {
+        return Invoke-RestMethod -Uri "$Url/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
+    }
+
+    Add-Type @"
+using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+public class TlbxInstallerTrustAllCerts {
+    public static void Ignore() {
+        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+    }
+    public static void Restore() {
+        ServicePointManager.ServerCertificateValidationCallback = null;
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+    try
+    {
+        [TlbxInstallerTrustAllCerts]::Ignore()
+        return Invoke-RestMethod -Uri "$Url/api/health" -TimeoutSec 5 -ErrorAction Stop
+    }
+    finally
+    {
+        [TlbxInstallerTrustAllCerts]::Restore()
+    }
+}
+
+function Get-TlbxProcess
+{
+    param(
+        [string]$ExecutablePath,
+        [int]$ExpectedProcessId = 0
+    )
+
+    if ($ExpectedProcessId -gt 0)
+    {
+        return Get-Process -Id $ExpectedProcessId -ErrorAction SilentlyContinue
+    }
+
+    $expectedFullPath = [IO.Path]::GetFullPath($ExecutablePath)
+    $processes = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($ExecutablePath)) -ErrorAction SilentlyContinue)
+    foreach ($process in $processes)
+    {
+        try
+        {
+            if ($process.Path -and [IO.Path]::GetFullPath($process.Path) -eq $expectedFullPath)
+            {
+                return $process
+            }
+        }
+        catch
+        {
+            # Process path access can race with startup/exit; retry on the next poll.
+        }
+    }
+    return $null
+}
+
+function Wait-TlbxReady
+{
+    param(
+        [string]$ExecutablePath,
+        [int]$Port,
+        [string]$BindAddress,
+        [bool]$AsService,
+        [int]$ExpectedProcessId = 0
+    )
+
+    $healthUrl = @(Get-TlbxAccessUrls -Port $Port -BindAddress $BindAddress -TailscaleAddresses @())[0]
+    $lastHealth = $null
+    $process = $null
+    $serviceStatus = if ($AsService) { "Unknown" } else { "Not applicable" }
+
+    for ($attempt = 1; $attempt -le 15; $attempt++)
+    {
+        $process = Get-TlbxProcess -ExecutablePath $ExecutablePath -ExpectedProcessId $ExpectedProcessId
+        if ($AsService)
+        {
+            $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            $serviceStatus = if ($service) { $service.Status.ToString() } else { "Not installed" }
+        }
+
+        try
+        {
+            $lastHealth = Invoke-TlbxHealthRequest -Url $healthUrl
+        }
+        catch
+        {
+            $lastHealth = $null
+        }
+
+        $serviceReady = -not $AsService -or $serviceStatus -eq "Running"
+        if ($process -and $serviceReady -and $lastHealth -and $lastHealth.healthy)
+        {
+            return [pscustomobject]@{
+                Ready = $true
+                Process = $process
+                ServiceStatus = $serviceStatus
+                Health = $lastHealth
+                HealthUrl = $healthUrl
+            }
+        }
+
+        if ($ExpectedProcessId -gt 0 -and -not $process)
+        {
+            break
+        }
+        if ($attempt -lt 15)
+        {
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    return [pscustomobject]@{
+        Ready = $false
+        Process = $process
+        ServiceStatus = $serviceStatus
+        Health = $lastHealth
+        HealthUrl = $healthUrl
+    }
+}
+
+function Start-TlbxUserProcess
+{
+    param(
+        [string]$ExecutablePath,
+        [string]$InstallDir,
+        [string]$SettingsDir,
+        [int]$Port,
+        [string]$BindAddress
+    )
+
+    $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { $BindAddress }
+    $stdoutLog = Join-Path $SettingsDir "tlbx-user.stdout.log"
+    $stderrLog = Join-Path $SettingsDir "tlbx-user.stderr.log"
+    $arguments = Join-ProcessArguments -Arguments @(
+        "--user-mode",
+        "--settings-dir", $SettingsDir,
+        "--port", $Port.ToString([Globalization.CultureInfo]::InvariantCulture),
+        "--bind", $bindArg)
+
+    Write-Log "Starting user-mode tlbx with stdout=$stdoutLog and stderr=$stderrLog"
+    return Start-Process -FilePath $ExecutablePath -ArgumentList $arguments -WorkingDirectory $InstallDir `
+        -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+}
+
 function Install-Tlbx
 {
     param(
@@ -1656,9 +1912,14 @@ function Install-Tlbx
     $binarySwapCompleted = $false
     $installationCompleted = $false
     $serviceExistedBefore = $false
+    $startedUserProcess = $null
     trap
     {
         $installError = $_
+        if ($startedUserProcess -and -not $startedUserProcess.HasExited)
+        {
+            Stop-Process -Id $startedUserProcess.Id -Force -ErrorAction SilentlyContinue
+        }
         if ($binarySwapCompleted -and -not $installationCompleted -and $installDir -and $tempRoot)
         {
             Write-Host "  Installation failed; restoring the previous tlbx binary set..." -ForegroundColor Yellow
@@ -1832,91 +2093,33 @@ function Install-Tlbx
             Ensure-FirewallRule -Port $Port -InstallDir $installDir
         }
 
-        # Wait for mt.exe to spawn
-        Start-Sleep -Seconds 2
-
-        # Show final status
+        # Monitor both the supervised process and the configured HTTPS endpoint.
         Write-Section "Status"
-        $serviceStatus = (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue).Status
-        $mmProc = Get-Process -Name "mt" -ErrorAction SilentlyContinue
+        Write-StatusLine "Startup" "Waiting for process and https endpoint..." Yellow
+        $readiness = Wait-TlbxReady -ExecutablePath $destWebBinary -Port $Port -BindAddress $BindAddress -AsService $true
 
-        if ($serviceStatus -eq "Running") { Write-StatusLine "Service" "Running" Green }
-        else { Write-StatusLine "Service" "$serviceStatus" Red }
+        if ($readiness.ServiceStatus -eq "Running") { Write-StatusLine "Service" "Running" Green }
+        else { Write-StatusLine "Service" "$($readiness.ServiceStatus)" Red }
 
-        if ($mmProc) { Write-StatusLine "mt (web)" "Running (PID $($mmProc.Id))" Green }
-        else { Write-StatusLine "mt (web)" "Starting..." Yellow }
+        if ($readiness.Process) { Write-StatusLine "tlbx process" "Running (PID $($readiness.Process.Id))" Green }
+        else { Write-StatusLine "tlbx process" "Not running" Red }
 
-        # Check health endpoint with retries. Service startup can take longer on
-        # a cold machine, especially immediately after certificate creation.
-        $healthVerified = $false
-        $health = $null
-        for ($attempt = 1; $attempt -le 10 -and -not $healthVerified; $attempt++)
+        if ($readiness.Ready)
         {
-            try
-            {
-                if ($PSVersionTable.PSVersion.Major -ge 6)
-                {
-                    $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
-                }
-                else
-                {
-                    # PS 5.1 workaround for self-signed certs
-                    Add-Type @"
-using System.Net;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCerts {
-    public static void Ignore() {
-        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
-    }
-    public static void Restore() {
-        ServicePointManager.ServerCertificateValidationCallback = null;
-    }
-}
-"@ -ErrorAction SilentlyContinue
-                    [TrustAllCerts]::Ignore()
-                    $health = Invoke-RestMethod -Uri "https://localhost:$Port/api/health" -TimeoutSec 5 -ErrorAction Stop
-                }
-
-                if ($health -and $health.healthy)
-                {
-                    $healthVerified = $true
-                }
-            }
-            catch
-            {
-                $health = $null
-            }
-            finally
-            {
-                if ($PSVersionTable.PSVersion.Major -lt 6 -and ("TrustAllCerts" -as [type]))
-                {
-                    [TrustAllCerts]::Restore()
-                }
-            }
-
-            if (-not $healthVerified -and $attempt -lt 10)
-            {
-                Start-Sleep -Seconds 1
-            }
+            Write-StatusLine "HTTPS" "Reachable and healthy" Green
+            Write-StatusLine "Version" "$($readiness.Health.version)" Gray
         }
-
-        if ($healthVerified)
-        {
-            Write-StatusLine "Health" "Healthy" Green
-            Write-StatusLine "Version" "$($health.version)" Gray
-        }
-        elseif ($health)
+        elseif ($readiness.Health)
         {
             Write-StatusLine "Health" "Unhealthy" Red
-            if ($health.hostError) { Write-StatusLine "Error" "$($health.hostError)" Red }
+            if ($readiness.Health.hostError) { Write-StatusLine "Error" "$($readiness.Health.hostError)" Red }
         }
         else
         {
-            Write-StatusLine "Health" "Could not connect to https://localhost:$Port" Red
+            Write-StatusLine "HTTPS" "Could not connect to $($readiness.HealthUrl)" Red
         }
 
-        if ($serviceStatus -ne "Running" -or -not $healthVerified)
+        if (-not $readiness.Ready)
         {
             throw "tlbx was installed but did not pass the service and health verification. See $script:UpdateLogFile."
         }
@@ -1976,6 +2179,27 @@ public class TrustAllCerts {
         }
 
         Install-AsUserApp -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
+
+        Write-Section "Status"
+        Write-StatusLine "Startup" "Starting tlbx and waiting for https endpoint..." Yellow
+        $startedUserProcess = Start-TlbxUserProcess -ExecutablePath $destWebBinary -InstallDir $installDir `
+            -SettingsDir $userSettingsDir -Port $Port -BindAddress $BindAddress
+        $readiness = Wait-TlbxReady -ExecutablePath $destWebBinary -Port $Port -BindAddress $BindAddress `
+            -AsService $false -ExpectedProcessId $startedUserProcess.Id
+
+        if ($readiness.Process) { Write-StatusLine "tlbx process" "Running (PID $($readiness.Process.Id))" Green }
+        else { Write-StatusLine "tlbx process" "Not running" Red }
+
+        if ($readiness.Ready)
+        {
+            Write-StatusLine "HTTPS" "Reachable and healthy" Green
+            Write-StatusLine "Version" "$($readiness.Health.version)" Gray
+        }
+        else
+        {
+            Write-StatusLine "HTTPS" "Could not connect to $($readiness.HealthUrl)" Red
+            throw "tlbx was installed but the user process did not become reachable. See $userSettingsDir\tlbx-user.stderr.log."
+        }
     }
 
     # Remove the obsolete split-host binary only after the complete install has
@@ -1993,15 +2217,22 @@ public class TrustAllCerts {
     Write-Log "=========================================="
     Write-Log "INSTALLATION COMPLETE"
     Write-Log "  Location: $installDir"
-    Write-Log "  URL: https://localhost:$Port"
+    $accessUrls = @(Get-TlbxAccessUrls -Port $Port -BindAddress $BindAddress)
+    foreach ($accessUrl in $accessUrls)
+    {
+        Write-Log "  URL: $accessUrl"
+    }
     Write-Log "  Settings: $settingsDir"
     Write-Log "=========================================="
 
     Write-Section "Complete"
-    Write-Host "  Installation complete" -ForegroundColor Green
+    Write-Host "  Your tlbx is ready at:" -ForegroundColor Green
     Write-Host ""
     Write-StatusLine "Location" "$installDir" Gray
-    Write-StatusLine "URL" "https://localhost:$Port" Cyan
+    foreach ($accessUrl in $accessUrls)
+    {
+        Write-Host "  $accessUrl" -ForegroundColor Cyan
+    }
     Write-StatusLine "Note" "Browser may show certificate warning until trusted" Yellow
     if ($AsService -and (Test-NetworkBinding -BindAddress $BindAddress) -and -not $ConfigureFirewall)
     {
@@ -2214,8 +2445,6 @@ function Install-AsUserApp
     # Create uninstall script
     Create-UninstallScript -InstallDir $InstallDir -IsService $false
 
-    Write-Host ""
-    Write-Host "Run 'mt' to start tlbx" -ForegroundColor Yellow
 }
 
 function Register-Uninstall

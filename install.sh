@@ -17,8 +17,13 @@ INSTALL_TRANSACTION_INSTALL_DIR=""
 INSTALL_TRANSACTION_FILES=""
 INSTALL_TRANSACTION_SERVICE_MODE=false
 INSTALL_TRANSACTION_HAD_SERVICE=false
+STARTED_USER_PID=""
 cleanup_active_install_temp() {
     local exit_status="${1:-0}"
+    if [ "$exit_status" -ne 0 ] && [ -n "$STARTED_USER_PID" ] && kill -0 "$STARTED_USER_PID" 2>/dev/null; then
+        kill "$STARTED_USER_PID" 2>/dev/null || true
+        wait "$STARTED_USER_PID" 2>/dev/null || true
+    fi
     if [ "$exit_status" -ne 0 ] && [ "$INSTALL_TRANSACTION_ACTIVE" = true ]; then
         rollback_install_transaction
     fi
@@ -1688,78 +1693,153 @@ prompt_certificate_trust() {
     fi
 }
 
-show_process_status() {
-    local port="$1"
+is_tailscale_ipv4() {
+    local address="$1" first second third fourth extra
+    IFS=. read -r first second third fourth extra <<< "$address"
+    [[ -z "$extra" && "$first" =~ ^[0-9]+$ && "$second" =~ ^[0-9]+$ && \
+       "$third" =~ ^[0-9]+$ && "$fourth" =~ ^[0-9]+$ ]] || return 1
+    [ "$first" -eq 100 ] && [ "$second" -ge 64 ] && [ "$second" -le 127 ] && \
+        [ "$third" -le 255 ] && [ "$fourth" -le 255 ]
+}
 
-    print_phase "Status"
+get_tailscale_ipv4_addresses() {
+    local candidates="" address
+    if command_exists tailscale; then
+        candidates="$(tailscale ip -4 2>/dev/null || true)"
+    fi
+    if command_exists ip; then
+        candidates="$candidates
+$(ip -4 -o address show 2>/dev/null | awk '{print $4}' | cut -d/ -f1)"
+    elif command_exists ifconfig; then
+        candidates="$candidates
+$(ifconfig 2>/dev/null | awk '/inet / {print $2}')"
+    fi
 
-    # Check service status
+    while IFS= read -r address; do
+        address="${address//[[:space:]]/}"
+        if is_tailscale_ipv4 "$address"; then
+            printf '%s\n' "$address"
+        fi
+    done <<< "$candidates" | awk '!seen[$0]++'
+}
+
+format_tlbx_url() {
+    local host="$1" port="$2"
+    if [[ "$host" == *:* && "$host" != \[*\] ]]; then
+        host="[$host]"
+    fi
+    printf 'https://%s:%s' "$host" "$port"
+}
+
+get_primary_access_url() {
+    local port="$1" bind_address="$2" host
+    case "$bind_address" in
+        ""|localhost|127.0.0.1|::1|\[::1\]|\*|0.0.0.0|::|\[::\]) host="localhost" ;;
+        *) host="$bind_address" ;;
+    esac
+    format_tlbx_url "$host" "$port"
+}
+
+print_ready_urls() {
+    local port="$1" bind_address="$2" primary_url tailscale_address tailscale_url
+    primary_url="$(get_primary_access_url "$port" "$bind_address")"
+
+    echo -e "  ${GREEN}Your tlbx is ready at:${NC}"
+    echo "  $primary_url"
+    log "  URL: $primary_url"
+
+    case "$bind_address" in
+        \*|0.0.0.0|::|\[::\])
+            while IFS= read -r tailscale_address; do
+                [ -n "$tailscale_address" ] || continue
+                tailscale_url="$(format_tlbx_url "$tailscale_address" "$port")"
+                echo "  $tailscale_url"
+                log "  URL: $tailscale_url"
+            done < <(get_tailscale_ipv4_addresses)
+            ;;
+        *) ;;
+    esac
+}
+
+service_is_running() {
     if [ "$(uname -s)" = "Darwin" ]; then
-        if launchctl list 2>/dev/null | grep -q "$LAUNCHD_LABEL"; then
-            print_status "Service" "running" "$GREEN"
-        else
-            print_status "Service" "starting..." "$YELLOW"
-        fi
+        launchctl print "system/$LAUNCHD_LABEL" >/dev/null 2>&1
     else
-        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-            print_status "Service" "running" "$GREEN"
-        else
-            print_status "Service" "starting..." "$YELLOW"
-        fi
-    fi
-
-    # Check mt process
-    local mt_pid
-    mt_pid=$(pgrep -f "^/usr/local/bin/mt" 2>/dev/null | head -1 || true)
-    if [ -n "$mt_pid" ]; then
-        print_status "mt (web)" "running (PID $mt_pid)" "$GREEN"
-    else
-        print_status "mt (web)" "starting..." "$YELLOW"
-    fi
-
-    # Health check with version info
-    sleep 2
-    local health_response
-    health_response=$(curl -fsSk "https://localhost:$port/api/health" 2>/dev/null || true)
-
-    if [ -n "$health_response" ]; then
-        local healthy version
-        healthy=$(echo "$health_response" | grep -o '"healthy"[[:space:]]*:[[:space:]]*true' || true)
-        version=$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
-
-        if [ -n "$healthy" ]; then
-            if [ -n "$version" ]; then
-                print_status "Health" "healthy (v$version)" "$GREEN"
-            else
-                print_status "Health" "healthy" "$GREEN"
-            fi
-        else
-            print_status "Health" "unhealthy" "$RED"
-        fi
-    else
-        print_status "Health" "could not connect" "$YELLOW"
+        systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null
     fi
 }
 
-check_health() {
-    local port="$1"
-    local attempt
-    for attempt in 1 2 3 4 5 6 7 8 9 10; do
-        if command_exists curl; then
-            if curl -fsSk --max-time 5 "https://localhost:$port/api/health" 2>/dev/null | grep -q '"healthy"[[:space:]]*:[[:space:]]*true'; then
-                log "Health check passed"
-                return 0
-            fi
-        elif wget -qO- --timeout=5 --no-check-certificate "https://localhost:$port/api/health" 2>/dev/null | \
-             grep -q '"healthy"[[:space:]]*:[[:space:]]*true'; then
-            log "Health check passed"
+get_service_pid() {
+    if [ "$(uname -s)" = "Darwin" ]; then
+        launchctl print "system/$LAUNCHD_LABEL" 2>/dev/null | awk '/pid = / {print $3; exit}'
+    else
+        systemctl show "$SERVICE_NAME" --property MainPID --value 2>/dev/null | awk '$1 != 0 {print; exit}'
+    fi
+}
+
+request_health() {
+    local url="$1"
+    if command_exists curl; then
+        curl -fsSk --max-time 5 "$url/api/health" 2>/dev/null
+    else
+        wget -qO- --timeout=5 --no-check-certificate "$url/api/health" 2>/dev/null
+    fi
+}
+
+READY_PID=""
+READY_HEALTH_RESPONSE=""
+READY_VERSION=""
+READY_URL=""
+wait_tlbx_ready() {
+    local port="$1" bind_address="$2" service_mode="$3" expected_pid="${4:-}"
+    local attempt service_ready process_ready health_response current_pid
+    READY_PID=""
+    READY_HEALTH_RESPONSE=""
+    READY_VERSION=""
+    READY_URL="$(get_primary_access_url "$port" "$bind_address")"
+
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        service_ready=true
+        current_pid="$expected_pid"
+        if [ "$service_mode" = true ]; then
+            service_is_running || service_ready=false
+            current_pid="$(get_service_pid || true)"
+        fi
+
+        process_ready=false
+        if [ -n "$current_pid" ] && kill -0 "$current_pid" 2>/dev/null; then
+            process_ready=true
+            READY_PID="$current_pid"
+        fi
+
+        health_response="$(request_health "$READY_URL" || true)"
+        READY_HEALTH_RESPONSE="$health_response"
+        if [ "$service_ready" = true ] && [ "$process_ready" = true ] && \
+           echo "$health_response" | grep -q '"healthy"[[:space:]]*:[[:space:]]*true'; then
+            READY_VERSION="$(echo "$health_response" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')"
+            log "Process $READY_PID and health endpoint $READY_URL are ready"
             return 0
         fi
-        sleep 1
+
+        if [ -n "$expected_pid" ] && ! kill -0 "$expected_pid" 2>/dev/null; then
+            break
+        fi
+        [ "$attempt" -eq 15 ] || sleep 1
     done
 
-    log "Health check failed after 10 attempts" "ERROR"
+    log "Process/health readiness failed for $READY_URL after 15 attempts" "ERROR"
     return 1
+}
+
+start_user_tlbx() {
+    local install_dir="$1" settings_dir="$2" port="$3" bind_address="$4"
+    local stdout_log="$settings_dir/tlbx-user.stdout.log"
+    local stderr_log="$settings_dir/tlbx-user.stderr.log"
+
+    log "Starting user-mode tlbx with stdout=$stdout_log and stderr=$stderr_log"
+    nohup "$install_dir/mt" --user-mode --settings-dir "$settings_dir" \
+        --port "$port" --bind "$bind_address" </dev/null >"$stdout_log" 2>"$stderr_log" &
+    STARTED_USER_PID=$!
 }
 
 rollback_install_transaction() {
@@ -2127,14 +2207,28 @@ install_as_service() {
         install_systemd "$install_dir"
     fi
 
-    # Show detailed process status (like PS does)
-    show_process_status "$PORT"
-
-    if ! check_health "$PORT"; then
-        echo -e "  ${RED}tlbx was installed but did not pass the health check.${NC}"
+    print_phase "Status"
+    print_status "Startup" "waiting for process and https endpoint..." "$YELLOW"
+    if ! wait_tlbx_ready "$PORT" "$BIND_ADDRESS" true; then
+        if service_is_running; then
+            print_status "Service" "running" "$GREEN"
+        else
+            print_status "Service" "not running" "$RED"
+        fi
+        if [ -n "$READY_PID" ]; then
+            print_status "tlbx process" "running (PID $READY_PID)" "$GREEN"
+        else
+            print_status "tlbx process" "not running" "$RED"
+        fi
+        print_status "HTTPS" "could not connect to $READY_URL" "$RED"
+        echo -e "  ${RED}tlbx was installed but did not pass process and health verification.${NC}"
         echo -e "  ${GRAY}See $LOG_FILE for details.${NC}"
         exit 1
     fi
+    print_status "Service" "running" "$GREEN"
+    print_status "tlbx process" "running (PID $READY_PID)" "$GREEN"
+    print_status "HTTPS" "reachable and healthy" "$GREEN"
+    [ -z "$READY_VERSION" ] || print_status "Version" "$READY_VERSION"
 
     # Create uninstall script
     create_uninstall_script "$lib_dir" true
@@ -2149,16 +2243,14 @@ install_as_service() {
     log "=========================================="
     log "INSTALLATION COMPLETE"
     log "  Location: $install_dir/mt"
-    log "  URL: https://localhost:$PORT"
     log "  Settings: $settings_dir"
     log "=========================================="
 
     echo ""
     echo -e "  ${CYAN}════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}Installation complete${NC}"
-    echo ""
     print_status "Location" "$install_dir/mt"
-    print_status "URL" "https://localhost:$PORT" "$CYAN"
+    echo ""
+    print_ready_urls "$PORT" "$BIND_ADDRESS"
     if [ "$TRUST_CERT" != "yes" ]; then
         echo -e "  ${GRAY}Note: browser may show cert warning${NC}"
     fi
@@ -2759,22 +2851,37 @@ install_as_user() {
 
     create_uninstall_script "$lib_dir" false
 
+    print_phase "Status"
+    print_status "Startup" "starting tlbx and waiting for https endpoint..." "$YELLOW"
+    start_user_tlbx "$install_dir" "$settings_dir" "$PORT" "$BIND_ADDRESS"
+    if ! wait_tlbx_ready "$PORT" "$BIND_ADDRESS" false "$STARTED_USER_PID"; then
+        if kill -0 "$STARTED_USER_PID" 2>/dev/null; then
+            print_status "tlbx process" "running (PID $STARTED_USER_PID)" "$GREEN"
+        else
+            print_status "tlbx process" "not running" "$RED"
+        fi
+        print_status "HTTPS" "could not connect to $READY_URL" "$RED"
+        echo -e "  ${RED}tlbx was installed but the user process did not become reachable.${NC}"
+        echo -e "  ${GRAY}See $settings_dir/tlbx-user.stderr.log for details.${NC}"
+        exit 1
+    fi
+    print_status "tlbx process" "running (PID $READY_PID)" "$GREEN"
+    print_status "HTTPS" "reachable and healthy" "$GREEN"
+    [ -z "$READY_VERSION" ] || print_status "Version" "$READY_VERSION"
+
     commit_install_transaction
 
     log "=========================================="
     log "INSTALLATION COMPLETE"
     log "  Location: $install_dir/mt"
-    log "  URL: https://localhost:$PORT"
     log "  Settings: $settings_dir"
     log "=========================================="
 
     echo ""
     echo -e "  ${CYAN}════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}Installation complete${NC}"
-    echo ""
     print_status "Location" "$install_dir/mt"
-    print_status "URL" "https://localhost:$PORT" "$CYAN"
-    echo -e "  ${YELLOW}Run 'mt' to start tlbx${NC}"
+    echo ""
+    print_ready_urls "$PORT" "$BIND_ADDRESS"
     echo -e "  ${CYAN}════════════════════════════════════════${NC}"
     echo ""
 }
