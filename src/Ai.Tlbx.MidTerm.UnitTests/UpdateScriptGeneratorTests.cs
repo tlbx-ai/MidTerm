@@ -295,6 +295,7 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
         Assert.Contains("$ConptyRuntimeFiles", scriptText, StringComparison.Ordinal);
         Assert.Contains("conpty.dll", scriptText, StringComparison.Ordinal);
         Assert.Contains("x64\\OpenConsole.exe", scriptText, StringComparison.Ordinal);
+        Assert.Contains("THIRD-PARTY-LICENSES.txt", scriptText, StringComparison.Ordinal);
         Assert.Contains("SafeCopy $newRuntimePath $currentRuntimePath $relativePath", scriptText, StringComparison.Ordinal);
         Assert.Contains("$backupRuntimePath", scriptText, StringComparison.Ordinal);
     }

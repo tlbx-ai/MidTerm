@@ -1517,7 +1517,7 @@ function Assert-SignedRelease
 
 function Get-WindowsReleaseFileNames
 {
-    $files = @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json")
+    $files = @($WebBinaryName, $TtyHostBinaryName, $AgentHostBinaryName, $TmuxShimBinaryName, "version.json", "THIRD-PARTY-LICENSES.txt")
     if ($ExpectedReleasePlatform -in @("win-x64", "win-x86"))
     {
         $files += @("conpty.dll", "x64/OpenConsole.exe", "arm64/OpenConsole.exe")

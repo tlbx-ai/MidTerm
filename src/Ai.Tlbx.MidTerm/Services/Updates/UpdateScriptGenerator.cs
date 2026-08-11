@@ -88,8 +88,8 @@ public static class UpdateScriptGenerator
         var serviceName = EscapeForPowerShell(serviceIdentity.WindowsServiceName);
         var certificateFileName = TlbxProductIdentity.GetCertificateFileName(settingsDir);
         var conptyRuntimeFiles = RuntimeInformation.ProcessArchitecture == Architecture.X86
-            ? new[] { "conpty.dll", "x86\\OpenConsole.exe", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe" }
-            : new[] { "conpty.dll", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe" };
+            ? new[] { "conpty.dll", "x86\\OpenConsole.exe", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe", "THIRD-PARTY-LICENSES.txt" }
+            : new[] { "conpty.dll", "x64\\OpenConsole.exe", "arm64\\OpenConsole.exe", "THIRD-PARTY-LICENSES.txt" };
         var conptyRuntimeFilesLiteral = string.Join(", ", conptyRuntimeFiles.Select(path => $"'{EscapeForPowerShell(path)}'"));
 
         var isWebOnly = updateType != UpdateType.Full;
