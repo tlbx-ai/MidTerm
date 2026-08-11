@@ -190,11 +190,18 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         }
     }
 
-    internal static int ResolvePollDelay(long lastActivityMs, long nowMs)
+    internal static int ResolvePollDelay(long lastActivityMs, long nowMs, bool hasForegroundChild)
     {
-        return nowMs - lastActivityMs < ActivePollingWindowMs
-            ? ActivePollIntervalMs
-            : IdlePollIntervalMs;
+        if (nowMs - lastActivityMs < ActivePollingWindowMs)
+        {
+            return ActivePollIntervalMs;
+        }
+
+        // An idle PowerShell/cmd shell has no foreground child to observe. Stop
+        // taking system-wide Toolhelp snapshots until terminal input wakes the
+        // monitor. If a launched child is still alive, retain the slow fallback
+        // so its eventual exit is reflected even without another keystroke.
+        return hasForegroundChild ? IdlePollIntervalMs : Timeout.Infinite;
     }
 
     private void ScheduleNextPoll()
@@ -206,7 +213,10 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                 return;
             }
 
-            var delay = ResolvePollDelay(_lastActivityMs, Environment.TickCount64);
+            var delay = ResolvePollDelay(
+                _lastActivityMs,
+                Environment.TickCount64,
+                _currentChildPid.HasValue);
             _fastPolling = delay == ActivePollIntervalMs;
             _timer.Change(delay, Timeout.Infinite);
         }

@@ -87,9 +87,4 @@ describe('WebGL context ownership', () => {
     expect(shouldOwnWebglContext(true, true, true)).toBe(true);
     expect(shouldOwnWebglContext(true, true, false)).toBe(false);
   });
-
-  it('disables managed WebGL when multiple terminal tabs are mounted', () => {
-    expect(shouldOwnWebglContext(true, true, true, false)).toBe(false);
-    expect(shouldOwnWebglContext(false, true, false, false)).toBe(false);
-  });
 });

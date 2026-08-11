@@ -40,12 +40,28 @@ const sampleSeconds = Number(process.env.TLBX_PERF_SAMPLE_SECONDS || 40);
 const sampleIntervalMs = Number(
   process.env.TLBX_PERF_SAMPLE_INTERVAL_MS || 2000,
 );
+const warmupSeconds = Number(process.env.TLBX_PERF_WARMUP_SECONDS || 5);
+const switchCycles = Number(process.env.TLBX_PERF_SWITCH_CYCLES || 1);
 const serverPid = Number(process.env.TLBX_PERF_SERVER_PID || 0);
 const collectCpuProfile = process.env.TLBX_PERF_CPU_PROFILE === "1";
 
 if (!Number.isInteger(sessionCount) || sessionCount < 0 || sessionCount > 12) {
   throw new Error(
     `TLBX_PERF_SESSION_COUNT must be between 0 and 12, got ${sessionCount}.`,
+  );
+}
+if (
+  !Number.isFinite(warmupSeconds) ||
+  warmupSeconds < 0 ||
+  warmupSeconds > 60
+) {
+  throw new Error(
+    `TLBX_PERF_WARMUP_SECONDS must be between 0 and 60, got ${warmupSeconds}.`,
+  );
+}
+if (!Number.isInteger(switchCycles) || switchCycles < 0 || switchCycles > 10) {
+  throw new Error(
+    `TLBX_PERF_SWITCH_CYCLES must be between 0 and 10, got ${switchCycles}.`,
   );
 }
 
@@ -143,9 +159,11 @@ function Measure-Processes([int[]]$ids) {
   $items = @(foreach ($id in $ids) {
     $p = Get-Process -Id $id -ErrorAction SilentlyContinue
     if ($p) {
+      $processPath = try { $p.Path } catch { $null }
       [pscustomobject]@{
         pid = $p.Id
         name = $p.ProcessName
+        path = $processPath
         cpuSeconds = [Math]::Round($p.CPU, 4)
         workingSetBytes = [long]$p.WorkingSet64
         privateBytes = [long]$p.PrivateMemorySize64
@@ -221,6 +239,39 @@ function summarizeCpu(samples, selector) {
     : null;
 }
 
+function percentile(values, fraction) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[
+    Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)
+  ];
+}
+
+function summarizeProcessCpu(samples, predicate) {
+  if (samples.length < 2) return [];
+  const first = samples[0];
+  const last = samples.at(-1);
+  const elapsedSeconds = (last.timestampMs - first.timestampMs) / 1000;
+  if (elapsedSeconds <= 0) return [];
+  const firstByPid = new Map(
+    (first.os?.tlbx?.processes || []).map((process) => [process.pid, process]),
+  );
+  return (last.os?.tlbx?.processes || [])
+    .filter(predicate)
+    .map((process) => {
+      const initial = firstByPid.get(process.pid);
+      const cpuDelta = initial ? process.cpuSeconds - initial.cpuSeconds : 0;
+      return {
+        pid: process.pid,
+        name: process.name,
+        path: process.path,
+        averageCorePercent:
+          Math.round((cpuDelta / elapsedSeconds) * 10000) / 100,
+      };
+    })
+    .sort((left, right) => right.averageCorePercent - left.averageCorePercent);
+}
+
 function sumProcessMetric(sample, predicate, metric) {
   return (sample?.os?.tlbx?.processes || [])
     .filter(predicate)
@@ -262,6 +313,7 @@ function summarizeProcessGroup(samples, predicate) {
 
 const createdSessionIds = [];
 const samples = [];
+const switchMeasurements = [];
 let baseline = null;
 let windowsProcessIds = null;
 let browserContext;
@@ -366,6 +418,13 @@ try {
   // can produce output. Readiness itself is established above from live state.
   await page.waitForTimeout(250);
 
+  const sessionsBeforeTraffic = await requestJson(page, "/api/sessions");
+  const lastOutputBeforeTraffic = Object.fromEntries(
+    sessionsBeforeTraffic.sessions
+      .filter((session) => createdSessionIds.includes(session.id))
+      .map((session) => [session.id, session.supervisor?.lastOutputAt ?? null]),
+  );
+
   for (let index = 0; index < createdSessionIds.length; index += 1) {
     const command = buildTrafficCommand(index + 1);
     if (index === createdSessionIds.length - 1) {
@@ -393,17 +452,87 @@ try {
 
   if (createdSessionIds.length > 0) {
     await page.waitForFunction(
-      () => {
-        const summary = window.mmDebug?.perf.snapshot().terminalSummary;
-        const active = summary?.terminals.find((terminal) => terminal.active);
-        return (active?.baseY ?? 0) > 0;
+      async ({ ids, previousOutput }) => {
+        const response = await fetch("/api/sessions");
+        if (!response.ok) return false;
+        const payload = await response.json();
+        const byId = new Map(
+          payload.sessions.map((session) => [session.id, session]),
+        );
+        return ids.every((id) => {
+          const lastOutputAt = byId.get(id)?.supervisor?.lastOutputAt ?? null;
+          return lastOutputAt !== null && lastOutputAt !== previousOutput[id];
+        });
       },
-      undefined,
+      { ids: createdSessionIds, previousOutput: lastOutputBeforeTraffic },
       { timeout: 15000 },
     );
+
+    const expectsWebgl = await page.evaluate(
+      () => window.mmDebug?.settings?.useWebGL !== false,
+    );
+    for (let cycle = 0; cycle < switchCycles; cycle += 1) {
+      for (const sessionId of createdSessionIds) {
+        const measurement = await page.evaluate(
+          async ({ id, webglRequired }) => {
+            const item = document.querySelector(
+              `.session-item[data-session-id="${CSS.escape(id)}"]`,
+            );
+            if (!(item instanceof HTMLElement)) {
+              throw new Error(`Session item ${id} is missing.`);
+            }
+
+            const startedAt = performance.now();
+            const deadline = startedAt + 15000;
+            const nextFrame = () =>
+              new Promise((resolve) => requestAnimationFrame(resolve));
+            item.click();
+
+            let state = window.mmDebug?.terminals.get(id);
+            while (
+              !(
+                window.mmDebug?.activeId === id &&
+                state?.opened &&
+                !state.container.classList.contains("hidden")
+              )
+            ) {
+              if (performance.now() >= deadline) {
+                throw new Error(`Session ${id} did not become visible.`);
+              }
+              await nextFrame();
+              state = window.mmDebug?.terminals.get(id);
+            }
+            const visibleMs = performance.now() - startedAt;
+
+            while (
+              !(
+                window.mmDebug?.activeId === id &&
+                (!webglRequired || state?.hasWebgl === true) &&
+                (state?.terminal.buffer.active.baseY ?? 0) > 0
+              )
+            ) {
+              if (performance.now() >= deadline) {
+                throw new Error(`Session ${id} did not finish catch-up.`);
+              }
+              await nextFrame();
+              state = window.mmDebug?.terminals.get(id);
+            }
+
+            return {
+              sessionId: id,
+              visibleMs: Math.round(visibleMs * 100) / 100,
+              caughtUpMs:
+                Math.round((performance.now() - startedAt) * 100) / 100,
+            };
+          },
+          { id: sessionId, webglRequired: expectsWebgl },
+        );
+        switchMeasurements.push(measurement);
+      }
+    }
   }
 
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(warmupSeconds * 1000);
   if (collectCpuProfile) await client.send("Profiler.start");
   const startedAt = Date.now();
   const sampleCount = Math.ceil((sampleSeconds * 1000) / sampleIntervalMs) + 1;
@@ -466,6 +595,38 @@ try {
     cpuProfilePath: collectCpuProfile ? cpuProfilePath : null,
     sessionCount,
     sampleSeconds,
+    warmupSeconds,
+    switchCycles,
+    switching: {
+      count: switchMeasurements.length,
+      visibleAverageMs:
+        switchMeasurements.length > 0
+          ? Math.round(
+              switchMeasurements.reduce(
+                (sum, value) => sum + value.visibleMs,
+                0,
+              ) / switchMeasurements.length,
+            )
+          : null,
+      visibleP95Ms: percentile(
+        switchMeasurements.map((measurement) => measurement.visibleMs),
+        0.95,
+      ),
+      caughtUpAverageMs:
+        switchMeasurements.length > 0
+          ? Math.round(
+              switchMeasurements.reduce(
+                (sum, value) => sum + value.caughtUpMs,
+                0,
+              ) / switchMeasurements.length,
+            )
+          : null,
+      caughtUpP95Ms: percentile(
+        switchMeasurements.map((measurement) => measurement.caughtUpMs),
+        0.95,
+      ),
+      samples: switchMeasurements,
+    },
     baseline: {
       jsHeapUsedMB: bytesToMb(baseline?.jsHeapUsedBytes),
       chromeWorkingSetMB: bytesToMb(baseline?.os?.chrome?.workingSetBytes),
@@ -529,6 +690,7 @@ try {
       finalProcessCount: final?.os?.tlbx?.count ?? null,
       finalProcesses: final?.os?.tlbx?.processes ?? [],
       owned: tlbxOwned,
+      ownedCpuByProcess: summarizeProcessCpu(samples, isTlbxOwnedProcess),
       shellAndConsole: summarizeProcessGroup(
         samples,
         (process) => !isTlbxOwnedProcess(process),

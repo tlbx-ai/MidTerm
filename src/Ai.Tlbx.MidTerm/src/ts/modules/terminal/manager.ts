@@ -644,16 +644,13 @@ function hasWebglPriority(sessionId: string, state: TerminalState): boolean {
     isWebglOwnershipManaged(state),
     webglPriorityKnown,
     webglPrioritySessionIds.has(sessionId),
-    sessionTerminals.size <= 1,
   );
 }
 
 function enforceManagedWebglLimit(): void {
-  if (sessionTerminals.size <= 1) return;
-
   for (const sessionId of [...terminalsWithWebgl]) {
     const state = sessionTerminals.get(sessionId);
-    if (state) {
+    if (state && isWebglOwnershipManaged(state) && !hasWebglPriority(sessionId, state)) {
       detachWebglAddon(sessionId, state);
     }
   }
@@ -843,9 +840,10 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
   // A hidden tab retains its xterm buffer, but it must not retain a GPU
   // renderer. Xterm 6.1/WebGL 0.20 makes each preserved context materially
   // expensive, so keeping one per previously visited tab multiplies Chrome's
-  // private memory without producing a visible pixel. With multiple managed
-  // terminals, keep all of them on the built-in renderer: even one WebGL
-  // context plus repeated ownership transfers exceeds its measured benefit.
+  // private memory without producing a visible pixel. Keep WebGL on the active
+  // session and visible layout panes so sustained output remains GPU-backed;
+  // switching exposes the preserved canvas immediately and transfers renderer
+  // ownership without recreating the terminal or its buffer.
   for (const sessionId of [...terminalsWithWebgl]) {
     const state = sessionTerminals.get(sessionId);
     if (state && isWebglOwnershipManaged(state) && !hasWebglPriority(sessionId, state)) {

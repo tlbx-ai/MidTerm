@@ -8,15 +8,20 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class WindowsProcessMonitorTests
 {
     [Theory]
-    [InlineData(0, 0, WindowsProcessMonitor.ActivePollIntervalMs)]
-    [InlineData(0, 1999, WindowsProcessMonitor.ActivePollIntervalMs)]
-    [InlineData(0, 2000, WindowsProcessMonitor.IdlePollIntervalMs)]
-    [InlineData(1000, 31000, WindowsProcessMonitor.IdlePollIntervalMs)]
-    public void ResolvePollDelay_UsesFastPollingOnlyAroundTerminalActivity(
+    [InlineData(0, 0, false, WindowsProcessMonitor.ActivePollIntervalMs)]
+    [InlineData(0, 1999, false, WindowsProcessMonitor.ActivePollIntervalMs)]
+    [InlineData(0, 2000, false, Timeout.Infinite)]
+    [InlineData(1000, 31000, false, Timeout.Infinite)]
+    [InlineData(0, 2000, true, WindowsProcessMonitor.IdlePollIntervalMs)]
+    [InlineData(1000, 31000, true, WindowsProcessMonitor.IdlePollIntervalMs)]
+    public void ResolvePollDelay_StopsIdleShellsAndRetainsFallbackForChildProcesses(
         long lastActivityMs,
         long nowMs,
+        bool hasForegroundChild,
         int expectedDelayMs)
     {
-        Assert.Equal(expectedDelayMs, WindowsProcessMonitor.ResolvePollDelay(lastActivityMs, nowMs));
+        Assert.Equal(
+            expectedDelayMs,
+            WindowsProcessMonitor.ResolvePollDelay(lastActivityMs, nowMs, hasForegroundChild));
     }
 }
