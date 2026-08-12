@@ -121,6 +121,37 @@ public sealed class SessionUpdateStateServiceTests
     }
 
     [Fact]
+    public void ObserveOutput_RemembersAgentResumeHintAcrossChunksOutsideScrollback()
+    {
+        var stateDir = Path.Combine(Path.GetTempPath(), "midterm-update-state-tests", Guid.NewGuid().ToString("N"));
+        var service = new SessionUpdateStateService(stateDir);
+        service.NoteForeground(
+            "s1",
+            foregroundName: "node",
+            foregroundCommandLine: "node codex.js --yolo",
+            foregroundProcessIdentity: "codex");
+
+        service.ObserveOutput("s1", "To continue, run codex res"u8.ToArray());
+        service.ObserveOutput("s1", "ume 019ff0f5-6686-7c93-8420-4b6f4f4b9eae\r\n"u8.ToArray());
+
+        Assert.Equal(
+            "codex --yolo resume 019ff0f5-6686-7c93-8420-4b6f4f4b9eae",
+            service.TryBuildObservedResumeCommand("s1", "codex --yolo"));
+    }
+
+    [Fact]
+    public void ObserveOutput_IgnoresUntrackedShellTraffic()
+    {
+        var stateDir = Path.Combine(Path.GetTempPath(), "midterm-update-state-tests", Guid.NewGuid().ToString("N"));
+        var service = new SessionUpdateStateService(stateDir);
+        service.NoteForeground("s1", "pwsh", "pwsh", "pwsh");
+
+        service.ObserveOutput("s1", "echo codex resume must-not-run"u8.ToArray());
+
+        Assert.Null(service.TryBuildObservedResumeCommand("s1", "pwsh"));
+    }
+
+    [Fact]
     public void TryBuildResumeCommand_DoesNotRelaunchNonAiProcessWithoutOptIn()
     {
         var command = SessionUpdateStateService.TryBuildResumeCommand(

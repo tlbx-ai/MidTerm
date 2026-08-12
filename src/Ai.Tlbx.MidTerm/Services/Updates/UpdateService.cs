@@ -968,7 +968,9 @@ public sealed partial class UpdateService : IDisposable
         }
         else
         {
-            var update = LatestUpdate;
+            // Never apply a timer/UI snapshot here. A release can finish publishing
+            // after the last background check but before the user presses Update.
+            var update = await CheckForUpdateAsync().ConfigureAwait(false);
             if (update is null || !update.Available)
             {
                 return FailUpdate(artifacts, "No update available");

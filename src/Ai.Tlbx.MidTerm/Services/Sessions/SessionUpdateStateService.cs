@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -15,7 +16,12 @@ public sealed partial class SessionUpdateStateService
 {
     private const int ResumeHintScrollbackBytes = 256 * 1024;
     private const int ResumeHintTailLineCount = 8;
+    private const int ObservedResumeTailBytes = 256;
+    private const int ObservedResumeContextBeforeBytes = 64;
+    private const int ObservedResumeContextAfterBytes = 384;
     private readonly string _statePath;
+    private readonly ConcurrentDictionary<string, byte> _trackedAiSessions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ResumeObservation> _resumeObservations = new(StringComparer.Ordinal);
 
     public SessionUpdateStateService(SettingsService settingsService)
         : this(settingsService.SettingsDirectory)
@@ -25,6 +31,66 @@ public sealed partial class SessionUpdateStateService
     public SessionUpdateStateService(string settingsDirectory)
     {
         _statePath = Path.Combine(settingsDirectory, "state.json");
+    }
+
+    public void NoteForeground(
+        string sessionId,
+        string? foregroundName,
+        string? foregroundCommandLine,
+        string? foregroundProcessIdentity)
+    {
+        if (IsSupportedAiForeground(foregroundName, foregroundCommandLine, foregroundProcessIdentity))
+        {
+            _trackedAiSessions[sessionId] = 0;
+            return;
+        }
+
+        _trackedAiSessions.TryRemove(sessionId, out _);
+    }
+
+    public void ObserveOutput(string sessionId, ReadOnlyMemory<byte> data)
+    {
+        if (data.IsEmpty || !_trackedAiSessions.ContainsKey(sessionId))
+        {
+            return;
+        }
+
+        var observation = _resumeObservations.GetOrAdd(sessionId, static _ => new ResumeObservation());
+        lock (observation)
+        {
+            var span = data.Span;
+            var resumeIndex = LastIndexOfAsciiIgnoreCase(span, "resume"u8);
+            var crossesBoundary = resumeIndex < 0 && ContainsResumeAcrossBoundary(observation.Tail, observation.TailLength, span);
+
+            if (resumeIndex >= 0 || crossesBoundary)
+            {
+                var currentStart = resumeIndex >= 0
+                    ? Math.Max(0, resumeIndex - ObservedResumeContextBeforeBytes)
+                    : 0;
+                var currentLength = Math.Min(span.Length - currentStart, ObservedResumeContextAfterBytes);
+                var includeTail = currentStart == 0 ? observation.TailLength : 0;
+                var candidate = new byte[includeTail + currentLength];
+                if (includeTail > 0)
+                {
+                    observation.Tail.AsSpan(0, includeTail).CopyTo(candidate);
+                }
+                span.Slice(currentStart, currentLength).CopyTo(candidate.AsSpan(includeTail));
+
+                var hint = TryFindAiResumeHint(Encoding.UTF8.GetString(candidate));
+                if (hint is not null)
+                {
+                    observation.Hint = hint;
+                }
+            }
+
+            observation.RememberTail(span);
+        }
+    }
+
+    public void ForgetSession(string sessionId)
+    {
+        _trackedAiSessions.TryRemove(sessionId, out _);
+        _resumeObservations.TryRemove(sessionId, out _);
     }
 
     public async Task CaptureAsync(
@@ -128,8 +194,7 @@ public sealed partial class SessionUpdateStateService
         var resumeHint = TryFindAiResumeHint(terminalText);
         if (resumeHint is not null)
         {
-            var preservedFlags = PreserveResumeFlags(foregroundCommandLine);
-            return BuildCommand([resumeHint.Provider, ..preservedFlags, resumeHint.ResumeArgument, resumeHint.ThreadId]);
+            return BuildResumeCommand(resumeHint, foregroundCommandLine);
         }
 
         if (!tryResumeNonAiAgentProcesses ||
@@ -254,7 +319,7 @@ public sealed partial class SessionUpdateStateService
         }
     }
 
-    private static async Task<string?> TryBuildResumeCommandAsync(
+    private async Task<string?> TryBuildResumeCommandAsync(
         TtyHostSessionManager sessionManager,
         SessionDecorationState decoration,
         bool tryResumeNonAiAgentProcesses,
@@ -278,11 +343,36 @@ public sealed partial class SessionUpdateStateService
             Log.Warn(() => $"Failed to read resume scrollback for {decoration.SessionId}: {ex.Message}");
         }
 
+        var observedHint = GetObservedResumeHint(decoration.SessionId);
+        if (observedHint is not null)
+        {
+            return BuildResumeCommand(observedHint, decoration.ForegroundCommandLine);
+        }
+
         return TryBuildResumeCommand(
             terminalText,
             decoration.ForegroundCommandLine,
             decoration.ForegroundName,
             tryResumeNonAiAgentProcesses);
+    }
+
+    internal string? TryBuildObservedResumeCommand(string sessionId, string? foregroundCommandLine)
+    {
+        var hint = GetObservedResumeHint(sessionId);
+        return hint is null ? null : BuildResumeCommand(hint, foregroundCommandLine);
+    }
+
+    private AiResumeHint? GetObservedResumeHint(string sessionId)
+    {
+        if (!_resumeObservations.TryGetValue(sessionId, out var observation))
+        {
+            return null;
+        }
+
+        lock (observation)
+        {
+            return observation.Hint;
+        }
     }
 
     private static async Task RestoreDecorationsAsync(
@@ -638,6 +728,74 @@ public sealed partial class SessionUpdateStateService
         return null;
     }
 
+    private static string BuildResumeCommand(AiResumeHint hint, string? foregroundCommandLine)
+    {
+        var preservedFlags = PreserveResumeFlags(foregroundCommandLine);
+        return BuildCommand([hint.Provider, ..preservedFlags, hint.ResumeArgument, hint.ThreadId]);
+    }
+
+    private static bool IsSupportedAiForeground(
+        string? foregroundName,
+        string? foregroundCommandLine,
+        string? foregroundProcessIdentity)
+    {
+        return IsSupportedAiToken(foregroundProcessIdentity)
+            || IsSupportedAiToken(foregroundName)
+            || TokenizeCommandLine(foregroundCommandLine).Any(IsSupportedAiToken);
+    }
+
+    private static bool IsSupportedAiToken(string? value)
+    {
+        var token = Path.GetFileNameWithoutExtension(value?.Trim());
+        return token is not null &&
+            (token.Equals("codex", StringComparison.OrdinalIgnoreCase)
+             || token.Equals("claude", StringComparison.OrdinalIgnoreCase)
+             || token.Equals("grok", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int LastIndexOfAsciiIgnoreCase(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
+    {
+        if (needle.IsEmpty || haystack.Length < needle.Length)
+        {
+            return -1;
+        }
+
+        for (var start = haystack.Length - needle.Length; start >= 0; start--)
+        {
+            var matches = true;
+            for (var offset = 0; offset < needle.Length; offset++)
+            {
+                if (ToAsciiLower(haystack[start + offset]) != ToAsciiLower(needle[offset]))
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches)
+            {
+                return start;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool ContainsResumeAcrossBoundary(byte[] tail, int tailLength, ReadOnlySpan<byte> current)
+    {
+        var prefixLength = Math.Min(current.Length, 8);
+        var suffixLength = Math.Min(tailLength, 8);
+        Span<byte> boundary = stackalloc byte[suffixLength + prefixLength];
+        tail.AsSpan(tailLength - suffixLength, suffixLength).CopyTo(boundary);
+        current[..prefixLength].CopyTo(boundary[suffixLength..]);
+        return LastIndexOfAsciiIgnoreCase(boundary, "resume"u8) >= 0;
+    }
+
+    private static byte ToAsciiLower(byte value)
+    {
+        return value is >= (byte)'A' and <= (byte)'Z' ? (byte)(value + 32) : value;
+    }
+
     private static string GetTailLines(string text, int lineCount)
     {
         if (lineCount <= 0 || string.IsNullOrEmpty(text))
@@ -844,6 +1002,32 @@ public sealed partial class SessionUpdateStateService
     private static partial Regex AiResumeHintRegex();
 
     private sealed record AiResumeHint(string Provider, string ResumeArgument, string ThreadId);
+
+    private sealed class ResumeObservation
+    {
+        public byte[] Tail { get; } = new byte[ObservedResumeTailBytes];
+        public int TailLength { get; private set; }
+        public AiResumeHint? Hint { get; set; }
+
+        public void RememberTail(ReadOnlySpan<byte> data)
+        {
+            if (data.Length >= Tail.Length)
+            {
+                data[^Tail.Length..].CopyTo(Tail);
+                TailLength = Tail.Length;
+                return;
+            }
+
+            var retained = Math.Min(TailLength, Tail.Length - data.Length);
+            if (retained > 0)
+            {
+                Tail.AsSpan(TailLength - retained, retained).CopyTo(Tail);
+            }
+
+            data.CopyTo(Tail.AsSpan(retained));
+            TailLength = retained + data.Length;
+        }
+    }
 
     private sealed record RestoreUpdateStateResult(IReadOnlyList<string> FailedOriginalSessionIds)
     {

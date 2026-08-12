@@ -23,10 +23,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_apply_update()", shell, StringComparison.Ordinal);
         Assert.Contains("$_MT/api/update/apply", shell, StringComparison.Ordinal);
         Assert.Contains("Current version:", shell, StringComparison.Ordinal);
+        Assert.Contains("latestVersion", shell, StringComparison.Ordinal);
+        Assert.Contains("Update did not reach expected version", shell, StringComparison.Ordinal);
 
         Assert.Contains("function Mt-ApplyUpdate", powershell, StringComparison.Ordinal);
         Assert.Contains("$script:_MT/api/update/apply", powershell, StringComparison.Ordinal);
         Assert.Contains("Current version:", powershell, StringComparison.Ordinal);
+        Assert.Contains("$update.latestVersion", powershell, StringComparison.Ordinal);
+        Assert.Contains("Update did not reach expected version", powershell, StringComparison.Ordinal);
         Assert.Contains("_MBR", shell, StringComparison.Ordinal);
         Assert.Contains("_MJR", shell, StringComparison.Ordinal);
         Assert.Contains("_MCURL --fail-with-body -sSk -b", shell, StringComparison.Ordinal);

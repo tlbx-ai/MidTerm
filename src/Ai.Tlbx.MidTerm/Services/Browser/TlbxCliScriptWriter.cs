@@ -400,21 +400,26 @@ public static class TlbxCliScriptWriter
         # mt_apply_update [SOURCE]  — apply pending update and wait for server to return
         mt_apply_update() {
           local source="${1:-}" url="$_MT/api/update/apply"
+          local target=""
           if [ -n "$source" ]; then
             url="$url?source=$(_ME "$source")"
+          else
+            target=$(_MC "$_MT/api/update/check" 2>/dev/null | sed -n 's/.*"latestVersion":"\([^"]*\)".*/\1/p')
           fi
           _MC -X POST "$url" || return $?
           sleep 3
           local i version
           for ((i=0; i<90; i++)); do
-            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) && break
+            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) || version=""
+            version=${version#\"}; version=${version%\"}
+            if [ -n "$version" ] && { [ -z "$target" ] || [ "$version" = "$target" ]; }; then
+              printf 'Current version: %s\n' "$version"
+              return 0
+            fi
             sleep 1
           done
-          if [ -n "$version" ]; then
-            printf 'Current version: %s\n' "$version"
-          else
-            echo "Update triggered. Server restart still in progress."
-          fi
+          echo "Update did not reach expected version ${target:-unknown}; current version: ${version:-unreachable}." >&2
+          return 1
         }
 
         # Session management
@@ -1404,20 +1409,32 @@ public static class TlbxCliScriptWriter
         function Mt-ApplyUpdate {
             param([string]$Source)
             $url = "$script:_MT/api/update/apply"
+            $targetVersion = $null
             if ($Source) {
                 $url += "?source=$([Uri]::EscapeDataString($Source))"
             }
+            else {
+                try {
+                    $update = (_MC "$script:_MT/api/update/check") | ConvertFrom-Json
+                    $targetVersion = $update.latestVersion
+                }
+                catch {}
+            }
             _MC -X POST $url
             Start-Sleep -Seconds 3
+            $currentVersion = $null
             for ($i = 0; $i -lt 90; $i++) {
                 $version = & curl.exe -sfk "$script:_MT/api/version" 2>$null
                 if ($LASTEXITCODE -eq 0 -and $version) {
-                    Write-Output "Current version: $version"
-                    return
+                    $currentVersion = $version.Trim().Trim('"')
+                    if (-not $targetVersion -or $currentVersion -eq $targetVersion) {
+                        Write-Output "Current version: $currentVersion"
+                        return
+                    }
                 }
                 Start-Sleep -Seconds 1
             }
-            Write-Output "Update triggered. Server restart still in progress."
+            Write-Error "Update did not reach expected version $($targetVersion ?? 'unknown'); current version: $($currentVersion ?? 'unreachable')."
         }
 
         # Session management
